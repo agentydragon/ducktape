@@ -150,6 +150,9 @@ class Environment:
     egress: EgressProps
     app: AppProps
     actions: ActionsProps
+    # Whether this environment runs the Sandbox Controller and our own runner SandboxTemplates
+    # beside agent-sandbox's: testing does, ahead of staging.
+    own_sandboxes: bool
     notifications_github: GitHubAppProps | None = None
     # Binding scopes and cluster binding management the Sandbox Service keeps after their catalog
     # entries are removed, so the bindings existing Sandboxes still hold can be cleaned up.

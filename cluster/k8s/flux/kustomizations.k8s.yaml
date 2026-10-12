@@ -3739,6 +3739,10 @@ spec:
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
+      name: agentplane-sandbox-controller
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
       name: agentplane-actions
       namespace: agentplane-testing
     - apiVersion: apps/v1
@@ -3756,10 +3760,6 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: dex
-      namespace: agentplane-testing
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: agentplane-sandbox-controller
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment

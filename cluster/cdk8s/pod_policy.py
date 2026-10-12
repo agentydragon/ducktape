@@ -1,7 +1,7 @@
 """Cluster pod policy: `harden` and `place`, each called once on a finished workload of any
 dialect -- a cdk8s-plus workload, a raw `k8s.Kube*` object, or a CRD that embeds a pod
-template. Both reach the pod spec through `POD_SPEC_PATHS`, which the fleet rules also
-read, and patch in only what it leaves unset, so a value stated at construction wins.
+template. Both reach the pod spec through `POD_SPEC_PATHS`, keyed by API group and kind
+since two groups define a `SandboxTemplate`, which the fleet rules also read, and patch in only what it leaves unset, so a value stated at construction wins.
 """
 
 from __future__ import annotations
@@ -16,33 +16,40 @@ from constructs import Construct
 
 from cluster.cdk8s.node_scheduling import CONTROL_PLANE_TOLERATION, Placement
 
-POD_SPEC_PATHS: Mapping[str, str] = MappingProxyType(
+POD_SPEC_PATHS: Mapping[tuple[str, str], str] = MappingProxyType(
     {
-        "Deployment": "/spec/template/spec",
-        "StatefulSet": "/spec/template/spec",
-        "DaemonSet": "/spec/template/spec",
-        "ReplicaSet": "/spec/template/spec",
-        "Job": "/spec/template/spec",
-        "CronJob": "/spec/jobTemplate/spec/template/spec",
-        "SandboxTemplate": "/spec/podTemplate/spec",
-        "ScaledJob": "/spec/jobTargetRef/template/spec",
+        ("apps", "Deployment"): "/spec/template/spec",
+        ("apps", "StatefulSet"): "/spec/template/spec",
+        ("apps", "DaemonSet"): "/spec/template/spec",
+        ("apps", "ReplicaSet"): "/spec/template/spec",
+        ("batch", "Job"): "/spec/template/spec",
+        ("batch", "CronJob"): "/spec/jobTemplate/spec/template/spec",
+        ("extensions.agents.x-k8s.io", "SandboxTemplate"): "/spec/podTemplate/spec",
+        ("agentplane.allegedly.works", "SandboxTemplate"): "/spec/pod/spec",
+        ("keda.sh", "ScaledJob"): "/spec/jobTargetRef/template/spec",
     }
 )
 _RUNTIME_DEFAULT = k8s.SeccompProfile(type="RuntimeDefault")
 _DROP_ALL = k8s.Capabilities(drop=["ALL"])
 
 
+def workload_kind(manifest: dict[str, Any]) -> tuple[str, str]:
+    """A rendered object's API group (empty for the core group) and kind."""
+    return manifest["apiVersion"].rpartition("/")[0], manifest["kind"]
+
+
 def pod_spec(manifest: dict[str, Any]) -> dict[str, Any]:
     """The pod spec inside a rendered workload; `KeyError` for a kind `POD_SPEC_PATHS` lacks."""
     spec = manifest
-    for key in POD_SPEC_PATHS[manifest["kind"]].split("/")[1:]:
+    for key in POD_SPEC_PATHS[workload_kind(manifest)].split("/")[1:]:
         spec = spec[key]
     return spec
 
 
 def _workload(workload: Construct) -> tuple[ApiObject, str, dict[str, Any]]:
     obj = ApiObject.of(workload)
-    return obj, POD_SPEC_PATHS[obj.kind], pod_spec(obj.to_json())
+    manifest = obj.to_json()
+    return obj, POD_SPEC_PATHS[workload_kind(manifest)], pod_spec(manifest)
 
 
 def harden(workload: Construct) -> None:

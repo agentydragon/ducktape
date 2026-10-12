@@ -37,15 +37,7 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.app.action_federation_settings import DirectFederationSettings
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import agent_access_profiles as access, cilium
-from cluster.cdk8s.agentplane import (
-    actions,
-    app as app_component,
-    app_settings,
-    dex,
-    egress,
-    policy_controller,
-    sandbox_controller,
-)
+from cluster.cdk8s.agentplane import actions, app as app_component, app_settings, dex, egress, policy_controller
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     MCP_EVERYTHING_NAME,
     MCP_EVERYTHING_PORT,
@@ -179,6 +171,7 @@ ENV = Environment(
             EgressRule.to_endpoints(cilium.endpoint_labels(TESTING_NAMESPACE, OAUTH_FIXTURE_NAME), OAUTH_FIXTURE_PORT),
         ],
     ),
+    own_sandboxes=True,
 )
 
 
@@ -363,9 +356,8 @@ def chart(app: App) -> Chart:
     )
     add_testing_fixtures(chart)
     dex.Dex(chart, "dex")
-    sandbox_controller.SandboxController(chart, "sandbox-controller", ENV)
     # No grant catalog here, so no Kubernetes-rule sets: it reports KubernetesReady on testing's
-    # PolicyBindings, which the Sandbox Controller waits for before starting a Pod.
+    # PolicyBindings.
     policy_controller.PolicyController(chart, "policy-controller", ENV, sets={})
     EgressCredentials(
         chart, "egress-credentials", namespace=ENV.egress.credentials_namespace, proxy_namespace=ENV.namespace

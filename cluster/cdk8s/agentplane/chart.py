@@ -22,6 +22,7 @@ from cluster.cdk8s.agentplane import (
     notifications,
     runner_gateway,
     runner_sandbox,
+    sandbox_controller,
     sandbox_pod,
     sandbox_service,
 )
@@ -87,6 +88,8 @@ def environment_chart(app: App, env: Environment) -> Chart:
     )
     app_component.App(chart, "app", env)
     runner_sandbox.RunnerSandbox(chart, "runner-sandbox", env)
+    if env.own_sandboxes:
+        sandbox_controller.SandboxController(chart, "sandbox-controller", env)
     actions.Actions(chart, "actions", env)
     notifications.Notifications(
         chart,

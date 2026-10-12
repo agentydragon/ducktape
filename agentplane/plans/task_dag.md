@@ -668,23 +668,16 @@ calls the gateway to seal. Action Service boxes keep a catalog of their own (#10
 
 ```mermaid
 flowchart TD
-    SANDBOX_RUNNER_TEMPLATES[Candidate: runner SandboxTemplates of our kind]
     SANDBOX_CONTROLLER_PROVISIONING[In flight: the controller provisions a Sandbox]
     ACTION_POLICY_MIGRATE[Action policies on PolicySet, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
     KUBERNETES_POLICY_SETS[Grant catalog as PolicySets, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
     SANDBOX_CONTROLLER_TEARDOWN[Candidate: deleting a Sandbox seals it first]
     SANDBOX_IMAGE_REPLACE[Candidate: replace the runner image between incarnations]
     SANDBOX_CREATE_CUTOVER[Blocked: Sandboxes are created as ours]
-    SANDBOX_RUNNER_TEMPLATES --> SANDBOX_CREATE_CUTOVER
     SANDBOX_CONTROLLER_PROVISIONING --> SANDBOX_CREATE_CUTOVER
     SANDBOX_CONTROLLER_TEARDOWN --> SANDBOX_CREATE_CUTOVER
     SANDBOX_CREATE_CUTOVER --> AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox]
 ```
-
-### `SANDBOX_RUNNER_TEMPLATES` — runner SandboxTemplates of our kind
-
-**Candidate.** The runner `SandboxTemplate`s of our kind, rendered from the same `RunnerTemplate`
-construct as agent-sandbox's, with the state volume as a claim instead of a `volumeClaimTemplate`.
 
 ### `SANDBOX_CONTROLLER_PROVISIONING` — the controller provisions a Sandbox
 
@@ -719,11 +712,12 @@ live in [the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
 
 ### `SANDBOX_CREATE_CUTOVER` — Sandboxes are created as ours
 
-**Blocked on runner templates, provisioning and teardown; decision card before the PR.** `CreateSandbox` and
+**Blocked on provisioning and teardown; decision card before the PR.** `CreateSandbox` and
 the rest of the Sandbox Service API, the app's live view and the Runner Gateway's destination
 lookup read and write our `Sandbox` instead of agent-sandbox's, replacing the imperative-only
 `CreateSandbox`. Existing staging Sandboxes stay on agent-sandbox until `AGENT_SANDBOX_RETIRE`
-recreates them. The Sandbox Controller runs on `agentplane-testing` only until then: the cutover
+recreates them. The Sandbox Controller and our runner `SandboxTemplate`s exist on `agentplane-testing` only
+(`Environment.own_sandboxes`) until then: the cutover
 lands on testing first, and staging gets the controller and the cutover only once testing holds
 (operator, 2026-10-12 PDT: testing down beats staging down). The create form and Sandbox presets
 name policy sets of any rule type, one chip per set, in a new `policy_sets` preset field.
@@ -732,8 +726,9 @@ name policy sets of any rule type, one chip per set, in a new `policy_sets` pres
 
 **Blocked on our resource and on Action Service boxes becoming plain Pods; decision card before the
 PR.** Staging Sandboxes are recreated on our resource, not converted; until then they keep the old
-policy kinds, and the recreated ones get the controller's `PolicyBinding`. Then delete Agentplane's runner `SandboxTemplate`s
-(`cluster/cdk8s/agentplane/runner_sandbox.py`), the Sandbox
+policy kinds, and the recreated ones get the controller's `PolicyBinding`. Then delete Agentplane's
+agent-sandbox runner `SandboxTemplate`s (`cluster/cdk8s/agentplane/runner_sandbox.py`, whose
+rendered spec ours now copy: build ours directly) and `Environment.own_sandboxes`, the Sandbox
 Service's agent-sandbox inventory, views and watch, the annotations it used as its record, the
 `volumeClaimTemplates` state volume and the agent-sandbox RBAC of both services. The controller
 install stays for `cluster/cdk8s/agent_workspaces.py`.

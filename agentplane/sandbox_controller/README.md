@@ -23,7 +23,9 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
 
 ## Running
 
-`agentplane-testing` runs it from `cluster/cdk8s/agentplane/sandbox_controller.py`, which also holds its RBAC.
+Environments with `own_sandboxes` (`agentplane-testing` only, for now) run it from
+`cluster/cdk8s/agentplane/sandbox_controller.py`, which also holds its RBAC, and get a runner
+`SandboxTemplate` of our kind beside each of agent-sandbox's (`runner_sandbox.py`).
 Locally:
 
 ```bash

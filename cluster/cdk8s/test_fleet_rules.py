@@ -77,6 +77,13 @@ def test_pod_hardening_covers_init_containers_and_crd_pod_templates() -> None:
         "metadata": {"name": "runner"},
         "spec": {"podTemplate": {"spec": {**_HARDENED, "containers": [{"name": "runner"}]}}},
     }
+    # Same kind, another group, another pod path.
+    own_sandbox = {
+        "apiVersion": "agentplane.allegedly.works/v1alpha1",
+        "kind": "SandboxTemplate",
+        "metadata": {"name": "own"},
+        "spec": {"pod": {"spec": {"containers": [{"name": "runner", "resources": _RESOURCES}]}}},
+    }
     scaled_job = {
         "apiVersion": "keda.sh/v1alpha1",
         "kind": "ScaledJob",
@@ -89,10 +96,12 @@ def test_pod_hardening_covers_init_containers_and_crd_pod_templates() -> None:
         pod={**_HARDENED, "initContainers": [{"name": "migrate"}]},
     )
     assert [
-        error.split(":")[0] for error in pod_hardening([sandbox, scaled_job, deployment], unhardened=frozenset())
+        error.split(":")[0]
+        for error in pod_hardening([sandbox, own_sandbox, scaled_job, deployment], unhardened=frozenset())
     ] == [
         "SandboxTemplate/runner container runner",
         "SandboxTemplate/runner container runner",
+        "SandboxTemplate/own container runner",
         "ScaledJob/ci container job",
         "Deployment/with-init container migrate",
         "Deployment/with-init container migrate",

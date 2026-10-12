@@ -30,11 +30,12 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecVolumeClaimTemplatesSpecResources,
     SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests,
 )
-from cdk8s import ApiObjectMetadata
+from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
 from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
+from agentplane.crd_group import GROUP
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import egress, llm_ingress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
@@ -218,16 +219,16 @@ class RunnerTemplate(Construct):
         )
 
     def _add_sandbox_template(self, *, name: str, image: str, description: str) -> None:
-        namespace = self.env.namespace
-        SandboxTemplate(
+        metadata = ApiObjectMetadata(
+            name=name,
+            namespace=self.env.namespace,
+            # What the sandbox Actions tell an agent choosing among the templates they offer.
+            annotations={DESCRIPTION_ANNOTATION: description},
+        )
+        template = SandboxTemplate(
             self,
             "sandboxtemplate",
-            metadata=ApiObjectMetadata(
-                name=name,
-                namespace=namespace,
-                # What the sandbox Actions tell an agent choosing among the templates they offer.
-                annotations={DESCRIPTION_ANNOTATION: description},
-            ),
+            metadata=metadata,
             # The CiliumNetworkPolicy next to this construct is the runner's fence.
             network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
             volume_claim_templates_policy=SandboxTemplateSpecVolumeClaimTemplatesPolicy.OVERRIDES,
@@ -273,3 +274,19 @@ class RunnerTemplate(Construct):
                 )
             ],
         )
+        if self.env.own_sandboxes:
+            # Our own SandboxTemplate (agentplane/sandbox_controller), the same Pod and state volume
+            # read off agent-sandbox's.
+            spec = template.to_json()["spec"]
+            (claim,) = spec["volumeClaimTemplates"]
+            ApiObject(
+                self, "own-sandboxtemplate", api_version=f"{GROUP}/v1alpha1", kind="SandboxTemplate", metadata=metadata
+            ).add_json_patch(
+                JsonPatch.add(
+                    "/spec",
+                    {
+                        "pod": spec["podTemplate"],
+                        "stateVolume": {"name": claim["metadata"]["name"], "claim": claim["spec"]},
+                    },
+                )
+            )
