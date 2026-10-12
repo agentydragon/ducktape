@@ -129,10 +129,10 @@ async def async_main(settings: Settings) -> None:
         gateway = RunnerGatewayClient(
             gateway_channel,
             token_file=settings.runner_gateway_token_file,
-            command_admission_timeout_s=settings.sandbox_service_command_admission_timeout_s,
+            command_admission_timeout_s=settings.runner_gateway_command_admission_timeout_s,
             request_timeout_s=settings.sandbox_service_request_timeout_s,
             control=SandboxControlClient(
-                control_target=settings.sandbox_service_control_target,
+                control_target=settings.runner_gateway_control_target,
                 token_file=settings.runner_gateway_token_file,
                 request_timeout_s=settings.sandbox_service_request_timeout_s,
                 lifecycle_timeout_s=settings.sandbox_service_lifecycle_timeout_s,

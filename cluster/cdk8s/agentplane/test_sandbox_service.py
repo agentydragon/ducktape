@@ -54,12 +54,10 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     assert gateway_pod["serviceAccountName"] == runner_gateway.NAME
     # The migration blocks startup; the gateway also needs the URL for explicit Open.
     commands_migration = one(gateway_pod["initContainers"])
-    assert commands_migration["env"] == [
-        {
-            "name": "AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL",
-            "valueFrom": {"secretKeyRef": {"name": "postgres-sandbox-commands", "key": "uri"}},
-        }
-    ]
+    assert commands_migration["env"][0] == {
+        "name": "AGENTPLANE_RUNNER_GATEWAY_COMMANDS_DATABASE_URL",
+        "valueFrom": {"secretKeyRef": {"name": "postgres-sandbox-commands", "key": "uri"}},
+    }
     gateway_container = one(item for item in gateway_pod["containers"] if item["name"] == "runner-gateway")
     assert commands_migration["env"][0]["valueFrom"] in [item.get("valueFrom") for item in gateway_container["env"]]
     # History belongs to the History Service, and command admission to the gateway: the Sandbox Service holds
@@ -74,9 +72,7 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     )
     history_pod = resource("Deployment", history_service.NAME)["spec"]["template"]["spec"]
     history_migration = one(history_pod["initContainers"])
-    assert history_migration["env"] == [
-        {"name": "AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL", "valueFrom": history_secret}
-    ]
+    assert {"name": "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL", "valueFrom": history_secret} in history_migration["env"]
     for rule in resource("Role", app.NAME)["rules"]:
         assert set(rule["verbs"]) <= {"get", "list", "watch"}
     backend_config = yaml.safe_load(resource("ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])

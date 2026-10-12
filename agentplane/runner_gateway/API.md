@@ -114,7 +114,7 @@ Sandbox Service's account for `SealSandbox` through `sealer_accounts`. Its token
 
 `port` defaults to 8080 for gRPC, which also serves the unauthenticated `grpc.health.v1.Health`.
 `SubmitCommand` waits up to `runner_admission_ack_timeout_s` (default 15) for runner journal
-admission. Configure the app client's `sandbox_service_command_admission_timeout_s` (default 20)
+admission. Configure the app client's `runner_gateway_command_admission_timeout_s` (default 20)
 above that server budget. Management uses `lifecycle_timeout_s` (default 300).
 
 `runner_control_port` (default 8082) is a separate gRPC listener serving only the

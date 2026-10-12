@@ -2340,6 +2340,11 @@ spec:
         - name: forgejo-images-creds
       initContainers:
         - env:
+            - name: AGENTPLANE_RUNNER_GATEWAY_COMMANDS_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-sandbox-commands
             - name: AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -2743,6 +2748,11 @@ spec:
         - name: forgejo-images-creds
       initContainers:
         - env:
+            - name: AGENTPLANE_HISTORY_SERVICE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-sandbox-service
             - name: AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL
               valueFrom:
                 secretKeyRef:
@@ -3090,7 +3100,6 @@ spec:
             - --sandbox-service-target=agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
             - --runner-gateway-target=agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8080
             - --runner-gateway-token-file=/var/run/secrets/agentplane-runner-gateway/token
-            - --sandbox-service-control-target={sandbox}-control.{namespace}.svc:8080
             - --history-service-target=agentplane-history-service.agentplane-testing.svc.cluster.local:8080
             - --notifications-url=http://agentplane-notifications.agentplane-testing.svc.cluster.local:8080
             - --notifications-token-file=/var/run/secrets/agentplane-notifications/token
@@ -3147,6 +3156,10 @@ spec:
                   name: agentplane-oidc
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-testing:agentplane-agent"]'
+            - name: AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET
+              value: "{sandbox}-control.{namespace}.svc:8080"
+            - name: AGENTPLANE_SANDBOX_SERVICE_CONTROL_TARGET
+              value: "{sandbox}-control.{namespace}.svc:8080"
             - name: AGENTPLANE_CONFIG_FILE
               value: /etc/agentplane/config.yaml
           image: git.allegedly.works/ducktape-ci/agentplane-app:unset

@@ -10,7 +10,7 @@ from agentplane.history_service.storage.database_migrate import RUNNER
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_SANDBOX_SERVICE_")
+    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_HISTORY_SERVICE_")
     database_url: str
 
 

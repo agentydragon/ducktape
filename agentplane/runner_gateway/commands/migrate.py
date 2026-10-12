@@ -10,7 +10,7 @@ from agentplane.runner_gateway.commands.database_migrate import RUNNER
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_SANDBOX_SERVICE_")
+    model_config = SettingsConfigDict(env_prefix="AGENTPLANE_RUNNER_GATEWAY_")
     commands_database_url: str
 
 

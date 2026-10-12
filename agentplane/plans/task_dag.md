@@ -788,18 +788,16 @@ flowchart TD
 (and the `postgres-sandbox-service` Secret) for the History Service. Rename in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`)
 and have the CNPG `Database` and managed role adopt the new names; recreating the database under a
 new name would copy the log. Verify the History Service and Electric reconnect with no data movement.
-The migrate env `AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL` (pinned in
-`cluster/cdk8s/agentplane/test_sandbox_service.py`) and the `storage/migrate.py` and
-`cluster/cdk8s/agentplane/history_service.py` docstrings take the new name.
+The `storage/migrate.py` and `cluster/cdk8s/agentplane/history_service.py` docstrings take the
+new name.
 
 ### `SANDBOX_DATABASE_RENAME` — name the Runner Gateway's database for it
 
 **Unscheduled; operator, 2026-10-11 PDT: keep the name for now, not urgent.** `sandbox_commands` holds the Runner Gateway's Session registry and command
 admission; the Sandbox Service has no database. Rename it and its role and Secret for the gateway
 in place, as `HISTORY_DATABASE_RENAME` does, and point the Runner Gateway, its migration init
-container and `commands_database_url` at the new names. Env
-`AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL` and `database.py`'s comment on
-`sandbox_commands` follow.
+container and `commands_database_url` at the new names. `database.py`'s comment on
+`sandbox_commands` follows.
 
 ### `ACTION_SANDBOX_PODS` — Action Service boxes as plain Pods
 
@@ -892,9 +890,8 @@ flowchart TD
 
 ### `GATEWAY_CLIENT_SPLIT` — the gateway client stands alone
 
-**Unscheduled.** `RunnerGatewayClient`'s `Runner` handle is renamed, its
-`command_admission_timeout_s` stops being nullable, and the Notification Service's
-`SandboxServiceSettings` splits in two.
+**Unscheduled.** `RunnerGatewayClient`'s `Runner` handle is renamed and its
+`command_admission_timeout_s` stops being nullable.
 
 ### `SEAL_FINALIZER` — seal as a finalizer on every delete
 
@@ -931,7 +928,8 @@ flowchart TD
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
         RUNNER_CORE_SPLIT[Candidate: runner control and ingress clients share their plumbing]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
-        SERVICE_SETTING_NAMES[Candidate: settings name the service they configure]
+        SERVICE_SETTING_OLD_NAMES_DROP[Waits on rollout: drop the old setting names]
+        NOTIFICATION_GATEWAY_SETTINGS[Candidate: the notification service's Runner Gateway block]
         NOTIFICATION_WRITE_ONLY_COLUMNS[Decision: audit columns nothing reads]
         EVENT_DRIVEN_WAKEUPS[Decision: which timed polls become event-driven]
     end
@@ -965,13 +963,25 @@ that says so.
 one production implementation, `ConnectionAuthority`. `db.py` cannot name it, because `connections.py`
 imports `db.py`'s rows: `ActionStore` first moves out of `db.py`, then takes a `ConnectionAuthority`.
 
-### `SERVICE_SETTING_NAMES` — settings name the service they configure
+### `SERVICE_SETTING_OLD_NAMES_DROP` — drop the old setting names
 
-**Candidate.** The gateway's and the History Service's migrators read `AGENTPLANE_SANDBOX_SERVICE_*`
-(`runner_gateway/commands/migrate.py`, `history_service/storage/migrate.py`), and the app's
-`sandbox_service_control_target` and `sandbox_service_command_admission_timeout_s` configure the
-Runner Gateway. The settings forbid extra keys, so a rename lands in two steps: accept the new name
-and render it, then drop the old one.
+**Waits on rollout** of `agentplane-app`, `agentplane-runner-gateway-migrate` and
+`agentplane-history-migrate` images that read `runner_gateway_control_target`,
+`AGENTPLANE_RUNNER_GATEWAY_COMMANDS_DATABASE_URL` and `AGENTPLANE_HISTORY_SERVICE_DATABASE_URL`, on
+both agentplane-staging and agentplane-testing. Until then cdk8s renders each old env var beside the
+new one, which an image that does not read it ignores. Then delete the three `CLEANUP` entries,
+`AGENTPLANE_SANDBOX_SERVICE_CONTROL_TARGET` (`cluster/cdk8s/agentplane/app.py`),
+`AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL` (`runner_gateway.py`) and
+`AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL` (`history_service.py`), and regenerate. No code reads the
+old names.
+
+### `NOTIFICATION_GATEWAY_SETTINGS` — the notification service's Runner Gateway block
+
+**Candidate.** The notification service's `sandbox_service` settings block also holds the Runner
+Gateway's `gateway_target`, `gateway_token_file`, `control_target` and
+`command_admission_timeout_s`; move them to a `runner_gateway` block. The settings file and the
+block both forbid extra keys, so no one file suits an image on either side: the code first accepts
+both shapes, then the file switches and the code drops the old one.
 
 ### `NOTIFICATION_WRITE_ONLY_COLUMNS` — audit columns nothing reads
 

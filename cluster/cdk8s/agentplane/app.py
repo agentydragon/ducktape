@@ -180,6 +180,7 @@ class App(Construct):
     def _add_workload(self, config: SettingsFile) -> ServiceWorkload:
         namespace = self.env.namespace
         env = self._container_env()
+        control_target = EnvValue.from_value(runner_gateway.control_target(namespace))
         oidc_secret_reload = self.oidc.name
         if self.env.app.oidc_session_secret_name != self.oidc.name:
             oidc_secret_reload += f",{self.env.app.oidc_session_secret_name}"
@@ -198,14 +199,20 @@ class App(Construct):
                 sandbox_service_target=f"{sandbox_service.service(namespace).fqdn}:{sandbox_service.service(namespace).pod_port}",
                 runner_gateway_target=runner_gateway.target(namespace),
                 runner_gateway_token_file="/var/run/secrets/agentplane-runner-gateway/token",
-                sandbox_service_control_target=runner_gateway.control_target(namespace),
                 history_service_target=f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).pod_port}",
                 notifications_url=f"http://{notifications.service(namespace).fqdn}:{notifications.service(namespace).port.number}",
                 notifications_token_file="/var/run/secrets/agentplane-notifications/token",
                 host="0.0.0.0",
                 port=self.service.pod_port,
             ),
-            env_variables=env,
+            env_variables={
+                **env,
+                env_name(Settings, "runner_gateway_control_target"): control_target,
+                # CLEANUP(added 2026-10-12): drop once agentplane-staging and agentplane-testing pin an
+                #   agentplane-app image that reads runner_gateway_control_target. Both names are env vars,
+                #   not flags, because an image ignores an env var it does not know but refuses a flag.
+                "AGENTPLANE_SANDBOX_SERVICE_CONTROL_TARGET": control_target,
+            },
             ports=[self.service.port.container_port()],
             readiness=http_probe("/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),

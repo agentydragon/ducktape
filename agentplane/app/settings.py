@@ -61,7 +61,7 @@ class Settings(AppSettingsConfig):
     runner_gateway_target: str = Field(
         min_length=1, description="The Runner Gateway's gRPC host:port, serving Sessions."
     )
-    sandbox_service_control_target: str = Field(
+    runner_gateway_control_target: str = Field(
         min_length=1,
         description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
         "`{sandbox}-control.{namespace}.svc:8080`. Lifecycle calls go there, to the replica holding the "
@@ -78,7 +78,7 @@ class Settings(AppSettingsConfig):
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     sandbox_service_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
-    sandbox_service_command_admission_timeout_s: float = Field(
+    runner_gateway_command_admission_timeout_s: float = Field(
         default=20,
         gt=0,
         allow_inf_nan=False,
