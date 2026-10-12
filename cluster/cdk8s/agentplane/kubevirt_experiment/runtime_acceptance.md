@@ -19,7 +19,7 @@ runner_image='git.allegedly.works/ducktape-ci/agentplane-runner-vm@sha256:<diges
 replacement_image='git.allegedly.works/ducktape-ci/agentplane-runner-vm@sha256:<replacement-digest>'
 trust_config_map=agentplane-vm-trust
 node=ovh-ns103711
-# The runner's endpoints, as the Sandbox Service gives a Pod runner (sandbox_service/runner_endpoints.py).
+# The runner's endpoints through the egress proxy, with the placeholder bearers the proxy substitutes.
 control_target='<runner-gateway-control-host>:<port>'
 control_bearer='<control-placeholder>'
 ingress_target='<history-ingress-host>:<port>'

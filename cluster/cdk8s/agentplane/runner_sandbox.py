@@ -1,6 +1,7 @@
 """The runner's boxes, behind the egress path every agentplane box shares (sandbox_pod.py): the
-runner SandboxTemplate, which adds the harness runner and a state volume, and the ServiceAccount and
-fence every runner template's Pods share. staging.py adds a second template on the ducktape image.
+runner SandboxTemplate (agentplane/sandbox_controller), which adds the harness runner and a state
+volume, and the ServiceAccount and fence every runner template's Pods share. staging.py adds a second
+template on the ducktape image.
 
 The templates' container images carry the same `unset` placeholder tag as the app's Deployment:
 kustomize's `images:` transformer patches by image name across every resource in the Kustomization,
@@ -13,9 +14,6 @@ from collections.abc import Sequence
 from typing import Any
 
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
-    SandboxTemplateSpecNetworkPolicyManagement,
-    SandboxTemplateSpecPodTemplate,
-    SandboxTemplateSpecPodTemplateMetadata,
     SandboxTemplateSpecPodTemplateSpecContainers,
     SandboxTemplateSpecPodTemplateSpecContainersEnv,
     SandboxTemplateSpecPodTemplateSpecContainersResources,
@@ -24,23 +22,15 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts,
     SandboxTemplateSpecPodTemplateSpecVolumes,
     SandboxTemplateSpecPodTemplateSpecVolumesSecret,
-    SandboxTemplateSpecVolumeClaimTemplates,
-    SandboxTemplateSpecVolumeClaimTemplatesMetadata,
-    SandboxTemplateSpecVolumeClaimTemplatesPolicy,
-    SandboxTemplateSpecVolumeClaimTemplatesSpec,
-    SandboxTemplateSpecVolumeClaimTemplatesSpecResources,
-    SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests,
 )
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
-from agentplane.crd_group import GROUP
-from agentplane.egress import sidecar
+from agentplane.crd_group import GROUP, VERSION
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import egress, launcher_relay, llm_ingress, platform_routes, runner_vm, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods
 
@@ -50,7 +40,7 @@ _IMAGE = "git.allegedly.works/ducktape-ci/runner"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _LABELS = {"app.kubernetes.io/name": NAME}
 # Shared by the runner's --state-dir flag, its container volumeMount, and the
-# SandboxTemplate's own VolumeClaimTemplate -- all three must name the same volume.
+# SandboxTemplate's state volume -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
 _STATE_DIR = "/state"
 _BUILDBUDDY_SECRET = "buildbuddy-api-key"
@@ -74,7 +64,7 @@ class RunnerSandbox(Construct):
             self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=namespace), automount_token=False
         )
         # Runner Pods accept no connections; they reach DNS and the egress proxy's listener, which the
-        # sidecar relays to, and dial the Runner Gateway through that proxy.
+        # sidecar relays to. The platform routes add the Agentplane services their runner dials.
         NetworkPolicy(
             self,
             "networkpolicy",
@@ -83,14 +73,15 @@ class RunnerSandbox(Construct):
             ingress=isolate_ingress(),
             egress=[cilium.dns_egress(), egress.proxy(namespace).egress()],
         )
-        if env.own_sandboxes:
-            platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
+        platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
         template = RunnerTemplate(self, "runner-template", env, name="runner", image=_IMAGE)
         if env.vm_sandboxes:
-            own = template.own_spec
-            assert own is not None  # vm_sandboxes needs own_sandboxes (Environment)
-            launcher_relay.LauncherRelayPolicy(self, "launcher-relay", namespace=namespace, runner_pod=own["pod"])
-            runner_vm.RunnerVmTemplate(self, "runner-vm-template", env, labels=_LABELS, state_volume=own["stateVolume"])
+            launcher_relay.LauncherRelayPolicy(
+                self, "launcher-relay", namespace=namespace, runner_pod=template.spec["pod"]
+            )
+            runner_vm.RunnerVmTemplate(
+                self, "runner-vm-template", env, labels=_LABELS, state_volume=template.spec["stateVolume"]
+            )
 
 
 class RunnerTemplate(Construct):
@@ -111,9 +102,8 @@ class RunnerTemplate(Construct):
         self.env = env
         self.buildbuddy_secret = buildbuddy_secret
         self.extra_harness_env = extra_harness_env
-        # Our own SandboxTemplate's rendered spec, where the environment has one.
-        self.own_spec: dict[str, Any] | None = None
-        self._add_sandbox_template(name=name, image=image)
+        # The SandboxTemplate's spec: its `pod`, and the `stateVolume` the VM template shares.
+        self.spec = self._add_sandbox_template(name=name, image=image)
 
     def _runner_container(self, image: str) -> SandboxTemplateSpecPodTemplateSpecContainers:
         # The environment a harness child starts from: a bare NAME takes the runner's
@@ -147,6 +137,8 @@ class RunnerTemplate(Construct):
             "/bin/codex",
             "--openai-base-url",
             "$(LITELLM_URL)/v1",
+            # The Runner Gateway and the ingress, over the sidecar's platform routes.
+            *platform_routes.runner_args(self.env.namespace),
         ]
         for entry in harness_env:
             args.extend(["--harness-env", entry])
@@ -217,70 +209,46 @@ class RunnerTemplate(Construct):
             ],
         )
 
-    def _add_sandbox_template(self, *, name: str, image: str) -> None:
-        metadata = ApiObjectMetadata(name=name, namespace=self.env.namespace)
-        template = SandboxTemplate(
+    def _add_sandbox_template(self, *, name: str, image: str) -> dict[str, Any]:
+        pod = sandbox_pod.render_pod_template(
+            _LABELS,
+            sandbox_pod.pod_spec(
+                self.env,
+                workload=self._runner_container(image),
+                service_account_name=NAME,
+                workload_volumes=(
+                    [
+                        SandboxTemplateSpecPodTemplateSpecVolumes(
+                            name=_BUILDBUDDY_SECRET,
+                            secret=SandboxTemplateSpecPodTemplateSpecVolumesSecret(
+                                secret_name=_BUILDBUDDY_SECRET,
+                                default_mode=288,  # 0440; readable via fsGroup 1000
+                            ),
+                        )
+                    ]
+                    if self.buildbuddy_secret
+                    else []
+                ),
+                sidecar_env=[platform_routes.sidecar_env(self.env.namespace)],
+            ),
+        )
+        state_volume = {
+            "name": _STATE_VOLUME_NAME,
+            "claim": {
+                # The bulk tier, and the only one a sandbox can have: OVH's `tier=ssd` nodes are
+                # control-plane, and a sandbox is not getting that toleration. Node-local, so a sandbox
+                # does not outlive its node -- which is what a sandbox is for.
+                "storageClassName": "local-path-ovh-hdd",
+                "accessModes": ["ReadWriteOnce"],
+                "resources": {"requests": {"storage": "10Gi"}},
+            },
+        }
+        spec = {"pod": pod, "stateVolume": state_volume}
+        ApiObject(
             self,
             "sandboxtemplate",
-            metadata=metadata,
-            # The CiliumNetworkPolicy next to this construct is the runner's fence.
-            network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
-            volume_claim_templates_policy=SandboxTemplateSpecVolumeClaimTemplatesPolicy.OVERRIDES,
-            pod_template=SandboxTemplateSpecPodTemplate(
-                metadata=SandboxTemplateSpecPodTemplateMetadata(labels=_LABELS),
-                spec=sandbox_pod.pod_spec(
-                    self.env,
-                    workload=self._runner_container(image),
-                    service_account_name=NAME,
-                    workload_volumes=(
-                        [
-                            SandboxTemplateSpecPodTemplateSpecVolumes(
-                                name=_BUILDBUDDY_SECRET,
-                                secret=SandboxTemplateSpecPodTemplateSpecVolumesSecret(
-                                    secret_name=_BUILDBUDDY_SECRET,
-                                    default_mode=288,  # 0440; readable via fsGroup 1000
-                                ),
-                            )
-                        ]
-                        if self.buildbuddy_secret
-                        else []
-                    ),
-                ),
-            ),
-            volume_claim_templates=[
-                SandboxTemplateSpecVolumeClaimTemplates(
-                    metadata=SandboxTemplateSpecVolumeClaimTemplatesMetadata(name=_STATE_VOLUME_NAME),
-                    spec=SandboxTemplateSpecVolumeClaimTemplatesSpec(
-                        # The bulk tier, and the only one a sandbox can have: OVH's
-                        # `tier=ssd` nodes are control-plane, and a sandbox is not
-                        # getting that toleration. Node-local, so a sandbox does
-                        # not outlive its node -- which is what a sandbox is for.
-                        storage_class_name="local-path-ovh-hdd",
-                        access_modes=["ReadWriteOnce"],
-                        resources=SandboxTemplateSpecVolumeClaimTemplatesSpecResources(
-                            requests={
-                                "storage": SandboxTemplateSpecVolumeClaimTemplatesSpecResourcesRequests.from_string(
-                                    "10Gi"
-                                )
-                            }
-                        ),
-                    ),
-                )
-            ],
-        )
-        if self.env.own_sandboxes:
-            # Our own SandboxTemplate (agentplane/sandbox_controller), the same Pod and state volume
-            # read off agent-sandbox's. Its runner reaches the Runner Gateway and the ingress over the
-            # sidecar's platform routes, where agent-sandbox's gets endpoints from the Sandbox Service.
-            spec = template.to_json()["spec"]
-            (claim,) = spec["volumeClaimTemplates"]
-            containers = {container["name"]: container for container in spec["podTemplate"]["spec"]["containers"]}
-            containers[sidecar.CONTAINER_NAME]["env"].append(platform_routes.sidecar_env(self.env.namespace))
-            containers["runner"]["args"].extend(platform_routes.runner_args(self.env.namespace))
-            self.own_spec = {
-                "pod": spec["podTemplate"],
-                "stateVolume": {"name": claim["metadata"]["name"], "claim": claim["spec"]},
-            }
-            ApiObject(
-                self, "own-sandboxtemplate", api_version=f"{GROUP}/v1alpha1", kind="SandboxTemplate", metadata=metadata
-            ).add_json_patch(JsonPatch.add("/spec", self.own_spec))
+            api_version=f"{GROUP}/{VERSION}",
+            kind="SandboxTemplate",
+            metadata=ApiObjectMetadata(name=name, namespace=self.env.namespace),
+        ).add_json_patch(JsonPatch.add("/spec", spec))
+        return spec

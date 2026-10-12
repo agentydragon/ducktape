@@ -1996,476 +1996,10 @@ data:
       - namespace: agentplane-staging
         name: agentplane-notifications
     token_audience: agentplane-sandbox-service
-    default_egress_policies:
+    default_policy_sets:
       - basic
       - inference-experiments
-    own_sandboxes:
-      default_policy_sets:
-        - basic
-        - inference-experiments
-    kubernetes_grants:
-      sandbox-tool-config:
-        kind: RoleBinding
-        namespace: agentplane-staging
-        role_ref:
-          kind: Role
-          name: agentplane-sandbox-tool-config-reader
-      public-coder-node-read:
-        kind: ClusterRoleBinding
-        role_ref:
-          kind: ClusterRole
-          name: public-coder-agent-node-reader
-      public-coder-cluster-metadata-read:
-        kind: ClusterRoleBinding
-        role_ref:
-          kind: ClusterRole
-          name: public-coder-agent-cluster-metadata-reader
-      cluster-diagnostics:
-        kind: ClusterRoleBinding
-        role_ref:
-          kind: ClusterRole
-          name: cluster-diagnostics-reader
-      haku-sandbox-write:
-        kind: RoleBinding
-        namespace: haku-sandbox
-        role_ref:
-          kind: Role
-          name: haku-sandbox-admin
-      agentplane-testing-operator:
-        kind: RoleBinding
-        namespace: agentplane-testing
-        role_ref:
-          kind: Role
-          name: agentplane-testing-operator
-      agentplane-staging-metadata:
-        kind: RoleBinding
-        namespace: agentplane-staging
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      agentplane-staging-logs:
-        kind: RoleBinding
-        namespace: agentplane-staging
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      activitywatch-metadata:
-        kind: RoleBinding
-        namespace: activitywatch
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      activitywatch-logs:
-        kind: RoleBinding
-        namespace: activitywatch
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      agent-sandbox-system-metadata:
-        kind: RoleBinding
-        namespace: agent-sandbox-system
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      agentplane-index-metadata:
-        kind: RoleBinding
-        namespace: agentplane-index
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      agentplane-index-logs:
-        kind: RoleBinding
-        namespace: agentplane-index
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      agentplane-testing-metadata:
-        kind: RoleBinding
-        namespace: agentplane-testing
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      agentplane-testing-logs:
-        kind: RoleBinding
-        namespace: agentplane-testing
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      airlock-metadata:
-        kind: RoleBinding
-        namespace: airlock
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      airlock-logs:
-        kind: RoleBinding
-        namespace: airlock
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      authentik-metadata:
-        kind: RoleBinding
-        namespace: authentik
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      authentik-logs:
-        kind: RoleBinding
-        namespace: authentik
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      cert-manager-metadata:
-        kind: RoleBinding
-        namespace: cert-manager
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      cert-manager-logs:
-        kind: RoleBinding
-        namespace: cert-manager
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      cli-proxy-api-metadata:
-        kind: RoleBinding
-        namespace: cli-proxy-api
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      cli-proxy-api-logs:
-        kind: RoleBinding
-        namespace: cli-proxy-api
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      clickhouse-metadata:
-        kind: RoleBinding
-        namespace: clickhouse
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      clickhouse-logs:
-        kind: RoleBinding
-        namespace: clickhouse
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      cnpg-system-metadata:
-        kind: RoleBinding
-        namespace: cnpg-system
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      cnpg-system-logs:
-        kind: RoleBinding
-        namespace: cnpg-system
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      flux-system-metadata:
-        kind: RoleBinding
-        namespace: flux-system
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      flux-system-logs:
-        kind: RoleBinding
-        namespace: flux-system
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      gatus-metadata:
-        kind: RoleBinding
-        namespace: gatus
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      gatus-logs:
-        kind: RoleBinding
-        namespace: gatus
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      grocy-sf-metadata:
-        kind: RoleBinding
-        namespace: grocy-sf
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      grocy-sf-logs:
-        kind: RoleBinding
-        namespace: grocy-sf
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      grocy-vallejo-metadata:
-        kind: RoleBinding
-        namespace: grocy-vallejo
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      grocy-vallejo-logs:
-        kind: RoleBinding
-        namespace: grocy-vallejo
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      haku-ci-metadata:
-        kind: RoleBinding
-        namespace: haku-ci
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      haku-ci-logs:
-        kind: RoleBinding
-        namespace: haku-ci
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      litellm-metadata:
-        kind: RoleBinding
-        namespace: litellm
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      litellm-logs:
-        kind: RoleBinding
-        namespace: litellm
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      local-path-storage-metadata:
-        kind: RoleBinding
-        namespace: local-path-storage
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      local-path-storage-logs:
-        kind: RoleBinding
-        namespace: local-path-storage
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      loki-metadata:
-        kind: RoleBinding
-        namespace: loki
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      loki-logs:
-        kind: RoleBinding
-        namespace: loki
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      monitoring-metadata:
-        kind: RoleBinding
-        namespace: monitoring
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      monitoring-logs:
-        kind: RoleBinding
-        namespace: monitoring
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      nix-cache-metadata:
-        kind: RoleBinding
-        namespace: nix-cache
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      node-feature-discovery-metadata:
-        kind: RoleBinding
-        namespace: node-feature-discovery
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      node-feature-discovery-logs:
-        kind: RoleBinding
-        namespace: node-feature-discovery
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      nvidia-device-plugin-metadata:
-        kind: RoleBinding
-        namespace: nvidia-device-plugin
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      nvidia-device-plugin-logs:
-        kind: RoleBinding
-        namespace: nvidia-device-plugin
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      oci-cache-metadata:
-        kind: RoleBinding
-        namespace: oci-cache
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      oci-cache-logs:
-        kind: RoleBinding
-        namespace: oci-cache
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      openebs-metadata:
-        kind: RoleBinding
-        namespace: openebs
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      openebs-logs:
-        kind: RoleBinding
-        namespace: openebs
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      proxmox-proxy-metadata:
-        kind: RoleBinding
-        namespace: proxmox-proxy
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      proxmox-proxy-logs:
-        kind: RoleBinding
-        namespace: proxmox-proxy
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      public-coder-agent-metadata:
-        kind: RoleBinding
-        namespace: public-coder-agent
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      study-casino-metadata:
-        kind: RoleBinding
-        namespace: study-casino
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      study-casino-logs:
-        kind: RoleBinding
-        namespace: study-casino
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      tana-mcp-metadata:
-        kind: RoleBinding
-        namespace: tana-mcp
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      tana-mcp-logs:
-        kind: RoleBinding
-        namespace: tana-mcp
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      vm-images-publisher-metadata:
-        kind: RoleBinding
-        namespace: vm-images-publisher
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      spend-policy-config:
-        kind: RoleBinding
-        namespace: plaid-mcp
-        role_ref:
-          kind: Role
-          name: plaid-spend-finance-config-reader
-      coinbase-credentials:
-        kind: RoleBinding
-        namespace: agentplane-staging
-        role_ref:
-          kind: Role
-          name: claude-ai-coinbase-reader
-      haku-console-metadata:
-        kind: RoleBinding
-        namespace: haku-console
-        role_ref:
-          kind: Role
-          name: agent-haku-console-metadata-reader
-      clickhouse-diagnostics:
-        kind: RoleBinding
-        namespace: clickhouse
-        role_ref:
-          kind: Role
-          name: agent-clickhouse-diagnostics-reader
-      ducktape-flux-read:
-        kind: RoleBinding
-        namespace: ducktape-flux
-        role_ref:
-          kind: Role
-          name: ducktape-flux-reader
-      public-coder-volsync-status:
-        kind: RoleBinding
-        namespace: public-coder-agent
-        role_ref:
-          kind: Role
-          name: agent-public-coder-extended-diagnostics-reader
-      public-coder-agent-reader:
-        kind: RoleBinding
-        namespace: public-coder-agent
-        role_ref:
-          kind: Role
-          name: public-coder-agent-reader
-      agentplane-testing-login:
-        kind: RoleBinding
-        namespace: public-coder-agent
-        role_ref:
-          kind: Role
-          name: agentplane-testing-login-reader
-    kubernetes_binding_cleanup_namespaces:
-      - activitywatch
-      - agent-sandbox-system
-      - agentplane-index
-      - agentplane-testing
-      - airlock
-      - authentik
-      - cert-manager
-      - cli-proxy-api
-      - clickhouse
-      - cnpg-system
-      - ducktape-flux
-      - flux-system
-      - gatus
-      - grocy-sf
-      - grocy-vallejo
-      - haku-ci
-      - haku-console
-      - haku-sandbox
-      - litellm
-      - local-path-storage
-      - loki
-      - monitoring
-      - nix-cache
-      - node-feature-discovery
-      - nvidia-device-plugin
-      - oci-cache
-      - openebs
-      - proxmox-proxy
-      - public-coder-agent
-      - study-casino
-      - tana-mcp
-      - vm-images-publisher
-    kubernetes_cluster_binding_cleanup: true
     port: 8080
-    control_target: "{sandbox}-control.{namespace}.svc:8080"
-    gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
-    runner_control:
-      target: agentplane-runner-gateway.agentplane-staging.svc.cluster.local:8082
-      bearer: agentplane-credential-agentplane-runner-control
-      egress_policy: runner-control
-    runner_ingress:
-      target: agentplane-history-service.agentplane-staging.svc.cluster.local:8081
-      bearer: agentplane-credential-agentplane-runner-ingress
-      egress_policy: runner-ingress
 immutable: false
 ---
 apiVersion: v1
@@ -2543,9 +2077,6 @@ spec:
             - mountPath: /etc/agentplane-sandbox-service
               name: configmap-agentplane-sandbox-service-config
               readOnly: true
-            - mountPath: /var/run/secrets/agentplane-runner-gateway
-              name: runner-gateway-token
-              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -2569,13 +2100,6 @@ spec:
         - configMap:
             name: agentplane-sandbox-service-config
           name: configmap-agentplane-sandbox-service-config
-        - name: runner-gateway-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-runner-gateway
-                  expirationSeconds: 3600
-                  path: token
 ---
 apiVersion: v1
 kind: Service
@@ -2605,80 +2129,6 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: agentplane-sandbox-service
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-staging-managed-cluster-bindings
-rules:
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resources:
-      - clusterrolebindings
-    verbs:
-      - create
-      - get
-      - list
-      - delete
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - agent-readable-namespace-logs
-    resources:
-      - clusterroles
-    verbs:
-      - bind
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - agent-readable-namespace-metadata
-    resources:
-      - clusterroles
-    verbs:
-      - bind
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - cluster-diagnostics-reader
-    resources:
-      - clusterroles
-    verbs:
-      - bind
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - public-coder-agent-cluster-metadata-reader
-    resources:
-      - clusterroles
-    verbs:
-      - bind
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - public-coder-agent-node-reader
-    resources:
-      - clusterroles
-    verbs:
-      - bind
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resources:
-      - clusterroles
-    verbs:
-      - get
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-staging-managed-cluster-bindings
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-staging-managed-cluster-bindings
-subjects:
-  - kind: ServiceAccount
-    name: agentplane-sandbox-service
-    namespace: agentplane-staging
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -2713,24 +2163,6 @@ metadata:
   namespace: agentplane-staging
 rules:
   - apiGroups:
-      - extensions.agents.x-k8s.io
-    resources:
-      - sandboxtemplates
-    verbs:
-      - get
-      - list
-  - apiGroups:
-      - agents.x-k8s.io
-    resources:
-      - sandboxes
-    verbs:
-      - create
-      - get
-      - list
-      - watch
-      - patch
-      - delete
-  - apiGroups:
       - agentplane.allegedly.works
     resources:
       - sandboxtemplates
@@ -2741,10 +2173,9 @@ rules:
     resources:
       - sandboxes
     verbs:
+      - create
       - get
       - list
-      - watch
-      - create
       - patch
       - delete
   - apiGroups:
@@ -2760,16 +2191,6 @@ rules:
     verbs:
       - get
       - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
-    verbs:
-      - create
-      - get
-      - patch
-      - delete
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -2777,7 +2198,6 @@ rules:
     verbs:
       - get
       - list
-      - watch
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -2785,7 +2205,6 @@ rules:
     verbs:
       - get
       - list
-      - watch
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -2793,7 +2212,6 @@ rules:
     verbs:
       - get
       - list
-      - watch
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -2801,60 +2219,6 @@ rules:
     verbs:
       - create
       - delete
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicysets
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicybindings
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicybindings
-    verbs:
-      - create
-      - delete
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resources:
-      - rolebindings
-    verbs:
-      - create
-      - get
-      - list
-      - delete
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resources:
-      - roles
-    verbs:
-      - get
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - agentplane-sandbox-tool-config-reader
-    resources:
-      - roles
-    verbs:
-      - bind
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - claude-ai-coinbase-reader
-    resources:
-      - roles
-    verbs:
-      - bind
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -2890,14 +2254,6 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: agentplane-sandbox-service
@@ -2932,9 +2288,6 @@ data:
         name: agentplane-app
       - namespace: agentplane-staging
         name: agentplane-notifications
-    sealer_accounts:
-      - namespace: agentplane-staging
-        name: agentplane-sandbox-service
     token_audience: agentplane-runner-gateway
     platform_instructions: |-
       You are running in a Kubernetes sandbox managed by Agentplane. Agentplane governs outbound network
@@ -3351,14 +2704,6 @@ metadata:
   namespace: agentplane-staging
 rules:
   - apiGroups:
-      - agents.x-k8s.io
-    resources:
-      - sandboxes
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
       - ""
     resources:
       - pods
@@ -3464,14 +2809,6 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-notifications
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-sandbox-service
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -4756,7 +4093,6 @@ data:
         role_ref:
           kind: Role
           name: agentplane-testing-login-reader
-    own_sandboxes: true
     egress_admin_url: http://agentplane-egress-admin.agentplane-staging.svc:8081/
     action_federation:
       service_url: http://agentplane-actions.agentplane-staging.svc:8080/
@@ -5110,21 +4446,6 @@ metadata:
   namespace: agentplane-staging
 rules:
   - apiGroups:
-      - extensions.agents.x-k8s.io
-    resources:
-      - sandboxtemplates
-    verbs:
-      - get
-      - list
-  - apiGroups:
-      - agents.x-k8s.io
-    resources:
-      - sandboxes
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
       - agentplane.allegedly.works
     resources:
       - sandboxes
@@ -5448,221 +4769,6 @@ spec:
             - port: "8081"
               protocol: TCP
 ---
-apiVersion: extensions.agents.x-k8s.io/v1beta1
-kind: SandboxTemplate
-metadata:
-  name: runner
-  namespace: agentplane-staging
-spec:
-  networkPolicyManagement: Unmanaged
-  podTemplate:
-    metadata:
-      labels:
-        app.kubernetes.io/name: agentplane-runner
-    spec:
-      automountServiceAccountToken: false
-      containers:
-        - args:
-            - --state-dir
-            - /state
-            - --claude-binary
-            - /bin/claude
-            - --anthropic-base-url
-            - $(LITELLM_URL)
-            - --codex-binary
-            - /bin/codex
-            - --openai-base-url
-            - $(LITELLM_URL)/v1
-            - --harness-env
-            - HOME
-            - --harness-env
-            - PATH
-            - --harness-env
-            - TZ
-            - --harness-env
-            - HTTP_PROXY
-            - --harness-env
-            - HTTPS_PROXY
-            - --harness-env
-            - http_proxy
-            - --harness-env
-            - https_proxy
-            - --harness-env
-            - NO_PROXY
-            - --harness-env
-            - no_proxy
-            - --harness-env
-            - SSL_CERT_FILE
-            - --harness-env
-            - NODE_EXTRA_CA_CERTS
-            - --harness-env
-            - CURL_CA_BUNDLE
-            - --harness-env
-            - GIT_SSL_CAINFO
-            - --harness-env
-            - REQUESTS_CA_BUNDLE
-            - --harness-env
-            - KUBECONFIG
-            - --harness-inherit-env
-            - TZDIR
-          env:
-            - name: LITELLM_URL
-              value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
-            - name: HTTP_PROXY
-              value: http://127.0.0.1:3128
-            - name: HTTPS_PROXY
-              value: http://127.0.0.1:3128
-            - name: http_proxy
-              value: http://127.0.0.1:3128
-            - name: https_proxy
-              value: http://127.0.0.1:3128
-            - name: NO_PROXY
-              value: 127.0.0.1,localhost
-            - name: no_proxy
-              value: 127.0.0.1,localhost
-            - name: SSL_CERT_FILE
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: NODE_EXTRA_CA_CERTS
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: CURL_CA_BUNDLE
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: GIT_SSL_CAINFO
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: REQUESTS_CA_BUNDLE
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: KUBECONFIG
-              value: /etc/kubernetes/kubeconfig
-            - name: ANTHROPIC_AUTH_TOKEN
-              value: agentplane-credential-agentplane-workload
-            - name: OPENAI_API_KEY
-              value: agentplane-credential-agentplane-workload
-            - name: TZ
-              value: America/Los_Angeles
-          image: git.allegedly.works/ducktape-ci/runner:unset
-          name: runner
-          resources:
-            limits:
-              cpu: "2"
-              memory: 4Gi
-            requests:
-              cpu: 500m
-              memory: 1Gi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-          volumeMounts:
-            - mountPath: /state
-              name: state
-            - mountPath: /etc/ssl/certs/ca-certificates.crt
-              name: egress-ca
-              readOnly: true
-              subPath: ca-certificates.crt
-            - mountPath: /etc/ssl/certs/java/cacerts
-              name: egress-ca
-              readOnly: true
-              subPath: ca-certificates.p12
-            - mountPath: /etc/kubernetes/kubeconfig
-              name: tool-config
-              readOnly: true
-              subPath: kubeconfig
-          workingDir: /state
-        - env:
-            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
-              value: agentplane-egress.agentplane-staging.svc.cluster.local
-            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
-              value: "8888"
-            - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
-              value: "3128"
-            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
-              value: 0.0.0.0
-            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
-              value: "3129"
-            - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
-              value: /var/run/agentplane-egress/token
-            - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
-          image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
-          name: egress-sidecar
-          readinessProbe:
-            failureThreshold: 1
-            httpGet:
-              path: /readyz
-              port: 3129
-            periodSeconds: 2
-            timeoutSeconds: 1
-          resources:
-            limits:
-              cpu: 100m
-              memory: 128Mi
-            requests:
-              cpu: 10m
-              memory: 32Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-          volumeMounts:
-            - mountPath: /var/run/agentplane-egress
-              name: egress-token
-              readOnly: true
-      imagePullSecrets:
-        - name: forgejo-images-creds
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
-      securityContext:
-        fsGroup: 1000
-        runAsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      serviceAccountName: agentplane-runner
-      terminationGracePeriodSeconds: 60
-      volumes:
-        - configMap:
-            name: agentplane-egress-ca
-          name: egress-ca
-        - configMap:
-            name: agentplane-sandbox-tool-config
-          name: tool-config
-        - name: egress-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-egress
-                  expirationSeconds: 600
-                  path: token
-              - serviceAccountToken:
-                  audience: https://localhost:7445
-                  expirationSeconds: 600
-                  path: kubernetes-token
-              - serviceAccountToken:
-                  audience: agentplane-notifications
-                  expirationSeconds: 600
-                  path: notifications-token
-              - serviceAccountToken:
-                  audience: agentplane-runner-control
-                  expirationSeconds: 600
-                  path: runner-control-token
-              - serviceAccountToken:
-                  audience: agentplane-runner-ingress
-                  expirationSeconds: 600
-                  path: runner-ingress-token
-  volumeClaimTemplates:
-    - metadata:
-        name: state
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 10Gi
-        storageClassName: local-path-ovh-hdd
-  volumeClaimTemplatesPolicy: Overrides
----
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: SandboxTemplate
 metadata:
@@ -5687,6 +4793,14 @@ spec:
             - /bin/codex
             - --openai-base-url
             - $(LITELLM_URL)/v1
+            - --control-target
+            - 127.0.0.1:3130
+            - --control-bearer
+            - platform-route
+            - --ingress-target
+            - 127.0.0.1:3131
+            - --ingress-bearer
+            - platform-route
             - --harness-env
             - HOME
             - --harness-env
@@ -5719,14 +4833,6 @@ spec:
             - KUBECONFIG
             - --harness-inherit-env
             - TZDIR
-            - --control-target
-            - 127.0.0.1:3130
-            - --control-bearer
-            - platform-route
-            - --ingress-target
-            - 127.0.0.1:3131
-            - --ingress-bearer
-            - platform-route
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
@@ -5878,12 +4984,12 @@ spec:
   stateVolume:
     name: state
     claim:
+      storageClassName: local-path-ovh-hdd
       accessModes:
         - ReadWriteOnce
       resources:
         requests:
           storage: 10Gi
-      storageClassName: local-path-ovh-hdd
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -7399,232 +6505,6 @@ spec:
     deletionPolicy: Retain
     name: buildbuddy-api-key
 ---
-apiVersion: extensions.agents.x-k8s.io/v1beta1
-kind: SandboxTemplate
-metadata:
-  name: runner-ducktape
-  namespace: agentplane-staging
-spec:
-  networkPolicyManagement: Unmanaged
-  podTemplate:
-    metadata:
-      labels:
-        app.kubernetes.io/name: agentplane-runner
-    spec:
-      automountServiceAccountToken: false
-      containers:
-        - args:
-            - --state-dir
-            - /state
-            - --claude-binary
-            - /bin/claude
-            - --anthropic-base-url
-            - $(LITELLM_URL)
-            - --codex-binary
-            - /bin/codex
-            - --openai-base-url
-            - $(LITELLM_URL)/v1
-            - --harness-env
-            - HOME
-            - --harness-env
-            - PATH
-            - --harness-env
-            - TZ
-            - --harness-env
-            - HTTP_PROXY
-            - --harness-env
-            - HTTPS_PROXY
-            - --harness-env
-            - http_proxy
-            - --harness-env
-            - https_proxy
-            - --harness-env
-            - NO_PROXY
-            - --harness-env
-            - no_proxy
-            - --harness-env
-            - SSL_CERT_FILE
-            - --harness-env
-            - NODE_EXTRA_CA_CERTS
-            - --harness-env
-            - CURL_CA_BUNDLE
-            - --harness-env
-            - GIT_SSL_CAINFO
-            - --harness-env
-            - REQUESTS_CA_BUNDLE
-            - --harness-env
-            - KUBECONFIG
-            - --harness-env
-            - BBR_BUILDBUDDY_API_KEY_FILE
-            - --harness-inherit-env
-            - TZDIR
-          env:
-            - name: LITELLM_URL
-              value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
-            - name: BBR_BUILDBUDDY_API_KEY_FILE
-              value: /run/buildbuddy/api-key
-            - name: HTTP_PROXY
-              value: http://127.0.0.1:3128
-            - name: HTTPS_PROXY
-              value: http://127.0.0.1:3128
-            - name: http_proxy
-              value: http://127.0.0.1:3128
-            - name: https_proxy
-              value: http://127.0.0.1:3128
-            - name: NO_PROXY
-              value: 127.0.0.1,localhost
-            - name: no_proxy
-              value: 127.0.0.1,localhost
-            - name: SSL_CERT_FILE
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: NODE_EXTRA_CA_CERTS
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: CURL_CA_BUNDLE
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: GIT_SSL_CAINFO
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: REQUESTS_CA_BUNDLE
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: KUBECONFIG
-              value: /etc/kubernetes/kubeconfig
-            - name: ANTHROPIC_AUTH_TOKEN
-              value: agentplane-credential-agentplane-workload
-            - name: OPENAI_API_KEY
-              value: agentplane-credential-agentplane-workload
-            - name: TZ
-              value: America/Los_Angeles
-          image: git.allegedly.works/ducktape-ci/runner-ducktape:unset
-          name: runner
-          resources:
-            limits:
-              cpu: "2"
-              memory: 4Gi
-            requests:
-              cpu: 500m
-              memory: 1Gi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-          volumeMounts:
-            - mountPath: /state
-              name: state
-            - mountPath: /etc/ssl/certs/ca-certificates.crt
-              name: egress-ca
-              readOnly: true
-              subPath: ca-certificates.crt
-            - mountPath: /etc/ssl/certs/java/cacerts
-              name: egress-ca
-              readOnly: true
-              subPath: ca-certificates.p12
-            - mountPath: /etc/kubernetes/kubeconfig
-              name: tool-config
-              readOnly: true
-              subPath: kubeconfig
-            - mountPath: /run/buildbuddy
-              name: buildbuddy-api-key
-              readOnly: true
-          workingDir: /state
-        - env:
-            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
-              value: agentplane-egress.agentplane-staging.svc.cluster.local
-            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
-              value: "8888"
-            - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
-              value: "3128"
-            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
-              value: 0.0.0.0
-            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
-              value: "3129"
-            - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
-              value: /var/run/agentplane-egress/token
-            - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
-          image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
-          name: egress-sidecar
-          readinessProbe:
-            failureThreshold: 1
-            httpGet:
-              path: /readyz
-              port: 3129
-            periodSeconds: 2
-            timeoutSeconds: 1
-          resources:
-            limits:
-              cpu: 100m
-              memory: 128Mi
-            requests:
-              cpu: 10m
-              memory: 32Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-          volumeMounts:
-            - mountPath: /var/run/agentplane-egress
-              name: egress-token
-              readOnly: true
-      imagePullSecrets:
-        - name: forgejo-images-creds
-      nodeSelector:
-        topology.kubernetes.io/zone: hil-ovh
-      securityContext:
-        fsGroup: 1000
-        runAsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      serviceAccountName: agentplane-runner
-      terminationGracePeriodSeconds: 60
-      volumes:
-        - configMap:
-            name: agentplane-egress-ca
-          name: egress-ca
-        - configMap:
-            name: agentplane-sandbox-tool-config
-          name: tool-config
-        - name: egress-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-egress
-                  expirationSeconds: 600
-                  path: token
-              - serviceAccountToken:
-                  audience: https://localhost:7445
-                  expirationSeconds: 600
-                  path: kubernetes-token
-              - serviceAccountToken:
-                  audience: agentplane-notifications
-                  expirationSeconds: 600
-                  path: notifications-token
-              - serviceAccountToken:
-                  audience: agentplane-runner-control
-                  expirationSeconds: 600
-                  path: runner-control-token
-              - serviceAccountToken:
-                  audience: agentplane-runner-ingress
-                  expirationSeconds: 600
-                  path: runner-ingress-token
-        - name: buildbuddy-api-key
-          secret:
-            defaultMode: 288
-            secretName: buildbuddy-api-key
-  volumeClaimTemplates:
-    - metadata:
-        name: state
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 10Gi
-        storageClassName: local-path-ovh-hdd
-  volumeClaimTemplatesPolicy: Overrides
----
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: SandboxTemplate
 metadata:
@@ -7649,6 +6529,14 @@ spec:
             - /bin/codex
             - --openai-base-url
             - $(LITELLM_URL)/v1
+            - --control-target
+            - 127.0.0.1:3130
+            - --control-bearer
+            - platform-route
+            - --ingress-target
+            - 127.0.0.1:3131
+            - --ingress-bearer
+            - platform-route
             - --harness-env
             - HOME
             - --harness-env
@@ -7683,14 +6571,6 @@ spec:
             - BBR_BUILDBUDDY_API_KEY_FILE
             - --harness-inherit-env
             - TZDIR
-            - --control-target
-            - 127.0.0.1:3130
-            - --control-bearer
-            - platform-route
-            - --ingress-target
-            - 127.0.0.1:3131
-            - --ingress-bearer
-            - platform-route
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080
@@ -7851,12 +6731,12 @@ spec:
   stateVolume:
     name: state
     claim:
+      storageClassName: local-path-ovh-hdd
       accessModes:
         - ReadWriteOnce
       resources:
         requests:
           storage: 10Gi
-      storageClassName: local-path-ovh-hdd
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

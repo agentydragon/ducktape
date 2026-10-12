@@ -68,17 +68,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
     }
     sandbox_service.SandboxService(chart, "sandbox-service", env, callers=app_caller | notifications_caller)
-    runner_gateway.RunnerGateway(
-        chart,
-        "runner-gateway",
-        env,
-        callers=app_caller | notifications_caller,
-        sealers={
-            ServiceAccountRef(namespace=env.namespace, name=sandbox_service.NAME): sandbox_service.service(
-                env.namespace
-            ).pods
-        },
-    )
+    runner_gateway.RunnerGateway(chart, "runner-gateway", env, callers=app_caller | notifications_caller)
     history_service.HistoryService(
         chart,
         "history-service",
@@ -88,8 +78,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
     )
     app_component.App(chart, "app", env)
     runner_sandbox.RunnerSandbox(chart, "runner-sandbox", env)
-    if env.own_sandboxes:
-        sandbox_controller.SandboxController(chart, "sandbox-controller", env)
+    sandbox_controller.SandboxController(chart, "sandbox-controller", env)
     actions.Actions(chart, "actions", env)
     notifications.Notifications(
         chart,

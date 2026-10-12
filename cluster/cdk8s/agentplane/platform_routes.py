@@ -1,6 +1,6 @@
 """The Agentplane services runners call over the egress sidecar's platform routes
 (agentplane/egress/platform_routes.py). From this one list come:
-- the sidecar's routes and the runner's endpoint flags in our runner SandboxTemplate;
+- the sidecar's routes and the runner's endpoint flags in the runner SandboxTemplates;
 - the network rules on both ends.
 
 Each route uses the token the sidecar already projects for its service's audience (sandbox_pod.py).
@@ -13,6 +13,9 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
+    SandboxTemplateSpecPodTemplateSpecContainersEnv,
+)
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
 
@@ -55,7 +58,7 @@ def routes(namespace: str) -> tuple[Route, ...]:
     return control(namespace), ingress(namespace)
 
 
-def sidecar_env(namespace: str) -> dict[str, str]:
+def sidecar_env(namespace: str) -> SandboxTemplateSpecPodTemplateSpecContainersEnv:
     """The sidecar's `platform_routes` setting, as its environment variable."""
     value = {
         route.name: PlatformRoute(
@@ -65,7 +68,9 @@ def sidecar_env(namespace: str) -> dict[str, str]:
         ).model_dump(mode="json")
         for route in routes(namespace)
     }
-    return {"name": env_name(sidecar.Settings, "platform_routes"), "value": json.dumps(value)}
+    return SandboxTemplateSpecPodTemplateSpecContainersEnv(
+        name=env_name(sidecar.Settings, "platform_routes"), value=json.dumps(value)
+    )
 
 
 def runner_args(namespace: str) -> list[str]:

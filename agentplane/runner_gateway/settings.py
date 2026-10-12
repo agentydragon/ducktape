@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import ClassVar
 
-from pydantic import Field, JsonValue
+from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.subjects import ServiceAccountRef
@@ -45,5 +45,3 @@ class Settings(YamlFileSettings):
         min_length=1,
         description="This replica's Pod IP, where a Sandbox's control Service points while it holds the runner connection.",
     )
-    # CLEANUP(added 2026-10-12): drop once the manifests stop setting it (the cdk8s PR after this one).
-    sealer_accounts: JsonValue | None = None

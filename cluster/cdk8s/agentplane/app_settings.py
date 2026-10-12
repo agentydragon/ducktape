@@ -109,7 +109,7 @@ def settings(
 
 
 def on_policy_sets(cfg: AppSettingsConfig) -> AppSettingsConfig:
-    """The same settings where Sandboxes are Agentplane's own kind, which takes `policy_sets` alone.
+    """The same settings with each preset on PolicySets, which a Sandbox takes alone.
 
     Each egress policy and Action policy set has a PolicySet of its name (`egress_policies.py`,
     `actions_staging_policies.py`); a preset's Kubernetes grants become the sets that cover them.
@@ -117,7 +117,6 @@ def on_policy_sets(cfg: AppSettingsConfig) -> AppSettingsConfig:
     # `model_copy` is typed `Any` on this settings class.
     converted: AppSettingsConfig = cfg.model_copy(
         update={
-            "own_sandboxes": True,
             "sandbox_presets": {
                 name: SandboxPreset.model_validate(
                     {
@@ -132,7 +131,7 @@ def on_policy_sets(cfg: AppSettingsConfig) -> AppSettingsConfig:
                     }
                 )
                 for name, preset in cfg.sandbox_presets.items()
-            },
+            }
         }
     )
     return converted

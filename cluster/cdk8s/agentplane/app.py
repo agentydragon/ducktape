@@ -122,12 +122,6 @@ class App(Construct):
             "role",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
-                RolePolicyRule(
-                    resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get", "list"]
-                ),
-                RolePolicyRule(
-                    resources=[custom_resource("agents.x-k8s.io", "sandboxes")], verbs=["get", "list", "watch"]
-                ),
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 RolePolicyRule(
@@ -139,8 +133,8 @@ class App(Construct):
                             "egresscredentials",
                             "actionpolicysets",
                             "actionpolicybindings",
-                            # The create form lists PolicySets where Sandboxes are our own kind.
-                            *(("policysets",) if self.env.own_sandboxes else ()),
+                            # The create form lists them.
+                            "policysets",
                         )
                     ],
                     verbs=["get", "list", "watch"],

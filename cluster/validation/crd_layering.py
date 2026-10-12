@@ -4,6 +4,7 @@ from __future__ import annotations
 
 # Operator kustomizations and the CRD kinds they manage.
 # Kustomizations with empty sets are part of the operator layer but don't define CRDs.
+# A kind two providers share is written `Kind.group`.
 OPERATOR_CRDS: dict[str, set[str]] = {
     "external-secrets-operator": {
         "ExternalSecret",
@@ -95,8 +96,10 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "ActionPolicyBinding",
         "PolicySet",
         "PolicyBinding",
+        "Sandbox.agentplane.allegedly.works",
+        "SandboxTemplate.agentplane.allegedly.works",
     },
-    "agent-sandbox-controller": {"SandboxTemplate", "SandboxWarmPool"},
+    "agent-sandbox-controller": {"SandboxTemplate.extensions.agents.x-k8s.io", "SandboxWarmPool"},
     "sshpiper-crds": {"Pipe"},
     "seaweedfs-operator": {
         "AdminScript",
