@@ -2647,11 +2647,6 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-sandbox-commands
-            - name: AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-sandbox-commands
           image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-migrate:unset
           imagePullPolicy: Always
           name: migrate-commands
@@ -3087,11 +3082,6 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-sandbox-service
-            - name: AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-sandbox-service
           image: git.allegedly.works/ducktape-ci/agentplane-history-migrate:unset
           imagePullPolicy: Always
           name: migrate
@@ -3510,8 +3500,6 @@ spec:
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-testing:agentplane-agent"]'
             - name: AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET
-              value: "{sandbox}-control.{namespace}.svc:8080"
-            - name: AGENTPLANE_SANDBOX_SERVICE_CONTROL_TARGET
               value: "{sandbox}-control.{namespace}.svc:8080"
             - name: AGENTPLANE_CONFIG_FILE
               value: /etc/agentplane/config.yaml

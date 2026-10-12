@@ -120,12 +120,7 @@ class HistoryService(Construct):
             migrate=migrate_init_container(
                 "git.allegedly.works/ducktape-ci/agentplane-history-migrate:unset",
                 name="migrate",
-                env_variables={
-                    "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL": database_url,
-                    # CLEANUP(added 2026-10-12): drop once agentplane-staging and agentplane-testing pin
-                    #   an agentplane-history-migrate image that reads the AGENTPLANE_HISTORY_SERVICE_ prefix.
-                    "AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL": database_url,
-                },
+                env_variables={"AGENTPLANE_HISTORY_SERVICE_DATABASE_URL": database_url},
             ),
         )
         config.mount_into(workload.container, env=Settings.config_file_env)

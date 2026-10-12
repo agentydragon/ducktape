@@ -906,7 +906,6 @@ flowchart TD
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         RUNNER_ERRORS_REHOME[Unscheduled: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
-        SERVICE_SETTING_OLD_NAMES_DROP[Waits on rollout: drop the old setting names]
         NOTIFICATION_GATEWAY_SETTINGS[Waits on rollout: the notification config sets runner_gateway]
     end
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
@@ -925,18 +924,6 @@ grpc_services.md, and give the app's `bridge.py` its own error type.
 **Unscheduled; operator, 2026-10-11 PDT: keep the flag for debugging for now, may retire it later.**
 Settlement is on by default; `ingress.settle_deltas` turns it off. Retiring the flag makes
 settlement unconditional: delete the setting, `Environment.settle_deltas` and the `Store` flag.
-
-### `SERVICE_SETTING_OLD_NAMES_DROP` — drop the old setting names
-
-**Waits on rollout** of `agentplane-app`, `agentplane-runner-gateway-migrate` and
-`agentplane-history-migrate` images that read `runner_gateway_control_target`,
-`AGENTPLANE_RUNNER_GATEWAY_COMMANDS_DATABASE_URL` and `AGENTPLANE_HISTORY_SERVICE_DATABASE_URL`, on
-both agentplane-staging and agentplane-testing. Until then cdk8s renders each old env var beside the
-new one, which an image that does not read it ignores. Then delete the three `CLEANUP` entries,
-`AGENTPLANE_SANDBOX_SERVICE_CONTROL_TARGET` (`cluster/cdk8s/agentplane/app.py`),
-`AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL` (`runner_gateway.py`) and
-`AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL` (`history_service.py`), and regenerate. No code reads the
-old names.
 
 ### `NOTIFICATION_GATEWAY_SETTINGS` — the notification config sets `runner_gateway`
 

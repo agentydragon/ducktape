@@ -168,12 +168,7 @@ class RunnerGateway(Construct):
             migrate=migrate_init_container(
                 "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-migrate:unset",
                 name="migrate-commands",
-                env_variables={
-                    "AGENTPLANE_RUNNER_GATEWAY_COMMANDS_DATABASE_URL": commands_database,
-                    # CLEANUP(added 2026-10-12): drop once agentplane-staging and agentplane-testing pin
-                    #   an agentplane-runner-gateway-migrate image that reads the AGENTPLANE_RUNNER_GATEWAY_ prefix.
-                    "AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL": commands_database,
-                },
+                env_variables={"AGENTPLANE_RUNNER_GATEWAY_COMMANDS_DATABASE_URL": commands_database},
             ),
         )
         self._add_rbac(workload.account)

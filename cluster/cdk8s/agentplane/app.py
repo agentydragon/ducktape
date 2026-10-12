@@ -208,14 +208,7 @@ class App(Construct):
                 host="0.0.0.0",
                 port=self.service.pod_port,
             ),
-            env_variables={
-                **env,
-                env_name(Settings, "runner_gateway_control_target"): control_target,
-                # CLEANUP(added 2026-10-12): drop once agentplane-staging and agentplane-testing pin an
-                #   agentplane-app image that reads runner_gateway_control_target. Both names are env vars,
-                #   not flags, because an image ignores an env var it does not know but refuses a flag.
-                "AGENTPLANE_SANDBOX_SERVICE_CONTROL_TARGET": control_target,
-            },
+            env_variables={**env, env_name(Settings, "runner_gateway_control_target"): control_target},
             ports=[self.service.port.container_port()],
             readiness=http_probe("/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),
