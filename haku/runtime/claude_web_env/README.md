@@ -33,6 +33,11 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
 
 ## Setup script
 
+**Gotcha (observed, not documented):** in Claude Projects sessions the environment
+setup script runs before the repo is cloned; in single-repo Claude Code web sessions
+the checkout has been present at setup time. Hence the script below must not depend
+on the checkout.
+
 The environment setup script runs before any repo is cloned, so
 [`env_setup.sh`](env_setup.sh) is self-contained: it reads no repo path and clones
 nothing. It inlines `devinfra/claude/web_setup.sh` (profile mode),
