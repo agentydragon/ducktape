@@ -513,6 +513,8 @@ def write_manifests(root: Path) -> None:
         root,
         _APP_DIR,
         app_chart,
-        # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
+        # A TLS-intercepting forward proxy for whole Claude sessions on the client hosts, not only
+        # GitHub: it reaches any public origin, bounded by its own runtime destination checks
+        # (devinfra/github_proxy/central/README.md) and the private-range deny.
         unpinned_https_egress={"github-api-proxy"},
     )

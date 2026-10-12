@@ -61,8 +61,8 @@ def pod_hardening(objects: list[dict[str, Any]], *, unhardened: frozenset[str]) 
 def pinned_https_egress(objects: list[dict[str, Any]], *, unpinned: frozenset[str]) -> list[str]:
     """A CiliumNetworkPolicy egress rule reaching port 443 outside the cluster (world,
     remote-node, host, FQDNs) names the TLS server names it allows: without SNI it is
-    "any HTTPS server". `unpinned` names the policies allowed through by design -- a
-    TLS-terminating proxy whose allowlist is its own configuration."""
+    "any HTTPS server". `unpinned` names the policies allowed through by design: TLS-terminating
+    proxies, each saying at its waiver what bounds it instead."""
     errors: list[str] = []
     for obj in objects:
         if obj["kind"] != _NETWORKPOLICY_KIND or obj["metadata"]["name"] in unpinned:
