@@ -182,8 +182,8 @@ py_library(
     srcs = ["generation.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        ":flux",
         ":fleet_rules",
+        ":flux",
         ":manifest_roots",
         ":namespaces",
         "//cluster/cdk8s/providers/flux:kustomization",

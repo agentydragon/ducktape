@@ -681,7 +681,7 @@ def write_manifests(root: Path) -> None:
                     _OUTPUT_DIR,
                     chart,
                     # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-                    unhardened_pods=frozenset({"Deployment/home-assistant", "Job/onboarding"}),
+                    unhardened_pods={"Deployment/home-assistant", "Job/onboarding"},
                 ),
                 "break-glass-credentials.sops.yaml",
                 "home-location.sops.yaml",

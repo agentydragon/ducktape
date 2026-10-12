@@ -7,7 +7,7 @@ admission denial or a CreateContainerConfigError on the cluster.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Collection, Iterator
 from itertools import combinations
 from typing import Any, cast
 
@@ -263,15 +263,11 @@ def unused_waivers(objects: list[dict[str, Any]], *, unhardened: frozenset[str],
 @jsii.implements(IValidation)
 class FleetRules:
     def __init__(
-        self,
-        scope: Construct,
-        *,
-        unhardened_pods: frozenset[str] = frozenset(),
-        unpinned_https_egress: frozenset[str] = frozenset(),
+        self, scope: Construct, *, unhardened_pods: Collection[str] = (), unpinned_https_egress: Collection[str] = ()
     ) -> None:
         self._scope = scope
-        self._unhardened_pods = unhardened_pods
-        self._unpinned_https_egress = unpinned_https_egress
+        self._unhardened_pods = frozenset(unhardened_pods)
+        self._unpinned_https_egress = frozenset(unpinned_https_egress)
 
     def validate(self) -> list[str]:
         objects = [
@@ -287,10 +283,7 @@ class FleetRules:
 
 
 def add_fleet_rules(
-    scope: Construct,
-    *,
-    unhardened_pods: frozenset[str] = frozenset(),
-    unpinned_https_egress: frozenset[str] = frozenset(),
+    scope: Construct, *, unhardened_pods: Collection[str] = (), unpinned_https_egress: Collection[str] = ()
 ) -> None:
     """Check every object under `scope` when it synthesizes; an App checks all its charts together."""
     scope.node.add_validation(

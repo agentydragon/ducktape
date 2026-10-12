@@ -549,7 +549,7 @@ def generate_manifests(root: Path) -> None:
             namespace=dcgm_exporter_exporter.NAMESPACE,
             config_map_generator=[dcgm_exporter_exporter.COUNTERS_CONFIG_MAP],
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"DaemonSet/dcgm-exporter"}),
+            unhardened_pods={"DaemonSet/dcgm-exporter"},
         ),
         monitoring_crds_kustomization,
     )
@@ -720,7 +720,7 @@ def generate_manifests(root: Path) -> None:
             website_artifact,
             website.chart,
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"Deployment/website"}),
+            unhardened_pods={"Deployment/website"},
         ),
         kyverno_kustomization,
     )
@@ -733,7 +733,7 @@ def generate_manifests(root: Path) -> None:
             proxmox_proxy.chart,
             config_map_generator=[proxmox_proxy.config_map(mesh)],
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"Deployment/proxmox-proxy"}),
+            unhardened_pods={"Deployment/proxmox-proxy"},
         ),
         kyverno_kustomization,
     )
@@ -751,9 +751,9 @@ def generate_manifests(root: Path) -> None:
         mitmproxy.chart,
         egress_fences.mitmproxy_cloud_api,
         # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods=frozenset({"Deployment/mitmproxy"}),
+        unhardened_pods={"Deployment/mitmproxy"},
         # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
-        unpinned_https_egress=frozenset({"allow-cloud-api-egress"}),
+        unpinned_https_egress={"allow-cloud-api-egress"},
     )
     docker_ci_artifact = artifact("docker-ci", f"{PARKED_ROOT}/docker-ci")
     parked_flux_kustomizations.docker_ci(
@@ -767,7 +767,7 @@ def generate_manifests(root: Path) -> None:
             atuin_artifact,
             atuin_server.chart,
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"Deployment/server"}),
+            unhardened_pods={"Deployment/server"},
         ),
         cnpg_kustomization,
     )
@@ -844,7 +844,7 @@ def generate_manifests(root: Path) -> None:
             ollama_app.chart,
             config_map_generator=ollama_app.write_config_maps(root),
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"Deployment/ollama", "Job/setup-gpt-oss-v8"}),
+            unhardened_pods={"Deployment/ollama", "Job/setup-gpt-oss-v8"},
         ),
         external_secrets_operator_kustomization,
         kyverno_kustomization,
@@ -865,7 +865,7 @@ def generate_manifests(root: Path) -> None:
             atuin_user_provisioner_artifact,
             atuin_user_provisioner.chart,
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"Job/user-provisioner"}),
+            unhardened_pods={"Job/user-provisioner"},
         ),
         atuin_kustomization,
         user_agentydragon_kustomization,
@@ -1044,7 +1044,7 @@ def generate_manifests(root: Path) -> None:
             kubectl_passthrough_mcp_artifact,
             kubectl_passthrough_mcp.chart,
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"Deployment/kubectl-passthrough-mcp"}),
+            unhardened_pods={"Deployment/kubectl-passthrough-mcp"},
         ),
     )
     forgejo_artifact = artifact("forgejo", f"{HAND_WRITTEN_ROOT}/forgejo")
@@ -1066,7 +1066,7 @@ def generate_manifests(root: Path) -> None:
             matrix.chart,
             siblings=matrix.SOPS_FILES,
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"Deployment/element-web"}),
+            unhardened_pods={"Deployment/element-web"},
         ),
         cnpg_kustomization,
     )
@@ -1119,7 +1119,7 @@ def generate_manifests(root: Path) -> None:
             namespace=vector_talos_logs.NAMESPACE,
             config_map_generator=[vector_talos_logs.CONFIG_MAP],
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"DaemonSet/vector-talos-logs"}),
+            unhardened_pods={"DaemonSet/vector-talos-logs"},
         ),
     )
     monitoring_alloy_artifact = artifact("monitoring-alloy", alloy.OUTPUT_DIR)
@@ -1185,7 +1185,7 @@ def generate_manifests(root: Path) -> None:
             haku_ci_artifact,
             haku_ci_runner.chart,
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"ScaledJob/haku-runner"}),
+            unhardened_pods={"ScaledJob/haku-runner"},
         ),
         keda_kustomization,
         external_secrets_operator_kustomization,
@@ -1237,7 +1237,7 @@ def generate_manifests(root: Path) -> None:
             components=["./image-pins"],
             config_map_generator=activitywatch_app.CONFIG_MAPS,
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"Deployment/activitywatch"}),
+            unhardened_pods={"Deployment/activitywatch"},
         ),
         external_secrets_operator_kustomization,
     )
@@ -1266,7 +1266,7 @@ def generate_manifests(root: Path) -> None:
         components=[posixpath.relpath(airlock.PINS_DIR, airlock.OUTPUT_DIR)],
         config_map_generator=[airlock.CONFIG_MAP],
         # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods=frozenset({"Deployment/airlock"}),
+        unhardened_pods={"Deployment/airlock"},
     )
     airlock_kustomization = agents_flux_kustomizations.airlock(
         flux_chart, airlock_directory, external_secrets_operator_kustomization
@@ -1323,7 +1323,7 @@ def generate_manifests(root: Path) -> None:
             siblings=cli_proxy_api.KEY_FILES,
             components=["./image-pins"],
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"Deployment/cli-proxy-api"}),
+            unhardened_pods={"Deployment/cli-proxy-api"},
         ),
         external_secrets_operator_kustomization,
         kyverno_kustomization,
@@ -1449,7 +1449,7 @@ def generate_manifests(root: Path) -> None:
             components=["./image-pins"],
             config_map_generator=[haku_mailbox.CONFIG_MAP, haku_mailbox.INGRESS_CONFIG_MAP],
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"Deployment/haku-mailbox"}),
+            unhardened_pods={"Deployment/haku-mailbox"},
         ),
         cnpg_kustomization,
         cert_manager_kustomization,
@@ -1475,7 +1475,7 @@ def generate_manifests(root: Path) -> None:
             matrix_user_provisioner.chart,
             components=[posixpath.relpath(matrix_user_provisioner.PINS_DIR, matrix_user_provisioner.OUTPUT_DIR)],
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"Job/provision-matrix-users"}),
+            unhardened_pods={"Job/provision-matrix-users"},
         ),
         external_secrets_operator_kustomization,
         matrix_kustomization,
@@ -1489,7 +1489,7 @@ def generate_manifests(root: Path) -> None:
         components=["./image-pins"],
         config_map_generator=[nix_cache_attic.SERVER_CONFIG_MAP, nix_cache_attic.ROTATORS_CONFIG_MAP],
         # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods=frozenset({"Deployment/attic"}),
+        unhardened_pods={"Deployment/attic"},
     )
     nix_cache_kustomization = nix_cache_flux_kustomizations.nix_cache(
         flux_chart,
@@ -1534,7 +1534,7 @@ def generate_manifests(root: Path) -> None:
             components=[posixpath.relpath(study_casino_app.PINS_DIR, study_casino_app.OUTPUT_DIR)],
             config_map_generator=study_casino_app.config_maps(root),
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods=frozenset({"Deployment/study-casino", "Job/db-readonly-provisioner"}),
+            unhardened_pods={"Deployment/study-casino", "Job/db-readonly-provisioner"},
         ),
         cnpg_kustomization,
         external_secrets_operator_kustomization,
@@ -1638,7 +1638,7 @@ def generate_manifests(root: Path) -> None:
         generator_options=haku_openclaw_spike_config.GENERATOR_OPTIONS,
         config_map_generator=[haku_openclaw_spike_config.write_kubeconfig_config_map(root)],
         # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods=frozenset({"Deployment/haku-openclaw-spike"}),
+        unhardened_pods={"Deployment/haku-openclaw-spike"},
     )
     write_directory(
         root,
@@ -1648,7 +1648,7 @@ def generate_manifests(root: Path) -> None:
         siblings=["openclaw-spike-kube-token.sops.yaml"],
         components=["./image-pins"],
         # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
-        unpinned_https_egress=frozenset({"allow-haku-openclaw-spike-proxy-egress"}),
+        unpinned_https_egress={"allow-haku-openclaw-spike-proxy-egress"},
     )
     haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR)
     haku_workspaces.haku_workspaces(

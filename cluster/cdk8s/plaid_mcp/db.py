@@ -242,5 +242,5 @@ def write_manifests(root: Path) -> None:
         chart,
         manifest_name="db.k8s.yaml",
         # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods=frozenset({"Job/db-readonly-provisioner"}),
+        unhardened_pods={"Job/db-readonly-provisioner"},
     )

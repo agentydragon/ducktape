@@ -470,5 +470,5 @@ def write_manifests(root: Path) -> None:
         OUTPUT_DIR,
         chart,
         # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods=frozenset({"Deployment/facade", "Deployment/tana-mcp"}),
+        unhardened_pods={"Deployment/facade", "Deployment/tana-mcp"},
     )

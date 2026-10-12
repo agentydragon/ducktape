@@ -264,7 +264,7 @@ def write_manifests(root: Path) -> None:
         chart,
         egress_fences.haku_cloud_api,
         # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods=frozenset({"Deployment/haku-egress-proxy"}),
+        unhardened_pods={"Deployment/haku-egress-proxy"},
         # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
-        unpinned_https_egress=frozenset({"allow-haku-cloud-api-egress"}),
+        unpinned_https_egress={"allow-haku-cloud-api-egress"},
     )

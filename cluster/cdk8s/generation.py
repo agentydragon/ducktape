@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import posixpath
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from pathlib import Path, PurePosixPath
 
 from cdk8s import ApiObjectMetadata, App, Chart, Yaml
@@ -94,8 +94,8 @@ def write_app(
     app: App,
     *,
     manifest_name: str | None = None,
-    unhardened_pods: frozenset[str] = frozenset(),
-    unpinned_https_egress: frozenset[str] = frozenset(),
+    unhardened_pods: Collection[str] = (),
+    unpinned_https_egress: Collection[str] = (),
 ) -> str:
     """Write every chart of `app`, in chart order, into one generated file in `directory`,
     after the fleet rules pass over all of them. `unhardened_pods` and `unpinned_https_egress`
@@ -115,8 +115,8 @@ def write_charts(
     directory: str,
     *chart_builders: Callable[[App], Chart],
     manifest_name: str | None = None,
-    unhardened_pods: frozenset[str] = frozenset(),
-    unpinned_https_egress: frozenset[str] = frozenset(),
+    unhardened_pods: Collection[str] = (),
+    unpinned_https_egress: Collection[str] = (),
 ) -> str:
     """Synthesize charts, in order, into one generated file in `directory`; return its name.
     The waivers are `write_app`'s."""
@@ -143,8 +143,8 @@ def write_directory(
     configurations: Sequence[str] = (),
     patch_charts: Sequence[Callable[[App], Chart]] = (),
     json6902_patches: Sequence[Json6902Patch] = (),
-    unhardened_pods: frozenset[str] = frozenset(),
-    unpinned_https_egress: frozenset[str] = frozenset(),
+    unhardened_pods: Collection[str] = (),
+    unpinned_https_egress: Collection[str] = (),
 ) -> RenderedDirectory:
     """Synthesize a component's charts into the one generated file of the directory `artifact`
     packages (`write_charts`), and write its `kustomization.yaml` listing it, then `siblings`:

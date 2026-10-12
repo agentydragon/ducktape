@@ -877,5 +877,5 @@ def write_manifests(root: Path) -> None:
         kubeconfig_chart,
         app_chart,
         # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods=frozenset({"Deployment/public-coder-agent"}),
+        unhardened_pods={"Deployment/public-coder-agent"},
     )

@@ -247,7 +247,7 @@ def write_manifests(root: Path) -> None:
                         directory,
                         partial(household_chart, household=household),
                         # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-                        unhardened_pods=frozenset({"Deployment/grocy-mcp-server"}),
+                        unhardened_pods={"Deployment/grocy-mcp-server"},
                     )
                 ],
                 components=[posixpath.relpath(PINS_DIR, directory)],

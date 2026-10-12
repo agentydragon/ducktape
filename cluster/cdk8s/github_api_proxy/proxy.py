@@ -514,5 +514,5 @@ def write_manifests(root: Path) -> None:
         _APP_DIR,
         app_chart,
         # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
-        unpinned_https_egress=frozenset({"github-api-proxy"}),
+        unpinned_https_egress={"github-api-proxy"},
     )
