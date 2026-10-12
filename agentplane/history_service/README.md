@@ -66,7 +66,11 @@ the folded one.
 `WatchSessionSummaries` tells a reader when to re-read: each fold commit NOTIFYs the history
 database, and every replica forwards that to its watchers as a payload-free `changed`. A stream opens
 with one `changed` to cover whatever the caller missed, and ends with `reconnect_required` after
-`watch_lease_s`.
+`watch_lease_s`. A request with `opened_after` also gets `session_opened` for each Session recorded at
+a later position, the backlog first and then each as its first push binds it, so the app opens a
+Thread for Sessions it did not start. The binding draws the Session's `opened_position` under a
+transaction advisory lock held to commit, so positions become visible in ascending order and a caller
+that reconnects after the last position it handled misses none.
 
 `ReadThreadEntities` serves a window of a Session's fold rows, by entity index or by key, each as
 the `ThreadEntityView` JSON browsers sync. A caller holding rows of a replaced epoch gets

@@ -37,11 +37,12 @@ from agentplane.app.shutdown import drain_of
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.session_discovery import SessionDiscovery
+from agentplane.app.threads.history_watch import SessionOpenings
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -208,7 +209,7 @@ async def _other_connections(database: AsyncEngine) -> int:
 
 
 @pytest.mark.usefixtures("sigterm_is_survivable")
-async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_discovery_and_database(
+async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_openings_and_database(
     inventory: SandboxServiceClient,
     runners: SandboxSessions,
     store: ThreadStore,
@@ -228,6 +229,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_disc
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
+    history_client: HistoryServiceClient,
 ) -> None:
     """A tab holding `/live/sandboxes` open used to hold Uvicorn's shutdown open with it. The stream
     now ends at the signal -- cleanly, which a stream cancelled at the budget would not -- readiness
@@ -236,11 +238,9 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_disc
     live_index.sandboxes[SANDBOX] = raw
     live_index.pods[SANDBOX] = running
     await event_logs.seed(SANDBOX, "shutdown-session")
-    # Not the entered conftest fixture: serve_then_close owns the discovery lifetime.
-    discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
     app = create_app(
         inventory,
-        RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery),
+        RunnerBridge(runners=runners, event_logs=event_logs, content=content),
         store,
         MODELS,
         egress,
@@ -262,33 +262,39 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_disc
         uvicorn.Config(app, host="127.0.0.1", port=port, log_level="warning", timeout_graceful_shutdown=60),
         drain_of(app),
     )
-    serving = asyncio.create_task(
-        serve_then_close(server, discovery=discovery, database_updates=database_updates, engine=engine)
-    )
-    while not server.started:
-        if serving.done():
-            serving.result()
-            raise RuntimeError("uvicorn exited before starting")
-        await asyncio.sleep(0.02)
-    assert await _other_connections(database) > 0
+    async with history_client.new_client() as openings_client:
+        serving = asyncio.create_task(
+            serve_then_close(
+                server,
+                session_openings=SessionOpenings(openings_client, event_logs, retry_interval_s=0.05),
+                database_updates=database_updates,
+                engine=engine,
+            )
+        )
+        while not server.started:
+            if serving.done():
+                serving.result()
+                raise RuntimeError("uvicorn exited before starting")
+            await asyncio.sleep(0.02)
+        assert await _other_connections(database) > 0
 
-    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=AGENT_AUTH) as client:
-        assert (await client.get("/readyz")).status_code == 204
-        async with client.stream("GET", "/live/sandboxes") as stream:
-            lines = stream.aiter_lines()
-            async for line in lines:
-                if line == "event: snapshot":
-                    break
-            signal.raise_signal(signal.SIGTERM)
-            # To the end of the body: a stream cancelled at the budget raises RemoteProtocolError here.
-            async for _line in lines:
-                pass
-    assert drain_of(app).draining
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app.test") as probes:
-        assert (await probes.get("/readyz")).status_code == 503
-        assert (await probes.get("/healthz")).status_code == 204
+        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}", headers=AGENT_AUTH) as client:
+            assert (await client.get("/readyz")).status_code == 204
+            async with client.stream("GET", "/live/sandboxes") as stream:
+                lines = stream.aiter_lines()
+                async for line in lines:
+                    if line == "event: snapshot":
+                        break
+                signal.raise_signal(signal.SIGTERM)
+                # To the end of the body: a stream cancelled at the budget raises RemoteProtocolError here.
+                async for _line in lines:
+                    pass
+        assert drain_of(app).draining
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app.test") as probes:
+            assert (await probes.get("/readyz")).status_code == 503
+            assert (await probes.get("/healthz")).status_code == 204
 
-    await serving
+        await serving
 
     # A closed connection's backend leaves pg_stat_activity a moment after the client let go of it.
     async for attempt in AsyncRetrying(

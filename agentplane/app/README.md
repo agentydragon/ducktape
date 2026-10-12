@@ -53,10 +53,11 @@ bbr test //agentplane/app/...
   (`EventLog`), the name and archive state an operator sets, and the cursor a confirmed resume masks
   the feed's end before (`models.py`). Everything folded from a Session's events (summaries, entities,
   payload chunks, evidence) is the History Service's, read over its gRPC API (`summaries.py`,
-  `view/`) or replicated by Electric from its database; `summary_watch.py` turns its fold commits into
-  `Channel.THREADS` wake-ups. `store.py` (`ThreadStore`) composes the two. `session_discovery.py`'s
-  `SessionDiscovery` only discovers the running sandboxes' Sessions and opens a Thread for each; runners push their
-  events to the History Service.
+  `view/`) or replicated by Electric from its database. `history_watch.py` follows the History
+  Service's watch: `HistoryWatch` turns its fold commits into `Channel.THREADS` wake-ups, and
+  `SessionOpenings` opens a Thread for each Session it records, whoever started it. `store.py`
+  (`ThreadStore`) composes the app database and the History Service; runners push their events to
+  the History Service.
 - `threads/bridge.py`: browser-facing composition of session operations with archive synchronization.
   `threads/sessions.py` selects explicit destinations from the app's live index and caches Sandbox
   Service clients. Neither opens direct runner connections or owns lifecycle implementation.
@@ -120,10 +121,9 @@ The app copies no runner events and folds none. Each runner pushes its Sessions'
 History Service's ingress, and the History Service folds them under per-Session leases
 ([History Service](../history_service/README.md)); the app reads both through the History Service.
 
-Sandbox discovery uses the existing Kubernetes list/watch cache, including
-relist recovery; watch changes wake reconciliation. The timer discovers sessions
-via runner `ListSessions`, which currently has no watch RPC. Merely observing a stopped session
-does not restart its harness. Explicit Open starts or resumes it without waiting for its history;
+A Session gets its Thread from the History Service's watch, which names each Session it records
+on the runner's first push; every stream resumes after the last one the replica opened, and a new
+process starts from the first. Opening a Thread does not restart its harness. Explicit Open starts or resumes it without waiting for its history;
 a confirmed resume masks the feed's earlier end, so a resumed browser does not read the previous
 harness's terminal state. On a
 Thread page, **Resume harness** opens that Thread's existing runner session using its retained
@@ -295,7 +295,7 @@ SIGTERM begins a drain as Uvicorn's shutdown starts: `/readyz` answers 503 (`/he
 liveness check), every other new request is refused, and every open SSE stream -- the live views,
 a session's events, the Actions stream -- ends where it is waiting rather than at its next frame.
 Uvicorn waits at most `--shutdown-timeout` (5 s) for what is still open, then cancels it. Only after
-that does Session discovery stop and the store close its connections, which is what
+that do Session openings stop and the store close its connections, which is what
 the rest of the Deployments' 60-second grace period is for. No preStop delay consumes that budget.
 
 ## Shape

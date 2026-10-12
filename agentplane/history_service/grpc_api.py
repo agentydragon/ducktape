@@ -29,6 +29,8 @@ from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, W
 
 logger = logging.getLogger(__name__)
 
+_OPENINGS_PAGE = 500
+
 
 @dataclass(frozen=True)
 class Resources:
@@ -41,6 +43,7 @@ class Resources:
     reader_accounts: frozenset[ServiceAccountRef]
     request_timeout_s: float
     summary_changes: ChangeSignal
+    session_openings: ChangeSignal
     # How long one WatchSessionSummaries stream lasts before it asks the caller to reconnect.
     watch_lease_s: float
 
@@ -161,18 +164,23 @@ class HistoryService(history_service_pb2_grpc.HistoryServiceServicer):
     async def WatchSessionSummaries(  # type: ignore[override]
         self, request: history_service_pb2.WatchSessionSummariesRequest, context: grpc.aio.ServicerContext
     ) -> None:
-        """Write `changed` on open and after each change, then `reconnect_required` once the lease ends."""
+        """Write `changed` on open and after each change, each Session recorded since if asked, then
+        `reconnect_required` once the lease ends."""
         async with errors(context):
             async with asyncio.timeout(self.resources.request_timeout_s):
                 await self.resources.authenticate(context)
             deadline = asyncio.get_running_loop().time() + self.resources.watch_lease_s
-            # Subscribed before the opening notice, so nothing committed after it goes unannounced.
+            opened_after = request.opened_after if request.HasField("opened_after") else None
+            # Subscribed before the opening notice, so nothing committed after it goes unannounced. A
+            # recorded Session also wakes a stream that asked for none: a spurious `changed` is harmless.
             changed = asyncio.Event()
-            with self.resources.summary_changes.subscribe(changed):
+            with self.resources.summary_changes.subscribe(changed), self.resources.session_openings.subscribe(changed):
                 while True:
                     changed.clear()
                     async with asyncio.timeout(self.resources.request_timeout_s):
                         await context.write(history_service_pb2.WatchSessionSummariesResponse(changed=Empty()))
+                    if opened_after is not None:
+                        opened_after = await self._announce_openings(context, opened_after)
                     lease = asyncio.timeout_at(deadline)
                     try:
                         async with lease:
@@ -183,6 +191,24 @@ class HistoryService(history_service_pb2_grpc.HistoryServiceServicer):
                         break
             async with asyncio.timeout(self.resources.request_timeout_s):
                 await context.write(history_service_pb2.WatchSessionSummariesResponse(reconnect_required=Empty()))
+
+    async def _announce_openings(self, context: grpc.aio.ServicerContext, after: int) -> int:
+        """Write `session_opened` for each Session recorded after `after`; return the last position written."""
+        while True:
+            async with asyncio.timeout(self.resources.request_timeout_s):
+                page = await self.resources.history.opened_sessions(after_position=after, limit=_OPENINGS_PAGE)
+            for opened in page:
+                async with asyncio.timeout(self.resources.request_timeout_s):
+                    await context.write(
+                        history_service_pb2.WatchSessionSummariesResponse(
+                            session_opened=history_service_pb2.SessionOpened(
+                                session_id=str(opened.session_id), position=opened.position
+                            )
+                        )
+                    )
+                after = opened.position
+            if len(page) < _OPENINGS_PAGE:
+                return after
 
 
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:

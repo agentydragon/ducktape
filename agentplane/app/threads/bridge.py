@@ -11,7 +11,6 @@ from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
-from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.summaries import FeedError
 from agentplane.app.threads.view.content import ContentStore
@@ -70,13 +69,10 @@ class CommandStatus(BaseModel):
 
 
 class RunnerBridge:
-    def __init__(
-        self, *, runners: SandboxSessions, event_logs: EventLogStore, content: ContentStore, discovery: SessionDiscovery
-    ) -> None:
+    def __init__(self, *, runners: SandboxSessions, event_logs: EventLogStore, content: ContentStore) -> None:
         self._runners = runners
         self._event_logs = event_logs
         self._content = content
-        self._discovery = discovery
 
     async def list_sessions(self, sandbox: str) -> list[runner_pb2.SessionSummary]:
         return await self._runners.client(sandbox).list_sessions()
@@ -96,7 +92,6 @@ class RunnerBridge:
         if thread_id != UUID(public_id):
             raise RunnerError("service Session ID conflicts with the retained Thread identity")
         await self._event_logs.resume_pending(thread_id)
-        self._discovery.wake()
         attached = runner_pb2.Attached()
         attached.CopyFrom(created.attached)
         return attached
@@ -134,7 +129,6 @@ class RunnerBridge:
         # The Thread mapping already exists. Do not make runner Resume depend on archive
         # catch-up; its feed exposes that later, and a stale view remains non-authoritative.
         await self._event_logs.resume_pending(thread_id)
-        self._discovery.wake()
         return attached
 
     async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
@@ -150,8 +144,6 @@ class RunnerBridge:
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
-        # Wake Session discovery before relaying; the response does not wait for it.
-        self._discovery.wake()
         try:
             return await self._runners.gateway.command(str(thread_id), command)
         except TimeoutError as error:

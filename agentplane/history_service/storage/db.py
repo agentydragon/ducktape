@@ -5,7 +5,17 @@ The migration is owned by Sandbox Service. No app tables or app-issued identitie
 
 from uuid import UUID
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, ForeignKeyConstraint, Index, LargeBinary, String, text
+from sqlalchemy import (
+    BigInteger,
+    CheckConstraint,
+    ForeignKey,
+    ForeignKeyConstraint,
+    Identity,
+    Index,
+    LargeBinary,
+    String,
+    text,
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -32,6 +42,7 @@ class SessionHistory(Base):
         ),
         CheckConstraint("num_nulls(sandbox_namespace, sandbox_name) IN (0, 2)", name="history_sandbox_complete"),
         CheckConstraint("sandbox_namespace IS NOT NULL OR writer_uid IS NOT NULL", name="history_origin"),
+        Index("ux_history_opened_position", "opened_position", unique=True),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -51,6 +62,9 @@ class SessionHistory(Base):
     last_cursor: Mapped[int] = mapped_column(BigInteger)
     # Complete SessionFeedState protobuf, absent until a runner prefix is observed.
     feed_state: Mapped[bytes | None] = mapped_column(LargeBinary)
+    # The order the Session was recorded in. `Store.bind_writer` draws it under a lock held to commit,
+    # so positions become visible in ascending order.
+    opened_position: Mapped[int] = mapped_column(BigInteger, Identity())
 
 
 class SessionEvent(Base):

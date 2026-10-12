@@ -21,7 +21,8 @@ service HistoryService {
   // The observations an entity was folded from, and the native harness frames behind each.
   rpc ReadEntityEvidence(ReadEntityEvidenceRequest) returns (ReadEntityEvidenceResponse);
   rpc ReadNativeFrames(ReadNativeFramesRequest) returns (ReadNativeFramesResponse);
-  // Tells the caller when fold state it may hold changed. It names nothing: re-read what you hold.
+  // Tells the caller when fold state it may hold changed, which names nothing: re-read what you hold.
+  // On request it also names each Session the History Service records.
   rpc WatchSessionSummaries(WatchSessionSummariesRequest) returns (stream WatchSessionSummariesResponse);
 }
 
@@ -208,7 +209,11 @@ message ReadNativeFramesRequest {
   uint32 limit = 6;
 }
 
-message WatchSessionSummariesRequest {}
+message WatchSessionSummariesRequest {
+  // Present: the stream also sends `session_opened` for every Session recorded at a position after
+  // this one, those already recorded first. 0 names every Session. Absent: it names none.
+  optional uint64 opened_after = 1;
+}
 
 message WatchSessionSummariesResponse {
   oneof observation {
@@ -217,8 +222,18 @@ message WatchSessionSummariesResponse {
     google.protobuf.Empty changed = 1;
     // Planned renewal: reconnect with fresh authorization.
     google.protobuf.Empty reconnect_required = 2;
+    // Only for a request with `opened_after`.
+    SessionOpened session_opened = 3;
   }
   // A successful stream ends with reconnect_required; bare EOF is a failure.
+}
+
+// A Session the History Service recorded, on the runner's first push of it.
+message SessionOpened {
+  string session_id = 1;
+  // Ascending in recording order, and a position becomes visible only after every lower one, so a
+  // caller that reconnects with the last position it handled misses no Session.
+  uint64 position = 2;
 }
 
 message NativeFrame {

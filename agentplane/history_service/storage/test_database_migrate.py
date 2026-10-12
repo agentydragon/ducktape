@@ -38,7 +38,8 @@ def test_follower_snapshots_take_the_public_session_id(db_url: str) -> None:
                 text("INSERT INTO thread_history_summary (thread_id, attached) VALUES (:id, CAST(:attached AS jsonb))"),
                 {"id": session_id, "attached": json.dumps(MessageToDict(attached))},
             )
-        RUNNER.apply(db_url)
+        # Only the migration under test: the later ones already ran on this database before the stamp.
+        RUNNER.apply(db_url, "0013_feed_snapshot_public_ids")
         with engine.connect() as connection:
             stored = history_service_pb2.SessionFeedState.FromString(
                 connection.scalar(text("SELECT feed_state FROM session_history WHERE id = :id"), {"id": session_id})

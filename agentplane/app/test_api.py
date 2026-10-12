@@ -30,7 +30,6 @@ from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -664,14 +663,12 @@ async def test_a_runner_that_has_not_connected_is_a_503(
     live_index.sandboxes["live"], live_index.pods["live"] = seed_runner(custom_objects, core_v1, "live")
     with backend(custom_objects, core_v1, tmp_path / "failure-token", database_url=service_history_db_url) as endpoint:
         async with dial(endpoint.target) as channel:
-            runners = SandboxSessions(live_index, endpoint.gateway(channel))
             app = create_app(
                 inventory,
                 RunnerBridge(
-                    runners=runners,
+                    runners=SandboxSessions(live_index, endpoint.gateway(channel)),
                     event_logs=event_logs,
                     content=content,
-                    discovery=SessionDiscovery(runners=runners, event_logs=event_logs),
                 ),
                 store,
                 TEST_MODELS,
@@ -765,11 +762,9 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     session_id = str(uuid4())
     thread_id = await event_logs.seed("live", session_id)
     async with unanswered_command_service(tmp_path / "wedged-token") as (service, cancelled):
-        runners = SandboxSessions(live_index, service)
-        discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
         app = create_app(
             inventory,
-            RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery),
+            RunnerBridge(runners=SandboxSessions(live_index, service), event_logs=event_logs, content=content),
             store,
             TEST_MODELS,
             egress,
@@ -786,7 +781,6 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
             notifications_token_file=notifications_token_file,
         )
         async with (
-            discovery,
             httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
             ) as http,

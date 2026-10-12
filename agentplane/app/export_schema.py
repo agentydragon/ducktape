@@ -29,7 +29,6 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
@@ -73,15 +72,9 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
         ContentStore(engine, history_reader=history),
     )
     live = LiveIndex(freshness=Freshness(stale_after_seconds=900), core_v1=CoreV1Api(api_client))
-    runners = SandboxSessions(live, gateway)
     document: dict[str, Any] = create_app(
         inventory,
-        RunnerBridge(
-            runners=runners,
-            event_logs=event_logs,
-            content=content,
-            discovery=SessionDiscovery(runners=runners, event_logs=event_logs),
-        ),
+        RunnerBridge(runners=SandboxSessions(live, gateway), event_logs=event_logs, content=content),
         ThreadStore(engine, summaries, gateway=gateway),
         ModelCatalog(
             models=[

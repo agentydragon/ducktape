@@ -106,6 +106,7 @@ async def history_service(
                 reader_accounts=frozenset({READER}),
                 request_timeout_s=10,
                 summary_changes=wakeups.changes[Channel.SUMMARIES],
+                session_openings=wakeups.changes[Channel.SESSIONS],
                 watch_lease_s=watch_lease_s,
             ),
             server,
