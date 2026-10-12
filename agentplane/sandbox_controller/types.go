@@ -33,6 +33,10 @@ type StateVolume struct {
 type SandboxTemplateSpec struct {
 	Pod         corev1.PodTemplateSpec `json:"pod"`
 	StateVolume StateVolume            `json:"stateVolume"`
+	// StateSchemaVersion is the layout of the state PVC this template's runner reads and writes. A
+	// state PVC records the version of the template that created it, and no Pod starts from a
+	// template declaring another.
+	StateSchemaVersion int32 `json:"stateSchemaVersion"`
 }
 
 // +kubebuilder:object:root=true

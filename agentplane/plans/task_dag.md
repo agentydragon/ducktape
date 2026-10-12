@@ -671,7 +671,8 @@ flowchart TD
     SANDBOX_CONTROLLER_PROVISIONING[In flight: the controller provisions a Sandbox]
     ACTION_POLICY_MIGRATE[Action policies on PolicySet, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
     KUBERNETES_POLICY_SETS[Grant catalog as PolicySets, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
-    SANDBOX_IMAGE_REPLACE[Candidate: replace the runner image between incarnations]
+    SANDBOX_IMAGE_REPLACE[Blocked: replace a VM's runner image between incarnations]
+    VM_PROVIDER[VM provider, section 4] --> SANDBOX_IMAGE_REPLACE
     SANDBOX_CREATE_CUTOVER[Blocked: Sandboxes are created as ours]
     SANDBOX_CONTROLLER_PROVISIONING --> SANDBOX_CREATE_CUTOVER
     SANDBOX_CREATE_CUTOVER --> AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox]
@@ -691,12 +692,12 @@ Left after #10162: session defaults, bootstrap command and runner endpoints.
 
 ### `SANDBOX_IMAGE_REPLACE` — replace the runner image between incarnations
 
-**Candidate; the operator's "pause, replace the image, resume" (2026-10-12 PDT).** For pods and VMs
-alike, the controller accepts a new runner image only once the current incarnation is gone: the next
-Pod runs it, and a VM gets its containerDisk rewritten while `runStrategy: Halted`. Both keep the
-state PVC. The PVC records a state-schema version, and an image that does not declare that version
-is refused. The VM half is #8843's `ReplaceVmImage` and `VmTemplate.state_schema_version`, replaced
-live in [the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
+**Blocked on the VM kind; the operator's "pause, replace the image, resume" (2026-10-12 PDT).** Pods
+are done: the next Pod runs the template's new image on the same state PVC, refused when the
+template's `stateSchemaVersion` is not the one the PVC records. Left: a VM gets its containerDisk
+rewritten while `runStrategy: Halted`, under the same check. That is #8843's `ReplaceVmImage` and
+`VmTemplate.state_schema_version`, replaced live in
+[the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
 
 ### `SANDBOX_CREATE_CUTOVER` — Sandboxes are created as ours
 

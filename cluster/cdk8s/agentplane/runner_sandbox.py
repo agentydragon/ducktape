@@ -51,6 +51,10 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 # SandboxTemplate's own VolumeClaimTemplate -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
 _STATE_DIR = "/state"
+# The layout of the runner's state directory, which our SandboxTemplates declare; the Sandbox
+# Controller starts no runner on a state PVC another version created. Bump it with a runner change
+# that cannot read the previous layout.
+_STATE_SCHEMA_VERSION = 1
 _BUILDBUDDY_SECRET = "buildbuddy-api-key"
 _BUILDBUDDY_MOUNT = "/run/buildbuddy"
 
@@ -270,6 +274,7 @@ class RunnerTemplate(Construct):
                     {
                         "pod": spec["podTemplate"],
                         "stateVolume": {"name": claim["metadata"]["name"], "claim": claim["spec"]},
+                        "stateSchemaVersion": _STATE_SCHEMA_VERSION,
                     },
                 )
             )

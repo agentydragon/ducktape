@@ -4385,6 +4385,7 @@ spec:
         requests:
           storage: 10Gi
       storageClassName: local-path-ovh-hdd
+  stateSchemaVersion: 1
 ---
 apiVersion: v1
 kind: ServiceAccount

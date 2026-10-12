@@ -8,7 +8,8 @@
       "type": "object",
       "required": [
         "pod",
-        "stateVolume"
+        "stateVolume",
+        "stateSchemaVersion"
       ],
       "properties": {
         "pod": {
@@ -34,6 +35,12 @@
               "x-kubernetes-preserve-unknown-fields": true
             }
           }
+        },
+        "stateSchemaVersion": {
+          "description": "The layout of the state PVC this template's runner reads and writes. A state PVC records the version of the template that created it, and no Pod starts from a template declaring another.",
+          "type": "integer",
+          "format": "int32",
+          "minimum": 1
         }
       }
     }

@@ -21,6 +21,10 @@ and the state PVC. A Sandbox is its state, running or not; an **incarnation** is
 - Clearing `spec.running` deletes the Pod.
 - Each incarnation reads `spec.template` and the template as they are when it starts. Editing
   either never changes a running Pod.
+- Replacing the runner image is editing the template, or pointing `spec.template` at another, while
+  the Sandbox is stopped or between incarnations; the next Pod runs it on the same PVC.
+- The PVC records the `stateSchemaVersion` of the template that created it. A template declaring
+  another starts nothing on it.
 - A template that does not exist, or that defines the state volume itself, starts nothing.
 
 ## Identity
@@ -48,6 +52,6 @@ and the state PVC. A Sandbox is its state, running or not; an **incarnation** is
 `status.incarnation` names the current Pod and its UID. The `Running` condition is True while the
 Pod runs. Otherwise it is False, with reason `Stopped`, `Starting`, `Stopping`, `PodEnded`,
 `Sealing`, `Deleting`,
-`TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `ServiceAccountConflict`,
+`TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `StateSchemaMismatch`, `ServiceAccountConflict`,
 `PolicyBindingConflict` or `PodConflict` (a Pod of the Sandbox's name that
 it does not control).

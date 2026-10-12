@@ -34,6 +34,7 @@ func testTemplate(image string) *SandboxTemplate {
 	return &SandboxTemplate{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: templateName},
 		Spec: SandboxTemplateSpec{
+			StateSchemaVersion: 1,
 			Pod: corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/name": "test-runner"}},
 				Spec: corev1.PodSpec{Containers: []corev1.Container{{
@@ -210,13 +211,8 @@ func TestStopDeletesPodAndKeepsStateVolume(t *testing.T) {
 	}
 }
 
-func TestStartResolvesTheTemplateAsItIsThen(t *testing.T) {
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
-	reconcileOnce(t, r)
-	setRunning(t, c, false)
-	reconcileOnce(t, r)
-
-	template := testTemplate("test-image:v2")
+func replaceTemplate(t *testing.T, c client.Client, template *SandboxTemplate) {
+	t.Helper()
 	var current SandboxTemplate
 	if err := c.Get(context.Background(), client.ObjectKeyFromObject(template), &current); err != nil {
 		t.Fatal(err)
@@ -225,11 +221,46 @@ func TestStartResolvesTheTemplateAsItIsThen(t *testing.T) {
 	if err := c.Update(context.Background(), &current); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestStartResolvesTheTemplateAsItIsThen(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	setRunning(t, c, false)
+	reconcileOnce(t, r)
+
+	replaceTemplate(t, c, testTemplate("test-image:v2"))
 	setRunning(t, c, true)
 	reconcileOnce(t, r)
 	pod := getPod(t, c)
 	if pod == nil || pod.Spec.Containers[0].Image != "test-image:v2" {
 		t.Fatalf("restarted Pod = %v, want the updated template's image", pod)
+	}
+}
+
+func TestImageOfAnotherStateSchemaIsRefused(t *testing.T) {
+	r, c := newReconciler(t, false, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	if held := getPVC(t, c).Annotations[StateSchemaAnnotation]; held != "1" {
+		t.Fatalf("state PVC holds schema %q, want the creating template's 1", held)
+	}
+	newer := testTemplate("test-image:v2")
+	newer.Spec.StateSchemaVersion = 2
+	replaceTemplate(t, c, newer)
+	setRunning(t, c, true)
+	reconcileOnce(t, r)
+	if getPod(t, c) != nil {
+		t.Fatal("a Pod started on a state PVC of another schema")
+	}
+	if reason := runningReason(t, c); reason != "StateSchemaMismatch" {
+		t.Errorf("Running reason = %s, want StateSchemaMismatch", reason)
+	}
+
+	// The PVC is kept, so an image declaring its schema starts on it.
+	replaceTemplate(t, c, testTemplate("test-image:v3"))
+	reconcileOnce(t, r)
+	if pod := getPod(t, c); pod == nil || pod.Spec.Containers[0].Image != "test-image:v3" {
+		t.Fatalf("Pod = %v, want one of the image declaring the PVC's schema", pod)
 	}
 }
 

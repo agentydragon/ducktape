@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -31,6 +32,8 @@ const (
 	// On the state PVC, which has no owner reference: the Sandbox incarnation that created it, so a
 	// recreated Sandbox of the same name never takes over a previous one's state.
 	SandboxUIDAnnotation = "agentplane.allegedly.works/sandbox-uid"
+	// On the state PVC: the state schema version of the template that created it.
+	StateSchemaAnnotation = "agentplane.allegedly.works/state-schema-version"
 	// Seals a deleted Sandbox's Sessions, then deletes its Pod and, once that is gone, its state PVC.
 	StateVolumeFinalizer = "agentplane.allegedly.works/state-volume"
 
@@ -171,10 +174,13 @@ func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *Sandbox) (*
 	}
 	pvc = &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        StateVolumeName(sandbox.Name),
-			Namespace:   sandbox.Namespace,
-			Labels:      map[string]string{SandboxLabel: sandbox.Name},
-			Annotations: map[string]string{SandboxUIDAnnotation: string(sandbox.UID)},
+			Name:      StateVolumeName(sandbox.Name),
+			Namespace: sandbox.Namespace,
+			Labels:    map[string]string{SandboxLabel: sandbox.Name},
+			Annotations: map[string]string{
+				SandboxUIDAnnotation:  string(sandbox.UID),
+				StateSchemaAnnotation: strconv.Itoa(int(template.Spec.StateSchemaVersion)),
+			},
 		},
 		Spec: *template.Spec.StateVolume.Claim.DeepCopy(),
 	}
@@ -220,6 +226,17 @@ func (r *Reconciler) convergePod(ctx context.Context, sandbox *Sandbox, pod *cor
 	template, blocked, err := r.template(ctx, sandbox)
 	if template == nil {
 		return nil, blocked, err
+	}
+	// The state PVC exists and is the Sandbox's own: ensureStateVolume reported otherwise.
+	pvc, err := r.stateVolume(ctx, sandbox)
+	if err != nil {
+		return nil, nil, err
+	}
+	if pvc == nil {
+		return nil, &unready{"Starting", "the state PVC is not created yet"}, nil
+	}
+	if held, declared := pvc.Annotations[StateSchemaAnnotation], strconv.Itoa(int(template.Spec.StateSchemaVersion)); held != declared {
+		return nil, &unready{"StateSchemaMismatch", fmt.Sprintf("SandboxTemplate %s declares state schema %s; PVC %s holds %q", template.Name, declared, pvc.Name, held)}, nil
 	}
 	pod, blocked = render(sandbox, template)
 	if blocked != nil {
