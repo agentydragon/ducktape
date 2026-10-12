@@ -672,7 +672,7 @@ flowchart TD
     SANDBOX_CONTROLLER_PROVISIONING[In flight: the controller provisions a Sandbox]
     ACTION_POLICY_MIGRATE[Action policies on PolicySet, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
     KUBERNETES_POLICY_SETS[Grant catalog as PolicySets, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
-    SANDBOX_CONTROLLER_TEARDOWN[Candidate: deleting a Sandbox seals it first]
+    SANDBOX_CONTROLLER_TEARDOWN[In flight: deleting a Sandbox seals it first]
     SANDBOX_IMAGE_REPLACE[Candidate: replace the runner image between incarnations]
     SANDBOX_CREATE_CUTOVER[Blocked: Sandboxes are created as ours]
     SANDBOX_RUNNER_TEMPLATES --> SANDBOX_CREATE_CUTOVER
@@ -700,10 +700,8 @@ Left after #10162: session defaults, bootstrap command and runner endpoints.
 
 ### `SANDBOX_CONTROLLER_TEARDOWN` — deleting a Sandbox seals it first
 
-**Candidate.** Deleting the Sandbox seals its last incarnation before the Pod and PVC go, as
-`teardown.py` does today: a stopped Sandbox runs once more, fenced, so its runner can seal every
-Session, then the controller deletes it once ingress has acknowledged the seals. The Runner Gateway
-watches deleting Sandboxes of our kind; when the fenced runner connects it seals every Session and,
+**In flight; the controller already waits on `SessionsSealed`.** Left: the Runner Gateway accepts the runners of our kind, refuses new Sessions and commands for a
+deleting one, and watches deleting Sandboxes of our kind; when the fenced runner connects it seals every Session and,
 once ingress has acknowledged them all, sets the Sandbox's `SessionsSealed` condition, which the
 controller waits on before deleting the Pod and PVC (operator, 2026-10-12 PDT). The Sandbox
 Service's `SealSandbox` call to the gateway goes with the Sandbox Service; there is no Go gRPC client.

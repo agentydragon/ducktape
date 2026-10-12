@@ -4,9 +4,9 @@ Reconciles `Sandbox` into a state PVC that outlives every incarnation, its own S
 `PolicyBinding`, and, while running, one Pod from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel). It is the Go controller the
 [Sandbox Service](../sandbox_service/README.md) is moving into, and does not yet do what that
-service does around a Sandbox: session defaults, bootstrap, runner endpoints, launch binding and
-the teardown seal. Until it does, nothing creates these
-Sandboxes. Deleting one deletes its PVC without sealing its Sessions.
+service does around a Sandbox: session defaults, bootstrap, runner endpoints and launch binding.
+Until it does, nothing creates these Sandboxes. Deletion waits for the Runner Gateway's
+`SessionsSealed` condition, which the gateway does not set for this kind yet.
 
 A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) controller:
 
@@ -40,6 +40,12 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   controller is down has to wait for it.
 - **The Pod is deleted before the PVC**, in separate reconciles, so the PVC never goes while a
   container can still write to it.
+- **The gateway seals, the controller deletes.** The Runner Gateway holds the runner's control
+  stream, so it seals and reports through the `SessionsSealed` condition; the controller makes no
+  gRPC call.
+- **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Sealing`. Removing the finalizer
+  by hand orphans the PVC, which has no owner reference; to give up on the seal, set
+  `SessionsSealed` True on the Sandbox's status instead, and the controller deletes the rest.
 - **No Pod waits on its `PolicyBinding`'s readers.** Every reader fails closed, so a grant applied
   after the Pod starts only refuses its first requests, as for a running Pod whose PolicySets
   change; a gate would make every Sandbox depend on every reader, optional ones included.

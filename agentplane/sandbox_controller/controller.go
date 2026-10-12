@@ -23,12 +23,15 @@ import (
 
 const (
 	Running = "Running"
+	// Set True by the Runner Gateway on a deleting Sandbox once its runner has sealed every Session
+	// and the ingress has acknowledged each seal; nothing of the Sandbox is deleted before.
+	SessionsSealed = "SessionsSealed"
 	// On the Pod, the state PVC, the ServiceAccount and the PolicyBinding: the Sandbox they belong to.
 	SandboxLabel = "agentplane.allegedly.works/sandbox"
 	// On the state PVC, which has no owner reference: the Sandbox incarnation that created it, so a
 	// recreated Sandbox of the same name never takes over a previous one's state.
 	SandboxUIDAnnotation = "agentplane.allegedly.works/sandbox-uid"
-	// Deletes the state PVC once the Sandbox's Pod is gone.
+	// Seals a deleted Sandbox's Sessions, then deletes its Pod and, once that is gone, its state PVC.
 	StateVolumeFinalizer = "agentplane.allegedly.works/state-volume"
 
 	templateIndex = "spec.template"
@@ -59,7 +62,14 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 	if !sandbox.DeletionTimestamp.IsZero() {
-		return ctrl.Result{}, r.finalize(ctx, &sandbox, pod)
+		if !controllerutil.ContainsFinalizer(&sandbox, StateVolumeFinalizer) {
+			return ctrl.Result{}, nil
+		}
+		pod, blocked, err := r.finalize(ctx, &sandbox, pod)
+		if err != nil || blocked == nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{}, r.updateStatus(ctx, &sandbox, pod, blocked)
 	}
 	if controllerutil.AddFinalizer(&sandbox, StateVolumeFinalizer) {
 		if err := r.Update(ctx, &sandbox); err != nil {
@@ -75,7 +85,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		return ctrl.Result{}, err
 	}
 	if blocked == nil {
-		if pod, blocked, err = r.convergePod(ctx, &sandbox, pod, gate); err != nil {
+		if pod, blocked, err = r.convergePod(ctx, &sandbox, pod, sandbox.Spec.Running, gate); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -94,30 +104,43 @@ func (r *Reconciler) pod(ctx context.Context, sandbox *Sandbox) (*corev1.Pod, er
 	return &pod, nil
 }
 
-// finalize deletes the Pod, then the state PVC once no Pod can be writing to it, then lets the
-// Sandbox go. Each deletion's watch event runs the next step.
-func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, pod *corev1.Pod) error {
-	if !controllerutil.ContainsFinalizer(sandbox, StateVolumeFinalizer) {
-		return nil
+// finalize seals the Sandbox's Sessions, then deletes the Pod, then the state PVC once no Pod can
+// be writing to it, then lets the Sandbox go. Each step's watch event runs the next. It returns why
+// the Sandbox is still there, or nil once the finalizer is removed.
+func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, pod *corev1.Pod) (*corev1.Pod, *unready, error) {
+	pvc, err := r.stateVolume(ctx, sandbox)
+	if err != nil {
+		return nil, nil, err
+	}
+	own := pvc != nil && pvc.Annotations[SandboxUIDAnnotation] == string(sandbox.UID)
+	// Without a state PVC of its own the Sandbox never had a runner, so it has no Session to seal.
+	if own && !meta.IsStatusConditionTrue(sandbox.Status.Conditions, SessionsSealed) {
+		// Only a running runner seals, so a stopped Sandbox runs once more; the Runner Gateway
+		// refuses every new Session and command for a deleting Sandbox.
+		pod, blocked, err := r.convergePod(ctx, sandbox, pod, true, nil)
+		if blocked == nil {
+			blocked = &unready{"Sealing", "waiting for the Runner Gateway to seal every Session"}
+		}
+		return pod, blocked, err
 	}
 	if pod != nil {
 		if pod.DeletionTimestamp.IsZero() {
-			return client.IgnoreNotFound(r.Delete(ctx, pod, client.Preconditions{UID: &pod.UID}))
+			if err := client.IgnoreNotFound(r.Delete(ctx, pod, client.Preconditions{UID: &pod.UID})); err != nil {
+				return nil, nil, err
+			}
 		}
-		return nil
+		return pod, &unready{"Deleting", fmt.Sprintf("Pod %s is being deleted", pod.Name)}, nil
 	}
-	pvc, err := r.stateVolume(ctx, sandbox)
-	if err != nil {
-		return err
-	}
-	if pvc != nil && pvc.Annotations[SandboxUIDAnnotation] == string(sandbox.UID) {
+	if own {
 		if pvc.DeletionTimestamp.IsZero() {
-			return client.IgnoreNotFound(r.Delete(ctx, pvc, client.Preconditions{UID: &pvc.UID}))
+			if err := client.IgnoreNotFound(r.Delete(ctx, pvc, client.Preconditions{UID: &pvc.UID})); err != nil {
+				return nil, nil, err
+			}
 		}
-		return nil
+		return nil, &unready{"Deleting", fmt.Sprintf("PVC %s is being deleted", pvc.Name)}, nil
 	}
 	controllerutil.RemoveFinalizer(sandbox, StateVolumeFinalizer)
-	return r.Update(ctx, sandbox)
+	return nil, nil, r.Update(ctx, sandbox)
 }
 
 func (r *Reconciler) stateVolume(ctx context.Context, sandbox *Sandbox) (*corev1.PersistentVolumeClaim, error) {
@@ -174,12 +197,12 @@ func (r *Reconciler) template(ctx context.Context, sandbox *Sandbox) (*SandboxTe
 	return &template, nil, nil
 }
 
-// convergePod starts a Pod for a running Sandbox that has none, unless gate says why not yet, and
-// deletes the Pod of a stopped one. It returns the Pod the Sandbox now has.
-func (r *Reconciler) convergePod(ctx context.Context, sandbox *Sandbox, pod *corev1.Pod, gate *unready) (*corev1.Pod, *unready, error) {
+// convergePod starts a Pod for a Sandbox that is to run and has none, unless gate says why not
+// yet, and deletes the Pod of one that is not. It returns the Pod the Sandbox now has.
+func (r *Reconciler) convergePod(ctx context.Context, sandbox *Sandbox, pod *corev1.Pod, running bool, gate *unready) (*corev1.Pod, *unready, error) {
 	if pod != nil {
 		ended := pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
-		if pod.DeletionTimestamp.IsZero() && (!sandbox.Spec.Running || ended) {
+		if pod.DeletionTimestamp.IsZero() && (!running || ended) {
 			// An ended incarnation goes too, so a running Sandbox gets a new one.
 			if err := client.IgnoreNotFound(r.Delete(ctx, pod, client.Preconditions{UID: &pod.UID})); err != nil {
 				return nil, nil, err
@@ -188,7 +211,7 @@ func (r *Reconciler) convergePod(ctx context.Context, sandbox *Sandbox, pod *cor
 		// A Pod still terminating keeps its name; the next one starts after its deletion event.
 		return pod, nil, nil
 	}
-	if !sandbox.Spec.Running {
+	if !running {
 		return nil, nil, nil
 	}
 	if gate != nil {

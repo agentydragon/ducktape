@@ -305,15 +305,39 @@ func TestAnotherSandboxesStateVolumeIsNotAdopted(t *testing.T) {
 	}
 }
 
-func TestDeletionRemovesPodThenStateVolume(t *testing.T) {
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
-	reconcileOnce(t, r)
+// sealSessions is the Runner Gateway reporting every Session sealed.
+func sealSessions(t *testing.T, c client.Client) {
+	t.Helper()
+	sandbox := getSandbox(t, c)
+	meta.SetStatusCondition(&sandbox.Status.Conditions, metav1.Condition{Type: SessionsSealed, Status: metav1.ConditionTrue, Reason: "Sealed"})
+	if err := c.Status().Update(context.Background(), sandbox); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func deleteSandbox(t *testing.T, c client.Client) {
+	t.Helper()
 	if err := c.Delete(context.Background(), getSandbox(t, c)); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	deleteSandbox(t, c)
+	reconcileOnce(t, r)
+	if getPod(t, c) == nil || getPVC(t, c) == nil {
+		t.Fatal("deletion removed the Pod or the state PVC before the Sessions were sealed")
+	}
+	if reason := runningReason(t, c); reason != "Sealing" {
+		t.Errorf("Running reason = %s, want Sealing", reason)
+	}
+
+	sealSessions(t, c)
 	reconcileOnce(t, r)
 	if getPod(t, c) != nil {
-		t.Fatal("deletion left the Pod")
+		t.Fatal("deletion left the Pod once the Sessions were sealed")
 	}
 	if getPVC(t, c) == nil {
 		t.Fatal("the state PVC went in the same step as the Pod, while the Pod could still be writing")
@@ -329,6 +353,21 @@ func TestDeletionRemovesPodThenStateVolume(t *testing.T) {
 	}
 }
 
+func TestDeletingAStoppedSandboxRunsItOnceMoreToSeal(t *testing.T) {
+	r, c := newReconciler(t, false, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	deleteSandbox(t, c)
+	reconcileOnce(t, r)
+	if getPod(t, c) == nil {
+		t.Fatal("a stopped Sandbox got no Pod to seal its Sessions from")
+	}
+	sealSessions(t, c)
+	reconcileOnce(t, r)
+	if getPod(t, c) != nil {
+		t.Fatal("the sealing Pod outlived the seal")
+	}
+}
+
 func TestDeletionLeavesAnotherSandboxesStateVolume(t *testing.T) {
 	stale := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
 		Namespace: namespace, Name: StateVolumeName(sandboxName),
@@ -336,11 +375,17 @@ func TestDeletionLeavesAnotherSandboxesStateVolume(t *testing.T) {
 	}}
 	r, c := newReconciler(t, false, testTemplate("test-image:v1"), stale)
 	reconcileOnce(t, r)
-	if err := c.Delete(context.Background(), getSandbox(t, c)); err != nil {
-		t.Fatal(err)
-	}
+	deleteSandbox(t, c)
 	reconcileOnce(t, r)
 	if getPVC(t, c) == nil {
 		t.Fatal("deleting a Sandbox deleted a state PVC it never created")
+	}
+	// It never had a state PVC, so never a runner or a Session to seal.
+	if getPod(t, c) != nil {
+		t.Error("a Sandbox that never ran was started to seal")
+	}
+	var sandbox Sandbox
+	if err := c.Get(context.Background(), sandboxKey, &sandbox); !apierrors.IsNotFound(err) {
+		t.Fatalf("a Sandbox with nothing to seal or delete is still present: %v", err)
 	}
 }

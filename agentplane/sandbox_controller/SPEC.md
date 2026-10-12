@@ -10,7 +10,8 @@ and the state PVC. A Sandbox is its state, running or not; an **incarnation** is
 - The PVC has no owner reference, so neither garbage collection nor the Pod going away removes it.
   It carries the Sandbox's UID; a Sandbox never uses or deletes a PVC another Sandbox created, and
   reports `StateVolumeConflict` instead.
-- Deleting the Sandbox deletes its Pod, then, once the Pod is gone, its PVC. Stopping never does.
+- Deleting the Sandbox deletes its PVC once its Sessions are sealed and its Pod is gone (below).
+  Stopping never does.
 
 ## Incarnations
 
@@ -33,10 +34,20 @@ and the state PVC. A Sandbox is its state, running or not; an **incarnation** is
   starts only means its early requests are refused.
 - A ServiceAccount or `PolicyBinding` of the Sandbox's name that it does not own starts nothing.
 
+## Deletion
+
+- A deleted Sandbox with a state PVC of its own keeps its Pod, and a stopped one runs once more,
+  until its `SessionsSealed` condition is True. The Runner Gateway sets it once the runner has
+  sealed every Session and the ingress has acknowledged each seal, so history holds every Session
+  through its seal before its state goes.
+- Then the Pod is deleted, then, once it is gone, the PVC, then the Sandbox.
+- A Sandbox without a state PVC of its own never had a runner, so nothing is sealed.
+
 ## Status
 
 `status.incarnation` names the current Pod and its UID. The `Running` condition is True while the
 Pod runs. Otherwise it is False, with reason `Stopped`, `Starting`, `Stopping`, `PodEnded`,
+`Sealing`, `Deleting`,
 `TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `ServiceAccountConflict`,
 `PolicyBindingConflict` or `PodConflict` (a Pod of the Sandbox's name that
 it does not control).
