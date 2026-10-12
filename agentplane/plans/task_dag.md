@@ -945,7 +945,6 @@ flowchart TD
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
-        COMMAND_SUBMISSION_DROP[Waits on rollout: drop the command_submission table]
         SERVICE_SETTING_NAMES[Candidate: settings name the service they configure]
         OPERATOR_ROUTE_PREFIX[Candidate: one operator route prefix]
         NOTIFICATION_WRITE_ONLY_COLUMNS[Decision: audit columns nothing reads]
@@ -962,14 +961,6 @@ the gateway, the status translation the Sandbox Service and Runner Gateway clien
 (`agentplane/grpc_calls.py`, which raises it for `FAILED_PRECONDITION`) and the app's
 Thread-identity conflicts raise it. Move the client-side error beside that translation, per
 grpc_services.md, and give the app's `bridge.py` its own error type.
-
-### `COMMAND_SUBMISSION_DROP` — drop the `command_submission` table
-
-**Waits on rollout.** The Runner Gateway no longer reads or writes `command_submission`, but its
-model still declares the table (a `CLEANUP` tombstone) so the migration drift check passes; replicas
-older than that still write it. Once staging and production run that gateway image, a drop
-migration removes the table and the model, as its own PR the operator merges after an on-demand CNPG
-`Backup`.
 
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 

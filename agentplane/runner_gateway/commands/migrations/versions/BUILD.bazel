@@ -92,3 +92,12 @@ py_library(
         "@pypi//sqlalchemy",
     ],
 )
+
+py_library(
+    name = "0010_command_submission_drop",
+    srcs = ["0010_command_submission_drop.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
