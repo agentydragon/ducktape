@@ -174,3 +174,22 @@ func TestMissingRoleIsReportedAndLeftUnbound(t *testing.T) {
 		t.Fatalf("natives = %v", got)
 	}
 }
+
+func TestMissingSetIsReportedAndTheRestStillGrant(t *testing.T) {
+	r, c := newReconciler(t, nil, namespaceReader, nodeReader)
+	var binding PolicyBinding
+	if err := c.Get(context.Background(), grantRequest.NamespacedName, &binding); err != nil {
+		t.Fatal(err)
+	}
+	binding.Spec.PolicySets = append([]string{"test-absent"}, binding.Spec.PolicySets...)
+	if err := c.Update(context.Background(), &binding); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if got := condition(t, c); got.Reason != "PolicySetUnavailable" {
+		t.Fatalf("condition = %+v", got)
+	}
+	if got := nativeScopes(t, c); !maps.Equal(got, granted) {
+		t.Fatalf("natives = %v", got)
+	}
+}

@@ -18,7 +18,7 @@ require (
 	k8s.io/apiserver v0.37.0
 )
 
-// Direct dependencies for agentplane/x/kubernetes_policy_go
+// Direct dependencies for agentplane/kubernetes_policy
 require (
 	k8s.io/api v0.37.0
 	k8s.io/client-go v0.37.0

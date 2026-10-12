@@ -1,85 +1,45 @@
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
-package(default_visibility = ["//agentplane:__subpackages__"])
-
-py_binary(
-    name = "main_bin",
-    main_module = "agentplane.kubernetes_policy.main",
-    deps = [":main"],
-)
-
-py_library(
-    name = "controller",
-    srcs = ["controller.py"],
+go_library(
+    name = "kubernetes_policy",
+    srcs = [
+        "controller.go",
+        "types.go",
+        "zz_generated.deepcopy.go",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/kubernetes_policy",
+    visibility = ["//agentplane/kubernetes_policy:__subpackages__"],
     deps = [
-        ":expansion",
-        "//agentplane:crd_group",
-        "//agentplane:subjects",
-        "//agentplane/policy:resources",
-        "//util:kubernetes",
-        "//util:kubernetes_watch",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//tenacity",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_api//rbac/v1:rbac",
+        "@io_k8s_apimachinery//pkg/api/errors",
+        "@io_k8s_apimachinery//pkg/api/meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1/unstructured",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_apimachinery//pkg/runtime/schema",
+        "@io_k8s_apimachinery//pkg/types",
+        "@io_k8s_sigs_controller_runtime//:controller-runtime",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_k8s_sigs_controller_runtime//pkg/handler",
+        "@io_k8s_sigs_controller_runtime//pkg/reconcile",
+        "@io_k8s_sigs_controller_runtime//pkg/scheme",
     ],
 )
 
-py_library(
-    name = "expansion",
-    srcs = ["expansion.py"],
+go_test(
+    name = "kubernetes_policy_test",
+    srcs = ["controller_test.go"],
+    embed = [":kubernetes_policy"],
     deps = [
-        "//agentplane:subjects",
-        "//agentplane/policy:resources",
-    ],
-)
-
-py_library(
-    name = "main",
-    srcs = ["main.py"],
-    deps = [
-        ":controller",
-        ":settings",
-        "//agentplane:service_process",
-        "//util:kubernetes",
-        "@pypi//kubernetes_asyncio",
-    ],
-)
-
-py_library(
-    name = "settings",
-    srcs = ["settings.py"],
-    deps = [
-        "//util:yaml_file_settings",
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
-    ],
-)
-
-py_test(
-    name = "test_controller",
-    srcs = ["test_controller.py"],
-    deps = [
-        ":controller",
-        "//:conftest",
-        "//agentplane:crd_group",
-        "//agentplane/policy:resources",
-        "//agentplane/testing:fake_apiserver",
-        "//util:kubernetes",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//more_itertools",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_expansion",
-    srcs = ["test_expansion.py"],
-    deps = [
-        ":expansion",
-        "//:conftest",
-        "//agentplane:subjects",
-        "//agentplane/policy:resources",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
+        "@io_k8s_api//core/v1:core",
+        "@io_k8s_api//rbac/v1:rbac",
+        "@io_k8s_apimachinery//pkg/api/meta",
+        "@io_k8s_apimachinery//pkg/apis/meta/v1:meta",
+        "@io_k8s_apimachinery//pkg/runtime",
+        "@io_k8s_client_go//kubernetes/scheme",
+        "@io_k8s_sigs_controller_runtime//pkg/client",
+        "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@io_k8s_sigs_controller_runtime//pkg/reconcile",
     ],
 )

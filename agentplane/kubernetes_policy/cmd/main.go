@@ -1,4 +1,4 @@
-// The Kubernetes Policy Controller spike's entry point.
+// The Kubernetes Policy Controller's entry point.
 package main
 
 import (
@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	kubernetespolicy "github.com/agentydragon/ducktape/agentplane/x/kubernetes_policy_go"
+	kubernetespolicy "github.com/agentydragon/ducktape/agentplane/kubernetes_policy"
 )
 
 func main() {

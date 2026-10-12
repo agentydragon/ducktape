@@ -22,9 +22,9 @@ the Kubernetes rule types of `PolicySet` (`agentplane/crds/manifests/crd-policys
   bindings themselves: one deleted or edited by hand is restored.
 - A recreated ServiceAccount with a previous one's name gets new native bindings; those of the old
   account are deleted, since RBAC matches subjects by name alone.
-- The controller never creates a binding to a role that does not exist, and touches only native
-  bindings carrying its label and its own policy namespace, so several Agentplane instances' controllers
-  share a cluster.
+- The controller never creates a binding to a role that does not exist; it binds the role once it
+  appears. It touches only native bindings carrying its label and its own policy namespace, so
+  several Agentplane instances' controllers share a cluster.
 
 ## Revocation timing
 
@@ -33,7 +33,7 @@ running they keep granting; nothing in the API server expires them.
 
 ## Status
 
-Each `PolicySet` and `PolicyBinding` carries a `KubernetesReady` condition, applied under the
-controller's own field manager so other readers' conditions stay. A set is `Valid` or `Invalid`. A
-binding is `Applied`, or `False` with reason `Invalid`, `Expired`, `SubjectNotWatched`,
-`SubjectMissing`, `PolicySetUnavailable` or `ApplyFailed` and a message naming what is wrong.
+Each `PolicyBinding` carries a `KubernetesReady` condition, applied under the controller's own field
+manager so other readers' conditions stay. It is `Applied`, or `False` with reason `Expired`,
+`SubjectNotWatched`, `SubjectMissing`, `PolicySetUnavailable` or `ApplyFailed` and a message naming
+what is wrong. The CRD schemas reject malformed sets and bindings.

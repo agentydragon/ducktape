@@ -1,5 +1,5 @@
-// Package kubernetespolicy is a controller-runtime spike of the Kubernetes Policy Controller
-// (agentplane/kubernetes_policy), reading the same PolicySet and PolicyBinding CRDs.
+// Package kubernetespolicy is the Kubernetes Policy Controller: it keeps the native RoleBindings and
+// ClusterRoleBindings that PolicyBindings' Kubernetes rules expand to. Contract: SPEC.md.
 //
 // +kubebuilder:object:generate=true
 // +groupName=agentplane.allegedly.works

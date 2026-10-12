@@ -6,8 +6,7 @@ stamps them, so the informer's list-then-watch-from-version protocol is exercise
 replays every change after the version it names, then streams live ones until `timeoutSeconds`
 passes or `close_watches` ends it (which is how a test forces a relist). The kinds served and the
 namespace each is legitimately read from default to the egress proxy's; another informer's tests
-pass their own map, where `None` serves a cluster-scoped kind, or a namespaced one from any
-namespace and across all of them. Objects are keyed by name alone, so names must be unique per kind.
+pass their own map.
 """
 
 from __future__ import annotations
@@ -15,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -35,7 +34,7 @@ SECRETS_PLURAL = "secrets"
 
 # Which namespace each kind is legitimately read from. All three differ, so a proxy that asked the
 # wrong one is a failed assertion rather than a test that passes because they happen to be equal.
-_NAMESPACE_OF: dict[str, str | None] = {
+_NAMESPACE_OF = {
     SECRETS_PLURAL: CREDENTIALS_NAMESPACE,
     SANDBOXES_PLURAL: SANDBOX_NAMESPACE,
     POLICIES_PLURAL: NAMESPACE,
@@ -75,7 +74,7 @@ def _selected(selector: str, obj: dict[str, Any]) -> bool:
 class FakeApiServer:
     tokens: dict[str, TokenVerdict] = field(default_factory=dict)
     pods: dict[str, dict[str, Any]] = field(default_factory=dict)
-    namespace_of: dict[str, str | None] = field(default_factory=lambda: dict(_NAMESPACE_OF))
+    namespace_of: dict[str, str] = field(default_factory=lambda: dict(_NAMESPACE_OF))
     objects: dict[str, dict[str, dict[str, Any]]] = field(default_factory=dict)
     status_patches: list[tuple[str, dict[str, Any]]] = field(default_factory=list)
     token_reviews: int = 0
@@ -84,16 +83,10 @@ class FakeApiServer:
     _version: int = 0
     _events: list[_Event] = field(default_factory=list)
     _watchers: set[asyncio.Queue[_Event | None]] = field(default_factory=set)
-    _waiters: set[asyncio.Event] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         for plural in self.namespace_of:
             self.objects.setdefault(plural, {})
-
-    def _check_namespace(self, request: web.Request, plural: str) -> None:
-        expected = self.namespace_of[plural]
-        if expected is not None:
-            assert request.match_info["namespace"] == expected
 
     def put(self, plural: str, obj: dict[str, Any]) -> None:
         """Create or replace; stamps the next resourceVersion (and a uid on create) and wakes watches."""
@@ -120,18 +113,6 @@ class FakeApiServer:
         self._events.append(event)
         for queue in self._watchers:
             queue.put_nowait(event)
-        for waiter in self._waiters:
-            waiter.set()
-
-    async def wait_for(self, predicate: Callable[[], bool]) -> None:
-        """Returns once `predicate` holds, rechecking it after every stored change."""
-        while not predicate():
-            waiter = asyncio.Event()
-            self._waiters.add(waiter)
-            try:
-                await waiter.wait()
-            finally:
-                self._waiters.discard(waiter)
 
     def close_watches(self) -> None:
         """End every watch stream open right now, as the server does at `timeoutSeconds`.
@@ -190,7 +171,7 @@ class FakeApiServer:
         if not self.watch_available:
             return web.Response(status=503)
         plural = request.match_info["plural"]
-        self._check_namespace(request, plural)
+        assert request.match_info["namespace"] == self.namespace_of[plural]
         selector = request.query.get("labelSelector", "")
         # The client spells the flag `True`, which the real server parses like `true`.
         if request.query.get("watch", "").lower() == "true":
@@ -256,7 +237,7 @@ class FakeApiServer:
 
     async def get_object(self, request: web.Request) -> web.Response:
         plural, name = request.match_info["plural"], request.match_info["name"]
-        self._check_namespace(request, plural)
+        assert request.match_info["namespace"] == self.namespace_of[plural]
         obj = self.objects[plural].get(name)
         if obj is None:
             return web.json_response({"kind": "Status", "code": 404, "reason": "NotFound"}, status=404)
@@ -264,7 +245,7 @@ class FakeApiServer:
 
     async def create_object(self, request: web.Request) -> web.Response:
         plural = request.match_info["plural"]
-        self._check_namespace(request, plural)
+        assert request.match_info["namespace"] == self.namespace_of[plural]
         body = await request.json()
         if body["metadata"]["name"] in self.objects[plural]:
             return web.json_response({"kind": "Status", "code": 409, "reason": "AlreadyExists"}, status=409)
@@ -274,7 +255,7 @@ class FakeApiServer:
     async def replace_object(self, request: web.Request) -> web.Response:
         """PUT, with the `resourceVersion` precondition the real server applies when the body names one."""
         plural, name = request.match_info["plural"], request.match_info["name"]
-        self._check_namespace(request, plural)
+        assert request.match_info["namespace"] == self.namespace_of[plural]
         body = await request.json()
         current = self.objects[plural].get(name)
         if current is None:
@@ -285,19 +266,11 @@ class FakeApiServer:
         self.put(plural, body)
         return web.json_response(self.objects[plural][name])
 
-    async def delete_object(self, request: web.Request) -> web.Response:
-        plural, name = request.match_info["plural"], request.match_info["name"]
-        self._check_namespace(request, plural)
-        if name not in self.objects[plural]:
-            return web.json_response({"kind": "Status", "code": 404, "reason": "NotFound"}, status=404)
-        self.delete(plural, name)
-        return web.json_response({"apiVersion": "v1", "kind": "Status", "status": "Success"})
-
     async def patch_object(self, request: web.Request) -> web.Response:
         """A JSON merge patch, with the `resourceVersion` precondition the real server applies when
         the patch names one."""
         plural, name = request.match_info["plural"], request.match_info["name"]
-        self._check_namespace(request, plural)
+        assert request.match_info["namespace"] == self.namespace_of[plural]
         assert request.content_type == "application/merge-patch+json"
         patch = await request.json()
         current = self.objects[plural].get(name)
@@ -310,22 +283,13 @@ class FakeApiServer:
         return web.json_response(self.objects[plural][name])
 
     async def patch_status(self, request: web.Request) -> web.Response:
-        """A JSON merge patch, or a server-side apply, which merges conditions by type the way the
-        list-map key `type` makes the real server do; field ownership is not modelled."""
         plural, name = request.match_info["plural"], request.match_info["name"]
-        self._check_namespace(request, plural)
+        assert request.match_info["namespace"] == self.namespace_of[plural]
+        assert request.content_type == "application/merge-patch+json"
         patch = await request.json()
         self.status_patches.append((name, patch["status"]))
         current = self.objects[plural][name]
-        status = patch["status"]
-        if request.content_type == "application/apply-patch+yaml":
-            assert request.query.get("fieldManager")
-            conditions = {condition["type"]: condition for condition in current.get("status", {}).get("conditions", [])}
-            conditions |= {condition["type"]: condition for condition in status["conditions"]}
-            status = {**current.get("status", {}), "conditions": list(conditions.values())}
-        else:
-            assert request.content_type == "application/merge-patch+json"
-        self.put(plural, {**current, "status": status})
+        self.put(plural, {**current, "status": patch["status"]})
         return web.json_response(self.objects[plural][name])
 
 
@@ -448,7 +412,7 @@ def binding(
 
 
 @asynccontextmanager
-async def fake_apiserver(namespace_of: dict[str, str | None] | None = None) -> AsyncIterator[FakeApiServer]:
+async def fake_apiserver(namespace_of: dict[str, str] | None = None) -> AsyncIterator[FakeApiServer]:
     fake = FakeApiServer() if namespace_of is None else FakeApiServer(namespace_of=namespace_of)
     app = web.Application()
     app.router.add_post("/apis/authentication.k8s.io/v1/tokenreviews", fake.token_review)
@@ -462,14 +426,8 @@ async def fake_apiserver(namespace_of: dict[str, str | None] | None = None) -> A
     app.router.add_get("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}", fake.get_object)
     app.router.add_post("/apis/{group}/{version}/namespaces/{namespace}/{plural}", fake.create_object)
     app.router.add_put("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}", fake.replace_object)
-    app.router.add_delete("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}", fake.delete_object)
     app.router.add_patch("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}", fake.patch_object)
     app.router.add_patch("/apis/{group}/{version}/namespaces/{namespace}/{plural}/{name}/status", fake.patch_status)
-    # Cluster-scoped kinds, and namespaced ones listed across all namespaces.
-    app.router.add_get("/apis/{group}/{version}/{plural}", fake.list_or_watch)
-    app.router.add_post("/apis/{group}/{version}/{plural}", fake.create_object)
-    app.router.add_get("/apis/{group}/{version}/{plural}/{name}", fake.get_object)
-    app.router.add_delete("/apis/{group}/{version}/{plural}/{name}", fake.delete_object)
     # handler_cancellation: a watch handler outliving its disconnected client would otherwise
     # stall cleanup for the shutdown timeout.
     runner = web.AppRunner(app, handler_cancellation=True)

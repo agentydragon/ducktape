@@ -3,10 +3,10 @@ load("@io_bazel_rules_go//go:def.bzl", "go_binary", "go_library")
 go_library(
     name = "cmd_lib",
     srcs = ["main.go"],
-    importpath = "github.com/agentydragon/ducktape/agentplane/x/kubernetes_policy_go/cmd",
+    importpath = "github.com/agentydragon/ducktape/agentplane/kubernetes_policy/cmd",
     visibility = ["//visibility:private"],
     deps = [
-        "//agentplane/x/kubernetes_policy_go",
+        "//agentplane/kubernetes_policy",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_api//rbac/v1:rbac",
         "@io_k8s_apimachinery//pkg/labels",
@@ -23,5 +23,4 @@ go_binary(
     name = "kubernetes-policy-controller",
     embed = [":cmd_lib"],
     pure = "on",
-    visibility = ["//agentplane/x/kubernetes_policy_go:__pkg__"],
 )
