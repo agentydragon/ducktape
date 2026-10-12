@@ -17,9 +17,6 @@ logger = logging.getLogger(__name__)
 
 type Status = tuple[grpc.StatusCode, str]
 
-# Failures on the server's side of the call, whose cause the fixed client message does not carry.
-_LOGGED = frozenset({grpc.StatusCode.UNAVAILABLE, grpc.StatusCode.DEADLINE_EXCEEDED})
-
 
 @dataclass(frozen=True)
 class ServicerResources:
@@ -48,8 +45,8 @@ def status_mapping(
     *rows: Abort[Any], deadline: str, unavailable: str, also_unavailable: tuple[type[Exception], ...] = ()
 ) -> Callable[[grpc.aio.ServicerContext], AbstractAsyncContextManager[None]]:
     """A servicer's `errors(context)`: the first matching row aborts. A rejected bearer, a deadline and
-    an unreachable backend map the same way everywhere; `rows` go between them. An abort with
-    `UNAVAILABLE` or `DEADLINE_EXCEEDED` logs the exception behind it."""
+    an unreachable backend map the same way everywhere; `rows` go between them. Every abort logs the
+    exception behind it."""
     table = (
         Abort(WorkloadPrincipalRejectedError, (grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")),
         *rows,
@@ -67,8 +64,7 @@ def status_mapping(
             for row in table:
                 if isinstance(error, row.errors):
                     code, details = row.status(error) if callable(row.status) else row.status
-                    if code in _LOGGED:
-                        logger.warning("answered %s (%s)", code.name, details, exc_info=error)
+                    logger.warning("answered %s (%s)", code.name, details, exc_info=error)
                     await context.abort(code, details)
             raise
 

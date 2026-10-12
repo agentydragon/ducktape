@@ -124,6 +124,7 @@ py_library(
     deps = [
         "@pypi//pytest",
         "@pypi//pytest_asyncio",
+        "@pypi//pytest_timeout",
     ],
 )
 
