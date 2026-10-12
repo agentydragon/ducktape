@@ -298,7 +298,8 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         assert binding["metadata"] == {"name": delegation_role, "namespace": namespace}
         assert binding["roleRef"] == {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": delegation_role}
         assert binding["subjects"] == [
-            {"kind": "ServiceAccount", "name": "agentplane-sandbox-service", "namespace": "agentplane-staging"}
+            {"kind": "ServiceAccount", "name": account, "namespace": "agentplane-staging"}
+            for account in ("agentplane-sandbox-service", "agentplane-policy-controller")
         ]
 
         flux = flux_by_name[f"{delegation_name}{namespace}"]

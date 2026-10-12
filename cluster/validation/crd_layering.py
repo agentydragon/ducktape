@@ -87,7 +87,15 @@ OPERATOR_CRDS: dict[str, set[str]] = {
         "VolumeUploadSource",
     },
     "openclaw-operator": {"OpenClawInstance", "OpenClawSelfConfig"},
-    "agentplane-crds": {"EgressPolicy", "EgressBinding", "EgressCredential", "ActionPolicySet", "ActionPolicyBinding"},
+    "agentplane-crds": {
+        "EgressPolicy",
+        "EgressBinding",
+        "EgressCredential",
+        "ActionPolicySet",
+        "ActionPolicyBinding",
+        "PolicySet",
+        "PolicyBinding",
+    },
     "agent-sandbox-controller": {"SandboxTemplate", "SandboxWarmPool"},
     "sshpiper-crds": {"Pipe"},
     "seaweedfs-operator": {
