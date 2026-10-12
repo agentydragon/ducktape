@@ -788,8 +788,9 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 ```mermaid
 flowchart TD
     HISTORY_DATABASE_RENAME[Candidate: rename the sandbox_service database and role]
-    SANDBOX_DATABASE_RENAME[Candidate: name the sandbox_commands database for the Runner Gateway]
+    SANDBOX_DATABASE_RENAME[Unscheduled: name the sandbox_commands database for the Runner Gateway]
     ACTION_SANDBOX_PODS[Candidate: Action Service boxes as plain Pods]
+    ACTION_SANDBOX_PODS --> ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
 ```
 
@@ -805,7 +806,7 @@ The migrate env `AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL` (pinned in
 
 ### `SANDBOX_DATABASE_RENAME` — name the Runner Gateway's database for it
 
-**Candidate.** `sandbox_commands` holds the Runner Gateway's Session registry and command
+**Unscheduled; operator, 2026-10-11 PDT: keep the name for now, not urgent.** `sandbox_commands` holds the Runner Gateway's Session registry and command
 admission; the Sandbox Service has no database. Rename it and its role and Secret for the gateway
 in place, as `HISTORY_DATABASE_RENAME` does, and point the Runner Gateway, its migration init
 container and `commands_database_url` at the new names. Env
@@ -827,6 +828,14 @@ Action Service keeps `pods/exec` there. Each box is owner-referenced to its call
 ServiceAccount, so deleting a runner Sandbox deletes the boxes its agent started (operator,
 2026-10-12 PDT). Independent of the policy migrations: a box creates no
 bindings and runs under the caller's standing ones, whatever their kind.
+
+### `ACTION_BOX_RENAME` — Action boxes stop being called sandboxes
+
+**Unscheduled; operator, 2026-10-11 PDT: a later TODO.** Rename what calls an Action Service box a
+sandbox, so it no longer reads as a Session Sandbox: the `sandbox__*` Actions,
+`action_service/sandbox/`, the `agentplane-sandbox` templates and labels, and
+`cluster/cdk8s/agentplane/command_sandbox.py`. The `sandbox__*` tool names are what agents and
+external Connections call, so renaming them is a wire change.
 
 ## 10. Legacy burn-down
 
