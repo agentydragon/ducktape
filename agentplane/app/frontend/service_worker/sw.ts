@@ -21,88 +21,96 @@ type PushMessage = PushShow | PushRetract;
 // The worker is checked against WebWorker globals, not the frontend's document globals.
 declare const self: ServiceWorkerGlobalScope;
 
-// TypeScript's standard libraries do not declare notification actions yet, despite their use by
-// ServiceWorkerRegistration.showNotification(). Augment only the missing options field.
+// TypeScript's standard libraries do not declare these notification options yet, despite their use by
+// ServiceWorkerRegistration.showNotification(). Augment only the missing options fields.
 declare global {
   interface NotificationOptions {
     actions?: Array<{ action: string; title: string }>;
+    renotify?: boolean;
   }
 }
 
-async function closeActionNotification(actionId: string): Promise<void> {
-  const notifications = await self.registration.getNotifications({ tag: actionId });
-  for (const notification of notifications) notification.close();
+// Chrome (Android especially) revokes notification permission from origins whose notifications it
+// judges spammy: many shown, few engaged with. So there is exactly one Agentplane notification,
+// rebuilt from the Actions currently waiting, rather than one per Action plus a notice per outcome.
+const PENDING_TAG = "agentplane-pending";
+const LISTED_TITLES = 3;
+
+interface PendingSummary {
+  kind: "summary";
+}
+
+async function fetchPending(): Promise<ActionRequestView[] | null> {
+  try {
+    const response = await fetch("/actions?state=decision_pending", { credentials: "include" });
+    if (response.ok) return (await response.json()) as ActionRequestView[];
+  } catch {
+    /* Offline delivery still opens the app without offering stale decisions. */
+  }
+  return null;
+}
+
+async function showPending(message: PushMessage): Promise<void> {
+  // Push services can deliver pushes late, out of order, or collapsed, so the message only says
+  // that something changed. Current authority decides what is shown; an expired session gets a
+  // generic notification that deep-links to reauthentication, never decision buttons.
+  const pending = await fetchPending();
+  const options: NotificationOptions = { tag: PENDING_TAG, requireInteraction: true };
+  if (pending === null) {
+    await self.registration.showNotification("Agentplane", {
+      ...options,
+      body: "Open Agentplane to review waiting Actions",
+      renotify: message.kind === "show",
+      data: { kind: "summary" } satisfies PendingSummary,
+    });
+  } else if (pending.length === 0) {
+    // Every push must show something, or Chrome shows its own "updated in the background" notice.
+    await self.registration.showNotification("Agentplane", { tag: PENDING_TAG, silent: true });
+    for (const notification of await self.registration.getNotifications({ tag: PENDING_TAG })) notification.close();
+  } else if (pending.length === 1) {
+    const [request] = pending;
+    const content = formatActionNotification(request);
+    await self.registration.showNotification(content.title, {
+      ...options,
+      body: content.text,
+      renotify: message.kind === "show",
+      silent: message.kind === "retract",
+      actions: [
+        { action: "approve", title: "Approve" },
+        { action: "deny", title: "Deny" },
+      ],
+      data: {
+        kind: "show",
+        action_id: request.id,
+        action_group: request.action.group,
+        action_name: request.action.name,
+        version: request.version,
+        url: `/#/actions/${request.id}`,
+      } satisfies PushShow,
+    });
+  } else {
+    await self.registration.showNotification(`${pending.length} Actions waiting`, {
+      ...options,
+      body: pending
+        .slice(0, LISTED_TITLES)
+        .map((request) => formatActionNotification(request).title)
+        .join("\n"),
+      renotify: message.kind === "show",
+      silent: message.kind === "retract",
+      data: { kind: "summary" } satisfies PendingSummary,
+    });
+  }
 }
 
 self.addEventListener("push", (event) => {
   if (!event.data) return;
-  const message = event.data.json() as PushMessage;
-  if (message.kind === "retract") {
-    if (message.outcome === "allowed") {
-      event.waitUntil(closeActionNotification(message.action_id));
-    } else {
-      event.waitUntil(
-        self.registration.showNotification(message.outcome, {
-          tag: message.action_id,
-          silent: true,
-          requireInteraction: false,
-          data: message,
-        })
-      );
-    }
-    return;
-  }
-  if (message.kind !== "show") return;
-  event.waitUntil(
-    (async () => {
-      // Push services can deliver an old show after its retraction. Re-read authority before
-      // offering decisions; an expired session gets a reauthentication deep link, not buttons.
-      let current: ActionRequestView | null = null;
-      try {
-        const response = await fetch(`/actions/${encodeURIComponent(message.action_id)}`, { credentials: "include" });
-        if (response.ok) current = (await response.json()) as ActionRequestView;
-      } catch {
-        /* Offline delivery still opens the app without offering stale decisions. */
-      }
-      if (current && current.state !== "decision_pending") {
-        if (current.state === "allowed") {
-          await closeActionNotification(message.action_id);
-        } else {
-          await self.registration.showNotification(current.state.replaceAll("_", " "), {
-            tag: message.action_id,
-            silent: true,
-            data: { kind: "retract", action_id: message.action_id },
-          });
-        }
-        return;
-      }
-      const content = current
-        ? formatActionNotification(current)
-        : {
-            title: `${message.action_group} / ${message.action_name}`,
-            text: "Open Agentplane to review this Action",
-          };
-      await self.registration.showNotification(content.title, {
-        body: content.text,
-        tag: message.action_id,
-        requireInteraction: true,
-        actions: current
-          ? [
-              { action: "approve", title: "Approve" },
-              { action: "deny", title: "Deny" },
-            ]
-          : [],
-        data: current ? { ...message, version: current.version } : message,
-      });
-    })()
-  );
+  event.waitUntil(showPending(event.data.json() as PushMessage));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const message = event.notification.data as PushMessage | null;
-  if (!message || message.kind !== "show") return;
-  if (event.action !== "approve" && event.action !== "deny") {
+  const message = event.notification.data as PushShow | PendingSummary | null;
+  if (!message || message.kind !== "show" || (event.action !== "approve" && event.action !== "deny")) {
     event.waitUntil(self.clients.openWindow("/#/actions"));
     return;
   }

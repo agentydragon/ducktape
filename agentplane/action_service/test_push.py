@@ -125,6 +125,42 @@ async def test_replica_delivery_and_recovery(engine: AsyncEngine, db_url: str) -
         assert not await first.reconcile()
 
 
+async def test_burst_of_requests_is_one_push_per_browser(engine: AsyncEngine, db_url: str) -> None:
+    sessions = make_sessionmaker(engine)
+    await PushSubscriptionStore(sessions).save(
+        operator=OPERATOR, endpoint="https://push.example/a", p256dh="test", auth="test", user_agent="test"
+    )
+    store = action_store(sessions)
+    requests = [
+        await store.submit(
+            ActionRequestInput(
+                action=ActionIdentity(group="test", name="echo"),
+                arguments={},
+                idempotency_key=f"burst-{index}",
+                title=f"burst {index}",
+            ),
+            CALLER,
+            request_id=uuid4(),
+            vote=None,
+        )
+        for index in range(3)
+    ]
+    recorded: list[tuple[str, str]] = []
+    async with RecordingNotifier(engine, db_url, recorded) as notifier:
+        await notifier.reconcile()
+        assert recorded == [("https://push.example/a", "show")]
+        for request in requests:
+            await store.decide(
+                request.id,
+                DecisionInput(verdict=Verdict.DENY, expected_version=1, idempotency_key=f"deny-{request.id}"),
+                OPERATOR,
+                provider="human_operator",
+            )
+        await notifier.reconcile()
+        assert recorded == [("https://push.example/a", "show"), ("https://push.example/a", "retract")]
+        assert not await notifier.reconcile()
+
+
 async def test_auto_approved_request_is_never_pushed(engine: AsyncEngine, db_url: str) -> None:
     sessions = make_sessionmaker(engine)
     await PushSubscriptionStore(sessions).save(

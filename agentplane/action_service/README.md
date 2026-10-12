@@ -596,9 +596,15 @@ send but before commit may resend; stable notification tags/topics collapse repe
 exactly-once delivery and a push-service acknowledgement is not proof of device display.
 
 Only pending requests need an actionable notification. Requests resolved before reconciliation
-need no new alert; browsers previously notified receive a non-actionable resolution notice. Push
-payloads contain Action identity/version, not arguments, credentials, or results. Notification
-buttons use the integration app's ordinary operator session and canonical Decision contract.
+need no new alert. Chrome revokes notification permission from origins it judges spammy (many
+notifications, little engagement; seen on Android), so a browser gets at most one push per
+reconciliation, covering every change since its last one, under one push `Topic` so a push service
+holding messages for an offline device keeps only the newest. The service worker answers each push
+by listing the Actions waiting now and showing one notification under one tag: the Action itself
+with Approve/Deny when one waits, a count and first titles when several do, nothing when none do
+(shown and closed at once, since Chrome requires a visible notification per push). Push payloads
+contain Action identity/version, not arguments, credentials, or results. Notification buttons use
+the integration app's ordinary operator session and canonical Decision contract.
 
 ## Shutdown budgets
 

@@ -36,7 +36,8 @@ type TestWorker = {
   requests: Array<{ url: string; options?: RequestInit }>;
   windows: string[];
   notices: Notice[];
-  setCurrent(action: ActionRequestView | null): void;
+  closed: string[];
+  setPending(actions: ActionRequestView[] | null): void;
 };
 
 function actionRequest(
@@ -62,12 +63,15 @@ function loadWorker(): TestWorker {
   const requests: TestWorker["requests"] = [];
   const windows: TestWorker["windows"] = [];
   const notices: TestWorker["notices"] = [];
-  let current: ActionRequestView | null = actionRequest({
-    action: { group: "finance", name: "transfer" },
-    title: "Transfer $400 to vendor",
-    description: "Invoice 2026-04-18.",
-    arguments: { recipient: "vendor", amount: 400, account: "checking" },
-  });
+  const closed: string[] = [];
+  let pending: ActionRequestView[] | null = [
+    actionRequest({
+      action: { group: "finance", name: "transfer" },
+      title: "Transfer $400 to vendor",
+      description: "Invoice 2026-04-18.",
+      arguments: { recipient: "vendor", amount: 400, account: "checking" },
+    }),
+  ];
 
   const self = {
     addEventListener: (
@@ -78,6 +82,10 @@ function loadWorker(): TestWorker {
       showNotification: async (title: string, options: Omit<Notice, "title">) => {
         notices.push({ title, ...options });
       },
+      getNotifications: async (filter: { tag: string }) =>
+        notices
+          .filter((notice) => notice.tag === filter.tag)
+          .map((notice) => ({ close: () => closed.push(notice.tag ?? "") })),
     },
     clients: { openWindow: async (url: string) => windows.push(url), claim: async () => {} },
     skipWaiting: async () => {},
@@ -87,12 +95,12 @@ function loadWorker(): TestWorker {
     self,
     fetch: async (url: string, options?: RequestInit) => {
       requests.push({ url, options });
-      return { ok: current !== null, json: async () => current };
+      return { ok: options?.method === "POST" || pending !== null, json: async () => pending };
     },
     crypto: { randomUUID: () => "test-intent" },
   });
 
-  return { listeners, requests, windows, notices, setCurrent: (action) => (current = action) };
+  return { listeners, requests, windows, notices, closed, setPending: (actions) => (pending = actions) };
 }
 
 async function dispatch(worker: TestWorker, kind: string, event: TestEvent): Promise<void> {
@@ -137,14 +145,14 @@ describe("service worker notifications", () => {
 
   it("renders SSH exec with its target, command, and timeout", async () => {
     const worker = loadWorker();
-    worker.setCurrent(
+    worker.setPending([
       actionRequest({
         action: { group: "ssh", name: "exec" },
         title: "Check disk space",
         description: "Run the disk usage check on the build host.",
         arguments: { user: "deploy", host: "build-01", command: "df -h", timeout_seconds: 30 },
-      })
-    );
+      }),
+    ]);
 
     const notice = await show(worker, {
       ...showMessage,
@@ -179,22 +187,42 @@ describe("service worker notifications", () => {
     expect(JSON.parse(String(worker.requests[1]?.options?.body))).toMatchObject({ verdict: "deny" });
 
     const retracted = await show(worker, { kind: "retract", action_id: "request", outcome: "denied" });
-    expect(retracted.tag).toBe("request");
-    expect(retracted.actions).toBeUndefined();
+    expect(retracted.silent).toBe(true);
+  });
 
-    worker.setCurrent({
-      ...actionRequest({
-        action: { group: "ssh", name: "exec" },
-        title: "Check disk space",
-        description: "Run the disk usage check on the build host.",
-        arguments: { user: "deploy", host: "build-01", command: "df -h", timeout_seconds: 30 },
-      }),
-      state: "denied",
-      version: 2,
+  it("keeps one notification for any number of waiting Actions", async () => {
+    const worker = loadWorker();
+    const first = actionRequest({
+      action: { group: "finance", name: "transfer" },
+      title: "First",
+      description: null,
+      arguments: {},
     });
-    expect((await show(worker)).actions).toBeUndefined();
+    const second = { ...first, id: "00000000-0000-4000-8000-000000000002", title: "Second" };
+    worker.setPending([first, second]);
 
-    worker.setCurrent(null);
-    expect((await show(worker)).actions).toEqual([]);
+    const notice = await show(worker);
+    await show(worker);
+
+    expect(new Set(worker.notices.map((each) => each.tag)).size).toBe(1);
+    expect({ title: notice.title, body: notice.body, actions: notice.actions }).toMatchInlineSnapshot(`
+      {
+        "actions": undefined,
+        "body": "First · finance / transfer
+      Second · finance / transfer",
+        "title": "2 Actions waiting",
+      }
+    `);
+    expect(notice.requireInteraction).toBe(true);
+  });
+
+  it("clears the notification once nothing waits, and degrades without session authority", async () => {
+    const worker = loadWorker();
+    worker.setPending([]);
+    await show(worker, { kind: "retract", action_id: "request", outcome: "denied" });
+    expect(worker.closed).toEqual(["agentplane-pending"]);
+
+    worker.setPending(null);
+    expect((await show(worker)).actions).toBeUndefined();
   });
 });
