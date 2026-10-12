@@ -18,16 +18,15 @@ from agentplane.proto import history_service_pb2, history_service_pb2_grpc
 
 
 class HistoryServiceError(ConnectionError):
-    def __init__(self, code: grpc.StatusCode) -> None:
-        super().__init__(code.name)
+    def __init__(self, code: grpc.StatusCode, details: str | None) -> None:
+        super().__init__(f"{code.name}: {details}")
         self.code = code
 
 
 def _raise(error: grpc.aio.AioRpcError) -> Never:
-    # Do not include upstream details: they may contain credentials or event payloads.
     if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-        raise TimeoutError(error.code().name) from error
-    raise HistoryServiceError(error.code()) from error
+        raise TimeoutError(f"{error.code().name}: {error.details()}") from error
+    raise HistoryServiceError(error.code(), error.details()) from error
 
 
 class HistoryServiceClient:

@@ -33,18 +33,17 @@ from agentplane.sandbox_service.errors import SandboxNotFoundError
 
 
 class ServiceError(ConnectionError):
-    def __init__(self, code: grpc.StatusCode) -> None:
-        super().__init__(code.name)
+    def __init__(self, code: grpc.StatusCode, details: str | None) -> None:
+        super().__init__(f"{code.name}: {details}")
         self.code = code
 
 
 def _raise(error: grpc.aio.AioRpcError) -> Never:
-    # Do not include upstream details: they may contain credentials or native output.
     if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
-        raise TimeoutError(error.code().name) from error
+        raise TimeoutError(f"{error.code().name}: {error.details()}") from error
     if error.code() == grpc.StatusCode.FAILED_PRECONDITION:
-        raise RunnerError(error.code().name) from error
-    raise ServiceError(error.code()) from error
+        raise RunnerError(f"{error.code().name}: {error.details()}") from error
+    raise ServiceError(error.code(), error.details()) from error
 
 
 async def _bearer(token_file: Path) -> tuple[tuple[str, str], ...]:
