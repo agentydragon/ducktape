@@ -4,6 +4,8 @@ from typing import assert_never
 
 from agentplane.proto import event_pb2
 
+# gazelle:include_dep @pypi//protobuf
+
 Observation = (
     event_pb2.HarnessStarted
     | event_pb2.HarnessExited

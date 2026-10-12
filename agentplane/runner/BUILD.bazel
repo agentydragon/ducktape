@@ -608,7 +608,10 @@ py_library(
 py_library(
     name = "observation",
     srcs = ["observation.py"],
-    deps = ["//agentplane/proto:event_pb2"],
+    deps = [
+        "//agentplane/proto:event_pb2",
+        "@pypi//protobuf",
+    ],
 )
 
 py_test(
