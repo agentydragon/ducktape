@@ -7,7 +7,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0025_drop_connection_binding_change"
+revision = "0025_drop_binding_change"
 down_revision = "0024_drop_grant_caller"
 branch_labels = None
 depends_on = None
