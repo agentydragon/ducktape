@@ -13,6 +13,7 @@ from cdk8s_plus_34 import k8s
 from constructs import Construct
 
 from cluster.cdk8s import stateful_infra
+from cluster.cdk8s.agentplane import runner_sandbox
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on
 from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -50,6 +51,18 @@ def _values() -> dict[str, object]:
                                 # than the class name: the PriorityClass belongs to another Flux
                                 # Kustomization (seaweedfs-cluster).
                                 "priorityThreshold": {"value": stateful_infra.PRIORITY},
+                                # Only pods this selects are evictable. An Agentplane runner Pod
+                                # carries its Sandbox's live Sessions and starts again only from
+                                # its state volume, so balancing must never move it.
+                                "labelSelector": {
+                                    "matchExpressions": [
+                                        {
+                                            "key": "app.kubernetes.io/name",
+                                            "operator": "NotIn",
+                                            "values": [runner_sandbox.NAME],
+                                        }
+                                    ]
+                                },
                             },
                         },
                         {

@@ -33,6 +33,12 @@ spec:
         - name: default
           pluginConfig:
             - args:
+                labelSelector:
+                  matchExpressions:
+                    - key: app.kubernetes.io/name
+                      operator: NotIn
+                      values:
+                        - agentplane-runner
                 nodeFit: true
                 priorityThreshold:
                   value: 1000000
