@@ -43,6 +43,20 @@ curl -fsSL -o "$work/airgap.tar.zst" "$base/k3s-airgap-images-amd64.tar.zst" || 
 chmod +x "$work/k3s"
 ts "downloaded: $(du -sh "$work" | cut -f1)"
 
+# The Firecracker guest kernel has no CONFIG_KEYS, and kubelet refuses to start when it cannot read
+# kernel/keys/root_max{keys,bytes}. Shadow /proc/sys/kernel with a copy that has them. Containers
+# mount their own procfs, so only the host-side k3s processes see the copy.
+fake_kernel_sysctls() {
+  [ -e /proc/sys/kernel/keys/root_maxkeys ] && return 0
+  local fake="$work/proc-sys-kernel"
+  mkdir -p "$fake/keys"
+  (cd /proc/sys/kernel && find . -type d) | while read -r d; do mkdir -p "$fake/$d"; done
+  (cd /proc/sys/kernel && find . -type f -readable) | while read -r f; do cat "/proc/sys/kernel/$f" >"$fake/$f" 2>/dev/null || true; done
+  echo 1000000 >"$fake/keys/root_maxkeys"
+  echo 25000000 >"$fake/keys/root_maxbytes"
+  $SUDO mount --bind "$fake" /proc/sys/kernel && echo "shadowed /proc/sys/kernel"
+}
+
 cleanup_k3s() {
   $SUDO pkill -TERM -f 'k3s server' 2>/dev/null
   sleep 3
@@ -83,11 +97,8 @@ try_config() {
   ts "== attempt $name: $*"
   $SUDO mkdir -p "$dir/agent/images" && $SUDO cp "$work/airgap.tar.zst" "$dir/agent/images/"
   local start=$(date +%s)
-  # The Firecracker guest kernel has no CONFIG_KEYS, so kubelet cannot read
-  # kernel/keys/root_max{keys,bytes}; this gate makes that failure non-fatal.
   $SUDO "$work/k3s" server --data-dir "$dir" --write-kubeconfig "$work/kubeconfig-$name" --write-kubeconfig-mode 644 \
-    --disable traefik,metrics-server --node-name spike \
-    --kubelet-arg=feature-gates=KubeletInUserNamespace=true "$@" >"$OUT/k3s-$name.log" 2>&1 &
+    --disable traefik,metrics-server --node-name spike "$@" >"$OUT/k3s-$name.log" 2>&1 &
   local kc="$work/kubeconfig-$name" k="$work/k3s kubectl --kubeconfig $work/kubeconfig-$name"
   for _ in $(seq 120); do
     [ -f "$kc" ] && $k get node spike >/dev/null 2>&1 && break
@@ -131,9 +142,10 @@ try_config() {
   return 0
 }
 
+fake_kernel_sysctls
 ok=""
-try_config default && ok="$ok default"
 try_config hostgw --flannel-backend=host-gw --disable-network-policy && ok="$ok hostgw"
+try_config default && ok="$ok default"
 [ -n "$ok" ] || try_config native --flannel-backend=host-gw --disable-network-policy --snapshotter=native --kube-proxy-arg=proxy-mode=iptables && ok="$ok native"
 ts "== working configs:${ok:- none}"
 [ -n "$ok" ]
