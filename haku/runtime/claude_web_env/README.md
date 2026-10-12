@@ -8,7 +8,7 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
 
 - **Setup script:** paste the script from [Setup script](#setup-script) below
   directly into the environment's setup-script dialog. The setup script runs
-  *before* any repo is cloned, so it cannot reference a file in this repo; it
+  _before_ any repo is cloned, so it cannot reference a file in this repo; it
   shallow-clones ducktape itself and runs `devinfra/claude/web_setup.sh` from that
   checkout with `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku`.
 - **Environment variables:**
