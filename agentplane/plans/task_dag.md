@@ -473,8 +473,7 @@ observations. New database work follows the task-specific review and rollout req
 flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
-    POLICY_CRDS[In flight: generic PolicySet and PolicyBinding CRDs] --> K8S_POLICY_CONTROLLER[In flight: Kubernetes policy controller]
-    K8S_POLICY_CONTROLLER_LANGUAGE[Decision: controller language] -. language .-> K8S_POLICY_CONTROLLER
+    POLICY_CRDS[In flight: generic PolicySet and PolicyBinding CRDs] --> K8S_POLICY_CONTROLLER[In flight: Kubernetes policy controller in Go]
     POLICY_CRDS --> ACTION_POLICY_MIGRATE[Blocked: Action policies move to PolicySet]
     POLICY_CRDS --> EGRESS_POLICY_MIGRATE[Blocked: egress policies move to PolicySet]
     ACTION_POLICY_MIGRATE --> OLD_POLICY_KINDS_DROP[Blocked: drop the old policy kinds]
@@ -524,16 +523,10 @@ own condition type (`KubernetesReady`, `ActionsReady`, `EgressReady`) through se
 This node ships only the Kubernetes rule types: a `roleRef` (Role or ClusterRole) with either a
 namespace list or `clusterWide` (ClusterRole only). `EgressCredential` stays separate.
 
-### `K8S_POLICY_CONTROLLER_LANGUAGE` — controller language
-
-**Decision; card open with the operator.** Go (recommended by the RBAC controller thread), Rust
-(`kube-rs`) or Python. The controller logic (expansion, apply, expiry) proceeds either way; the
-implementation that loses is deleted with the decision.
-
 ### `K8S_POLICY_CONTROLLER` — Kubernetes policy controller
 
 **In flight with `POLICY_CRDS`, by the RBAC controller thread; the first reader of the generic
-kinds.** A separate controller reconciles bindings live into native RoleBindings
+kinds. Written in Go (operator, 2026-10-12 PDT).** A separate controller reconciles bindings live into native RoleBindings
 and ClusterRoleBindings: one per (binding, role, namespace), named from the binding UID, no dedup,
 carrying the instance label and the subject SA's UID; it deletes them when the SA is gone or its
 UID differs. A finalizer cleans up across namespaces. At `expiresAt` it deletes the native bindings
@@ -594,9 +587,7 @@ presets' separate `egress_policies`, `action_policy_sets` and `kubernetes_grants
 **Blocked on the caller review and the deployed controller.** The claude.ai caller gets a
 Flux-owned `PolicyBinding` of the sets `CLAUDE_AI_SA` approves, of any rule type, replacing its
 static per-namespace grants in `agent_access_profiles.py`. Static Group subjects (Haku OIDC,
-public-coder) stay Flux bindings. Test an allowed and a denied request. Caller accounts' bindings,
-this one and those of the accounts Action boxes run as, are Flux-owned, never Sandbox-owned;
-`ACTION_BOX_NAMESPACE` decides which namespace they live in.
+public-coder) stay Flux bindings. Test an allowed and a denied request. Static caller accounts' bindings, this one among them, are Flux-owned, never Sandbox-owned.
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
 
@@ -799,14 +790,6 @@ flowchart TD
     HISTORY_DATABASE_RENAME[Candidate: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Candidate: name the sandbox_commands database for the Runner Gateway]
     ACTION_SANDBOX_PODS[Candidate: Action Service boxes as plain Pods]
-    ACTION_BOX_NAMESPACE[Decision: where Action boxes run]
-    ACTION_BOX_SA_MOVE[Blocked: caller accounts move to the Action box namespace]
-    ACTION_POLICY_MIGRATE[Action policies on PolicySet, section 6]
-    EGRESS_POLICY_MIGRATE[Egress policies on PolicySet, section 6]
-    ACTION_BOX_NAMESPACE -. if dedicated .-> ACTION_BOX_SA_MOVE
-    ACTION_SANDBOX_PODS --> ACTION_BOX_SA_MOVE
-    ACTION_POLICY_MIGRATE --> ACTION_BOX_SA_MOVE
-    EGRESS_POLICY_MIGRATE --> ACTION_BOX_SA_MOVE
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
 ```
 
@@ -838,24 +821,12 @@ the Sandbox Service does not provision it. The `sandbox__*` Actions stamp plain 
 Action Service's own template entries (rendered by cdk8s from `command_sandbox.py`) instead of
 agent-sandbox `Sandbox` objects; each service reads only its own catalog and refuses at startup a
 template without the egress sidecar or with the workload token mounted; staging stops offering
-the runner templates to the Action Service. Independent of the policy migrations: a box creates no
+the runner templates to the Action Service. Boxes stay in the Session Sandboxes' namespace, so an
+agent in a runner Sandbox can start one bound to its own per-Sandbox ServiceAccount, and the
+Action Service keeps `pods/exec` there. Each box is owner-referenced to its caller's
+ServiceAccount, so deleting a runner Sandbox deletes the boxes its agent started (operator,
+2026-10-12 PDT). Independent of the policy migrations: a box creates no
 bindings and runs under the caller's standing ones, whatever their kind.
-
-### `ACTION_BOX_NAMESPACE` — where Action boxes run
-
-**Decision; open with the operator.** In the Session Sandboxes' namespace the Action Service's
-`pods/exec`, which cannot be scoped by label, reaches every Session Sandbox. A dedicated namespace
-scopes it to Action boxes, but a Pod runs only as a ServiceAccount in its own namespace, so the
-caller accounts and their bindings would move there. The other choice keeps everything where it
-is.
-
-### `ACTION_BOX_SA_MOVE` — caller accounts move to the Action box namespace
-
-**Blocked on the decision going for a dedicated namespace, the plain-Pod boxes, and both policy
-migrations (so only `PolicyBinding`s move); decision card before the PR.** Move or re-create the
-caller ServiceAccounts (claude-ai and the rest) with their bindings in the new namespace, narrow
-the Action Service's Pod and exec RBAC to it, and test that a caller still reaches its Actions and
-egress.
 
 ## 10. Legacy burn-down
 
