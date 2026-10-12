@@ -557,7 +557,7 @@ export function SandboxPage({
         <Text>
           {sandbox.launch_grants_pending || !sandbox.kubernetes_grants_ready
             ? "Launch or Kubernetes grants are not ready; sessions cannot start yet."
-            : `Sandbox status: ${sandboxSummary(sandbox).label}. Sessions need a ready Pod.`}
+            : "Sessions need a ready Pod."}
         </Text>
       )}
       <Tabs
