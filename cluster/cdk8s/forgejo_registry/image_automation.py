@@ -56,9 +56,6 @@ IMAGES = (
     "agentplane-runner-gateway-migrate",
     "agentplane-sandbox",
     "agentplane-sandbox-build",
-    # CLEANUP(added 2026-10-11): delete once the Runner Gateway's migration init container pulls
-    #   agentplane-runner-gateway-migrate, with its devinfra/ci/image_targets.json entry.
-    "agentplane-sandbox-commands-migrate",
     "agentplane-sandbox-service",
     "aiquota-api",
     "airlock",

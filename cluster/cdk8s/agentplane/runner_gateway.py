@@ -165,7 +165,7 @@ class RunnerGateway(Construct):
             ),
             termination_grace=Duration.seconds(60),
             migrate=migrate_init_container(
-                "git.allegedly.works/ducktape-ci/agentplane-sandbox-commands-migrate:unset",
+                "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-migrate:unset",
                 name="migrate-commands",
                 env_variables={"AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL": commands_database},
             ),

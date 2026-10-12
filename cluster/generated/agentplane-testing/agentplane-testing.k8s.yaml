@@ -2346,7 +2346,7 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-sandbox-commands
-          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-commands-migrate:unset
+          image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-migrate:unset
           imagePullPolicy: Always
           name: migrate-commands
           resources:

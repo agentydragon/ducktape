@@ -698,10 +698,7 @@ admission; the Sandbox Service has no database. Rename it and its role and Secre
 in place, as `HISTORY_DATABASE_RENAME` does, and point the Runner Gateway, its migration init
 container and `commands_database_url` at the new names. Env
 `AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL` and `database.py`'s comment on
-`sandbox_commands` follow. Independently of the rename, Flux now pins a real
-`agentplane-runner-gateway-migrate` tag in both image-pins files, so the init container can switch
-to that image and `agentplane-sandbox-commands-migrate` can go (the CLEANUP in
-`cluster/cdk8s/forgejo_registry/image_automation.py`).
+`sandbox_commands` follow.
 
 ### `ACTION_SANDBOX_DESIGN` — Action Service Sandboxes through the Sandbox Service
 

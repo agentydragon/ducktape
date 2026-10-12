@@ -281,11 +281,6 @@
       "test": "//agentplane/history_service/...",
       "registry": "forgejo"
     },
-    "agentplane-sandbox-commands-migrate": {
-      "target": "//agentplane/runner_gateway/commands:migration_image",
-      "test": "//agentplane/runner_gateway/commands/...",
-      "registry": "forgejo"
-    },
     "agentplane-runner-gateway": {
       "target": "//agentplane/runner_gateway:image",
       "test": "//agentplane/runner_gateway/...",
