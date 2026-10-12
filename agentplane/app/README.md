@@ -20,8 +20,8 @@ app endpoint. The [Sandbox Service](../sandbox_service/README.md) owns sandbox l
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold;
 the app is a client of all three.
 Notifications depends on that backend and Actions, not this app. The app's own state is browser
-sessions, each Thread's link to its Session (`event_log`), and what an operator sets on a Thread
-(name, archived); like any state the app holds, these are candidates to move into a dedicated
+sessions and its `thread` table: each Thread, keyed by its Session's ID, with what an operator sets
+on it (name, archived); like any state the app holds, these are candidates to move into a dedicated
 service ([principles](../docs/principles.md#composable-services-not-a-platform-you-sign-up-for-whole)).
 
 The current bridge's session-scoped runner attachment is implementation state, not
@@ -50,7 +50,7 @@ bbr test //agentplane/app/...
 - `action_policy.py`: read-only binding views composed with Action Service's effective-policy answer.
   Launch grants and binding mutations belong to Sandbox Service, not this app or its preset catalog.
 - `threads/`: Threads over the History Service. The app's database holds each Thread's identity
-  (`EventLog`) and the name and archive state an operator sets (`models.py`). Everything folded from a Session's events (summaries, entities,
+  and the name and archive state an operator sets (`Thread`, `models.py`). Everything folded from a Session's events (summaries, entities,
   payload chunks, evidence) is the History Service's, read over its gRPC API (`summaries.py`,
   `view/`) or replicated by Electric from its database. `history_watch.py` follows the History
   Service's watch: `HistoryWatch` turns its fold commits into `Channel.THREADS` wake-ups, and

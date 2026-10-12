@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.database_updates import Channel
 from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
-from agentplane.app.threads.models import EventLog
+from agentplane.app.threads.models import Thread
 from agentplane.app.threads.summaries import FeedSnapshot, Summaries
 from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
 from agentplane.history_service.settled_cursors import next_stored, settled_ranges
@@ -60,15 +60,13 @@ class EventLogStore:
             return thread_id
         async with self._sessions.begin() as session:
             # Another replica may win this insert race; its row is the same mapping.
-            if await session.scalar(
-                insert(EventLog).values(id=thread_id).on_conflict_do_nothing().returning(EventLog.id)
-            ):
+            if await session.scalar(insert(Thread).values(id=thread_id).on_conflict_do_nothing().returning(Thread.id)):
                 await notify(session, Channel.THREADS)
         return thread_id
 
     async def exists(self, thread_id: UUID) -> bool:
         async with self._sessions() as session:
-            return await session.get(EventLog, thread_id) is not None
+            return await session.get(Thread, thread_id) is not None
 
     async def last_cursor(self, thread_id: UUID) -> int:
         """The committed fold cursor, independent of archive progress."""

@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from agentplane.app.testing.retained_history import seed_retained_session
 from agentplane.app.testing.thread_test_support import event_entry
 from agentplane.app.threads.events.event_log import EventLogStore, SessionAdmissionError
-from agentplane.app.threads.models import EventLog
+from agentplane.app.threads.models import Thread
 from agentplane.app.threads.summaries import Summaries
 from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
 from agentplane.proto import event_pb2, history_service_pb2
@@ -149,7 +149,7 @@ async def test_concurrent_replicas_create_one_service_thread(engine: AsyncEngine
     first, second = await asyncio.gather(*(store.open(str(public_id)) for store in stores))
     assert first == second == public_id
     async with async_sessionmaker(engine)() as session:
-        assert await session.scalar(select(func.count()).select_from(EventLog)) == 1
+        assert await session.scalar(select(func.count()).select_from(Thread)) == 1
 
 
 @pytest.mark.parametrize(
@@ -247,9 +247,9 @@ async def test_public_session_open_preserves_retained_identity(engine: AsyncEngi
     assert await current.open(str(public_id)) == public_id
     reader.read_session_observations.assert_not_awaited()
     async with async_sessionmaker(engine)() as session:
-        row = await session.get(EventLog, public_id)
+        row = await session.get(Thread, public_id)
         assert row is not None
-        assert await session.scalar(select(func.count()).select_from(EventLog)) == 1
+        assert await session.scalar(select(func.count()).select_from(Thread)) == 1
 
 
 async def test_open_refuses_a_runner_session_id(engine: AsyncEngine) -> None:

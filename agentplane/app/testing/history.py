@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 from agentplane.app.database_updates import Channel
 from agentplane.app.testing.replication_source import Placements
 from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.models import EventLog
+from agentplane.app.threads.models import Thread
 from agentplane.app.threads.summaries import Summaries
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
@@ -89,7 +89,5 @@ class SeededEventLogStore(EventLogStore):
 
     async def _insert(self, public_id: UUID) -> None:
         async with self._sessions.begin() as session:
-            if await session.scalar(
-                insert(EventLog).values(id=public_id).on_conflict_do_nothing().returning(EventLog.id)
-            ):
+            if await session.scalar(insert(Thread).values(id=public_id).on_conflict_do_nothing().returning(Thread.id)):
                 await notify(session, Channel.THREADS)

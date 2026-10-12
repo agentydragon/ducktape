@@ -39,6 +39,7 @@ filegroup(
         "//agentplane/app/migrations/versions:0032_app_projection_drop.py",
         "//agentplane/app/migrations/versions:0033_event_log_sandbox_drop.py",
         "//agentplane/app/migrations/versions:0034_thread_resume_drop.py",
+        "//agentplane/app/migrations/versions:0035_event_log_into_thread.py",
     ],
     visibility = ["//agentplane/app:__pkg__"],
 )

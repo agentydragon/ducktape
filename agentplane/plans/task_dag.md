@@ -20,21 +20,12 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 ```mermaid
 flowchart TD
-    APP_SESSION_SCHEMA_RENAME[Candidate: name app Session reference accurately]
-    APP_ALEMBIC_SQUASH[Blocked: baseline final app schema]
-    APP_SESSION_SCHEMA_RENAME --> APP_ALEMBIC_SQUASH
+    APP_ALEMBIC_SQUASH[Candidate: baseline final app schema]
 ```
-
-### `APP_SESSION_SCHEMA_RENAME` — name the app Session reference accurately
-
-**Candidate.** Rename `EventLog`/`event_log` with their foreign keys, queries and
-references. Preserve public IDs and app projection/operator metadata; do not rename
-service archive tables or runner storage. Coordinate a safe schema rollout. Metadata
-consumer audits remain scoped cleanup, not permission to discard useful UI projections.
 
 ### `APP_ALEMBIC_SQUASH` — consolidate the final app schema
 
-**Blocked on final schema naming/cleanup.** Baseline only the settled schema,
+**Candidate.** Baseline only the settled schema,
 verify fresh and migrated databases and their deployed stamps before pruning old revisions.
 Retain the data-preserving rollback procedure. No Action Service or other database squash implied.
 

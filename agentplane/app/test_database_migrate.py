@@ -27,6 +27,18 @@ def _execute(db_url: str, statement: str) -> None:
         engine.dispose()
 
 
+def _restore_event_log(connection: Connection) -> None:
+    """The `event_log` table that migrations before `0035_event_log_into_thread` expect."""
+    connection.execute(text("CREATE TABLE event_log (id uuid PRIMARY KEY, created_at timestamptz NOT NULL)"))
+    connection.execute(text("ALTER TABLE thread DROP COLUMN created_at"))
+    connection.execute(
+        text(
+            "ALTER TABLE thread ADD CONSTRAINT thread_id_fkey FOREIGN KEY (id) REFERENCES event_log(id) "
+            "ON DELETE CASCADE"
+        )
+    )
+
+
 def _restore_raw_history_schema(connection: Connection) -> None:
     """Only historical migration tests need the retired schema; never runtime fixtures."""
     connection.execute(
@@ -71,6 +83,7 @@ def test_raw_history_retirement_preserves_current_state(db_url: str) -> None:
     thread, token = uuid.uuid4(), uuid.uuid4()
     try:
         with engine.begin() as connection:
+            _restore_event_log(connection)
             _restore_sandbox(connection)
             _restore_raw_history_schema(connection)
             connection.execute(text("ALTER TABLE event_log ADD COLUMN raw_ingestion_fenced_at_cursor bigint"))
@@ -116,11 +129,7 @@ def test_raw_history_retirement_preserves_current_state(db_url: str) -> None:
         with engine.connect() as connection:
             assert not inspect(connection).has_table("event")
             assert not inspect(connection).has_table("feed_state")
-            assert "raw_ingestion_fenced_at_cursor" not in {
-                c["name"] for c in inspect(connection).get_columns("event_log")
-            }
             assert connection.scalar(text("SELECT to_regprocedure('reject_fenced_app_ingestion()')")) is None
-            assert connection.scalar(text("SELECT id FROM event_log WHERE id = :id"), {"id": thread}) == thread
             assert connection.scalar(text("SELECT name FROM thread WHERE id = :id"), {"id": thread}) == "operator name"
             assert not set(fold_models.Base.metadata.tables) & set(inspect(connection).get_table_names())
     finally:
@@ -131,6 +140,7 @@ def test_raw_retirement_refuses_unexpected_dependencies(db_url: str) -> None:
     engine = create_engine(RUNNER.sync_url(db_url))
     try:
         with engine.begin() as connection:
+            _restore_event_log(connection)
             _restore_raw_history_schema(connection)
             connection.execute(
                 text(
@@ -160,7 +170,7 @@ def test_a_database_that_differs_from_the_models_fails_to_migrate(db_url: str) -
 
 
 def test_an_index_only_the_database_has_is_drift(db_url: str) -> None:
-    _execute(db_url, "CREATE INDEX index_only_in_test_database ON event_log (created_at)")
+    _execute(db_url, "CREATE INDEX index_only_in_test_database ON thread (created_at)")
     with pytest.raises(RuntimeError, match="index_only_in_test_database"):
         RUNNER.apply(db_url)
 
@@ -175,6 +185,7 @@ def test_drop_locator_preserves_identity(db_url: str) -> None:
     thread = uuid.uuid4()
     try:
         with engine.begin() as connection:
+            _restore_event_log(connection)
             _restore_sandbox(connection)
             connection.execute(text("ALTER TABLE event_log ADD COLUMN session_id text"))
             connection.execute(text("ALTER TABLE event_log ADD UNIQUE (sandbox, session_id)"))
@@ -191,9 +202,36 @@ def test_drop_locator_preserves_identity(db_url: str) -> None:
         RUNNER.apply(db_url)
         RUNNER.apply(db_url)
         with engine.connect() as connection:
-            assert "session_id" not in {c["name"] for c in inspect(connection).get_columns("event_log")}
-            assert not inspect(connection).get_unique_constraints("event_log")
-            assert connection.scalar(text("SELECT id FROM event_log WHERE id = :id"), {"id": thread}) == thread
+            assert connection.scalar(text("SELECT id FROM thread WHERE id = :id"), {"id": thread}) == thread
+    finally:
+        engine.dispose()
+
+
+def test_event_log_folds_into_thread(db_url: str) -> None:
+    engine = create_engine(RUNNER.sync_url(db_url))
+    unnamed, named = uuid.uuid4(), uuid.uuid4()
+    try:
+        with engine.begin() as connection:
+            _restore_event_log(connection)
+            connection.execute(text("UPDATE alembic_version_app SET version_num = '0034_thread_resume_drop'"))
+            connection.execute(
+                text(
+                    "INSERT INTO event_log (id, created_at) VALUES "
+                    "(:unnamed, '2026-01-01T00:00:00Z'), (:named, '2026-02-01T00:00:00Z')"
+                ),
+                {"unnamed": unnamed, "named": named},
+            )
+            connection.execute(
+                text("INSERT INTO thread (id, name, archived) VALUES (:id, 'operator name', true)"), {"id": named}
+            )
+        RUNNER.apply(db_url)
+        RUNNER.apply(db_url)
+        with engine.connect() as connection:
+            assert not inspect(connection).has_table("event_log")
+            rows = connection.execute(
+                text("SELECT id, to_char(created_at AT TIME ZONE 'UTC', 'YYYY-MM'), name, archived FROM thread")
+            )
+            assert set(rows) == {(unnamed, "2026-01", None, False), (named, "2026-02", "operator name", True)}
     finally:
         engine.dispose()
 

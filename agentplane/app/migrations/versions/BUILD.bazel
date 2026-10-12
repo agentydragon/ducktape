@@ -36,6 +36,7 @@ exports_files(
         "0032_app_projection_drop.py",
         "0033_event_log_sandbox_drop.py",
         "0034_thread_resume_drop.py",
+        "0035_event_log_into_thread.py",
     ],
     visibility = ["//agentplane/app/migrations:__pkg__"],
 )
@@ -292,6 +293,15 @@ py_library(
 py_library(
     name = "0034_thread_resume_drop",
     srcs = ["0034_thread_resume_drop.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0035_event_log_into_thread",
+    srcs = ["0035_event_log_into_thread.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

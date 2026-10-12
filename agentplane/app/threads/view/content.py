@@ -22,7 +22,7 @@ from agentplane.app.threads.events.debug import (
     ThreadScopeChangedError,
 )
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
-from agentplane.app.threads.models import EventLog
+from agentplane.app.threads.models import Thread
 from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
 from agentplane.history_service.fold.views import EntityKind, ThreadCommandEntityView
 from agentplane.proto import command_pb2, event_log_pb2, history_service_pb2
@@ -133,7 +133,7 @@ class ContentStore:
 
     async def _require_thread(self, thread_id: UUID) -> None:
         async with self._sessions() as session:
-            if await session.get(EventLog, thread_id) is None:
+            if await session.get(Thread, thread_id) is None:
                 raise ThreadNotFoundError(thread_id)
 
     async def _commands(self, thread_id: UUID, command_ids: Sequence[str]) -> list[ThreadCommandEntityView] | None:
