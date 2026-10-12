@@ -18,6 +18,8 @@ PREFIX = f"sandbox-actions.{GROUP}"
 DESCRIPTION_ANNOTATION = f"{PREFIX}/description"
 
 
+# CLEANUP(added 2026-10-12): delete with its inventory, DESCRIPTION_ANNOTATION and the Action
+#   Service's Sandbox RBAC once no deployed config names `kind: sandbox` (staging moves to `box`).
 class SandboxExecutorBinding(BaseModel):
     """Sandboxes stamped and exec'd by this service rather than reached over MCP.
 
@@ -44,3 +46,24 @@ class SandboxExecutorBinding(BaseModel):
         # A set's iteration order follows per-process string hashing, and the manifest generator
         # writes this binding into a ConfigMap that has to come out the same on every run.
         return sorted(templates)
+
+
+class BoxExecutorBinding(BaseModel):
+    """Boxes this service starts as plain Pods running as the caller, from PodTemplates it offers.
+
+    Code-owned for the same reason as `SandboxExecutorBinding`.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["box"] = "box"
+    description: str = Field(min_length=1, max_length=2000, description="Agent-visible executor description.")
+    namespace: str = Field(min_length=1, description="Namespace boxes run and are exec'd in.")
+    templates: dict[str, str] = Field(
+        min_length=1,
+        description="The boxes a caller may create: each names a PodTemplate in the namespace and says what a "
+        "box made from it holds, for the agent choosing one. Only these: a caller free to name any would "
+        "start whatever Pod the namespace holds a template for.",
+    )
+    max_timeout_seconds: int = Field(default=1800, gt=0, le=3600)
+    max_output_bytes: int = Field(default=200_000, ge=0, le=1_000_000)

@@ -32,6 +32,52 @@ py_library(
 )
 
 py_library(
+    name = "box_inventory",
+    srcs = ["box_inventory.py"],
+    deps = [
+        ":binding",
+        ":inventory",
+        ":models",
+        "//agentplane:subjects",
+        "//agentplane/egress:sidecar",
+        "//mcp_infra/exec:kubernetes",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_box_inventory",
+    srcs = ["test_box_inventory.py"],
+    deps = [
+        ":binding",
+        ":box_inventory",
+        ":inventory",
+        ":models",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/action_service:conftest",
+        "//mcp_infra/exec:kubernetes",
+        "//util/exec:models",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "clients",
+    srcs = ["clients.py"],
+    deps = [
+        ":binding",
+        ":box_inventory",
+        ":inventory",
+        "//mcp_infra/exec:kubernetes",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
     name = "models",
     srcs = ["models.py"],
     deps = [
@@ -65,6 +111,7 @@ py_library(
     deps = [
         ":actions",
         ":binding",
+        ":box_inventory",
         ":inventory",
         ":models",
         "//agentplane:subjects",

@@ -52,11 +52,13 @@ a forwarded identity and `pods/exec` to serve boxes that use none of its machine
   by the Sandbox Service: backend (`pod` or `vm`), runner image and harnesses, state volume size and
   mount path, and the Pod (or VM) shape. The Sandbox Service fills in the per-Sandbox
   ServiceAccount, the control and ingress targets and the state PVC; a template names none of them.
-- **Action Service box templates** are entries in the Action Service's reviewed configuration,
-  rendered by cdk8s: a name, the description an agent chooses by, and a complete Pod spec with
-  `automountServiceAccountToken: false`. The Action Service fills in the Pod name, its labels and
-  `serviceAccountName: <caller>`. A CiliumNetworkPolicy on the box label is the fence: DNS and the
-  egress proxy out, nothing in.
+- **Action Service box templates** are entries in the Action Service's reviewed configuration: a
+  name and the description an agent chooses by, each naming a core `PodTemplate` cdk8s renders
+  beside it with `automountServiceAccountToken: false`. The Action Service fills in the Pod name,
+  its labels, its owner and `serviceAccountName: <caller>`. A CiliumNetworkPolicy on the box label
+  is the fence: DNS and the egress proxy out, nothing in. Rejected: **the Pod spec inline in the
+  configuration.** The image pins (`image-pins/kustomization.yaml`) rewrite containers in any
+  object but never inside a ConfigMap string, so every box would run the `unset` placeholder tag.
 
 Each service reads only its own catalog, so "which templates may this caller choose" needs no flag.
 A box that wants the ducktape toolchain gets its own Action template on that image, not the runner
@@ -96,6 +98,6 @@ need a counterpart there with its bindings.
 
 - The Sandbox Service's API and authority stay as they are; the Action Service is not its client.
 - The Action Service swaps its agent-sandbox inventory for plain Pods and its `SandboxTemplate`
-  allowlist for its own template entries; staging stops offering it the runner templates.
+  allowlist for its own `PodTemplate`s; staging stops offering it the runner templates.
 - Retiring agent-sandbox waits on the Session Sandbox resource and on Action boxes becoming plain
   Pods, and on nothing else.

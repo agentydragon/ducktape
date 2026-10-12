@@ -17,9 +17,9 @@ from agentplane.action_service.catalog import ActionCatalog, McpExecutorBinding
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.mcp_linkage import McpLinkageAuthority
 from agentplane.action_service.sandbox.actions import actions
-from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import BoxExecutorBinding, SandboxExecutorBinding
+from agentplane.action_service.sandbox.clients import SandboxClients
 from agentplane.action_service.sandbox.executor import SandboxExecutor
-from agentplane.action_service.sandbox.inventory import SandboxClients
 from agentplane.action_service.service import Executor
 
 
@@ -49,6 +49,19 @@ async def running_executor(
                         f"ActionGroup {key!r} direct_tools names Actions it does not offer: {sorted(unoffered)}"
                     )
                 executors[key] = SandboxExecutor(binding, inventory)
+            case BoxExecutorBinding() as binding:
+                if sandboxes is None:
+                    raise ValueError(f"ActionGroup {key!r} is a box group and no Kubernetes access was supplied")
+                # Declared, not discovered, likewise. Its offered templates are read once, here, to
+                # refuse one that is missing or whose box would escape the egress path.
+                box_inventory = sandboxes.box_inventory(binding)
+                await box_inventory.check_templates()
+                group.actions = actions(binding, binding.templates)
+                if group.direct_tools is not None and (unoffered := group.direct_tools - group.actions.keys()):
+                    raise ValueError(
+                        f"ActionGroup {key!r} direct_tools names Actions it does not offer: {sorted(unoffered)}"
+                    )
+                executors[key] = SandboxExecutor(binding, box_inventory)
             case McpExecutorBinding():
                 try:
                     supervised[key] = (

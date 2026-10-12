@@ -34,10 +34,19 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.mcp_settings import McpOAuthServer
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
+from agentplane.action_service.sandbox.binding import BoxExecutorBinding
 from agentplane.app.action_federation_settings import DirectFederationSettings
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import agent_access_profiles as access, cilium
-from cluster.cdk8s.agentplane import actions, app as app_component, app_settings, dex, egress, policy_controller
+from cluster.cdk8s.agentplane import (
+    actions,
+    app as app_component,
+    app_settings,
+    command_sandbox,
+    dex,
+    egress,
+    policy_controller,
+)
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     MCP_EVERYTHING_NAME,
     MCP_EVERYTHING_PORT,
@@ -125,6 +134,17 @@ _ACTION_GROUPS = {
                 "server_id": "example",
                 "auth": "oauth",
             },
+        ),
+    ),
+    # Ahead of staging, which still runs its boxes as agent-sandbox Sandboxes.
+    "sandbox": ActionGroup(
+        title="Sandbox",
+        description="Boxes that run as the calling ServiceAccount, and bounded commands in them.",
+        executor=BoxExecutorBinding(
+            kind="box",
+            description="Created and exec'd by this service, as the caller, in its own namespace.",
+            namespace=TESTING_NAMESPACE,
+            templates=command_sandbox.TEMPLATES,
         ),
     ),
 }
@@ -344,6 +364,7 @@ def chart(app: App) -> Chart:
     # `AgentRbac`'s own docstring for why it must not be in staging's.
     AgentRbac(chart, "rbac", ENV)
     AcceptanceToken(chart, "acceptance-token", ENV)
+    command_sandbox.CommandSandbox(chart, "command-sandbox", ENV)
     # claude-ai's boxes reach this app through staging's egress proxy, by its Service rather than its
     # public name, which would hairpin out through the Gateway and back.
     app_service = app_component.service(ENV.namespace)

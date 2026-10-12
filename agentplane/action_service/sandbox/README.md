@@ -8,6 +8,13 @@ These Sandboxes are not the integration app's. The app stamps one to _host an ag
 container, a harness, a Thread. This surface stamps one to _run commands in_, driven
 by an agent that lives elsewhere. Same CRD, different operation, different component.
 
+**A `box` group** offers the same Actions on plain Pods instead (<box_inventory.py>). It creates
+each box as a Pod from a core `PodTemplate`, running as the caller and owner-referenced to the
+caller's ServiceAccount, and passes the Pod's own conditions through. The config names each
+template with what it holds. The service refuses at startup, and again at each `create`, a template
+that is missing, lacks the `egress-sidecar` container, or lets another container mount a
+ServiceAccount token. Testing runs `box`, staging `sandbox`; `sandbox` goes once staging moves.
+
 ## The contract
 
 **A sandbox is a shell as yourself.** It runs as the calling ServiceAccount, reaches what that

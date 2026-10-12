@@ -33,12 +33,12 @@ READY_CONDITION = "Ready"
 
 
 class SandboxCondition(BaseModel):
-    """One status condition, as the Agent Sandbox controller wrote it.
+    """One status condition, as the Agent Sandbox controller wrote it, or a box's Pod condition.
 
-    Passed through rather than summarised: the controller owns this lifecycle, and a reading taken
-    here would be a second opinion that can disagree with the authority and carries less than it
-    did. `reason` is the machine-readable half an agent can branch on (`DependenciesReady`,
-    `WarmPoolNotFound`); `message` is the sentence a human wants.
+    Passed through rather than summarised: a reading taken here would be a second opinion that can
+    disagree with the authority and carries less than it did. `reason` is the machine-readable half
+    an agent can branch on (`DependenciesReady`, `ContainersNotReady`); `message` is the sentence a
+    human wants.
     """
 
     model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
@@ -56,9 +56,14 @@ class SandboxInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: SandboxName
-    template: str = Field(description="The SandboxTemplate this box was created from.")
+    template: str = Field(description="The template this box was created from.")
+    phase: str | None = Field(
+        default=None,
+        description='A box\'s Pod phase, absent until Kubernetes reports one. "Failed" is a box evicted from its '
+        "node, which only `dispose` and a new `create` recover.",
+    )
     conditions: list[SandboxCondition] = Field(
-        description=f"The controller's own conditions, verbatim. {READY_CONDITION!r} with "
+        description=f"Its conditions as Kubernetes reports them, verbatim. {READY_CONDITION!r} with "
         'status "True" is what `exec` requires; until then that condition says why, and a '
         '"Suspended" condition means a box that is stopped rather than still coming up.'
     )

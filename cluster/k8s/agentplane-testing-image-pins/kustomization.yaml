@@ -21,6 +21,10 @@ images:
   # Initial publication on devel supplies the tag through Flux image automation.
   - name: git.allegedly.works/ducktape-ci/runner
     newTag: devel-20261012075128-fd6c101 # {"$imagepolicy": "flux-system:runner:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-sandbox
+    newTag: devel-20261012061423-d8eb300 # {"$imagepolicy": "flux-system:agentplane-sandbox:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-sandbox-build
+    newTag: devel-20261012061453-d8eb300 # {"$imagepolicy": "flux-system:agentplane-sandbox-build:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar
     newTag: devel-20260924234050-4819c98 # {"$imagepolicy": "flux-system:agentplane-egress-sidecar:tag"}
   - name: git.allegedly.works/ducktape-ci/agentplane-action-service

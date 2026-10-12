@@ -31,6 +31,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 logger = logging.getLogger(__name__)
 
+# The sidecar container's name in every Pod it relays for, which the services stamping those Pods
+# check their templates for.
+CONTAINER_NAME = "egress-sidecar"
 REFUSED_HEADER = "x-agentplane-egress-sidecar"
 _MAX_HEAD_BYTES = 64 * 1024
 _PIPE_CHUNK = 64 * 1024

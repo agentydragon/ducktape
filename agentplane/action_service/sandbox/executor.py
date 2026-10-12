@@ -19,7 +19,8 @@ from pydantic import BaseModel, JsonValue, ValidationError
 
 from agentplane.action_service.models import ExecutionRequest, ExecutionResult, ExecutionState
 from agentplane.action_service.sandbox.actions import SandboxAction
-from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import BoxExecutorBinding, SandboxExecutorBinding
+from agentplane.action_service.sandbox.box_inventory import BoxInventory
 from agentplane.action_service.sandbox.inventory import ForeignSandboxError, SandboxActionError, SandboxInventory
 from agentplane.action_service.sandbox.models import (
     CreateArgs,
@@ -49,7 +50,9 @@ class SandboxExecutor(Executor):
     dispose of, so shutdown must not touch one.
     """
 
-    def __init__(self, binding: SandboxExecutorBinding, inventory: SandboxInventory) -> None:
+    def __init__(
+        self, binding: SandboxExecutorBinding | BoxExecutorBinding, inventory: SandboxInventory | BoxInventory
+    ) -> None:
         self._binding = binding
         self._inventory = inventory
 

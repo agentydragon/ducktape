@@ -14,7 +14,7 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, JsonValue
 
 from agentplane.action_service.catalog import ActionDefinition
-from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import BoxExecutorBinding, SandboxExecutorBinding
 from agentplane.action_service.sandbox.models import (
     READY_CONDITION,
     CreateArgs,
@@ -45,7 +45,7 @@ def _schema(model: type[BaseModel]) -> dict[str, JsonValue]:
     return cast(dict[str, JsonValue], model.model_json_schema())
 
 
-def _exec_schema(binding: SandboxExecutorBinding) -> dict[str, JsonValue]:
+def _exec_schema(binding: SandboxExecutorBinding | BoxExecutorBinding) -> dict[str, JsonValue]:
     """`ExecArgs` with this deployment's caps as its maxima, so submission refuses a request the
     executor would cut short, and says why, instead of the run ending early."""
     # TODO: find a way to carry the caps into the schema other than overwriting the maxima
@@ -56,7 +56,9 @@ def _exec_schema(binding: SandboxExecutorBinding) -> dict[str, JsonValue]:
     return cast(dict[str, JsonValue], schema)
 
 
-def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> dict[str, ActionDefinition]:
+def actions(
+    binding: SandboxExecutorBinding | BoxExecutorBinding, descriptions: dict[str, str]
+) -> dict[str, ActionDefinition]:
     """What this group offers, declared from its own models rather than discovered over a wire.
 
     The offered templates, with what each says of itself (`descriptions`), are rendered into
@@ -105,7 +107,7 @@ def actions(binding: SandboxExecutorBinding, descriptions: dict[str, str]) -> di
         ),
         SandboxAction.GET: ActionDefinition(
             description=(
-                "Inspect one sandbox of yours without changing it: the controller's own conditions, "
+                "Inspect one sandbox of yours without changing it: its conditions as Kubernetes reports them, "
                 f'verbatim. Poll it until {READY_CONDITION!r} has status "True"; until then that '
                 "condition's reason and message say what it is waiting on."
             ),

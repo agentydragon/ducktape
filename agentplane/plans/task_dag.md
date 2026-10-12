@@ -790,7 +790,7 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 flowchart TD
     HISTORY_DATABASE_RENAME[Candidate: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Unscheduled: name the sandbox_commands database for the Runner Gateway]
-    ACTION_SANDBOX_PODS[Candidate: Action Service boxes as plain Pods]
+    ACTION_SANDBOX_PODS[In progress: Action Service boxes as plain Pods]
     ACTION_SANDBOX_PODS --> ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_SANDBOX_PODS --> ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
@@ -815,7 +815,10 @@ container and `commands_database_url` at the new names. `database.py`'s comment 
 
 ### `ACTION_SANDBOX_PODS` — Action Service boxes as plain Pods
 
-**Candidate; direction accepted with the operator 2026-10-12 PDT, written up in draft #10012.**
+**In progress: testing first (operator, 2026-10-12 PDT).** Executor kind `box` runs beside
+`sandbox` and testing offers it; once boxes pass on testing, the follow-up PR moves staging's group
+to `box` and deletes kind `sandbox`, its Sandbox RBAC and the template description annotation.
+Direction accepted with the operator 2026-10-12 PDT ([ADR](../docs/adr_action_sandboxes.md)).
 Action Service boxes and Session Sandboxes share only the Pod recipe (`sandbox_pod.py`): a box
 runs as the caller's own ServiceAccount, with no runner, state volume, owned bindings or seal, so
 the Sandbox Service does not provision it. The `sandbox__*` Actions stamp plain Pods from the

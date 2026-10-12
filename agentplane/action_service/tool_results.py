@@ -15,7 +15,7 @@ from mcp.types import CallToolResult, TextContent
 
 from agentplane.action_service.catalog import ExecutorBinding, McpExecutorBinding
 from agentplane.action_service.models import ActionRequestView, ActionState
-from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import BoxExecutorBinding, SandboxExecutorBinding
 
 
 def tool_result(view: ActionRequestView, executor: ExecutorBinding, *, max_wait_seconds: float) -> ToolResult:
@@ -26,7 +26,7 @@ def tool_result(view: ActionRequestView, executor: ExecutorBinding, *, max_wait_
             match executor:
                 case McpExecutorBinding():
                     return ToolResult.from_mcp_result(CallToolResult.model_validate(execution.result))
-                case SandboxExecutorBinding():
+                case SandboxExecutorBinding() | BoxExecutorBinding():
                     return ToolResult(structured_content=execution.result)
         case ActionState.DECISION_PENDING | ActionState.ALLOWED | ActionState.DISPATCHING | ActionState.RUNNING:
             waiting = (

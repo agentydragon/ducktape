@@ -26,6 +26,7 @@ POD_SPEC_PATHS: Mapping[tuple[str, str], str] = MappingProxyType(
         ("batch", "CronJob"): "/spec/jobTemplate/spec/template/spec",
         ("extensions.agents.x-k8s.io", "SandboxTemplate"): "/spec/podTemplate/spec",
         ("agentplane.allegedly.works", "SandboxTemplate"): "/spec/pod/spec",
+        ("", "PodTemplate"): "/template/spec",
         ("keda.sh", "ScaledJob"): "/spec/jobTargetRef/template/spec",
     }
 )

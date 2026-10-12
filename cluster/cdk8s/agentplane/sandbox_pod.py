@@ -1,8 +1,8 @@
-"""The Pod shape every agentplane SandboxTemplate shares: the egress sidecar that relays a box's
+"""The Pod shape every agentplane box shares: the egress sidecar that relays a box's
 traffic to the central proxy, the tokens only it mounts, the interception CA over the system bundle
 and as Java's trust store, a kubeconfig that reaches the API server through the proxy, and the proxy
-environment that points a workload at the sidecar. The runner templates (runner_sandbox.py) and the
-sandbox Actions' command box (command_sandbox.py) are both built from it, so both kinds of box sit
+environment that points a workload at the sidecar. The runner SandboxTemplates (runner_sandbox.py) and
+the sandbox Actions' box templates (command_sandbox.py) are both built from it, so both kinds of box sit
 behind the same egress path; only the command box also gets the system bazelrc that points Bazel at
 the trust store.
 """
@@ -214,7 +214,7 @@ def workload_security_context() -> SandboxTemplateSpecPodTemplateSpecContainersS
 
 def _egress_sidecar(env: Environment) -> SandboxTemplateSpecPodTemplateSpecContainers:
     return SandboxTemplateSpecPodTemplateSpecContainers(
-        name="egress-sidecar",
+        name=sidecar.CONTAINER_NAME,
         image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
         env=[
             SandboxTemplateSpecPodTemplateSpecContainersEnv(
@@ -325,7 +325,7 @@ def pod_spec(
     """`workload` beside the egress sidecar, as uid 1000, with no ServiceAccount token in the Pod: the
     projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
     several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
-    `service_account_name` is the template's own; whoever stamps a Sandbox from it may replace it.
+    `service_account_name` is the template's own; whoever creates a box from it may replace it.
     `workload_volumes` are Pod volumes the workload mounts beyond the egress path's own."""
     return SandboxTemplateSpecPodTemplateSpec(
         # The workload first: with no default-container annotation, the first container is the one

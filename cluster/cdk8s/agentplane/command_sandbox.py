@@ -2,11 +2,13 @@
 with no harness and no state volume. The command box runs the plain sandbox image
 (agentplane/images/sandbox.nix) and costs the namespace quota what a command needs; the build box is
 the same box sized for a build, on the build image (agentplane/images/build.nix), which adds Bazel
-and its toolchain. staging.py offers both to the sandbox Actions, and each template describes itself
-to an agent choosing one in the annotation those Actions read.
+and its toolchain. Each is rendered twice: as a core PodTemplate, which a `box` group creates plain
+Pods from, and as a SandboxTemplate describing itself in the annotation a `sandbox` group reads.
 """
 
 from __future__ import annotations
+
+from collections.abc import Sequence
 
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecNetworkPolicyManagement,
@@ -21,7 +23,7 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir,
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit,
 )
-from cdk8s import ApiObjectMetadata
+from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
@@ -32,7 +34,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
-# The command box's SandboxTemplate, and both boxes' Pod name label and fence. The egress proxy's
+# The command box's template, and both boxes' Pod name label and fence. The egress proxy's
 # policy spells it too (egress.py), since this module imports that one.
 NAME = "agentplane-sandbox"
 BUILD_NAME = "agentplane-sandbox-build"
@@ -77,33 +79,33 @@ _BUILD_HOME = SandboxTemplateSpecPodTemplateSpecVolumes(
 )
 
 
+# What a box made from each template holds, for the agent choosing one.
+TEMPLATES = {
+    NAME: (
+        "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl "
+        "(configured as the caller's ServiceAccount) and python3 (install packages into a "
+        "`python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
+    ),
+    BUILD_NAME: (
+        "The sandbox box sized for a build: the same tools plus bazel (bazelisk, which runs the "
+        "version a workspace's `.bazelversion` names) and gcc, 2 cores and 4Gi, and a home directory "
+        "that survives the container being killed for running out of memory, though not the box's Pod."
+    ),
+}
+
+
 class CommandSandbox(Construct):
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
         _template(
-            self,
-            "sandboxtemplate",
-            env,
-            name=NAME,
-            description=(
-                "A box to run commands in: bash and coreutils, git, curl, ripgrep, jq, openssl, kubectl "
-                "(configured as the caller's ServiceAccount) and python3 (install packages into a "
-                "`python3 -m venv`). 1 core and 2Gi, and no volume: files last as long as the box's Pod."
-            ),
-            workload=_workload(_IMAGE, _COMMAND_RESOURCES, env),
-            volumes=[],
+            self, "sandboxtemplate", env, name=NAME, workload=_workload(_IMAGE, _COMMAND_RESOURCES, env), volumes=[]
         )
         _template(
             self,
             "build-sandboxtemplate",
             env,
             name=BUILD_NAME,
-            description=(
-                "The sandbox box sized for a build: the same tools plus bazel (bazelisk, which runs the "
-                "version a workspace's `.bazelversion` names) and gcc, 2 cores and 4Gi, and a home directory "
-                "that survives the container being killed for running out of memory, though not the box's Pod."
-            ),
             workload=_workload(
                 _BUILD_IMAGE,
                 _BUILD_RESOURCES,
@@ -129,24 +131,41 @@ def _template(
     env: Environment,
     *,
     name: str,
-    description: str,
     workload: SandboxTemplateSpecPodTemplateSpecContainers,
-    volumes: list[SandboxTemplateSpecPodTemplateSpecVolumes],
+    volumes: Sequence[SandboxTemplateSpecPodTemplateSpecVolumes],
 ) -> None:
+    pod_template = SandboxTemplateSpecPodTemplate(
+        metadata=SandboxTemplateSpecPodTemplateMetadata(labels=_LABELS),
+        # No account of its own: the sandbox Actions run every box as its caller.
+        spec=sandbox_pod.pod_spec(env, workload=workload, service_account_name=None, workload_volumes=volumes),
+    )
     SandboxTemplate(
         scope,
         id,
         metadata=ApiObjectMetadata(
-            name=name, namespace=env.namespace, annotations={DESCRIPTION_ANNOTATION: description}
+            name=name, namespace=env.namespace, annotations={DESCRIPTION_ANNOTATION: TEMPLATES[name]}
         ),
         # The CiliumNetworkPolicy beside it is the box's fence.
         network_policy_management=SandboxTemplateSpecNetworkPolicyManagement.UNMANAGED,
-        pod_template=SandboxTemplateSpecPodTemplate(
-            metadata=SandboxTemplateSpecPodTemplateMetadata(labels=_LABELS),
-            # No account of its own: the sandbox Actions stamp every box as its caller.
-            spec=sandbox_pod.pod_spec(env, workload=workload, service_account_name=None, workload_volumes=volumes),
-        ),
+        pod_template=pod_template,
     )
+    # The shared Pod recipe speaks agent-sandbox's types; a SandboxTemplate in a chart of its own
+    # renders them to the Kubernetes JSON a PodTemplate holds.
+    rendered = SandboxTemplate(
+        Chart(App(), "box-template"),
+        "sandboxtemplate",
+        metadata=ApiObjectMetadata(name=name),
+        pod_template=pod_template,
+    ).to_json()["spec"]["podTemplate"]
+    # A PodTemplate rather than a Pod spec in the Action Service's ConfigMap: the image pins
+    # (image-pins/kustomization.yaml) rewrite containers in any object, never inside a string.
+    ApiObject(
+        scope,
+        f"{id}-pod",
+        api_version="v1",
+        kind="PodTemplate",
+        metadata=ApiObjectMetadata(name=name, namespace=env.namespace),
+    ).add_json_patch(JsonPatch.add("/template", rendered))
 
 
 def _workload(

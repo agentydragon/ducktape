@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Sequence
-from dataclasses import dataclass
 from typing import Any, cast
 
 from kubernetes_asyncio import client as k8s_client
@@ -45,7 +44,7 @@ class ForeignSandboxError(SandboxActionError):
     """A Sandbox of that name exists and belongs to someone else, or to nothing this surface made."""
 
 
-def _labels(caller: ServiceAccountRef, name: str, template: str) -> dict[str, str]:
+def labels(caller: ServiceAccountRef, name: str, template: str) -> dict[str, str]:
     return {
         MANAGED_LABEL: "true",
         CALLER_LABEL: caller.name,
@@ -55,7 +54,7 @@ def _labels(caller: ServiceAccountRef, name: str, template: str) -> dict[str, st
     }
 
 
-def _object_name(caller: ServiceAccountRef, name: str) -> str:
+def object_name(caller: ServiceAccountRef, name: str) -> str:
     """Deterministic, so creating the same name twice reaches the same box rather than a second one."""
     return f"{caller.name}-{name}"[:63].rstrip("-")
 
@@ -143,7 +142,7 @@ class SandboxInventory:
             sandbox = cast(
                 dict[str, Any],
                 await self._custom_objects.get_namespaced_custom_object(
-                    *SANDBOX_API, self._binding.namespace, SANDBOXES_PLURAL, _object_name(caller, name)
+                    *SANDBOX_API, self._binding.namespace, SANDBOXES_PLURAL, object_name(caller, name)
                 ),
             )
         except ApiException as error:
@@ -218,7 +217,7 @@ class SandboxInventory:
         body = {
             "apiVersion": SANDBOX_API.api_version,
             "kind": "Sandbox",
-            "metadata": {"name": _object_name(caller, name), "labels": _labels(caller, name, template_name)},
+            "metadata": {"name": object_name(caller, name), "labels": labels(caller, name, template_name)},
             # Retain: this surface owns deletion, and a box whose caller is still working in it must
             # not be collected out from under them on a schedule nobody set.
             # TODO(sandbox-lifetime): so a forgotten box keeps its 2500m of the namespace's
@@ -270,7 +269,7 @@ class SandboxInventory:
                 *SANDBOX_API,
                 self._binding.namespace,
                 SANDBOXES_PLURAL,
-                _object_name(caller, name),
+                object_name(caller, name),
                 body=k8s_client.V1DeleteOptions(),
             )
         except ApiException as error:
@@ -312,22 +311,4 @@ class SandboxInventory:
             # different caps, across a settings roll, is still held to this one's.
             max_output_bytes=min(max_output_bytes, self._binding.max_output_bytes),
             timeout_seconds=min(timeout_seconds, self._binding.max_timeout_seconds),
-        )
-
-
-@dataclass(frozen=True)
-class SandboxClients:
-    """This service's own Kubernetes access, from which one inventory per configured group is built.
-
-    Held apart from the binding because the clients are the process's and the binding is reviewed
-    configuration: several groups may be configured, and they share one API client between them.
-    """
-
-    custom_objects: CustomObjectsClient
-    core_v1: CoreV1Api
-    exec_runner: ExecRunner
-
-    def inventory(self, binding: SandboxExecutorBinding) -> SandboxInventory:
-        return SandboxInventory(
-            binding, custom_objects=self.custom_objects, core_v1=self.core_v1, exec_runner=self.exec_runner
         )
