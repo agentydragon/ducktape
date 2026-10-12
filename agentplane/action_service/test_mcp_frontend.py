@@ -258,11 +258,8 @@ async def _serve(
         direct_wait_seconds=30,
         max_wait_seconds=30,
     )
-    try:
-        async with lifespan_in_own_task(app):
-            yield Frontend(app, store, service, updates, tokens)
-    finally:
-        await service.close()
+    async with service, lifespan_in_own_task(app):
+        yield Frontend(app, store, service, updates, tokens)
 
 
 @pytest.fixture

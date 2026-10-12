@@ -545,7 +545,10 @@ async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine:
     # Uvicorn re-raises captured signals to the previous handler on context exit.
     signal.signal(signal.SIGTERM, lambda sig, frame: None)
     try:
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test-actions") as client:
+        async with (
+            service,
+            httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test-actions") as client,
+        ):
             assert (await client.get("/readyz")).status_code == 200
             with server.capture_signals():
                 signal.raise_signal(signal.SIGTERM)
@@ -555,7 +558,6 @@ async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine:
                 assert (await client.get("/healthz")).status_code == 200
                 assert (await client.post("/v1/action-requests", json={})).status_code == 503
                 assert (await client.post("/mcp", json={})).status_code == 503
-        await service.close()
     finally:
         signal.signal(signal.SIGTERM, original_handler)
 

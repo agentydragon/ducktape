@@ -4,6 +4,8 @@ import asyncio
 import logging
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime
+from types import TracebackType
+from typing import Self
 
 from sqlalchemy.exc import SQLAlchemyError
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_attempt, wait_exponential
@@ -29,10 +31,14 @@ class Diagnostics:
 
 
 class DecisionLog:
-    def __init__(self, store: DecisionStore, *, queue_size: int = 2000, batch_size: int = 100) -> None:
+    def __init__(
+        self, store: DecisionStore, *, queue_size: int = 2000, batch_size: int = 100, flush_seconds: float = 5
+    ) -> None:
+        """`flush_seconds` bounds how long closing waits for queued records to be written."""
         if queue_size < 1 or batch_size < 1:
             raise ValueError("queue and batch sizes must be positive")
         self.store = store
+        self._flush_seconds = flush_seconds
         self._queue: asyncio.Queue[DecisionRecord] = asyncio.Queue(queue_size)
         self._batch_size = batch_size
         self._closing = False
@@ -74,10 +80,18 @@ class DecisionLog:
     async def flush(self) -> None:
         await self._queue.join()
 
-    async def close(self, flush_seconds: float = 5) -> None:
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        await self.close()
+
+    async def close(self) -> None:
         self._closing = True
         try:
-            async with asyncio.timeout(flush_seconds):
+            async with asyncio.timeout(self._flush_seconds):
                 await self.flush()
         except TimeoutError:
             logger.warning("decision history shutdown deadline reached")

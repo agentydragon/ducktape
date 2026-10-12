@@ -47,6 +47,7 @@ async def async_main(settings: Settings) -> None:
             ),
             queue_size=settings.decision_queue_size,
             batch_size=settings.decision_batch_size,
+            flush_seconds=settings.decision_flush_seconds,
         )
         decision_log.start()
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
@@ -86,28 +87,26 @@ async def async_main(settings: Settings) -> None:
         # One resolver for both doors: the tunnel and the rules API authenticate the same bearers,
         # so a verdict either reached is a verdict the other need not spend a TokenReview on.
         rules_app = create_rules_app(WorkloadPrincipalAuthenticator(workload_resolver), RulesProjection(index))
-        try:
-            async with (
-                background(informer.run(), name="egress-informer"),
-                EgressProxyServer(
-                    addon,
-                    confdir=settings.confdir,
-                    upstream_ca_file=settings.upstream_ca_file,
-                    listen_host=settings.listen_host,
-                    listen_port=settings.listen_port,
-                ),
-                serve(rules_app, settings.agent_api_host, settings.agent_api_port),
-                # Admitted last, so that /healthz answering at all means the two listeners above
-                # are bound. It is the readiness probe, and readiness gates every Service this Pod
-                # backs -- entered first it reports the Pod ready while mitmproxy, much the slower
-                # of the two to bind, still refuses connections on the tunnel port.
-                serve(create_admin_app(decision_log, index), settings.admin_host, settings.admin_port) as admin_port,
-            ):
-                logger.info("admin listening on %s:%d", settings.admin_host, admin_port)
-                logger.info("agent API listening on %s:%d", settings.agent_api_host, settings.agent_api_port)
-                await until_terminated()
-        finally:
-            await decision_log.close(settings.decision_flush_seconds)
+        async with (
+            decision_log,
+            background(informer.run(), name="egress-informer"),
+            EgressProxyServer(
+                addon,
+                confdir=settings.confdir,
+                upstream_ca_file=settings.upstream_ca_file,
+                listen_host=settings.listen_host,
+                listen_port=settings.listen_port,
+            ),
+            serve(rules_app, settings.agent_api_host, settings.agent_api_port),
+            # Admitted last, so that /healthz answering at all means the two listeners above
+            # are bound. It is the readiness probe, and readiness gates every Service this Pod
+            # backs -- entered first it reports the Pod ready while mitmproxy, much the slower
+            # of the two to bind, still refuses connections on the tunnel port.
+            serve(create_admin_app(decision_log, index), settings.admin_host, settings.admin_port) as admin_port,
+        ):
+            logger.info("admin listening on %s:%d", settings.admin_host, admin_port)
+            logger.info("agent API listening on %s:%d", settings.agent_api_host, settings.agent_api_port)
+            await until_terminated()
 
 
 if __name__ == "__main__":

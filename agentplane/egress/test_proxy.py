@@ -992,7 +992,7 @@ async def test_rules_unbound_placeholder_is_not_forwarded(proxy: ProxyUnderTest)
     assert proxy.resolver.pin_calls == []
 
 
-@pytest.mark.parametrize("decision_queue_size", [1])
+@pytest.mark.parametrize(("decision_queue_size", "decision_flush_seconds"), [(1, 0.01)])
 async def test_database_outage_and_full_queue_do_not_block_authorized_egress(
     proxy: ProxyUnderTest, decision_log: DecisionLog, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1011,7 +1011,7 @@ async def test_database_outage_and_full_queue_do_not_block_authorized_egress(
     response = await proxy.get("/public/second")
     assert response.status == 200
     assert not release.is_set()
-    await decision_log.close(flush_seconds=0.01)
+    await decision_log.close()
     assert decision_log.diagnostics.dropped_shutdown == 2
     assert decision_log.diagnostics.dropped_overflow >= 2
 

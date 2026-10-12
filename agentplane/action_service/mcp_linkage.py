@@ -10,6 +10,8 @@ import logging
 import secrets
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum
+from types import TracebackType
+from typing import Self
 from uuid import UUID, uuid4
 
 import httpx2
@@ -141,7 +143,12 @@ class McpLinkageAuthority:
             self._stop.clear()
             self._refresh_task = asyncio.create_task(self._refresh_loop(), name="mcp-linkage-refresh")
 
-    async def close(self) -> None:
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
         if self._refresh_task is None:
             return
         self._stop.set()

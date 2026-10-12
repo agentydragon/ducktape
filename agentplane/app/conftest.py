@@ -266,9 +266,8 @@ def runners(live_index: LiveIndex, inventory: SandboxServiceClient) -> SandboxSe
 
 @pytest.fixture
 async def discovery(runners: SandboxSessions, event_logs: EventLogStore) -> AsyncIterator[SessionDiscovery]:
-    discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
-    yield discovery
-    await discovery.close()
+    async with SessionDiscovery(runners=runners, event_logs=event_logs) as discovery:
+        yield discovery
 
 
 @pytest.fixture

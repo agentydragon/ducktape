@@ -218,12 +218,10 @@ def oauth_settings(tmp_path: Path) -> Iterator[OAuthSettings]:
 @pytest.fixture
 async def executor(http_group: ActionGroup, fake_server: FakeMcpServer) -> AsyncIterator[McpActionGroupExecutor]:
     executor = McpActionGroupExecutor.from_group("remote", http_group, catalog_refresh_interval=timedelta(hours=1))
-    try:
+    async with executor:
         await executor.start()
         await wait_available(http_group)
         yield executor
-    finally:
-        await executor.close()
 
 
 @pytest.fixture
@@ -244,7 +242,7 @@ async def test_http_session_discovery_call_and_shutdown(
     execution_request: ExecutionRequest,
 ) -> None:
     executor = McpActionGroupExecutor.from_group("remote", http_group)
-    try:
+    async with executor:
         await executor.start()
         await wait_available(http_group)
         assert http_group.available
@@ -269,8 +267,6 @@ async def test_http_session_discovery_call_and_shutdown(
         assert len(fake_server.calls) == 1
         assert fake_server.calls[0]["params"]["name"] == "echo"
         assert fake_server.calls[0]["params"]["arguments"] == {"text": "hi"}
-    finally:
-        await executor.close()
     assert fake_server.requests[-1].method == "DELETE"
     assert all("authorization" not in request.headers for request in fake_server.requests)
     # Neither `server/discover` nor `initialize` itself carries a session id -- the server only
@@ -299,11 +295,9 @@ async def test_http_configured_headers_are_sent_on_every_request(fake_server: Fa
             ),
         )
         executor = McpActionGroupExecutor.from_group("remote", group)
-        try:
+        async with executor:
             await executor.start()
             await wait_available(group)
-        finally:
-            await executor.close()
     assert fake_server.requests
     assert all(request.headers["x-mcp-toolsets"] == "default,actions" for request in fake_server.requests)
 
@@ -433,7 +427,7 @@ async def test_oauth_group_without_a_usable_linkage_stays_dormant_and_says_why(
 
         with patch.object(executor, "_connect_client", connect):
             await executor.start()
-            try:
+            async with executor:
                 await asyncio.sleep(0)
                 assert not group.available
                 assert group.actions == {}
@@ -444,8 +438,6 @@ async def test_oauth_group_without_a_usable_linkage_stays_dormant_and_says_why(
                 linkage_changed.set()
                 async with asyncio.timeout(1):
                     await connected.wait()
-            finally:
-                await executor.close()
 
 
 async def test_oauth_auth_resolves_the_current_token_for_each_request() -> None:

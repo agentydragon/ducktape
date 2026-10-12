@@ -769,21 +769,19 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
             notifications_http=notifications_http,
             notifications_token_file=notifications_token_file,
         )
-        try:
-            async with (
-                httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
-                ) as http,
-                asyncio.timeout(10),
-            ):
-                response = await http.post(
-                    f"/threads/{thread_id}/commands",
-                    json={"commandId": "test-unanswered-command", "submitInput": {"text": "never admitted"}},
-                )
-                assert response.status_code == 504, response.text
-                assert await cancelled.get() == session_id
-        finally:
-            await discovery.close()
+        async with (
+            discovery,
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
+            ) as http,
+            asyncio.timeout(10),
+        ):
+            response = await http.post(
+                f"/threads/{thread_id}/commands",
+                json={"commandId": "test-unanswered-command", "submitInput": {"text": "never admitted"}},
+            )
+            assert response.status_code == 504, response.text
+            assert await cancelled.get() == session_id
 
 
 def test_egress_lists_the_bindings_naming_the_sandbox(client: TestClient) -> None:

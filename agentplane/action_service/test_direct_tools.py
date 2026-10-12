@@ -238,11 +238,8 @@ async def direct(
             yield
 
     app = Starlette(routes=[Route("/mcp", TransportDisconnects(mcp_app))], lifespan=lifespan)
-    try:
-        async with lifespan_in_own_task(app):
-            yield Direct(app, store, grant)
-    finally:
-        await service.close()
+    async with service, lifespan_in_own_task(app):
+        yield Direct(app, store, grant)
 
 
 def _text(content: list[ContentBlock]) -> str:

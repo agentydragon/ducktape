@@ -11,6 +11,8 @@ import contextlib
 import logging
 from dataclasses import dataclass
 from datetime import timedelta
+from types import TracebackType
+from typing import Self
 from uuid import UUID
 
 from asyncpg import PostgresError
@@ -55,47 +57,51 @@ class FoldRunner:
         self._slots = asyncio.Semaphore(concurrency)
         self._leases: dict[UUID, ProjectionLease] = {}
 
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        """Hand every held lease back, so another folder need not wait out `LEASE_DURATION`. Each block is
+        one span of folding; the runner may be entered again."""
+        for session_id in list(self._leases):
+            await self._release(session_id)
+
     async def run(self, *, interval_s: float, changes: Changes, health: health.aio.HealthServicer) -> None:
         """Folds until cancelled, reporting `HEALTH_SERVICE` SERVING while it does. An error it does
         not retry stops the fold, not the process, so raw reads stay served: it is logged and
         `HEALTH_SERVICE` turns NOT_SERVING."""
         await health.set(HEALTH_SERVICE, health_pb2.HealthCheckResponse.SERVING)
         try:
-            await self._fold(interval_s=interval_s, changes=changes)
+            async with self:
+                await self._fold(interval_s=interval_s, changes=changes)
         except Exception:
             logger.exception("Thread fold stopped")
             await health.set(HEALTH_SERVICE, health_pb2.HealthCheckResponse.NOT_SERVING)
 
     async def _fold(self, *, interval_s: float, changes: Changes) -> None:
         """Catch up immediately while behind; wait for commits or `interval_s` to retry."""
-        try:
-            changed = asyncio.Event()
-            with changes.subscribe(changed):
-                while True:
-                    changed.clear()
-                    try:
-                        backlog = await self.cycle()
-                        logger.info(
-                            "Thread fold: %d of %d Sessions behind, %d events behind",
-                            backlog.behind,
-                            backlog.sessions,
-                            backlog.events_behind,
-                        )
-                    # asyncpg raises connect-time server errors (e.g. no free connection slots) unwrapped.
-                    except SQLAlchemyError, PostgresError, OSError:
-                        logger.warning("Thread fold cycle failed; will retry", exc_info=True)
-                    else:
-                        if backlog.behind:
-                            continue
-                    with contextlib.suppress(TimeoutError):
-                        await asyncio.wait_for(changed.wait(), timeout=interval_s)
-        finally:
-            await self.release()
-
-    async def release(self) -> None:
-        """Hand every held lease back, so another folder need not wait out `LEASE_DURATION`."""
-        for session_id in list(self._leases):
-            await self._release(session_id)
+        changed = asyncio.Event()
+        with changes.subscribe(changed):
+            while True:
+                changed.clear()
+                try:
+                    backlog = await self.cycle()
+                    logger.info(
+                        "Thread fold: %d of %d Sessions behind, %d events behind",
+                        backlog.behind,
+                        backlog.sessions,
+                        backlog.events_behind,
+                    )
+                # asyncpg raises connect-time server errors (e.g. no free connection slots) unwrapped.
+                except SQLAlchemyError, PostgresError, OSError:
+                    logger.warning("Thread fold cycle failed; will retry", exc_info=True)
+                else:
+                    if backlog.behind:
+                        continue
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(changed.wait(), timeout=interval_s)
 
     async def cycle(self) -> FoldBacklog:
         """Advance every retained Session by at most one page."""
