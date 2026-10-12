@@ -3,7 +3,6 @@
 import hashlib
 import json
 from collections.abc import Sequence, Set
-from dataclasses import asdict
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -329,7 +328,6 @@ class Store:
                 inbox_id=inbox.id,
                 idempotency_key=body.idempotency_key,
                 creation=body.model_dump(mode="json"),
-                creator=asdict(principal),
                 version=1,
                 actions_after_sequence=actions_after_sequence,
                 github_start_position=github_start_position,
@@ -918,7 +916,6 @@ class Store:
                 payload=payload,
                 action=action,
                 head_sha=head_sha,
-                received_at=datetime.now(UTC),
             )
             session.add(receipt)
             await session.flush()

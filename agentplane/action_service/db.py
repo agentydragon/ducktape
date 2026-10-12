@@ -111,19 +111,6 @@ class ConnectionRow(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
-class ConnectionBindingChangeRow(Base):
-    __tablename__ = "external_connection_binding_change"
-
-    id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
-    connection_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("external_connection.id"))
-    version: Mapped[int] = mapped_column(Integer)
-    previous_caller: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
-    caller: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
-    operator_issuer: Mapped[str] = mapped_column(Text)
-    operator_subject: Mapped[str] = mapped_column(Text)
-    at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
-
-
 class ConnectionGrantRow(Base):
     __tablename__ = "external_connection_grant"
     __table_args__ = (UniqueConstraint("connection_id", "revision"),)

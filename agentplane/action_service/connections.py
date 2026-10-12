@@ -1,7 +1,7 @@
 """Single-operator Connection authority, independent of OAuth protocol and browser ceremony.
 
 Only an in-process OAuth adapter may bind/activate grants after verifying consent and the
-upstream principal. The operator API exposes inventory, rename, audited rebinding and revocation. A grant acts
+upstream principal. The operator API exposes inventory, rename, rebinding and revocation. A grant acts
 as one labeled ServiceAccount, checked against the policy informer's index on every resolution:
 removing the label or the ServiceAccount is the disable.
 """
@@ -18,8 +18,8 @@ from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, StringConstrai
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.action_service.db import ConnectionBindingChangeRow, ConnectionGrantRow, ConnectionRow, SessionMaker
-from agentplane.action_service.models import CallerPrincipal, ExternalGrantProvenance, OperatorPrincipal
+from agentplane.action_service.db import ConnectionGrantRow, ConnectionRow, SessionMaker
+from agentplane.action_service.models import CallerPrincipal, ExternalGrantProvenance
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.subjects import ServiceAccountRef
 
@@ -331,9 +331,7 @@ class ConnectionAuthority:
             row.updated_at = datetime.now(UTC)
             return _view(row, await _grants(db, connection_id))
 
-    async def rebind(
-        self, connection_id: UUID, *, expected_version: int, caller: ServiceAccountRef, operator: OperatorPrincipal
-    ) -> Connection:
+    async def rebind(self, connection_id: UUID, *, expected_version: int, caller: ServiceAccountRef) -> Connection:
         """Retarget future uses of an issued token; past grants and Action provenance stay immutable."""
         async with self._sessions.begin() as db:
             row = await _locked_connection(db, connection_id)
@@ -344,26 +342,12 @@ class ConnectionAuthority:
             if row.bound_caller is None:
                 raise GrantRejectedError("connection is unbound")
             self.require_caller(caller)
-            previous = ServiceAccountRef.model_validate(row.bound_caller)
-            if previous == caller:
+            if ServiceAccountRef.model_validate(row.bound_caller) == caller:
                 return _view(row, grants)
-            now = datetime.now(UTC)
             row.bound_caller = caller.model_dump(mode="json")
             row.binding_version += 1
             row.version += 1
-            row.updated_at = now
-            db.add(
-                ConnectionBindingChangeRow(
-                    id=uuid4(),
-                    connection_id=connection_id,
-                    version=row.version,
-                    previous_caller=previous.model_dump(mode="json"),
-                    caller=row.bound_caller,
-                    operator_issuer=operator.issuer,
-                    operator_subject=operator.subject,
-                    at=now,
-                )
-            )
+            row.updated_at = datetime.now(UTC)
             return _view(row, grants)
 
     async def unbind(self, connection_id: UUID, *, expected_version: int) -> Connection:

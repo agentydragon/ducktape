@@ -44,9 +44,8 @@ snapshot, including after rename, rebind or reconnect. Workload requests carry n
 `ActionStore` validates that snapshot against the active grant and the Connection's current
 binding version and eligible ServiceAccount under the Connection row lock, both during admission
 and before the dispatch claim. The operator may rebind an active Connection to a different eligible
-ServiceAccount without issuing a new OAuth token; this increments the binding version, retains
-immutable original grant history in `original_caller`, and records the operator and previous/new caller
-in an `external_connection_binding_change` audit row. Later requests from the existing token use
+ServiceAccount without issuing a new OAuth token; this increments the binding version and retains
+immutable original grant history in `original_caller`. Later requests from the existing token use
 the new account. Authority comes from `bound_caller`, history from `original_caller`.
 A revoked, missing, unlabeled or rebound original authority prevents an older unclaimed Action
 from dispatching even if another grant now acts as the same ServiceAccount: the unstarted

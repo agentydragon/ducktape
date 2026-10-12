@@ -648,12 +648,10 @@ def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
             connection_id, expected_version=body.expected_version, display_name=body.display_name
         )
 
-    @app.post("/v1/operator/connections/{connection_id}/rebind")
-    async def rebind_connection(
-        connection_id: UUID, body: ConnectionRebind, principal: Annotated[OperatorPrincipal, Depends(_operator)]
-    ) -> Connection:
+    @app.post("/v1/operator/connections/{connection_id}/rebind", dependencies=[Depends(_operator)])
+    async def rebind_connection(connection_id: UUID, body: ConnectionRebind) -> Connection:
         return await authority.rebind(
-            connection_id, expected_version=body.expected_version, caller=body.service_account, operator=principal
+            connection_id, expected_version=body.expected_version, caller=body.service_account
         )
 
     @app.post("/v1/operator/connections/{connection_id}/unbind", dependencies=[Depends(_operator)])

@@ -87,7 +87,6 @@ class Subscription(Base):
     inbox_id: Mapped[UUID] = mapped_column(ForeignKey("inbox.id", ondelete="CASCADE"))
     idempotency_key: Mapped[str]
     creation: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
-    creator: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
     version: Mapped[int]
     actions_after_sequence: Mapped[int | None] = mapped_column(BigInteger)
     # Immutable lower bound for GitHub receipts eligible for this subscription.
@@ -168,7 +167,6 @@ class GitHubDelivery(Base):
     head_sha: Mapped[str | None]
     digest: Mapped[bytes] = mapped_column(LargeBinary)
     payload: Mapped[dict[str, JsonValue]] = mapped_column(JSONB)
-    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 class GitHubInstallation(Base):

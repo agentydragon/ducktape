@@ -777,9 +777,7 @@ async def test_late_correlation_survives_restart_and_does_not_block_other_events
     async with store.sessions() as session:
         assert await session.scalar(select(Subscription.next_attempt).where(Subscription.id == sub.id)) is not None
     await store.release(claim, None)
-    # The next association/receipt arrives long after the former grace window, with fresh objects.
-    async with store.sessions.begin() as session:
-        await session.execute(update(GitHubDelivery).values(received_at=datetime.now(UTC) - timedelta(days=2)))
+    # The next association/receipt arrives after a restart, with fresh objects.
     recovered = Store(engine, quotas=QuotaSettings())
     restarted = GitHub(GitHubClient(github.client.http, github.settings))
     if ci_first:

@@ -13,6 +13,7 @@ filegroup(
         "//agentplane/notification_service/migrations/versions:0007_subscription_health.py",
         "//agentplane/notification_service/migrations/versions:0008_github_entities.py",
         "//agentplane/notification_service/migrations/versions:0009_github_issue_subject.py",
+        "//agentplane/notification_service/migrations/versions:0010_drop_write_only_columns.py",
     ],
     visibility = ["//agentplane/notification_service:__pkg__"],
 )

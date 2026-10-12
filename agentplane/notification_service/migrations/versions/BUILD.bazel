@@ -10,6 +10,7 @@ exports_files([
     "0007_subscription_health.py",
     "0008_github_entities.py",
     "0009_github_issue_subject.py",
+    "0010_drop_write_only_columns.py",
 ])
 
 py_library(
@@ -82,4 +83,13 @@ py_library(
     name = "0009_github_issue_subject",
     srcs = ["0009_github_issue_subject.py"],
     deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0010_drop_write_only_columns",
+    srcs = ["0010_drop_write_only_columns.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
 )

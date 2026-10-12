@@ -930,7 +930,6 @@ flowchart TD
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         SERVICE_SETTING_OLD_NAMES_DROP[Waits on rollout: drop the old setting names]
         NOTIFICATION_GATEWAY_SETTINGS[Candidate: the notification service's Runner Gateway block]
-        NOTIFICATION_WRITE_ONLY_COLUMNS[Decision: audit columns nothing reads]
     end
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
 ```
@@ -981,13 +980,6 @@ Gateway's `gateway_target`, `gateway_token_file`, `control_target` and
 `command_admission_timeout_s`; move them to a `runner_gateway` block. The settings file and the
 block both forbid extra keys, so no one file suits an image on either side: the code first accepts
 both shapes, then the file switches and the code drops the old one.
-
-### `NOTIFICATION_WRITE_ONLY_COLUMNS` — audit columns nothing reads
-
-**Decision; drops columns, so the operator decides.** `Subscription.creator` and
-`GitHubDelivery.received_at` (notifications) and the Action Service's
-`external_connection_binding_change` table are written and never read in production. Keep them as an
-audit trail, or drop them with a migration.
 
 ## Scope and retirement of stale gates
 

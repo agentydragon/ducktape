@@ -10,7 +10,7 @@ from uuid import uuid4
 import httpx
 import pytest
 import pytest_bazel
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.api import create_app
@@ -28,7 +28,6 @@ from agentplane.action_service.db import (
     ActionConflictError,
     ActionNotFoundError,
     ActionStore,
-    ConnectionBindingChangeRow,
     ConnectionGrantRow,
     make_sessionmaker,
 )
@@ -114,8 +113,7 @@ async def test_rebind_keeps_token_and_history_but_not_old_pending_action_authori
     before = await service.resolve(request.grant_id, issuer=ISSUER, client_id=request.client_id)
     snapshot = before.provenance()
     connection = await service.get(before.connection_id)
-    operator = OperatorPrincipal(issuer="https://operator.example", subject="test-operator")
-    changed = await service.rebind(connection.id, expected_version=connection.version, caller=OTHER, operator=operator)
+    changed = await service.rebind(connection.id, expected_version=connection.version, caller=OTHER)
     assert changed.bound_caller == OTHER
     assert changed.grants[0].caller == PERSONAL  # Immutable original authorization evidence.
     assert changed.grants[0].id == before.id  # Existing OAuth token still addresses this grant.
@@ -129,15 +127,10 @@ async def test_rebind_keeps_token_and_history_but_not_old_pending_action_authori
         stored = await db.get(ConnectionGrantRow, request.grant_id)
         assert stored is not None
         assert stored.original_caller == PERSONAL.model_dump(mode="json")
-        log = list(await db.scalars(select(ConnectionBindingChangeRow)))
-        assert len(log) == 1
-        assert (log[0].operator_issuer, log[0].operator_subject) == (operator.issuer, operator.subject)
-        assert log[0].previous_caller == PERSONAL.model_dump(mode="json")
-        assert log[0].caller == OTHER.model_dump(mode="json")
     with pytest.raises(ConnectionConflictError):
-        await service.rebind(connection.id, expected_version=connection.version, caller=PERSONAL, operator=operator)
+        await service.rebind(connection.id, expected_version=connection.version, caller=PERSONAL)
     with pytest.raises(GrantRejectedError):
-        await service.rebind(changed.id, expected_version=changed.version, caller=UNLABELED, operator=operator)
+        await service.rebind(changed.id, expected_version=changed.version, caller=UNLABELED)
     assert (await service.get(changed.id)).bound_caller == OTHER
     await service.unbind(changed.id, expected_version=changed.version)
     with pytest.raises(GrantRejectedError):

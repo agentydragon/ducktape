@@ -358,7 +358,7 @@ async def test_rebind_preserves_issued_access_and_refresh_tokens(oauth: OAuthFix
     assert grant is not None
     assert grant.caller == PERSONAL
     connection = await oauth.connections.get(grant.connection_id)
-    await oauth.connections.rebind(connection.id, expected_version=connection.version, caller=OTHER, operator=OPERATOR)
+    await oauth.connections.rebind(connection.id, expected_version=connection.version, caller=OTHER)
     rebound = await oauth.proxy.authenticate(tokens["access_token"])
     assert rebound is not None
     assert rebound.caller == OTHER

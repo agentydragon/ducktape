@@ -166,9 +166,9 @@ def _round_trip(connection: Connection) -> None:
                        'https://operator.example', 'test-operator', now())"""
         ).bindparams(id=audit_change, connection_id=audit_connection)
     )
-    command.upgrade(config, "head")
+    command.upgrade(config, "0022_connection_binding_change")
     assert connection.scalar(text("SELECT operator_subject FROM external_connection_binding_change")) == "test-operator"
-    # The new migration must not rewrite or discard an existing audit entry, in either direction.
+    # The rename must not rewrite or discard an existing audit entry, in either direction.
     command.downgrade(config, "0021_connection_rebind")
     assert connection.scalar(text("SELECT operator_subject FROM external_connection_rebind")) == "test-operator"
     connection.execute(text("DELETE FROM external_connection_rebind"))
