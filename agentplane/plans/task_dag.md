@@ -489,6 +489,7 @@ flowchart LR
     SANDBOX_RBAC[Blocked: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
     NETWORK_WORKLOAD_IDENTITY[Unscheduled: network-level workload identity]
+    PC_KUBERNETES_POLICY_SET[Unscheduled: public-coder's Kubernetes access as one PolicySet]
 ```
 
 ### `PC_EGRESS_CREDENTIALS` — label public-coder's Action Service caller
@@ -503,6 +504,16 @@ grant. Coordinate with the owner of the currently disabled/controlled workload b
 credential substitution and Action policy against the existing proxy, then do a reversible cutover.
 Remove only unused OpenClaw-specific wiring; retain shared Iron/Haku consumers. Do not turn this
 into an outage matrix. Source: [public-coder wiring](../../cluster/cdk8s/public_coder/proxy.py).
+
+### `PC_KUBERNETES_POLICY_SET` — public-coder's Kubernetes access as one PolicySet
+
+**Unscheduled; operator, 2026-10-12 PDT: wants it eventually.** Move public-coder-agent's whole set
+of RoleBindings and ClusterRoleBindings (logs, pods, node and cluster-metadata reads, VolSync status
+and the rest, in `cluster/cdk8s/public_coder/app.py` and its entries in
+`cluster/cdk8s/agent_access_profiles.py`) under one `PolicySet` of Kubernetes rules with a Flux-owned
+`PolicyBinding`. Open: `PolicyBinding` subjects are ServiceAccounts only, while some of these
+grants name the `haku:access-profile:public-coder` Group, so either the binding learns Group
+subjects or those grants move to the agent's ServiceAccount.
 
 ### `CLAUDE_AI_SA` — review the external caller's actual authority
 
@@ -533,8 +544,8 @@ grant annotation and its finalizer, and the grant catalog.
 
 **Blocked on the caller review.** The claude.ai caller gets a
 Flux-owned `PolicyBinding` of the sets `CLAUDE_AI_SA` approves, of any rule type, replacing its
-static per-namespace grants in `agent_access_profiles.py`. Static Group subjects (Haku OIDC,
-public-coder) stay Flux bindings. Test an allowed and a denied request. Static caller accounts' bindings, this one among them, are Flux-owned, never Sandbox-owned.
+static per-namespace grants in `agent_access_profiles.py`. Static Group subjects (Haku OIDC;
+public-coder until `PC_KUBERNETES_POLICY_SET`) stay Flux bindings. Test an allowed and a denied request. Static caller accounts' bindings, this one among them, are Flux-owned, never Sandbox-owned.
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
 
