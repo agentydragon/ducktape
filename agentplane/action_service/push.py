@@ -156,10 +156,8 @@ class ActionPushNotifier:
         self._http = httpx.AsyncClient(timeout=10, follow_redirects=False)
         self._task: asyncio.Task[None] | None = None
 
-    def start(self) -> None:
-        self._task = asyncio.create_task(self.run(), name="action-web-push")
-
     async def __aenter__(self) -> Self:
+        self._task = asyncio.create_task(self.run(), name="action-web-push")
         return self
 
     async def __aexit__(

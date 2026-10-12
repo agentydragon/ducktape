@@ -272,9 +272,7 @@ class McpActionGroupExecutor(Executor):
         executor._requires_linkage = True
         return executor
 
-    async def start(self) -> None:
-        if self._supervisor is not None or self._draining:
-            raise RuntimeError("MCP executor already started or stopped")
+    def _start(self) -> None:
         self._mark_unavailable()
         self._supervisor = asyncio.create_task(self._supervise(), name=f"mcp-executor-{self._group_key}")
         self._supervisor.add_done_callback(self._supervisor_done)
@@ -305,12 +303,26 @@ class McpActionGroupExecutor(Executor):
             self._supervisor.cancel()
 
     async def __aenter__(self) -> Self:
+        if self._supervisor is not None or self._draining:
+            raise RuntimeError("MCP executor already started or stopped")
+        try:
+            self._start()
+        except BaseException:
+            await self._close_redacted()
+            raise
         return self
 
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
     ) -> None:
-        await self.close()
+        await self._close_redacted()
+
+    async def _close_redacted(self) -> None:
+        try:
+            await self.close()
+        except Exception:
+            # The pinned HTTP client can re-raise a terminal transport failure during shutdown.
+            raise RuntimeError(f"ActionGroup {self._group_key!r} MCP shutdown failed") from None
 
     async def close(self) -> None:
         self.begin_drain()

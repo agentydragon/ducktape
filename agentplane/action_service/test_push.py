@@ -52,6 +52,9 @@ class RecordingNotifier(ActionPushNotifier):
         self.recorded = recorded
         self.fail = fail
 
+    async def run(self) -> None:
+        """No NOTIFY-driven loop: each test drives reconcile() by hand and owns every send."""
+
     async def _send_one(self, row: PushSubscriptionRow, message: PushShow | PushRetract) -> str:
         if self.fail:
             return "retry"

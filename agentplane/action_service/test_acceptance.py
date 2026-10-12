@@ -158,7 +158,6 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
     executor = CountingExecutor()
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": executor})
-    await service.start()
     async with service, await _client(service, operator_idp) as client:
         key = "submit-1"
         envelope = {
@@ -379,7 +378,6 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(
     executor = LeakyFailingExecutor()
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": executor})
-    await service.start()
     async with service, await _client(service, operator_idp) as client:
         pending = (
             await client.post(
@@ -408,7 +406,6 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(
         assert len(executor.requests) == 1
 
         restarted = ActionService(store, echo_catalog, {"agentplane": executor})
-        await restarted.start()
         async with restarted:
             # A restart resumes pending dispatches only, and a failed Execution is not one.
             assert await store.pending_dispatches() == []
@@ -450,7 +447,6 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
     assert should_dispatch is True
 
     restarted = ActionService(store, echo_catalog, {"agentplane": executor})
-    await restarted.start()
     async with restarted, await _client(restarted, operator_idp) as client:
         assert (await _terminal(client, str(pending_view.id)))["state"] == "succeeded"
         assert len(executor.requests) == 1
@@ -481,7 +477,6 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
 
     never_called = CountingExecutor()
     after_crash = ActionService(store, echo_catalog, {"agentplane": never_called})
-    await after_crash.start()
     async with after_crash:
         # The lease from before the crash is still comfortably unexpired, so the new process
         # must not assume the old one's work is dead.
@@ -520,7 +515,6 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
     )
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, catalog, {"github": CountingExecutor()})
-    await service.start()
     async with service, await _client(service, operator_idp, catalog=catalog) as client:
         groups = await client.get("/v1/action-groups", headers=_workload("workload-a"))
         assert groups.status_code == 200
@@ -641,7 +635,6 @@ async def test_catalog_admission_and_group_routing(
     echo_catalog.groups["offline"].available = False
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": first, "other": second, "offline": first})
-    await service.start()
     async with service, await _client(service, operator_idp, catalog=echo_catalog) as client:
         for group, name in [("missing", "echo"), ("agentplane", "missing"), ("unbound", "echo")]:
             response = await client.post(
@@ -739,7 +732,6 @@ async def test_action_removed_before_allow_never_dispatches(
     executor = CountingExecutor()
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": executor})
-    await service.start()
     async with service, await _client(service, operator_idp, catalog=echo_catalog) as client:
         view = await service.submit(
             ActionRequestInput(
@@ -929,7 +921,6 @@ async def test_operator_history_pages_exclude_pending_and_require_operator(
     engine: AsyncEngine, echo_catalog: ActionCatalog, operator_idp: OperatorIdp
 ) -> None:
     service = ActionService(ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": CountingExecutor()})
-    await service.start()
     path = "/v1/operator/action-requests/history"
     async with service, await _client(service, operator_idp) as client:
         requests = []

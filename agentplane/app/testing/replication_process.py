@@ -290,7 +290,6 @@ async def _serve(
                 app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
             try:
                 async with database_updates.listener.listen(), discovery:
-                    await discovery.start()
                     watching = asyncio.create_task(history_watch.run(), name="test-app-history-watch")
                     try:
                         with socket.socket() as listener:

@@ -177,7 +177,6 @@ async def decision_log(
         queue_size=decision_queue_size,
         flush_seconds=decision_flush_seconds,
     ) as log:
-        log.start()
         yield log
 
 

@@ -82,7 +82,6 @@ async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_l
             )
             executor = McpActionGroupExecutor.from_group_with_linkage("example", group, authority)
             async with executor:
-                await executor.start()
                 await wait_available(group)
                 result = await executor.execute(
                     ExecutionRequest(

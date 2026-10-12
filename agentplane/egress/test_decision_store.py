@@ -63,8 +63,6 @@ async def test_shared_history_survives_replacement_and_repeated_migration(histor
         DecisionLog(DecisionStore(make_engine(history_db_url), retention=timedelta(days=7))) as first,
         DecisionLog(DecisionStore(make_engine(history_db_url), retention=timedelta(days=7))) as second,
     ):
-        first.start()
-        second.start()
         first.record(a)
         second.record(b)
         await asyncio.gather(first.flush(), second.flush())
@@ -98,7 +96,6 @@ async def test_duplicate_acknowledgement_ambiguity(history_db_url: str, monkeypa
     monkeypatch.setattr(log.store, "append", commit_then_disconnect)
     event = record()
     async with log:
-        log.start()
         log.record(event)
         await log.flush()
         assert await log.store.recent(event.subject) == [event]
@@ -135,11 +132,11 @@ async def test_overflow_outage_nonblocking_and_explicit_read_failure(monkeypatch
         raise OSError("test private exception must not escape")
 
     monkeypatch.setattr(log.store, "append", unavailable)
+    # Before entering, so no writer drains the queue yet.
+    log.record(record())
+    log.record(record())
+    assert log.diagnostics.dropped_overflow == 1
     async with log:
-        log.record(record())
-        log.record(record())
-        assert log.diagnostics.dropped_overflow == 1
-        log.start()
         await entered.wait()
         # The DB is blocked, but synchronous admission recording still completes.
         log.record(record())
@@ -173,7 +170,6 @@ async def test_retry_budget_explicit_loss(monkeypatch: pytest.MonkeyPatch) -> No
 
     monkeypatch.setattr(log.store, "append", unavailable)
     async with log:
-        log.start()
         log.record(record())
         await log.flush()
         assert log.diagnostics.dropped_unavailable == 1

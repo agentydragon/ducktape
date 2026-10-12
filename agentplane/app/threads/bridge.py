@@ -96,7 +96,7 @@ class RunnerBridge:
         if thread_id != UUID(public_id):
             raise RunnerError("service Session ID conflicts with the retained Thread identity")
         await self._event_logs.resume_pending(thread_id)
-        await self._discovery.start()
+        self._discovery.wake()
         attached = runner_pb2.Attached()
         attached.CopyFrom(created.attached)
         return attached
@@ -134,7 +134,7 @@ class RunnerBridge:
         # The Thread mapping already exists. Do not make runner Resume depend on archive
         # catch-up; its feed exposes that later, and a stale view remains non-authoritative.
         await self._event_logs.resume_pending(thread_id)
-        await self._discovery.start()
+        self._discovery.wake()
         return attached
 
     async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
@@ -151,7 +151,7 @@ class RunnerBridge:
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
         # Wake Session discovery before relaying; the response does not wait for it.
-        await self._discovery.start()
+        self._discovery.wake()
         try:
             return await self._runners.service.command(str(thread_id), command)
         except TimeoutError as error:

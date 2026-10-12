@@ -184,7 +184,6 @@ async def review(
         engine = make_engine(db_url)
         stack.push_async_callback(engine.dispose)
         executor = await stack.enter_async_context(McpActionGroupExecutor("test_review", group, server))
-        await executor.start()
         private_key, public_key = generate_rsa_keypair()
         idp_sock = bind_free_port()
         idp_origin, app_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}", "http://test-app.invalid"
@@ -199,7 +198,6 @@ async def review(
         service = await stack.enter_async_context(
             ActionService(ActionStore(make_sessionmaker(engine)), catalog, {"test_review": executor}, policies=policies)
         )
-        await service.start()
         connections = ConnectionAuthority(make_sessionmaker(engine), policies)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         downstream = service_api.create_app(

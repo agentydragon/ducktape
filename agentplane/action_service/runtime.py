@@ -61,18 +61,8 @@ async def running_executor(
                     raise ValueError(f"ActionGroup {key!r} has an invalid MCP binding") from None
 
     async with AsyncExitStack() as stack:
-        for key, mcp_executor in supervised.items():
+        for mcp_executor in supervised.values():
             if on_health_change is not None:
                 mcp_executor.on_health_change = on_health_change
-            # Register before start: a connected client can fail during initial discovery.
-            stack.push_async_callback(_close_executor, key, mcp_executor)
-            await mcp_executor.start()
+            await stack.enter_async_context(mcp_executor)
         yield {**executors, **supervised}
-
-
-async def _close_executor(key: str, executor: McpActionGroupExecutor) -> None:
-    try:
-        await executor.close()
-    except Exception:
-        # The pinned HTTP client can re-raise a terminal transport failure during shutdown.
-        raise RuntimeError(f"ActionGroup {key!r} MCP shutdown failed") from None

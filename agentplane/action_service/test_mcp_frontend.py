@@ -244,7 +244,16 @@ async def _serve(
     authentication.create_token_review = AsyncMock(side_effect=review)
     store = ActionStore(make_sessionmaker(engine))
     policies = _policy_index()
-    service = ActionService(store, catalog, executors, policies=policies)
+    # Tests move requests through the store by hand (decide, claim); only the startup pass of the
+    # dispatch and lease-sweep loops may run, so nothing dispatches or expires behind their back.
+    service = ActionService(
+        store,
+        catalog,
+        executors,
+        policies=policies,
+        dispatch_poll_interval=timedelta(hours=1),
+        lease_sweep_interval=timedelta(hours=1),
+    )
     updates = ActionUpdates(db_url)
     app = create_app(
         service,

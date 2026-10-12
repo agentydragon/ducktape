@@ -138,12 +138,12 @@ class McpLinkageAuthority:
         self._refresh_task: asyncio.Task[None] | None = None
         self._change_events: dict[str, set[asyncio.Event]] = {}
 
-    async def start_refresh_loop(self) -> None:
-        if self._refresh_task is None:
-            self._stop.clear()
-            self._refresh_task = asyncio.create_task(self._refresh_loop(), name="mcp-linkage-refresh")
-
     async def __aenter__(self) -> Self:
+        if self._refresh_task is not None:
+            raise RuntimeError("MCP linkage refresh already running")
+        await self._cleanup_removed_servers()
+        self._stop.clear()
+        self._refresh_task = asyncio.create_task(self._refresh_loop(), name="mcp-linkage-refresh")
         return self
 
     async def __aexit__(
@@ -155,7 +155,7 @@ class McpLinkageAuthority:
         await self._refresh_task
         self._refresh_task = None
 
-    async def cleanup_removed_servers(self) -> None:
+    async def _cleanup_removed_servers(self) -> None:
         """Delete linkages, token state, and pending flows for removed configuration."""
         if not self._servers:
             return

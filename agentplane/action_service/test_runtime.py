@@ -10,7 +10,7 @@ import textwrap
 from datetime import timedelta
 from pathlib import Path
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, Mock, patch
 from uuid import uuid4
 
 import httpx
@@ -107,11 +107,11 @@ async def test_invalid_binding_fails_before_any_adapter_starts() -> None:
     catalog = ActionCatalog(
         groups={"first": _group({"transport": "stdio", "command": "unused"}), "invalid": _group({})}
     )
-    with patch.object(McpActionGroupExecutor, "start", new_callable=AsyncMock) as start:
+    with patch.object(McpActionGroupExecutor, "_start") as start:
         with pytest.raises(ValueError, match="ActionGroup 'invalid'"):
             async with running_executor(catalog):
                 pytest.fail("invalid binding was served")
-        start.assert_not_awaited()
+        start.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -130,12 +130,12 @@ async def test_malformed_http_binding_fails_before_any_connection_without_echoin
     config: dict[str, JsonValue],
 ) -> None:
     catalog = ActionCatalog(groups={"remote": _group(config)})
-    with patch.object(McpActionGroupExecutor, "start", new_callable=AsyncMock) as start:
+    with patch.object(McpActionGroupExecutor, "_start") as start:
         with pytest.raises(ValueError, match="invalid MCP binding") as error:
             async with running_executor(catalog):
                 pytest.fail("malformed binding was served")
         assert "test-only-private" not in str(error.value)
-        start.assert_not_awaited()
+        start.assert_not_called()
 
 
 @pytest.mark.parametrize("kind", ["echo", "hostexec", "unknown"])
@@ -211,7 +211,7 @@ async def test_runtime_sanitizes_connect_and_cleanup_failures() -> None:
         }
     )
     with (
-        patch.object(McpActionGroupExecutor, "start", AsyncMock(side_effect=RuntimeError("private connect material"))),
+        patch.object(McpActionGroupExecutor, "_start", Mock(side_effect=RuntimeError("private connect material"))),
         patch.object(McpActionGroupExecutor, "close", AsyncMock(side_effect=RuntimeError("private cleanup material"))),
         pytest.raises(RuntimeError, match="MCP shutdown failed") as error,
     ):
@@ -259,7 +259,7 @@ async def test_partial_startup_closes_current_and_previous_adapter(failure: str)
     adapters = {key: McpActionGroupExecutor.from_group(key, group) for key, group in catalog.groups.items()}
     names = {adapter: key for key, adapter in adapters.items()}
 
-    async def start(adapter: McpActionGroupExecutor) -> None:
+    def start(adapter: McpActionGroupExecutor) -> None:
         events.append(f"start {names[adapter]}")
         if len(events) == 2:
             if failure == "connect":
@@ -273,7 +273,7 @@ async def test_partial_startup_closes_current_and_previous_adapter(failure: str)
 
     with (
         patch.object(McpActionGroupExecutor, "from_group", side_effect=lambda key, group: adapters[key]),
-        patch.object(McpActionGroupExecutor, "start", start),
+        patch.object(McpActionGroupExecutor, "_start", start),
         patch.object(McpActionGroupExecutor, "close", close),
     ):
         expected = asyncio.CancelledError if failure == "cancel" else RuntimeError
@@ -405,7 +405,7 @@ async def test_main_failure_disposes_engine_after_owned_resources(failure: str) 
         patch("agentplane.action_service.main.make_engine", return_value=engine),
         patch("agentplane.action_service.main.verify_schema", verify),
         patch("agentplane.service_process.k8s_config.load_incluster_config"),
-        patch.object(ActionService, "start", start),
+        patch.object(ActionService, "_start", start),
         patch.object(ActionService, "close", close),
         patch.object(uvicorn.Server, "serve", serve),
     ):

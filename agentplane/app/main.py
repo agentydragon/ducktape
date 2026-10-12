@@ -214,7 +214,6 @@ async def serve_then_close(
     connections and the database have the rest of the Pod's grace period to themselves."""
     try:
         async with database_updates.listener.listen(), discovery:
-            await discovery.start()
             await server.serve()
     finally:
         await engine.dispose()

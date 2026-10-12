@@ -254,7 +254,7 @@ class ActionService:
         self._sweep_task: asyncio.Task[None] | None = None
         self._dispatch_task: asyncio.Task[None] | None = None
 
-    async def start(self) -> None:
+    async def _start(self) -> None:
         """Resume only dispatches that provably never started; liveness sweeps handle the rest.
 
         A restart never assumes in-flight work died with the old process: the sweep loop
@@ -281,6 +281,14 @@ class ActionService:
             self._close_task = asyncio.create_task(self._close(), name="action-service-drain")
 
     async def __aenter__(self) -> Self:
+        if self._heartbeat_task is not None or self.draining:
+            raise RuntimeError("action service already started or stopped")
+        try:
+            await self._start()
+        except BaseException:
+            # Stops the dispatch/lease tasks a partial start left running.
+            await self.close()
+            raise
         return self
 
     async def __aexit__(

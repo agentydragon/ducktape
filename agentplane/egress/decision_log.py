@@ -66,12 +66,6 @@ class DecisionLog:
             "writer_running": self._worker is not None and not self._worker.done(),
         }
 
-    def start(self) -> None:
-        if self._worker is not None:
-            raise RuntimeError("decision writer already started")
-        self._worker = asyncio.create_task(self._run(), name="egress-decision-writer")
-        self._worker.add_done_callback(self._finished)
-
     def _finished(self, worker: asyncio.Task[None]) -> None:
         if not worker.cancelled() and (error := worker.exception()) is not None:
             self.diagnostics.available = False
@@ -81,6 +75,10 @@ class DecisionLog:
         await self._queue.join()
 
     async def __aenter__(self) -> Self:
+        if self._worker is not None:
+            raise RuntimeError("decision writer already started")
+        self._worker = asyncio.create_task(self._run(), name="egress-decision-writer")
+        self._worker.add_done_callback(self._finished)
         return self
 
     async def __aexit__(

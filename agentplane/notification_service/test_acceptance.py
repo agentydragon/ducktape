@@ -80,7 +80,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     action_service = ActionService(
         ActionStore(make_sessionmaker(action_engine)), echo_catalog, {"agentplane": echo_executor}
     )
-    await action_service.start()
     async with action_service, kubernetes() as cluster, asyncio.timeout(60):
         for token, account in [("owner-token", owner), ("delegate-token", delegate), ("other-token", other)]:
             cluster.fake.tokens[token] = TokenVerdict(

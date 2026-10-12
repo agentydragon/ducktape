@@ -1095,7 +1095,7 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
     )
     called = 0
 
-    async def no_archive_yet() -> None:
+    def no_archive_yet() -> None:
         return None
 
     async def submit(session_id: str, candidate: command_pb2.Command) -> event_log_pb2.EventEntry:
@@ -1105,7 +1105,7 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
         assert candidate == command
         return receipt
 
-    monkeypatch.setattr(bridge._discovery, "start", no_archive_yet)
+    monkeypatch.setattr(bridge._discovery, "wake", no_archive_yet)
     monkeypatch.setattr(bridge._runners.service, "command", submit)
     assert await bridge.command(thread, command) == receipt
     assert await content.admitted_command(thread, command) is None
@@ -1169,7 +1169,6 @@ async def replicas(
             survivor_discovery,
             owner_discovery,
         ):
-            await owner_discovery.start()
             await owner_discovery.reconcile()
             yield Replicas(
                 owner,
@@ -1268,29 +1267,28 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
         return running()
 
     monkeypatch.setattr(runners, "running", observed_running)
-    discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
-    async with service, dialing(runner.runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)), discovery:
+    async with service, dialing(runner.runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)):
         await asyncio.to_thread(sandbox_endpoint.wait_connected, UUID(destination.sandbox_uid))
         await service.runner(destination).create(session_id=uuid4(), spec=MessageToDict(spec))
-        await discovery.start()
-        async with asyncio.timeout(10):
-            await discovered.wait()
-        discovered.clear()
-        live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX] = raw, running_pod
-        live_index.changes.notify()
-        async with asyncio.timeout(10):
-            await discovered.wait()
-        # Only discovery can create this row: no bridge exists, so no Open, command, or SSE request ran.
-        async for attempt in AsyncRetrying(
-            stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
-        ):
-            with attempt:
-                threads = await store.list_threads()
-                assert len(threads) == 1
-                # Discovery wakes once from the informer; projection subsequently fetches service pages.
-                await discovery.reconcile()
-                assert await event_logs.last_cursor(threads[0].id) > 0
-        assert threads[0].sandbox == SANDBOX
+        async with SessionDiscovery(runners=runners, event_logs=event_logs) as discovery:
+            async with asyncio.timeout(10):
+                await discovered.wait()
+            discovered.clear()
+            live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX] = raw, running_pod
+            live_index.changes.notify()
+            async with asyncio.timeout(10):
+                await discovered.wait()
+            # Only discovery can create this row: no bridge exists, so no Open, command, or SSE request ran.
+            async for attempt in AsyncRetrying(
+                stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+            ):
+                with attempt:
+                    threads = await store.list_threads()
+                    assert len(threads) == 1
+                    # Discovery wakes once from the informer; projection subsequently fetches service pages.
+                    await discovery.reconcile()
+                    assert await event_logs.last_cursor(threads[0].id) > 0
+            assert threads[0].sandbox == SANDBOX
 
 
 async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
@@ -1397,50 +1395,50 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     """Runner receipts and a committed Thread mapping suffice; copying the feed is independent."""
     # Stall the runner's push to the History Service's ingress without delaying the runner itself.
     monkeypatch.setattr("agentplane.runner.ingress.IngressPusher.push", AsyncMock())
-    discovery = SessionDiscovery(runners=local_runners, event_logs=event_logs)
-    bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, discovery=discovery)
-    opened = await asyncio.wait_for(bridge.create_session(SANDBOX, uuid4(), MessageToDict(spec)), timeout=10)
-    thread_id = UUID(opened.session_id)
-    assert opened.last_cursor > 0
-    assert await event_logs.last_cursor(thread_id) == 0
+    async with SessionDiscovery(runners=local_runners, event_logs=event_logs) as discovery:
+        bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, discovery=discovery)
+        opened = await asyncio.wait_for(bridge.create_session(SANDBOX, uuid4(), MessageToDict(spec)), timeout=10)
+        thread_id = UUID(opened.session_id)
+        assert opened.last_cursor > 0
+        assert await event_logs.last_cursor(thread_id) == 0
 
-    # A native conversation must exist before Resume: an idle Open has no Claude/Codex
-    # history to restore even if the runner subsequently reports STOPPED.
-    seed = await bridge.command(
-        thread_id,
-        command_pb2.Command(command_id="seed-before-archive", submit_input=command_pb2.SubmitInput(text="SEED")),
-    )
-    await model.reply(await model.request(), Text("SEED_REPLY"))
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
-    ):
-        with attempt:
-            (summary,) = await local_runners.client(SANDBOX).list_sessions()
-            assert summary.last_cursor > seed.cursor
-            assert not summary.active_turn_id
-    assert await event_logs.last_cursor(thread_id) == 0
+        # A native conversation must exist before Resume: an idle Open has no Claude/Codex
+        # history to restore even if the runner subsequently reports STOPPED.
+        seed = await bridge.command(
+            thread_id,
+            command_pb2.Command(command_id="seed-before-archive", submit_input=command_pb2.SubmitInput(text="SEED")),
+        )
+        await model.reply(await model.request(), Text("SEED_REPLY"))
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                (summary,) = await local_runners.client(SANDBOX).list_sessions()
+                assert summary.last_cursor > seed.cursor
+                assert not summary.active_turn_id
+        assert await event_logs.last_cursor(thread_id) == 0
 
-    await bridge.command(
-        thread_id,
-        command_pb2.Command(command_id="stop-before-archive", stop_runner_session=command_pb2.StopRunnerSession()),
-    )
-    # Admission is not harness shutdown. Wait on the runner's own state, not on the
-    # stalled archive, before attempting a legitimate Resume.
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
-    ):
-        with attempt:
-            (summary,) = await local_runners.client(SANDBOX).list_sessions()
-            assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
-    resumed = await asyncio.wait_for(
-        bridge.resume_thread(
-            thread_id, expected_harness=Harness(runner_pb2.Harness.Name(spec.harness)), expected_cwd=spec.cwd
-        ),
-        timeout=10,
-    )
-    assert resumed.session_id == opened.session_id
-    assert resumed.last_cursor > opened.last_cursor
-    assert await event_logs.last_cursor(thread_id) == 0
+        await bridge.command(
+            thread_id,
+            command_pb2.Command(command_id="stop-before-archive", stop_runner_session=command_pb2.StopRunnerSession()),
+        )
+        # Admission is not harness shutdown. Wait on the runner's own state, not on the
+        # stalled archive, before attempting a legitimate Resume.
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                (summary,) = await local_runners.client(SANDBOX).list_sessions()
+                assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+        resumed = await asyncio.wait_for(
+            bridge.resume_thread(
+                thread_id, expected_harness=Harness(runner_pb2.Harness.Name(spec.harness)), expected_cwd=spec.cwd
+            ),
+            timeout=10,
+        )
+        assert resumed.session_id == opened.session_id
+        assert resumed.last_cursor > opened.last_cursor
+        assert await event_logs.last_cursor(thread_id) == 0
 
 
 if __name__ == "__main__":

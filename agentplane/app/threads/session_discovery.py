@@ -31,6 +31,9 @@ class SessionDiscovery:
         self._coordinator: asyncio.Task[None] | None = None
 
     async def __aenter__(self) -> Self:
+        if self._coordinator is not None:
+            raise RuntimeError("session discovery already running")
+        self._coordinator = asyncio.create_task(self._coordinate(), name="session-discovery")
         return self
 
     async def __aexit__(
@@ -38,10 +41,8 @@ class SessionDiscovery:
     ) -> None:
         await self.close()
 
-    async def start(self) -> None:
-        """Start discovery, or wake it to reconcile now."""
-        if self._coordinator is None:
-            self._coordinator = asyncio.create_task(self._coordinate(), name="session-discovery")
+    def wake(self) -> None:
+        """Reconcile now rather than at the next interval."""
         self._changed.set()
 
     async def _coordinate(self) -> None:

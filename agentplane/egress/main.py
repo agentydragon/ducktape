@@ -49,7 +49,6 @@ async def async_main(settings: Settings) -> None:
             batch_size=settings.decision_batch_size,
             flush_seconds=settings.decision_flush_seconds,
         )
-        decision_log.start()
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
         informer = Informer(
             index=index,

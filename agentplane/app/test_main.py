@@ -38,6 +38,7 @@ from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.session_discovery import SessionDiscovery
+from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
@@ -209,7 +210,7 @@ async def _other_connections(database: AsyncEngine) -> int:
 @pytest.mark.usefixtures("sigterm_is_survivable")
 async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_discovery_and_database(
     inventory: SandboxServiceClient,
-    bridge: RunnerBridge,
+    runners: SandboxSessions,
     store: ThreadStore,
     database_updates: Wakeups,
     engine: AsyncEngine,
@@ -222,7 +223,6 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_disc
     database: AsyncEngine,
     event_logs: EventLogStore,
     content: ContentStore,
-    discovery: SessionDiscovery,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     electric_proxy: ElectricProxy,
@@ -236,9 +236,11 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_disc
     live_index.sandboxes[SANDBOX] = raw
     live_index.pods[SANDBOX] = running
     await event_logs.seed(SANDBOX, "shutdown-session")
+    # Not the entered conftest fixture: serve_then_close owns the discovery lifetime.
+    discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
     app = create_app(
         inventory,
-        bridge,
+        RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery),
         store,
         MODELS,
         egress,

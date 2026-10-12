@@ -95,8 +95,6 @@ async def async_main(settings: Settings) -> None:
                 engine=engine,
             )
         )
-        await mcp_linkage.cleanup_removed_servers()
-        await mcp_linkage.start_refresh_loop()
         # Built unconditionally: a configured sandbox group must fail at startup rather than at the
         # first dispatch, and an API client this process already holds costs nothing when unused.
         sandboxes = SandboxClients(
@@ -109,7 +107,7 @@ async def async_main(settings: Settings) -> None:
             running_executor(catalog, mcp_linkage, sandboxes, on_health_change=updates.wake_mcp_health)
         )
         if settings.web_push is not None:
-            push_notifier = await stack.enter_async_context(
+            await stack.enter_async_context(
                 ActionPushNotifier(
                     PushIdentity(settings.web_push),
                     PushSubscriptionStore(make_sessionmaker(engine)),
@@ -117,7 +115,6 @@ async def async_main(settings: Settings) -> None:
                     database_url=settings.database_url,
                 )
             )
-            push_notifier.start()
 
         def drain_backends() -> None:
             for executor in executors.values():
@@ -134,7 +131,6 @@ async def async_main(settings: Settings) -> None:
                 on_drain=drain_backends,
             )
         )
-        await service.start()
         operator_authenticator: OperatorAuthenticator
         if settings.operator_oidc is not None:
             operator_authenticator = OidcOperatorAuthenticator(settings.operator_oidc)
