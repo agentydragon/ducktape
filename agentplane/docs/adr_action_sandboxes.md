@@ -84,6 +84,10 @@ authority. A Pod runs only as a ServiceAccount in its own namespace, and those a
 Session Sandboxes' namespace, so Action boxes do too, and the Action Service keeps `pods/exec` there.
 Kubernetes RBAC cannot scope `pods/exec` by label, so that exec also reaches Session Sandboxes.
 
+Each box carries an owner reference to its caller's ServiceAccount, so deleting a Session Sandbox
+(and with it the account it minted) garbage-collects the boxes its agent created. Boxes of static
+accounts such as claude-ai are unaffected; `dispose` and an idle expiry bound them.
+
 Rejected: **a namespace of their own.** It would scope the Action Service's Pod authority to Action
 boxes, but every caller account, including each per-Sandbox account the Sandbox Service mints, would
 need a counterpart there with its bindings.
