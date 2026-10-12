@@ -669,6 +669,7 @@ calls the gateway to seal. Action Service boxes keep a catalog of their own ([AD
 ```mermaid
 flowchart TD
     SANDBOX_IMAGE_REPLACE[Candidate: replace the runner image between incarnations]
+    VM_PROVIDER[VM provider, section 4] -. VMs .-> SANDBOX_IMAGE_REPLACE
     SANDBOX_CREATE_CUTOVER[Candidate: Sandboxes are created as ours]
     ACTION_POLICY_MIGRATE[Action policies on PolicySet, section 6] -. staging .-> SANDBOX_CREATE_CUTOVER
     KUBERNETES_POLICY_SETS[Grant catalog as PolicySets, section 6] -. staging .-> SANDBOX_CREATE_CUTOVER
@@ -677,12 +678,13 @@ flowchart TD
 
 ### `SANDBOX_IMAGE_REPLACE` — replace the runner image between incarnations
 
-**Candidate; the operator's "pause, replace the image, resume" (2026-10-12 PDT).** For pods and VMs
-alike, the controller accepts a new runner image only once the current incarnation is gone: the next
-Pod runs it, and a VM gets its containerDisk rewritten while `runStrategy: Halted`. Both keep the
-state PVC. The PVC records a state-schema version, and an image that does not declare that version
-is refused. The VM half is #8843's `ReplaceVmImage` and `VmTemplate.state_schema_version`, replaced
-live in [the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
+**Candidate; the operator's "pause, replace the image, resume" (2026-10-12 PDT).** Pods already get
+it: the next Pod runs the template's new image on the same state PVC. Left, both for pods and VMs:
+what the PVC holds belongs to the runner (operator, 2026-10-12 PDT), so the runner records the
+version of its state layout there, migrates an older one forward when it starts, and refuses one it
+cannot migrate with a reported reason; the controller gates nothing on it. Left for VMs: the
+containerDisk is rewritten while `runStrategy: Halted`, as #8843's `ReplaceVmImage` did live in
+[the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
 
 ### `SANDBOX_CREATE_CUTOVER` — Sandboxes are created as ours
 
