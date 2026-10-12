@@ -162,7 +162,7 @@ class App(Construct):
                 "postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)"
                 "@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)"
             ),
-            env_name(Settings, "electric_url"): EnvValue.from_value(electric.service(namespace, electric.HISTORY).url),
+            env_name(Settings, "electric_url"): EnvValue.from_value(electric.service(namespace).url),
             env_name(OIDCSettings, "issuer"): EnvValue.from_value(self.env.app.oidc_issuer),
             env_name(OIDCSettings, "public_base_url"): EnvValue.from_value(f"https://{self.env.app.hostname}"),
             env_name(OIDCSettings, "client_id"): self.oidc.key("client-id").env_value(self, "oidc-client-id-ref"),
@@ -281,7 +281,7 @@ class App(Construct):
                 # still requires its own configured operator authenticator;
                 # network reachability grants no review authority.
                 actions.service(namespace).egress(),
-                electric.service(namespace, electric.HISTORY).egress(),
+                electric.service(namespace).egress(),
                 database.egress(namespace),
             ],
         )

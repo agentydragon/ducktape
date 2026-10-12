@@ -382,8 +382,8 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   labels:
-    app.kubernetes.io/name: agentplane-electric-history
-  name: agentplane-electric-history
+    app.kubernetes.io/name: agentplane-electric
+  name: agentplane-electric
   namespace: agentplane-testing
 spec:
   minReadySeconds: 0
@@ -392,14 +392,14 @@ spec:
   revisionHistoryLimit: 10
   selector:
     matchLabels:
-      cdk8s.io/metadata.addr: agentplane-electric-history-deployment-c830e9f5
+      cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
   strategy:
     type: Recreate
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: agentplane-electric-history
-        cdk8s.io/metadata.addr: agentplane-electric-history-deployment-c830e9f5
+        app.kubernetes.io/name: agentplane-electric
+        cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
     spec:
       automountServiceAccountToken: false
       containers:
@@ -511,8 +511,8 @@ apiVersion: v1
 kind: Service
 metadata:
   labels:
-    app.kubernetes.io/name: agentplane-electric-history
-  name: agentplane-electric-history
+    app.kubernetes.io/name: agentplane-electric
+  name: agentplane-electric
   namespace: agentplane-testing
 spec:
   externalIPs: []
@@ -522,13 +522,13 @@ spec:
       protocol: TCP
       targetPort: 3000
   selector:
-    cdk8s.io/metadata.addr: agentplane-electric-history-deployment-c830e9f5
+    cdk8s.io/metadata.addr: agentplane-electric-deployment-c86a4b11
   type: ClusterIP
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
-  name: agentplane-electric-history
+  name: agentplane-electric
   namespace: agentplane-testing
 spec:
   egress:
@@ -552,7 +552,7 @@ spec:
               protocol: TCP
   endpointSelector:
     matchLabels:
-      app.kubernetes.io/name: agentplane-electric-history
+      app.kubernetes.io/name: agentplane-electric
   ingress:
     - fromEndpoints:
         - matchLabels:
@@ -3130,7 +3130,7 @@ spec:
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
             - name: AGENTPLANE_ELECTRIC_URL
-              value: http://agentplane-electric-history.agentplane-testing.svc:3000
+              value: http://agentplane-electric.agentplane-testing.svc:3000
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://agentplane-dex-testing.allegedly.works/dex
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -3241,7 +3241,7 @@ spec:
             - name: AGENTPLANE_DATABASE_URL
               value: postgresql+asyncpg://$(AGENTPLANE_DB_USER):$(AGENTPLANE_DB_PASSWORD)@$(AGENTPLANE_DB_HOST):$(AGENTPLANE_DB_PORT)/$(AGENTPLANE_DB_NAME)
             - name: AGENTPLANE_ELECTRIC_URL
-              value: http://agentplane-electric-history.agentplane-testing.svc:3000
+              value: http://agentplane-electric.agentplane-testing.svc:3000
             - name: AGENTPLANE_OIDC_ISSUER
               value: https://agentplane-dex-testing.allegedly.works/dex
             - name: AGENTPLANE_OIDC_PUBLIC_BASE_URL
@@ -3561,7 +3561,7 @@ spec:
               protocol: TCP
     - toEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: agentplane-electric-history
+            app.kubernetes.io/name: agentplane-electric
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
         - ports:

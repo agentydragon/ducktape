@@ -3711,7 +3711,7 @@ spec:
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-electric-history
+      name: agentplane-electric
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
@@ -3905,7 +3905,7 @@ spec:
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-electric-history
+      name: agentplane-electric
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment

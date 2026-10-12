@@ -57,7 +57,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
     chart = Chart(app, "agentplane", disable_resource_name_hashes=True)
     Namespace(chart, "namespace", env)
     database.Db(chart, "db", env)
-    electric.Electric(chart, "electric-history", env, electric.HISTORY)
+    electric.Electric(chart, "electric", env)
     llm_ingress.LlmIngress(chart, "llm-ingress", env)
     egress.Egress(chart, "egress", env, runners=runner_sandbox.pods(env.namespace))
     sandbox_pod.add_tool_config(chart, env)

@@ -653,7 +653,6 @@ flowchart TD
     HISTORY_SANDBOX_LOCATOR_DROP[Candidate: drop the Sandbox locator from the history database]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Candidate: name the sandbox_commands database for the Runner Gateway]
-    ELECTRIC_DEPLOYMENT_RENAME[Candidate: give Electric its plain name]
     ACTION_SANDBOX_DESIGN[Decision: Action Service Sandboxes through the Sandbox Service]
     ACTION_SANDBOX_PROVISIONING[Blocked: the Action Service stops creating Sandboxes]
     ACTION_SANDBOX_DESIGN --> ACTION_SANDBOX_PROVISIONING
@@ -706,11 +705,6 @@ binding or runner. Design what the Sandbox Service's API offers them (a Sandbox 
 **Blocked on the design.** The Action Service's Sandbox Actions call the Sandbox Service; their own
 inventory and the Action Service's RBAC on `Sandbox` objects go, as does `TODO(sandbox-lifetime)`
 once the Sandbox Service's lifetime handling covers them (`SANDBOX_IDLE_EXPIRY`).
-
-### `ELECTRIC_DEPLOYMENT_RENAME` — one Electric, plainly named
-
-**Candidate.** Give the remaining Electric deployment the plain name; it still carries the
-history-specific `agentplane-electric-history`.
 
 ## 10. Legacy burn-down
 
