@@ -485,7 +485,6 @@ flowchart LR
     POLICY_SANDBOX_CUTOVER --> SANDBOX_RBAC
     POLICY_SANDBOX_CUTOVER --> OLD_POLICY_KINDS_DROP
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
-    SANDBOX_IDLE_EXPIRY[Candidate: delete idle runner Sandboxes]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
 ```
@@ -593,12 +592,6 @@ the first Open until the script exits, and nothing shows its output or progress.
 Sandbox comes up and expose its progress and result, keeping successful bootstrap as the Open
 precondition unless the operator reviews a change.
 
-### `SANDBOX_IDLE_EXPIRY` — delete runner Sandboxes nobody uses
-
-**Candidate.** Expire idle runner Sandboxes; Action Service boxes are `ACTION_BOX_IDLE_REAPER`'s.
-Deleting one goes through [teardown](../sandbox_service/API.md#teardown), which waits until history is
-archived through the seal (the ingress acknowledgement).
-
 ## 7. History Service ownership
 
 Target: [History Service plan](history_service.md).
@@ -655,6 +648,8 @@ flowchart TD
     POLICY_SANDBOX_CUTOVER[Sandboxes take policy sets, section 6] -. binding owner moves .-> AGENT_SANDBOX_RETIRE
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
+    SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes stop]
+    SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
     CLAUDE_PORTABLE_STATE -. per harness .-> SESSION_REVIVE
     CODEX_PORTABLE_STATE -. per harness .-> SESSION_REVIVE
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
@@ -669,7 +664,9 @@ back (native harness state only, or also its workspace files); which launch conf
 incarnation uses (the Sandbox's recorded one, or a current template, which also decides whether an
 image upgrade happens on revival); who may revive and how (an explicit API call, never implicitly
 on a read or a notification). Sessions that share a Sandbox revive together, since they share its
-state PVC.
+state PVC. Open since the operator asked for idle expiry (2026-10-11 PDT): whether a command
+arriving at the Runner Gateway for a stopped Sandbox starts it automatically, against the
+explicit-call lean above, and what the user sees while it starts.
 
 ### `SESSION_STATE_VOLUME_DESIGN` — what the state PVC holds
 
@@ -730,6 +727,17 @@ on a kept state PVC and resume, checking continuation and prompt-cache cost. The
 ### `CODEX_PORTABLE_STATE` — Codex evidence
 
 **Candidate after the volume design.** The same for Codex; neither harness waits for the other.
+
+### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes stop
+
+**Unscheduled; needs design; operator, 2026-10-11 PDT.** An idle runner Sandbox stops its
+current incarnation: the Pod or VM goes, and the Sandbox, its ServiceAccount, bindings and state
+PVC stay, so nothing is sealed or lost and `SESSION_REVIVE` resumes it on the same PVC. Decide what
+counts as idle (no turns or commands for a configured time, and nothing attached), and whether a
+stopped Sandbox is ever deleted outright, and when; deleting goes through
+[teardown](../sandbox_service/API.md#teardown) and the seal. Before our resource exists, a pod-only
+version could use agent-sandbox's `operatingMode`. Action Service boxes are
+`ACTION_BOX_IDLE_REAPER`'s, which only ever deletes.
 
 ### `SESSION_INCARNATIONS` — a Session records its incarnations
 
