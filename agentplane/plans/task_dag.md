@@ -442,6 +442,7 @@ app/Sandbox Service database changes requires its own migration safety review.
 ```mermaid
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: Claude Code web sessions in Agentplane]
+    SERVICE_LOG_FLAGS[Unscheduled: logging flags in the services]
 ```
 
 ### `CLAUDE_CODE_WEB_BRIDGE` — Claude Code web sessions in Agentplane
@@ -450,6 +451,12 @@ flowchart LR
 conversations in Agentplane, and possibly drive them, by shimming the web interface's control
 protocol. Builds on the viewer and syncer under `devinfra/` and the reverse-engineering in
 `agentydragon/gaffer-private`.
+
+### `SERVICE_LOG_FLAGS` — logging flags in the services
+
+**Unscheduled; operator, 2026-10-12 PDT: would welcome it.** `agentplane/service_process.py` fixes
+every service at `INFO`. A setting for the level, per logger where it helps (request logging in the
+app, the gRPC clients), lets a debugging session turn detail up on one Deployment without an image.
 
 ## 6. Existing access and lifecycle follow-ups
 
@@ -500,7 +507,10 @@ trade-offs and acceptance cases. The preferred live design is an Agentplane-owne
 subject-free group CR and per-Sandbox assignment CR, reconciled by a separate small controller
 image/ServiceAccount with narrowly reviewed binding-write and named-role `bind` authority;
 final CRD schemas, migration and RBAC grants still require review. Snapshot expansion remains
-an acceptable simpler fallback.
+an acceptable simpler fallback. The operator leans toward the CR and small controller (2026-10-12
+PDT), not yet a decision. Either way the UI shows a group as one named chip (say, "basic cluster
+diag"), never the hundreds of namespace bindings it expands to. The same controller could expire a
+grant, giving time-limited Kubernetes permissions.
 
 ### `KUBERNETES_RBAC_POLICY_BINDINGS` — apply groups and one-SA changes
 
@@ -821,6 +831,14 @@ suspension and PVC creation, but its `Sandbox` is also the Sandbox Service's onl
 over. Replaces the imperative-only `CreateSandbox` too. If the Sandbox Service becomes a real
 controller or operator for it, rename the service to say so (operator, 2026-10-11 PDT).
 
+It also carries the operator's eventual "pause, replace the image, resume" (2026-10-12 PDT), for
+pods and VMs alike. The controller accepts a new `spec.runner.image` only once the current
+incarnation is gone: the next Pod runs the new image, and a VM gets its containerDisk rewritten while
+`runStrategy: Halted`. Both keep the state PVC. The PVC records a state-schema version, and an image
+that does not declare that version is refused. The VM half is #8843's `ReplaceVmImage` and
+`VmTemplate.state_schema_version`, replaced live in
+[the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
+
 ### `POD_INCARNATION` — a Pod is the incarnation
 
 **Decision; later.** A Sandbox is its agent's volumes, with or without a running runner; an
@@ -878,6 +896,7 @@ flowchart TD
         SERVICE_SETTING_NAMES[Candidate: settings name the service they configure]
         OPERATOR_ROUTE_PREFIX[Candidate: one operator route prefix]
         NOTIFICATION_WRITE_ONLY_COLUMNS[Decision: audit columns nothing reads]
+        EVENT_DRIVEN_WAKEUPS[Decision: which timed polls become event-driven]
     end
     RUNNER_INBOUND_RETIRE --> RUNNER_CORE_SPLIT
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
@@ -952,6 +971,14 @@ services move together.
 `GitHubDelivery.received_at` (notifications) and the Action Service's
 `external_connection_binding_change` table are written and never read in production. Keep them as an
 audit trail, or drop them with a migration.
+
+### `EVENT_DRIVEN_WAKEUPS` — wake on events, not timers
+
+**Decision; operator, 2026-10-12 PDT: pull or push on events rather than polls.** Loops that still
+wake on a timer: the Action Service's pending-dispatch reconcile (`action_service/service.py`, every
+second), the indexer's source sync and idle embedding retry (`indexing/maintenance.py`), and the
+Notification Service's storage-error retry. Decide which wait on a `NOTIFY` or a stream instead,
+and which stay as retry backoff after an error, which is not a poll.
 
 ## Scope and retirement of stale gates
 
