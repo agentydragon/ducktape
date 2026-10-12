@@ -50,6 +50,29 @@ func TestPodRunsAsTheSandboxsOwnServiceAccount(t *testing.T) {
 	if getBinding(t, c) != nil {
 		t.Error("a Sandbox naming no PolicySets got a PolicyBinding")
 	}
+	if account.Labels[ActionCallerLabel] != "true" {
+		t.Errorf("ServiceAccount labels = %v, want %s", account.Labels, ActionCallerLabel)
+	}
+}
+
+func TestAccountCreatedWithoutTheActionCallerLabelGetsIt(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	var account corev1.ServiceAccount
+	if err := c.Get(context.Background(), sandboxKey, &account); err != nil {
+		t.Fatal(err)
+	}
+	delete(account.Labels, ActionCallerLabel)
+	if err := c.Update(context.Background(), &account); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if err := c.Get(context.Background(), sandboxKey, &account); err != nil {
+		t.Fatal(err)
+	}
+	if account.Labels[ActionCallerLabel] != "true" {
+		t.Errorf("ServiceAccount labels = %v, want %s", account.Labels, ActionCallerLabel)
+	}
 }
 
 func TestBindingIsCreatedWithThePodWithoutWaitingForItsReaders(t *testing.T) {

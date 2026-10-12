@@ -29,6 +29,8 @@ from agentplane.subjects import ServiceAccountRef
 POLICY_SETS_PLURAL = "actionpolicysets"
 BINDINGS_PLURAL = "actionpolicybindings"
 SERVICE_ACCOUNTS_PLURAL = "serviceaccounts"
+# Sandbox Controller sets the same label on its Sandboxes' accounts (`ActionCallerLabel` in
+# agentplane/sandbox_controller/identity.go).
 CALLER_LABEL = f"{GROUP}/use-action-service"
 CALLER_LABEL_SELECTOR = f"{CALLER_LABEL}=true"
 READY_CONDITION = "Ready"
