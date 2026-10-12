@@ -15,7 +15,7 @@ py_library(
         "//agentplane:grpc_calls",
         "//agentplane:subjects",
         "//agentplane/proto:sandbox_service_pb2",
-        "//agentplane/runner:runner",
+        "//agentplane/runner",
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway:destinations",
         "//agentplane/runner_gateway:grpc_api",
