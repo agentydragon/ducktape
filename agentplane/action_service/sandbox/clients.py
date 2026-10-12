@@ -6,9 +6,9 @@ from dataclasses import dataclass
 
 from kubernetes_asyncio.client import ApiClient, CoreV1Api
 
-from agentplane.action_service.sandbox.binding import BoxExecutorBinding, SandboxExecutorBinding
-from agentplane.action_service.sandbox.box_inventory import BoxInventory
+from agentplane.action_service.sandbox.binding import PodExecutorBinding, SandboxExecutorBinding
 from agentplane.action_service.sandbox.inventory import SandboxInventory
+from agentplane.action_service.sandbox.pod_inventory import PodInventory
 from mcp_infra.exec.kubernetes import ExecRunner
 from util.kubernetes import CustomObjectsClient
 
@@ -31,5 +31,5 @@ class SandboxClients:
             binding, custom_objects=self.custom_objects, core_v1=self.core_v1, exec_runner=self.exec_runner
         )
 
-    def box_inventory(self, binding: BoxExecutorBinding) -> BoxInventory:
-        return BoxInventory(binding, api=self.api, core_v1=self.core_v1, exec_runner=self.exec_runner)
+    def pod_inventory(self, binding: PodExecutorBinding) -> PodInventory:
+        return PodInventory(binding, api=self.api, core_v1=self.core_v1, exec_runner=self.exec_runner)

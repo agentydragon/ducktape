@@ -2,7 +2,7 @@
 with no harness and no state volume. The command box runs the plain sandbox image
 (agentplane/images/sandbox.nix) and costs the namespace quota what a command needs; the build box is
 the same box sized for a build, on the build image (agentplane/images/build.nix), which adds Bazel
-and its toolchain. Each is rendered twice: as a core PodTemplate, which a `box` group creates plain
+and its toolchain. Each is rendered twice: as a core PodTemplate, which a `pod` group creates plain
 Pods from, and as a SandboxTemplate describing itself in the annotation a `sandbox` group reads.
 """
 

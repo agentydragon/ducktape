@@ -19,8 +19,7 @@ from pydantic import BaseModel, JsonValue, ValidationError
 
 from agentplane.action_service.models import ExecutionRequest, ExecutionResult, ExecutionState
 from agentplane.action_service.sandbox.actions import SandboxAction
-from agentplane.action_service.sandbox.binding import BoxExecutorBinding, SandboxExecutorBinding
-from agentplane.action_service.sandbox.box_inventory import BoxInventory
+from agentplane.action_service.sandbox.binding import PodExecutorBinding, SandboxExecutorBinding
 from agentplane.action_service.sandbox.inventory import ForeignSandboxError, SandboxActionError, SandboxInventory
 from agentplane.action_service.sandbox.models import (
     CreateArgs,
@@ -32,6 +31,7 @@ from agentplane.action_service.sandbox.models import (
     SandboxList,
     TemplateArgs,
 )
+from agentplane.action_service.sandbox.pod_inventory import PodInventory
 from agentplane.action_service.service import ExecutionLease, Executor, hold_lease
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import PodExecError
@@ -51,7 +51,7 @@ class SandboxExecutor(Executor):
     """
 
     def __init__(
-        self, binding: SandboxExecutorBinding | BoxExecutorBinding, inventory: SandboxInventory | BoxInventory
+        self, binding: SandboxExecutorBinding | PodExecutorBinding, inventory: SandboxInventory | PodInventory
     ) -> None:
         self._binding = binding
         self._inventory = inventory

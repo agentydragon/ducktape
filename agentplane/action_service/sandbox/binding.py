@@ -19,7 +19,7 @@ DESCRIPTION_ANNOTATION = f"{PREFIX}/description"
 
 
 # CLEANUP(added 2026-10-12): delete with its inventory, DESCRIPTION_ANNOTATION and the Action
-#   Service's Sandbox RBAC once no deployed config names `kind: sandbox` (staging moves to `box`).
+#   Service's Sandbox RBAC once no deployed config names `kind: sandbox` (staging moves to `pod`).
 class SandboxExecutorBinding(BaseModel):
     """Sandboxes stamped and exec'd by this service rather than reached over MCP.
 
@@ -48,7 +48,7 @@ class SandboxExecutorBinding(BaseModel):
         return sorted(templates)
 
 
-class BoxExecutorBinding(BaseModel):
+class PodExecutorBinding(BaseModel):
     """Boxes this service starts as plain Pods running as the caller, from PodTemplates it offers.
 
     Code-owned for the same reason as `SandboxExecutorBinding`.
@@ -56,7 +56,7 @@ class BoxExecutorBinding(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    kind: Literal["box"] = "box"
+    kind: Literal["pod"] = "pod"
     description: str = Field(min_length=1, max_length=2000, description="Agent-visible executor description.")
     namespace: str = Field(min_length=1, description="Namespace boxes run and are exec'd in.")
     templates: dict[str, str] = Field(

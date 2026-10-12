@@ -4691,7 +4691,7 @@ data:
         title: Sandbox
         description: Boxes that run as the calling ServiceAccount, and bounded commands in them.
         executor:
-          kind: box
+          kind: pod
           description: Created and exec'd by this service, as the caller, in its own namespace.
           namespace: agentplane-testing
           templates:

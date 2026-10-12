@@ -30,14 +30,14 @@ from kubernetes_asyncio.client import (
     V1VolumeProjection,
 )
 
-from agentplane.action_service.sandbox.binding import BoxExecutorBinding
-from agentplane.action_service.sandbox.box_inventory import BoxInventory
+from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.inventory import (
     DEFAULT_CONTAINER_ANNOTATION,
     ForeignSandboxError,
     SandboxActionError,
 )
 from agentplane.action_service.sandbox.models import READY_CONDITION
+from agentplane.action_service.sandbox.pod_inventory import PodInventory
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import CommandResult
 from util.exec.models import Exited
@@ -48,7 +48,7 @@ CALLER_UID = "test-caller-uid"
 # `object_name` composes it this way; spelled out so a change to that scheme fails here loudly.
 OBJECT_NAME = "caller-one-box"
 
-BINDING = BoxExecutorBinding(
+BINDING = PodExecutorBinding(
     description="test sandboxes", namespace=NAMESPACE, templates={"test-template": "the test box"}
 )
 
@@ -141,8 +141,8 @@ class FakeExecRunner:
         return CommandResult(exit=Exited(exit_code=0), stdout="", stderr="", duration_seconds=0.1)
 
 
-def _inventory(core_v1: FakeCoreV1, runner: FakeExecRunner | None = None, api: ApiClient | None = None) -> BoxInventory:
-    return BoxInventory(
+def _inventory(core_v1: FakeCoreV1, runner: FakeExecRunner | None = None, api: ApiClient | None = None) -> PodInventory:
+    return PodInventory(
         BINDING,
         # Only `get_template` serializes; the tests that reach it pass a real client.
         api=api,  # type: ignore[arg-type]

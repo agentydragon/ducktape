@@ -815,9 +815,9 @@ container and `commands_database_url` at the new names. `database.py`'s comment 
 
 ### `ACTION_SANDBOX_PODS` — Action Service boxes as plain Pods
 
-**In progress: testing first (operator, 2026-10-12 PDT).** Executor kind `box` runs beside
+**In progress: testing first (operator, 2026-10-12 PDT).** Executor kind `pod` runs beside
 `sandbox` and testing offers it; once boxes pass on testing, the follow-up PR moves staging's group
-to `box` and deletes kind `sandbox`, its Sandbox RBAC and the template description annotation.
+to `pod` and deletes kind `sandbox`, its Sandbox RBAC and the template description annotation.
 Direction accepted with the operator 2026-10-12 PDT ([ADR](../docs/adr_action_sandboxes.md)).
 Action Service boxes and Session Sandboxes share only the Pod recipe (`sandbox_pod.py`): a box
 runs as the caller's own ServiceAccount, with no runner, state volume, owned bindings or seal, so

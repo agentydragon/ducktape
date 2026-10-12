@@ -1,4 +1,4 @@
-"""The boxes a `box` group creates, reads and deletes, and the commands it runs in them.
+"""The boxes a `pod` group creates, reads and deletes, and the commands it runs in them.
 
 A box is a plain Pod running as its caller, stamped from a PodTemplate the binding offers; its labels,
 ownership check and errors are the `sandbox` inventory's (inventory.py). It is not a Sandbox Service
@@ -24,7 +24,7 @@ from kubernetes_asyncio.client import (
     V1PodTemplateSpec,
 )
 
-from agentplane.action_service.sandbox.binding import BoxExecutorBinding
+from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.inventory import (
     CALLER_LABEL,
     CALLER_NAMESPACE_LABEL,
@@ -79,7 +79,7 @@ def _info(pod: V1Pod) -> SandboxInfo:
     )
 
 
-def _check_box(name: str, template: V1PodTemplateSpec) -> None:
+def _check_template(name: str, template: V1PodTemplateSpec) -> None:
     """Refuse a template whose box would escape the egress path. A box runs as its caller, so a
     ServiceAccount token in the container an agent runs commands in would hand out the caller's
     whole authority as a portable credential (README.md)."""
@@ -108,11 +108,11 @@ def _refusal(error: ApiException) -> str:
     return cast(str, json.loads(error.body)["message"]) if error.body else str(error.reason)
 
 
-class BoxInventory:
+class PodInventory:
     """Every box this group owns, keyed by the caller that asked for it."""
 
     def __init__(
-        self, binding: BoxExecutorBinding, *, api: ApiClient, core_v1: CoreV1Api, exec_runner: ExecRunner
+        self, binding: PodExecutorBinding, *, api: ApiClient, core_v1: CoreV1Api, exec_runner: ExecRunner
     ) -> None:
         self._binding = binding
         self._api = api
@@ -125,7 +125,7 @@ class BoxInventory:
             offered = ", ".join(sorted(self._binding.templates))
             raise SandboxActionError(f"unknown template {name!r}; this deployment offers {offered}")
         template = cast(V1PodTemplate, await self._core_v1.read_namespaced_pod_template(name, self._binding.namespace))
-        _check_box(name, template.template)
+        _check_template(name, template.template)
         return cast(V1PodTemplateSpec, template.template)
 
     async def check_templates(self) -> None:

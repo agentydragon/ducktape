@@ -167,7 +167,7 @@ class Actions(Construct):
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"])
             )
 
-        # A `sandbox` ActionGroup stamps Sandboxes, and a `box` group plain Pods from its
+        # A `sandbox` ActionGroup stamps Sandboxes, and a `pod` group plain Pods from its
         # PodTemplates, owned by the caller's ServiceAccount; both run commands in the Pods. This is
         # namespace-wide and cannot say "only the boxes this Action made": that boundary is
         # the executor's own label check (agentplane/action_service/sandbox/inventory.py), which

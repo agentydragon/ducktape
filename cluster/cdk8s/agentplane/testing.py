@@ -34,7 +34,7 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.mcp_settings import McpOAuthServer
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
-from agentplane.action_service.sandbox.binding import BoxExecutorBinding
+from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.action_federation_settings import DirectFederationSettings
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import agent_access_profiles as access, cilium
@@ -140,8 +140,8 @@ _ACTION_GROUPS = {
     "sandbox": ActionGroup(
         title="Sandbox",
         description="Boxes that run as the calling ServiceAccount, and bounded commands in them.",
-        executor=BoxExecutorBinding(
-            kind="box",
+        executor=PodExecutorBinding(
+            kind="pod",
             description="Created and exec'd by this service, as the caller, in its own namespace.",
             namespace=TESTING_NAMESPACE,
             templates=command_sandbox.TEMPLATES,
