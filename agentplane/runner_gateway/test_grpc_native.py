@@ -17,14 +17,13 @@ from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncEngine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.grpc_calls import ServiceError
+from agentplane.grpc_calls import RefusedError, ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SessionDefaults
-from agentplane.runner import runner as local_runner  # the gateway client also defines `Runner`
-from agentplane.runner.errors import RunnerError
+from agentplane.runner.runner import Runner, follow_journal
 from agentplane.runner.testing import events
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
-from agentplane.runner_gateway.client import Runner, RunnerGatewayClient
+from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxRunner
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.testing.grpc_service import service_client
@@ -40,7 +39,7 @@ AUDIENCE = "test-native-grpc"
 
 
 @pytest.fixture
-def resources(cluster: Cluster, runner: local_runner.Runner, engine: AsyncEngine) -> Resources:
+def resources(cluster: Cluster, runner: Runner, engine: AsyncEngine) -> Resources:
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
         pod_name="test-native-caller",
@@ -60,7 +59,7 @@ def resources(cluster: Cluster, runner: local_runner.Runner, engine: AsyncEngine
 
 
 @pytest.fixture(autouse=True)
-async def connected(cluster: Cluster, resources: Resources, runner: local_runner.Runner) -> AsyncIterator[None]:
+async def connected(cluster: Cluster, resources: Resources, runner: Runner) -> AsyncIterator[None]:
     async with runner_connected(cluster, resources, runner):
         yield
 
@@ -71,12 +70,12 @@ async def remote(resources: Resources, token_file: Path) -> AsyncIterator[Runner
         yield client
 
 
-async def inspect(runner: Runner, session_id: str) -> runner_pb2.SessionSummary:
+async def inspect(runner: SandboxRunner, session_id: str) -> runner_pb2.SessionSummary:
     return one(summary for summary in await runner.list_sessions() if summary.session_id == session_id)
 
 
 async def complete_turn(
-    remote: RunnerGatewayClient, local: local_runner.Runner, model: ScriptedModel, session_id: str, command_id: str
+    remote: RunnerGatewayClient, local: Runner, model: ScriptedModel, session_id: str, command_id: str
 ) -> list[event_log_pb2.EventEntry]:
     command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="Reply: GRPC_OK"))
     receipt = await remote.command(DESTINATION, session_id, command)
@@ -94,7 +93,7 @@ async def complete_turn(
     entries: list[event_log_pb2.EventEntry] = []
     async with (
         asyncio.timeout(20),
-        aclosing(local_runner.follow_journal(local.sessions[session_id].journal, receipt.cursor - 1)) as journal,
+        aclosing(follow_journal(local.sessions[session_id].journal, receipt.cursor - 1)) as journal,
     ):
         async for entry in journal:
             entries.append(entry)
@@ -115,7 +114,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     spec: runner_pb2.SessionSpec,
     cluster: Cluster,
     workspace: Path,
-    runner: local_runner.Runner,
+    runner: Runner,
 ) -> None:
     bootstrap_marker = workspace / "bootstrap-runs"
     setup_marker = workspace / "setup-runs"
@@ -146,7 +145,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         assert (await destination.create(session_id=requested, spec={})).attached.spec == opened.spec
         assert (await destination.list_sessions())[0].spec == opened.spec
         # The runner refuses a retry whose spec differs from the one it recorded.
-        with pytest.raises(RunnerError):
+        with pytest.raises(RefusedError):
             await destination.create(session_id=requested, spec={"instructions": "Different task"})
         assert bootstrap_marker.read_text() == "B"
         assert setup_marker.read_text() == "S"
@@ -154,11 +153,11 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         stop = command_pb2.Command(command_id="grpc-stop", stop_runner_session=command_pb2.StopRunnerSession())
         await remote.command(DESTINATION, session, stop)
         journal = runner.sessions[session].journal
-        async with asyncio.timeout(20), aclosing(local_runner.follow_journal(journal, entries[-1].cursor)) as tail:
+        async with asyncio.timeout(20), aclosing(follow_journal(journal, entries[-1].cursor)) as tail:
             async for entry in tail:
                 if events.kind(entry) == "harness_exited":
                     break
-        with pytest.raises(RunnerError):
+        with pytest.raises(RefusedError):
             await remote.command(
                 DESTINATION,
                 session,
@@ -181,7 +180,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         assert resumed.harness_state == runner_pb2.HARNESS_STATE_RUNNING
         await complete_turn(restarted, runner, model, session, "grpc-resumed")
         assert (await destination.list_sessions())[0].spec == opened.spec
-        with pytest.raises(RunnerError):
+        with pytest.raises(RefusedError):
             await destination.create(
                 session_id=uuid4(), spec={"harness": "HARNESS_CODEX", "cwd": "/workspace", "model": "test"}
             )
@@ -215,7 +214,7 @@ async def test_failed_setup_cannot_be_resumed(remote: RunnerGatewayClient, spec:
             opened = await inspect(runner, created.session_id)
             assert opened.setup_state != runner_pb2.SETUP_STATE_RUNNING
     assert opened.setup_state == runner_pb2.SETUP_STATE_FAILED
-    with pytest.raises(RunnerError):
+    with pytest.raises(RefusedError):
         await runner.resume(created.session_id)
 
 
@@ -229,7 +228,7 @@ async def test_invalid_launch_and_failed_bootstrap_never_create(
             await runner.create(session_id=uuid4(), spec=invalid)
         assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
     cluster.set_binding(SandboxBinding(bootstrap="exit 42"))
-    with pytest.raises(RunnerError):
+    with pytest.raises(RefusedError):
         await runner.create(session_id=uuid4(), spec=MessageToDict(spec))
     assert not await runner.list_sessions()
 

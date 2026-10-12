@@ -75,7 +75,6 @@ py_library(
         "//agentplane/egress:decisions_client",
         "//agentplane/postgres:wakeups",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/runner:errors",
         "//agentplane/runner:harness",
         "//agentplane/sandbox_service:action_policy_views",
         "//agentplane/sandbox_service:client",

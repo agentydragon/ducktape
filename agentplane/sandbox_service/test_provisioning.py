@@ -18,10 +18,9 @@ from more_itertools import one
 
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP
-from agentplane.grpc_calls import ServiceError
+from agentplane.grpc_calls import RefusedError, ServiceError
 from agentplane.proto import runner_pb2, sandbox_service_pb2
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, SandboxDestination, TeardownPhase
-from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress import EgressInventory
@@ -157,7 +156,7 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
     assert view.initializing
     assert view.operating_mode == "Suspended"
     assert not case.core.service_accounts
-    with pytest.raises(RunnerError):
+    with pytest.raises(RefusedError):
         await api.resume(view.name)
     await case.service.reconcile_once()
     view = await api.get(view.name)
@@ -168,7 +167,7 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
     assert await case.service.inventory.pending_grants(view.name) is None
     assert await api.list_sandboxes() == [view]
     assert await api.list_templates() == [TEMPLATE]
-    with pytest.raises(RunnerError):
+    with pytest.raises(RefusedError):
         await api.delete(view.name)
     stale = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=str(uuid4()))
     for operation in (api.stub.SuspendSandbox, api.stub.ResumeSandbox, api.stub.DeleteSandbox):
@@ -415,7 +414,7 @@ async def test_a_template_that_names_an_endpoint_is_refused(api: SandboxServiceC
     template = deepcopy(case.custom.objects[("sandboxtemplates", TEMPLATE)])
     template["spec"]["podTemplate"]["spec"]["containers"][0]["args"] = [flag, "test-elsewhere.test:9000"]
     case.custom.objects[("sandboxtemplates", TEMPLATE)] = template
-    with pytest.raises(RunnerError):  # How the client reports FAILED_PRECONDITION.
+    with pytest.raises(RefusedError):  # How the client reports FAILED_PRECONDITION.
         await api.create(CreateSandboxRequest(name="test", template=TEMPLATE))
     assert ("sandboxes", "test") not in case.custom.objects
 
@@ -505,7 +504,7 @@ async def test_a_name_held_by_the_other_kind_is_refused(
 async def test_our_kind_suspends_resumes_and_deletes_by_its_spec(own_api: SandboxServiceClient, case: Case) -> None:
     view = await own_api.create(CreateSandboxRequest(name="test", template=TEMPLATE))
     _own(case, "test")["metadata"]["finalizers"] = ["test-controller-finalizer"]
-    with pytest.raises(RunnerError):  # How the client reports FAILED_PRECONDITION: running.
+    with pytest.raises(RefusedError):  # How the client reports FAILED_PRECONDITION: running.
         await own_api.delete("test")
     stale = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=str(uuid4()))
     for operation in (own_api.stub.SuspendSandbox, own_api.stub.ResumeSandbox, own_api.stub.DeleteSandbox):
@@ -522,7 +521,7 @@ async def test_our_kind_suspends_resumes_and_deletes_by_its_spec(own_api: Sandbo
     # The controller runs it again to seal its Sessions, then deletes the rest.
     assert (await own_api.get("test")).teardown == TeardownPhase.TEARDOWN_PHASE_SEALING
     assert case.custom.deleted == [(OWN_STORE, "test")]
-    with pytest.raises(RunnerError):
+    with pytest.raises(RefusedError):
         await own_api.resume("test")
 
 

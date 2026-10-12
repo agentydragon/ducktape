@@ -262,7 +262,7 @@ async def test_unlisted_callers_rejected_before_lookup(
     destination = sandbox_service_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
     async with service(configured, cluster.provisioning) as target, dial(target) as channel:
         sandboxes = sandbox_client(channel, token_file, namespace=SANDBOX_NAMESPACE)
-        remote = gateway_client(channel, token_file, command_admission_timeout_s=None, control_target=target)
+        remote = gateway_client(channel, token_file, command_admission_timeout_s=10, control_target=target)
         for call, request in (
             (sandboxes.stub.ListSandboxes, Empty()),
             (sandboxes.stub.GetSandbox, sandbox_service_pb2.GetSandboxRequest(name=SANDBOX)),

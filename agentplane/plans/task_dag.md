@@ -854,7 +854,6 @@ runner through the Sandbox Service.
 
 ```mermaid
 flowchart TD
-    GATEWAY_CLIENT_SPLIT[Unscheduled: the gateway client stands alone]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 7]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
@@ -867,11 +866,6 @@ flowchart TD
 journal entries its ingress has already acknowledged, behind a flag, with full persistence kept
 selectable. Not designed: what the runner still needs locally (cursors, seal state, entries a
 resumed harness or a lost push reads back) once acknowledged entries are gone.
-
-### `GATEWAY_CLIENT_SPLIT` — the gateway client stands alone
-
-**Unscheduled.** `RunnerGatewayClient`'s `Runner` handle is renamed and its
-`command_admission_timeout_s` stops being nullable.
 
 ### `SEAL_FINALIZER` — seal as a finalizer on every delete
 
@@ -904,21 +898,12 @@ Refactors found by reading devel (2026-10-11 PDT) against the quality bar and
 ```mermaid
 flowchart TD
     subgraph COHERENCE_REFACTORS[Coherence refactors]
-        RUNNER_ERRORS_REHOME[Unscheduled: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
         SERVICE_SETTING_OLD_NAMES_DROP[Waits on rollout: drop the old setting names]
         NOTIFICATION_GATEWAY_SETTINGS[Waits on rollout: the notification config sets runner_gateway]
     end
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
 ```
-
-### `RUNNER_ERRORS_REHOME` — errors beside the client that raises them
-
-**Unscheduled.** `agentplane.runner.errors` is now every service's "session refused" vocabulary:
-the gateway, the status translation the Sandbox Service and Runner Gateway clients share
-(`agentplane/grpc_calls.py`, which raises it for `FAILED_PRECONDITION`) and the app's
-Thread-identity conflicts raise it. Move the client-side error beside that translation, per
-grpc_services.md, and give the app's `bridge.py` its own error type.
 
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 

@@ -93,10 +93,9 @@ from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
 from agentplane.egress.decisions import Decision
 from agentplane.egress.decisions_client import DecisionsClient, DecisionsUnavailableError
-from agentplane.grpc_calls import ServiceError
+from agentplane.grpc_calls import RefusedError, ServiceError
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import runner_pb2
-from agentplane.runner.errors import RunnerError
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -1011,8 +1010,10 @@ _ERROR_STATUS: dict[type[Exception], int] = {
     DuplicateKubernetesGrantError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     SandboxNotReachableError: status.HTTP_409_CONFLICT,
     runner_bridge.RunnerAdmissionTimeoutError: status.HTTP_504_GATEWAY_TIMEOUT,
-    # The runner refused a lifecycle request or a command: an unknown session, a spec mismatch.
-    RunnerError: status.HTTP_409_CONFLICT,
+    # The runner or the Sandbox's state refused a lifecycle request or a command: an unknown session.
+    RefusedError: status.HTTP_409_CONFLICT,
+    # The Thread's history or retained Session spec does not admit it: a spec mismatch.
+    runner_bridge.ThreadStateError: status.HTTP_409_CONFLICT,
     runner_bridge.MalformedMessageError: status.HTTP_422_UNPROCESSABLE_CONTENT,
 }
 

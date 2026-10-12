@@ -264,7 +264,7 @@ async def test_threads_the_gateway_cannot_list_are_said_so_in_the_frame(
         unreachable = RunnerGatewayClient(
             channel,
             token_file=token,
-            command_admission_timeout_s=None,
+            command_admission_timeout_s=5,
             request_timeout_s=5,
             control=SandboxControlClient(
                 control_target=f"127.0.0.1:{port}", token_file=token, request_timeout_s=5, lifecycle_timeout_s=5

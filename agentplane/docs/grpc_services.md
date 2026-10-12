@@ -66,7 +66,8 @@ follows it; code that differs converges on it.
   gRPC logs it and answers `UNKNOWN`. `context.abort` outside the mapping is for request validation
   the RPC itself performs.
 - **Client:** `agentplane.grpc_calls` translates `grpc.aio.AioRpcError` in one place into a
-  `ServiceError` carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`).
+  `ServiceError` carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`; the Sandbox
+  Service and Runner Gateway clients read `FAILED_PRECONDITION` as `RefusedError`).
 
 ## Deadlines
 

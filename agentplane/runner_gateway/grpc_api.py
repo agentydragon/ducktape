@@ -22,7 +22,6 @@ from agentplane.proto import (
     sandbox_service_pb2,
 )
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination
-from agentplane.runner.errors import RunnerError
 from agentplane.runner_gateway import session_lifecycle, wire
 from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
@@ -76,7 +75,7 @@ errors = status_mapping(
     Abort(grpc.aio.AioRpcError, _runner_status),
     Abort((ValueError, ParseError), (grpc.StatusCode.INVALID_ARGUMENT, "invalid service request")),
     Abort(
-        (InventoryError, RunnerError),
+        (InventoryError, session_lifecycle.BootstrapError),
         (grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request"),
     ),
     deadline="service deadline expired",

@@ -725,11 +725,6 @@ py_test(
 )
 
 py_library(
-    name = "errors",
-    srcs = ["errors.py"],
-)
-
-py_library(
     name = "harness",
     srcs = ["harness.py"],
     visibility = [

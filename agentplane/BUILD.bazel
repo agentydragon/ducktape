@@ -37,7 +37,6 @@ py_library(
     srcs = ["grpc_calls.py"],
     deps = [
         ":grpc_options",
-        "//agentplane/runner:errors",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],

@@ -1,5 +1,5 @@
 """Bearer metadata and status translation for the Agentplane gRPC clients. The Sandbox Service and
-Runner Gateway clients also dial through here and read FAILED_PRECONDITION as a `RunnerError`."""
+Runner Gateway clients also dial through here and read FAILED_PRECONDITION as a `RefusedError`."""
 
 import asyncio
 from collections.abc import Awaitable, Callable
@@ -10,10 +10,13 @@ import grpc
 from google.protobuf.message import Message
 
 from agentplane.grpc_options import LARGE_EVENT_RECEIVE_OPTIONS
-from agentplane.runner.errors import RunnerError
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
+
+
+class RefusedError(Exception):
+    """The runner or the Sandbox's state refused the operation (FAILED_PRECONDITION)."""
 
 
 class ServiceError(ConnectionError):
@@ -40,7 +43,7 @@ def raise_status(error: grpc.aio.AioRpcError) -> Never:
 
 def _raise(error: grpc.aio.AioRpcError) -> Never:
     if error.code() == grpc.StatusCode.FAILED_PRECONDITION:
-        raise RunnerError(f"{error.code().name}: {error.details()}") from error
+        raise RefusedError(f"{error.code().name}: {error.details()}") from error
     raise_status(error)
 
 

@@ -77,7 +77,7 @@ from agentplane.notification_service.sources.github.state import (
 )
 from agentplane.notification_service.store import ConflictError, NotFoundError, Store
 from agentplane.notification_service.testing.store import claimed, due_source, migration_config
-from agentplane.runner_gateway.client import Runner
+from agentplane.runner_gateway.client import SandboxRunner
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
 
@@ -590,7 +590,7 @@ async def test_rate_limit_retry_survives_ingress_and_restart(
     upstream.limited = True
     service.github = github
     service.notice_debounce = NoticeDebounceSettings(quiet_seconds=3600, max_wait_seconds=3600)
-    runner = create_autospec(Runner)
+    runner = create_autospec(SandboxRunner)
     with patch.object(Service, "runner", return_value=runner):
         before = datetime.now(UTC)
         assert await service.step()

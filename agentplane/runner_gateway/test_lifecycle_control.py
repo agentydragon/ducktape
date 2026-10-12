@@ -15,10 +15,9 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.grpc_calls import ServiceError
+from agentplane.grpc_calls import RefusedError, ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import TeardownPhase
-from agentplane.runner.errors import RunnerError
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases
 from agentplane.runner_gateway.destinations import DestinationResolver
@@ -142,7 +141,7 @@ async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
         session_id = opened.request.session_id
         # A harness that failed to launch.
         opened.outcome.set_result(grpc.StatusCode.UNKNOWN)
-        with pytest.raises(RunnerError):
+        with pytest.raises(RefusedError):
             await first
         # The runner created the Session and could not start it; asked again it only confirms it,
         # stopped, so the create starts it.
@@ -182,7 +181,7 @@ async def test_listing_and_resuming_go_over_the_channel(holder: Replica, public_
         assert resume.request.session_id == str(public_id)
         # A Session whose setup failed.
         resume.outcome.set_result(grpc.StatusCode.FAILED_PRECONDITION)
-        with pytest.raises(RunnerError):
+        with pytest.raises(RefusedError):
             await resuming
 
 

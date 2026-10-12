@@ -125,7 +125,6 @@ py_library(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/runner:errors",
         "//agentplane/runner:harness",
         "@pypi//fastapi",
         "@pypi//grpcio",

@@ -16,11 +16,14 @@ from agentplane.app.threads.view.content import ContentStore
 
 # Not `runner_pb2`: that name is the runner's protocol here.
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
-from agentplane.runner.errors import RunnerError
 from agentplane.runner.harness import Harness
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
+
+
+class ThreadStateError(Exception):
+    """The Thread's history or its runner Session's retained state refuses the operation."""
 
 
 class MalformedMessageError(Exception):
@@ -67,7 +70,7 @@ class RunnerBridge:
         public_id = created.session_id
         thread_id = await self._event_logs.open(public_id)
         if thread_id != UUID(public_id):
-            raise RunnerError("service Session ID conflicts with the retained Thread identity")
+            raise ThreadStateError("service Session ID conflicts with the retained Thread identity")
         attached = runner_pb2.Attached()
         attached.CopyFrom(created.attached)
         return attached
@@ -82,25 +85,25 @@ class RunnerBridge:
         """
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
-            raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
+            raise ThreadStateError(f"runner history is rejected: {snapshot.end.message}")
         sandbox = await self._session_sandbox(thread_id)
         session_id = str(thread_id)
         sessions = await self.list_sessions(sandbox)
         summary = next((row for row in sessions if row.session_id == session_id), None)
         if summary is None:
-            raise RunnerError(f"runner has no retained session {session_id!r}; this Thread cannot be resumed")
+            raise ThreadStateError(f"runner has no retained session {session_id!r}; this Thread cannot be resumed")
         if summary.setup_state in (runner_pb2.SETUP_STATE_FAILED, runner_pb2.SETUP_STATE_INTERRUPTED):
-            raise RunnerError("Thread setup failed or was interrupted; create a new Thread to try again")
+            raise ThreadStateError("Thread setup failed or was interrupted; create a new Thread to try again")
         if (
             summary.spec.harness not in (runner_pb2.HARNESS_CLAUDE, runner_pb2.HARNESS_CODEX)
             or not summary.spec.cwd
             or not summary.spec.model
         ):
-            raise RunnerError(f"runner session {session_id!r} has no recoverable session spec")
+            raise ThreadStateError(f"runner session {session_id!r} has no recoverable session spec")
         if (expected_harness is not None and runner_pb2.Harness.Name(summary.spec.harness) != expected_harness) or (
             expected_cwd is not None and summary.spec.cwd != expected_cwd
         ):
-            raise RunnerError("runner's retained session spec does not match this Thread's harness and workspace")
+            raise ThreadStateError("runner's retained session spec does not match this Thread's harness and workspace")
         # The Thread mapping already exists. Do not make runner Resume depend on archive
         # catch-up; its feed exposes that later, and a stale view remains non-authoritative.
         return await self._runners.client(sandbox).resume(session_id)
@@ -117,7 +120,7 @@ class RunnerBridge:
             raise ThreadNotFoundError(thread_id)
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
-            raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
+            raise ThreadStateError(f"runner history is rejected: {snapshot.end.message}")
         runner = self._runners.client(await self._runners.sandbox_of(thread_id))
         try:
             return await self._runners.gateway.command(runner.destination, str(thread_id), command)
