@@ -650,27 +650,17 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 
 ```mermaid
 flowchart TD
-    HISTORY_SANDBOX_LOCATOR_DROP[Waits on rollout: drop the Sandbox locator from the history database]
-    HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
+    HISTORY_DATABASE_RENAME[Candidate: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Candidate: name the sandbox_commands database for the Runner Gateway]
     ACTION_SANDBOX_DESIGN[Decision: Action Service Sandboxes through the Sandbox Service]
     ACTION_SANDBOX_PROVISIONING[Blocked: the Action Service stops creating Sandboxes]
     ACTION_SANDBOX_DESIGN --> ACTION_SANDBOX_PROVISIONING
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
-    HISTORY_SANDBOX_LOCATOR_DROP --> HISTORY_DATABASE_RENAME
 ```
-
-### `HISTORY_SANDBOX_LOCATOR_DROP` — rows name only their Session and writer
-
-**Waits on rollout.** Nothing reads or writes the Sandbox locator columns (`sandbox_namespace`,
-`sandbox_name`, `sandbox_uid`) or `runner_session_id` any more, and migration 0013 rewrote the
-feed snapshots stored under a runner session ID. Once 0013 has run in both environments, drop the
-columns with `ux_history_runner_locator`, `history_sandbox_complete` and `history_origin`. A data
-drop: take a CNPG `Backup` first, and the operator merges it.
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
-**Blocked on the column drop.** Rename the `sandbox_service` database and role
+**Candidate.** Rename the `sandbox_service` database and role
 (and the `postgres-sandbox-service` Secret) for the History Service, resolving the `TODO` in
 `cluster/cdk8s/agentplane/database.py`. Rename in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`)
 and have the CNPG `Database` and managed role adopt the new names; recreating the database under a

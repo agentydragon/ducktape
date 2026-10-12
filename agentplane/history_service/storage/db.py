@@ -5,7 +5,7 @@ The migration is owned by Sandbox Service. No app tables or app-issued identitie
 
 from uuid import UUID
 
-from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, ForeignKeyConstraint, Index, LargeBinary, String, text
+from sqlalchemy import BigInteger, CheckConstraint, ForeignKey, ForeignKeyConstraint, LargeBinary, String
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 
@@ -17,31 +17,12 @@ class SessionHistory(Base):
     __tablename__ = "session_history"
     __table_args__ = (
         CheckConstraint("last_cursor >= 0", name="history_last_cursor_nonnegative"),
-        Index(
-            "ux_history_runner_locator",
-            "sandbox_namespace",
-            "sandbox_name",
-            "sandbox_uid",
-            "runner_session_id",
-            unique=True,
-            postgresql_nulls_not_distinct=True,
-            postgresql_where=text("runner_session_id IS NOT NULL"),
-        ),
         CheckConstraint(
             "num_nulls(writer_namespace, writer_name, writer_uid) IN (0, 3)", name="history_writer_complete"
         ),
-        CheckConstraint("num_nulls(sandbox_namespace, sandbox_name) IN (0, 2)", name="history_sandbox_complete"),
-        CheckConstraint("sandbox_namespace IS NOT NULL OR writer_uid IS NOT NULL", name="history_origin"),
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
-    # CLEANUP(added 2026-10-12): Drop the Sandbox locator and `runner_session_id`, with their index and
-    #   checks, once migration 0013 has run in agentplane-staging and agentplane-testing. Nothing reads
-    #   them; only rows the retired follower created set them.
-    sandbox_namespace: Mapped[str | None] = mapped_column(String)
-    sandbox_name: Mapped[str | None] = mapped_column(String)
-    sandbox_uid: Mapped[UUID | None]
-    runner_session_id: Mapped[str | None] = mapped_column(String)
     # The ServiceAccount whose first accepted ingress push bound the Session; absent until then.
     # Pushes from any other account are refused.
     writer_namespace: Mapped[str | None] = mapped_column(String)

@@ -5,13 +5,32 @@ import uuid
 
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
-from sqlalchemy import create_engine, text
+from sqlalchemy import Connection, create_engine, text
 
 from agentplane.history_service.storage.database_migrate import RUNNER
 from agentplane.proto import history_service_pb2, runner_pb2
 
 # The migrated database is read back over psycopg, which SQLAlchemy loads from the URL scheme.
 # gazelle:include_dep @pypi//psycopg
+
+
+def _restore_sandbox_locator(connection: Connection) -> None:
+    """The follower's columns that migrations before `0014_drop_sandbox_locator` expect."""
+    connection.execute(
+        text(
+            "ALTER TABLE session_history ADD COLUMN sandbox_namespace varchar, ADD COLUMN sandbox_name varchar, "
+            "ADD COLUMN sandbox_uid uuid, ADD COLUMN runner_session_id varchar, "
+            "ADD CONSTRAINT history_sandbox_complete CHECK (num_nulls(sandbox_namespace, sandbox_name) IN (0, 2)), "
+            "ADD CONSTRAINT history_origin CHECK (sandbox_namespace IS NOT NULL OR writer_uid IS NOT NULL)"
+        )
+    )
+    connection.execute(
+        text(
+            "CREATE UNIQUE INDEX ux_history_runner_locator ON session_history "
+            "(sandbox_namespace, sandbox_name, sandbox_uid, runner_session_id) NULLS NOT DISTINCT "
+            "WHERE runner_session_id IS NOT NULL"
+        )
+    )
 
 
 def test_follower_snapshots_take_the_public_session_id(db_url: str) -> None:
@@ -26,6 +45,7 @@ def test_follower_snapshots_take_the_public_session_id(db_url: str) -> None:
     engine = create_engine(RUNNER.sync_url(db_url))
     try:
         with engine.begin() as connection:
+            _restore_sandbox_locator(connection)
             connection.execute(text("UPDATE alembic_version SET version_num = '0012_drop_resumed_after_cursor'"))
             connection.execute(
                 text(
