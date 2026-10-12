@@ -676,7 +676,13 @@ def write_manifests(root: Path) -> None:
         root / _OUTPUT_DIR / "kustomization.yaml",
         kustomize_kustomization(
             resources=[
-                write_charts(root, _OUTPUT_DIR, chart),
+                write_charts(
+                    root,
+                    _OUTPUT_DIR,
+                    chart,
+                    # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+                    unhardened_pods=frozenset({"Deployment/home-assistant", "Job/onboarding"}),
+                ),
                 "break-glass-credentials.sops.yaml",
                 "home-location.sops.yaml",
             ],

@@ -509,4 +509,10 @@ def app_chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(root, _IDENTITY_DIR, identity_chart)
-    write_charts(root, _APP_DIR, app_chart)
+    write_charts(
+        root,
+        _APP_DIR,
+        app_chart,
+        # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
+        unpinned_https_egress=frozenset({"github-api-proxy"}),
+    )

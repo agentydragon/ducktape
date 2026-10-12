@@ -21,6 +21,17 @@ they have one owner; never grant access just because an ExternalSecret requests 
 Done: synthetic cases catch denied namespaces and absent referent identities, while
 valid generated and hand-written consumers pass. No duplicate consumer/provider roster.
 
+## Fleet rule waivers
+
+Workloads and proxy policies that already broke a rule when the rules started covering every
+App carry `unhardened_pods` / `unpinned_https_egress` waivers at their write call, each under a
+`CLEANUP(added 2026-10-12)` comment. Fix them in small PRs: RuntimeDefault seccomp first, then
+resources sized from VPA recommendations. For each unpinned proxy, either pin `serverNames` or
+keep the waiver with a comment saying why it is exempt by design, as Agentplane's egress proxy does.
+Synth fails on a waiver whose object passes, so a fix includes deleting it.
+
+Done: no `CLEANUP(added 2026-10-12)` waiver remains except the documented by-design exemptions.
+
 ## Fleet rule references
 
 `resolved_references` is a same-App kind-mismatch check, not missing-reference

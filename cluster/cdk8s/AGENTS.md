@@ -286,8 +286,9 @@ indirection, stop and ask before changing the design.
 A rule is a plain function `objects -> list[str]` over rendered dicts in
 `fleet_rules.py`, listed in `FleetRules.validate`, with a unit test on synthetic
 objects. Encode what the fleet holds; a rule that fails on `devel` is a policy change
-and lands in its own PR with the violations fixed. Exceptions are explicit parameters
-(`write_app`'s `unpinned_https_egress`), never name matching inside the rule.
+and lands in its own PR with the violations fixed. Exceptions are explicit parameters at
+the write call (`write_app`'s `unhardened_pods`, `unpinned_https_egress`), never name
+matching inside the rule; synth fails on one whose object is gone or passes.
 
 ## Gotchas
 

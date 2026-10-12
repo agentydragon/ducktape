@@ -94,25 +94,40 @@ def write_app(
     app: App,
     *,
     manifest_name: str | None = None,
+    unhardened_pods: frozenset[str] = frozenset(),
     unpinned_https_egress: frozenset[str] = frozenset(),
 ) -> str:
     """Write every chart of `app`, in chart order, into one generated file in `directory`,
-    after the fleet rules pass over all of them; `unpinned_https_egress` is the rules'.
+    after the fleet rules pass over all of them. `unhardened_pods` and `unpinned_https_egress`
+    are the rules' waivers (`fleet_rules.FleetRules`).
 
     The file defaults to `manifest_file(directory)`. A flat Kustomize root with several
     independently synthesized chart apps may pass a distinct `manifest_name` for each.
     """
     name = manifest_name or manifest_file(directory)
-    add_fleet_rules(app, unpinned_https_egress=unpinned_https_egress)
+    add_fleet_rules(app, unhardened_pods=unhardened_pods, unpinned_https_egress=unpinned_https_egress)
     _write_app(root / directory / name, app)
     return name
 
 
 def write_charts(
-    root: Path, directory: str, *chart_builders: Callable[[App], Chart], manifest_name: str | None = None
+    root: Path,
+    directory: str,
+    *chart_builders: Callable[[App], Chart],
+    manifest_name: str | None = None,
+    unhardened_pods: frozenset[str] = frozenset(),
+    unpinned_https_egress: frozenset[str] = frozenset(),
 ) -> str:
-    """Synthesize charts, in order, into one generated file in `directory`; return its name."""
-    return write_app(root, directory, _app(chart_builders), manifest_name=manifest_name)
+    """Synthesize charts, in order, into one generated file in `directory`; return its name.
+    The waivers are `write_app`'s."""
+    return write_app(
+        root,
+        directory,
+        _app(chart_builders),
+        manifest_name=manifest_name,
+        unhardened_pods=unhardened_pods,
+        unpinned_https_egress=unpinned_https_egress,
+    )
 
 
 def write_directory(
@@ -128,6 +143,8 @@ def write_directory(
     configurations: Sequence[str] = (),
     patch_charts: Sequence[Callable[[App], Chart]] = (),
     json6902_patches: Sequence[Json6902Patch] = (),
+    unhardened_pods: frozenset[str] = frozenset(),
+    unpinned_https_egress: frozenset[str] = frozenset(),
 ) -> RenderedDirectory:
     """Synthesize a component's charts into the one generated file of the directory `artifact`
     packages (`write_charts`), and write its `kustomization.yaml` listing it, then `siblings`:
@@ -135,7 +152,8 @@ def write_directory(
     such as an upstream release manifest. `patch_charts` are synthesized into
     `patches.k8s.yaml` beside it and listed as strategic-merge patches, before
     `json6902_patches`. `namespace`, `components`, `generator_options`, `config_map_generator`
-    and `configurations` are `kustomize_kustomization`'s.
+    and `configurations` are `kustomize_kustomization`'s; `unhardened_pods` and
+    `unpinned_https_egress` are `write_app`'s fleet-rule waivers.
 
     For a directory whose `kustomization.yaml` the generator owns: under `GENERATED_ROOT`, or
     under `HAND_WRITTEN_ROOT` beside the hand-written files it names (a `.sops.yaml` sibling,
@@ -152,7 +170,19 @@ def write_directory(
         raise ValueError(f"{artifact.name=}: the writer lists one directory; this artifact also copies {shared=}")
     out_dir = root / directory
     out_dir.mkdir(parents=True, exist_ok=True)
-    resources = [write_charts(root, directory, *chart_builders)] if chart_builders else []
+    resources = (
+        [
+            write_charts(
+                root,
+                directory,
+                *chart_builders,
+                unhardened_pods=unhardened_pods,
+                unpinned_https_egress=unpinned_https_egress,
+            )
+        ]
+        if chart_builders
+        else []
+    )
     patch_files: list[PatchFile] = []
     if patch_charts:
         # Partial objects: the fleet rules check the resources they patch, not the patches.

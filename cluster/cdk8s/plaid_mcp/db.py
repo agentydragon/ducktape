@@ -236,4 +236,11 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart, manifest_name="db.k8s.yaml")
+    write_charts(
+        root,
+        OUTPUT_DIR,
+        chart,
+        manifest_name="db.k8s.yaml",
+        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+        unhardened_pods=frozenset({"Job/db-readonly-provisioner"}),
+    )

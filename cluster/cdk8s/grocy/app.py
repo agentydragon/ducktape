@@ -383,7 +383,13 @@ def write_manifests(root: Path, household: str, *, mcp_dir: str) -> None:
         kustomize_kustomization(
             resources=[
                 posixpath.relpath(mcp_dir, directory),
-                write_charts(root, directory, partial(household_chart, household=household)),
+                write_charts(
+                    root,
+                    directory,
+                    partial(household_chart, household=household),
+                    # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+                    unhardened_pods=frozenset({"Deployment/grocy", "Job/grocy-config-ovh-verify-20260520"}),
+                ),
             ]
         ),
     )

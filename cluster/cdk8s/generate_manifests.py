@@ -548,6 +548,8 @@ def generate_manifests(root: Path) -> None:
             dcgm_exporter_exporter.chart,
             namespace=dcgm_exporter_exporter.NAMESPACE,
             config_map_generator=[dcgm_exporter_exporter.COUNTERS_CONFIG_MAP],
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"DaemonSet/dcgm-exporter"}),
         ),
         monitoring_crds_kustomization,
     )
@@ -711,12 +713,27 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     website_artifact = artifact("website", website.OUTPUT_DIR)
-    website.website(flux_chart, write_directory(root, website_artifact, website.chart), kyverno_kustomization)
+    website.website(
+        flux_chart,
+        write_directory(
+            root,
+            website_artifact,
+            website.chart,
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"Deployment/website"}),
+        ),
+        kyverno_kustomization,
+    )
     proxmox_proxy_artifact = artifact("proxmox-proxy", proxmox_proxy.OUTPUT_DIR)
     proxmox_proxy_kustomization = proxmox_proxy.proxmox_proxy(
         flux_chart,
         write_directory(
-            root, proxmox_proxy_artifact, proxmox_proxy.chart, config_map_generator=[proxmox_proxy.config_map(mesh)]
+            root,
+            proxmox_proxy_artifact,
+            proxmox_proxy.chart,
+            config_map_generator=[proxmox_proxy.config_map(mesh)],
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"Deployment/proxmox-proxy"}),
         ),
         kyverno_kustomization,
     )
@@ -728,7 +745,15 @@ def generate_manifests(root: Path) -> None:
     )
     agents_mitmproxy_artifact = artifact("agents-mitmproxy", mitmproxy.OUTPUT_DIR)
     write_directory(
-        root, agents_mitmproxy_artifact, mitmproxy.namespace_chart, mitmproxy.chart, egress_fences.mitmproxy_cloud_api
+        root,
+        agents_mitmproxy_artifact,
+        mitmproxy.namespace_chart,
+        mitmproxy.chart,
+        egress_fences.mitmproxy_cloud_api,
+        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+        unhardened_pods=frozenset({"Deployment/mitmproxy"}),
+        # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
+        unpinned_https_egress=frozenset({"allow-cloud-api-egress"}),
     )
     docker_ci_artifact = artifact("docker-ci", f"{PARKED_ROOT}/docker-ci")
     parked_flux_kustomizations.docker_ci(
@@ -736,7 +761,15 @@ def generate_manifests(root: Path) -> None:
     )
     atuin_artifact = artifact("atuin", atuin_server.OUTPUT_DIR)
     atuin_kustomization = atuin_server.atuin(
-        flux_chart, write_directory(root, atuin_artifact, atuin_server.chart), cnpg_kustomization
+        flux_chart,
+        write_directory(
+            root,
+            atuin_artifact,
+            atuin_server.chart,
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"Deployment/server"}),
+        ),
+        cnpg_kustomization,
     )
     authentik_artifact = artifact("authentik", f"{HAND_WRITTEN_ROOT}/authentik")
     authentik_kustomization = authentik_flux_kustomizations.authentik(
@@ -806,7 +839,12 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         # No `namespace=`: that transformer would also rewrite the RoleBinding's `claude-sandbox` subject.
         write_directory(
-            root, ollama_app_artifact, ollama_app.chart, config_map_generator=ollama_app.write_config_maps(root)
+            root,
+            ollama_app_artifact,
+            ollama_app.chart,
+            config_map_generator=ollama_app.write_config_maps(root),
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"Deployment/ollama", "Job/setup-gpt-oss-v8"}),
         ),
         external_secrets_operator_kustomization,
         kyverno_kustomization,
@@ -822,7 +860,13 @@ def generate_manifests(root: Path) -> None:
     atuin_user_provisioner_artifact = artifact("atuin-user-provisioner", atuin_user_provisioner.OUTPUT_DIR)
     atuin_user_provisioner.atuin_user_provisioner(
         flux_chart,
-        write_directory(root, atuin_user_provisioner_artifact, atuin_user_provisioner.chart),
+        write_directory(
+            root,
+            atuin_user_provisioner_artifact,
+            atuin_user_provisioner.chart,
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"Job/user-provisioner"}),
+        ),
         atuin_kustomization,
         user_agentydragon_kustomization,
     )
@@ -994,7 +1038,14 @@ def generate_manifests(root: Path) -> None:
     )
     kubectl_passthrough_mcp_artifact = artifact("kubectl-passthrough-mcp", kubectl_passthrough_mcp.OUTPUT_DIR)
     kubectl_passthrough_mcp.kubectl_passthrough_mcp(
-        flux_chart, write_directory(root, kubectl_passthrough_mcp_artifact, kubectl_passthrough_mcp.chart)
+        flux_chart,
+        write_directory(
+            root,
+            kubectl_passthrough_mcp_artifact,
+            kubectl_passthrough_mcp.chart,
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"Deployment/kubectl-passthrough-mcp"}),
+        ),
     )
     forgejo_artifact = artifact("forgejo", f"{HAND_WRITTEN_ROOT}/forgejo")
     forgejo_flux_kustomizations.forgejo(
@@ -1009,7 +1060,14 @@ def generate_manifests(root: Path) -> None:
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
     matrix_kustomization = matrix.matrix(
         flux_chart,
-        write_directory(root, matrix_app_artifact, matrix.chart, siblings=matrix.SOPS_FILES),
+        write_directory(
+            root,
+            matrix_app_artifact,
+            matrix.chart,
+            siblings=matrix.SOPS_FILES,
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"Deployment/element-web"}),
+        ),
         cnpg_kustomization,
     )
     headlamp_app_artifact = artifact("headlamp-app", headlamp.OUTPUT_DIR)
@@ -1060,6 +1118,8 @@ def generate_manifests(root: Path) -> None:
             vector_talos_logs.chart,
             namespace=vector_talos_logs.NAMESPACE,
             config_map_generator=[vector_talos_logs.CONFIG_MAP],
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"DaemonSet/vector-talos-logs"}),
         ),
     )
     monitoring_alloy_artifact = artifact("monitoring-alloy", alloy.OUTPUT_DIR)
@@ -1120,7 +1180,13 @@ def generate_manifests(root: Path) -> None:
     haku_ci_artifact = artifact("haku-ci", haku_ci_runner.OUTPUT_DIR)
     haku_ci_kustomization = haku_ci_runner.haku_ci(
         flux_chart,
-        write_directory(root, haku_ci_artifact, haku_ci_runner.chart),
+        write_directory(
+            root,
+            haku_ci_artifact,
+            haku_ci_runner.chart,
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"ScaledJob/haku-runner"}),
+        ),
         keda_kustomization,
         external_secrets_operator_kustomization,
     )
@@ -1170,6 +1236,8 @@ def generate_manifests(root: Path) -> None:
             siblings=["activitywatch-write-token.sops.yaml", "activitywatch-read-token.sops.yaml"],
             components=["./image-pins"],
             config_map_generator=activitywatch_app.CONFIG_MAPS,
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"Deployment/activitywatch"}),
         ),
         external_secrets_operator_kustomization,
     )
@@ -1197,6 +1265,8 @@ def generate_manifests(root: Path) -> None:
         siblings=airlock.SOPS_FILES,
         components=[posixpath.relpath(airlock.PINS_DIR, airlock.OUTPUT_DIR)],
         config_map_generator=[airlock.CONFIG_MAP],
+        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+        unhardened_pods=frozenset({"Deployment/airlock"}),
     )
     airlock_kustomization = agents_flux_kustomizations.airlock(
         flux_chart, airlock_directory, external_secrets_operator_kustomization
@@ -1252,6 +1322,8 @@ def generate_manifests(root: Path) -> None:
             cli_proxy_api.chart,
             siblings=cli_proxy_api.KEY_FILES,
             components=["./image-pins"],
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"Deployment/cli-proxy-api"}),
         ),
         external_secrets_operator_kustomization,
         kyverno_kustomization,
@@ -1376,6 +1448,8 @@ def generate_manifests(root: Path) -> None:
             siblings=haku_mailbox.SOPS_FILES,
             components=["./image-pins"],
             config_map_generator=[haku_mailbox.CONFIG_MAP, haku_mailbox.INGRESS_CONFIG_MAP],
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"Deployment/haku-mailbox"}),
         ),
         cnpg_kustomization,
         cert_manager_kustomization,
@@ -1400,6 +1474,8 @@ def generate_manifests(root: Path) -> None:
             matrix_user_provisioner_artifact,
             matrix_user_provisioner.chart,
             components=[posixpath.relpath(matrix_user_provisioner.PINS_DIR, matrix_user_provisioner.OUTPUT_DIR)],
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"Job/provision-matrix-users"}),
         ),
         external_secrets_operator_kustomization,
         matrix_kustomization,
@@ -1412,6 +1488,8 @@ def generate_manifests(root: Path) -> None:
         siblings=["jwt-token.sops.yaml", "cache-keys.sops.yaml"],
         components=["./image-pins"],
         config_map_generator=[nix_cache_attic.SERVER_CONFIG_MAP, nix_cache_attic.ROTATORS_CONFIG_MAP],
+        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+        unhardened_pods=frozenset({"Deployment/attic"}),
     )
     nix_cache_kustomization = nix_cache_flux_kustomizations.nix_cache(
         flux_chart,
@@ -1455,6 +1533,8 @@ def generate_manifests(root: Path) -> None:
             study_casino_app.chart,
             components=[posixpath.relpath(study_casino_app.PINS_DIR, study_casino_app.OUTPUT_DIR)],
             config_map_generator=study_casino_app.config_maps(root),
+            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+            unhardened_pods=frozenset({"Deployment/study-casino", "Job/db-readonly-provisioner"}),
         ),
         cnpg_kustomization,
         external_secrets_operator_kustomization,
@@ -1557,6 +1637,8 @@ def generate_manifests(root: Path) -> None:
         components=[posixpath.relpath(haku_openclaw_spike_config.PINS_DIR, haku_openclaw_spike_config.OUTPUT_DIR)],
         generator_options=haku_openclaw_spike_config.GENERATOR_OPTIONS,
         config_map_generator=[haku_openclaw_spike_config.write_kubeconfig_config_map(root)],
+        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+        unhardened_pods=frozenset({"Deployment/haku-openclaw-spike"}),
     )
     write_directory(
         root,
@@ -1565,6 +1647,8 @@ def generate_manifests(root: Path) -> None:
         egress_fences.haku_openclaw_spike,
         siblings=["openclaw-spike-kube-token.sops.yaml"],
         components=["./image-pins"],
+        # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
+        unpinned_https_egress=frozenset({"allow-haku-openclaw-spike-proxy-egress"}),
     )
     haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR)
     haku_workspaces.haku_workspaces(

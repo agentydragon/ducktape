@@ -449,4 +449,10 @@ def chart(app: App, *, aiquota_bearer: SecretKey) -> Chart:
 
 
 def write_manifests(root: Path, *, aiquota_bearer: SecretKey) -> None:
-    write_charts(root, OUTPUT_DIR, lambda app: chart(app, aiquota_bearer=aiquota_bearer))
+    write_charts(
+        root,
+        OUTPUT_DIR,
+        lambda app: chart(app, aiquota_bearer=aiquota_bearer),
+        # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
+        unpinned_https_egress=frozenset({"allow-public-coder-agent-proxy-egress"}),
+    )

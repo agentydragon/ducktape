@@ -16,6 +16,7 @@ from cluster.cdk8s.fleet_rules import (
     pinned_https_egress,
     pod_hardening,
     resolved_references,
+    unused_waivers,
 )
 
 _HARDENED = {"securityContext": {"seccompProfile": {"type": "RuntimeDefault"}}}
@@ -60,11 +61,12 @@ def test_pod_hardening_names_the_container_and_what_it_lacks() -> None:
         _deployment("ok", containers=[{"name": "main", "resources": _RESOURCES}], pod=_HARDENED),
         _deployment("own-profile", containers=[{"name": "main", "resources": _RESOURCES, **_HARDENED}]),
     ]
-    assert pod_hardening(objects) == [
+    assert pod_hardening(objects, unhardened=frozenset()) == [
         "Deployment/bare container main: seccomp profile is None, not RuntimeDefault",
         "Deployment/bare container main: resources.requests lacks ['memory']",
         "Deployment/bare container main: resources.limits lacks ['memory']",
     ]
+    assert pod_hardening(objects, unhardened=frozenset({"Deployment/bare"})) == []
 
 
 def test_pod_hardening_covers_init_containers_and_crd_pod_templates() -> None:
@@ -85,7 +87,9 @@ def test_pod_hardening_covers_init_containers_and_crd_pod_templates() -> None:
         containers=[{"name": "main", "resources": _RESOURCES}],
         pod={**_HARDENED, "initContainers": [{"name": "migrate"}]},
     )
-    assert [error.split(":")[0] for error in pod_hardening([sandbox, scaled_job, deployment])] == [
+    assert [
+        error.split(":")[0] for error in pod_hardening([sandbox, scaled_job, deployment], unhardened=frozenset())
+    ] == [
         "SandboxTemplate/runner container runner",
         "SandboxTemplate/runner container runner",
         "ScaledJob/ci container job",
@@ -113,6 +117,23 @@ def test_https_egress_outside_the_cluster_needs_server_names() -> None:
         "CiliumNetworkPolicy/actions: HTTPS egress to [{'matchName': 'api.example.test'}] without serverNames",
     ]
     assert pinned_https_egress(objects, unpinned=frozenset({"proxy", "actions"})) == []
+
+
+def test_waivers_name_objects_that_still_break_their_rule() -> None:
+    objects = [
+        _deployment("bare", containers=[{"name": "main"}]),
+        _deployment("ok", containers=[{"name": "main", "resources": _RESOURCES}], pod=_HARDENED),
+        _policy("open", [_https({"toEntities": ["world"]})]),
+        _policy("pinned", [_https({"toEntities": ["world"]}, ["a.example.test"])]),
+    ]
+    assert unused_waivers(objects, unhardened=frozenset({"Deployment/bare"}), unpinned=frozenset({"open"})) == []
+    assert unused_waivers(
+        objects, unhardened=frozenset({"Deployment/ok", "Deployment/gone"}), unpinned=frozenset({"pinned"})
+    ) == [
+        "pod hardening waived for Deployment/gone, which is not in this App or passes",
+        "pod hardening waived for Deployment/ok, which is not in this App or passes",
+        "unpinned HTTPS egress waived for CiliumNetworkPolicy/pinned, which is not in this App or passes",
+    ]
 
 
 def _reader(

@@ -257,4 +257,14 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, namespaces.haku_egress_proxy, chart, egress_fences.haku_cloud_api)
+    write_charts(
+        root,
+        OUTPUT_DIR,
+        namespaces.haku_egress_proxy,
+        chart,
+        egress_fences.haku_cloud_api,
+        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+        unhardened_pods=frozenset({"Deployment/haku-egress-proxy"}),
+        # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
+        unpinned_https_egress=frozenset({"allow-haku-cloud-api-egress"}),
+    )

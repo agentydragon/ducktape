@@ -235,4 +235,10 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(root, OUTPUT_DIR, chart)
+    write_charts(
+        root,
+        OUTPUT_DIR,
+        chart,
+        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
+        unhardened_pods=frozenset({"CronJob/vm-images-publisher"}),
+    )
