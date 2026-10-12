@@ -1,4 +1,5 @@
-"""VolSync, with the ServiceAccount token its metrics scrape authenticates with.
+"""VolSync, with the ServiceAccount token its metrics scrape authenticates with and the alert
+on a missed sync schedule.
 
 The chart protects `/metrics` with Kubernetes token auth, but its generated ServiceMonitor
 configures no credentials: a post-renderer injects the Secret-backed token, so Alloy does not
@@ -7,7 +8,7 @@ need to read a local token file.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
     HelmReleaseSpecInstall,
@@ -27,6 +28,7 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.helm import helm_release, https_helm_repository
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 
 NAME = "volsync"
 NAMESPACE = "volsync-system"
@@ -92,6 +94,38 @@ def chart(app: App) -> Chart:
             )
         ],
         values={"manageCRDs": True, "nodeSelector": node_scheduling.HIL_OVH_NODE_SELECTOR},
+    )
+    PrometheusRule(
+        chart,
+        "alerts",
+        metadata=ApiObjectMetadata(name="volsync-alerts", namespace=NAMESPACE),
+        groups=[
+            group(
+                "volsync",
+                [
+                    # VolSync sets the gauge when a scheduled sync is still unfinished at its next
+                    # scheduled start, and clears it when a sync completes. Schedule-less objects
+                    # (rsync-tls destinations) never set it.
+                    Rule.alert(
+                        "VolSyncVolumeOutOfSync",
+                        "volsync_volume_out_of_sync == 1",
+                        for_="1h",
+                        labels={"severity": "warning"},
+                        summary=(
+                            "VolSync {{ $labels.role }} {{ $labels.obj_namespace }}/{{ $labels.obj_name }} "
+                            "missed its sync schedule"
+                        ),
+                        description=(
+                            "{{ $labels.method }} {{ $labels.role }} "
+                            "{{ $labels.obj_namespace }}/{{ $labels.obj_name }} has not completed a sync within its "
+                            "schedule interval. Check status.lastSyncTime and the mover pod logs; a restic mover "
+                            "failing with `repository is already locked` needs `restic unlock` once no mover is "
+                            "running."
+                        ),
+                    )
+                ],
+            )
+        ],
     )
     return chart
 

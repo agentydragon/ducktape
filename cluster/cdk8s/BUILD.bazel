@@ -1317,6 +1317,7 @@ py_library(
         ":node_scheduling",
         "//cluster/cdk8s/providers/flux:helmrelease",
         "//cluster/cdk8s/providers/flux:kustomization",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
