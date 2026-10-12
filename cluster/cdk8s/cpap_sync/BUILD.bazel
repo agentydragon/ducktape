@@ -22,6 +22,7 @@ py_library(
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/kubevirt:virtual_machine",
         "//cluster/cdk8s/providers/kubevirt:virtualmachine",
+        "//cluster/cdk8s/providers/prometheus_operator:prometheus_rule",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],
