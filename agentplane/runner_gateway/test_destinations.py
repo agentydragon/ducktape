@@ -11,6 +11,8 @@ from agentplane.sandbox_service.errors import SandboxTearingDownError
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION, OWN_SANDBOXES, SANDBOX, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 
+# gazelle:include_dep @pypi//protobuf
+
 
 async def test_successor_pod_same_sandbox_and_account_keeps_destination(cluster: Cluster) -> None:
     destinations = DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api))
