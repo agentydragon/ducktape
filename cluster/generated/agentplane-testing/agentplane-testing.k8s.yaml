@@ -6023,6 +6023,26 @@ rules:
       - create
       - delete
   - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+  - apiGroups:
       - coordination.k8s.io
     resources:
       - leases

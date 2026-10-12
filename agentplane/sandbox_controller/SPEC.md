@@ -22,9 +22,21 @@ and the state PVC. A Sandbox is its state, running or not; an **incarnation** is
   either never changes a running Pod.
 - A template that does not exist, or that defines the state volume itself, starts nothing.
 
+## Identity
+
+- Every Sandbox gets a ServiceAccount of its name, which its Pods run as, replacing the template's.
+- While `spec.policySets` names PolicySets, the Sandbox has one `PolicyBinding` of its name binding
+  that account to exactly those sets, with no expiry. Clearing the list deletes it. Other bindings
+  for the same account, such as runtime grants, are left alone.
+- Both are owned by the Sandbox, so deleting the Sandbox revokes them.
+- A Pod starts only once `KubernetesReady`, `EgressReady` and `ActionsReady` on that binding are
+  True for its current generation. A running Pod keeps running when they change.
+- A ServiceAccount or `PolicyBinding` of the Sandbox's name that it does not own starts nothing.
+
 ## Status
 
 `status.incarnation` names the current Pod and its UID. The `Running` condition is True while the
 Pod runs. Otherwise it is False, with reason `Stopped`, `Starting`, `Stopping`, `PodEnded`,
-`TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict` or `PodConflict` (a Pod of the
-Sandbox's name that it does not control).
+`TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `ServiceAccountConflict`,
+`PolicyBindingConflict`, `PolicyBindingNotReady` or `PodConflict` (a Pod of the Sandbox's name that
+it does not control).

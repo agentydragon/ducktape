@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 	sandboxcontroller "github.com/agentydragon/ducktape/agentplane/sandbox_controller"
 )
 
@@ -45,12 +46,16 @@ func run(namespace, metricsAddress, probeAddress string) error {
 	if err := sandboxcontroller.AddToScheme(scheme); err != nil {
 		return err
 	}
+	if err := policycontroller.AddToScheme(scheme); err != nil {
+		return err
+	}
 	labelled, err := labels.NewRequirement(sandboxcontroller.SandboxLabel, selection.Exists, nil)
 	if err != nil {
 		return err
 	}
 	ours := labels.NewSelector().Add(*labelled)
-	// The cache holds one namespace, and of its Pods and PVCs only those carrying the Sandbox label.
+	// The cache holds one namespace, and of its Pods, PVCs, ServiceAccounts and PolicyBindings only
+	// those carrying the Sandbox label.
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: metricsAddress},
@@ -62,8 +67,10 @@ func run(namespace, metricsAddress, probeAddress string) error {
 		Cache: cache.Options{
 			DefaultNamespaces: map[string]cache.Config{namespace: {}},
 			ByObject: map[client.Object]cache.ByObject{
-				&corev1.Pod{}:                   {Label: ours},
-				&corev1.PersistentVolumeClaim{}: {Label: ours},
+				&corev1.Pod{}:                     {Label: ours},
+				&corev1.PersistentVolumeClaim{}:   {Label: ours},
+				&corev1.ServiceAccount{}:          {Label: ours},
+				&policycontroller.PolicyBinding{}: {Label: ours},
 			},
 		},
 	})

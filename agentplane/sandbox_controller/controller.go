@@ -17,11 +17,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 )
 
 const (
 	Running = "Running"
-	// On the Pod and the state PVC: the Sandbox they belong to.
+	// On the Pod, the state PVC, the ServiceAccount and the PolicyBinding: the Sandbox they belong to.
 	SandboxLabel = "agentplane.allegedly.works/sandbox"
 	// On the state PVC, which has no owner reference: the Sandbox incarnation that created it, so a
 	// recreated Sandbox of the same name never takes over a previous one's state.
@@ -68,8 +70,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	gate, err := r.ensureIdentity(ctx, &sandbox)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 	if blocked == nil {
-		if pod, blocked, err = r.convergePod(ctx, &sandbox, pod); err != nil {
+		if pod, blocked, err = r.convergePod(ctx, &sandbox, pod, gate); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -168,9 +174,9 @@ func (r *Reconciler) template(ctx context.Context, sandbox *Sandbox) (*SandboxTe
 	return &template, nil, nil
 }
 
-// convergePod starts a Pod for a running Sandbox that has none and deletes the Pod of a stopped
-// one. It returns the Pod the Sandbox now has.
-func (r *Reconciler) convergePod(ctx context.Context, sandbox *Sandbox, pod *corev1.Pod) (*corev1.Pod, *unready, error) {
+// convergePod starts a Pod for a running Sandbox that has none, unless gate says why not yet, and
+// deletes the Pod of a stopped one. It returns the Pod the Sandbox now has.
+func (r *Reconciler) convergePod(ctx context.Context, sandbox *Sandbox, pod *corev1.Pod, gate *unready) (*corev1.Pod, *unready, error) {
 	if pod != nil {
 		ended := pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed
 		if pod.DeletionTimestamp.IsZero() && (!sandbox.Spec.Running || ended) {
@@ -184,6 +190,9 @@ func (r *Reconciler) convergePod(ctx context.Context, sandbox *Sandbox, pod *cor
 	}
 	if !sandbox.Spec.Running {
 		return nil, nil, nil
+	}
+	if gate != nil {
+		return nil, gate, nil
 	}
 	template, blocked, err := r.template(ctx, sandbox)
 	if template == nil {
@@ -206,13 +215,15 @@ func (r *Reconciler) convergePod(ctx context.Context, sandbox *Sandbox, pod *cor
 	return pod, nil, nil
 }
 
-// render is the template's Pod for this Sandbox, with the state volume filled in.
+// render is the template's Pod for this Sandbox, running as the Sandbox's ServiceAccount, with the
+// state volume filled in.
 func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready) {
 	spec := template.Spec.Pod.Spec.DeepCopy()
 	volume := template.Spec.StateVolume.Name
 	if slices.ContainsFunc(spec.Volumes, func(v corev1.Volume) bool { return v.Name == volume }) {
 		return nil, &unready{"TemplateInvalid", fmt.Sprintf("SandboxTemplate %s defines the state volume %s itself", template.Name, volume)}
 	}
+	spec.ServiceAccountName = sandbox.Name
 	spec.Volumes = append(spec.Volumes, corev1.Volume{
 		Name: volume,
 		VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
@@ -266,7 +277,8 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, pod *co
 	return r.Status().Update(ctx, sandbox)
 }
 
-// SetupWithManager wires the watches: each Sandbox, its Pod and state PVC, and the templates it names.
+// SetupWithManager wires the watches: each Sandbox, the objects it owns, its state PVC, and the
+// templates it names.
 func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &Sandbox{}, templateIndex, func(obj client.Object) []string {
 		return []string{obj.(*Sandbox).Spec.Template}
@@ -296,6 +308,8 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&Sandbox{}).
 		Owns(&corev1.Pod{}).
+		Owns(&corev1.ServiceAccount{}).
+		Owns(&policycontroller.PolicyBinding{}).
 		Watches(&corev1.PersistentVolumeClaim{}, bySandboxLabel).
 		Watches(&SandboxTemplate{}, byTemplate).
 		Complete(r)

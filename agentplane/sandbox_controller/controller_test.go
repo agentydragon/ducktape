@@ -14,6 +14,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
+
+	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 )
 
 const (
@@ -59,12 +61,15 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 	if err := AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
+	if err := policycontroller.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
 	sandbox := &Sandbox{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName, UID: "uid-sandbox"},
 		Spec:       SandboxSpec{Template: templateName, Running: running},
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(append(objects, sandbox)...).
-		WithStatusSubresource(&Sandbox{}).Build()
+		WithStatusSubresource(&Sandbox{}, &policycontroller.PolicyBinding{}).Build()
 	return &Reconciler{Client: c}, c
 }
 

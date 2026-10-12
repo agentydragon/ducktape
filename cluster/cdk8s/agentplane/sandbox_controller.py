@@ -1,5 +1,5 @@
 """The Sandbox Controller (agentplane/sandbox_controller): it keeps each of the environment's own
-Sandboxes' state PVC and, while running, its Pod."""
+Sandboxes' state PVC, ServiceAccount and PolicyBinding and, while running, its Pod."""
 
 from __future__ import annotations
 
@@ -70,6 +70,15 @@ class SandboxController(Construct):
                 RolePolicyRule(
                     resources=[custom_resource("", "pods"), custom_resource("", "persistentvolumeclaims")],
                     verbs=["get", "list", "watch", "create", "delete"],
+                ),
+                # Each Sandbox's own; garbage collection deletes them with the Sandbox.
+                RolePolicyRule(
+                    resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch", "create"]
+                ),
+                # Binding a Sandbox's account to the PolicySets its spec names, in this namespace.
+                RolePolicyRule(
+                    resources=[custom_resource(_GROUP, "policybindings")],
+                    verbs=["get", "list", "watch", "create", "update", "delete"],
                 ),
                 # Leader election.
                 RolePolicyRule(

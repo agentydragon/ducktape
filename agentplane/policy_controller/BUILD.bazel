@@ -10,7 +10,11 @@ go_library(
         "zz_generated.deepcopy.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/policy_controller",
-    visibility = ["//agentplane/policy_controller:__subpackages__"],
+    visibility = [
+        "//agentplane/policy_controller:__subpackages__",
+        # The Sandbox Controller writes each Sandbox's PolicyBinding.
+        "//agentplane/sandbox_controller:__subpackages__",
+    ],
     deps = [
         "@io_k8s_api//core/v1:core",
         "@io_k8s_api//rbac/v1:rbac",

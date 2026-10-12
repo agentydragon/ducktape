@@ -6,6 +6,7 @@ go_library(
     importpath = "github.com/agentydragon/ducktape/agentplane/sandbox_controller/cmd",
     visibility = ["//visibility:private"],
     deps = [
+        "//agentplane/policy_controller",
         "//agentplane/sandbox_controller",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/labels",

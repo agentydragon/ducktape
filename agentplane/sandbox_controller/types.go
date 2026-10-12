@@ -53,6 +53,8 @@ type SandboxSpec struct {
 	// Template names a SandboxTemplate in the Sandbox's namespace, read again at every start.
 	Template string `json:"template"`
 	Running  bool   `json:"running"`
+	// PolicySets names the PolicySets in the Sandbox's namespace its ServiceAccount is bound to.
+	PolicySets []string `json:"policySets,omitempty"`
 }
 
 // Incarnation is the Sandbox's current Pod.

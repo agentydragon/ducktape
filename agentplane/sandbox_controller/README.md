@@ -1,11 +1,11 @@
 # Sandbox Controller
 
-Reconciles `Sandbox` into a state PVC that outlives every incarnation and, while running, one Pod
-from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
+Reconciles `Sandbox` into a state PVC that outlives every incarnation, its own ServiceAccount and
+`PolicyBinding`, and, while running, one Pod from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel). It is the Go controller the
 [Sandbox Service](../sandbox_service/README.md) is moving into, and does not yet do what that
-service does around a Sandbox: its ServiceAccount, grants, egress and Action policy bindings,
-runner endpoints, launch binding and the teardown seal. Until it does, nothing creates these
+service does around a Sandbox: session defaults, bootstrap, runner endpoints, launch binding and
+the teardown seal. Until it does, nothing creates these
 Sandboxes. Deleting one deletes its PVC without sealing its Sessions.
 
 A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) controller:
@@ -16,8 +16,10 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   from a module that resolves this package.
 - [`controller.go`](controller.go): one reconcile per `Sandbox`. Its Pod (`Owns`), its state PVC
   (by the Sandbox label) and the templates it names (by a field index) map back to it.
-- [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace and, of Pods and
-  PVCs, to those carrying the Sandbox label.
+- [`identity.go`](identity.go): the Sandbox's ServiceAccount and `PolicyBinding`, and the gate a
+  Pod start waits on. The `PolicyBinding` types are the Policy Controller's.
+- [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace and, of the kinds
+  it creates, to objects carrying the Sandbox label.
 
 ## Running
 
@@ -38,6 +40,10 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   controller is down has to wait for it.
 - **The Pod is deleted before the PVC**, in separate reconciles, so the PVC never goes while a
   container can still write to it.
+- **Only Pod creation waits on the `PolicyBinding`.** Stopping, deleting and an already running Pod
+  never do, so a reader that is down cannot keep a Sandbox from stopping.
+- **Gotcha:** a namespace whose `PolicyBinding`s no Policy Controller watches never gets
+  `KubernetesReady`, so its Sandboxes that name PolicySets never start.
 - **Gotcha:** while agent-sandbox's `Sandbox` is installed, `kubectl get sandboxes` may resolve to
   either kind; name ours as `sandboxes.agentplane.allegedly.works`.
 - Tests drive `Reconcile` against controller-runtime's fake client, so which events enqueue which
