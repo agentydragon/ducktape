@@ -7,6 +7,7 @@ import { HashRouter, Route, Routes, useLocation, useMatch, useNavigate, useParam
 import { ActionRequestDetail } from "./actions/detail";
 import { ActionHistory } from "./actions/history";
 import { ActionRequests, ActionRequestsProvider } from "./actions/requests";
+import { ActionsAttentionBar } from "./actions/sidebar";
 import { ConnectionConsent } from "./consent";
 import { SandboxPage } from "./sandbox_page";
 import { RoutedThreadsLiveProvider, SandboxesLiveProvider } from "./live";
@@ -171,6 +172,8 @@ function AppRoutes(): JSX.Element {
               <div className="agentplane-topbar-title" ref={titleRef} />
               <div className="agentplane-topbar-actions" ref={actionsRef} />
             </div>
+            {/* The sidebar carries the queue while it is open; otherwise nothing would show it. */}
+            {!sidebarOpen && <ActionsAttentionBar />}
             <div className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
               {threadRoute !== null ? <SandboxesLiveProvider>{routes}</SandboxesLiveProvider> : routes}
             </div>

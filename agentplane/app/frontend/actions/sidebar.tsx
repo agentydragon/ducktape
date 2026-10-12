@@ -15,6 +15,7 @@ import {
   renderPaneOpened,
   shouldRenderPaneRequestTitle,
 } from "./rendering/index";
+import type { ActionRequestView } from "./client";
 import { ActionDecisionButtons, ActionRequestsContext } from "./requests";
 import "./sidebar.css";
 
@@ -41,18 +42,130 @@ function writeManuallyClosedRequests(requestIds: readonly string[]): void {
   }
 }
 
-/** Pending-only queue embedded below the thread list in the persistent navigation sidebar. */
-export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void }): JSX.Element | null {
+function usePendingRequests(): ActionRequestView[] {
   const actions = useContext(ActionRequestsContext);
-  const location = useLocation();
-  const [open, setOpen] = useState(false);
-  const [expandedId, setExpandedId] = useState<string | null>(null);
-  const manuallyClosedRequests = useRef(readManuallyClosedRequests());
-  const previousIds = useRef<ReadonlySet<string>>(new Set());
-  const pending = useMemo(
+  return useMemo(
     () => actions?.requests.filter((request) => request.state === "decision_pending") ?? [],
     [actions?.requests]
   );
+}
+
+/** One row per pending request: expandable preview, inline decision where eligible, details link. */
+function PendingActionList({
+  pending,
+  onNavigate,
+}: {
+  pending: readonly ActionRequestView[];
+  onNavigate?: () => void;
+}): JSX.Element | null {
+  const actions = useContext(ActionRequestsContext);
+  const location = useLocation();
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  if (actions === null) return null;
+  return (
+    <>
+      {pending.map((request) => {
+        const expanded = expandedId === request.id;
+        const actionLabel = renderActionLabel(request.action, request.arguments);
+        const collapsedPreview = renderPaneCollapsed(request.action, request.arguments);
+        const openedPreview = renderPaneOpened(request.action, request.arguments);
+        const showRequestTitle = shouldRenderPaneRequestTitle(request.action, request.arguments, request.title);
+        const canQuickApprove =
+          (request.external_grant === null || request.external_grant === undefined) &&
+          canApproveInline(request.action, request.arguments);
+        const detailsPath = `/actions/${encodeURIComponent(request.id)}`;
+        const navigationState = {
+          returnTo: {
+            pathname: location.pathname,
+            search: location.search,
+            hash: location.hash,
+          },
+        };
+
+        return (
+          <div className="agentplane-actions-sidebar-request" key={request.id}>
+            <div className="agentplane-actions-sidebar-request-heading">
+              <UnstyledButton
+                className="agentplane-actions-sidebar-expand"
+                aria-label={`${expanded ? "Collapse" : "Expand"} ${request.title}`}
+                aria-expanded={expanded}
+                onClick={() => setExpandedId(expanded ? null : request.id)}
+              >
+                {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
+                <div className="agentplane-actions-sidebar-request-label">
+                  <div className="agentplane-actions-sidebar-name">
+                    {actionLabel ?? `${request.action.group} / ${request.action.name}`}
+                  </div>
+                  {showRequestTitle && (
+                    <Text size="xs" lineClamp={1} title={request.title}>
+                      {request.title}
+                    </Text>
+                  )}
+                  {!expanded && collapsedPreview !== null && (
+                    <div className="agentplane-actions-sidebar-collapsed-preview">{collapsedPreview}</div>
+                  )}
+                </div>
+              </UnstyledButton>
+              <Tooltip label="View full details" withArrow>
+                <Link
+                  className="agentplane-actions-sidebar-details"
+                  to={detailsPath}
+                  state={navigationState}
+                  onClick={onNavigate}
+                  aria-label={`View details for ${request.title}`}
+                >
+                  <IconArrowRight size={15} aria-hidden="true" />
+                </Link>
+              </Tooltip>
+            </div>
+            {expanded && (
+              <Stack className="agentplane-actions-sidebar-preview" gap="xs">
+                {request.external_grant && (
+                  <Text size="xs" fw={600}>
+                    Authenticated external caller
+                  </Text>
+                )}
+                {openedPreview ?? <JsonView value={request.arguments} />}
+                <Group justify="space-between" wrap="nowrap" gap="xs">
+                  {canQuickApprove ? (
+                    <ActionDecisionButtons
+                      size="xs"
+                      deciding={actions.deciding === request.id}
+                      title={request.title}
+                      onDecide={(verdict) => actions.decide(request, verdict)}
+                    />
+                  ) : (
+                    <Text size="xs" c="dimmed">
+                      Decisions require full review.
+                    </Text>
+                  )}
+                  <Tooltip label="View full details" withArrow>
+                    <Link
+                      className="agentplane-actions-sidebar-details"
+                      to={detailsPath}
+                      state={navigationState}
+                      onClick={onNavigate}
+                    >
+                      Details <IconArrowRight size={13} aria-hidden="true" />
+                    </Link>
+                  </Tooltip>
+                </Group>
+              </Stack>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/** Pending-only queue embedded below the thread list in the persistent navigation sidebar. */
+export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void }): JSX.Element | null {
+  const actions = useContext(ActionRequestsContext);
+  const [open, setOpen] = useState(false);
+  const manuallyClosedRequests = useRef(readManuallyClosedRequests());
+  const previousIds = useRef<ReadonlySet<string>>(new Set());
+  const pending = usePendingRequests();
   const pendingIds = useMemo(() => pending.map((request) => request.id), [pending]);
   const actionLoading = actions?.loading ?? true;
   const actionError = actions?.error ?? null;
@@ -72,7 +185,6 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
       manuallyClosedRequests.current = new Set();
       writeManuallyClosedRequests([]);
       previousIds.current = currentIds;
-      setExpandedId(null);
       setOpen(false);
       return;
     }
@@ -163,97 +275,54 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
               No pending actions.
             </Text>
           )}
-          {pending.map((request) => {
-            const expanded = expandedId === request.id;
-            const actionLabel = renderActionLabel(request.action, request.arguments);
-            const collapsedPreview = renderPaneCollapsed(request.action, request.arguments);
-            const openedPreview = renderPaneOpened(request.action, request.arguments);
-            const showRequestTitle = shouldRenderPaneRequestTitle(request.action, request.arguments, request.title);
-            const canQuickApprove =
-              (request.external_grant === null || request.external_grant === undefined) &&
-              canApproveInline(request.action, request.arguments);
-            const detailsPath = `/actions/${encodeURIComponent(request.id)}`;
-            const navigationState = {
-              returnTo: {
-                pathname: location.pathname,
-                search: location.search,
-                hash: location.hash,
-              },
-            };
+          <PendingActionList pending={pending} onNavigate={onNavigate} />
+        </div>
+      )}
+    </section>
+  );
+}
 
-            return (
-              <div className="agentplane-actions-sidebar-request" key={request.id}>
-                <div className="agentplane-actions-sidebar-request-heading">
-                  <UnstyledButton
-                    className="agentplane-actions-sidebar-expand"
-                    aria-label={`${expanded ? "Collapse" : "Expand"} ${request.title}`}
-                    aria-expanded={expanded}
-                    onClick={() => setExpandedId(expanded ? null : request.id)}
-                  >
-                    {expanded ? <IconChevronDown size={12} /> : <IconChevronRight size={12} />}
-                    <div className="agentplane-actions-sidebar-request-label">
-                      <div className="agentplane-actions-sidebar-name">
-                        {actionLabel ?? `${request.action.group} / ${request.action.name}`}
-                      </div>
-                      {showRequestTitle && (
-                        <Text size="xs" lineClamp={1} title={request.title}>
-                          {request.title}
-                        </Text>
-                      )}
-                      {!expanded && collapsedPreview !== null && (
-                        <div className="agentplane-actions-sidebar-collapsed-preview">{collapsedPreview}</div>
-                      )}
-                    </div>
-                  </UnstyledButton>
-                  <Tooltip label="View full details" withArrow>
-                    <Link
-                      className="agentplane-actions-sidebar-details"
-                      to={detailsPath}
-                      state={navigationState}
-                      onClick={onNavigate}
-                      aria-label={`View details for ${request.title}`}
-                    >
-                      <IconArrowRight size={15} aria-hidden="true" />
-                    </Link>
-                  </Tooltip>
-                </div>
-                {expanded && (
-                  <Stack className="agentplane-actions-sidebar-preview" gap="xs">
-                    {request.external_grant && (
-                      <Text size="xs" fw={600}>
-                        Authenticated external caller
-                      </Text>
-                    )}
-                    {openedPreview ?? <JsonView value={request.arguments} />}
-                    <Group justify="space-between" wrap="nowrap" gap="xs">
-                      {canQuickApprove ? (
-                        <ActionDecisionButtons
-                          size="xs"
-                          deciding={actions.deciding === request.id}
-                          title={request.title}
-                          onDecide={(verdict) => actions.decide(request, verdict)}
-                        />
-                      ) : (
-                        <Text size="xs" c="dimmed">
-                          Decisions require full review.
-                        </Text>
-                      )}
-                      <Tooltip label="View full details" withArrow>
-                        <Link
-                          className="agentplane-actions-sidebar-details"
-                          to={detailsPath}
-                          state={navigationState}
-                          onClick={onNavigate}
-                        >
-                          Details <IconArrowRight size={13} aria-hidden="true" />
-                        </Link>
-                      </Tooltip>
-                    </Group>
-                  </Stack>
-                )}
-              </div>
-            );
-          })}
+/** The pending queue for when the navigation sidebar is closed, as at phone width: a one-line strip
+    above the routed page that expands in place, in a bounded scroll area, so the open thread and
+    its composer stay usable beneath it. */
+export function ActionsAttentionBar(): JSX.Element | null {
+  const actions = useContext(ActionRequestsContext);
+  const pending = usePendingRequests();
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    if (pending.length === 0) setOpen(false);
+  }, [pending.length]);
+
+  if (actions === null || pending.length === 0) return null;
+
+  return (
+    <section className="agentplane-actions-attention" aria-label="Actions awaiting review">
+      <UnstyledButton
+        className="agentplane-actions-sidebar-toggle"
+        onClick={() => setOpen((wasOpen) => !wasOpen)}
+        aria-expanded={open}
+        aria-controls={open ? "agentplane-actions-attention-content" : undefined}
+      >
+        <Group gap="xs" wrap="nowrap">
+          {open ? <IconChevronDown size={14} /> : <IconChevronRight size={14} />}
+          <Badge color="yellow" size="sm" circle aria-hidden="true">
+            {pending.length}
+          </Badge>
+          <Text size="sm" fw={600}>
+            {pending.length === 1 ? "Action" : "Actions"} waiting for review
+          </Text>
+        </Group>
+      </UnstyledButton>
+      {open && (
+        <div id="agentplane-actions-attention-content" className="agentplane-actions-attention-content">
+          <StaleNotice streams={[actions.stream]} />
+          {actions.error !== null && (
+            <Text size="xs" c="red" role="alert">
+              {actions.error}
+            </Text>
+          )}
+          <PendingActionList pending={pending} />
         </div>
       )}
     </section>

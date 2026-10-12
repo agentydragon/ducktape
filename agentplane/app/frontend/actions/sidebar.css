@@ -169,3 +169,20 @@
   color: var(--mantine-color-text);
   outline: none;
 }
+
+.agentplane-actions-attention {
+  flex: 0 0 auto;
+  border-bottom: 1px solid var(--mantine-color-yellow-5);
+  background: var(--mantine-color-body);
+}
+
+/* Bounded so the thread and its composer keep most of the screen while the queue is open. */
+.agentplane-actions-attention-content {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(45dvh, 30rem);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 0 8px 8px;
+}

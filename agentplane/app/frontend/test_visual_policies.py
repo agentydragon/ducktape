@@ -42,6 +42,23 @@ async def test_actions_sidebar_queue(view: VisualPage, app: AgentplaneFixture) -
     await view.capture()
 
 
+@MOBILE_ONLY
+@pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
+async def test_actions_attention_strip_over_thread(view: VisualPage, app: AgentplaneFixture, expanded: bool) -> None:
+    await app.set_flag(Flag.PENDING_ACTIONS)
+    await app.mount_thread(IDLE_THREAD)
+    page = view.page
+    strip = page.locator(".agentplane-actions-attention")
+    toggle = strip.get_by_role("button", name="waiting for review")
+    await expect(toggle).to_have_attribute("aria-expanded", "false")
+    if expanded:
+        await toggle.click()
+        await expect(strip.get_by_text("restart the test backup service")).to_be_visible()
+    await expect(page.get_by_label("Message")).to_be_visible()
+    await view.check(context="Actions strip over the open thread")
+    await view.capture()
+
+
 async def test_actions_sidebar_resize(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_thread(IDLE_THREAD)

@@ -4,7 +4,7 @@ import { act, type JSX } from "react";
 import { MemoryRouter, useLocation } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
-import { ActionsSidebarSection } from "./sidebar";
+import { ActionsAttentionBar, ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
 import { mount, request, unmountLast } from "./testing";
 
@@ -203,4 +203,29 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
     expect(container.querySelector<HTMLButtonElement>(`button[aria-label="Approve ${read.title}"]`)).not.toBeNull();
     expect(container.textContent).not.toContain("Decisions require full review.");
   }
+});
+
+it("shows the closed-sidebar queue as a collapsed strip only while requests are pending", async () => {
+  vi.stubGlobal("EventSource", ActionStream);
+  const container = await mount(
+    <MemoryRouter initialEntries={["/threads/test-thread"]}>
+      <ActionRequestsProvider>
+        <ActionsAttentionBar />
+      </ActionRequestsProvider>
+    </MemoryRouter>
+  );
+  const pending = request("decision_pending", 1);
+
+  await send([]);
+  expect(container.querySelector(".agentplane-actions-attention")).toBeNull();
+  await send([pending]);
+  const toggle = container.querySelector<HTMLButtonElement>(".agentplane-actions-attention button[aria-expanded]");
+  if (!toggle) throw new Error("missing Actions attention strip");
+  expect(toggle.getAttribute("aria-expanded")).toBe("false");
+  expect(container.textContent).not.toContain(pending.title);
+
+  await act(async () => toggle.click());
+  expect(container.textContent).toContain(pending.title);
+  await send([]);
+  expect(container.querySelector(".agentplane-actions-attention")).toBeNull();
 });

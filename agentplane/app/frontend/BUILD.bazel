@@ -928,6 +928,7 @@ ts_library(
         "//agentplane/app/frontend/actions:detail",
         "//agentplane/app/frontend/actions:history",
         "//agentplane/app/frontend/actions:requests",
+        "//agentplane/app/frontend/actions:sidebar",
         "//agentplane/app/frontend/threads:projected_session",
         "//agentplane/app/frontend/threads:thread_store",
         "//agentplane/app/frontend/threads:thread_sync",

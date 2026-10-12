@@ -88,6 +88,7 @@ ts_library(
     ],
     tsconfig = TSCONFIG,
     deps = [
+        ":action_client",
         ":requests",
         ":sidebar_css",
         "//:node_modules/@mantine/core",
