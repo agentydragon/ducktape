@@ -1110,6 +1110,7 @@ agentplane_visual_test(
 agentplane_visual_test(
     name = "visual_policies",
     src = "test_visual_policies.py",
+    shard_count = 2,
     title = "Agentplane: policies",
 )
 
