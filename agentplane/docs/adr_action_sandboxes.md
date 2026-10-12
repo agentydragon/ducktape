@@ -1,7 +1,6 @@
 # ADR: Action Service boxes are not Sandbox Service Sandboxes
 
-- **Status:** Proposed (accepted in discussion with the operator on 2026-10-12, except the namespace
-  question below)
+- **Status:** Proposed (accepted in discussion with the operator on 2026-10-12)
 - **Date:** 2026-10-12
 - **Scope:** the `sandbox__*` Actions ([`action_service/sandbox/`](../action_service/sandbox/README.md)),
   the [Sandbox Service API](../sandbox_service/API.md) and the templates both stamp from
@@ -76,18 +75,18 @@ instead of a box with no network.
 Rejected: **the service injects the sidecar at create.** It moves the sidecar's configuration into
 two services and makes the reviewed template differ from what runs.
 
-### 4. Open: where Action boxes run
+### 4. Action boxes run beside Session Sandboxes
 
-The `pods/exec` the Action Service needs cannot be scoped by label, so in the Session Sandboxes'
-namespace it reaches every Session Sandbox too. A namespace of their own scopes the Action Service's
-Pod create, delete and exec to Action boxes. But a Pod runs only as a ServiceAccount in its own
-namespace, and the callers' accounts (claude-ai and the rest) live in the Session Sandboxes'
-namespace, along with their `EgressBinding`s and `ActionPolicyBinding`s. The choice:
+An agent in a Session Sandbox can create an Action box, and the box runs as that Sandbox's own
+ServiceAccount: the Sandbox Service labels every account it mints for the Action Service, so the
+agent's call arrives as that account and the box gets exactly the agent's egress and Action
+authority. A Pod runs only as a ServiceAccount in its own namespace, and those accounts live in the
+Session Sandboxes' namespace, so Action boxes do too, and the Action Service keeps `pods/exec` there.
+Kubernetes RBAC cannot scope `pods/exec` by label, so that exec also reaches Session Sandboxes.
 
-- **A dedicated namespace:** the caller accounts move there (or get counterparts there), and their
-  bindings with them; the Action Service loses all access to Session Sandboxes.
-- **The shared namespace for now:** no account moves; the Action Service keeps namespace-wide
-  `pods/exec`.
+Rejected: **a namespace of their own.** It would scope the Action Service's Pod authority to Action
+boxes, but every caller account, including each per-Sandbox account the Sandbox Service mints, would
+need a counterpart there with its bindings.
 
 ## Consequences
 
