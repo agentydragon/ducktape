@@ -669,7 +669,7 @@ calls the gateway to seal. Action Service boxes keep a catalog of their own (#10
 ```mermaid
 flowchart TD
     SANDBOX_RUNNER_TEMPLATES[Candidate: runner SandboxTemplates of our kind]
-    SANDBOX_CONTROLLER_PROVISIONING[Blocked: the controller provisions a Sandbox]
+    SANDBOX_CONTROLLER_PROVISIONING[In flight: the controller provisions a Sandbox]
     ACTION_POLICY_MIGRATE[Action policies on PolicySet, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
     KUBERNETES_POLICY_SETS[Grant catalog as PolicySets, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
     SANDBOX_CONTROLLER_TEARDOWN[Candidate: deleting a Sandbox seals it first]
@@ -688,8 +688,8 @@ construct as agent-sandbox's, with the state volume as a claim instead of a `vol
 
 ### `SANDBOX_CONTROLLER_PROVISIONING` — the controller provisions a Sandbox
 
-**Blocked on the Action policy migration and the Kubernetes catalog as `PolicySet`s.** The spec
-gains the rest of the recipe: `policySets` (names of sets of any rule type), session defaults,
+**In flight; the ServiceAccount and `PolicyBinding` half is #10162, on testing. Staging waits on the
+Action policy migration and the Kubernetes catalog as `PolicySet`s.** The spec gains the rest of the recipe: `policySets` (names of sets of any rule type), session defaults,
 bootstrap command and runner endpoints, the parts the Sandbox Service now keeps
 as annotations on agent-sandbox's `Sandbox` (`provisioning.py`, `kubernetes_bindings.py`,
 `egress.py`, `action_policy.py`, `runner_endpoints.py`). The controller creates the Sandbox's own
@@ -697,15 +697,17 @@ ServiceAccount and its one `PolicyBinding` of those sets, both owned by the Sand
 never sets `expiresAt`. No Pod starts until the binding's `KubernetesReady`, `EgressReady` and
 Action conditions are all `True` for its current generation. The Sandbox Service never writes
 `PolicyBinding`s. Runtime and time-limited grants are separate bindings (`POLICY_RUNTIME_GRANTS`).
-Testing first, then staging.
+Left after #10162: session defaults, bootstrap command and runner endpoints.
 
 ### `SANDBOX_CONTROLLER_TEARDOWN` — deleting a Sandbox seals it first
 
 **Candidate.** Deleting the Sandbox seals its last incarnation before the Pod and PVC go, as
 `teardown.py` does today: a stopped Sandbox runs once more, fenced, so its runner can seal every
-Session, then the controller deletes it once ingress has acknowledged the seals. Decide whether the
-controller calls the gateway's seal RPC (Go client for `runner_gateway.proto`) or the gateway acts on
-a condition the controller sets.
+Session, then the controller deletes it once ingress has acknowledged the seals. The Runner Gateway
+watches deleting Sandboxes of our kind; when the fenced runner connects it seals every Session and,
+once ingress has acknowledged them all, sets the Sandbox's `SessionsSealed` condition, which the
+controller waits on before deleting the Pod and PVC (operator, 2026-10-12 PDT). The Sandbox
+Service's `SealSandbox` call to the gateway goes with the Sandbox Service; there is no Go gRPC client.
 
 ### `SANDBOX_IMAGE_REPLACE` — replace the runner image between incarnations
 
