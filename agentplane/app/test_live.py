@@ -51,7 +51,6 @@ from agentplane.app.operator_sessions import (
 )
 from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.shutdown import Drain
-from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
@@ -319,7 +318,7 @@ def app(
     history = HistoryServiceClient("127.0.0.1:1", token_file=tmp_path / "unused-history-token", request_timeout_s=1)
     summaries = Summaries(engine, history)
     event_logs, content = (
-        event_log.SeededEventLogStore(engine, history_reader=history, summaries=summaries),
+        event_log.EventLogStore(engine, history_reader=history, summaries=summaries),
         ContentStore(engine, history_reader=history),
     )
     database_updates = create_database_updates(engine.url)
@@ -370,7 +369,7 @@ async def _next_threads(stream: AsyncIterator[str | bytes | memoryview]) -> Thre
 async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_changes(
     seeded: LiveIndex,
     store: ThreadStore,
-    event_logs: SeededEventLogStore,
+    event_logs: event_log.EventLogStore,
     replica: Replica,
     database_updates: WakeupListener,
 ) -> None:
@@ -412,7 +411,7 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
 
 
 async def test_global_thread_stream_carries_its_window_and_the_open_thread(
-    seeded: LiveIndex, event_logs: SeededEventLogStore, replica: Replica, database_updates: WakeupListener
+    seeded: LiveIndex, event_logs: event_log.EventLogStore, replica: Replica, database_updates: WakeupListener
 ) -> None:
     oldest, _, newest = [await event_logs.seed("runner-1", f"test-window-thread-{n}") for n in range(3)]
     drain = Drain()
@@ -431,7 +430,11 @@ async def test_global_thread_stream_carries_its_window_and_the_open_thread(
 
 
 async def test_global_thread_stream_reports_listener_loss_then_rereads_after_reconnect(
-    seeded: LiveIndex, event_logs: SeededEventLogStore, replica: Replica, database_updates: WakeupListener, db_url: str
+    seeded: LiveIndex,
+    event_logs: event_log.EventLogStore,
+    replica: Replica,
+    database_updates: WakeupListener,
+    db_url: str,
 ) -> None:
     drain = Drain()
     response = await live_threads(index=seeded, store=replica.store, updates=database_updates, shutdown=drain)

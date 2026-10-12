@@ -694,7 +694,6 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/action_service:operator_oidc_settings",
-        "//agentplane/app/testing:history",
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/testing:thread_test_support",
         "//agentplane/app/threads:bridge",
