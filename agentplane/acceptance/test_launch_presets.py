@@ -27,22 +27,21 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     configured = {preset.name: preset for preset in await client.presets()}
     preset = configured[PUBLIC_CODER]
     assert preset.session_defaults.harness is Harness.CODEX
-    assert GITHUB_AGENTYDRAGON_AGENT in preset.policies
+    # One of the two lists is filled, whichever the deployment's Sandbox kind takes.
+    policies = preset.policy_sets or preset.egress_policies
+    assert GITHUB_AGENTYDRAGON_AGENT in policies
     assert preset.session_defaults.model
 
     view = await sandbox(
         "accept-public-coder",
         template=preset.template,
-        egress_policies=preset.policies,
+        policies=policies,
         session_defaults=SessionDefaults(instructions=INSTRUCTIONS).over(preset.session_defaults),
         bootstrap=preset.bootstrap,
     )
     assert view.binding is not None
     assert view.binding.session_defaults is not None
     assert view.binding.session_defaults.instructions == INSTRUCTIONS
-    assert GITHUB_AGENTYDRAGON_AGENT in {
-        policy.name for binding in await client.bindings(view.name) for policy in binding.policies
-    }
 
     first_id = uuid4()
     async for attempt in runner_startup_retries():

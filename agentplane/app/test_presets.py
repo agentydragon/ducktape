@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.sandbox_models import SessionDefaults
@@ -47,6 +48,29 @@ def test_session_defaults_over_replaces_only_explicitly_set_fields(
     merged = edit.over(selected.session_defaults)
 
     assert (merged.model, merged.instructions) == ("preset-model", instructions)
+
+
+def _preset(**grants: list[str]) -> SandboxPreset:
+    return SandboxPreset.model_validate({"title": "Misfit", "template": "runner", "thread_preset": "thread", **grants})
+
+
+@pytest.mark.parametrize(
+    ("own_sandboxes", "preset"),
+    [
+        (True, _preset(egress_policies=["github-agentydragon-agent"])),
+        (True, _preset(action_policy_sets=["github-reads"])),
+        (True, _preset(kubernetes_grants=["tool-config"])),
+        (False, _preset(policy_sets=["github-agentydragon-agent"])),
+    ],
+    ids=["own-kind-egress", "own-kind-action", "own-kind-kubernetes", "agent-sandbox-policy-sets"],
+)
+def test_a_preset_may_not_fill_fields_its_sandbox_kind_refuses(own_sandboxes: bool, preset: SandboxPreset) -> None:
+    with pytest.raises(ValidationError, match="refuses"):
+        PresetCatalog(
+            own_sandboxes=own_sandboxes,
+            sandboxes={"misfit": preset},
+            threads={"thread": ThreadPreset(title="Thread", harness=Harness.CODEX, model="preset-model")},
+        )
 
 
 if __name__ == "__main__":

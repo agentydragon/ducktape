@@ -449,6 +449,12 @@ offers the namespace's sets from `GET /action-policy/sets`, each with the Action
 on it, and records the picked preset in the URL (`/#/?preset=<name>`) so a launch form can be
 linked to.
 
+Where the Sandbox Service creates Agentplane's own Sandbox kind (the app's `own_sandboxes` setting,
+which must agree with it), that kind takes `policy_sets` alone. `GET /sandboxes/form` then lists the
+namespace's `PolicySet`s and the form offers them in place of the egress, Action policy set and
+Kubernetes grant pickers; a preset fills only the fields its deployment's kind takes, which the app
+checks at startup.
+
 Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
 content to the runner under a stable preset identity. The runner executes it idempotently on the
 persistent state volume; a failure refuses the session open. The existing full `SessionSpec` API is

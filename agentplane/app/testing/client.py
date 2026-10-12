@@ -18,7 +18,7 @@ from uuid import UUID
 import httpx
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 
-from agentplane.app.api import EgressGrant
+from agentplane.app.api import EgressGrant, SandboxForm
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPresetView
 from agentplane.app.sandbox_models import NewSandbox, SandboxView
@@ -80,6 +80,9 @@ class Client:
 
     async def presets(self) -> list[SandboxPresetView]:
         return [SandboxPresetView.model_validate(row) for row in await self._json("GET", "/presets")]
+
+    async def sandbox_form(self) -> SandboxForm:
+        return SandboxForm.model_validate(await self._json("GET", "/sandboxes/form"))
 
     async def templates(self) -> list[str]:
         return list(await self._json("GET", "/sandboxes/templates"))

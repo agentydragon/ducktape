@@ -120,7 +120,13 @@ TEST_PRESETS = PresetCatalog(
 
 
 @pytest.fixture
+def presets() -> PresetCatalog:
+    return TEST_PRESETS
+
+
+@pytest.fixture
 def bare_app(
+    presets: PresetCatalog,
     model_catalog: ModelCatalog,
     inventory: SandboxServiceClient,
     bridge: RunnerBridge,
@@ -149,7 +155,7 @@ def bare_app(
         live_index,
         action_policy,
         reviewer=reviewer,
-        presets=TEST_PRESETS,
+        presets=presets,
         electric=electric_proxy,
         event_logs=event_logs,
         content=content,
@@ -237,6 +243,20 @@ async def test_create_returns_the_new_row(client: httpx.AsyncClient, custom_obje
 
 async def test_templates_list_the_concrete_choices_for_the_create_form(client: httpx.AsyncClient) -> None:
     assert (await client.get("/sandboxes/templates")).json() == [TEMPLATE]
+
+
+async def test_the_form_offers_no_policy_sets_where_sandboxes_are_agent_sandbox_ones(client: httpx.AsyncClient) -> None:
+    assert (await client.get("/sandboxes/form")).json() == {"policy_sets": None}
+
+
+@pytest.mark.parametrize("presets", [PresetCatalog(own_sandboxes=True)])
+async def test_the_form_offers_the_namespace_policy_sets_where_sandboxes_are_our_own(
+    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    for name in ("packages", "basic"):
+        custom_objects.objects[("policysets", name)] = {"metadata": {"name": name}, "spec": {"rules": []}}
+
+    assert (await client.get("/sandboxes/form")).json() == {"policy_sets": ["basic", "packages"]}
 
 
 async def test_create_records_the_concrete_session_defaults_and_bootstrap(
@@ -911,6 +931,7 @@ async def test_presets_publish_editable_sandbox_and_session_defaults(client: htt
             "egress_policies": ["github"],
             "action_policy_sets": ["github-reads"],
             "kubernetes_grants": [],
+            "policy_sets": [],
             "session_defaults": {
                 "harness": "HARNESS_CODEX",
                 "model": "test-codex-model",

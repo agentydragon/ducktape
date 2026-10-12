@@ -46,6 +46,7 @@ const EMPTY_FORM: NewSandbox = {
   egress_policies: [],
   action_policy_sets: [],
   kubernetes_grants: [],
+  policy_sets: [],
   bootstrap: "",
 };
 const EMPTY_THREAD: SessionDefaults = {};
@@ -90,6 +91,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [templates, setTemplates] = useState<string[]>([]);
   // The namespace's action policy sets; a preset pre-fills the pick and the operator edits it.
   const [policySets, setPolicySets] = useState<ActionPolicySetView[]>([]);
+  // Where Sandboxes are Agentplane's own kind, the PolicySets one may name, which replace the
+  // three grant pickers; null where they are agent-sandbox's.
+  const [ownPolicySets, setOwnPolicySets] = useState<string[] | null>(null);
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
   const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
@@ -107,6 +111,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         egress_policies: [],
         action_policy_sets: [],
         kubernetes_grants: [],
+        policy_sets: [],
         bootstrap: "",
       }));
       setThread(EMPTY_THREAD);
@@ -118,6 +123,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       egress_policies: preset.egress_policies,
       action_policy_sets: preset.action_policy_sets,
       kubernetes_grants: preset.kubernetes_grants,
+      policy_sets: preset.policy_sets,
       bootstrap: preset.bootstrap,
     }));
     setThread(preset.session_defaults);
@@ -146,6 +152,9 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         setKubernetesGrantOptions(grantViews);
         setKubernetesGrantCatalogState("ready");
       }
+      const { data: sandboxForm, error: formFailure } = await api.GET("/sandboxes/form");
+      if (formFailure) setError(displayableError(formFailure));
+      else setOwnPolicySets(sandboxForm.policy_sets ?? null);
       const { data: presetViews } = await api.GET("/presets");
       setPresets(presetViews ?? []);
       const { data: templateNames, error: templateFailure } = await api.GET("/sandboxes/templates");
@@ -253,48 +262,62 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           placeholder={templates.length > 0 ? "Choose a template" : "Loading templates…"}
           style={{ flex: "1 1 14rem" }}
         />
-        <MultiSelect
-          label="Egress policies"
-          description="What this sandbox may reach"
-          hidePickedOptions
-          data={egressPolicies.filter((policy) => !(form.egress_policies ?? []).includes(policy))}
-          value={form.egress_policies ?? []}
-          onChange={(picked) => setForm({ ...form, egress_policies: picked })}
-          style={{ flex: "1 1 12rem" }}
-        />
-        <MultiSelect
-          label="Action policy sets"
-          description="What its harness may do without the operator"
-          hidePickedOptions
-          data={policySets.map(policySetOption)}
-          value={form.action_policy_sets ?? []}
-          onChange={(picked) => setForm({ ...form, action_policy_sets: picked })}
-          style={{ flex: "1 1 12rem" }}
-        />
-        {/* TODO: The selected workspace-read grant can horizontally overflow the phone launch form
-            when this selector opens; constrain its pill layout without shifting the page. */}
-        <MultiSelect
-          label="Kubernetes grants"
-          description="Roles bound to this sandbox's ServiceAccount"
-          hidePickedOptions
-          data={kubernetesGrantOptions.map((grant) => ({
-            value: grant.name,
-            label: `${grant.name} · ${grant.kind} · ${grant.namespace ? `namespace ${grant.namespace}` : "cluster"} → ${grant.role_ref.kind}/${grant.role_ref.name}`,
-          }))}
-          value={form.kubernetes_grants ?? []}
-          onChange={(picked) => setForm({ ...form, kubernetes_grants: picked })}
-          disabled={kubernetesGrantCatalogState !== "ready"}
-          placeholder={
-            kubernetesGrantCatalogState === "ready"
-              ? kubernetesGrantOptions.length > 0
-                ? "Select Kubernetes grants"
-                : "No Kubernetes grants available"
-              : kubernetesGrantCatalogState === "loading"
-                ? "Loading Kubernetes grants…"
-                : "Could not load Kubernetes grants"
-          }
-          style={{ flex: "1 1 18rem" }}
-        />
+        {ownPolicySets !== null ? (
+          <MultiSelect
+            label="Policy sets"
+            description="What this sandbox may reach and do"
+            hidePickedOptions
+            data={ownPolicySets}
+            value={form.policy_sets ?? []}
+            onChange={(picked) => setForm({ ...form, policy_sets: picked })}
+            style={{ flex: "1 1 18rem" }}
+          />
+        ) : (
+          <>
+            <MultiSelect
+              label="Egress policies"
+              description="What this sandbox may reach"
+              hidePickedOptions
+              data={egressPolicies.filter((policy) => !(form.egress_policies ?? []).includes(policy))}
+              value={form.egress_policies ?? []}
+              onChange={(picked) => setForm({ ...form, egress_policies: picked })}
+              style={{ flex: "1 1 12rem" }}
+            />
+            <MultiSelect
+              label="Action policy sets"
+              description="What its harness may do without the operator"
+              hidePickedOptions
+              data={policySets.map(policySetOption)}
+              value={form.action_policy_sets ?? []}
+              onChange={(picked) => setForm({ ...form, action_policy_sets: picked })}
+              style={{ flex: "1 1 12rem" }}
+            />
+            {/* TODO: The selected workspace-read grant can horizontally overflow the phone launch form
+              when this selector opens; constrain its pill layout without shifting the page. */}
+            <MultiSelect
+              label="Kubernetes grants"
+              description="Roles bound to this sandbox's ServiceAccount"
+              hidePickedOptions
+              data={kubernetesGrantOptions.map((grant) => ({
+                value: grant.name,
+                label: `${grant.name} · ${grant.kind} · ${grant.namespace ? `namespace ${grant.namespace}` : "cluster"} → ${grant.role_ref.kind}/${grant.role_ref.name}`,
+              }))}
+              value={form.kubernetes_grants ?? []}
+              onChange={(picked) => setForm({ ...form, kubernetes_grants: picked })}
+              disabled={kubernetesGrantCatalogState !== "ready"}
+              placeholder={
+                kubernetesGrantCatalogState === "ready"
+                  ? kubernetesGrantOptions.length > 0
+                    ? "Select Kubernetes grants"
+                    : "No Kubernetes grants available"
+                  : kubernetesGrantCatalogState === "loading"
+                    ? "Loading Kubernetes grants…"
+                    : "Could not load Kubernetes grants"
+              }
+              style={{ flex: "1 1 18rem" }}
+            />
+          </>
+        )}
         <Button
           onClick={() => void create()}
           disabled={

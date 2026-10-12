@@ -133,7 +133,7 @@ async def test_a_bound_sandbox_reaches_what_its_policy_names_and_nothing_else(
 
     Nothing here tells the agent the placeholder. If it comes back as the bot, discovery worked.
     """
-    view = await sandbox(f"accept-probe-{harness}", egress_policies=[GITHUB_AGENTYDRAGON_AGENT])
+    view = await sandbox(f"accept-probe-{harness}", policies=[GITHUB_AGENTYDRAGON_AGENT])
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     turn = await agent.run(PROBE)
     probe = turn.report(Probe)
