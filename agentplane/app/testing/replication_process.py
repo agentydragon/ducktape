@@ -289,7 +289,7 @@ async def _serve(
             if frontend_directory is not None:
                 app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
             try:
-                async with database_updates.listener.listen():
+                async with database_updates.listener.listen(), discovery:
                     await discovery.start()
                     watching = asyncio.create_task(history_watch.run(), name="test-app-history-watch")
                     try:
@@ -302,7 +302,6 @@ async def _serve(
                     finally:
                         watching.cancel()
                         await asyncio.gather(watching, return_exceptions=True)
-                        await discovery.close()
             finally:
                 await engine.dispose()
                 await core.close()

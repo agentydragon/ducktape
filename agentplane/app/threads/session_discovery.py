@@ -6,6 +6,8 @@ A Session's history and its fold belong to the History Service; the app only ope
 import asyncio
 import contextlib
 import logging
+from types import TracebackType
+from typing import Self
 
 import grpc
 from sqlalchemy.exc import SQLAlchemyError
@@ -27,6 +29,14 @@ class SessionDiscovery:
         self._changed = asyncio.Event()
         self._reconcile_lock = asyncio.Lock()
         self._coordinator: asyncio.Task[None] | None = None
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        await self.close()
 
     async def start(self) -> None:
         """Start discovery, or wake it to reconcile now."""
@@ -76,8 +86,10 @@ class SessionDiscovery:
             logger.warning("sandbox %s Session discovery unavailable", sandbox, exc_info=True)
 
     async def close(self) -> None:
-        if self._coordinator is not None:
-            self._coordinator.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._coordinator
-            self._coordinator = None
+        """Stop discovery; idempotent, so a replica can stop before its context exits."""
+        coordinator, self._coordinator = self._coordinator, None
+        if coordinator is not None:
+            coordinator.cancel()
+            await asyncio.wait({coordinator})
+            if not coordinator.cancelled() and (error := coordinator.exception()) is not None:
+                raise error

@@ -81,7 +81,7 @@ async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_l
                 ),
             )
             executor = McpActionGroupExecutor.from_group_with_linkage("example", group, authority)
-            try:
+            async with executor:
                 await executor.start()
                 await wait_available(group)
                 result = await executor.execute(
@@ -94,8 +94,6 @@ async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_l
                     execution_lease,
                 )
                 assert CallToolResult.model_validate(result.result).structured_content == {"result": "Echo: hi"}
-            finally:
-                await executor.close()
 
 
 if __name__ == "__main__":

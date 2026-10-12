@@ -159,8 +159,7 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": executor})
     await service.start()
-    client = await _client(service, operator_idp)
-    try:
+    async with service, await _client(service, operator_idp) as client:
         key = "submit-1"
         envelope = {
             "idempotency_key": key,
@@ -372,9 +371,6 @@ async def test_p0_allow_deny_scope_forgery_redaction_and_single_execution(
         assert caller_denied["decision"] == denied.json()["decision"]
         assert caller_denied["decision"]["decision_note"] == "not permitted"
         assert len(executor.requests) == 1
-    finally:
-        await client.aclose()
-        await service.close()
 
 
 async def test_executor_exception_material_is_not_logged_projected_or_retried(
@@ -384,8 +380,7 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": executor})
     await service.start()
-    client = await _client(service, operator_idp)
-    try:
+    async with service, await _client(service, operator_idp) as client:
         pending = (
             await client.post(
                 "/v1/action-requests",
@@ -414,19 +409,14 @@ async def test_executor_exception_material_is_not_logged_projected_or_retried(
 
         restarted = ActionService(store, echo_catalog, {"agentplane": executor})
         await restarted.start()
-        try:
+        async with restarted:
             # A restart resumes pending dispatches only, and a failed Execution is not one.
             assert await store.pending_dispatches() == []
             assert (await _terminal(client, pending["id"]))["state"] == "failed"
-        finally:
-            await restarted.close()
         assert len(executor.requests) == 1
 
         rendered = failed.__str__() + "\n" + "\n".join(record.getMessage() for record in caplog.records)
         assert "provider-token-must-not-escape" not in rendered
-    finally:
-        await client.aclose()
-        await service.close()
 
 
 async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to_the_lease_sweep(
@@ -461,14 +451,9 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
 
     restarted = ActionService(store, echo_catalog, {"agentplane": executor})
     await restarted.start()
-    client = await _client(restarted, operator_idp)
-    try:
+    async with restarted, await _client(restarted, operator_idp) as client:
         assert (await _terminal(client, str(pending_view.id)))["state"] == "succeeded"
         assert len(executor.requests) == 1
-    finally:
-        await client.aclose()
-        await restarted.close()
-
     inflight_view = await store.submit(
         ActionRequestInput(
             idempotency_key="restart-inflight",
@@ -497,7 +482,7 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
     never_called = CountingExecutor()
     after_crash = ActionService(store, echo_catalog, {"agentplane": never_called})
     await after_crash.start()
-    try:
+    async with after_crash:
         # The lease from before the crash is still comfortably unexpired, so the new process
         # must not assume the old one's work is dead.
         assert await store.pending_dispatches() == []
@@ -508,8 +493,6 @@ async def test_restart_resumes_only_pending_dispatch_and_leaves_inflight_work_to
         assert [event.state for event in await store.events(inflight_view.id, CALLER_A, after_sequence=3)] == [
             ActionState.RUNNING
         ]
-    finally:
-        await after_crash.close()
     assert never_called.requests == []
 
 
@@ -538,8 +521,7 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, catalog, {"github": CountingExecutor()})
     await service.start()
-    client = await _client(service, operator_idp, catalog=catalog)
-    try:
+    async with service, await _client(service, operator_idp, catalog=catalog) as client:
         groups = await client.get("/v1/action-groups", headers=_workload("workload-a"))
         assert groups.status_code == 200
         assert groups.json() == [
@@ -593,9 +575,6 @@ async def test_configured_catalog_is_discoverable_and_unknown_lookups_fail_clear
             "/v1/action-groups/github/actions/does-not-exist", headers=_workload("workload-a")
         )
         assert missing_action.status_code == 404
-    finally:
-        await client.aclose()
-        await service.close()
 
 
 async def test_operator_reads_a_named_subjects_effective_policy(
@@ -625,8 +604,7 @@ async def test_operator_reads_a_named_subjects_effective_policy(
     service = ActionService(
         ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": CountingExecutor()}, policies=index
     )
-    client = await _client(service, operator_idp)
-    try:
+    async with service, await _client(service, operator_idp) as client:
         sandbox_path = f"/v1/operator/action-policy/service-accounts/{ACCOUNT_A.namespace}/{ACCOUNT_A.name}"
         response = await client.get(sandbox_path, headers=_operator(operator_idp))
         assert response.status_code == 200, response.text
@@ -651,9 +629,6 @@ async def test_operator_reads_a_named_subjects_effective_policy(
         assert [b.name for b in SubjectActionPolicyView.model_validate(by_account.json()).bindings] == ["client-reads"]
         assert (await client.get(sandbox_path)).status_code == 401
         assert (await client.get(sandbox_path, headers=_workload("workload-a"))).status_code == 401
-    finally:
-        await client.aclose()
-        await service.close()
 
 
 async def test_catalog_admission_and_group_routing(
@@ -667,8 +642,7 @@ async def test_catalog_admission_and_group_routing(
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": first, "other": second, "offline": first})
     await service.start()
-    client = await _client(service, operator_idp, catalog=echo_catalog)
-    try:
+    async with service, await _client(service, operator_idp, catalog=echo_catalog) as client:
         for group, name in [("missing", "echo"), ("agentplane", "missing"), ("unbound", "echo")]:
             response = await client.post(
                 "/v1/action-requests",
@@ -757,9 +731,6 @@ async def test_catalog_admission_and_group_routing(
             headers=_workload("workload-a"),
         )
         assert refused.status_code == 422
-    finally:
-        await client.aclose()
-        await service.close()
 
 
 async def test_action_removed_before_allow_never_dispatches(
@@ -769,8 +740,7 @@ async def test_action_removed_before_allow_never_dispatches(
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": executor})
     await service.start()
-    client = await _client(service, operator_idp, catalog=echo_catalog)
-    try:
+    async with service, await _client(service, operator_idp, catalog=echo_catalog) as client:
         view = await service.submit(
             ActionRequestInput(
                 idempotency_key="removed-before-allow",
@@ -791,9 +761,6 @@ async def test_action_removed_before_allow_never_dispatches(
         assert terminal["execution"]["error"]["kind"] == "UnsupportedActionError"
         assert executor.requests == []
         assert await store.pending_dispatches() == []
-    finally:
-        await client.aclose()
-        await service.close()
 
 
 async def test_submission_schema_error_is_http_422_and_does_not_persist(
@@ -807,8 +774,7 @@ async def test_submission_schema_error_is_http_422_and_does_not_persist(
     store = ActionStore(make_sessionmaker(engine))
     executor = CountingExecutor()
     service = ActionService(store, echo_catalog, {"agentplane": executor})
-    client = await _client(service, operator_idp, catalog=echo_catalog)
-    try:
+    async with service, await _client(service, operator_idp, catalog=echo_catalog) as client:
         response = await client.post(
             "/v1/action-requests",
             json={
@@ -824,9 +790,6 @@ async def test_submission_schema_error_is_http_422_and_does_not_persist(
         assert "private-request-value" not in response.text
         assert await store.list_requests(CALLER_A) == []
         assert executor.requests == []
-    finally:
-        await client.aclose()
-        await service.close()
 
 
 async def test_operator_arguments_are_exact_but_caller_arguments_are_recursively_redacted(
@@ -967,9 +930,8 @@ async def test_operator_history_pages_exclude_pending_and_require_operator(
 ) -> None:
     service = ActionService(ActionStore(make_sessionmaker(engine)), echo_catalog, {"agentplane": CountingExecutor()})
     await service.start()
-    client = await _client(service, operator_idp)
     path = "/v1/operator/action-requests/history"
-    try:
+    async with service, await _client(service, operator_idp) as client:
         requests = []
         for index in range(4):
             submitted = await client.post(
@@ -1021,6 +983,3 @@ async def test_operator_history_pages_exclude_pending_and_require_operator(
                 "/v1/operator/action-requests", params={"state": "decision_pending"}, headers=_operator(operator_idp)
             )
         ).json()[0]["id"] == requests[3]["id"]
-    finally:
-        await client.aclose()
-        await service.close()

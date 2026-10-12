@@ -213,12 +213,9 @@ async def serve_then_close(
     timeout bounds the requests and streams still open, and stopping discovery and closing the runner
     connections and the database have the rest of the Pod's grace period to themselves."""
     try:
-        async with database_updates.listener.listen():
-            try:
-                await discovery.start()
-                await server.serve()
-            finally:
-                await discovery.close()
+        async with database_updates.listener.listen(), discovery:
+            await discovery.start()
+            await server.serve()
     finally:
         await engine.dispose()
 

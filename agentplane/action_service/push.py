@@ -11,6 +11,8 @@ import asyncio
 import base64
 import datetime
 import logging
+from types import TracebackType
+from typing import Self
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -157,7 +159,12 @@ class ActionPushNotifier:
     def start(self) -> None:
         self._task = asyncio.create_task(self.run(), name="action-web-push")
 
-    async def close(self) -> None:
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
         if self._task is not None:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)

@@ -82,12 +82,9 @@ class History:
 
     async def fold(self) -> None:
         """Fold every Session until none is behind, then hand the leases back for the next folder."""
-        async with self._folding:
-            try:
-                while (await self._fold.cycle()).behind:
-                    pass
-            finally:
-                await self._fold.release()
+        async with self._folding, self._fold:
+            while (await self._fold.cycle()).behind:
+                pass
 
     @asynccontextmanager
     async def paused(self) -> AsyncIterator[None]:

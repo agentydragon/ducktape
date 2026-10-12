@@ -19,7 +19,8 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from time import monotonic
-from typing import Annotated, Any, Literal, cast
+from types import TracebackType
+from typing import Annotated, Any, Literal, Self, cast
 
 import httpx2
 import jsonschema
@@ -302,6 +303,14 @@ class McpActionGroupExecutor(Executor):
         if self._supervisor is not None:
             # The supervisor does not own the lifetime of published connections.
             self._supervisor.cancel()
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        await self.close()
 
     async def close(self) -> None:
         self.begin_drain()

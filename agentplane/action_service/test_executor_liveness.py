@@ -219,7 +219,7 @@ async def test_action_service_restarts_and_worker_liveness_never_double_dispatch
         executor_health_timeout=timedelta(seconds=30),
     )
     await service.start()
-    try:
+    async with service:
         pending = await service.submit(
             ActionRequestInput(
                 idempotency_key="no-double-dispatch",
@@ -244,8 +244,6 @@ async def test_action_service_restarts_and_worker_liveness_never_double_dispatch
         # The still-running dispatch task eventually returns and reconciles instead of erroring.
         await _poll_state(store, request_id, want=ActionState.SUCCEEDED)
         assert len(executor.requests) == 1
-    finally:
-        await service.close()
 
 
 class GatedExecutor(Executor):
@@ -270,7 +268,7 @@ async def test_drain_fences_queued_dispatch_and_another_replica_claims_it(
     request_id = await _allowed_execution(store, idempotency_key="queued-drain")
     first = ActionService(store, echo_catalog, {"agentplane": executor})
     second = ActionService(store, echo_catalog, {"agentplane": executor})
-    try:
+    async with second, first:
         await first.start()
         # start() schedules the durable row, but the queued task has not entered the claim RPC.
         first.begin_drain()
@@ -285,9 +283,6 @@ async def test_drain_fences_queued_dispatch_and_another_replica_claims_it(
         await second.start()
         await _poll_state(store, request_id, want=ActionState.SUCCEEDED)
         assert executor.calls == 1
-    finally:
-        await first.close()
-        await second.close()
 
 
 async def test_drain_includes_a_claim_whose_database_reply_is_still_in_flight(
@@ -315,24 +310,24 @@ async def test_drain_includes_a_claim_whose_database_reply_is_still_in_flight(
 
     request_id = await _allowed_execution(store, idempotency_key="claim-race")
     service = ActionService(store, echo_catalog, {"agentplane": executor})
-    try:
-        with patch.object(store, "claim_execution", delayed_claim):
-            await service.start()
-            async with asyncio.timeout(5):
-                await claimed.wait()
-                service.begin_drain()
-                closing = asyncio.create_task(service.close())
-                return_claim.set()
-                await executor.started.wait()
-                assert not closing.done()
-                executor.release.set()
-                await closing
-        assert (await store.get(request_id, CALLER)).state is ActionState.SUCCEEDED
-        assert executor.calls == 1
-    finally:
-        return_claim.set()
-        executor.release.set()
-        await service.close()
+    async with service:
+        try:
+            with patch.object(store, "claim_execution", delayed_claim):
+                await service.start()
+                async with asyncio.timeout(5):
+                    await claimed.wait()
+                    service.begin_drain()
+                    closing = asyncio.create_task(service.close())
+                    return_claim.set()
+                    await executor.started.wait()
+                    assert not closing.done()
+                    executor.release.set()
+                    await closing
+            assert (await store.get(request_id, CALLER)).state is ActionState.SUCCEEDED
+            assert executor.calls == 1
+        finally:
+            return_claim.set()
+            executor.release.set()
 
 
 async def test_drain_waits_for_terminal_persistence_and_renews_its_lease(
@@ -357,24 +352,27 @@ async def test_drain_waits_for_terminal_persistence_and_renews_its_lease(
             renewed.set()
         return accepted
 
-    try:
-        with patch.object(store, "finish_execution", delayed_finish), patch.object(store, "heartbeat_execution", renew):
-            await service.start()
-            async with asyncio.timeout(5):
-                await executor.started.wait()
-                service.begin_drain()
-                executor.release.set()
-                await persisting.wait()
-                await renewed.wait()
-                assert (await store.get(request_id, CALLER)).state is ActionState.RUNNING
-                release_persistence.set()
-                await service.close()
-        assert (await store.get(request_id, CALLER)).state is ActionState.SUCCEEDED
-        assert not any(task.get_name() == "action-completion-renewal" for task in asyncio.all_tasks())
-    finally:
-        executor.release.set()
-        release_persistence.set()
-        await service.close()
+    async with service:
+        try:
+            with (
+                patch.object(store, "finish_execution", delayed_finish),
+                patch.object(store, "heartbeat_execution", renew),
+            ):
+                await service.start()
+                async with asyncio.timeout(5):
+                    await executor.started.wait()
+                    service.begin_drain()
+                    executor.release.set()
+                    await persisting.wait()
+                    await renewed.wait()
+                    assert (await store.get(request_id, CALLER)).state is ActionState.RUNNING
+                    release_persistence.set()
+                    await service.close()
+            assert (await store.get(request_id, CALLER)).state is ActionState.SUCCEEDED
+            assert not any(task.get_name() == "action-completion-renewal" for task in asyncio.all_tasks())
+        finally:
+            executor.release.set()
+            release_persistence.set()
 
 
 async def test_forced_drain_persists_unknown_and_never_replays(
@@ -385,7 +383,7 @@ async def test_forced_drain_persists_unknown_and_never_replays(
     request_id = await _allowed_execution(store, idempotency_key="forced-drain")
     first = ActionService(store, echo_catalog, {"agentplane": executor}, drain_timeout=timedelta(0))
     second = ActionService(store, echo_catalog, {"agentplane": executor})
-    try:
+    async with second, first:
         await first.start()
         async with asyncio.timeout(5):
             await executor.started.wait()
@@ -399,9 +397,6 @@ async def test_forced_drain_persists_unknown_and_never_replays(
         await second.start()
         await second.close()
         assert executor.calls == 1
-    finally:
-        await first.close()
-        await second.close()
 
 
 async def test_forced_drain_bounds_unavailable_outcome_persistence(

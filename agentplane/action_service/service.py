@@ -19,7 +19,8 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 from uuid import UUID, uuid4
 
 import jsonschema
@@ -278,6 +279,14 @@ class ActionService:
             if self._on_drain is not None:
                 self._on_drain()
             self._close_task = asyncio.create_task(self._close(), name="action-service-drain")
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        await self.close()
 
     async def close(self) -> None:
         self.begin_drain()

@@ -269,11 +269,8 @@ async def app_url(
         notifications_token_file=notifications_token_file,
     )
     sock = bind_free_port()
-    try:
-        async with serve_app_in_loop(app, sock=sock):
-            yield f"http://127.0.0.1:{sock.getsockname()[1]}"
-    finally:
-        await discovery.close()
+    async with discovery, serve_app_in_loop(app, sock=sock):
+        yield f"http://127.0.0.1:{sock.getsockname()[1]}"
 
 
 async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_event_id(
@@ -1166,21 +1163,22 @@ async def replicas(
         discovery=survivor_discovery,
     )
     try:
-        async with survivor_service, listening(replica_engine, history_client, history_token_file) as replica_updates:
+        async with (
+            survivor_service,
+            listening(replica_engine, history_client, history_token_file) as replica_updates,
+            survivor_discovery,
+            owner_discovery,
+        ):
             await owner_discovery.start()
             await owner_discovery.reconcile()
-            try:
-                yield Replicas(
-                    owner,
-                    owner_discovery,
-                    survivor,
-                    survivor_discovery,
-                    survivor_event_logs,
-                    replica_updates.changes[Channel.THREADS],
-                )
-            finally:
-                await owner_discovery.close()
-                await survivor_discovery.close()
+            yield Replicas(
+                owner,
+                owner_discovery,
+                survivor,
+                survivor_discovery,
+                survivor_event_logs,
+                replica_updates.changes[Channel.THREADS],
+            )
     finally:
         await replica_engine.dispose()
 
@@ -1271,31 +1269,28 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
 
     monkeypatch.setattr(runners, "running", observed_running)
     discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
-    async with service, dialing(runner.runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)):
-        try:
-            await asyncio.to_thread(sandbox_endpoint.wait_connected, UUID(destination.sandbox_uid))
-            await service.runner(destination).create(session_id=uuid4(), spec=MessageToDict(spec))
-            await discovery.start()
-            async with asyncio.timeout(10):
-                await discovered.wait()
-            discovered.clear()
-            live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX] = raw, running_pod
-            live_index.changes.notify()
-            async with asyncio.timeout(10):
-                await discovered.wait()
-            # Only discovery can create this row: no bridge exists, so no Open, command, or SSE request ran.
-            async for attempt in AsyncRetrying(
-                stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
-            ):
-                with attempt:
-                    threads = await store.list_threads()
-                    assert len(threads) == 1
-                    # Discovery wakes once from the informer; projection subsequently fetches service pages.
-                    await discovery.reconcile()
-                    assert await event_logs.last_cursor(threads[0].id) > 0
-            assert threads[0].sandbox == SANDBOX
-        finally:
-            await discovery.close()
+    async with service, dialing(runner.runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)), discovery:
+        await asyncio.to_thread(sandbox_endpoint.wait_connected, UUID(destination.sandbox_uid))
+        await service.runner(destination).create(session_id=uuid4(), spec=MessageToDict(spec))
+        await discovery.start()
+        async with asyncio.timeout(10):
+            await discovered.wait()
+        discovered.clear()
+        live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX] = raw, running_pod
+        live_index.changes.notify()
+        async with asyncio.timeout(10):
+            await discovered.wait()
+        # Only discovery can create this row: no bridge exists, so no Open, command, or SSE request ran.
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                threads = await store.list_threads()
+                assert len(threads) == 1
+                # Discovery wakes once from the informer; projection subsequently fetches service pages.
+                await discovery.reconcile()
+                assert await event_logs.last_cursor(threads[0].id) > 0
+        assert threads[0].sandbox == SANDBOX
 
 
 async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
@@ -1376,7 +1371,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
     del live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX]
     offline_discovery = SessionDiscovery(runners=local_runners, event_logs=event_logs)
     offline = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content, discovery=offline_discovery)
-    try:
+    async with offline_discovery:
         # A lost HTTP response is retryable from the committed Thread prefix even after the
         # sandbox disappears: this answer must not attempt a new runner attachment, which with the
         # sandbox gone from the index would raise.
@@ -1389,8 +1384,6 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
             assert (await next_message(lines)).event == "attached"
             assert await read_until(lines, "harnessExited") == stored
             assert (await next_message(lines)).event == "end"
-    finally:
-        await offline_discovery.close()
 
 
 async def test_open_and_resume_reply_before_archive_catches_up(

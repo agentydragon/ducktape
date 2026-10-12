@@ -70,54 +70,48 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
         ingest(service_history_db_url, runner.runner),
     ):
         directory = SandboxSessions(live_index, remote)
-        discovery = SessionDiscovery(runners=directory, event_logs=event_logs)
-        bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content, discovery=discovery)
-        try:
-            with pytest.raises(MalformedMessageError):
-                await bridge.create_session(SANDBOX, uuid4(), {"reasoning_effort": "low", "reasoningEffort": "high"})
-            assert not runner.runner.sessions
-            opened = await bridge.create_session(SANDBOX, uuid4(), MessageToDict(spec))
-            assert "Backend guidance" in opened.spec.instructions
-            thread = UUID(opened.session_id)
-            first = command_pb2.Command(command_id="remote-first", submit_input=command_pb2.SubmitInput(text="first"))
-            receipt = await bridge.command(thread, first)
-            assert receipt.event.command_admitted.command == first
-            # The runner receipt can arrive before the independent app archive copy.
-            async for attempt in AsyncRetrying(
-                stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
-            ):
-                with attempt:
-                    assert receipt in await event_logs.events(thread, limit=1000)
-            await model.reply(await model.request(), Text("FIRST"))
-            snapshot = await event_logs.feed_state(thread)
-            assert snapshot is not None
-            assert snapshot.end is None
-            second = command_pb2.Command(
-                command_id="remote-second", submit_input=command_pb2.SubmitInput(text="second")
-            )
-            next_receipt = await bridge.command(thread, second)
-            assert next_receipt.cursor > receipt.cursor
-            assert next_receipt.origin.source_id == receipt.origin.source_id
-            await model.reply(await model.request(), Text("SECOND"))
-            await bridge.command(
-                thread,
-                command_pb2.Command(command_id="remote-stop", stop_runner_session=command_pb2.StopRunnerSession()),
-            )
-            async for attempt in AsyncRetrying(
-                stop=stop_after_delay(15), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
-            ):
-                with attempt:
-                    native = await runner.runner.sessions[str(thread)].journal.since(0, limit=1000)
-                    archived = await event_logs.events(thread, limit=1000)
-                    assert archived == native
-                    assert any(entry.event.HasField("harness_exited") for entry in archived)
-            assert not [
-                record
-                for record in caplog.records
-                if record.name == "agentplane.app.threads.session_discovery" and record.levelno >= logging.WARNING
-            ]
-        finally:
-            await discovery.close()
+        async with SessionDiscovery(runners=directory, event_logs=event_logs) as discovery:
+            bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content, discovery=discovery)
+        with pytest.raises(MalformedMessageError):
+            await bridge.create_session(SANDBOX, uuid4(), {"reasoning_effort": "low", "reasoningEffort": "high"})
+        assert not runner.runner.sessions
+        opened = await bridge.create_session(SANDBOX, uuid4(), MessageToDict(spec))
+        assert "Backend guidance" in opened.spec.instructions
+        thread = UUID(opened.session_id)
+        first = command_pb2.Command(command_id="remote-first", submit_input=command_pb2.SubmitInput(text="first"))
+        receipt = await bridge.command(thread, first)
+        assert receipt.event.command_admitted.command == first
+        # The runner receipt can arrive before the independent app archive copy.
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                assert receipt in await event_logs.events(thread, limit=1000)
+        await model.reply(await model.request(), Text("FIRST"))
+        snapshot = await event_logs.feed_state(thread)
+        assert snapshot is not None
+        assert snapshot.end is None
+        second = command_pb2.Command(command_id="remote-second", submit_input=command_pb2.SubmitInput(text="second"))
+        next_receipt = await bridge.command(thread, second)
+        assert next_receipt.cursor > receipt.cursor
+        assert next_receipt.origin.source_id == receipt.origin.source_id
+        await model.reply(await model.request(), Text("SECOND"))
+        await bridge.command(
+            thread, command_pb2.Command(command_id="remote-stop", stop_runner_session=command_pb2.StopRunnerSession())
+        )
+        async for attempt in AsyncRetrying(
+            stop=stop_after_delay(15), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
+        ):
+            with attempt:
+                native = await runner.runner.sessions[str(thread)].journal.since(0, limit=1000)
+                archived = await event_logs.events(thread, limit=1000)
+                assert archived == native
+                assert any(entry.event.HasField("harness_exited") for entry in archived)
+        assert not [
+            record
+            for record in caplog.records
+            if record.name == "agentplane.app.threads.session_discovery" and record.levelno >= logging.WARNING
+        ]
 
 
 async def test_stopped_service_never_falls_back_to_reachable_runner(

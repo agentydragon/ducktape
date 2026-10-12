@@ -183,8 +183,7 @@ async def review(
     async with AsyncExitStack() as stack:
         engine = make_engine(db_url)
         stack.push_async_callback(engine.dispose)
-        executor = McpActionGroupExecutor("test_review", group, server)
-        stack.push_async_callback(executor.close)
+        executor = await stack.enter_async_context(McpActionGroupExecutor("test_review", group, server))
         await executor.start()
         private_key, public_key = generate_rsa_keypair()
         idp_sock = bind_free_port()
@@ -197,10 +196,9 @@ async def review(
             jwks_uri=f"{idp_url}jwks/",
         )
         policies = admitted_callers(PERSONAL)
-        service = ActionService(
-            ActionStore(make_sessionmaker(engine)), catalog, {"test_review": executor}, policies=policies
+        service = await stack.enter_async_context(
+            ActionService(ActionStore(make_sessionmaker(engine)), catalog, {"test_review": executor}, policies=policies)
         )
-        stack.push_async_callback(service.close)
         await service.start()
         connections = ConnectionAuthority(make_sessionmaker(engine), policies)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)

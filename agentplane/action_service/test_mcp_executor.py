@@ -114,7 +114,7 @@ async def test_start_mirrors_tool_catalog_into_the_action_group() -> None:
     executor.on_health_change = lambda: observed.append((executor._health.state.value, group.available))
     await executor.start()
     await wait_available(executor._group)
-    try:
+    async with executor:
         assert set(group.actions) == {"add", "greet"}
         assert group.actions["add"].description == "Add two numbers."
         assert group.actions["add"].input_schema["required"] == ["a", "b"]
@@ -123,8 +123,6 @@ async def test_start_mirrors_tool_catalog_into_the_action_group() -> None:
         assert group.available is True
         assert ("available", True) in observed
         assert ("discovering", False) in observed
-    finally:
-        await executor.close()
     assert observed[-1] == ("stopped", False)
 
 
@@ -139,7 +137,7 @@ async def test_explicit_refresh_picks_up_added_removed_and_changed_tools() -> No
     executor = McpActionGroupExecutor(GROUP_KEY, group, mcp, catalog_refresh_interval=timedelta(hours=1))
     await executor.start()
     await wait_available(executor._group)
-    try:
+    async with executor:
         assert set(group.actions) == {"stale"}
 
         @mcp.tool(name="fresh")
@@ -161,8 +159,6 @@ async def test_explicit_refresh_picks_up_added_removed_and_changed_tools() -> No
         required = group.actions["fresh"].input_schema["required"]
         assert isinstance(required, list)
         assert set(required) == {"y", "z"}
-    finally:
-        await executor.close()
 
 
 async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine: AsyncEngine) -> None:
@@ -189,7 +185,7 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
     await executor.start()
     await wait_available(executor._group)
     await service.start()
-    try:
+    async with executor, service:
         request_id = await _allowed_execution(service, idempotency_key="one-call")
         await _poll_state(store, request_id, want=ActionState.SUCCEEDED)
         assert calls == [{"text": "hi"}]
@@ -210,9 +206,6 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
         except ActionConflictError:
             pass
         assert calls == [{"text": "hi"}]
-    finally:
-        await service.close()
-        await executor.close()
 
 
 async def test_tool_error_output_is_a_successful_result(execution_lease: ExecutionLease) -> None:
@@ -226,7 +219,7 @@ async def test_tool_error_output_is_a_successful_result(execution_lease: Executi
     executor = McpActionGroupExecutor(GROUP_KEY, group, mcp)
     await executor.start()
     await wait_available(executor._group)
-    try:
+    async with executor:
         result = await executor.execute(
             _request(action=ActionIdentity(group=GROUP_KEY, name="explode"), arguments={}), execution_lease
         )
@@ -240,8 +233,6 @@ async def test_tool_error_output_is_a_successful_result(execution_lease: Executi
         assert group.available
         assert executor._connection is not None
         assert executor._connection.client.is_connected()
-    finally:
-        await executor.close()
 
 
 async def test_result_keeps_every_content_block_beside_structured_content(execution_lease: ExecutionLease) -> None:
@@ -261,7 +252,7 @@ async def test_result_keeps_every_content_block_beside_structured_content(execut
     executor = McpActionGroupExecutor(GROUP_KEY, _group(), mcp)
     await executor.start()
     await wait_available(executor._group)
-    try:
+    async with executor:
         result = await executor.execute(
             _request(action=ActionIdentity(group=GROUP_KEY, name="snapshot"), arguments={}), execution_lease
         )
@@ -275,8 +266,6 @@ async def test_result_keeps_every_content_block_beside_structured_content(execut
             "structuredContent": {"width": 1, "height": 1},
             "isError": False,
         }
-    finally:
-        await executor.close()
 
 
 async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(engine: AsyncEngine) -> None:
@@ -307,40 +296,42 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
     await executor.start()
     await wait_available(executor._group)
     await service.start()
-    try:
-        view = await service.submit(
-            ActionRequestInput(
-                idempotency_key="transport-loss",
-                title="test title for transport-loss",
-                action=ActionIdentity(group="slow", name="slow_echo"),
-                arguments={"marker_path": str(marker_path), "seconds": 30.0, "text": "hi"},
-            ),
-            CALLER,
-        )
-        await service.decide(
-            view.id,
-            DecisionInput(verdict=Verdict.ALLOW, expected_version=view.version, idempotency_key="transport-loss-allow"),
-            OPERATOR,
-        )
+    async with service:
+        try:
+            view = await service.submit(
+                ActionRequestInput(
+                    idempotency_key="transport-loss",
+                    title="test title for transport-loss",
+                    action=ActionIdentity(group="slow", name="slow_echo"),
+                    arguments={"marker_path": str(marker_path), "seconds": 30.0, "text": "hi"},
+                ),
+                CALLER,
+            )
+            await service.decide(
+                view.id,
+                DecisionInput(
+                    verdict=Verdict.ALLOW, expected_version=view.version, idempotency_key="transport-loss-allow"
+                ),
+                OPERATOR,
+            )
 
-        for _ in range(500):
-            if await asyncio.to_thread(marker_path.exists):
-                break
-            await asyncio.sleep(0.01)
-        else:
-            raise AssertionError("the tool never signalled it had started")
+            for _ in range(500):
+                if await asyncio.to_thread(marker_path.exists):
+                    break
+                await asyncio.sleep(0.01)
+            else:
+                raise AssertionError("the tool never signalled it had started")
 
-        # Sever the transport mid-call; the client's underlying subprocess dies with it.
-        await executor.close()
+            # Sever the transport mid-call; the client's underlying subprocess dies with it.
+            await executor.close()
 
-        await _poll_state(store, view.id, want=ActionState.EXECUTION_UNKNOWN)
-        final = await store.get(view.id, CALLER)
-        assert final.execution is not None
-        assert final.execution.error is not None
-        assert final.execution.error["kind"] == "execution_outcome_unknown"
-    finally:
-        await asyncio.to_thread(marker_path.unlink, missing_ok=True)
-        await service.close()
+            await _poll_state(store, view.id, want=ActionState.EXECUTION_UNKNOWN)
+            final = await store.get(view.id, CALLER)
+            assert final.execution is not None
+            assert final.execution.error is not None
+            assert final.execution.error["kind"] == "execution_outcome_unknown"
+        finally:
+            await asyncio.to_thread(marker_path.unlink, missing_ok=True)
 
 
 class ControlledLease(ExecutionLease):
@@ -387,7 +378,7 @@ async def test_mcp_renewal_failure_stops_waiting_without_retry(failure: str) -> 
     executor = McpActionGroupExecutor(GROUP_KEY, _group(), server)
     await executor.start()
     await wait_available(executor._group)
-    try:
+    async with executor:
         async with asyncio.timeout(5):
             with pytest.raises(ExecutionOutcomeUnknownError, match="lease") as error:
                 await executor.execute(
@@ -397,8 +388,6 @@ async def test_mcp_renewal_failure_stops_waiting_without_retry(failure: str) -> 
         assert calls == ["called"]
         assert lease.active == 0
         assert not any(task.get_name() == "action-execution-renewal" for task in asyncio.all_tasks())
-    finally:
-        await executor.close()
 
 
 async def test_discovery_wait_renews_and_lost_lease_prevents_tool_call() -> None:
@@ -424,23 +413,23 @@ async def test_discovery_wait_renews_and_lost_lease_prevents_tool_call() -> None
         await release_list.wait()
         return await list_tools()
 
-    try:
-        with patch.object(client, "list_tools", gated_list):
-            task = asyncio.create_task(
-                executor.execute(_request(action=ActionIdentity(group=GROUP_KEY, name="echo"), arguments={}), lease)
-            )
-            async with asyncio.timeout(5):
-                await lease.renewed.wait()
-                lease.failure = "lost"
-                release_list.set()
-                with pytest.raises(ExecutionOutcomeUnknownError, match="lease"):
-                    await task
-        assert calls == []
-        assert lease.active == 0
-        assert not any(task.get_name() == "action-execution-renewal" for task in asyncio.all_tasks())
-    finally:
-        release_list.set()
-        await executor.close()
+    async with executor:
+        try:
+            with patch.object(client, "list_tools", gated_list):
+                task = asyncio.create_task(
+                    executor.execute(_request(action=ActionIdentity(group=GROUP_KEY, name="echo"), arguments={}), lease)
+                )
+                async with asyncio.timeout(5):
+                    await lease.renewed.wait()
+                    lease.failure = "lost"
+                    release_list.set()
+                    with pytest.raises(ExecutionOutcomeUnknownError, match="lease"):
+                        await task
+            assert calls == []
+            assert lease.active == 0
+            assert not any(task.get_name() == "action-execution-renewal" for task in asyncio.all_tasks())
+        finally:
+            release_list.set()
 
 
 async def test_mcp_cancellation_joins_renewal_task() -> None:
@@ -457,7 +446,7 @@ async def test_mcp_cancellation_joins_renewal_task() -> None:
     executor = McpActionGroupExecutor(GROUP_KEY, _group(), server)
     await executor.start()
     await wait_available(executor._group)
-    try:
+    async with executor:
         task = asyncio.create_task(
             executor.execute(_request(action=ActionIdentity(group=GROUP_KEY, name="blocked"), arguments={}), lease)
         )
@@ -468,8 +457,6 @@ async def test_mcp_cancellation_joins_renewal_task() -> None:
                 await task
         assert lease.active == 0
         assert not any(task.get_name() == "action-execution-renewal" for task in asyncio.all_tasks())
-    finally:
-        await executor.close()
 
 
 async def test_mcp_deadline_stops_healthy_renewal(execution_lease: ExecutionLease) -> None:
@@ -483,15 +470,13 @@ async def test_mcp_deadline_stops_healthy_renewal(execution_lease: ExecutionLeas
     executor = McpActionGroupExecutor(GROUP_KEY, _group(), server, execution_timeout=timedelta(milliseconds=30))
     await executor.start()
     await wait_available(executor._group)
-    try:
+    async with executor:
         async with asyncio.timeout(5):
             with pytest.raises(ExecutionOutcomeUnknownError, match="deadline"):
                 await executor.execute(
                     _request(action=ActionIdentity(group=GROUP_KEY, name="blocked"), arguments={}), execution_lease
                 )
         assert not any(task.get_name() == "action-execution-renewal" for task in asyncio.all_tasks())
-    finally:
-        await executor.close()
 
 
 async def test_long_mcp_call_drains_with_live_execution_and_executor_leases(engine: AsyncEngine) -> None:
@@ -537,33 +522,32 @@ async def test_long_mcp_call_drains_with_live_execution_and_executor_leases(engi
 
     await executor.start()
     await wait_available(executor._group)
-    try:
-        with (
-            patch.object(store, "heartbeat_execution", renew),
-            patch.object(store, "record_executor_heartbeat", record_process),
-        ):
-            await service.start()
-            request_id = await _allowed_execution(service, idempotency_key="long-drain")
-            async with asyncio.timeout(5):
-                await started.wait()
-                service.begin_drain()
-                closing = asyncio.create_task(service.close())
-                await renewed_past_window.wait()
-                await process_heartbeat.wait()
-                assert await store.expire_stale_leases(executor_health_timeout=timedelta(seconds=1)) == []
-                assert (await store.get(request_id, CALLER)).state is ActionState.RUNNING
-                assert not closing.done()
-                release.set()
-                await closing
-            final = await store.get(request_id, CALLER)
-            assert final.state is ActionState.SUCCEEDED
-            assert final.execution is not None
-            assert CallToolResult.model_validate(final.execution.result).structured_content == {"echoed": "hi"}
-            assert calls == ["hi"]
-    finally:
-        release.set()
-        await service.close()
-        await executor.close()
+    async with executor, service:
+        try:
+            with (
+                patch.object(store, "heartbeat_execution", renew),
+                patch.object(store, "record_executor_heartbeat", record_process),
+            ):
+                await service.start()
+                request_id = await _allowed_execution(service, idempotency_key="long-drain")
+                async with asyncio.timeout(5):
+                    await started.wait()
+                    service.begin_drain()
+                    closing = asyncio.create_task(service.close())
+                    await renewed_past_window.wait()
+                    await process_heartbeat.wait()
+                    assert await store.expire_stale_leases(executor_health_timeout=timedelta(seconds=1)) == []
+                    assert (await store.get(request_id, CALLER)).state is ActionState.RUNNING
+                    assert not closing.done()
+                    release.set()
+                    await closing
+                final = await store.get(request_id, CALLER)
+                assert final.state is ActionState.SUCCEEDED
+                assert final.execution is not None
+                assert CallToolResult.model_validate(final.execution.result).structured_content == {"echoed": "hi"}
+                assert calls == ["hi"]
+        finally:
+            release.set()
 
 
 @pytest.mark.parametrize("remove_action", [False, True])
@@ -589,7 +573,7 @@ async def test_approved_work_stays_unclaimed_during_outage_then_recovers(
     )
     await executor.start()
     await wait_available(group)
-    try:
+    async with executor, service:
         view = await service.submit(
             ActionRequestInput(
                 idempotency_key="outage",
@@ -621,9 +605,6 @@ async def test_approved_work_stays_unclaimed_during_outage_then_recovers(
         await service.start()
         await _poll_state(store, view.id, want=ActionState.FAILED if remove_action else ActionState.SUCCEEDED)
         assert calls == ([] if remove_action else ["once"])
-    finally:
-        await service.close()
-        await executor.close()
 
 
 async def test_failed_discovery_reconnects_without_tearing_down_an_active_call(execution_lease: ExecutionLease) -> None:
@@ -647,23 +628,23 @@ async def test_failed_discovery_reconnects_without_tearing_down_an_active_call(e
     task = asyncio.create_task(
         executor.execute(_request(action=ActionIdentity(group=GROUP_KEY, name="gated"), arguments={}), execution_lease)
     )
-    try:
-        async with asyncio.timeout(5):
-            await started.wait()
-        with patch.object(old.client, "list_tools", side_effect=OSError("test-only transport failure")):
-            await executor.refresh_catalog()
-            assert not group.available
-            await wait_available(group)
-        assert executor._connection is not old
-        assert old.client.is_connected()
-        assert not task.done()
-        release.set()
-        assert (await task).state is ExecutionState.SUCCEEDED
-        assert calls == ["called"]
-    finally:
-        release.set()
-        await asyncio.gather(task, return_exceptions=True)
-        await executor.close()
+    async with executor:
+        try:
+            async with asyncio.timeout(5):
+                await started.wait()
+            with patch.object(old.client, "list_tools", side_effect=OSError("test-only transport failure")):
+                await executor.refresh_catalog()
+                assert not group.available
+                await wait_available(group)
+            assert executor._connection is not old
+            assert old.client.is_connected()
+            assert not task.done()
+            release.set()
+            assert (await task).state is ExecutionState.SUCCEEDED
+            assert calls == ["called"]
+        finally:
+            release.set()
+            await asyncio.gather(task, return_exceptions=True)
     assert not old.client.is_connected()
     assert not any(task.get_name().startswith(("mcp-wakeup-", "mcp-retire-")) for task in asyncio.all_tasks())
 
@@ -694,41 +675,40 @@ async def test_execution_never_switches_generation_after_schema_check(execution_
         await release.wait()
         return tools
 
-    try:
-        with patch.object(old.client, "list_tools", list_then_fail):
-            task = asyncio.create_task(
-                executor.execute(
-                    _request(action=ActionIdentity(group=GROUP_KEY, name="echo"), arguments={}), execution_lease
+    async with executor:
+        try:
+            with patch.object(old.client, "list_tools", list_then_fail):
+                task = asyncio.create_task(
+                    executor.execute(
+                        _request(action=ActionIdentity(group=GROUP_KEY, name="echo"), arguments={}), execution_lease
+                    )
                 )
-            )
-            async with asyncio.timeout(5):
-                await listing.wait()
-                await executor.refresh_catalog()
-                await wait_available(group)
-                assert executor._connection is not old
-                release.set()
-                result = await task
-        assert result.state is ExecutionState.FAILED
-        assert result.error is not None
-        assert result.error["kind"] == "mcp_unavailable"
-        assert calls == []
-    finally:
-        release.set()
-        await executor.close()
+                async with asyncio.timeout(5):
+                    await listing.wait()
+                    await executor.refresh_catalog()
+                    await wait_available(group)
+                    assert executor._connection is not old
+                    release.set()
+                    result = await task
+            assert result.state is ExecutionState.FAILED
+            assert result.error is not None
+            assert result.error["kind"] == "mcp_unavailable"
+            assert calls == []
+        finally:
+            release.set()
 
 
 async def test_supervisor_death_revokes_availability_and_joins_wakeup_tasks() -> None:
     group = _group()
-    executor = McpActionGroupExecutor(GROUP_KEY, group, FastMCP("supervisor"))
-    await executor.start()
-    await wait_available(group)
-    assert executor._supervisor is not None
-    executor._supervisor.cancel()
-    await asyncio.gather(executor._supervisor, return_exceptions=True)
-    assert not group.available
-    assert group.health is not None
-    assert group.health.reason == "supervisor_stopped"
-    await executor.close()
+    async with McpActionGroupExecutor(GROUP_KEY, group, FastMCP("supervisor")) as executor:
+        await executor.start()
+        await wait_available(group)
+        assert executor._supervisor is not None
+        executor._supervisor.cancel()
+        await asyncio.gather(executor._supervisor, return_exceptions=True)
+        assert not group.available
+        assert group.health is not None
+        assert group.health.reason == "supervisor_stopped"
     assert not any(task.get_name().startswith("mcp-wakeup-") for task in asyncio.all_tasks())
 
 

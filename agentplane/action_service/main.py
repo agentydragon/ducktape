@@ -87,12 +87,16 @@ async def async_main(settings: Settings) -> None:
         )
         connections = ConnectionAuthority(make_sessionmaker(engine), policy_index)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
-        mcp_linkage = McpLinkageAuthority(
-            make_sessionmaker(engine), settings.mcp_servers, client_metadata=settings.mcp_client_metadata, engine=engine
+        mcp_linkage = await stack.enter_async_context(
+            McpLinkageAuthority(
+                make_sessionmaker(engine),
+                settings.mcp_servers,
+                client_metadata=settings.mcp_client_metadata,
+                engine=engine,
+            )
         )
         await mcp_linkage.cleanup_removed_servers()
         await mcp_linkage.start_refresh_loop()
-        stack.push_async_callback(mcp_linkage.close)
         # Built unconditionally: a configured sandbox group must fail at startup rather than at the
         # first dispatch, and an API client this process already holds costs nothing when unused.
         sandboxes = SandboxClients(
@@ -104,31 +108,32 @@ async def async_main(settings: Settings) -> None:
         executors = await stack.enter_async_context(
             running_executor(catalog, mcp_linkage, sandboxes, on_health_change=updates.wake_mcp_health)
         )
-        push_notifier: ActionPushNotifier | None = None
         if settings.web_push is not None:
-            push_notifier = ActionPushNotifier(
-                PushIdentity(settings.web_push),
-                PushSubscriptionStore(make_sessionmaker(engine)),
-                base_url=settings.web_push.public_base_url,
-                database_url=settings.database_url,
+            push_notifier = await stack.enter_async_context(
+                ActionPushNotifier(
+                    PushIdentity(settings.web_push),
+                    PushSubscriptionStore(make_sessionmaker(engine)),
+                    base_url=settings.web_push.public_base_url,
+                    database_url=settings.database_url,
+                )
             )
-            stack.push_async_callback(push_notifier.close)
             push_notifier.start()
 
         def drain_backends() -> None:
             for executor in executors.values():
                 executor.begin_drain()
 
-        service = ActionService(
-            ActionStore(make_sessionmaker(engine), external_grants=connections),
-            catalog,
-            executors,
-            providers=[PolicySetDecisionProvider(visibility=visibility)],
-            policies=policy_index,
-            on_drain=drain_backends,
-        )
         # Stop dispatch/lease tasks before closing the adapters, including failed service startup.
-        stack.push_async_callback(service.close)
+        service = await stack.enter_async_context(
+            ActionService(
+                ActionStore(make_sessionmaker(engine), external_grants=connections),
+                catalog,
+                executors,
+                providers=[PolicySetDecisionProvider(visibility=visibility)],
+                policies=policy_index,
+                on_drain=drain_backends,
+            )
+        )
         await service.start()
         operator_authenticator: OperatorAuthenticator
         if settings.operator_oidc is not None:

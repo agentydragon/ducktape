@@ -58,17 +58,17 @@ def check_migration(connection: Connection) -> None:
 
 
 async def test_shared_history_survives_replacement_and_repeated_migration(history_db_url: str) -> None:
-    first = DecisionLog(DecisionStore(make_engine(history_db_url), retention=timedelta(days=7)))
-    second = DecisionLog(DecisionStore(make_engine(history_db_url), retention=timedelta(days=7)))
     a, b = record(), record()
-    first.start()
-    second.start()
-    first.record(a)
-    second.record(b)
-    await asyncio.gather(first.flush(), second.flush())
-    await asyncio.gather(first.close(), second.close())
-    replacement = DecisionLog(DecisionStore(make_engine(history_db_url), retention=timedelta(days=7)))
-    try:
+    async with (
+        DecisionLog(DecisionStore(make_engine(history_db_url), retention=timedelta(days=7))) as first,
+        DecisionLog(DecisionStore(make_engine(history_db_url), retention=timedelta(days=7))) as second,
+    ):
+        first.start()
+        second.start()
+        first.record(a)
+        second.record(b)
+        await asyncio.gather(first.flush(), second.flush())
+    async with DecisionLog(DecisionStore(make_engine(history_db_url), retention=timedelta(days=7))) as replacement:
         async with replacement.store.engine.begin() as connection:
             await connection.run_sync(check_migration)
         app = create_admin_app(replacement, Index(freshness=Freshness(stale_after_seconds=900)))
@@ -81,8 +81,6 @@ async def test_shared_history_survives_replacement_and_repeated_migration(histor
         assert await replacement.store.recent(SUBJECT.model_copy(update={"namespace": "elsewhere"})) == [], (
             "the same name in another namespace is a different subject"
         )
-    finally:
-        await replacement.close()
 
 
 async def test_duplicate_acknowledgement_ambiguity(history_db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -99,16 +97,14 @@ async def test_duplicate_acknowledgement_ambiguity(history_db_url: str, monkeypa
 
     monkeypatch.setattr(log.store, "append", commit_then_disconnect)
     event = record()
-    log.start()
-    log.record(event)
-    try:
+    async with log:
+        log.start()
+        log.record(event)
         await log.flush()
         assert await log.store.recent(event.subject) == [event]
         assert calls == 2
         assert log.diagnostics.write_failures == 1
         assert log.diagnostics.acknowledged == 1
-    finally:
-        await log.close()
 
 
 async def test_retention_and_recent_limit(history_db_url: str) -> None:
@@ -127,7 +123,9 @@ async def test_retention_and_recent_limit(history_db_url: str) -> None:
 
 async def test_overflow_outage_nonblocking_and_explicit_read_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     log = DecisionLog(
-        DecisionStore(make_engine("postgresql://test:test@127.0.0.1:1/test"), retention=timedelta(days=7)), queue_size=1
+        DecisionStore(make_engine("postgresql://test:test@127.0.0.1:1/test"), retention=timedelta(days=7)),
+        queue_size=1,
+        flush_seconds=0.01,
     )
     entered, release = asyncio.Event(), asyncio.Event()
 
@@ -137,30 +135,30 @@ async def test_overflow_outage_nonblocking_and_explicit_read_failure(monkeypatch
         raise OSError("test private exception must not escape")
 
     monkeypatch.setattr(log.store, "append", unavailable)
-    log.record(record())
-    log.record(record())
-    assert log.diagnostics.dropped_overflow == 1
-    log.start()
-    await entered.wait()
-    # The DB is blocked, but synchronous admission recording still completes.
-    log.record(record())
-    assert log.diagnostics.accepted == 2
-    app = create_admin_app(
-        log,
-        Index(
-            freshness=Freshness(stale_after_seconds=900, at=dict.fromkeys(WATCHED_KINDS, datetime.now(UTC))),
-            synced=True,
-        ),
-    )
-    async with admin_client(app) as client:
-        refused = await client.get("/decisions")
-        health = await client.get("/healthz")
-    assert refused.status_code == 503
-    assert "test private exception" not in refused.text
-    assert health.status_code == 200
-    assert health.json()["decisionHistory"]["dropped_overflow"] == 1
+    async with log:
+        log.record(record())
+        log.record(record())
+        assert log.diagnostics.dropped_overflow == 1
+        log.start()
+        await entered.wait()
+        # The DB is blocked, but synchronous admission recording still completes.
+        log.record(record())
+        assert log.diagnostics.accepted == 2
+        app = create_admin_app(
+            log,
+            Index(
+                freshness=Freshness(stale_after_seconds=900, at=dict.fromkeys(WATCHED_KINDS, datetime.now(UTC))),
+                synced=True,
+            ),
+        )
+        async with admin_client(app) as client:
+            refused = await client.get("/decisions")
+            health = await client.get("/healthz")
+        assert refused.status_code == 503
+        assert "test private exception" not in refused.text
+        assert health.status_code == 200
+        assert health.json()["decisionHistory"]["dropped_overflow"] == 1
     # Shutdown must not wait for the deliberately unreleased DB operation.
-    await log.close(flush_seconds=0.01)
     assert not release.is_set()
     assert log.diagnostics.dropped_shutdown == 2
 
@@ -174,13 +172,13 @@ async def test_retry_budget_explicit_loss(monkeypatch: pytest.MonkeyPatch) -> No
         raise OSError("test unavailable")
 
     monkeypatch.setattr(log.store, "append", unavailable)
-    log.start()
-    log.record(record())
-    await log.flush()
-    assert log.diagnostics.dropped_unavailable == 1
-    assert log.diagnostics.write_failures == 3
-    assert not log.diagnostics.available
-    await log.close()
+    async with log:
+        log.start()
+        log.record(record())
+        await log.flush()
+        assert log.diagnostics.dropped_unavailable == 1
+        assert log.diagnostics.write_failures == 3
+        assert not log.diagnostics.available
 
 
 if __name__ == "__main__":
