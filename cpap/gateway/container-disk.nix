@@ -31,5 +31,8 @@ pkgs.dockerTools.buildLayeredImage {
   # store output itself.
   uid = 107;
   gid = 107;
-  config = { };
+  # The disk's store path changes only with the guest's own inputs, so the publish
+  # workflow skips pushing when the newest published image carries the same one:
+  # each new tag restarts the VM, and unrelated artifact-pin bumps would otherwise do so.
+  config.Labels."works.allegedly.nix-source" = "${diskImage}";
 }

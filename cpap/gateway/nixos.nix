@@ -1,6 +1,7 @@
 # CPAP ez Share WiFi gateway — a minimal KubeVirt VM pinned to the OptiPlex
 # that owns the physical USB WiFi adapter.
 {
+  cpap-gateway-health,
   lib,
   pkgs,
   ...
@@ -14,96 +15,6 @@ let
   hasCardRoute = pkgs.writeShellScript "cpap-gateway-has-card-route" ''
     ${pkgs.iproute2}/bin/ip -4 route show ${cardSubnet} | ${pkgs.gnugrep}/bin/grep -q .
   '';
-  # Classifies the gateway every minute and acts on it:
-  #   connected      -> card bridge listening
-  #   card-away      -> radio sees other networks but not the card; expected while the
-  #                     CPAP travels, so only the bridge stops
-  #   card-visible   -> retry the NetworkManager connection
-  #   no-wifi-device / radio-deaf (scan sees no networks at all) -> the adapter is wedged;
-  #                     reload mt7921u, then re-authorize the USB device, every few checks
-  # Transitions are logged to the serial console (Loki `container="guest-console-log"`).
-  healthCheck = pkgs.writeShellApplication {
-    name = "cpap-gateway-health";
-    runtimeInputs = with pkgs; [
-      coreutils
-      gawk
-      gnugrep
-      iproute2
-      kmod
-      networkmanager
-      systemd
-    ];
-    text = ''
-      state_dir=/run/cpap-gateway-health
-      mkdir -p "$state_dir"
-      previous="$(cat "$state_dir/state" 2>/dev/null || echo unknown)"
-      failures="$(cat "$state_dir/failures" 2>/dev/null || echo 0)"
-
-      iface="$(nmcli -t -f DEVICE,TYPE device status | awk -F: '$2 == "wifi" && !found { print $1; found = 1 }')"
-      if [ -z "$iface" ]; then
-        state=no-wifi-device
-      elif ${hasCardRoute}; then
-        state=connected
-      else
-        ssids="$(nmcli -t -f SSID device wifi list ifname "$iface" --rescan yes || true)"
-        if grep -qxF "${ssid}" <<<"$ssids"; then
-          state=card-visible
-        elif grep -q . <<<"$ssids"; then
-          state=card-away
-        else
-          state=radio-deaf
-        fi
-      fi
-
-      if [ "$state" != "$previous" ]; then
-        echo "cpap-gateway-health: $previous -> $state''${iface:+ (iface $iface)}"
-        echo "$state" > "$state_dir/state"
-      fi
-
-      case "$state" in
-        connected)
-          echo 0 > "$state_dir/failures"
-          systemctl start --no-block cpap-card-proxy.service
-          ;;
-        card-visible)
-          echo 0 > "$state_dir/failures"
-          systemctl stop cpap-card-proxy.service
-          nmcli connection up cpap-ezshare || true
-          ;;
-        card-away)
-          echo 0 > "$state_dir/failures"
-          systemctl stop cpap-card-proxy.service
-          ;;
-        no-wifi-device | radio-deaf)
-          systemctl stop cpap-card-proxy.service
-          failures=$((failures + 1))
-          echo "$failures" > "$state_dir/failures"
-          # Give NetworkManager a few minutes after boot or a reset before escalating.
-          if [ $((failures % 5)) -eq 0 ]; then
-            for dev in /sys/bus/usb/devices/*; do
-              if [ "$(cat "$dev/idVendor" 2>/dev/null)" = 0e8d ] && [ "$(cat "$dev/idProduct" 2>/dev/null)" = 7961 ]; then
-                echo "cpap-gateway-health: adapter present at $dev (authorized=$(cat "$dev/authorized"))"
-              fi
-            done
-            if [ $((failures % 10)) -eq 5 ]; then
-              echo "cpap-gateway-health: $state for $failures checks; reloading mt7921u"
-              modprobe -r mt7921u || true
-              modprobe mt7921u
-            else
-              echo "cpap-gateway-health: $state for $failures checks; re-authorizing the USB adapter"
-              for dev in /sys/bus/usb/devices/*; do
-                if [ "$(cat "$dev/idVendor" 2>/dev/null)" = 0e8d ] && [ "$(cat "$dev/idProduct" 2>/dev/null)" = 7961 ]; then
-                  echo 0 > "$dev/authorized"
-                  sleep 2
-                  echo 1 > "$dev/authorized"
-                fi
-              done
-            fi
-          fi
-          ;;
-      esac
-    '';
-  };
 in
 {
   imports = [
@@ -234,9 +145,26 @@ in
       "NetworkManager.service"
       "cpap-gateway-wifi.service"
     ];
+    # Every minute: start the card bridge while connected, retry association while the
+    # card is visible, and reset a wedged adapter (cpap/gateway/health.py).
+    path = with pkgs; [
+      iproute2
+      kmod
+      networkmanager
+      systemd
+    ];
     serviceConfig = {
       Type = "oneshot";
-      ExecStart = lib.getExe healthCheck;
+      ExecStart = lib.escapeShellArgs [
+        (lib.getExe cpap-gateway-health)
+        "--card-ssid=${ssid}"
+        "--card-subnet=${cardSubnet}"
+        "--connection=cpap-ezshare"
+        "--proxy-unit=cpap-card-proxy.service"
+        "--driver=mt7921u"
+        "--usb-id=0e8d:7961"
+        "--state-file=/run/cpap-gateway-health/state.json"
+      ];
     };
   };
   systemd.timers.cpap-gateway-health = {

@@ -13,15 +13,17 @@ internal `cpap-card` Service; the sync job no longer needs host networking or
 WiFi capabilities.
 
 The gateway logs its kernel and journal to the serial console, which KubeVirt's
-`guest-console-log` container ships to Loki. A minute timer (`cpap-gateway-health`)
-logs each change between `connected`, `card-away` (the radio sees other networks
-but not the card, which is normal while the CPAP travels), `card-visible`, and the
-two wedged-adapter states `no-wifi-device` and `radio-deaf` (a scan finds no
-networks at all). The card bridge listens only while `connected`, so a sync against
-an absent card is refused at once. In a wedged state the timer alternately reloads
-`mt7921u` and re-authorizes the USB adapter every five minutes. On the first run after this migration, the fresh repo is
-re-seeded with the card's full history (~17+ min over the card's WiFi; the old
-PVC-era data was discarded).
+`guest-console-log` container ships to Loki. A minute timer runs `cpap-gateway-health`
+(<gateway/health.py>, released as a wheel and pinned into the guest image) and logs
+each change between `connected`, `card-away` (the radio sees other networks but not
+the card, which is normal while the CPAP travels), `card-visible`, and the two
+wedged-adapter states `no-wifi-device` and `radio-deaf` (a scan finds no networks at
+all). The card bridge listens only while `connected`, so a sync against an absent
+card is refused at once. In a wedged state the timer alternately reloads `mt7921u`
+and re-authorizes the USB adapter every five minutes.
+
+On the first run after this migration, the fresh repo is re-seeded with the card's
+full history (~17+ min over the card's WiFi; the old PVC-era data was discarded).
 
 ## Background
 

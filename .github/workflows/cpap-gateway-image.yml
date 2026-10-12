@@ -14,6 +14,9 @@ on:
       - "cpap/gateway/**"
       - "flake.lock"
       - "flake.nix"
+      # The health check reaches the guest through its artifact pin; unrelated pin
+      # bumps rebuild an unchanged disk, which the publish step does not push.
+      - "nix/artifact-pins.json"
       - "nix/flake/packages.nix"
       - "nix/nixos/modules/vm-hardware.nix"
       # keep-sorted end
