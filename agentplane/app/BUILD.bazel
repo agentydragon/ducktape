@@ -541,6 +541,7 @@ py_test(
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/threads:bridge",
         "//agentplane/app/threads:session_discovery",
+        "//agentplane/app/threads:sessions",
         "//agentplane/app/threads:store",
         "//agentplane/app/threads/view:content",
         "//agentplane/egress:decisions_client",
