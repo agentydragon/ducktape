@@ -281,6 +281,11 @@
       "test": "//agentplane/policy_controller/...",
       "registry": "forgejo"
     },
+    "agentplane-sandbox-controller": {
+      "target": "//agentplane/sandbox_controller:image",
+      "test": "//agentplane/sandbox_controller/...",
+      "registry": "forgejo"
+    },
     "agentplane-runner-gateway": {
       "target": "//agentplane/runner_gateway:image",
       "test": "//agentplane/runner_gateway/...",

@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "required": [
+    "spec"
+  ],
+  "properties": {
+    "spec": {
+      "type": "object",
+      "required": [
+        "pod",
+        "stateVolume"
+      ],
+      "properties": {
+        "pod": {
+          "description": "A PodTemplateSpec. Each incarnation's Pod takes its labels, annotations and spec; the controller adds the state volume. The API server validates the result when the Pod is created.",
+          "type": "object",
+          "x-kubernetes-preserve-unknown-fields": true
+        },
+        "stateVolume": {
+          "type": "object",
+          "required": [
+            "name",
+            "claim"
+          ],
+          "properties": {
+            "name": {
+              "description": "The Pod volume the controller fills with the Sandbox's state PVC. The template's containers mount it by this name and must not define it.",
+              "type": "string",
+              "minLength": 1
+            },
+            "claim": {
+              "description": "A PersistentVolumeClaimSpec for the state PVC.",
+              "type": "object",
+              "x-kubernetes-preserve-unknown-fields": true
+            }
+          }
+        }
+      }
+    }
+  }
+}

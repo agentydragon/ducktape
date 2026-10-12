@@ -1,0 +1,55 @@
+# The recipe for one kind of Sandbox: the Pod each incarnation runs, and the claim for the state PVC
+# the Sandbox keeps across incarnations. The Sandbox Controller
+# (agentplane/sandbox_controller/SPEC.md) reads a template at every start, so an edit applies to
+# each Sandbox's next incarnation and never to a running one. The kubeconform schema under
+# cluster/schemas/ is written by `bb run //agentplane/crds:generate_bin` from this file.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: sandboxtemplates.agentplane.allegedly.works
+spec:
+  group: agentplane.allegedly.works
+  scope: Namespaced
+  names:
+    kind: SandboxTemplate
+    listKind: SandboxTemplateList
+    plural: sandboxtemplates
+    singular: sandboxtemplate
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      additionalPrinterColumns:
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [pod, stateVolume]
+              properties:
+                pod:
+                  description: >-
+                    A PodTemplateSpec. Each incarnation's Pod takes its labels, annotations and
+                    spec; the controller adds the state volume. The API server validates the
+                    result when the Pod is created.
+                  type: object
+                  x-kubernetes-preserve-unknown-fields: true
+                stateVolume:
+                  type: object
+                  required: [name, claim]
+                  properties:
+                    name:
+                      description: >-
+                        The Pod volume the controller fills with the Sandbox's state PVC. The
+                        template's containers mount it by this name and must not define it.
+                      type: string
+                      minLength: 1
+                    claim:
+                      description: A PersistentVolumeClaimSpec for the state PVC.
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true

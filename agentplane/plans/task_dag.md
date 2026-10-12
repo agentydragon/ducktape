@@ -620,7 +620,7 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 flowchart TD
     DURABLE_SESSION_LIFECYCLE[Decision: Session lifetime and revival]
     SESSION_STATE_VOLUME_DESIGN[Decision: what the state PVC holds]
-    AGENTPLANE_SANDBOX_RESOURCE[Unscheduled: our own Sandbox resource]
+    AGENTPLANE_SANDBOX_RESOURCE[In progress: our own Sandbox resource]
     CLAUDE_PORTABLE_STATE[Blocked: Claude resumes on a new incarnation]
     CODEX_PORTABLE_STATE[Blocked: Codex resumes on a new incarnation]
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
@@ -675,38 +675,69 @@ there; its quota; and refusing an incompatible harness or runner version rather 
 
 ### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
 
-**Unscheduled; operator, 2026-10-12 PDT: the shared base of this section and stateful VMs.** An Agentplane custom
-resource (in `agentplane/crds/`) whose spec is the recipe (template, grants, egress, session
-defaults, bootstrap command, runner endpoints), the kind (`pod | vm`), its state PVC and the desired
-runner (image, running or stopped), with incarnations in its status. It replaces agent-sandbox's
-`Sandbox`: the Sandbox Service reconciles it into a bare Pod or a `VirtualMachine` and owns the
-state PVC itself. Since dial-out, all agent-sandbox gives us is a Pod from a template,
-suspension and PVC creation, but its `Sandbox` is also the Sandbox Service's only durable record
-(binding, grants, provisioning state and finalizers are annotations on it), so ours takes that
-over, including ownership of the Sandbox's `PolicyBinding`. Its templates are an Agentplane kind
-too, read only by the Sandbox Service; Action Service boxes keep a catalog of their own (#10012).
-The spec names its template rather than copying it: each incarnation, a resume included,
-resolves the name to the template as it is then, so an updated template applies at the next start
-(operator, 2026-10-11 PDT), and the state-schema check below refuses one whose runner cannot read
-the kept state. Replaces the imperative-only `CreateSandbox` too.
+**In progress; operator, 2026-10-12 PDT: the shared base of this section and stateful VMs.** Our
+`Sandbox` and `SandboxTemplate` and the Sandbox Controller (`agentplane/sandbox_controller/SPEC.md`)
+reconcile a pod Sandbox into its state PVC and Pods. This node is done when the controller does
+everything the Sandbox Service does around an agent-sandbox `Sandbox` today and Sandboxes are created
+as ours: the nodes below. The Sandbox Service then folds into the controller, which is renamed for it
+(operator, 2026-10-11 PDT), and stays separate from the Runner Gateway, so the provisioning
+permissions stay off the runner-facing service. The gateway may write a Sandbox's desired running
+state, which the controller validates; it gets no resume RPC on the Sandbox Service, which already
+calls the gateway to seal. Action Service boxes keep a catalog of their own (#10012).
 
-The Sandbox Service becomes this resource's controller, in Go on controller-runtime like the
-Policy Controller, and is renamed to say so (operator, 2026-10-11 PDT). It stays separate from the
-Runner Gateway, so the provisioning permissions (Pods, VMs, PVCs, ServiceAccounts, bindings) stay
-off the runner-facing service. The gateway may write the resource's desired running state, which
-the controller validates; it gets no resume RPC on the Sandbox Service, which already calls the
-gateway to seal.
+```mermaid
+flowchart TD
+    SANDBOX_CONTROLLER_DEPLOY[Candidate: run the Sandbox Controller on staging]
+    SANDBOX_CONTROLLER_PROVISIONING[Candidate: the controller provisions a Sandbox]
+    SANDBOX_CONTROLLER_TEARDOWN[Candidate: deleting a Sandbox seals it first]
+    SANDBOX_IMAGE_REPLACE[Candidate: replace the runner image between incarnations]
+    SANDBOX_CREATE_CUTOVER[Blocked: Sandboxes are created as ours]
+    SANDBOX_CONTROLLER_DEPLOY --> SANDBOX_CREATE_CUTOVER
+    SANDBOX_CONTROLLER_PROVISIONING --> SANDBOX_CREATE_CUTOVER
+    SANDBOX_CONTROLLER_TEARDOWN --> SANDBOX_CREATE_CUTOVER
+    SANDBOX_CREATE_CUTOVER --> AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox]
+```
 
-It also carries the operator's eventual "pause, replace the image, resume" (2026-10-12 PDT), for
-pods and VMs alike. The controller accepts a new `spec.runner.image` only once the current
-incarnation is gone: the next Pod runs the new image, and a VM gets its containerDisk rewritten while
-`runStrategy: Halted`. Both keep the state PVC. The PVC records a state-schema version, and an image
-that does not declare that version is refused. The VM half is #8843's `ReplaceVmImage` and
-`VmTemplate.state_schema_version`, replaced live in
-[the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
+### `SANDBOX_CONTROLLER_DEPLOY` — run the Sandbox Controller on staging
 
-Deleting the Sandbox seals its last incarnation and deletes its PVC; stopping it never does. Test
-both, and that a Pod or VM going away on its own leaves the Sandbox and its PVC in place.
+**Candidate; its RBAC gets the operator's review, so no auto-merge.** Deployment, RBAC, network
+policy and metrics, as `cluster/cdk8s/agentplane/policy_controller.py` does, plus the runner
+`SandboxTemplate`s rendered from the same `RunnerTemplate` construct as agent-sandbox's, with the
+state volume as a claim instead of a `volumeClaimTemplate`. Updates the README diagram.
+
+### `SANDBOX_CONTROLLER_PROVISIONING` — the controller provisions a Sandbox
+
+**Candidate.** The spec gains the rest of the recipe: grants, egress policies, Action policy sets,
+session defaults, bootstrap command and runner endpoints, the parts the Sandbox Service now keeps
+as annotations on agent-sandbox's `Sandbox` (`provisioning.py`, `kubernetes_bindings.py`,
+`egress.py`, `action_policy.py`, `runner_endpoints.py`). The controller creates the Sandbox's own
+ServiceAccount and binds it, owning its `PolicyBinding` (coordinate with `POLICY_SANDBOX_CUTOVER`),
+and starts no Pod before the bindings exist.
+
+### `SANDBOX_CONTROLLER_TEARDOWN` — deleting a Sandbox seals it first
+
+**Candidate.** Deleting the Sandbox seals its last incarnation before the Pod and PVC go, as
+`teardown.py` does today: a stopped Sandbox runs once more, fenced, so its runner can seal every
+Session, then the controller deletes it once ingress has acknowledged the seals. Decide whether the
+controller calls the gateway's seal RPC (Go client for `runner_gateway.proto`) or the gateway acts on
+a condition the controller sets.
+
+### `SANDBOX_IMAGE_REPLACE` — replace the runner image between incarnations
+
+**Candidate; the operator's "pause, replace the image, resume" (2026-10-12 PDT).** For pods and VMs
+alike, the controller accepts a new runner image only once the current incarnation is gone: the next
+Pod runs it, and a VM gets its containerDisk rewritten while `runStrategy: Halted`. Both keep the
+state PVC. The PVC records a state-schema version, and an image that does not declare that version
+is refused. The VM half is #8843's `ReplaceVmImage` and `VmTemplate.state_schema_version`, replaced
+live in [the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
+
+### `SANDBOX_CREATE_CUTOVER` — Sandboxes are created as ours
+
+**Blocked on deploy, provisioning and teardown; decision card before the PR.** `CreateSandbox` and
+the rest of the Sandbox Service API, the app's live view and the Runner Gateway's destination
+lookup read and write our `Sandbox` instead of agent-sandbox's, replacing the imperative-only
+`CreateSandbox`. Existing staging Sandboxes stay on agent-sandbox until `AGENT_SANDBOX_RETIRE`
+recreates them.
 
 ### `AGENT_SANDBOX_RETIRE` — Agentplane stops using agent-sandbox
 

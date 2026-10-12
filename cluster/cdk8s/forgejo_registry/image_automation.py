@@ -56,6 +56,7 @@ IMAGES = (
     "agentplane-runner-gateway-migrate",
     "agentplane-sandbox",
     "agentplane-sandbox-build",
+    "agentplane-sandbox-controller",
     "agentplane-sandbox-service",
     "aiquota-api",
     "airlock",

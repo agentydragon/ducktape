@@ -1,0 +1,106 @@
+# A Sandbox is its state, running or not: a state PVC that the Sandbox Controller
+# (agentplane/sandbox_controller/SPEC.md) creates from the template and keeps across incarnations,
+# plus, while `running` is set, one Pod stamped from the template as it is at that start. Stopping
+# deletes the Pod and keeps the PVC; deleting the Sandbox deletes both. The kubeconform schema under
+# cluster/schemas/ is written by `bb run //agentplane/crds:generate_bin` from this file.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: sandboxes.agentplane.allegedly.works
+spec:
+  group: agentplane.allegedly.works
+  scope: Namespaced
+  names:
+    kind: Sandbox
+    listKind: SandboxList
+    plural: sandboxes
+    singular: sandbox
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Template
+          type: string
+          jsonPath: .spec.template
+        - name: Desired
+          type: boolean
+          jsonPath: .spec.running
+        - name: Running
+          type: string
+          jsonPath: .status.conditions[?(@.type=="Running")].reason
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          x-kubernetes-validations:
+            # The name is the value of the Sandbox label on its Pod and state PVC.
+            - rule: size(self.metadata.name) <= 63
+              message: a Sandbox name is at most 63 characters
+          properties:
+            spec:
+              type: object
+              required: [template]
+              properties:
+                template:
+                  description: >-
+                    A SandboxTemplate in the Sandbox's namespace. The controller reads it at every
+                    start, so changing it, or the template itself, applies from the next incarnation.
+                  type: string
+                  minLength: 1
+                running:
+                  description: >-
+                    Whether the Sandbox has a Pod. Setting it starts a new incarnation; clearing it
+                    deletes the Pod and keeps the state PVC.
+                  type: boolean
+                  default: false
+            status:
+              type: object
+              properties:
+                incarnation:
+                  description: The Sandbox's current Pod, while it has one.
+                  type: object
+                  required: [name, uid]
+                  properties:
+                    name:
+                      type: string
+                    uid:
+                      type: string
+                conditions:
+                  type: array
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [type]
+                  items:
+                    description: >-
+                      A metav1.Condition. `Running` is the controller's: True once the Pod runs,
+                      otherwise False with a reason naming the state or what blocks it.
+                    type: object
+                    required: [type, status, lastTransitionTime, reason, message]
+                    properties:
+                      type:
+                        type: string
+                        maxLength: 316
+                        pattern: '^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'
+                      status:
+                        type: string
+                        enum: ["True", "False", Unknown]
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                        minLength: 1
+                        maxLength: 1024
+                        pattern: "^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$"
+                      message:
+                        type: string
+                        maxLength: 32768

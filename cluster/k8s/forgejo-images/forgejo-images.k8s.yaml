@@ -206,6 +206,11 @@ spec:
       name: agentplane-sandbox-build
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-sandbox-controller'
+      kind: ImageRepository
+      name: agentplane-sandbox-controller
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-sandbox-service'
       kind: ImageRepository
       name: agentplane-sandbox-service

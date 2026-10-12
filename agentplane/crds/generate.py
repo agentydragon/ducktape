@@ -35,6 +35,8 @@ CRD_FILES = (
     "crd-actionpolicybindings.yaml",
     "crd-policysets.yaml",
     "crd-policybindings.yaml",
+    "crd-sandboxtemplates.yaml",
+    "crd-sandboxes.yaml",
 )
 # The spec field holding a binding CRD's subject; an array field's items are the subject.
 _SUBJECT_FIELDS = {

@@ -8,3 +8,5 @@ resources:
   - crd-actionpolicybindings.yaml
   - crd-policysets.yaml
   - crd-policybindings.yaml
+  - crd-sandboxtemplates.yaml
+  - crd-sandboxes.yaml
