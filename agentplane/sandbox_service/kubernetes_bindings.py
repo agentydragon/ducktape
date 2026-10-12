@@ -211,7 +211,7 @@ class KubernetesBindings:
             await self._inventory.remove_finalizer(sandbox.name, KUBERNETES_BINDINGS_FINALIZER)
 
     async def reconcile_once(self) -> None:
-        sandboxes = await self._inventory.list_sandboxes()
+        sandboxes = await self._inventory.list_agent_sandboxes()
         for sandbox in sandboxes:
             if sandbox.deleting:
                 await self.cleanup(sandbox)

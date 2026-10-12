@@ -101,6 +101,10 @@ class NewSandbox(BaseModel):
     kubernetes_grants: list[str] = Field(
         default_factory=list, description="Enabled Kubernetes grant names to bind to this Sandbox ServiceAccount."
     )
+    policy_sets: list[str] = Field(
+        default_factory=list,
+        description="PolicySet names to bind, for Agentplane's own Sandbox kind, in place of the three grant lists.",
+    )
     session_defaults: SessionDefaults | None = Field(
         default=None, description="Reusable session defaults for future sessions in this Sandbox."
     )

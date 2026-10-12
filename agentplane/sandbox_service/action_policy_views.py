@@ -30,8 +30,8 @@ class UnknownPolicySetError(InventoryError):
     afterwards still lands there without granting anything from the missing set.
     """
 
-    def __init__(self, names: list[str]) -> None:
-        super().__init__(f"no ActionPolicySet in the namespace is named {', '.join(names)}")
+    def __init__(self, names: list[str], *, kind: str) -> None:
+        super().__init__(f"no {kind} in the namespace is named {', '.join(names)}")
         self.names = names
 
 

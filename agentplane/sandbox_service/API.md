@@ -41,8 +41,8 @@ The same service-caller allowlist gates every RPC. Provisioning is always enable
   separate objects. Operating mode, launch-grants-pending, and Kubernetes-grant facts remain
   separate fields; the service does not synthesize one status from them.
 - `ListTemplates`: available SandboxTemplates. The app renders its configured grant catalog locally.
-- `CreateSandbox`: concrete template, egress policy selections, Action policy sets, Kubernetes grants,
-  optional session defaults, and bootstrap. The requested `name` is the Kubernetes Sandbox CR name.
+- `CreateSandbox`: concrete template, egress policy selections, Action policy sets, Kubernetes grants
+  (or policy sets, below), optional session defaults, and bootstrap. The requested `name` is the Kubernetes Sandbox CR name.
   Retry with the same name and exact choices while that CR exists; a different caller or request
   conflicts. Create first records intent on a Suspended CR, then ensures its UID-owned ServiceAccount
   and grants before resuming. A persisted initialization marker lets reconciliation recover without
@@ -55,6 +55,13 @@ The same service-caller allowlist gates every RPC. Provisioning is always enable
   policies ([Event ingress](../docs/runner_control.md#event-ingress)); the request chooses neither.
   A template whose runner already passes one of those flags is refused. No request may pick an
   endpoint's egress policy, at creation or through `GrantEgress`.
+  Where the deployment sets `own_sandboxes` (testing), the CR is Agentplane's own `Sandbox` instead:
+  running from the start, bound to `policy_sets` plus the configured defaults, which must all name
+  `PolicySet`s in the namespace. Its template's runner reaches its services over the egress
+  sidecar's platform routes, and the Sandbox Controller makes its ServiceAccount and binding, so
+  the service grants nothing. A request naming egress policies, Action policy sets or Kubernetes
+  grants is refused there, as `policy_sets` is for agent-sandbox's. Either kind's name blocks the
+  other's.
 - `GrantEgress`: UID-pinned Sandbox destination and egress policy names; returns the created binding name.
   `RevokeEgress`: binding name; retains the refusal to delete Git-owned bindings. Both require the
   same service-caller authorization as other operations.

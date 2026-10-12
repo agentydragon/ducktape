@@ -32,6 +32,7 @@ py_library(
     name = "inventory",
     srcs = ["inventory.py"],
     deps = [
+        ":action_policy_views",
         ":binding_storage",
         ":errors",
         ":kubernetes_views",
@@ -39,6 +40,7 @@ py_library(
         ":runner_endpoints",
         ":session_config",
         "//agentplane:crd_group",
+        "//agentplane:policy_sets",
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
@@ -263,6 +265,7 @@ py_library(
         "//agentplane/proto:sandbox_service_pb2",
         "@pypi//more_itertools",
         "@pypi//protobuf",
+        "@pypi//pydantic",
     ],
 )
 
@@ -323,7 +326,9 @@ py_test(
         ":kubernetes_views",
         ":provisioning",
         "//:conftest",
+        "//agentplane:crd_group",
         "//agentplane:grpc_calls",
+        "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",
@@ -518,6 +523,7 @@ py_library(
     ],
     deps = [
         ":kubernetes_grants",
+        ":provisioning",
         ":runner_endpoints",
         "//agentplane:subjects",
         "//util:yaml_file_settings",

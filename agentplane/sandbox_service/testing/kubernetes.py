@@ -122,6 +122,7 @@ async def kubernetes() -> AsyncIterator[Cluster]:
                     {},
                     KubernetesBindings(inventory, k8s_client.RbacAuthorizationV1Api(api)),
                     RUNNER_ENDPOINTS,
+                    own_sandboxes=None,
                 ),
             )
 

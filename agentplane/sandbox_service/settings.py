@@ -9,6 +9,7 @@ from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
+from agentplane.sandbox_service.provisioning import OwnSandboxes
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.subjects import ServiceAccountRef
 from util.yaml_file_settings import YamlFileSettings
@@ -29,6 +30,9 @@ class Settings(YamlFileSettings):
     port: int = Field(default=8080, ge=1, le=65535)
     kubeconfig: Path | None = None
     default_egress_policies: list[str] = Field(default_factory=list)
+    own_sandboxes: OwnSandboxes | None = Field(
+        default=None, description="Create Agentplane's own Sandbox kind; absent, agent-sandbox's."
+    )
     kubernetes_grants: dict[str, KubernetesGrant] = Field(default_factory=dict)
     kubernetes_binding_cleanup_namespaces: set[str] = Field(default_factory=set)
     kubernetes_cluster_binding_cleanup: bool = False

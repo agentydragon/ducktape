@@ -702,14 +702,16 @@ live in [the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
 **In flight; the operator chose "both kinds" (2026-10-12): new Sandboxes are ours, existing
 agent-sandbox ones keep working.** The Sandbox Service, the app's live view and the Runner
 Gateway's destination lookup read both kinds, and our spec carries session defaults and the
-bootstrap command. Left: `CreateSandbox`, suspend, resume and delete write ours on testing,
-replacing the imperative-only `CreateSandbox`. That lookup refuses new Sessions and commands for a deleting Sandbox, as it does for
+bootstrap command. `CreateSandbox`, suspend, resume and delete write ours on testing
+(`own_sandboxes` in the Sandbox Service's settings). That lookup refuses new Sessions and commands for a deleting Sandbox, as it does for
 one in agent-sandbox teardown, while the gateway seals it. Existing staging Sandboxes stay on agent-sandbox until `AGENT_SANDBOX_RETIRE`
 recreates them. The Sandbox Controller and our runner `SandboxTemplate`s exist on `agentplane-testing` only
 (`Environment.own_sandboxes`) until then: the cutover
 lands on testing first, and staging gets the controller and the cutover only once testing holds
-(operator, 2026-10-12 PDT: testing down beats staging down). The create form and Sandbox presets
-name policy sets of any rule type, one chip per set, in a new `policy_sets` preset field.
+(operator, 2026-10-12 PDT: testing down beats staging down). Left: the create form and Sandbox presets
+name policy sets of any rule type, one chip per set, in a new `policy_sets` preset field (the app's
+`NewSandbox` already carries it), and the acceptance suite asks for policy sets where the deployment
+creates ours, which refuses egress policy selections.
 
 ### `AGENT_SANDBOX_RETIRE` — Agentplane stops using agent-sandbox
 

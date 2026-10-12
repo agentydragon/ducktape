@@ -40,8 +40,10 @@ class ObjectMeta(_Wire):
     namespace: str
     uid: UUID
     generation: int
+    resource_version: str
     creation_timestamp: AwareDatetime
     deletion_timestamp: AwareDatetime | None = None
+    annotations: dict[str, str] = Field(default_factory=dict)
 
 
 class SessionDefaults(_Wire):
