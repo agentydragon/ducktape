@@ -1,10 +1,8 @@
 # Reusable Kubernetes RBAC grant groups
 
-Status: **CR shape decided (policy set and binding); semantics, authority and rollout open; no new
-Kubernetes authority approved.** The
-[task DAG](task_dag.md) tracks `KUBERNETES_RBAC_POLICIES` (decision), `KUBERNETES_RBAC_POLICY_BINDINGS`
-(implementation after the decision), and `MANAGED_SA_RBAC` (later accounts without a
-Sandbox). This plan records a preferred Agentplane-owned controller shape alongside the
+Status: **design decided (operator, 2026-10-12 PDT); implementation in progress.** The
+[task DAG](task_dag.md) tracks `KUBERNETES_RBAC_POLICY_BINDINGS` (the controller) and
+`MANAGED_SA_RBAC` (accounts without a Sandbox). This plan records a preferred Agentplane-owned controller shape alongside the
 prior art and acceptance checks; CRD fields and migration still need review. Existing
 [agent RBAC documentation](../../cluster/docs/agent_rbac.md) describes deployed/static
 ownership; it remains the source for current grant scope.
@@ -98,11 +96,25 @@ spec:
   expiresAt: "2026-10-13T00:00:00Z" # optional
 ```
 
-Still open: live or snapshot semantics; namespace lists rendered by cdk8s or selected by
-label; who may write sets and bindings; whether a Sandbox's binding carries an owner reference
-to it; stamping the SA's UID so a same-name replacement does not inherit grants; per-instance
-labels; the controller as its own Deployment; and cutting staging over by recreating Sandboxes
-whose grants are frozen annotations today.
+Also decided (operator, 2026-10-12 PDT):
+
+- **Live semantics**: editing a set changes every bound SA's native bindings.
+- **Namespaces** are explicit lists that cdk8s renders from `namespace_access`; no selectors.
+- **Writers**: only Flux writes sets. Sandbox Service writes a Sandbox's binding at create and
+  through an operator-only grant/revoke RPC; Flux writes bindings for static SAs.
+- **`bind` authority**: the controller holds `bind` only on role `resourceNames` generated from
+  the same source as the sets.
+- **Ownership**: a Sandbox owns its binding; a finalizer on the binding deletes the native
+  bindings.
+- **SA identity**: native bindings carry the SA's UID and are deleted when the SA is missing or
+  its UID differs, so a same-name replacement inherits nothing.
+- **Native bindings**: one per (binding, role, namespace), no deduplication, each carrying an
+  instance label.
+- **Controller**: its own Deployment and ServiceAccount.
+- **Expiry**: the native bindings are deleted at `expiresAt`; an overdue expiry alerts.
+- **Subjects**: ServiceAccounts only.
+- **Cutover**: clean. Existing staging Sandboxes with grants are recreated, and the PR that does
+  it gets a decision card first.
 
 The definition refers only to **existing** Roles/ClusterRoles. Its namespaced entries support
 `Role` (existing in each named target namespace) or `ClusterRole`; cluster-wide entries
@@ -261,11 +273,9 @@ Compare the mechanisms against **two existing managed Sandbox SAs sharing one gr
 third SA with a one-off binding. Show the create form's compact selection, then add and remove
 an eligible namespace, widen/narrow a referenced Role, change the group membership, revoke the
 one-off and shared assignments independently, delete a Sandbox, and restart the controller.
-For both snapshot and live semantics, state exactly which existing SAs change after each step,
+State exactly which existing SAs change after each step,
 including same-name SA replacement, partial failures and owner/Flux conflicts. Show how an
 operator inspects both intent and expanded grants, and verify representative allowed and denied
 requests with the affected SAs. If selecting RBAC Manager, first prove that an externally owned
 Sandbox SA can be bound without RBAC Manager trying to own/create/delete it; do not test with a
-production SA or credentials. Only after the policy shape is reviewed should
-`KUBERNETES_RBAC_POLICY_BINDINGS` implement it; an SA with no Sandbox is an ordinary binding
-of the same CR.
+production SA or credentials. An SA with no Sandbox is an ordinary binding of the same CR.

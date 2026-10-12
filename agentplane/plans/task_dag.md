@@ -472,7 +472,7 @@ observations. New database work follows the task-specific review and rollout req
 flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned Kubernetes grants]
-    KUBERNETES_RBAC_POLICIES[Decision: reusable groups and update semantics] --> KUBERNETES_RBAC_POLICY_BINDINGS[Blocked: apply groups and one-SA changes]
+    KUBERNETES_RBAC_POLICY_BINDINGS[In flight: Kubernetes permission-set controller]
     KUBERNETES_RBAC_POLICY_BINDINGS --> MANAGED_SA_RBAC
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_IDLE_EXPIRY[Candidate: delete idle Sandboxes]
@@ -499,30 +499,14 @@ into an outage matrix. Source: [public-coder wiring](../../cluster/cdk8s/public_
 Kubernetes scope and egress/Action grants. Record intended authority in generated configuration,
 not ad hoc grants. Test an allowed and denied operation; do not add privileges as part of this review.
 
-### `KUBERNETES_RBAC_POLICIES` — reusable groups and update semantics
+### `KUBERNETES_RBAC_POLICY_BINDINGS` — Kubernetes permission-set controller
 
-**Decision.** Replace the hundreds of per-namespace grant selections in some Sandbox presets
-and their creation dialog with a named, subject-free Kubernetes grant group. Compare snapshot
-expansion (acceptable) with live updates to existing bound SAs (preferred); keep a one-SA runtime
-grant operation, which may use the same group mechanism. Decide ownership, namespace expansion,
-role-edit/revocation behavior and inspection. The launch catalog is not already a live policy.
-See the [RBAC grant-group plan](kubernetes_rbac_groups.md) for the current behavior, prior art,
-trade-offs and acceptance cases. Decided (operator, 2026-10-12 PDT): the policy-set CR pattern of
-egress and Actions, a subject-free set of role refs and namespaces plus a binding naming one SA,
-its sets and an optional `expiresAt`, reconciled by a small controller with narrowly reviewed
-binding-write and named-role `bind` authority. Still open: live or snapshot semantics, namespace
-lists or selectors, who writes sets and bindings, SA-UID stamping, and the staging cutover. Either way the UI shows a group as one named chip (say, "basic cluster
-diag"), never the hundreds of namespace bindings it expands to. `expiresAt` gives time-limited
-grants; since the API server evaluates the generated RBAC bindings, the controller deletes them at
-expiry.
-
-### `KUBERNETES_RBAC_POLICY_BINDINGS` — apply groups and one-SA changes
-
-**Blocked on the reviewed policy shape.** Implement compact group selection and durable assignment,
-expanded Kubernetes bindings, a one-SA runtime change and inspection. Reconcile changed group
-membership for existing SAs if live semantics are chosen; otherwise make snapshots explicit and
-support deliberate updates. Retain managed binding conflict/cleanup safeguards and verify
-add/remove, overlaps and restart. See the [plan](kubernetes_rbac_groups.md).
+**In flight; the RBAC controller thread is building it; design decided (operator, 2026-10-12 PDT)
+in the [plan](kubernetes_rbac_groups.md).** Permission-set and binding CRs in the egress and
+Actions pattern, reconciled live into native RBAC bindings by a separate controller, with
+`expiresAt` grants, Sandbox Service writing a Sandbox's binding at create and through an
+operator-only grant/revoke RPC, and the UI showing a set as one named chip, never the bindings it
+expands to. Verify add/remove, overlaps, expiry, SA replacement and restart.
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 
