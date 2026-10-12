@@ -862,6 +862,7 @@ py_test(
         "//agentplane/action_service/sandbox:binding",
         "//agentplane/egress:resources",
         "//agentplane/sandbox_service:runner_endpoints",
+        "//cluster/cdk8s:pod_policy",
         "@pypi//more_itertools",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

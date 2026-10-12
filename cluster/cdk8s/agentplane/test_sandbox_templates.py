@@ -20,6 +20,13 @@ from agentplane.egress.resources import placeholder_of
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from cluster.cdk8s.agentplane import history_service, notifications, runner_gateway, sandbox_service
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
+from cluster.cdk8s.pod_policy import workload_kind
+
+
+def _templates(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """The agent-sandbox SandboxTemplates, which the Action and Sandbox Services read; a namespace with
+    its own Sandboxes also carries one of our kind per template, with the same pod."""
+    return [doc for doc in docs if workload_kind(doc) == ("extensions.agents.x-k8s.io", "SandboxTemplate")]
 
 
 def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -37,7 +44,7 @@ def test_every_offered_template_exists_and_describes_itself(
             for doc in docs
             if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-actions-settings"
         )
-        templates = {doc["metadata"]["name"]: doc for doc in docs if doc["kind"] == "SandboxTemplate"}
+        templates = {doc["metadata"]["name"]: doc for doc in _templates(docs)}
         for group in yaml.safe_load(settings["data"]["settings.yaml"])["action_groups"].values():
             if group["executor"]["kind"] != "sandbox":
                 continue
@@ -52,7 +59,7 @@ def test_every_offered_template_exists_and_describes_itself(
 def test_all_sandbox_workloads_use_shared_environment_defaults(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
-    templates = [doc for doc in agentplane_manifests[namespace] if doc["kind"] == "SandboxTemplate"]
+    templates = _templates(agentplane_manifests[namespace])
     assert templates
     for template in templates:
         workload = template["spec"]["podTemplate"]["spec"]["containers"][0]
@@ -71,7 +78,7 @@ def test_sandbox_sidecars_project_the_notifications_audience(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
     for namespace, manifests in agentplane_manifests.items():
-        templates = [doc for doc in manifests if doc["kind"] == "SandboxTemplate"]
+        templates = _templates(manifests)
         assert templates, namespace
         for template in templates:
             pod = template["spec"]["podTemplate"]["spec"]
@@ -93,7 +100,7 @@ def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
     for namespace, docs in agentplane_manifests.items():
-        templates = {doc["metadata"]["name"]: doc for doc in docs if doc["kind"] == "SandboxTemplate"}
+        templates = {doc["metadata"]["name"]: doc for doc in _templates(docs)}
         app_config = one(
             doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
         )
@@ -166,8 +173,7 @@ def test_model_configs_are_generated_into_the_llm_ingress_configmap(
         assert yaml.safe_load(settings["data"]["settings.yaml"])["models"] == expected, namespace
         runners = [
             container
-            for template in manifests
-            if template["kind"] == "SandboxTemplate"
+            for template in _templates(manifests)
             for container in template["spec"]["podTemplate"]["spec"]["containers"]
             if container["name"] == "runner"
         ]
@@ -208,9 +214,7 @@ def test_runner_endpoint_reaches_its_listener_with_the_pods_token(
     audience = credential["spec"]["source"]["projectedWorkloadToken"]["audience"]
     proxy_settings = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-egress-settings")["data"]["settings.yaml"])
     assert audience in proxy_settings["projected_token_audiences"]
-    for template in docs:
-        if template["kind"] != "SandboxTemplate":
-            continue
+    for template in _templates(docs):
         pod = template["spec"]["podTemplate"]["spec"]
         sidecar = one(container for container in pod["containers"] if container["name"] == "egress-sidecar")
         token_files = json.loads(
