@@ -103,7 +103,7 @@ freshness}` targets exist for CI. If bazel should _produce_ the shipped artifact
 
 3. **The Nix closure is the existing tool-delivery mechanism under the tight fence.**
    `fastmcp`/`tea`/`himalaya` reach PATH via `.#agent-haku`, installed by
-   `claude_web_env/setup.sh` (web home) and the worker `entrypoint.sh` (self-hosted). It resolves
+   the pasted setup script in `claude_web_env/README.md` (web home) and the worker `entrypoint.sh` (self-hosted). It resolves
    as **Attic cache hits** (`cache.allegedly.works` + `cache.nixos.org`, both on the _tight_
    allowlist) — `flake.nix` is explicitly built so "restricted egress can substitute these
    fixed-output paths from Attic". The closure build + push runs on **ducktape's github

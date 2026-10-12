@@ -6,9 +6,11 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
 
 ## Environment settings (when creating the web environment)
 
-- **Setup script:** `bash ducktape/haku/runtime/claude_web_env/setup.sh` — the setup
-  command runs from the parent of the repo checkout, so it needs the `ducktape/`
-  prefix (same as the shared `bash ducktape/devinfra/claude/web_setup.sh`).
+- **Setup script:** paste the script from [Setup script](#setup-script) below
+  directly into the environment's setup-script dialog. The setup script runs
+  *before* any repo is cloned, so it cannot reference a file in this repo; it
+  shallow-clones ducktape itself and runs `devinfra/claude/web_setup.sh` from that
+  checkout with `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku`.
 - **Environment variables:**
   - `DUCKTAPE_CLAUDE_HOOKS_PROFILE=haku/runtime/claude_web_env/profile.yaml`
   - `SOPS_AGE_KEY=<the haku age key>` — decrypt it from
@@ -32,12 +34,29 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
     `.#agent-haku` install (and any Nix/pre-commit work) pulls from the cache
     instead of failing (observed: `nixos.org` 403 without this).
 
+## Setup script
+
+Paste verbatim into the environment setup dialog:
+
+```bash
+#!/bin/bash
+# Haku Claude Code web environment setup script.
+# Paste this whole script into the environment's "Setup script" dialog.
+# It runs BEFORE the repo is cloned, so it fetches its own shallow ducktape
+# checkout and runs the shared web setup from it, installing Haku's
+# .#agent-haku closure (.#devtools + fastmcp, himalaya, tea).
+set -euo pipefail
+export DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku
+src=/tmp/ducktape-env-setup
+if [ ! -f "$src/devinfra/claude/web_setup.sh" ]; then
+  rm -rf "$src"
+  git clone --depth 1 https://github.com/agentydragon/ducktape "$src"
+fi
+exec bash "$src/devinfra/claude/web_setup.sh"
+```
+
 ## Files
 
-- `setup.sh` — environment setup script; delegates to `devinfra/claude/web_setup.sh`,
-  setting `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` so Haku installs `.#agent-haku`
-  (the shared `.#devtools` plus fastmcp for MCP facades, himalaya for mailbox
-  access, and tea for Gitea/Forgejo issue/PR/release workflows).
 - `profile.yaml` — the claude-hook profile. Sets the `K8S_*` overrides (→ group
   `haku` / `haku-sandbox`) and runs `bootstrap.sh` as its background command.
 - `bootstrap.sh` — profile background command: materializes `~/.kube/config`
@@ -52,7 +71,7 @@ here (on Anthropic infra) and drives the cluster over `kubectl`; the
 
 ## How a session boots
 
-1. `setup.sh` (env creation) → shared web setup installing `.#agent-haku`
+1. The pasted setup script (env creation) → shared web setup installing `.#agent-haku`
    (`.#devtools` plus fastmcp, himalaya, and tea), claude-hook daemon, certs, git
    remotes.
 2. `profile.yaml` runs `bootstrap.sh` (each session start): it materializes
@@ -67,7 +86,7 @@ Depends on `secrets/haku-k8s-jwt.yaml` existing (minted by the
 ## Gotcha: the Setup hook can clobber `.#agent-haku` tools
 
 `web_setup.sh` runs **twice** per fresh session: once as the init script (via
-`setup.sh`, which sets `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` → installs Haku's
+the pasted setup script, which sets `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` → installs Haku's
 extra tools)
 and once as the **Setup hook** (`web_setup_hook.sh` → `web_setup.sh`), which does
 **not** carry that env var. The Setup-hook run was defaulting to `.#devtools` and

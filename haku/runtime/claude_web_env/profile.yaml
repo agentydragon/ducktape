@@ -48,7 +48,7 @@ background_commands:
   - name: nix nixpkgs check
     command: |
       if ! command -v nix &>/dev/null; then
-        echo "ERROR: Nix not found on PATH. setup.sh should have installed Nix — did it complete?"
+        echo "ERROR: Nix not found on PATH. the environment setup script should have installed Nix — did it complete?"
         exit 1
       fi
       if nix-instantiate '<nixpkgs>' --eval -E '1' &>/dev/null 2>&1; then

@@ -282,7 +282,7 @@ at the `home-manager.yaml` sibling.
 
 **Which flake output** (orthogonal to install mode): in `profile` mode
 `web_setup.sh` installs `.#devtools` by default, or the output named by
-`DUCKTAPE_WEB_SETUP_OUTPUT`. Haku's <../../haku/runtime/claude_web_env/setup.sh> sets
+`DUCKTAPE_WEB_SETUP_OUTPUT`. Haku's pasted setup script (<../../haku/runtime/claude_web_env/README.md>) sets
 `DUCKTAPE_WEB_SETUP_OUTPUT=agent-haku` to get `.#agent-haku`, which composes
 `.#devtools` and adds Haku-only CLIs: fastmcp (`fastmcp call <url> --auth
 <bearer>`) for in-cluster MCP facades, himalaya for mailbox access, and tea for

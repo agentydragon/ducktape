@@ -90,7 +90,7 @@ and there's no `Task [bootstrap] exited` message to wait for.
 Recover manually, in order:
 
 1. **Load the Nix devshell yourself** — a managed session's `PATH` doesn't have Nix on it
-   either (`setup.sh`/`direnv` never ran). `/etc/profile.d/nix.sh` exists but isn't sourced
+   either (the env setup script/`direnv` never ran). `/etc/profile.d/nix.sh` exists but isn't sourced
    into the tool's shell, so add it to `PATH` directly and run everything else through `nix
 develop` (per the repo's `AGENTS.md` guidance for a missing devshell):
    ```bash
@@ -98,7 +98,7 @@ develop` (per the repo's `AGENTS.md` guidance for a missing devshell):
    ```
    Only `sops`/`kubectl`/`bazelisk`/etc. from `nix develop` matter for bootstrap; `tea` /
    `himalaya` / `fastmcp` come from the separate `.#agent-haku` closure (`nix shell
-.#agent-haku`, slow — minutes — the first time), which `setup.sh` also normally installs.
+.#agent-haku`, slow — minutes — the first time), which the env setup script also normally installs.
    If you skip it, `tea whoami` fails; fall back to raw REST per your state's `sources/` and
    **surface the gap** as an env-breakage finding rather than silently skipping a source.
 2. **Run `bootstrap.sh` directly** — it's self-sufficient in this harness (defaults
