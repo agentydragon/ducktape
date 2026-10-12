@@ -27,7 +27,6 @@ from cluster.cdk8s.agentplane.egress import (
     PACKAGES_POLICY,
     PUBLIC_CODER_VISUALS_POLICY,
 )
-from cluster.cdk8s.agentplane.grpc_channel_config import LARGE_EVENT_GRPC_CHANNEL_OPTIONS
 from cluster.cdk8s.model_selections import HarnessRoutes
 from model_catalog.catalog import Route
 
@@ -52,8 +51,6 @@ def settings(
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
 ) -> AppSettingsConfig:
     return AppSettingsConfig(
-        sandbox_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
-        history_service_grpc_channel_options=LARGE_EVENT_GRPC_CHANNEL_OPTIONS,
         models=ModelCatalog(
             models=[
                 ModelOption(

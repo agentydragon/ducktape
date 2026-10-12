@@ -3035,10 +3035,6 @@ data:
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
           fi
     kubernetes_grants: {}
-    sandbox_service_grpc_channel_options:
-      grpc.max_receive_message_length: 33554432
-    history_service_grpc_channel_options:
-      grpc.max_receive_message_length: 33554432
     egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081/
     action_federation:
       service_url: http://agentplane-actions.agentplane-testing.svc:8080/
@@ -4402,14 +4398,10 @@ data:
       target: agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
       gateway_target: agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8080
       control_target: "{sandbox}-control.{namespace}.svc:8080"
-      grpc_channel_options:
-        grpc.max_receive_message_length: 33554432
       token_file: /var/run/secrets/notifications/sandboxes
       gateway_token_file: /var/run/secrets/notifications/gateway
     history_service:
       target: agentplane-history-service.agentplane-testing.svc.cluster.local:8080
-      grpc_channel_options:
-        grpc.max_receive_message_length: 33554432
       token_file: /var/run/secrets/notifications/history
 immutable: false
 ---

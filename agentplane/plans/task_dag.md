@@ -946,7 +946,6 @@ flowchart TD
         THREAD_RESUME_COLUMN_DROP[Candidate: drop thread.resumed_after_cursor]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
-        GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: drop the unread channel-options settings]
         COMMAND_SUBMISSION_DROP[Waits on rollout: drop the command_submission table]
         SERVICE_SETTING_NAMES[Candidate: settings name the service they configure]
         OPERATOR_ROUTE_PREFIX[Candidate: one operator route prefix]
@@ -999,13 +998,6 @@ lost-stream error and backoff, `IngressPusher` stops borrowing `ControlTiming`, 
 **Candidate.** `ActionStore`'s `ExternalGrantAuthority` Protocol (also a footgun `| None = None`) has
 one production implementation, `ConnectionAuthority`. `db.py` cannot name it, because `connections.py`
 imports `db.py`'s rows: `ActionStore` first moves out of `db.py`, then takes a `ConnectionAuthority`.
-
-### `GRPC_CHANNEL_OPTIONS_CONSTANT` — one gRPC channel options constant
-
-**Candidate.** The Sandbox Service and History Service clients set the 32 MiB receive limit
-themselves (rolled to testing and staging), and nothing reads the app's
-and Notification Service's channel-options settings. Remove those fields and the values
-`app_settings.py` and `notifications.py` set from `grpc_channel_config.py`, in one PR.
 
 ### `SERVICE_SETTING_NAMES` — settings name the service they configure
 
