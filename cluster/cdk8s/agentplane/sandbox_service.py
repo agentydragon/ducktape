@@ -226,6 +226,7 @@ class SandboxService(Construct):
                     resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
                     verbs=["create", "get", "list", "watch", "patch", "delete"],
                 ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxtemplates")], verbs=["list"]),
                 RolePolicyRule(
                     resources=[custom_resource(GROUP, "sandboxes")],
                     verbs=["get", "list", "watch", *(("create", "patch", "delete") if self.env.own_sandboxes else ())],
