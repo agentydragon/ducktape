@@ -111,6 +111,16 @@ try_config() {
     return 1
   fi
   ts "$name: node Ready after $(($(date +%s) - start))s"
+  local node_ip
+  node_ip=$($k get node spike -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
+  # Without kube-proxy no ClusterIP works, so in-cluster API clients go to the apiserver directly.
+  for d in local-path-provisioner coredns; do
+    $k -n kube-system set env "deploy/$d" KUBERNETES_SERVICE_HOST="$node_ip" KUBERNETES_SERVICE_PORT=6443
+  done
+  # Stands in for a gateway the test process serves on the host, which a runner Pod dials.
+  mkdir -p "$work/host-www" && echo hello-from-host >"$work/host-www/index.html"
+  python3 -m http.server 18080 --bind 0.0.0.0 --directory "$work/host-www" >/dev/null 2>&1 &
+  local host_http=$!
   local busybox=""
   for _ in $(seq 30); do
     busybox=$($k get node spike -o jsonpath='{range .status.images[*]}{.names[0]}{"\n"}{end}' | grep -m1 busybox)
@@ -136,13 +146,17 @@ try_config() {
   local got
   got=$($k logs client 2>&1)
   $k exec server -- id
-  $k expose pod server --port=8080 --name=server
-  $k run svc-client --image="$busybox" --restart=Never --command -- wget -T 10 -qO- http://server.default.svc.cluster.local:8080/
-  if $k wait --for=jsonpath='{.status.phase}'=Succeeded pod/svc-client --timeout=60s; then
-    echo "service via DNS: $($k logs svc-client)"
+  $k run host-client --image="$busybox" --restart=Never --command -- wget -T 10 -qO- "http://$node_ip:18080/"
+  if $k wait --for=jsonpath='{.status.phase}'=Succeeded pod/host-client --timeout=60s; then
+    echo "pod to host: $($k logs host-client)"
   else
-    echo "service via DNS: FAILED $($k logs svc-client 2>&1 | tail -3)"
+    echo "pod to host: FAILED $($k logs host-client 2>&1 | tail -3)"
   fi
+  local t_del=$(date +%s)
+  $k delete pod server --wait=true
+  $k apply -f - <<<"${POD_YAML//BUSYBOX/$busybox}" >/dev/null
+  $k wait --for=condition=Ready pod/server --timeout=120s && echo "re-created Pod on the same PVC in $(($(date +%s) - t_del))s: $($k exec server -- cat /state/f)"
+  kill "$host_http"
   $k get pods -A
   ts "RESULT $name: OK pod-to-pod='$got' total=$(($(date +%s) - start))s"
   cleanup_k3s
@@ -151,8 +165,8 @@ try_config() {
 
 fake_kernel_sysctls
 ok=""
-# iptables mode: the kernel has no xt_mark, so kube-proxy's and flannel's rule syncs fail.
-try_config iptables --flannel-backend=host-gw --disable-network-policy && ok="$ok iptables"
-try_config nftables --flannel-backend=host-gw --disable-network-policy --kube-proxy-arg=proxy-mode=nftables && ok="$ok nftables"
+# kube-proxy cannot run on this kernel: iptables mode needs xt_mark, nftables mode needs
+# nft reject and numgen, none of which are built. So no ClusterIP Services.
+try_config nokubeproxy --flannel-backend=host-gw --disable-network-policy --disable-kube-proxy && ok="$ok nokubeproxy"
 ts "== working configs:${ok:- none}"
 [ -n "$ok" ]
