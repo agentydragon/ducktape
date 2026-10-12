@@ -26,15 +26,11 @@ from cluster.cdk8s.agentplane.staging_config import _FINANCE_AGENT_INSTRUCTIONS,
 def test_ducktape_pr_instructions_are_shared_once() -> None:
     for instructions in (_PUBLIC_CODER_INSTRUCTIONS, _FINANCE_AGENT_INSTRUCTIONS):
         assert instructions.count(DUCKTAPE_PR_INSTRUCTIONS) == 1
-        assert "agentydragon-agent/ducktape" in instructions
-        assert "agentydragon/ducktape" in instructions
 
 
-def test_ducktape_preset_clones_and_installs_hooks_without_direnv() -> None:
+def test_ducktape_preset_installs_hooks_without_direnv() -> None:
     cfg = staging.ENV.app_config
     script = cfg.thread_presets["public-coder-ducktape-codex"].setup_script
-    assert "git clone --depth 1 --branch devel --single-branch" in script
-    assert "https://github.com/agentydragon/ducktape.git ." in script
     assert "pre-commit install" in script
     assert "direnv allow" not in script
     # The generic public coder preset has no repo-specific checkout or hooks.

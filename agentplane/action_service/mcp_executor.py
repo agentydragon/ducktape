@@ -361,8 +361,8 @@ class McpActionGroupExecutor(Executor):
 
     def _retired(self, task: asyncio.Task[None]) -> None:
         self._retirements.pop(task, None)
-        if not task.cancelled() and task.exception() is not None:
-            logger.warning("MCP retirement failed for %s", self._group_key)
+        if not task.cancelled() and (error := task.exception()) is not None:
+            logger.warning("MCP retirement failed for %s", self._group_key, exc_info=error)
 
     async def _connect_client(self) -> None:
         self._health.state = McpLifecycle.CONNECTING

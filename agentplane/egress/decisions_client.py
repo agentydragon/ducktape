@@ -18,7 +18,14 @@ logger = logging.getLogger(__name__)
 
 
 class DecisionsUnavailableError(Exception):
-    """The proxy did not answer: not deployed yet, restarting, or refused by network policy."""
+    """The proxy did not answer (not deployed yet, restarting, refused by network policy) or answered non-success."""
+
+    def __init__(self, *, status_code: int | None, detail: str) -> None:
+        super().__init__(
+            f"the egress proxy did not answer: {detail}"
+            if status_code is None
+            else f"the egress proxy answered {status_code}: {detail}"
+        )
 
 
 class DecisionsClient:
@@ -28,8 +35,16 @@ class DecisionsClient:
     async def recent(self, subject: ServiceAccountRef) -> list[Decision]:
         try:
             response = await self._http.get("/decisions", params={"namespace": subject.namespace, "name": subject.name})
-            response.raise_for_status()
         except httpx.HTTPError as error:
             logger.warning("egress proxy decisions unavailable for %s/%s: %s", subject.namespace, subject.name, error)
-            raise DecisionsUnavailableError(f"the egress proxy did not answer: {error}") from error
+            raise DecisionsUnavailableError(status_code=None, detail=str(error)) from error
+        if not response.is_success:
+            logger.warning(
+                "egress proxy decisions failed for %s/%s: %s %s",
+                subject.namespace,
+                subject.name,
+                response.status_code,
+                response.text,
+            )
+            raise DecisionsUnavailableError(status_code=response.status_code, detail=response.text)
         return [Decision.model_validate(item) for item in response.json()]

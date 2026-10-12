@@ -53,7 +53,13 @@ from agentplane.notification_service.models import (
     SubscriptionView,
 )
 from agentplane.notification_service.settings import QuotaSettings
-from agentplane.notification_service.sources.github.models import GitHubBinding, GitHubEvent, GitHubSource, subject_key
+from agentplane.notification_service.sources.github.models import (
+    EventName,
+    GitHubBinding,
+    GitHubEvent,
+    GitHubSource,
+    subject_key,
+)
 from agentplane.notification_service.sources.github.state import (
     AccessFence,
     HeadRevision,
@@ -465,8 +471,8 @@ class Store:
                         summary = f"GitHub {event.event}"
                         if event.action:
                             summary += f" · {event.action[:80]}"
-                        if event.event.value in ("check_run", "workflow_run") and entry.payload:
-                            check = entry.payload.get(event.event.value)
+                        if event.event in (EventName.CHECK_RUN, EventName.WORKFLOW_RUN) and entry.payload:
+                            check = entry.payload.get(event.event)
                             if isinstance(check, dict):
                                 conclusion = check.get("conclusion")
                                 if isinstance(conclusion, str):

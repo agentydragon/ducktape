@@ -98,7 +98,7 @@ def test_binding_subject_is_a_namespaced_service_account() -> None:
         # A subject is a namespace and a name together; neither half stands alone.
         {"subject": {"name": "caller"}, "policySets": ["a"]},
         {"subject": {"namespace": "agentplane-test"}, "policySets": ["a"]},
-        # The kinds this subject replaced are no longer a shape the service accepts.
+        # A subject is the flat ServiceAccount reference; a nested kind wrapper is not one.
         {"subject": {"serviceAccount": {"namespace": "agentplane-test", "name": "caller"}}, "policySets": ["a"]},
         {"subject": {"sandbox": {"name": "coder-1", "uid": "u"}}, "policySets": ["a"]},
         {"subject": {"namespace": "agentplane-test", "name": "caller"}, "policySets": []},

@@ -177,7 +177,7 @@ class CancellationView(BaseModel):
     request: Receipt
 
 
-class TransportDisconnects:
+class DisconnectSignalMiddleware:
     """Expose the transport's `http.disconnect` to tools as `request.state.action_disconnected`.
 
     Only a wrapper around the transport's `receive` sees the disconnect, and the MCP SDK's stateless

@@ -39,7 +39,7 @@ from agentplane.action_service.connections import ConnectionAuthority, Grant, Gr
 from agentplane.action_service.db import ActionStore, make_sessionmaker
 from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
-from agentplane.action_service.mcp_frontend import TransportDisconnects, create_server
+from agentplane.action_service.mcp_frontend import DisconnectSignalMiddleware, create_server
 from agentplane.action_service.models import ActionState, CallerPrincipal, ExecutionResult, ExecutionState
 from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_evaluation import PROVIDER_NAME, PolicySetDecisionProvider
@@ -237,7 +237,7 @@ async def direct(
         async with updates.listener.connection(), mcp_app.lifespan(mcp_app):
             yield
 
-    app = Starlette(routes=[Route("/mcp", TransportDisconnects(mcp_app))], lifespan=lifespan)
+    app = Starlette(routes=[Route("/mcp", DisconnectSignalMiddleware(mcp_app))], lifespan=lifespan)
     async with service, lifespan_in_own_task(app):
         yield Direct(app, store, grant)
 

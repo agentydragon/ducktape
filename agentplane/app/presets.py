@@ -25,7 +25,14 @@ class ThreadPreset(BaseModel):
     setup_script: str = Field(default="", max_length=65_536)
 
     def defaults(self) -> SessionDefaults:
-        return SessionDefaults.model_validate(self.model_dump(exclude={"title"}))
+        return SessionDefaults(
+            harness=self.harness,
+            model=self.model,
+            cwd=self.cwd,
+            reasoning_effort=self.reasoning_effort,
+            instructions=self.instructions,
+            setup_script=self.setup_script,
+        )
 
 
 class SandboxPreset(BaseModel):

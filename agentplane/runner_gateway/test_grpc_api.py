@@ -394,6 +394,7 @@ async def test_command_uses_runner_ack_budget_not_unary_request_budget(
         await register(engine, session_id)
         submitted = asyncio.create_task(remote.command(str(session_id), command))
         delivered = await peer.delivery()
+        # Elapsed time is the subject: the ack lands after both 0.1 s budgets but inside the 1 s ack budget.
         await asyncio.sleep(0.2)
         await peer.admit(delivered, 1)
         assert await submitted == admission(command, 1)

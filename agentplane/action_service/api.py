@@ -54,7 +54,7 @@ from agentplane.action_service.enrollments import (
     EnrollmentPreviewInput,
     EnrollmentRejectedError,
 )
-from agentplane.action_service.mcp_frontend import TransportDisconnects, create_server
+from agentplane.action_service.mcp_frontend import DisconnectSignalMiddleware, create_server
 from agentplane.action_service.mcp_linkage import (
     McpLinkageAuthority,
     McpLinkageConflictError,
@@ -594,7 +594,7 @@ def create_app(
     # Match only the transport endpoint, without a slash redirect or intercepting unknown REST paths.
     if oauth is not None:
         app.router.routes.extend(oauth.get_routes(mcp_path="/mcp"))
-    app.router.routes.append(Route("/mcp", TransportDisconnects(mcp_app)))
+    app.router.routes.append(Route("/mcp", DisconnectSignalMiddleware(mcp_app)))
     return app
 
 
