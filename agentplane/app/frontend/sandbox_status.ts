@@ -4,6 +4,12 @@ import type { SandboxStatusKind } from "./status_mark";
 
 type RawObject = Record<string, unknown>;
 
+// Mirrors SANDBOX_API_VERSIONS in agentplane/sandbox_resource.py: agent-sandbox's and Agentplane's own.
+const SANDBOX_API_VERSIONS: ReadonlySet<string> = new Set([
+  "agents.x-k8s.io/v1beta1",
+  "agentplane.allegedly.works/v1alpha1",
+]);
+
 export interface RawCondition {
   type: string;
   status: string;
@@ -89,7 +95,7 @@ export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
   if (controllers.length !== 1) return false;
   const owner = controllers[0];
   return (
-    owner.api_version === "agents.x-k8s.io/v1beta1" &&
+    SANDBOX_API_VERSIONS.has(owner.api_version) &&
     owner.kind === "Sandbox" &&
     owner.name === sandbox.name &&
     owner.uid === sandbox.uid &&

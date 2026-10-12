@@ -468,6 +468,16 @@ ts_library(
     ],
 )
 
+agentplane_vitest_test(
+    name = "sandbox_status_test",
+    srcs = ["sandbox_status.test.ts"],
+    deps = [
+        ":client",
+        ":sandbox_status",
+        "//:node_modules/vitest",
+    ],
+)
+
 ts_library(
     name = "sandboxes",
     srcs = [
