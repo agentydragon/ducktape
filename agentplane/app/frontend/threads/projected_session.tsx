@@ -1063,6 +1063,7 @@ function ProjectedSessionBody({
     available &&
     !thread.archived &&
     !["SETUP_STATE_RUNNING", "SETUP_STATE_FAILED", "SETUP_STATE_INTERRUPTED"].includes(thread.setup_state ?? "") &&
+    thread.launch_outcome !== "LAUNCH_OUTCOME_PENDING" &&
     operational?.status !== "failed" &&
     (operational?.status !== "active" || controls?.harness_state !== "running");
   const [resuming, setResuming] = useState(false);

@@ -41,6 +41,11 @@ class ThreadView(BaseModel):
         "HARNESS_STATE_STOPPED, or HARNESS_STATE_UNSPECIFIED while no feed has ever attached to this thread."
     )
     setup_state: str | None = Field(default=None, description="One-shot Thread setup state, once attached.")
+    launch_outcome: str | None = Field(
+        default=None,
+        description="The protocol's LaunchOutcome enum member, by name: whether the harness's first launch is still "
+        "pending, started or failed; None before attachment.",
+    )
     active_turn_id: str | None = Field(
         default=None, description="The runner's currently active turn, or None when it is idle."
     )

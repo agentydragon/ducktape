@@ -526,6 +526,7 @@ def build_attached(session: Session, published: RecoveryState) -> runner_pb2.Att
         harness_state=runner_pb2.HARNESS_STATE_RUNNING if session.running else runner_pb2.HARNESS_STATE_STOPPED,
         active_turn_id=published.active_turn_id,
         setup_state=session.setup_state,
+        launch_outcome=session.launch_outcome,
     )
 
 

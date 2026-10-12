@@ -21,7 +21,7 @@ import { RunningChevrons, StatusDot } from "./custom_mark_icons";
  * thread `idle` again. `stopped`: the harness is down (shut down or lost), whether its runner feed is
  * still attached or has ended. `failed`: the runner feed failed. `archived`: the thread was archived,
  * whatever its retained history says. `inactive`: nothing else live to show (Sandbox suspended or gone,
- * setup still running, the feed ended with the harness not known to be down, or not confirmed).
+ * setup or the harness's first launch still running, the feed ended with the harness not known to be down, or not confirmed).
  */
 export type ThreadStatusKind = "running" | "idle" | "turn_error" | "stopped" | "failed" | "archived" | "inactive";
 

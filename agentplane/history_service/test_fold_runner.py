@@ -103,7 +103,7 @@ async def test_folds_retained_sessions_a_page_per_cycle_until_caught_up(engine: 
         assert await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == empty)) is None
 
 
-async def test_a_session_still_in_setup_has_not_ended(engine: AsyncEngine, history: Store) -> None:
+async def test_a_session_ends_only_once_its_harness_launch_has_an_outcome(engine: AsyncEngine, history: Store) -> None:
     # The runner announces a Session whose setup script runs before its harness starts.
     session_id = await retained_session(
         history,
@@ -116,23 +116,25 @@ async def test_a_session_still_in_setup_has_not_ended(engine: AsyncEngine, histo
         session_id=str(session_id),
         harness_state=runner_pb2.HARNESS_STATE_STOPPED,
         setup_state=runner_pb2.SETUP_STATE_RUNNING,
+        launch_outcome=runner_pb2.LAUNCH_OUTCOME_PENDING,
     )
     await history.record_feed_state(session_id, history_service_pb2.SessionFeedState(attached=announce))
     folder = FoldRunner(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
     sessions = async_sessionmaker(engine, expire_on_commit=False)
 
-    await folder.cycle()
-    async with sessions() as session:
-        summary = await session.get(ThreadHistorySummary, session_id)
-        assert summary is not None
-        assert summary.end is None
+    async def fold_end(*entries: event_log_pb2.EventEntry) -> dict[str, str] | None:
+        if entries:
+            await history.append(session_id, list(entries))
+        await folder.cycle()
+        async with sessions() as session:
+            summary = await session.get(ThreadHistorySummary, session_id)
+            assert summary is not None
+            return summary.end
 
-    await history.append(session_id, [entry(3, setup_finished=event_pb2.SetupFinished(exit_code=7))])
-    await folder.cycle()
-    async with sessions() as session:
-        summary = await session.get(ThreadHistorySummary, session_id)
-        assert summary is not None
-        assert summary.end == {}
+    assert await fold_end() is None
+    # Setup succeeded; the harness is still launching.
+    assert await fold_end(entry(3, setup_finished=event_pb2.SetupFinished(exit_code=0))) is None
+    assert await fold_end(entry(4, harness_launch_failed=event_pb2.HarnessLaunchFailed(reason="test failure"))) == {}
 
 
 async def test_run_folds_without_waiting_out_the_interval_while_behind(engine: AsyncEngine, history: Store) -> None:

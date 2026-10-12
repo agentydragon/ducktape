@@ -102,7 +102,24 @@ describe("a failed last turn colors only an otherwise idle thread", () => {
       { ...failed, harness_state: "HARNESS_STATE_STOPPED", setup_state: "SETUP_STATE_RUNNING", feed_status: "ended" },
       "inactive",
     ],
-    [{ ...failed, harness_state: "HARNESS_STATE_STOPPED", setup_state: "SETUP_STATE_SUCCEEDED" }, "stopped"],
+    [
+      {
+        ...failed,
+        harness_state: "HARNESS_STATE_STOPPED",
+        setup_state: "SETUP_STATE_SUCCEEDED",
+        launch_outcome: "LAUNCH_OUTCOME_PENDING",
+      },
+      "inactive",
+    ],
+    [
+      {
+        ...failed,
+        harness_state: "HARNESS_STATE_STOPPED",
+        setup_state: "SETUP_STATE_SUCCEEDED",
+        launch_outcome: "LAUNCH_OUTCOME_STARTED",
+      },
+      "stopped",
+    ],
   ] as const)("%o is %s", (overrides, kind) => {
     expect(threadStatusFromSnapshot(thread(overrides), READY_SANDBOX, true).kind).toBe(kind);
   });

@@ -49,9 +49,10 @@ async def project_lifecycle(
         end is None
         and attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
         and attached.setup_state != runner_pb2.SETUP_STATE_RUNNING
+        and attached.launch_outcome != runner_pb2.LAUNCH_OUTCOME_PENDING
     ):
         # A pushed journal has no attachment to reach EOF; its stopped harness is where a followed one ended.
-        # A harness waiting on setup has not started yet, so it has not ended either.
+        # A harness waiting on setup or still launching has not started yet, so it has not ended either.
         end = {}
     summary.attached = MessageToDict(attached)
     summary.end = end
@@ -67,20 +68,33 @@ async def project_lifecycle(
 def project_attached(attached: runner_pb2.Attached, entry: event_log_pb2.EventEntry) -> None:
     attached.last_cursor = entry.cursor
     event = entry.event
+    # The runner's own rule (runner/session.py `_apply_prefix`): the first outcome settles the launch.
+    # An announcement from a runner that predates the field leaves it unspecified until then.
+    undecided = attached.launch_outcome in (runner_pb2.LAUNCH_OUTCOME_UNSPECIFIED, runner_pb2.LAUNCH_OUTCOME_PENDING)
     match event.WhichOneof("observation"):
         case "setup_finished":
-            attached.setup_state = (
-                runner_pb2.SETUP_STATE_SUCCEEDED
-                if event.setup_finished.exit_code == 0
-                else runner_pb2.SETUP_STATE_FAILED
-            )
+            succeeded = event.setup_finished.exit_code == 0
+            attached.setup_state = runner_pb2.SETUP_STATE_SUCCEEDED if succeeded else runner_pb2.SETUP_STATE_FAILED
+            if undecided:
+                attached.launch_outcome = (
+                    runner_pb2.LAUNCH_OUTCOME_PENDING if succeeded else runner_pb2.LAUNCH_OUTCOME_FAILED
+                )
         case "setup_interrupted":
             attached.setup_state = runner_pb2.SETUP_STATE_INTERRUPTED
+            if undecided:
+                attached.launch_outcome = runner_pb2.LAUNCH_OUTCOME_FAILED
+        case "harness_launch_failed":
+            if undecided:
+                attached.launch_outcome = runner_pb2.LAUNCH_OUTCOME_FAILED
         case "harness_started":
             attached.harness_state = runner_pb2.HARNESS_STATE_RUNNING
+            if undecided:
+                attached.launch_outcome = runner_pb2.LAUNCH_OUTCOME_STARTED
         case "harness_exited" | "harness_lost":
             attached.harness_state = runner_pb2.HARNESS_STATE_STOPPED
             attached.active_turn_id = ""
+            if undecided:
+                attached.launch_outcome = runner_pb2.LAUNCH_OUTCOME_FAILED
         case "turn_started":
             attached.active_turn_id = event.turn_started.turn_id
         case "turn_completed":
