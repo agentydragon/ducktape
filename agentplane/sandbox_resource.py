@@ -28,6 +28,11 @@ SANDBOX_API_VERSIONS = frozenset({SANDBOX_API_VERSION, SANDBOX_API.api_version})
 # Set by the Runner Gateway on a deleting Sandbox once its runner sealed every Session and the
 # ingress acknowledged each seal; the controller deletes nothing of the Sandbox before.
 SESSIONS_SEALED = "SessionsSealed"
+# On a Sandbox's Pod, or its VM, VMI and virt-launcher Pod: the Sandbox's name.
+SANDBOX_LABEL = f"{GROUP}/sandbox"
+# A VM Sandbox's runner runs in its VMI's virt-launcher Pod, which the VMI controls.
+VMI_API_VERSION = "kubevirt.io/v1"
+VMI_KIND = "VirtualMachineInstance"
 _APPLY_PATCH = "application/apply-patch+yaml"
 
 
@@ -63,7 +68,15 @@ class Spec(_Wire):
     bootstrap: str | None = None
 
 
+class Incarnation(_Wire):
+    """The Pod the Sandbox's runner runs in: its own Pod, or its VM's virt-launcher Pod."""
+
+    name: str
+    uid: str
+
+
 class Status(_Wire):
+    incarnation: Incarnation | None = None
     conditions: list[Condition] = Field(default_factory=list)
 
 
@@ -75,6 +88,13 @@ class Sandbox(_Wire):
     @property
     def sessions_sealed(self) -> bool:
         return any(c.type == SESSIONS_SEALED and c.status is ConditionStatus.TRUE for c in self.status.conditions)
+
+    def runs_in(self, pod: k8s_client.V1Pod) -> bool:
+        """Whether `pod` is the incarnation the Sandbox Controller reports, the same object and not
+        one recreated under its name. Only the controller writes it, so this holds for a VM's
+        virt-launcher Pod, which the Sandbox does not control."""
+        incarnation = self.status.incarnation
+        return incarnation is not None and pod.metadata is not None and pod.metadata.uid == incarnation.uid
 
 
 async def read_sandbox(custom_objects: CustomObjectsClient, namespace: str, name: str) -> Sandbox | None:

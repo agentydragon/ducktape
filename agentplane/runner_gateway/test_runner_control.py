@@ -32,7 +32,7 @@ from agentplane.runner_gateway.testing.runner_control import (
     add_own_sandbox,
     serve_replica_control,
 )
-from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
+from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, OWN_SANDBOXES, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND, SANDBOXES_PLURAL
 
@@ -148,10 +148,11 @@ async def test_accepting_records_the_connection_on_the_sandbox(
     assert [port["name"] for port in endpoints["ports"]] == [port["name"] for port in service["spec"]["ports"]]
 
 
+@pytest.mark.parametrize("vm", [False, True], ids=["pod", "vm"])
 async def test_a_runner_of_agentplanes_own_sandbox_connects(
-    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster, vm: bool
 ) -> None:
-    add_own_sandbox(cluster)
+    add_own_sandbox(cluster, vm=vm)
     async with connect(listener, OWN_RUNNER_TOKEN) as call:
         await call.write(HELLO)
         assert (await read_frame(call)).welcome.connection_epoch == 1
@@ -160,6 +161,16 @@ async def test_a_runner_of_agentplanes_own_sandbox_connects(
     assert [(ref["apiVersion"], ref["uid"]) for ref in lease["metadata"]["ownerReferences"]] == [
         (sandbox_resource.SANDBOX_API_VERSION, OWN_SANDBOX_UID)
     ]
+
+
+async def test_a_virt_launcher_pod_that_is_not_its_sandboxes_incarnation_is_refused(
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
+) -> None:
+    add_own_sandbox(cluster, vm=True)
+    cluster.fake.objects[OWN_SANDBOXES][OWN_SANDBOX]["status"]["incarnation"]["uid"] = "test-other-launcher-uid"
+    async with connect(listener, OWN_RUNNER_TOKEN) as call:
+        await call.write(HELLO)
+        assert await status_of(call) == grpc.StatusCode.PERMISSION_DENIED
 
 
 async def test_a_connection_through_another_replica_supersedes_this_one(replica: Replica, cluster: Cluster) -> None:

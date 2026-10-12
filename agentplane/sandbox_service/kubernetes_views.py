@@ -1,7 +1,7 @@
 """Read-only projections of persisted Sandbox/Pod resources, shared with UI informers."""
 
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from typing import cast
 
@@ -104,9 +104,17 @@ def own_sandbox_views(
     """`sandbox_views` for Agentplane's own Sandboxes."""
     pods_by_name = {pod.metadata.name: pod for pod in pods}
     return [
-        own_sandbox_view(parsed, pods_by_name.get(parsed.metadata.name), api_client=api_client)
+        own_sandbox_view(parsed, incarnation_pod(parsed, pods_by_name), api_client=api_client)
         for parsed in map(sandbox_resource.Sandbox.model_validate, sandboxes)
     ]
+
+
+def incarnation_pod(
+    sandbox: sandbox_resource.Sandbox, pods_by_name: Mapping[str, k8s_client.V1Pod]
+) -> k8s_client.V1Pod | None:
+    """The Sandbox's incarnation among `pods_by_name`, if it is there."""
+    incarnation = sandbox.status.incarnation
+    return None if incarnation is None else pods_by_name.get(incarnation.name)
 
 
 def sandbox_view(sandbox: object, pod: k8s_client.V1Pod | None, *, api_client: k8s_client.ApiClient) -> Sandbox:
@@ -143,8 +151,9 @@ def _view(sandbox: SandboxResource, pod: k8s_client.V1Pod | None, *, api_client:
 def own_sandbox_view(
     sandbox: sandbox_resource.Sandbox, pod: k8s_client.V1Pod | None, *, api_client: k8s_client.ApiClient
 ) -> Sandbox:
-    """Agentplane's own Sandbox in the same projection. Its Pod runs as the ServiceAccount of its
-    name, which the Sandbox Controller binds; nothing is pending past that, since no Pod waits for its
+    """Agentplane's own Sandbox in the same projection. Its Pod is its incarnation (its own, or its
+    VM's virt-launcher Pod), and `pod` is shown only while it is that one. It runs as the
+    ServiceAccount of its name, which the Sandbox Controller binds; nothing is pending past that, since no Pod waits for its
     grants. While it seals before deletion it is in teardown, as an agent-sandbox one is from
     DeleteSandbox on, and it is deleting once its Sessions are sealed."""
     metadata, spec = sandbox.metadata, sandbox.spec
@@ -165,7 +174,7 @@ def own_sandbox_view(
         teardown=TeardownPhase.TEARDOWN_PHASE_SEALING
         if in_deletion and not sandbox.sessions_sealed
         else TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED,
-        pod=_pod(pod, api_client=api_client) if pod is not None else None,
+        pod=_pod(pod, api_client=api_client) if pod is not None and sandbox.runs_in(pod) else None,
     )
 
 

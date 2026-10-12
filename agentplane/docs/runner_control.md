@@ -412,12 +412,14 @@ When a `Connect` stream opens, the Runner Gateway authenticates the bearer with 
 resolves the principal the way destination resolution does, in reverse:
 
 1. The Pod named by the token exists with the token's UID and is not being deleted.
-2. It has exactly one controller reference, a `Sandbox` of the agent-sandbox API, and that Sandbox
-   is in the service's inventory with the same UID.
+2. It has exactly one controller reference: a `Sandbox`, agent-sandbox's in the service's inventory
+   or Agentplane's own, with the same UID; or, for a VM Sandbox, its VMI, in which case the Pod's
+   `agentplane.allegedly.works/sandbox` label names Agentplane's own Sandbox, whose
+   `status.incarnation` (written only by the Sandbox Controller) is this Pod's UID.
 3. The Sandbox runs as the token's ServiceAccount.
 
-A VM environment's runner reaches the control listener from its `virt-launcher` Pod's egress relay, and that
-Pod resolves to its environment through its own controller chain under the same rules.
+A VM Sandbox's runner reaches the control listener from its `virt-launcher` Pod's egress relay, so
+its token is that Pod's.
 
 Names, IPs, claimed Session IDs and anything in `Hello` are not identity. The connection is bound
 to the Sandbox UID and Pod UID that resolution returned. A Sandbox being deleted is still

@@ -66,6 +66,7 @@ from agentplane.sandbox_service.egress_views import (
 )
 from agentplane.sandbox_service.kubernetes_views import (
     MANAGED_LABEL,
+    incarnation_pod,
     own_sandbox_view,
     own_sandbox_views,
     sandbox_view,
@@ -183,8 +184,9 @@ class LiveIndex:
         # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
         api_client = self.core_v1.api_client  # type: ignore[attr-defined]
         if own is not None:
+            parsed = Sandbox.model_validate(own)
             return http_sandbox_view(
-                own_sandbox_view(Sandbox.model_validate(own), self.pods.get(name), api_client=api_client)
+                own_sandbox_view(parsed, incarnation_pod(parsed, self.pods), api_client=api_client)
             )
         return http_sandbox_view(sandbox_view(raw, self.pods.get(name), api_client=api_client))
 

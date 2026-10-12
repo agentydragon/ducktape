@@ -29,7 +29,9 @@ class SandboxReader:
         api_client = self._core_v1.api_client  # type: ignore[attr-defined]
         own = await read_sandbox(self._custom_objects, self._namespace, name)
         if own is not None:
-            return own_sandbox_view(own, await self._pod(name), api_client=api_client)
+            incarnation = own.status.incarnation
+            pod = None if incarnation is None else await self._pod(incarnation.name)
+            return own_sandbox_view(own, pod, api_client=api_client)
         return sandbox_view(await self._sandbox(name), await self._pod(name), api_client=api_client)
 
     async def incarnation(self, destination: SandboxDestination) -> Sandbox:

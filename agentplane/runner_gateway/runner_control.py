@@ -76,7 +76,9 @@ async def resolve_peer(
     core: k8s_client.CoreV1Api,
 ) -> ControlPeer:
     """Follow the token's Pod to the Sandbox controlling it, the reverse of destination resolution.
-    The Sandbox is agent-sandbox's or Agentplane's own."""
+    The Sandbox is agent-sandbox's or Agentplane's own; a VM Sandbox's runner Pod is its VMI's
+    virt-launcher Pod, whose Sandbox the Sandbox label names and which must be the incarnation that
+    Sandbox reports."""
     if principal.namespace != sandboxes.namespace:
         raise PeerRefusedError("workload is outside the Sandbox namespace")
     try:
@@ -89,9 +91,13 @@ async def resolve_peer(
     if metadata is None or metadata.uid != principal.pod_uid or metadata.deletion_timestamp is not None:
         raise WorkloadPrincipalRejectedError("bearer Pod was replaced or is being deleted")
     controllers = [ref for ref in metadata.owner_references or [] if ref.controller]
-    if len(controllers) != 1 or controllers[0].kind != SANDBOX_KIND:
+    if len(controllers) != 1:
         raise PeerRefusedError("Pod is not controlled by a Sandbox")
     owner = controllers[0]
+    if (owner.api_version, owner.kind) == (sandbox_resource.VMI_API_VERSION, sandbox_resource.VMI_KIND):
+        return await _resolve_vm_peer(principal, pod, custom_objects=custom_objects, namespace=sandboxes.namespace)
+    if owner.kind != SANDBOX_KIND:
+        raise PeerRefusedError("Pod is not controlled by a Sandbox")
     match owner.api_version:
         case SANDBOX_API.api_version:
             try:
@@ -113,6 +119,27 @@ async def resolve_peer(
         raise PeerRefusedError("Sandbox runs as a different ServiceAccount")
     return ControlPeer(
         sandbox_name=owner.name, sandbox_uid=UUID(uid), sandbox_api_version=owner.api_version, pod_uid=principal.pod_uid
+    )
+
+
+async def _resolve_vm_peer(
+    principal: WorkloadPrincipal, pod: k8s_client.V1Pod, *, custom_objects: CustomObjectsClient, namespace: str
+) -> ControlPeer:
+    labels = (pod.metadata.labels if pod.metadata is not None else None) or {}
+    name = labels.get(sandbox_resource.SANDBOX_LABEL)
+    own = None if name is None else await sandbox_resource.read_sandbox(custom_objects, namespace, name)
+    if own is None:
+        raise PeerRefusedError("virt-launcher Pod names no Sandbox")
+    if not own.runs_in(pod):
+        raise PeerRefusedError("Pod is not its Sandbox's current incarnation")
+    # The launcher admission runs a VM Sandbox's virt-launcher Pod as the Sandbox's ServiceAccount.
+    if own.metadata.name != principal.service_account_name:
+        raise PeerRefusedError("Sandbox runs as a different ServiceAccount")
+    return ControlPeer(
+        sandbox_name=own.metadata.name,
+        sandbox_uid=own.metadata.uid,
+        sandbox_api_version=sandbox_resource.SANDBOX_API_VERSION,
+        pod_uid=principal.pod_uid,
     )
 
 

@@ -36,35 +36,50 @@ HELLO = runner_control_pb2.RunnerFrame(hello=runner_control_pb2.Hello(runner_boo
 OWN_SANDBOX = "test-own-sandbox"
 OWN_SANDBOX_UID = "7d6c1f0e-35b4-4c3e-9a51-2f8e0b9d6a10"
 OWN_RUNNER_TOKEN = "test-own-runner-token"
+OWN_POD_UID = "test-own-pod-uid"
+LAUNCHER_POD = f"virt-launcher-{OWN_SANDBOX}-test"
+LAUNCHER_POD_UID = "test-launcher-pod-uid"
 
 
-def add_own_sandbox(cluster: Cluster) -> None:
-    """One of Agentplane's own Sandboxes, its Pod running as the ServiceAccount of its name as the
-    Sandbox Controller runs it, and `OWN_RUNNER_TOKEN` for that Pod's runner."""
-    reference = {
-        "apiVersion": sandbox_resource.SANDBOX_API_VERSION,
-        "kind": sandbox_resource.SANDBOX_KIND,
-        "name": OWN_SANDBOX,
-        "uid": OWN_SANDBOX_UID,
-        "controller": True,
-    }
+def add_own_sandbox(cluster: Cluster, *, vm: bool = False) -> None:
+    """One of Agentplane's own Sandboxes, its incarnation running as the ServiceAccount of its name
+    as the Sandbox Controller runs it, and `OWN_RUNNER_TOKEN` for that Pod's runner. The incarnation
+    is the Sandbox's own Pod, or with `vm` its VMI's virt-launcher Pod."""
+    if vm:
+        pod_name, pod_uid = LAUNCHER_POD, LAUNCHER_POD_UID
+        controller = {
+            "apiVersion": sandbox_resource.VMI_API_VERSION,
+            "kind": sandbox_resource.VMI_KIND,
+            "name": OWN_SANDBOX,
+            "uid": "test-vmi-uid",
+        }
+    else:
+        pod_name, pod_uid = OWN_SANDBOX, OWN_POD_UID
+        controller = {
+            "apiVersion": sandbox_resource.SANDBOX_API_VERSION,
+            "kind": sandbox_resource.SANDBOX_KIND,
+            "name": OWN_SANDBOX,
+            "uid": OWN_SANDBOX_UID,
+        }
     cluster.fake.put(
         OWN_SANDBOXES,
         {
-            "apiVersion": reference["apiVersion"],
-            "kind": reference["kind"],
+            "apiVersion": sandbox_resource.SANDBOX_API_VERSION,
+            "kind": sandbox_resource.SANDBOX_KIND,
             "metadata": {"name": OWN_SANDBOX, "uid": OWN_SANDBOX_UID, "creationTimestamp": "2026-09-01T11:00:00Z"},
             "spec": {"template": "test-template", "running": True},
+            "status": {"incarnation": {"name": pod_name, "uid": pod_uid}},
         },
     )
-    cluster.fake.pods[OWN_SANDBOX] = {
+    cluster.fake.pods[pod_name] = {
         "apiVersion": "v1",
         "kind": "Pod",
         "metadata": {
-            "name": OWN_SANDBOX,
+            "name": pod_name,
             "namespace": SANDBOX_NAMESPACE,
-            "uid": "test-own-pod-uid",
-            "ownerReferences": [reference],
+            "uid": pod_uid,
+            "labels": {sandbox_resource.SANDBOX_LABEL: OWN_SANDBOX},
+            "ownerReferences": [controller | {"controller": True}],
         },
         "spec": {
             "serviceAccountName": OWN_SANDBOX,
@@ -74,8 +89,8 @@ def add_own_sandbox(cluster: Cluster) -> None:
     }
     cluster.fake.tokens[OWN_RUNNER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{OWN_SANDBOX}",
-        pod_name=OWN_SANDBOX,
-        pod_uid="test-own-pod-uid",
+        pod_name=pod_name,
+        pod_uid=pod_uid,
         audiences=(RUNNER_AUDIENCE,),
     )
 

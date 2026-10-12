@@ -5,8 +5,8 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination, ServiceAccount
-from agentplane.runner_gateway.destinations import DestinationResolver
-from agentplane.runner_gateway.testing.runner_control import OWN_SANDBOX, OWN_SANDBOX_UID, add_own_sandbox
+from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
+from agentplane.runner_gateway.testing.runner_control import LAUNCHER_POD, OWN_SANDBOX, OWN_SANDBOX_UID, add_own_sandbox
 from agentplane.sandbox_service.errors import SandboxTearingDownError
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION, OWN_SANDBOXES, SANDBOX, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
@@ -30,12 +30,26 @@ def _own_destination() -> SandboxDestination:
     )
 
 
-async def test_own_sandbox_resolves_to_its_spec_binding(cluster: Cluster) -> None:
-    add_own_sandbox(cluster)
+@pytest.mark.parametrize("vm", [False, True], ids=["pod", "vm"])
+async def test_own_sandbox_resolves_to_its_spec_binding(cluster: Cluster, vm: bool) -> None:
+    add_own_sandbox(cluster, vm=vm)
     cluster.fake.objects[OWN_SANDBOXES][OWN_SANDBOX]["spec"]["bootstrap"] = "printf boot"
-    cluster.fake.pods[OWN_SANDBOX]["status"]["conditions"] = [{"type": "Ready", "status": "True"}]
+    cluster.fake.pods[LAUNCHER_POD if vm else OWN_SANDBOX]["status"]["conditions"] = [
+        {"type": "Ready", "status": "True"}
+    ]
     destinations = DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api))
     assert await destinations.resolve(_own_destination(), writes=True) == SandboxBinding(bootstrap="printf boot")
+
+
+async def test_own_sandbox_pod_the_controller_has_not_reported_is_not_a_destination(cluster: Cluster) -> None:
+    add_own_sandbox(cluster)
+    pod = cluster.fake.pods[OWN_SANDBOX]
+    pod["status"]["conditions"] = [{"type": "Ready", "status": "True"}]
+    # A new incarnation under the same name, before the Sandbox Controller reports it.
+    pod["metadata"]["uid"] = "test-unreported-pod-uid"
+    destinations = DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api))
+    with pytest.raises(DestinationUnavailableError):
+        await destinations.resolve(_own_destination(), writes=True)
 
 
 async def test_sealing_own_sandbox_takes_no_new_work(cluster: Cluster) -> None:
