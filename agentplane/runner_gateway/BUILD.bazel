@@ -448,6 +448,7 @@ py_library(
     name = "destinations",
     srcs = ["destinations.py"],
     deps = [
+        "//agentplane:sandbox_resource",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/sandbox_service:errors",
         "//agentplane/sandbox_service:reader",
@@ -464,8 +465,13 @@ py_test(
         ":conftest",
         ":destinations",
         "//:conftest",
+        "//agentplane/proto:sandbox_service_pb2",
+        "//agentplane/runner_gateway/testing:runner_control",
+        "//agentplane/sandbox_service:errors",
         "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
         "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

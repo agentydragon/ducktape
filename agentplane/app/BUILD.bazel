@@ -657,8 +657,10 @@ py_library(
         ":shutdown",
         ":sse",
         "//agentplane:changes",
+        "//agentplane:crd_group",
         "//agentplane:grpc_calls",
         "//agentplane:kubernetes_watch",
+        "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/action_service/policies:resources",
         "//agentplane/app/threads:store",
@@ -1321,6 +1323,7 @@ py_library(
         "//cluster/cdk8s:__subpackages__",
     ],
     deps = [
+        "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/runner:harness",

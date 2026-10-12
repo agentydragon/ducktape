@@ -47,6 +47,8 @@ py_library(
     testonly = True,
     srcs = ["fake_inventory.py"],
     deps = [
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
         "//agentplane/sandbox_service:egress_views",
         "//agentplane/sandbox_service:kubernetes_views",
         "//agentplane/sandbox_service:runner_endpoints",
