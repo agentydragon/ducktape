@@ -67,16 +67,16 @@ def test_public_internet_is_available_but_never_implicitly_granted(
     assert PUBLIC_INTERNET_POLICY not in _by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"]
     assert PUBLIC_INTERNET_POLICY not in _default_policies(docs)
     for doc in docs:
-        if doc["kind"] == "EgressBinding":
+        if doc["kind"] == "PolicyBinding":
             if namespace == "agentplane-staging" and doc["metadata"]["name"] == "public-coder-openclaw":
-                assert doc["spec"]["subjects"] == [{"namespace": "public-coder-agent", "name": "openclaw"}]
-                assert doc["spec"]["policies"] == [
+                assert doc["spec"]["subject"] == {"namespace": "public-coder-agent", "name": "openclaw"}
+                assert doc["spec"]["policySets"] == [
                     "public-coder-openclaw",
                     INFERENCE_EXPERIMENTS_POLICY,
                     PUBLIC_INTERNET_POLICY,
                 ]
             else:
-                assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policies"]
+                assert PUBLIC_INTERNET_POLICY not in doc["spec"]["policySets"]
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
@@ -239,9 +239,9 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     catalog = config["kubernetes_grants"]
     selected = config["sandbox_presets"][preset]["kubernetes_grants"]
     credential_grants = {"coinbase-credentials", "spend-policy-config"} if preset == "finance-agent" else set()
-    # Coinbase egress follows the Secret grant; haku-agent's EgressBinding carries none.
+    # Coinbase egress follows the Secret grant; haku-agent's egress PolicyBinding carries none.
     assert (COINBASE_POLICY in config["sandbox_presets"][preset]["egress_policies"]) == (preset == "finance-agent")
-    assert COINBASE_POLICY not in _by_name(docs, "EgressBinding", "haku-agent")["spec"]["policies"]
+    assert COINBASE_POLICY not in _by_name(docs, "PolicyBinding", "haku-agent")["spec"]["policySets"]
     assert set(selected) == set(config["sandbox_presets"]["public-coder"]["kubernetes_grants"]) | credential_grants
     assert len(selected) == len(set(selected))
     haku = config["sandbox_presets"]["haku"]["kubernetes_grants"]
@@ -353,8 +353,8 @@ def test_inference_is_granted_separately_from_platform_operations(
     basic = _by_name(docs, "EgressPolicy", BASIC_POLICY)
     assert INFERENCE_EXPERIMENTS_POLICY in _default_policies(docs)
     # Standing caller identities and static OpenClaw must receive the separate grant too.
-    for binding in (doc for doc in docs if doc["kind"] == "EgressBinding"):
-        policies = binding["spec"]["policies"]
+    for binding in (doc for doc in docs if doc["kind"] == "PolicyBinding"):
+        policies = binding["spec"]["policySets"]
         if BASIC_POLICY in policies or binding["metadata"]["name"] == "public-coder-openclaw":
             assert INFERENCE_EXPERIMENTS_POLICY in policies
     inference_hosts = {host for rule in granted["spec"]["rules"] for host in rule["hosts"]}
