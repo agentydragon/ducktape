@@ -39,6 +39,7 @@ from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
+from cluster.cdk8s.providers.prometheus_operator.prometheus_rule import PrometheusRule, Rule, group
 from cluster.cdk8s.secret_ref import SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 from cluster.cdk8s.vm_image_restart import OPT_IN_ANNOTATION, VmImageRestartController
@@ -234,6 +235,33 @@ def chart(app: App) -> Chart:
             ],
         ),
     )
+    PrometheusRule(
+        chart,
+        "prometheusrule",
+        metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE),
+        groups=[
+            group(
+                NAME,
+                [
+                    # The card is only in range while the CPAP is home, and it travels, so failed
+                    # runs are routine. Three weeks without one success is not.
+                    Rule.alert(
+                        "CpapSyncStale",
+                        f'time() - kube_cronjob_status_last_successful_time{{namespace="{NAMESPACE}", cronjob="{NAME}"}}'
+                        " > 21 * 86400",
+                        for_="1h",
+                        labels={"severity": "warning"},
+                        summary="cpap-sync has not succeeded in 3 weeks",
+                        description=(
+                            "No CPAP data has reached the cpap-data repo in over 21 days. If the CPAP has been home, "
+                            "check the gateway's state in Loki: "
+                            '{namespace="cpap-sync", container="guest-console-log"} |= "cpap-gateway-health".\n'
+                        ),
+                    )
+                ],
+            )
+        ],
+    )
     gateway = _gateway_vm(chart)
     VmImageRestartController(chart, "vm-image-restart-controller", target_vm=gateway)
     NetworkPolicy(
@@ -288,12 +316,16 @@ def chart(app: App) -> Chart:
 
 
 def cpap_sync(
-    chart: Chart, directory: RenderedDirectory, external_secrets_operator: Kustomization, kubevirt: Kustomization
+    chart: Chart,
+    directory: RenderedDirectory,
+    external_secrets_operator: Kustomization,
+    kubevirt: Kustomization,
+    monitoring_crds: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         directory,
         timeout="30m",
-        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, kubevirt),
+        depends_on=flux_kustomization_depends_on_many(external_secrets_operator, kubevirt, monitoring_crds),
     )
