@@ -175,7 +175,7 @@ function SetsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): JSX.E
       <Table.Thead>
         <Table.Tr>
           <Table.Th>Policy set</Table.Th>
-          <Table.Th visibleFrom="sm">Generation</Table.Th>
+          <Table.Th>Generation</Table.Th>
           <Table.Th>Ready</Table.Th>
         </Table.Tr>
       </Table.Thead>
@@ -191,12 +191,8 @@ function SetsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): JSX.E
                   {policySet.refused}
                 </Text>
               )}
-              {/* On a phone the generation folds under the name, leaving the verdict its width. */}
-              <Text size="xs" c="dimmed" hiddenFrom="sm">
-                generation {policySet.generation}
-              </Text>
             </Table.Td>
-            <Table.Td visibleFrom="sm">
+            <Table.Td>
               <Text size="sm">{policySet.generation}</Text>
             </Table.Td>
             <Table.Td>
