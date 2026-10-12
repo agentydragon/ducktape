@@ -47,12 +47,7 @@ def _summaries() -> Select[tuple[SessionHistory, ThreadHistorySummary, ThreadChe
 def _summary(
     history: SessionHistory, summary: ThreadHistorySummary | None, checkpoint: ThreadCheckpoint | None
 ) -> history_service_pb2.SessionSummary:
-    message = history_service_pb2.SessionSummary(
-        session_id=str(history.id),
-        sandbox_namespace=history.sandbox_namespace,
-        sandbox_name=history.sandbox_name,
-        committed_cursor=history.last_cursor,
-    )
+    message = history_service_pb2.SessionSummary(session_id=str(history.id), committed_cursor=history.last_cursor)
     if checkpoint is not None:
         message.projection_epoch = checkpoint.projection_epoch
         message.folded_through = checkpoint.through_cursor

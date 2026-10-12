@@ -109,7 +109,7 @@ async def _attached_thread() -> AsyncIterator[_Thread]:
         history = History(service.database_url)
         try:
             source, thread = ReplicationSource(Placements()), fixture_session_id(SANDBOX, SESSION)
-            await history.open(thread, sandbox=SANDBOX)
+            await history.open(thread)
             await history.set_attached(thread, source.attached)
             yield _Thread(service.url, history, source, thread)
         finally:

@@ -145,24 +145,15 @@ class Store:
             return row.last_cursor
 
     async def record_feed_state(self, session_id: UUID, feed: history_service_pb2.SessionFeedState) -> None:
-        """Record only a covered runner snapshot; delayed copiers cannot rewind it or drop a seal.
-
-        The snapshot may name the runner session or the public Session ID; it is stored under the
-        runner's where the row knows it (rows the retired follower created).
-        """
+        """Record only a covered runner snapshot; delayed copiers cannot rewind it or drop a seal."""
         snapshot = history_service_pb2.SessionFeedState()
         snapshot.CopyFrom(feed)
         async with self._sessions.begin() as session:
             row = await session.scalar(select(SessionHistory).where(SessionHistory.id == session_id).with_for_update())
             if row is None:
                 raise HistoryNotFoundError(session_id)
-            if not snapshot.HasField("attached") or snapshot.attached.session_id not in (
-                row.runner_session_id,
-                str(row.id),
-            ):
+            if not snapshot.HasField("attached") or snapshot.attached.session_id != str(row.id):
                 raise HistoryConflictError("feed snapshot does not match the bound runner session")
-            # Rows the ingress created know only the public ID.
-            snapshot.attached.session_id = row.runner_session_id or str(row.id)
             if snapshot.attached.last_cursor > row.last_cursor:
                 raise HistoryConflictError("feed snapshot is ahead of committed history")
             if snapshot.HasField("sealed") and snapshot.sealed.cursor != row.last_cursor:

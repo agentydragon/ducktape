@@ -1084,7 +1084,7 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     thread = await event_logs.seed(SANDBOX, SESSION)
-    await history.open(thread, sandbox=SANDBOX)
+    await history.open(thread)
     await register_gateway_session(history.engine, thread, sandbox=SANDBOX)
     command = command_pb2.Command(
         command_id="ahead-of-archive", interrupt_turn=command_pb2.InterruptTurn(turn_id="target")

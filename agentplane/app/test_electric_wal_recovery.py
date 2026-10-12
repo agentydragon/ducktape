@@ -139,7 +139,7 @@ async def _project_initial_item(history: History) -> tuple[UUID, ReplicationSour
     )
     source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="before outage")))
     thread = fixture_session_id(SANDBOX, SESSION)
-    await history.open(thread, sandbox=SANDBOX)
+    await history.open(thread)
     await history.set_attached(thread, source.attached)
     await history.record(thread, source.entries)
     return thread, source

@@ -15,7 +15,7 @@ from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.grpc_api import Resources, add_service
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
-from agentplane.history_service.testing.sessions import record_follower_session
+from agentplane.history_service.testing.sessions import WRITER
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2, history_service_pb2_grpc
@@ -90,17 +90,11 @@ def bearer(token: str) -> tuple[tuple[str, str], ...]:
     return (("authorization", f"Bearer {token}"),)
 
 
-async def test_reader_reads_history_of_a_deleted_sandbox(
-    stub: history_service_pb2_grpc.HistoryServiceAsyncStub, engine: AsyncEngine, history: Store
+async def test_reader_reads_unfolded_history(
+    stub: history_service_pb2_grpc.HistoryServiceAsyncStub, history: Store
 ) -> None:
     session_id = uuid4()
-    await record_follower_session(
-        engine,
-        session_id,
-        sandbox_namespace=SANDBOX_NAMESPACE,
-        sandbox_name="test-deleted-sandbox",
-        runner_session_id="test-legacy-runner",
-    )
+    await history.bind_writer(session_id, WRITER)
     await history.append(session_id, [EVENT])
 
     page = await stub.ReadSessionEvents(
@@ -119,11 +113,7 @@ async def test_reader_reads_history_of_a_deleted_sandbox(
         history_service_pb2.GetSessionSummaryRequest(session_id=str(session_id)), metadata=bearer(READER_TOKEN)
     )
     # Not folded yet: the lag is the whole committed prefix.
-    assert (summary.sandbox_name, summary.committed_cursor, summary.HasField("projection_epoch")) == (
-        "test-deleted-sandbox",
-        1,
-        False,
-    )
+    assert (summary.committed_cursor, summary.HasField("projection_epoch")) == (1, False)
 
 
 @pytest.mark.parametrize(

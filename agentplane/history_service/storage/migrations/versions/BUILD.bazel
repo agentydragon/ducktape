@@ -13,6 +13,7 @@ exports_files([
     "0010_drop_registry_columns.py",
     "0011_session_writer.py",
     "0012_drop_resumed_after_cursor.py",
+    "0013_feed_snapshot_public_ids.py",
 ])
 
 py_library(
@@ -109,4 +110,10 @@ py_library(
         "@pypi//alembic",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "0013_feed_snapshot_public_ids",
+    srcs = ["0013_feed_snapshot_public_ids.py"],
+    deps = ["@pypi//alembic"],
 )

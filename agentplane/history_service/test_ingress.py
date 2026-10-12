@@ -197,7 +197,7 @@ async def test_resume_announce_at_stopped_cursor_accepts_the_next_journal_entry(
         call = await push(stub, [stopped, *entries(1)])
         await call.acknowledged(1)
         call.call.cancel()
-        # A follower observed EOF before the runner resumed at the same cursor.
+        # EOF was recorded before the runner resumed at the same cursor.
         await Store(engine).record_feed_state(
             session_id, history_service_pb2.SessionFeedState(attached=stopped.announce, ended=True)
         )

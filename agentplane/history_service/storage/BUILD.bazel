@@ -68,7 +68,6 @@ py_test(
         "//:conftest",
         "//agentplane/history_service:channels",
         "//agentplane/history_service/testing:delta_spans",
-        "//agentplane/history_service/testing:sessions",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:history_service_pb2",
@@ -141,5 +140,21 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_database_migrate",
+    srcs = ["test_database_migrate.py"],
+    deps = [
+        ":conftest",
+        ":database_migrate",
+        "//:conftest",
+        "//agentplane/proto:history_service_pb2",
+        "//agentplane/proto:runner_pb2",
+        "@pypi//protobuf",
+        "@pypi//psycopg",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )

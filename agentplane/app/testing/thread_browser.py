@@ -20,7 +20,7 @@ import pytest
 from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
 
 from agentplane.app.testing import history_probe, thread_view_marks
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SANDBOX_NAMESPACE, SeededEventLogStore as EventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import (
@@ -41,7 +41,7 @@ from agentplane.history_service.testing.electric_service import (
     browser_electric_service,
     browser_postgres_server,
 )
-from agentplane.history_service.testing.history import SANDBOX_NAMESPACE, History
+from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.sandbox_service.client import SandboxServiceClient
 from util.bazel.runfiles import get_required_path

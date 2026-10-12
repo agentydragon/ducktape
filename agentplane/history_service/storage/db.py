@@ -17,8 +17,6 @@ class SessionHistory(Base):
     __tablename__ = "session_history"
     __table_args__ = (
         CheckConstraint("last_cursor >= 0", name="history_last_cursor_nonnegative"),
-        # A runner locator is a physical binding, not a durable identity. Rows the ingress created
-        # have no runner ID; imported locators with no UID still cannot be claimed twice.
         Index(
             "ux_history_runner_locator",
             "sandbox_namespace",
@@ -37,11 +35,11 @@ class SessionHistory(Base):
     )
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
-    # The Sandbox a follower copied the Session from; absent for a Session only pushed through the
-    # ingress, which knows writers, not Sandboxes.
+    # CLEANUP(added 2026-10-12): Drop the Sandbox locator and `runner_session_id`, with their index and
+    #   checks, once migration 0013 has run in agentplane-staging and agentplane-testing. Nothing reads
+    #   them; only rows the retired follower created set them.
     sandbox_namespace: Mapped[str | None] = mapped_column(String)
     sandbox_name: Mapped[str | None] = mapped_column(String)
-    # Nullable for imported records whose original Sandbox UID was not retained in app history.
     sandbox_uid: Mapped[UUID | None]
     runner_session_id: Mapped[str | None] = mapped_column(String)
     # The ServiceAccount whose first accepted ingress push bound the Session; absent until then.

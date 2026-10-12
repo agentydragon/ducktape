@@ -109,9 +109,5 @@ py_library(
 py_library(
     name = "sessions",
     srcs = ["sessions.py"],
-    deps = [
-        "//agentplane/history_service/storage:db",
-        "//agentplane/history_service/storage:store",
-        "@pypi//sqlalchemy",
-    ],
+    deps = ["//agentplane/history_service/storage:store"],
 )

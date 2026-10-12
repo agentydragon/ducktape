@@ -71,7 +71,7 @@ message SessionFeedState {
   // True only after runner EOF at exactly attached.last_cursor. False means
   // unconfirmed, not evidence of current connectivity or a running harness.
   bool ended = 2;
-  // The incarnation's seal, once a follower committed every entry through it. Sticky.
+  // The incarnation's seal, once history committed every entry through it. Sticky.
   .agentplane.proto.runner.Sealed sealed = 3;
 }
 
@@ -118,10 +118,8 @@ enum FeedStatus {
 
 message SessionSummary {
   string session_id = 1;
-  // Both or neither: the Sandbox a follower copied the Session from. A Session only pushed through
-  // the ingress names no Sandbox.
-  optional string sandbox_namespace = 2;
-  optional string sandbox_name = 3;
+  reserved 2, 3;
+  reserved "sandbox_namespace", "sandbox_name";
   // Committed raw history; the fold lags by `committed_cursor - folded_through`.
   uint64 committed_cursor = 4;
   // Absent until the fold has materialized an entry. A stalled fold reports its error in the

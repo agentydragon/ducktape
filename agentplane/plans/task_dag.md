@@ -650,7 +650,7 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 
 ```mermaid
 flowchart TD
-    HISTORY_SANDBOX_LOCATOR_DROP[Candidate: drop the Sandbox locator from the history database]
+    HISTORY_SANDBOX_LOCATOR_DROP[Waits on rollout: drop the Sandbox locator from the history database]
     HISTORY_DATABASE_RENAME[Blocked: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Candidate: name the sandbox_commands database for the Runner Gateway]
     ELECTRIC_DEPLOYMENT_RENAME[Candidate: give Electric its plain name]
@@ -663,13 +663,11 @@ flowchart TD
 
 ### `HISTORY_SANDBOX_LOCATOR_DROP` — rows name only their Session and writer
 
-**Candidate.** Under the ingress, a Session arrives under its client-minted public ID, which
-is also the runner's, and its row names the writer that pushed it. The Sandbox locator columns
-(`sandbox_namespace`, `sandbox_name`, `sandbox_uid`) and `runner_session_id` then only describe
-rows the followers wrote, and `source_id` is never set. Rewrite feed snapshots stored under a
-runner session ID under the public ID, then drop those columns with `ux_history_runner_locator`,
-and with them `SessionSummary`'s Sandbox fields, the summaries' Sandbox filter and
-`record_follower_session` in `history_service/testing`. Stops for the operator.
+**Waits on rollout.** Nothing reads or writes the Sandbox locator columns (`sandbox_namespace`,
+`sandbox_name`, `sandbox_uid`) or `runner_session_id` any more, and migration 0013 rewrote the
+feed snapshots stored under a runner session ID. Once 0013 has run in both environments, drop the
+columns with `ux_history_runner_locator`, `history_sandbox_complete` and `history_origin`. A data
+drop: take a CNPG `Backup` first, and the operator merges it.
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 

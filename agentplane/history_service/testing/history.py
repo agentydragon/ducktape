@@ -32,7 +32,7 @@ from agentplane.history_service.fold_runner import FoldRunner
 from agentplane.history_service.storage.database_migrate import RUNNER
 from agentplane.history_service.storage.db import SessionHistory
 from agentplane.history_service.storage.store import Store
-from agentplane.history_service.testing.sessions import record_follower_session
+from agentplane.history_service.testing.sessions import WRITER
 from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_log_pb2, history_service_pb2, runner_pb2
 from util.testing.postgres import PostgresDatabaseTemplate, migrated_database_template
@@ -40,7 +40,6 @@ from util.testing.postgres import PostgresDatabaseTemplate, migrated_database_te
 # gazelle:include_dep @pypi//asyncpg
 # gazelle:include_dep @pypi//protobuf
 
-SANDBOX_NAMESPACE = "test-history-sandbox-namespace"
 FOLD_INTERVAL_S = 0.05
 
 
@@ -67,18 +66,12 @@ class History:
         self._folding = asyncio.Lock()
         self._attachments: dict[UUID, runner_pb2.Attached] = {}
 
-    async def open(self, session_id: UUID, *, sandbox: str) -> None:
-        """Register the Session unless a Sandbox Service already did."""
+    async def open(self, session_id: UUID) -> None:
+        """Bind the Session to the test writer unless a writer already pushed it."""
         async with self.sessions() as session:
             if await session.get(SessionHistory, session_id) is not None:
                 return
-        await record_follower_session(
-            self.engine,
-            session_id,
-            sandbox_namespace=SANDBOX_NAMESPACE,
-            sandbox_name=sandbox,
-            runner_session_id=str(session_id),
-        )
+        await self.store.bind_writer(session_id, WRITER)
 
     async def fold(self) -> None:
         """Fold every Session until none is behind, then hand the leases back for the next folder."""

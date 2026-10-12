@@ -12,11 +12,13 @@ from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.summaries import Summaries
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.history_service.testing.history import SANDBOX_NAMESPACE, History
+from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import notify
 
 # Aliased: the gateway's Session row, beside SQLAlchemy sessions.
 from agentplane.runner_gateway.commands.db import Session as GatewaySession
+
+SANDBOX_NAMESPACE = "test-history-sandbox-namespace"
 
 
 def fixture_session_id(sandbox: str, session_id: str) -> UUID:
@@ -72,7 +74,7 @@ class SeededEventLogStore(EventLogStore):
         `session_id` is an alias."""
         public_id = fixture_session_id(sandbox, session_id)
         if self.history is not None:
-            await self.history.open(public_id, sandbox=sandbox)
+            await self.history.open(public_id)
             if isinstance(self.gateway, Placements):
                 self.gateway.sandboxes[public_id] = sandbox
             else:

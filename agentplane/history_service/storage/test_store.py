@@ -17,7 +17,6 @@ from agentplane.history_service.storage.store import (
     WriterMismatchError,
 )
 from agentplane.history_service.testing.delta_spans import claude_text
-from agentplane.history_service.testing.sessions import record_follower_session
 from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2, runner_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -216,27 +215,23 @@ async def test_feed_snapshot_requires_covered_bound_history_and_cannot_regress(e
 
 
 @pytest.mark.asyncio
-async def test_followed_snapshot_is_stored_under_runner_id_and_seal_is_sticky(engine: AsyncEngine) -> None:
+async def test_seal_ends_committed_history_and_is_sticky(engine: AsyncEngine) -> None:
     store = Store(engine)
     session_id = uuid4()
-    await record_follower_session(
-        engine, session_id, sandbox_namespace="testing", sandbox_name="gone", runner_session_id="original-native-path"
-    )
+    await store.bind_writer(session_id, WRITER)
     await store.append(session_id, [entry(1), entry(2)])
-    # A Sandbox Service follow names the public Session ID; a direct runner attach the runner's.
-    followed = history_service_pb2.SessionFeedState(
+    sealed = history_service_pb2.SessionFeedState(
         attached=runner_pb2.Attached(session_id=str(session_id), last_cursor=1)
     )
     with pytest.raises(HistoryConflictError, match="seal"):
         await store.record_feed_state(
             session_id,
-            history_service_pb2.SessionFeedState(attached=followed.attached, sealed=runner_pb2.Sealed(cursor=1)),
+            history_service_pb2.SessionFeedState(attached=sealed.attached, sealed=runner_pb2.Sealed(cursor=1)),
         )
-    followed.sealed.cursor = 2
-    await store.record_feed_state(session_id, followed)
-    assert (await store.read_page(session_id)).feed_state.attached.session_id == "original-native-path"
+    sealed.sealed.cursor = 2
+    await store.record_feed_state(session_id, sealed)
     direct = history_service_pb2.SessionFeedState(
-        attached=runner_pb2.Attached(session_id="original-native-path", last_cursor=2)
+        attached=runner_pb2.Attached(session_id=str(session_id), last_cursor=2)
     )
     await store.record_feed_state(session_id, direct)
     stored = (await store.read_page(session_id)).feed_state
