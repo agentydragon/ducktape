@@ -190,6 +190,9 @@ class TestingNamespaceResourceLimits(Construct):
         #
         # The LimitRange supplies defaults for containers that omit them (the CNPG
         # postgres container declares none); its mutations are applied before quota validation.
+        # No per-container minimum: KubeVirt's virt-launcher helper containers request 1m CPU
+        # and 1M memory. The 4Gi container max also caps VM size: KubeVirt v1.8.2 gave a 2Gi
+        # guest's compute container a 4632Mi limit here, which this LimitRange rejected.
         k8s.KubeResourceQuota(
             self,
             "resourcequota",
@@ -213,7 +216,6 @@ class TestingNamespaceResourceLimits(Construct):
                     k8s.LimitRangeItem(
                         type="Container",
                         max={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
-                        min={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("16Mi")},
                         default={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("512Mi")},
                         default_request={
                             "cpu": k8s.Quantity.from_string("100m"),

@@ -5024,9 +5024,6 @@ spec:
       max:
         cpu: "2"
         memory: 4Gi
-      min:
-        cpu: 10m
-        memory: 16Mi
       type: Container
     - max:
         cpu: "4"
