@@ -150,6 +150,18 @@ def chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
                 tls=ListenerTls.terminate("apex-allegedly-works-tls"),
                 allowed_routes=all_namespaces,
             ),
+            # The homepage's own domains; each pair of listeners shares one certificate.
+            *(
+                Listener.https(
+                    name=f"https-{hostname.replace('.', '-')}",
+                    hostname=hostname,
+                    port=443,
+                    tls=ListenerTls.terminate(f"{domain.replace('.', '-')}-tls"),
+                    allowed_routes=all_namespaces,
+                )
+                for domain in ("agentydragon.com", "adgn.link")
+                for hostname in (domain, f"www.{domain}")
+            ),
             Listener.http(name=_HTTP_LISTENER, port=80, allowed_routes=all_namespaces),
         ],
     )

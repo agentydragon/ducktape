@@ -4,13 +4,22 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
+from gateway_api_crds.io.k8s.networking.gateway import (
+    HttpRouteSpecRules,
+    HttpRouteSpecRulesFilters,
+    HttpRouteSpecRulesFiltersRequestRedirectPath,
+    HttpRouteSpecRulesFiltersRequestRedirectPathType,
+    HttpRouteSpecRulesFiltersRequestRedirectScheme,
+    HttpRouteSpecRulesFiltersRequestRedirectStatusCode,
+)
 
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry.chart import SECRET_NAME, forgejo_images_creds_external_secret
-from cluster.cdk8s.gateway import https_route
+from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
+from cluster.cdk8s.providers.gateway_api.http_route import HttpRoute, RouteFilter, RouteMatch
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/website"
@@ -18,6 +27,18 @@ PINS_DIR = f"{HAND_WRITTEN_ROOT}/website-image-pins"
 _NAME = "website"
 _NAMESPACE = "website"
 HOSTNAME = "www.allegedly.works"
+_CANONICAL_HOSTNAME = "www.agentydragon.com"
+_MOVED_PERMANENTLY = HttpRouteSpecRulesFiltersRequestRedirectStatusCode.VALUE_301
+_FOUND = HttpRouteSpecRulesFiltersRequestRedirectStatusCode.VALUE_302
+# Short links printed on stickers and an NFC armband: these paths must keep resolving.
+# path -> (redirect hostname, redirect path)
+_SHORT_LINKS = {
+    "/found": (_CANONICAL_HOSTNAME, "/found.html"),
+    "/nfc": (_CANONICAL_HOSTNAME, "/nfc.html"),
+    "/furry-rationalists-telegram": ("furryrationalists.proofgrid.tech", "/"),
+    "/effective-anthropomorphism-discord": ("discord.com", "/invite/Mcdsh757Ht"),
+    "/l": ("llm.agentydragon.com", "/"),
+}
 _SERVICE = ServiceRef(
     name=_NAME,
     port=Port(name="http", number=80),
@@ -97,12 +118,52 @@ def chart(app: App) -> Chart:
         chart,
         "route",
         metadata=ApiObjectMetadata(name=_NAME, namespace=_NAMESPACE),
-        hostnames=[HOSTNAME, "allegedly.works"],
+        hostnames=[HOSTNAME, "allegedly.works", _CANONICAL_HOSTNAME],
         backend=_SERVICE,
         hsts=False,
         listener=None,
     )
+    HttpRoute(
+        chart,
+        "apex-redirect",
+        metadata=ApiObjectMetadata(name="apex-redirect", namespace=_NAMESPACE),
+        parent_refs=[cluster_gateway_parent_ref()],
+        hostnames=["agentydragon.com"],
+        rules=[HttpRouteSpecRules(filters=[_redirect(_CANONICAL_HOSTNAME, None, _MOVED_PERMANENTLY)])],
+    )
+    HttpRoute(
+        chart,
+        "short-links",
+        metadata=ApiObjectMetadata(name="short-links", namespace=_NAMESPACE),
+        parent_refs=[cluster_gateway_parent_ref()],
+        hostnames=["adgn.link", "www.adgn.link"],
+        rules=[
+            HttpRouteSpecRules(filters=[_redirect(_CANONICAL_HOSTNAME, "/", _MOVED_PERMANENTLY)]),
+            *(
+                HttpRouteSpecRules(
+                    matches=[RouteMatch.path_prefix(path)], filters=[_redirect(hostname, target, _FOUND)]
+                )
+                for path, (hostname, target) in _SHORT_LINKS.items()
+            ),
+        ],
+    )
     return chart
+
+
+def _redirect(
+    hostname: str, path: str | None, status_code: HttpRouteSpecRulesFiltersRequestRedirectStatusCode
+) -> HttpRouteSpecRulesFilters:
+    """An HTTPS redirect to `hostname`, at `path` or, when it is None, the request's own path."""
+    return RouteFilter.request_redirect(
+        scheme=HttpRouteSpecRulesFiltersRequestRedirectScheme.HTTPS,
+        hostname=hostname,
+        status_code=status_code,
+        path=None
+        if path is None
+        else HttpRouteSpecRulesFiltersRequestRedirectPath(
+            type=HttpRouteSpecRulesFiltersRequestRedirectPathType.REPLACE_FULL_PATH, replace_full_path=path
+        ),
+    )
 
 
 def website(

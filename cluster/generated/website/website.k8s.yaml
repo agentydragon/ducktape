@@ -104,6 +104,7 @@ spec:
   hostnames:
     - www.allegedly.works
     - allegedly.works
+    - www.agentydragon.com
   parentRefs:
     - name: cluster-gateway
       namespace: gateway-system
@@ -111,3 +112,110 @@ spec:
     - backendRefs:
         - name: website
           port: 80
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: apex-redirect
+  namespace: website
+spec:
+  hostnames:
+    - agentydragon.com
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - filters:
+        - requestRedirect:
+            hostname: www.agentydragon.com
+            scheme: https
+            statusCode: 301
+          type: RequestRedirect
+---
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: short-links
+  namespace: website
+spec:
+  hostnames:
+    - adgn.link
+    - www.adgn.link
+  parentRefs:
+    - name: cluster-gateway
+      namespace: gateway-system
+  rules:
+    - filters:
+        - requestRedirect:
+            hostname: www.agentydragon.com
+            path:
+              replaceFullPath: /
+              type: ReplaceFullPath
+            scheme: https
+            statusCode: 301
+          type: RequestRedirect
+    - filters:
+        - requestRedirect:
+            hostname: www.agentydragon.com
+            path:
+              replaceFullPath: /found.html
+              type: ReplaceFullPath
+            scheme: https
+            statusCode: 302
+          type: RequestRedirect
+      matches:
+        - path:
+            type: PathPrefix
+            value: /found
+    - filters:
+        - requestRedirect:
+            hostname: www.agentydragon.com
+            path:
+              replaceFullPath: /nfc.html
+              type: ReplaceFullPath
+            scheme: https
+            statusCode: 302
+          type: RequestRedirect
+      matches:
+        - path:
+            type: PathPrefix
+            value: /nfc
+    - filters:
+        - requestRedirect:
+            hostname: furryrationalists.proofgrid.tech
+            path:
+              replaceFullPath: /
+              type: ReplaceFullPath
+            scheme: https
+            statusCode: 302
+          type: RequestRedirect
+      matches:
+        - path:
+            type: PathPrefix
+            value: /furry-rationalists-telegram
+    - filters:
+        - requestRedirect:
+            hostname: discord.com
+            path:
+              replaceFullPath: /invite/Mcdsh757Ht
+              type: ReplaceFullPath
+            scheme: https
+            statusCode: 302
+          type: RequestRedirect
+      matches:
+        - path:
+            type: PathPrefix
+            value: /effective-anthropomorphism-discord
+    - filters:
+        - requestRedirect:
+            hostname: llm.agentydragon.com
+            path:
+              replaceFullPath: /
+              type: ReplaceFullPath
+            scheme: https
+            statusCode: 302
+          type: RequestRedirect
+      matches:
+        - path:
+            type: PathPrefix
+            value: /l

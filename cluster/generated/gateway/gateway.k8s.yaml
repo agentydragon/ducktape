@@ -42,6 +42,50 @@ spec:
     - allowedRoutes:
         namespaces:
           from: All
+      hostname: agentydragon.com
+      name: https-agentydragon-com
+      port: 443
+      protocol: HTTPS
+      tls:
+        certificateRefs:
+          - name: agentydragon-com-tls
+        mode: Terminate
+    - allowedRoutes:
+        namespaces:
+          from: All
+      hostname: www.agentydragon.com
+      name: https-www-agentydragon-com
+      port: 443
+      protocol: HTTPS
+      tls:
+        certificateRefs:
+          - name: agentydragon-com-tls
+        mode: Terminate
+    - allowedRoutes:
+        namespaces:
+          from: All
+      hostname: adgn.link
+      name: https-adgn-link
+      port: 443
+      protocol: HTTPS
+      tls:
+        certificateRefs:
+          - name: adgn-link-tls
+        mode: Terminate
+    - allowedRoutes:
+        namespaces:
+          from: All
+      hostname: www.adgn.link
+      name: https-www-adgn-link
+      port: 443
+      protocol: HTTPS
+      tls:
+        certificateRefs:
+          - name: adgn-link-tls
+        mode: Terminate
+    - allowedRoutes:
+        namespaces:
+          from: All
       name: http
       port: 80
       protocol: HTTP
