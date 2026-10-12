@@ -116,7 +116,7 @@ def cluster(
     except `initdb` (`bootstrap.initdb`; `None` leaves CNPG's default, an `app` database and
     owner), `storage_class`/`size` (`storage`), `placement` (the zone or region pin), from which
     `_affinity` derives placement, and `wal_archive`, which makes the barman-cloud plugin archive
-    WAL to the ObjectStore named `ref.name`. Our policy: 2 instances
+    WAL to the ObjectStore named `ref.name` (`cnpg_backup.CnpgBackup` builds it). Our policy: 2 instances
     (cluster/docs/cnpg_conventions.md R2) on `POSTGRES_IMAGE`; `image_name=None` runs the
     operator's default image. Every Cluster disables the liveness isolation check -- CNPG 1.27+
     otherwise kills a primary it considers isolated on a transient network blip -- and enables

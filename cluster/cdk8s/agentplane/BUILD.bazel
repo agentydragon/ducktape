@@ -10,10 +10,9 @@ py_library(
     deps = [
         ":database",
         ":staging",
+        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/cnpg:objectstore",
-        "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
     ],
 )

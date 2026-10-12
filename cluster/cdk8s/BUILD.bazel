@@ -322,6 +322,20 @@ py_library(
 )
 
 py_library(
+    name = "cnpg_backup",
+    srcs = ["cnpg_backup.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+    deps = [
+        ":cnpg",
+        "//cluster/cdk8s/providers/cnpg:objectstore",
+        "//cluster/cdk8s/providers/cnpg:scheduledbackup",
+        "//cluster/cdk8s/seaweedfs:s3",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "api_resource",
     srcs = ["api_resource.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
