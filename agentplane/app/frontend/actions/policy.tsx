@@ -165,9 +165,10 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
 /** Every set a binding names, once each, with the verdict the Action Service wrote on it. */
 function SetsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): JSX.Element | null {
   // An ActionPolicySet and a PolicySet may share a name; each is its own row.
-  const sets = new Map<string, ActionPolicySetView>();
+  const sets = new Map<string, { kind: ActionPolicyBindingView["kind"]; policySet: ActionPolicySetView }>();
   for (const binding of bindings)
-    for (const policySet of binding.policy_sets) sets.set(`${binding.kind}/${policySet.name}`, policySet);
+    for (const policySet of binding.policy_sets)
+      sets.set(`${binding.kind}/${policySet.name}`, { kind: binding.kind, policySet });
   if (sets.size === 0) return null;
   return (
     <Table>
@@ -179,7 +180,7 @@ function SetsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): JSX.E
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
-        {[...sets].map(([key, policySet]) => (
+        {[...sets].map(([key, { kind, policySet }]) => (
           <Table.Tr key={key}>
             <Table.Td>
               <Text size="sm" fw={600}>
@@ -199,7 +200,14 @@ function SetsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): JSX.E
               <Text size="sm">{policySet.generation}</Text>
             </Table.Td>
             <Table.Td>
-              <Ready ready={policySet.ready} generation={policySet.generation} />
+              {kind === "PolicyBinding" ? (
+                // A PolicySet has no status object to judge: parsing is its whole verdict.
+                <Badge color={policySet.refused ? "red" : "green"} style={WHOLE_BADGE}>
+                  {policySet.refused ? "refused" : "Valid"}
+                </Badge>
+              ) : (
+                <Ready ready={policySet.ready} generation={policySet.generation} />
+              )}
             </Table.Td>
           </Table.Tr>
         ))}
