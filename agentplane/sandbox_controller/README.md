@@ -6,9 +6,9 @@ Reconciles `Sandbox` into a state PVC that outlives every incarnation, its own S
 [Sandbox Service](../sandbox_service/README.md) is moving into, and does not yet do what that
 service does around a Sandbox: launch binding. Its runner template reaches platform services over
 the egress sidecar's platform routes. `spec.sessionDefaults` and
-`spec.bootstrap` are the Runner Gateway's to read; the controller only carries them. Until
-`CreateSandbox` writes our kind, nothing creates these Sandboxes; the Sandbox Service, Runner
-Gateway and app already read them. Deletion waits for the
+`spec.bootstrap` are the Runner Gateway's to read; the controller only carries them. The Sandbox
+Service's `CreateSandbox` writes these Sandboxes where its `own_sandboxes` setting is on (testing);
+the Sandbox Service, Runner Gateway and app read both kinds. Deletion waits for the
 [Runner Gateway](../runner_gateway/README.md)'s `SessionsSealed` condition.
 
 Because the Runner Gateway sets that condition only once the History Service's ingress has

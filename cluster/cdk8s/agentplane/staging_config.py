@@ -105,6 +105,7 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
         models=models,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
+        own_sandboxes=False,
         action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
         kubernetes_grants={TOOL_CONFIG_GRANT: tool_config_grant(namespace), **agent_access_profiles.catalog()},
     )

@@ -701,8 +701,7 @@ lands on testing first, and staging gets the controller and the cutover only onc
 (operator, 2026-10-12 PDT: testing down beats staging down). Where the app's `own_sandboxes`
 setting is on, the create form offers the namespace's `PolicySet`s in place of the three grant
 pickers and presets fill `policy_sets`; the acceptance suite asks for policy sets wherever the form
-offers them. Left: testing turns that setting on, its public-coder preset names policy sets, and the
-app reads `PolicySet`s.
+offers them; testing has it on.
 
 ### `AGENT_SANDBOX_RETIRE` — Agentplane stops using agent-sandbox
 
