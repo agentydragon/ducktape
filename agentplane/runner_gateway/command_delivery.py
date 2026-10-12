@@ -15,7 +15,7 @@ from uuid import UUID
 from sqlalchemy.engine import URL
 
 from agentplane.postgres.listener import PostgresListener
-from agentplane.proto import event_log_pb2, runner_control_pb2 as control_pb2
+from agentplane.proto import event_log_pb2, runner_control_pb2
 from agentplane.runner_gateway.commands.dispatch import (
     DISPATCH_CHANNEL,
     OUTCOME_CHANNEL,
@@ -38,8 +38,8 @@ class CommandRefusedError(Exception):
     """The runner did not admit this delivery. The submission stays pending: a stopped harness
     may run again, and an exact retry reopens the attempt."""
 
-    def __init__(self, refusal: control_pb2.CommandRefused) -> None:
-        super().__init__(control_pb2.CommandRefused.Reason.Name(refusal.reason))
+    def __init__(self, refusal: runner_control_pb2.CommandRefused) -> None:
+        super().__init__(runner_control_pb2.CommandRefused.Reason.Name(refusal.reason))
         self.refusal = refusal
 
 

@@ -34,7 +34,7 @@ from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.settings import Settings
 from agentplane.app.shutdown import drain_of
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.session_discovery import SessionDiscovery
@@ -42,7 +42,7 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
@@ -181,7 +181,7 @@ def sigterm_is_survivable() -> Iterator[None]:
 
 
 @pytest.fixture
-def database_updates(engine: AsyncEngine) -> Wakeups:
+def database_updates(engine: AsyncEngine) -> WakeupListener:
     # Unlike the route-only fixtures, this test runs the production owner of the listener scope.
     return create_database_updates(engine.url)
 
@@ -212,7 +212,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_disc
     inventory: SandboxServiceClient,
     runners: SandboxSessions,
     store: ThreadStore,
-    database_updates: Wakeups,
+    database_updates: WakeupListener,
     engine: AsyncEngine,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
@@ -221,7 +221,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_disc
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     database: AsyncEngine,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,

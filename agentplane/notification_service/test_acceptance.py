@@ -24,14 +24,14 @@ from agentplane.action_service.models import DecisionInput, OperatorPrincipal, V
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.testing.fixtures import RecordingExecutor
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.db import Inbox
 from agentplane.notification_service.service import Service
-from agentplane.notification_service.settings import NoticeDebounceSettings
-from agentplane.notification_service.sources.actions import Actions
+from agentplane.notification_service.settings import NoticeDebounceSettings, QuotaSettings
+from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.store import Store
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
@@ -99,7 +99,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
             DisabledOperatorAuthenticator(),
             echo_catalog,
             callers=admitted_callers(owner, other),
-            updates=ActionUpdates("postgresql://unused-listener"),
+            updates=ActionUpdateBroker("postgresql://unused-listener"),
             direct_wait_seconds=0,
             max_wait_seconds=30,
             reader_accounts=frozenset({delegate}),
@@ -129,14 +129,16 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
             history_service(sandbox_service_db_url, tmp_path / "history-token") as history,
             history_wakeups.listener.listen(),
         ):
-            source = Actions(action_http, token_file)
+            source = ActionServiceClient(action_http, token_file)
             service = Service(
                 store,
                 source,
                 remote,
+                github=None,
                 history=history,
                 notice_debounce=NoticeDebounceSettings(quiet_seconds=0),
                 stale_confirmation_s=30,
+                operator_reader_account=None,
             )
             api = create_app(service, resolver)
             async with httpx.AsyncClient(
@@ -344,12 +346,14 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 await model.reply(notice_request, Text("Notifications received"))
                 # A fresh service object has no in-memory delivery state to lean on.
                 recovered = Service(
-                    Store(engine),
+                    Store(engine, quotas=QuotaSettings()),
                     source,
                     remote,
+                    github=None,
                     history=history,
                     notice_debounce=service.notice_debounce,
                     stale_confirmation_s=service.stale_confirmation_s,
+                    operator_reader_account=None,
                 )
                 inbox_id = UUID(hint["inbox_id"])
                 page = None

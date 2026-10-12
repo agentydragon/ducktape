@@ -43,9 +43,9 @@ py_library(
     srcs = ["harness.py"],
     deps = [
         ":responses",
-        "//agentplane/native/codex:async_run",
-        "//agentplane/native/codex:dynamic_tools",
         "//agentplane/native/codex:scenarios",
+        "//agentplane/native/codex/testing:async_run",
+        "//agentplane/native/codex/testing:dynamic_tools",
     ],
 )
 
@@ -219,8 +219,8 @@ py_test(
         ":responses_sse",
         "//:conftest",
         "//agentplane/harness_tests:conftest",
-        "//agentplane/native/codex:dynamic_tools",
         "//agentplane/native/codex:wire",
+        "//agentplane/native/codex/testing:dynamic_tools",
         "@pypi//pytest_bazel",
     ],
 )
@@ -262,9 +262,9 @@ py_test(
         ":responses_sse",
         "//:conftest",
         "//agentplane/harness_tests:conftest",
-        "//agentplane/native:async_process",
         "//agentplane/native/codex:driver",
         "//agentplane/native/codex:scenarios",
+        "//agentplane/native/testing:async_process",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

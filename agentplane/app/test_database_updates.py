@@ -9,11 +9,11 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.app.database_updates import Channel
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.thread_test_support import Replica, event_entry
 from agentplane.app.threads.store import ThreadStore
 from agentplane.history_service.testing.history import History
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import event_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -21,7 +21,11 @@ from agentplane.proto import event_pb2
 
 
 async def test_commits_wake_another_replica_and_leave_durable_replay(
-    store: ThreadStore, event_logs: EventLogStore, history: History, replica: Replica, database_updates: Wakeups
+    store: ThreadStore,
+    event_logs: SeededEventLogStore,
+    history: History,
+    replica: Replica,
+    database_updates: WakeupListener,
 ) -> None:
     changed, sessions_changed = asyncio.Event(), asyncio.Event()
     with (
@@ -48,7 +52,7 @@ async def test_commits_wake_another_replica_and_leave_durable_replay(
 
 
 async def test_listener_reconnect_wakes_every_channel_for_writes_during_the_gap(
-    store: ThreadStore, event_logs: EventLogStore, replica: Replica, database_updates: Wakeups, db_url: str
+    store: ThreadStore, event_logs: SeededEventLogStore, replica: Replica, database_updates: WakeupListener, db_url: str
 ) -> None:
     thread = await event_logs.seed("sb-1", "s-1")
     engine = create_async_engine(db_url)
@@ -65,7 +69,7 @@ async def test_listener_reconnect_wakes_every_channel_for_writes_during_the_gap(
                         "WHERE datname = current_database() AND application_name = 'agentplane-database-updates'"
                     )
                 )
-            # Wait on the termination callback itself, rather than an untagged Changes wakeup:
+            # Wait on the termination callback itself, rather than an untagged ChangeSignal wakeup:
             # a previous database notification can arrive after the subscription starts.
             await asyncio.wait_for(database_updates.listener.wait_until_disconnected(), timeout=5)
             assert not database_updates.listener.connected

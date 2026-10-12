@@ -130,14 +130,11 @@ async def journal_of(runner: Runner, session_id: str) -> list[event_log_pb2.Even
 
 @pytest.fixture
 async def runner(config: RunnerConfig) -> AsyncIterator[Runner]:
-    runner = Runner(config)
-    try:
+    async with Runner(config) as runner:
         for session_id in (A, B):
             runner.store.write(session_id, SessionRecord.from_spec(SPEC))
             await journal_stderr(runner, session_id, JOURNALED)
         yield runner
-    finally:
-        await runner.stop()
 
 
 @pytest.fixture
@@ -224,14 +221,11 @@ async def test_flushed_reports_the_acknowledged_seal_across_a_restart(
             await asyncio.gather(*pusher.pushes.values())
     assert {seal.session_id: seal.flushed for seal in (await runner.seal()).sessions} == {A: True, B: True}
     await runner.stop()
-    restarted = Runner(config)
-    try:
+    async with Runner(config) as restarted:
         assert {seal.session_id: (seal.cursor, seal.flushed) for seal in (await restarted.seal()).sessions} == {
             A: (JOURNALED, True),
             B: (JOURNALED, True),
         }
-    finally:
-        await restarted.stop()
 
 
 async def test_an_unreachable_ingress_holds_up_neither_journaling_nor_seal(runner: Runner) -> None:

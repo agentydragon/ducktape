@@ -144,8 +144,8 @@ def _http_auth(config: McpHttpServerConfigValue) -> str | None:
     if isinstance(config, McpHttpStaticBearerServerConfig):
         try:
             token = config.bearer_file.read_text().strip()
-        except OSError:
-            raise ValueError("configured MCP static bearer file is unavailable") from None
+        except OSError as error:
+            raise ValueError("configured MCP static bearer file is unavailable") from error
         if not token:
             raise ValueError("configured MCP static bearer file is empty")
         return token
@@ -308,21 +308,14 @@ class McpActionGroupExecutor(Executor):
         try:
             self._start()
         except BaseException:
-            await self._close_redacted()
+            await self.close()
             raise
         return self
 
     async def __aexit__(
         self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
     ) -> None:
-        await self._close_redacted()
-
-    async def _close_redacted(self) -> None:
-        try:
-            await self.close()
-        except Exception:
-            # The pinned HTTP client can re-raise a terminal transport failure during shutdown.
-            raise RuntimeError(f"ActionGroup {self._group_key!r} MCP shutdown failed") from None
+        await self.close()
 
     async def close(self) -> None:
         self.begin_drain()
@@ -348,7 +341,7 @@ class McpActionGroupExecutor(Executor):
             async with asyncio.timeout(CLEANUP_TIMEOUT.total_seconds()):
                 await connection.stack.aclose()
         except Exception:
-            logger.warning("MCP connection cleanup failed for %s", self._group_key)
+            logger.warning("MCP connection cleanup failed for %s", self._group_key, exc_info=True)
 
     async def _retire(self, connection: _Connection) -> None:
         try:
@@ -662,7 +655,7 @@ class McpActionGroupExecutor(Executor):
             result = await client.call_tool_mcp(name, request.arguments)
         except Exception as error:
             self._session_failed(connection, error)
-            raise ExecutionOutcomeUnknownError(f"MCP tools/call transport failure for {name}") from None
+            raise ExecutionOutcomeUnknownError(f"MCP tools/call transport failure for {name}") from error
 
         if result.is_error and _mcp_error_kind(result) == "execution_unknown":
             raise ExecutionOutcomeUnknownError("MCP backend reported an unknown execution outcome")

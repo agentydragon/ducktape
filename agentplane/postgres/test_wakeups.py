@@ -8,7 +8,7 @@ from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-from agentplane.postgres.wakeups import Wakeups, notify
+from agentplane.postgres.wakeups import WakeupListener, notify
 
 # The engine loads the asyncpg dialect from the URL's driver name.
 # gazelle:include_dep @pypi//asyncpg
@@ -19,7 +19,9 @@ FIRST, SECOND = "wakeups_test_first", "wakeups_test_second"
 async def test_commits_wake_their_channel_on_every_replica(postgres_admin_url: str) -> None:
     url = make_url(postgres_admin_url)
     engine = create_async_engine(url.set(drivername="postgresql+asyncpg"))
-    replicas = [Wakeups(url, channels=(FIRST, SECOND), application_name=f"wakeups-test-{uuid4().hex}") for _ in "ab"]
+    replicas = [
+        WakeupListener(url, channels=(FIRST, SECOND), application_name=f"wakeups-test-{uuid4().hex}") for _ in "ab"
+    ]
     first_a, first_b, second_a = asyncio.Event(), asyncio.Event(), asyncio.Event()
     try:
         async with replicas[0].listener.listen(), replicas[1].listener.listen():
@@ -45,7 +47,7 @@ async def test_commits_wake_their_channel_on_every_replica(postgres_admin_url: s
 async def test_reconnect_wakes_every_channel(postgres_admin_url: str) -> None:
     url = make_url(postgres_admin_url)
     name = f"wakeups-test-{uuid4().hex}"
-    wakeups = Wakeups(url, channels=(FIRST, SECOND), application_name=name)
+    wakeups = WakeupListener(url, channels=(FIRST, SECOND), application_name=name)
     engine = create_async_engine(url.set(drivername="postgresql+asyncpg"))
     first, second = asyncio.Event(), asyncio.Event()
     try:

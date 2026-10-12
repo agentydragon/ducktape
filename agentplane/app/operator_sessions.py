@@ -39,7 +39,7 @@ from starlette.types import ASGIApp
 
 from agentplane.app.database import Base
 from agentplane.app.database_updates import Channel
-from agentplane.changes import Changes
+from agentplane.changes import ChangeSignal
 from agentplane.postgres.wakeups import notify
 
 # How long a login may take from /auth/login to its callback.
@@ -269,7 +269,7 @@ class OperatorSessionStore:
             if await db.scalar(ended) is not None:
                 await notify(db, Channel.OPERATOR_SESSIONS)
 
-    async def until_ended(self, session_id: str, changes: Changes) -> None:
+    async def until_ended(self, session_id: str, changes: ChangeSignal) -> None:
         """Return once the session's row is deleted, on any replica, or its current `expires_at` has
         passed. Each wake from `changes` (the sessions channel) and each deadline re-reads the row."""
         changed = asyncio.Event()

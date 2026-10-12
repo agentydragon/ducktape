@@ -27,7 +27,7 @@ from agentplane.action_service.mcp_settings import McpClientMetadataSettings, Mc
 from agentplane.action_service.models import OperatorPrincipal
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 
@@ -112,6 +112,7 @@ async def linkage(engine: AsyncEngine, cimd_advertised: bool) -> AsyncIterator[M
                 url=AnyHttpUrl(cimd_client_id), client_name="Test Agentplane application"
             ),
             http=http,
+            engine=engine,
         )
 
 
@@ -127,7 +128,7 @@ async def callback_client(
         DisabledOperatorAuthenticator(),
         catalog,
         callers=admitted_callers(),
-        updates=ActionUpdates(db_url),
+        updates=ActionUpdateBroker(db_url),
         direct_wait_seconds=30,
         max_wait_seconds=30,
         mcp_linkage=linkage,

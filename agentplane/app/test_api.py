@@ -27,7 +27,7 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.session_discovery import SessionDiscovery
@@ -36,7 +36,7 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc_serving import serving
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import event_log_pb2, runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2, sandbox_service_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -139,7 +139,7 @@ def client(
     inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
-    database_updates: Wakeups,
+    database_updates: WakeupListener,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
@@ -151,7 +151,7 @@ def client(
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: Path,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
 ) -> Iterator[TestClient]:
     custom_objects.objects[("sandboxes", "live")] = sandbox("live")
@@ -632,14 +632,14 @@ def test_a_runner_that_has_not_connected_is_a_503(
     core_v1: FakeCoreV1Api,
     inventory: SandboxServiceClient,
     store: ThreadStore,
-    database_updates: Wakeups,
+    database_updates: WakeupListener,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
@@ -731,14 +731,14 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     core_v1: FakeCoreV1Api,
     inventory: SandboxServiceClient,
     store: ThreadStore,
-    database_updates: Wakeups,
+    database_updates: WakeupListener,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
@@ -881,7 +881,7 @@ def test_every_route_needs_one_of_the_two_credentials(client: TestClient) -> Non
     assert client.get("/sandboxes", headers={"Authorization": ""}).status_code == 401
     assert client.get("/sandboxes", headers={"Authorization": "Bearer wrong"}).status_code == 401
     assert client.post("/sandboxes", json={"name": "x"}, headers={"Authorization": ""}).status_code == 401
-    # The forgeable header the API server's service proxy used to forward buys nothing now.
+    # A forgeable identity header (`x-authentik-username`) buys nothing.
     assert client.get("/sandboxes", headers={"Authorization": "", "x-authentik-username": "root"}).status_code == 401
     assert client.get("/healthz", headers={"Authorization": ""}).status_code == 204
 
@@ -952,8 +952,8 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
     inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
-    event_logs: EventLogStore,
-    database_updates: Wakeups,
+    event_logs: SeededEventLogStore,
+    database_updates: WakeupListener,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
@@ -1008,8 +1008,8 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
     inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
-    event_logs: EventLogStore,
-    database_updates: Wakeups,
+    event_logs: SeededEventLogStore,
+    database_updates: WakeupListener,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
@@ -1063,8 +1063,8 @@ async def test_a_running_thread_cannot_be_archived(
     inventory: SandboxServiceClient,
     bridge: RunnerBridge,
     store: ThreadStore,
-    event_logs: EventLogStore,
-    database_updates: Wakeups,
+    event_logs: SeededEventLogStore,
+    database_updates: WakeupListener,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,

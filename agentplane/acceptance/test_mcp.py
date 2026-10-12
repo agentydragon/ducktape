@@ -8,7 +8,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
-from typing import Any, Literal, cast
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 import httpx
@@ -20,6 +20,7 @@ from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_f
 from agentplane.acceptance.agent import Agent
 from agentplane.acceptance.conftest import NAMESPACE, TESTING_NAMESPACE
 from agentplane.acceptance.operator_login import (
+    IdentityProvider,
     LoginBlockedError,
     OperatorCredentials,
     app_origin,
@@ -69,11 +70,11 @@ class PendingMcpReport(BaseModel):
     state: Literal["decision_pending"]
 
 
-def operator_idp() -> Literal["authentik", "dex"]:
-    value = os.environ.get("AGENTPLANE_ACCEPTANCE_IDP", "dex")
-    if value not in {"authentik", "dex"}:
+def operator_idp() -> IdentityProvider:
+    value = os.environ.get("AGENTPLANE_ACCEPTANCE_IDP", IdentityProvider.DEX)
+    if value not in set(IdentityProvider):
         pytest.fail("BLOCKED: AGENTPLANE_ACCEPTANCE_IDP must be authentik or dex", pytrace=False)
-    return cast(Literal["authentik", "dex"], value)
+    return IdentityProvider(value)
 
 
 class KubectlError(Exception):
@@ -350,7 +351,7 @@ wait for an operator decision in this turn.
         assert decided.execution is None
 
     completed = await agent.run(f"""
-Resume Action request {request_id}. The operator has decided {verdict.value}. Determine its terminal
+Resume Action request {request_id}. The operator has decided {verdict}. Determine its terminal
 outcome without submitting or deciding anything. Return only JSON with exactly request_id, state,
 and result. Copy result from execution when it exists; otherwise use null. Do not infer or fabricate it.
 """)

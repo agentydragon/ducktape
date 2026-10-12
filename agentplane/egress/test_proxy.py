@@ -27,6 +27,7 @@ from mitmproxy import connection, http
 from more_itertools import one
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
+from agentplane.egress import rules_api
 from agentplane.egress.addon import DENIED_HEADER, PROJECTED_TOKEN_HEADER, EgressAddon
 from agentplane.egress.admin import create_admin_app
 from agentplane.egress.conftest import (
@@ -60,7 +61,7 @@ from agentplane.egress.listener import serve
 from agentplane.egress.policy import DenyReason, Index
 from agentplane.egress.proxy import EgressProxyServer, write_interception_ca
 from agentplane.egress.resources import TargetMethod, placeholder_of
-from agentplane.egress.rules_api import PATH as RULES_PATH, RulesProjection, create_rules_app
+from agentplane.egress.rules_api import RulesProjection, create_rules_app
 from agentplane.egress.settings import Settings
 from agentplane.egress.sidecar import SidecarRelay
 from agentplane.egress.testing.replica import kubeconfig, replica
@@ -221,7 +222,7 @@ class ProxyUnderTest:
                     {
                         "hosts": [RULES_HOST],
                         "methods": ["GET"],
-                        "paths": [RULES_PATH],
+                        "paths": [rules_api.PATH],
                         "clusterInternal": True,
                         "credentialRef": {"name": WORKLOAD_CREDENTIAL},
                     }
@@ -493,7 +494,7 @@ async def test_authenticated_workload_source_uses_each_https_tunnels_own_token(
     ]
     assert all("proxy-authorization" not in headers for _, _, headers in proxy.upstream.requests)
 
-    view = await proxy.get_rules(RULES_PATH)
+    view = await proxy.get_rules(rules_api.PATH)
     assert view.status == 200
     assert WORKLOAD_PLACEHOLDER in view.body.decode()
     assert all(token not in view.body.decode() for token in (TOKEN_A, TOKEN_B))
@@ -911,7 +912,7 @@ async def test_admin_serves_decisions_and_health(proxy: ProxyUnderTest, decision
 
 async def test_a_workload_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest) -> None:
     """The Service DNS request is forwarded to the separate destination listener."""
-    response = await proxy.get_rules(RULES_PATH)
+    response = await proxy.get_rules(rules_api.PATH)
 
     assert response.status == 200, response.body
     assert proxy.upstream.requests == []
@@ -934,7 +935,7 @@ async def test_a_workload_reads_rules_through_its_loopback_sidecar(proxy: ProxyU
     async with SidecarRelay(
         proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
     ) as sidecar:
-        response = await proxy.get_rules(RULES_PATH, token=None, proxy_port=sidecar.listen_port)
+        response = await proxy.get_rules(rules_api.PATH, token=None, proxy_port=sidecar.listen_port)
 
     assert response.status == 200, response.body
     assert json.loads(response.body)["subject"] == SUBJECT_A.model_dump()
@@ -945,7 +946,7 @@ async def test_a_workload_reads_rules_through_its_loopback_sidecar(proxy: ProxyU
 
 async def test_rules_identity_ignores_forged_request_headers_and_body(proxy: ProxyUnderTest) -> None:
     response = await proxy.get_rules(
-        RULES_PATH,
+        rules_api.PATH,
         headers={
             "Authorization": f"Bearer {WORKLOAD_PLACEHOLDER}",
             "X-Agentplane-Subject": SANDBOX_B,
@@ -959,7 +960,7 @@ async def test_rules_identity_ignores_forged_request_headers_and_body(proxy: Pro
 
 
 async def test_the_agent_view_needs_the_same_identity_every_request_does(proxy: ProxyUnderTest) -> None:
-    response = await proxy.get_rules(RULES_PATH, token=None)
+    response = await proxy.get_rules(rules_api.PATH, token=None)
 
     assert denial(response, DenyReason.TOKEN_MISSING)
 
@@ -969,7 +970,7 @@ async def test_rules_destination_auth_is_required_after_the_authenticated_hop(
     proxy: ProxyUnderTest, authorization: str | None
 ) -> None:
     response = await proxy.get_rules(
-        RULES_PATH, headers={} if authorization is None else {"Authorization": authorization}
+        rules_api.PATH, headers={} if authorization is None else {"Authorization": authorization}
     )
 
     assert response.status == 401
@@ -981,12 +982,13 @@ async def test_rules_unbound_placeholder_is_not_forwarded(proxy: ProxyUnderTest)
     proxy.fake.put(
         POLICIES_PLURAL,
         policy(
-            BASIC_POLICY, [{"hosts": [RULES_HOST], "methods": ["GET"], "paths": [RULES_PATH], "clusterInternal": True}]
+            BASIC_POLICY,
+            [{"hosts": [RULES_HOST], "methods": ["GET"], "paths": [rules_api.PATH], "clusterInternal": True}],
         ),
     )
     await proxy.index.wait_for(lambda: proxy.index.policies[BASIC_POLICY].spec.rules[0].credential_ref is None)
 
-    response = await proxy.get_rules(RULES_PATH)
+    response = await proxy.get_rules(rules_api.PATH)
 
     assert denial(response, DenyReason.PLACEHOLDER_UNRESOLVED)
     assert proxy.resolver.pin_calls == []

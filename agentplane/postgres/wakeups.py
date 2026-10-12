@@ -11,15 +11,15 @@ from sqlalchemy import func, select
 from sqlalchemy.engine import URL
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from agentplane.changes import Changes
+from agentplane.changes import ChangeSignal
 from agentplane.postgres.listener import PostgresListener
 
 
-class Wakeups:
-    """One LISTEN connection, fanning each channel out to that channel's `Changes`."""
+class WakeupListener:
+    """One LISTEN connection, fanning each channel out to that channel's `ChangeSignal`."""
 
     def __init__(self, url: URL, *, channels: Iterable[str], application_name: str) -> None:
-        self.changes = {channel: Changes() for channel in channels}
+        self.changes = {channel: ChangeSignal() for channel in channels}
         self.listener = PostgresListener(
             url,
             channels=tuple(self.changes),

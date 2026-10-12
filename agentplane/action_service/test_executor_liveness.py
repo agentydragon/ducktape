@@ -34,6 +34,7 @@ from agentplane.action_service.models import (
     Verdict,
 )
 from agentplane.action_service.service import ActionService, ExecutionLease, Executor, ServiceDrainingError
+from agentplane.action_service.testing.lifecycle import wait_for_state
 from agentplane.subjects import ServiceAccountRef
 
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="test-workload-a"))
@@ -71,15 +72,6 @@ async def _allowed_execution(store: ActionStore, *, idempotency_key: str) -> Any
         provider=ActionService.HUMAN_PROVIDER,
     )
     return view.id
-
-
-async def _poll_state(store: ActionStore, request_id: Any, *, want: ActionState) -> None:
-    for _ in range(200):
-        view = await store.get(request_id, CALLER)
-        if view.state is want:
-            return
-        await asyncio.sleep(0.01)
-    raise AssertionError(f"never reached {want}")
 
 
 async def test_worker_dies_before_start_becomes_unknown_without_ever_calling_the_backend(engine: AsyncEngine) -> None:
@@ -238,11 +230,11 @@ async def test_action_service_restarts_and_worker_liveness_never_double_dispatch
         )
         request_id = pending.id
 
-        await _poll_state(store, request_id, want=ActionState.EXECUTION_UNKNOWN)
+        await wait_for_state(store, request_id, CALLER, want=ActionState.EXECUTION_UNKNOWN)
         assert len(executor.requests) == 1
 
         # The still-running dispatch task eventually returns and reconciles instead of erroring.
-        await _poll_state(store, request_id, want=ActionState.SUCCEEDED)
+        await wait_for_state(store, request_id, CALLER, want=ActionState.SUCCEEDED)
         assert len(executor.requests) == 1
 
 
@@ -280,7 +272,7 @@ async def test_drain_fences_queued_dispatch_and_another_replica_claims_it(
                 CALLER,
             )
     async with second:
-        await _poll_state(store, request_id, want=ActionState.SUCCEEDED)
+        await wait_for_state(store, request_id, CALLER, want=ActionState.SUCCEEDED)
         assert executor.calls == 1
 
 

@@ -146,9 +146,7 @@ _ACTION_GROUPS = {
                 # Actions (get_job_logs, actions_get, actions_list, ...) is not in GitHub
                 # MCP's default toolset catalog. `_REPOSITORY_SCOPED_ACTIONS` in
                 # actions_staging_policies.py already expects these tools; without this
-                # header the server never advertises them. Ported from haku-console's
-                # now-removed GitHub MCP wiring (cluster/cdk8s/haku/console_config.py,
-                # dropped in #7773), which configured this the same way.
+                # header the server never advertises them.
                 "headers": {"X-MCP-Toolsets": "default,actions"},
             },
         ),

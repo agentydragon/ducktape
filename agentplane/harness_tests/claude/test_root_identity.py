@@ -9,7 +9,7 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 
-from agentplane.harness_tests.claude import anthropic_sse as sse
+from agentplane.harness_tests.claude import anthropic_sse
 from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 
@@ -38,7 +38,9 @@ async def test_fresh_root_identity_timing(
             async with asyncio.timeout(30):
                 submitted = await run.send("Reply ROOT_ID_CONFIRMED.")
                 async with await anthropic_messages.await_next_request() as exchange:
-                    await exchange.send(*sse.message_stream([sse.Text("ROOT_ID_CONFIRMED")], model=MODEL).events)
+                    await exchange.send(
+                        *anthropic_sse.message_stream([anthropic_sse.Text("ROOT_ID_CONFIRMED")], model=MODEL).events
+                    )
                 result = await submitted.result()
                 assert result.result == "ROOT_ID_CONFIRMED"
                 assert result.session_id is not None

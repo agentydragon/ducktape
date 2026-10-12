@@ -14,7 +14,7 @@ from kubernetes_asyncio import client as k8s_client
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.changes import Changes
+from agentplane.changes import ChangeSignal
 from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
 from agentplane.history_service.storage.store import HistoryNotFoundError, Store
 from agentplane.history_service.summaries import SummaryReader
@@ -40,7 +40,7 @@ class Resources:
     # A public Session UUID is not itself authority: only these accounts read transcripts.
     reader_accounts: frozenset[ServiceAccountRef]
     request_timeout_s: float
-    summary_changes: Changes
+    summary_changes: ChangeSignal
     # How long one WatchSessionSummaries stream lasts before it asks the caller to reconnect.
     watch_lease_s: float
 

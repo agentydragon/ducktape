@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from agentplane.harness_tests.claude import anthropic_sse as sse, frames
+from agentplane.harness_tests.claude import anthropic_sse, frames
 from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.harness_tests.model_endpoint import JsonResponse
@@ -19,7 +19,9 @@ async def test_stream_lost_before_content_is_retried_without_streaming(
 
         async with await anthropic_messages.await_next_request() as exchange:
             assert exchange.request.stream is True
-            await exchange.send(*sse.message_stream([sse.Text("lost")], model=MODEL).through("message_start").events)
+            await exchange.send(
+                *anthropic_sse.message_stream([anthropic_sse.Text("lost")], model=MODEL).through("message_start").events
+            )
             await exchange.abort()
 
         # Claude Code retries the same turn as a non-streaming request.
@@ -28,7 +30,7 @@ async def test_stream_lost_before_content_is_retried_without_streaming(
             assert request.stream is False
             assert request.texts("user")[-1] == "Reply with exactly: CONNECTION_RETRY_OK"
             assert request.texts("assistant") == []
-            await exchange.respond(sse.message_body([sse.Text("CONNECTION_RETRY_OK")], model=MODEL))
+            await exchange.respond(anthropic_sse.message_body([anthropic_sse.Text("CONNECTION_RETRY_OK")], model=MODEL))
 
         assert (await prompt.result()).result == "CONNECTION_RETRY_OK"
         assert run.running
@@ -45,7 +47,9 @@ async def test_stream_lost_after_visible_text_is_retried_without_streaming(
 
         async with await anthropic_messages.await_next_request() as exchange:
             await exchange.send(
-                *sse.message_stream([sse.Text("POST_FAILURE_FIRST_OK")], model=MODEL).through("text_delta").events
+                *anthropic_sse.message_stream([anthropic_sse.Text("POST_FAILURE_FIRST_OK")], model=MODEL)
+                .through("text_delta")
+                .events
             )
             await exchange.abort()
 
@@ -54,7 +58,9 @@ async def test_stream_lost_after_visible_text_is_retried_without_streaming(
             request = exchange.request
             assert request.stream is False
             assert request.texts("assistant") == []
-            await exchange.respond(sse.message_body([sse.Text("POST_FAILURE_FIRST_OK")], model=MODEL))
+            await exchange.respond(
+                anthropic_sse.message_body([anthropic_sse.Text("POST_FAILURE_FIRST_OK")], model=MODEL)
+            )
         assert (await first.result()).result == "POST_FAILURE_FIRST_OK"
         assert run.running
 
@@ -63,7 +69,7 @@ async def test_stream_lost_after_visible_text_is_retried_without_streaming(
             request = exchange.request
             assert request.texts("user")[-1] == "Reply with exactly: POST_FAILURE_FOLLOW_UP_OK"
             assert request.texts("assistant") == ["POST_FAILURE_FIRST_OK"]
-            stream = sse.message_stream([sse.Text("POST_FAILURE_FOLLOW_UP_OK")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("POST_FAILURE_FOLLOW_UP_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await second.result()).result == "POST_FAILURE_FOLLOW_UP_OK"
     captured = run.native_frames()
@@ -88,7 +94,7 @@ async def test_retry_exhaustion_fails_the_turn_and_the_process_accepts_the_next_
             request = exchange.request
             assert request.texts("user")[-1] == "Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK"
             assert request.texts("assistant") == []
-            stream = sse.message_stream([sse.Text("POST_EXHAUSTION_FOLLOW_UP_OK")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("POST_EXHAUSTION_FOLLOW_UP_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await second.result()).result == "POST_EXHAUSTION_FOLLOW_UP_OK"
     captured = run.native_frames()
@@ -118,7 +124,9 @@ async def test_http_502_exhaustion_is_terminal_but_next_input_succeeds(
         second = await run.send("Reply with exactly: HTTP_FOLLOW_UP_OK")
         async with await anthropic_messages.await_next_request() as exchange:
             assert exchange.request.texts("user")[-1] == "Reply with exactly: HTTP_FOLLOW_UP_OK"
-            await exchange.send(*sse.message_stream([sse.Text("HTTP_FOLLOW_UP_OK")], model=MODEL).events)
+            await exchange.send(
+                *anthropic_sse.message_stream([anthropic_sse.Text("HTTP_FOLLOW_UP_OK")], model=MODEL).events
+            )
         assert (await second.result()).result == "HTTP_FOLLOW_UP_OK"
     assert [terminal.is_error for terminal in frames.terminals(run.native_frames())] == [True, False]
 

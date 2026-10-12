@@ -37,7 +37,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore, register_gateway_session
+from agentplane.app.testing.history import SeededEventLogStore, register_gateway_session
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.threads.events.stream import follow
@@ -46,13 +46,13 @@ from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.changes import Changes
+from agentplane.changes import ChangeSignal
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.history_service.testing.history import History
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, sandbox_service_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.harness import Harness
@@ -79,7 +79,7 @@ SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
 async def failed_bridge_state(
     request: pytest.FixtureRequest,
     runner: RunnerHandle,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     history_client: HistoryServiceClient,
     local_runners: SandboxSessions,
 ) -> AsyncIterator[None]:
@@ -224,14 +224,14 @@ async def app_url(
     local_runners: SandboxSessions,
     inventory: SandboxServiceClient,
     store: ThreadStore,
-    database_updates: Wakeups,
+    database_updates: WakeupListener,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
     history: History,
     electric_proxy: ElectricProxy,
@@ -927,7 +927,7 @@ async def test_resume_after_tool_completion_preserves_the_result_and_does_not_re
 
 
 async def test_thread_resume_reports_missing_runner_recovery_state(
-    app_url: str, event_logs: EventLogStore, history: History
+    app_url: str, event_logs: SeededEventLogStore, history: History
 ) -> None:
     thread_id = await event_logs.seed(SANDBOX, "missing-runner-session")
     await register_gateway_session(history.engine, thread_id, sandbox=SANDBOX)
@@ -1075,7 +1075,7 @@ async def test_command_admission_timeout_is_not_an_internal_server_error(
 
 async def test_command_returns_runner_receipt_before_app_archive_catches_up(
     bridge: RunnerBridge,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
     history: History,
     monkeypatch: pytest.MonkeyPatch,
@@ -1125,8 +1125,8 @@ class Replicas:
     survivor: RunnerBridge
     survivor_discovery: SessionDiscovery
     # What the survivor streams a thread from: its own pool and its own listener.
-    survivor_event_logs: EventLogStore
-    survivor_changes: Changes
+    survivor_event_logs: SeededEventLogStore
+    survivor_changes: ChangeSignal
 
 
 @pytest.fixture
@@ -1135,9 +1135,9 @@ async def replicas(
     local_runners: SandboxSessions,
     live_index: LiveIndex,
     runner: RunnerHandle,
-    database_updates: Wakeups,
+    database_updates: WakeupListener,
     db_url: str,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
     history: History,
     history_client: HistoryServiceClient,
@@ -1146,7 +1146,7 @@ async def replicas(
     replica_engine = connect(db_url)
     survivor_service = sandbox_endpoint.client()
     survivor_runners = SandboxSessions(live_index, survivor_service)
-    survivor_event_logs = EventLogStore(
+    survivor_event_logs = SeededEventLogStore(
         replica_engine,
         history=event_logs.history,
         gateway=event_logs.gateway,
@@ -1189,7 +1189,7 @@ async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
 
 
 async def test_replica_commands_and_database_stream_survive_discovery_owner_exit(
-    replicas: Replicas, event_logs: EventLogStore, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    replicas: Replicas, event_logs: SeededEventLogStore, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), MessageToDict(spec))).session_id)
     async for attempt in AsyncRetrying(
@@ -1241,7 +1241,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
     core_v1: FakeCoreV1Api,
     runner: RunnerHandle,
     store: ThreadStore,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
     monkeypatch: pytest.MonkeyPatch,
@@ -1292,7 +1292,7 @@ async def test_inventory_change_discovers_existing_runner_session_without_browse
 
 
 async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
-    replicas: Replicas, event_logs: EventLogStore, model: ScriptedModel, spec: runner_pb2.SessionSpec
+    replicas: Replicas, event_logs: SeededEventLogStore, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), MessageToDict(spec))).session_id)
     await replicas.survivor.command(
@@ -1346,8 +1346,8 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
     replicas: Replicas,
     local_runners: SandboxSessions,
     live_index: LiveIndex,
-    event_logs: EventLogStore,
-    database_updates: Wakeups,
+    event_logs: SeededEventLogStore,
+    database_updates: WakeupListener,
     spec: runner_pb2.SessionSpec,
     content: ContentStore,
     history: History,
@@ -1386,7 +1386,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
 
 async def test_open_and_resume_reply_before_archive_catches_up(
     local_runners: SandboxSessions,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,

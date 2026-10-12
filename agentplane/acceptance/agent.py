@@ -167,7 +167,7 @@ class Agent:
                     if turn.status != event_pb2.TURN_STATUS_COMPLETED:
                         raise AssertionError(
                             f"turn {completed.turn_id!r} ended with {event_pb2.TurnStatus.Name(turn.status)}: "
-                            f"diagnostic={completed.error!r}"
+                            f"{completed.error=}"
                         )
                     return turn
                 case _:

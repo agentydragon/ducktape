@@ -11,7 +11,7 @@ import pytest
 import pytest_bazel
 from pydantic import BaseModel
 
-from agentplane.native.async_process import AsyncNativeProcess, NativeProcessEofError
+from agentplane.native.testing.async_process import AsyncNativeProcess, NativeProcessEofError
 
 
 class Trigger(BaseModel):

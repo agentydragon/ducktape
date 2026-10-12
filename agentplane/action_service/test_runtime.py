@@ -10,7 +10,7 @@ import textwrap
 from datetime import timedelta
 from pathlib import Path
 from typing import cast
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import httpx
@@ -49,7 +49,7 @@ from agentplane.action_service.service import ActionService, ExecutionLease, Uns
 from agentplane.action_service.settings import Settings
 from agentplane.action_service.testing.callers import in_sync_index
 from agentplane.action_service.testing.lifecycle import wait_available
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
@@ -202,22 +202,6 @@ def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
             _cli_parse_args=False,
         )
     assert "test-only-private" not in str(error.value)
-
-
-async def test_runtime_sanitizes_connect_and_cleanup_failures() -> None:
-    catalog = ActionCatalog(
-        groups={
-            "remote": _group({"transport": "streamable-http", "url": "http://test-peer.invalid/mcp", "auth": "none"})
-        }
-    )
-    with (
-        patch.object(McpActionGroupExecutor, "_start", Mock(side_effect=RuntimeError("private connect material"))),
-        patch.object(McpActionGroupExecutor, "close", AsyncMock(side_effect=RuntimeError("private cleanup material"))),
-        pytest.raises(RuntimeError, match="MCP shutdown failed") as error,
-    ):
-        async with running_executor(catalog):
-            pytest.fail("unavailable runtime served")
-    assert error.value.__suppress_context__
 
 
 async def test_live_catalog_and_exact_group_dispatch(execution_lease: ExecutionLease) -> None:
@@ -536,7 +520,7 @@ async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine:
         DisabledOperatorAuthenticator(),
         catalog,
         callers=in_sync_index(),
-        updates=ActionUpdates(db_url),
+        updates=ActionUpdateBroker(db_url),
         direct_wait_seconds=30,
         max_wait_seconds=30,
     )

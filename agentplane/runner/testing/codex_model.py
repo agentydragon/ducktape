@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import itertools
 
-from agentplane.harness_tests.codex import responses_sse as sse
+from agentplane.harness_tests.codex import responses_sse
 from agentplane.harness_tests.codex.harness import MODEL
 from agentplane.harness_tests.codex.requests import ResponsesRequest
 from agentplane.harness_tests.codex.responses import OpenAIResponses
@@ -46,17 +46,21 @@ class CodexModel(ScriptedModel[ResponsesRequest]):
         )
 
     def stream(self, items: list[Item]) -> tuple[SseEvent, ...]:
-        return sse.response_stream([_item(item) for item in items], model=self.model).events
+        return responses_sse.response_stream([_item(item) for item in items], model=self.model).events
 
     def opened_stream(self) -> tuple[SseEvent, ...]:
-        return sse.response_stream([sse.Message("never finished")], model=self.model).through("response.created").events
+        return (
+            responses_sse.response_stream([responses_sse.Message("never finished")], model=self.model)
+            .through("response.created")
+            .events
+        )
 
 
-def _item(item: Item) -> sse.Item:
+def _item(item: Item) -> responses_sse.Item:
     match item:
         case Text(text):
-            return sse.Message(text)
+            return responses_sse.Message(text)
         case Reasoning(text):
-            return sse.Reasoning(text, next(_encrypted))
+            return responses_sse.Reasoning(text, next(_encrypted))
         case ShellCall(call_id, command):
-            return sse.FunctionCall(call_id, "exec_command", {"cmd": command})
+            return responses_sse.FunctionCall(call_id, "exec_command", {"cmd": command})

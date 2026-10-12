@@ -182,8 +182,8 @@ async def check_active_subscription_quota(session: AsyncSession, inbox_id: UUID,
 
 
 class Store:
-    def __init__(self, engine: AsyncEngine, *, quotas: QuotaSettings | None = None) -> None:
-        self.quotas = quotas if quotas is not None else QuotaSettings()
+    def __init__(self, engine: AsyncEngine, *, quotas: QuotaSettings) -> None:
+        self.quotas = quotas
         self.wakeups = create_wakeups(engine.url)
         self.sessions = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -462,7 +462,7 @@ class Store:
                         if isinstance(state, str):
                             summary += f" · {state[:80]}"
                     else:
-                        summary = f"GitHub {event.event.value}"
+                        summary = f"GitHub {event.event}"
                         if event.action:
                             summary += f" · {event.action[:80]}"
                         if event.event.value in ("check_run", "workflow_run") and entry.payload:

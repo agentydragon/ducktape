@@ -8,7 +8,7 @@ from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
 from util.testing.viewports import MOBILE
 from util.testing.visual_capture import VisualPage
 
-pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.visual_fixtures")
+pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 

@@ -4,8 +4,7 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
-from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
-from agentplane.app.frontend.visual_assertions import (
+from agentplane.app.frontend.testing.visual_assertions import (
     _INNER,
     _MAIN,
     _OUTER,
@@ -22,13 +21,14 @@ from agentplane.app.frontend.visual_assertions import (
     _scroll_to,
     _scroll_to_copy,
 )
+from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE
 from util.testing.visual_capture import VisualPage
 
 # gazelle:include_dep //util/testing:visual_fixtures
-# gazelle:include_dep //agentplane/app/frontend:visual_fixtures
-pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.visual_fixtures")
+# gazelle:include_dep //agentplane/app/frontend/testing:visual_fixtures
+pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -294,7 +294,7 @@ async def test_disclosure_control_reaches_card_edges(view: VisualPage, app: Agen
     assert control_box is not None
     assert card_box is not None
     # Allow the card's one-pixel border. The top and both sides belong to the actual control,
-    # including the area that used to be inert padding around its rectangular hover fill.
+    # including the padding around its rectangular hover fill.
     assert abs(control_box["x"] - card_box["x"]) <= 1
     assert abs(control_box["y"] - card_box["y"]) <= 1
     assert abs(control_box["x"] + control_box["width"] - card_box["x"] - card_box["width"]) <= 1

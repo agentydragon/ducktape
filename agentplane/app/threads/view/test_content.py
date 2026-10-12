@@ -7,7 +7,7 @@ from uuid import UUID
 import pytest
 import pytest_bazel
 
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.thread_test_support import event_entry
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
@@ -19,7 +19,7 @@ from agentplane.proto import command_pb2, event_pb2
 
 
 async def test_archived_command_admission_is_an_exact_retry_key(
-    event_logs: EventLogStore, content: ContentStore, history: History
+    event_logs: SeededEventLogStore, content: ContentStore, history: History
 ) -> None:
     thread = await event_logs.seed("sb-1", "s-1")
     command = command_pb2.Command(

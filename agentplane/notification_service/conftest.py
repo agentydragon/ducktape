@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 from agentplane.action_service.testing.fixtures import action_database_template, echo_catalog, echo_executor
 from agentplane.history_service.testing.fixtures import service_database_template
 from agentplane.notification_service.database_migrate import RUNNER
+from agentplane.notification_service.settings import QuotaSettings
 from agentplane.notification_service.store import Store
 from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
@@ -38,7 +39,7 @@ def sandbox_service_db_url(service_database_template: PostgresDatabaseTemplate, 
 
 @pytest.fixture
 async def store(engine: AsyncEngine) -> Store:
-    return Store(engine)
+    return Store(engine, quotas=QuotaSettings())
 
 
 @pytest.fixture

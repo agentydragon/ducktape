@@ -51,7 +51,7 @@ from agentplane.action_service.service import (
     UnsupportedActionError,
 )
 from agentplane.action_service.tool_results import tool_result
-from agentplane.action_service.updates import ActionUpdates, UpdatesUnavailableError
+from agentplane.action_service.updates import ActionUpdateBroker, UpdatesUnavailableError
 from agentplane.action_service.waits import ActionWaiter, WaitLimitExceededError, WaitOptions
 from agentplane.subjects import ServiceAccountRef
 
@@ -323,7 +323,7 @@ def _result(model: BaseModel, *, exclude_none: bool = False, exclude_unset: bool
 def create_server(
     service: ActionService,
     catalog: ActionCatalog,
-    updates: ActionUpdates,
+    updates: ActionUpdateBroker,
     verifier: CallerTokenVerifier,
     *,
     direct_wait_seconds: float,

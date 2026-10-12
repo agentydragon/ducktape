@@ -27,19 +27,6 @@ py_library(
 )
 
 py_library(
-    name = "async_run",
-    testonly = True,
-    srcs = ["async_run.py"],
-    deps = [
-        ":blocks",
-        ":facade",
-        ":scenarios",
-        ":wire",
-        "//agentplane/native:async_process",
-    ],
-)
-
-py_library(
     name = "facade",
     srcs = ["facade.py"],
     deps = [
@@ -75,19 +62,6 @@ py_test(
     ],
 )
 
-py_library(
-    name = "mcp",
-    testonly = True,
-    srcs = ["mcp.py"],
-    deps = [
-        ":driver",
-        ":wire",
-        "@pypi//fastmcp_slim",
-        "@pypi//mcp",
-        "@pypi//mcp_types",
-    ],
-)
-
 py_test(
     name = "test_facade",
     srcs = ["test_facade.py"],
@@ -95,7 +69,7 @@ py_test(
         ":facade",
         ":wire",
         "//:conftest",
-        "//agentplane/native:async_process",
+        "//agentplane/native/testing:async_process",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

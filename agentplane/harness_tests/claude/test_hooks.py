@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from agentplane.harness_tests.claude import anthropic_sse as sse, frames
+from agentplane.harness_tests.claude import anthropic_sse, frames
 from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.native.claude import scenarios
@@ -23,7 +23,9 @@ async def test_pretooluse_allow_lets_the_tool_run(
         prompt = await run.send("Use the shell probe and report PROBE_DONE.")
 
         async with await anthropic_messages.await_next_request() as exchange:
-            stream = sse.message_stream([sse.ToolUse("toolu_test_1", "Bash", {"command": PROBE})], model=MODEL)
+            stream = anthropic_sse.message_stream(
+                [anthropic_sse.ToolUse("toolu_test_1", "Bash", {"command": PROBE})], model=MODEL
+            )
             await exchange.send(*stream.events)
 
         async with await anthropic_messages.await_next_request() as exchange:
@@ -31,7 +33,7 @@ async def test_pretooluse_allow_lets_the_tool_run(
             assert result.tool_use_id == "toolu_test_1"
             assert result.is_error is False
             assert "PROBE_OK" in result.text
-            stream = sse.message_stream([sse.Text("PROBE_DONE")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("PROBE_DONE")], model=MODEL)
             await exchange.send(*stream.events)
 
         assert (await prompt.result()).result == "PROBE_DONE"
@@ -53,7 +55,9 @@ async def test_pretooluse_deny_blocks_the_tool_and_the_model_sees_why(
         prompt = await run.send("Use the shell probe and report the outcome.")
 
         async with await anthropic_messages.await_next_request() as exchange:
-            stream = sse.message_stream([sse.ToolUse("toolu_test_1", "Bash", {"command": PROBE})], model=MODEL)
+            stream = anthropic_sse.message_stream(
+                [anthropic_sse.ToolUse("toolu_test_1", "Bash", {"command": PROBE})], model=MODEL
+            )
             await exchange.send(*stream.events)
 
         async with await anthropic_messages.await_next_request() as exchange:
@@ -61,7 +65,7 @@ async def test_pretooluse_deny_blocks_the_tool_and_the_model_sees_why(
             assert result.tool_use_id == "toolu_test_1"
             assert result.is_error is True
             assert scenarios.HOOK_DENIAL in result.text
-            stream = sse.message_stream([sse.Text("HOOK_DENIED_OBSERVED")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("HOOK_DENIED_OBSERVED")], model=MODEL)
             await exchange.send(*stream.events)
 
         assert (await prompt.result()).result == "HOOK_DENIED_OBSERVED"

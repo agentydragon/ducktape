@@ -50,7 +50,7 @@ from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService, Executor
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, admitted_callers
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
 from util.net import bind_free_port
@@ -271,7 +271,7 @@ async def test_real_sdk_dcr_over_http_persists_client_metadata(
         DisabledOperatorAuthenticator(),
         echo_catalog,
         callers=oauth.callers,
-        updates=ActionUpdates(db_url),
+        updates=ActionUpdateBroker(db_url),
         direct_wait_seconds=30,
         max_wait_seconds=30,
         connections=oauth.connections,
@@ -636,7 +636,7 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
         DisabledOperatorAuthenticator(),
         echo_catalog,
         callers=oauth.callers,
-        updates=ActionUpdates(db_url),
+        updates=ActionUpdateBroker(db_url),
         direct_wait_seconds=30,
         max_wait_seconds=30,
         connections=oauth.connections,

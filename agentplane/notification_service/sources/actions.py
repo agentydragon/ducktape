@@ -17,7 +17,7 @@ class SourceNotOwnedError(Exception):
     pass
 
 
-class Actions:
+class ActionServiceClient:
     def __init__(self, http: httpx.AsyncClient, token_file: Path) -> None:
         self.http = http
         self.token_file = token_file

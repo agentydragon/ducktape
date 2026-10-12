@@ -20,7 +20,7 @@ import pytest
 from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
 
 from agentplane.app.testing import history_probe, thread_view_marks
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import (
@@ -121,7 +121,7 @@ class ThreadBrowser:
     page: Page
     source: ReplicationSource
     store: ThreadStore
-    event_logs: EventLogStore
+    event_logs: SeededEventLogStore
     content: ContentStore
     history: History
     opened: Opened
@@ -212,7 +212,7 @@ async def thread_browser(
     page: Page,
     db_url: str,
     store: ThreadStore,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
     thread_source: ReplicationSource,
     history: History,

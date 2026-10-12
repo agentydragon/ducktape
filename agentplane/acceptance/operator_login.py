@@ -12,8 +12,8 @@ import os
 import re
 import subprocess
 from dataclasses import dataclass
+from enum import StrEnum
 from http import HTTPStatus
-from typing import Literal
 from urllib.parse import parse_qs
 from uuid import uuid4
 
@@ -31,6 +31,11 @@ _DEX_AUTHORIZATION_PATH = "/dex/auth"
 _DEX_LOCAL_FORM_PATH = re.compile(r"/dex/auth/local(?:/login)?/?")
 _DEX_LOCAL_LOGIN_PATH = re.compile(r"/dex/auth/local/login/?")
 _DEX_OAUTH_PATH = re.compile(r"/dex/(auth|auth/local|auth/local/login|approval|callback)/?")
+
+
+class IdentityProvider(StrEnum):
+    AUTHENTIK = "authentik"
+    DEX = "dex"
 
 
 class LoginBlockedError(Exception):
@@ -139,7 +144,7 @@ def app_origin(base_url: str) -> httpx.URL:
 
 
 def _destination(
-    source: httpx.URL, location: str, app: httpx.URL, idp: httpx.URL, provider: Literal["authentik", "dex"]
+    source: httpx.URL, location: str, app: httpx.URL, idp: httpx.URL, provider: IdentityProvider
 ) -> httpx.URL:
     __tracebackhide__ = True
     url = source.join(location)
@@ -157,7 +162,8 @@ def _destination(
             and re.fullmatch(r"/api/v3/flows/executor/[a-zA-Z0-9_-]+/", url.path)
         )
         or (
-            provider == "dex" and re.fullmatch(r"/dex/(auth|auth/local|auth/local/login|approval|callback)/?", url.path)
+            provider is IdentityProvider.DEX
+            and re.fullmatch(r"/dex/(auth|auth/local|auth/local/login|approval|callback)/?", url.path)
         )
     ):
         return url
@@ -293,7 +299,10 @@ async def follow_dex_authorization(
 
 
 async def login_operator(
-    http: httpx.AsyncClient, credentials: OperatorCredentials, *, provider: Literal["authentik", "dex"] = "authentik"
+    http: httpx.AsyncClient,
+    credentials: OperatorCredentials,
+    *,
+    provider: IdentityProvider = IdentityProvider.AUTHENTIK,
 ) -> None:
     """Follow app-created state/PKCE/nonce unchanged; callback alone issues the logged-in cookie.
 
@@ -338,7 +347,7 @@ async def login_operator(
         if response.status_code != 200:
             stage = "app login" if _origin(response.url) == app else f"{provider} authorization"
             raise LoginBlockedError(f"BLOCKED: {stage} returned HTTP {response.status_code}")
-        if provider == "dex" and _DEX_LOCAL_FORM_PATH.fullmatch(response.url.path):
+        if provider is IdentityProvider.DEX and _DEX_LOCAL_FORM_PATH.fullmatch(response.url.path):
             response = await dex_password_login.submit(http, response, credentials)
             continue
         if re.fullmatch(r"/if/flow/[a-zA-Z0-9_-]+/", response.url.path):
