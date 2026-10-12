@@ -110,6 +110,8 @@ export function PushSettings(): JSX.Element {
     }
   }
 
+  const thisBrowserRegistered = current !== null && devices?.some((device) => device.endpoint === current) === true;
+
   const unavailable = loading
     ? "Loading notification settings…"
     : error && !key
@@ -135,14 +137,16 @@ export function PushSettings(): JSX.Element {
           {unavailable}
         </Text>
       )}
-      <Button
-        onClick={() => void enable()}
-        loading={busy}
-        disabled={unavailable !== null}
-        aria-describedby={unavailable ? "push-registration-status" : undefined}
-      >
-        Register this browser
-      </Button>
+      {!thisBrowserRegistered && (
+        <Button
+          onClick={() => void enable()}
+          loading={busy}
+          disabled={unavailable !== null}
+          aria-describedby={unavailable ? "push-registration-status" : undefined}
+        >
+          Register this browser
+        </Button>
+      )}
       {connection.phase === "reconnecting" && (
         <Text role="status" c="dimmed" size="sm">
           Connection lost; showing last registered browsers. Reconnecting…
