@@ -24,10 +24,10 @@ from typing import Any, Self
 from uuid import UUID, uuid4
 
 import jsonschema
-from tenacity import AsyncRetrying, before_sleep_log, wait_exponential
+from tenacity import AsyncRetrying, RetryCallState, before_sleep_log, retry_if_not_exception_type, wait_exponential
 
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity, UnknownActionError
-from agentplane.action_service.db import ActionStore
+from agentplane.action_service.db import ActionConflictError, ActionNotFoundError, ActionStore
 from agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -107,6 +107,16 @@ def _decisive(votes: Sequence[ProviderVote]) -> ProviderVote | None:
             if vote.outcome.verdict is verdict:
                 return vote
     return None
+
+
+def _claim_failed(state: RetryCallState) -> None:
+    assert state.outcome is not None
+    # Database exceptions can carry request material: log the type only, as `_done` does.
+    logger.warning(
+        "action dispatch claim failed; retrying: type=%s attempt=%d",
+        type(state.outcome.exception()).__name__,
+        state.attempt_number,
+    )
 
 
 class ExecutionLease:
@@ -540,14 +550,22 @@ class ActionService:
         return group is None or identity.group not in self._executors or group.available
 
     async def _dispatch_once(self, request_id: UUID) -> None:
-        if self.draining:
-            return
-        claim = await self._store.claim_execution(
-            request_id,
-            executor_id=self._executor_id,
-            lease_duration=self._lease_duration,
-            can_dispatch=self._can_dispatch,
-        )
+        # A failed claim leaves the row pending, and nothing else may wake for it: retry with
+        # backoff. Not once claimed, and not where the row itself is missing or inconsistent.
+        async for attempt in AsyncRetrying(
+            wait=wait_exponential(min=1, max=30),
+            retry=retry_if_not_exception_type((ActionNotFoundError, ActionConflictError)),
+            before_sleep=_claim_failed,
+        ):
+            with attempt:
+                if self.draining:
+                    return
+                claim = await self._store.claim_execution(
+                    request_id,
+                    executor_id=self._executor_id,
+                    lease_duration=self._lease_duration,
+                    can_dispatch=self._can_dispatch,
+                )
         if claim is None:
             return
         try:

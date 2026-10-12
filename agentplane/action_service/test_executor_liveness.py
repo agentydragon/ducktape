@@ -297,6 +297,38 @@ async def test_running_replica_wakes_for_a_dispatch_committed_elsewhere(
     assert executor.calls == 2
 
 
+async def test_failed_claim_is_retried_without_another_wake(engine: AsyncEngine, echo_catalog: ActionCatalog) -> None:
+    store = ActionStore(make_sessionmaker(engine))
+    executor = GatedExecutor()
+    executor.release.set()
+    claim_execution = store.claim_execution
+    attempts = 0
+
+    async def flaky_claim(
+        request_id: UUID,
+        *,
+        executor_id: str,
+        lease_duration: timedelta,
+        can_dispatch: Callable[[ActionIdentity], bool] | None = None,
+    ) -> ExecutionClaim | None:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise ConnectionError("test-transient-claim-failure")
+        return await claim_execution(
+            request_id, executor_id=executor_id, lease_duration=lease_duration, can_dispatch=can_dispatch
+        )
+
+    request_id = await _allowed_execution(store, idempotency_key="flaky-claim")
+    # Nothing notifies this signal: only the claim's own retry can reach the row again.
+    service = ActionService(store, echo_catalog, {"agentplane": executor}, dispatches=ChangeSignal())
+    with patch.object(store, "claim_execution", flaky_claim):
+        async with service:
+            await wait_for_state(store, request_id, CALLER, want=ActionState.SUCCEEDED)
+    assert attempts == 2
+    assert executor.calls == 1
+
+
 async def test_drain_includes_a_claim_whose_database_reply_is_still_in_flight(
     engine: AsyncEngine, echo_catalog: ActionCatalog
 ) -> None:
