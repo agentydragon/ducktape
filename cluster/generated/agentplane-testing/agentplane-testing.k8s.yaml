@@ -4753,6 +4753,121 @@ spec:
         name: launcher-or-token-volume
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-runner-vm-config
+  namespace: agentplane-testing
+data:
+  config.json: '{"version":1,"control":{"target":"10.0.2.1:3130","bearer":"platform-route"},"ingress":{"target":"10.0.2.1:3131","bearer":"platform-route"},"llm_base_url":"http://agentplane-llm-ingress.agentplane-testing.svc.cluster.local:8080","proxy_url":"http://10.0.2.1:3128"}'
+  kubeconfig: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: in-cluster
+        cluster:
+          server: https://kubernetes.default.svc.cluster.local
+          certificate-authority: /run/agentplane/ca-certificates.crt
+    users:
+      - name: workload
+        user:
+          token: agentplane-credential-kubernetes-workload
+    contexts:
+      - name: in-cluster
+        context:
+          cluster: in-cluster
+          user: workload
+    current-context: in-cluster
+immutable: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: SandboxTemplate
+metadata:
+  name: runner-vm
+  namespace: agentplane-testing
+spec:
+  vm:
+    dataVolumeTemplates:
+      - metadata:
+          name: workspace
+        spec:
+          pvc:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 10Gi
+            storageClassName: local-path-ovh-hdd
+          source:
+            blank: {}
+    template:
+      metadata:
+        labels:
+          app.kubernetes.io/name: agentplane-runner
+      spec:
+        domain:
+          cpu:
+            cores: 1
+          devices:
+            autoattachGraphicsDevice: false
+            disks:
+              - bootOrder: 1
+                disk:
+                  bus: virtio
+                name: rootdisk
+              - disk:
+                  bus: virtio
+                name: workspace
+                serial: workspace
+              - disk:
+                  bus: virtio
+                name: config
+                serial: agentplane-config
+              - disk:
+                  bus: virtio
+                name: trust
+                serial: agentplane-trust
+            interfaces:
+              - masquerade: {}
+                name: default
+                ports:
+                  - port: 22
+          firmware:
+            bootloader:
+              efi:
+                secureBoot: false
+          resources:
+            requests:
+              memory: 1536Mi
+        networks:
+          - name: default
+            pod: {}
+        nodeSelector:
+          kubevirt.io/schedulable: "true"
+        volumes:
+          - containerDisk:
+              image: git.allegedly.works/ducktape-ci/agentplane-runner-vm:unset
+              imagePullPolicy: IfNotPresent
+            name: rootdisk
+          - dataVolume:
+              name: workspace
+            name: workspace
+          - configMap:
+              name: agentplane-runner-vm-config
+            name: config
+          - configMap:
+              name: agentplane-testing-egress-ca
+            name: trust
+  stateVolume:
+    name: state
+    claim:
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+      storageClassName: local-path-ovh-hdd
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: agentplane-sandbox-controller

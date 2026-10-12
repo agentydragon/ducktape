@@ -51,6 +51,68 @@ def _virtio_disk(
     )
 
 
+def container_disk_template(
+    *,
+    labels: Mapping[str, str],
+    image: str,
+    cpu: VirtualMachineSpecTemplateSpecDomainCpu,
+    resources: VirtualMachineSpecTemplateSpecDomainResources,
+    node_selector: Mapping[str, str],
+    ports: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts],
+    disks: Mapping[str, VirtualMachineSpecTemplateSpecVolumes],
+    affinity: VirtualMachineSpecTemplateSpecAffinity | None = None,
+    host_devices: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesHostDevices] | None = None,
+    autoattach_graphics_device: bool | None = None,
+) -> VirtualMachineSpecTemplate:
+    """A VMI template, its pods labelled `labels`, that boots `image` as an ephemeral containerDisk
+    under EFI without Secure Boot, and reaches the pod network through masquerade on `ports`. Each of
+    `disks` attaches as a virtio disk the guest finds at `/dev/disk/by-id/virtio-<key>`. `cpu`,
+    `resources`, `node_selector`, `affinity`, `host_devices` and `autoattach_graphics_device` are the
+    VMI spec fields of those names.
+    """
+    return VirtualMachineSpecTemplate(
+        metadata=k8s.ObjectMeta(labels=dict(labels)),
+        spec=VirtualMachineSpecTemplateSpec(
+            node_selector=node_selector,
+            affinity=affinity,
+            domain=VirtualMachineSpecTemplateSpecDomain(
+                cpu=cpu,
+                resources=resources,
+                firmware=VirtualMachineSpecTemplateSpecDomainFirmware(
+                    bootloader=VirtualMachineSpecTemplateSpecDomainFirmwareBootloader(
+                        efi=VirtualMachineSpecTemplateSpecDomainFirmwareBootloaderEfi(secure_boot=False)
+                    )
+                ),
+                devices=VirtualMachineSpecTemplateSpecDomainDevices(
+                    autoattach_graphics_device=autoattach_graphics_device,
+                    disks=[
+                        _virtio_disk(_ROOT_DISK, boot_order=1),
+                        *(_virtio_disk(volume.name, serial=serial) for serial, volume in disks.items()),
+                    ],
+                    interfaces=[
+                        VirtualMachineSpecTemplateSpecDomainDevicesInterfaces(
+                            name=_NETWORK, masquerade={}, ports=list(ports)
+                        )
+                    ],
+                    host_devices=list(host_devices) if host_devices is not None else None,
+                ),
+            ),
+            networks=[
+                VirtualMachineSpecTemplateSpecNetworks(name=_NETWORK, pod=VirtualMachineSpecTemplateSpecNetworksPod())
+            ],
+            volumes=[
+                VirtualMachineSpecTemplateSpecVolumes(
+                    name=_ROOT_DISK,
+                    container_disk=VirtualMachineSpecTemplateSpecVolumesContainerDisk(
+                        image=image, image_pull_policy="IfNotPresent"
+                    ),
+                ),
+                *disks.values(),
+            ],
+        ),
+    )
+
+
 def container_disk_vm(
     scope: Construct,
     id: str,
@@ -69,12 +131,8 @@ def container_disk_vm(
     host_devices: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesHostDevices] | None = None,
     autoattach_graphics_device: bool | None = None,
 ) -> VirtualMachine:
-    """A VM (always running by default) that boots `image` as an ephemeral containerDisk under EFI without
-    Secure Boot, and reaches the pod network through masquerade on `ports`. Each of `disks`
-    attaches as a virtio disk the guest finds at `/dev/disk/by-id/virtio-<key>`. The VM is labelled
-    with its name, and its pods with `domain_labels(name)` too. `cpu`, `resources`, `node_selector`,
-    `affinity`, `host_devices` and `autoattach_graphics_device` are the VMI spec fields of those
-    names.
+    """A VM (always running by default) on `container_disk_template`, which takes the remaining
+    arguments. The VM is labelled with its name, and its pods with `domain_labels(name)` too.
     """
     labels = {"app.kubernetes.io/name": name}
     return VirtualMachine(
@@ -82,47 +140,16 @@ def container_disk_vm(
         id,
         metadata=ApiObjectMetadata(name=name, namespace=namespace, labels=labels, annotations=annotations),
         run_strategy=run_strategy,
-        template=VirtualMachineSpecTemplate(
-            metadata=k8s.ObjectMeta(labels=domain_labels(name) | labels),
-            spec=VirtualMachineSpecTemplateSpec(
-                node_selector=node_selector,
-                affinity=affinity,
-                domain=VirtualMachineSpecTemplateSpecDomain(
-                    cpu=cpu,
-                    resources=resources,
-                    firmware=VirtualMachineSpecTemplateSpecDomainFirmware(
-                        bootloader=VirtualMachineSpecTemplateSpecDomainFirmwareBootloader(
-                            efi=VirtualMachineSpecTemplateSpecDomainFirmwareBootloaderEfi(secure_boot=False)
-                        )
-                    ),
-                    devices=VirtualMachineSpecTemplateSpecDomainDevices(
-                        autoattach_graphics_device=autoattach_graphics_device,
-                        disks=[
-                            _virtio_disk(_ROOT_DISK, boot_order=1),
-                            *(_virtio_disk(volume.name, serial=serial) for serial, volume in disks.items()),
-                        ],
-                        interfaces=[
-                            VirtualMachineSpecTemplateSpecDomainDevicesInterfaces(
-                                name=_NETWORK, masquerade={}, ports=list(ports)
-                            )
-                        ],
-                        host_devices=list(host_devices) if host_devices is not None else None,
-                    ),
-                ),
-                networks=[
-                    VirtualMachineSpecTemplateSpecNetworks(
-                        name=_NETWORK, pod=VirtualMachineSpecTemplateSpecNetworksPod()
-                    )
-                ],
-                volumes=[
-                    VirtualMachineSpecTemplateSpecVolumes(
-                        name=_ROOT_DISK,
-                        container_disk=VirtualMachineSpecTemplateSpecVolumesContainerDisk(
-                            image=image, image_pull_policy="IfNotPresent"
-                        ),
-                    ),
-                    *disks.values(),
-                ],
-            ),
+        template=container_disk_template(
+            labels=domain_labels(name) | labels,
+            image=image,
+            cpu=cpu,
+            resources=resources,
+            node_selector=node_selector,
+            ports=ports,
+            disks=disks,
+            affinity=affinity,
+            host_devices=host_devices,
+            autoattach_graphics_device=autoattach_graphics_device,
         ),
     )

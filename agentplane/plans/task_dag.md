@@ -366,18 +366,13 @@ Runner Gateway.
 
 ### `VM_PROVIDER` — production provider API and lifecycle intent
 
-**Candidate.** Integrate typed environment kinds, templates/destinations, inventory, reconciliation,
-RBAC and UI. Container behavior remains intact. Review the changed service contracts and schema
-rollout as part of this work. For stateful VMs the kind lives on our own Sandbox resource, which
-reconciles to a bare Pod or a `VirtualMachine` (suspend is deleting the Pod or `runStrategy: Halted`).
-Re-type what is worth keeping from draft #8843 (`vm_view` status mapping and ownership checks, the
-`VmTemplate` catalog, halted create then start, DataVolume validation, halted image replacement)
-onto today's code, then close #8843 unmerged; it cannot be rebased. A Sandbox's kind comes only
-from its `SandboxTemplate`, so `CreateSandbox`, its proto and the app need no change (operator,
-2026-10-12 PDT). The VM template renders the guest's inputs as `agentplane/runner/vm.nix` reads
-them: the state PVC as the virtiofs filesystem `state`, a blank VM-lifetime workspace disk with
-serial `workspace`, and the config and trust disks. `agentplane-testing`'s 4Gi container limit caps
-a guest at about 1.7Gi: raise testing's limits or use small VMs there (operator, 2026-10-12 PDT).
+**Candidate.** The Sandbox Controller makes a `VirtualMachine` from a `SandboxTemplate`'s `vm`
+(`agentplane/sandbox_controller/SPEC.md` § VMs), the Runner Gateway accepts its virt-launcher Pod, and
+`agentplane-testing` has the `runner-vm` template (`cluster/cdk8s/agentplane/runner_vm.py`). Left:
+boot a Sandbox on `runner-vm` and open a Session on it; make `ListTemplates`, which reads only
+agent-sandbox's templates, list our own too, so the app's form offers `runner-vm`. Re-type what is
+worth keeping from draft #8843 (`vm_view` status mapping, DataVolume validation, halted image
+replacement), then close it unmerged; it cannot be rebased.
 
 ### `VM_EGRESS` — check the launcher relay live
 

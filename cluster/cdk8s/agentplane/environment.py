@@ -153,8 +153,9 @@ class Environment:
     # Whether this environment runs the Sandbox Controller and our own runner SandboxTemplates
     # beside agent-sandbox's: testing does, ahead of staging.
     own_sandboxes: bool
-    # Whether KubeVirt launchers of this environment's VM Sandboxes get the egress relay
-    # (launcher_relay.py). Only our own Sandboxes have VMs, so it needs `own_sandboxes`.
+    # Whether this environment has VM Sandboxes: the runner VM template (runner_vm.py) and the egress
+    # relay for their KubeVirt launchers (launcher_relay.py). Only our own Sandboxes have VMs, so it
+    # needs `own_sandboxes`.
     vm_sandboxes: bool
     notifications_github: GitHubAppProps | None = None
     # Binding scopes and cluster binding management the Sandbox Service keeps after their catalog

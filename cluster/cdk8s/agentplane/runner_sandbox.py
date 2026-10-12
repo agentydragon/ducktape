@@ -38,7 +38,7 @@ from constructs import Construct
 from agentplane.crd_group import GROUP
 from agentplane.egress import sidecar
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import egress, launcher_relay, llm_ingress, platform_routes, sandbox_pod
+from cluster.cdk8s.agentplane import egress, launcher_relay, llm_ingress, platform_routes, runner_vm, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
@@ -63,7 +63,8 @@ def pods(namespace: str) -> Pods:
 
 
 class RunnerSandbox(Construct):
-    """The runners' ServiceAccount and fence, and the shared runner template."""
+    """The runners' ServiceAccount and fence, the shared runner template, and where the environment has
+    VM Sandboxes, the VM template and its launchers' relay."""
 
     def __init__(self, scope: Construct, id: str, env: Environment) -> None:
         super().__init__(scope, id)
@@ -86,8 +87,10 @@ class RunnerSandbox(Construct):
             platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
         template = RunnerTemplate(self, "runner-template", env, name="runner", image=_IMAGE)
         if env.vm_sandboxes:
-            assert template.own_pod is not None  # vm_sandboxes needs own_sandboxes (Environment)
-            launcher_relay.LauncherRelayPolicy(self, "launcher-relay", namespace=namespace, runner_pod=template.own_pod)
+            own = template.own_spec
+            assert own is not None  # vm_sandboxes needs own_sandboxes (Environment)
+            launcher_relay.LauncherRelayPolicy(self, "launcher-relay", namespace=namespace, runner_pod=own["pod"])
+            runner_vm.RunnerVmTemplate(self, "runner-vm-template", env, labels=_LABELS, state_volume=own["stateVolume"])
 
 
 class RunnerTemplate(Construct):
@@ -108,14 +111,11 @@ class RunnerTemplate(Construct):
         self.env = env
         self.buildbuddy_secret = buildbuddy_secret
         self.extra_harness_env = extra_harness_env
-        # Our own SandboxTemplate's rendered Pod template, where the environment has one.
-        self.own_pod: dict[str, Any] | None = None
+        # Our own SandboxTemplate's rendered spec, where the environment has one.
+        self.own_spec: dict[str, Any] | None = None
         self._add_sandbox_template(name=name, image=image)
 
     def _runner_container(self, image: str) -> SandboxTemplateSpecPodTemplateSpecContainers:
-        # Through the egress proxy, which matches the host on the exact string its policy names.
-        llm = llm_ingress.service(self.env.namespace)
-        litellm_url = f"http://{llm.fqdn}:{llm.port.number}"
         # The environment a harness child starts from: a bare NAME takes the runner's
         # value, NAME=value sets one. The routing vars are named rather than set, so the
         # container env below is where they are written once and everything in the Pod
@@ -163,7 +163,9 @@ class RunnerTemplate(Construct):
             env=sandbox_pod.workload_environment(
                 self.env,
                 [
-                    SandboxTemplateSpecPodTemplateSpecContainersEnv(name="LITELLM_URL", value=litellm_url),
+                    SandboxTemplateSpecPodTemplateSpecContainersEnv(
+                        name="LITELLM_URL", value=llm_ingress.proxied_url(self.env.namespace)
+                    ),
                     *(
                         [
                             SandboxTemplateSpecPodTemplateSpecContainersEnv(
@@ -275,15 +277,10 @@ class RunnerTemplate(Construct):
             containers = {container["name"]: container for container in spec["podTemplate"]["spec"]["containers"]}
             containers[sidecar.CONTAINER_NAME]["env"].append(platform_routes.sidecar_env(self.env.namespace))
             containers["runner"]["args"].extend(platform_routes.runner_args(self.env.namespace))
-            self.own_pod = spec["podTemplate"]
+            self.own_spec = {
+                "pod": spec["podTemplate"],
+                "stateVolume": {"name": claim["metadata"]["name"], "claim": claim["spec"]},
+            }
             ApiObject(
                 self, "own-sandboxtemplate", api_version=f"{GROUP}/v1alpha1", kind="SandboxTemplate", metadata=metadata
-            ).add_json_patch(
-                JsonPatch.add(
-                    "/spec",
-                    {
-                        "pod": spec["podTemplate"],
-                        "stateVolume": {"name": claim["metadata"]["name"], "claim": claim["spec"]},
-                    },
-                )
-            )
+            ).add_json_patch(JsonPatch.add("/spec", self.own_spec))

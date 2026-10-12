@@ -196,6 +196,11 @@ spec:
       name: agentplane-runner-gateway-migrate
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'agentplane-runner-vm'
+      kind: ImageRepository
+      name: agentplane-runner-vm
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       filter: req.package.name == 'agentplane-sandbox'
       kind: ImageRepository
       name: agentplane-sandbox

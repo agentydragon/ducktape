@@ -39,6 +39,10 @@ class Route:
         return f"127.0.0.1:{self.listen_port}"
 
 
+# Each route replaces `authorization` with its own token, so a runner presents this placeholder.
+ROUTE_BEARER = "platform-route"
+
+
 def control(namespace: str) -> Route:
     return Route("control", runner_gateway.runner_control(namespace), RUNNER_CONTROL_AUDIENCE, 3130)
 
@@ -65,17 +69,16 @@ def sidecar_env(namespace: str) -> dict[str, str]:
 
 
 def runner_args(namespace: str) -> list[str]:
-    # The bearers are placeholders: each route replaces `authorization` with its own token.
     control_route, ingress_route = control(namespace), ingress(namespace)
     return [
         "--control-target",
         control_route.local_target,
         "--control-bearer",
-        "platform-route",
+        ROUTE_BEARER,
         "--ingress-target",
         ingress_route.local_target,
         "--ingress-bearer",
-        "platform-route",
+        ROUTE_BEARER,
     ]
 
 

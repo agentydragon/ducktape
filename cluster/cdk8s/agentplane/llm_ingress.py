@@ -55,6 +55,13 @@ def service(namespace: str) -> ServiceRef:
     )
 
 
+def proxied_url(namespace: str) -> str:
+    """The LLM ingress as a workload dials it through the egress proxy, which matches the host on the
+    exact string its policy names."""
+    llm = service(namespace)
+    return f"http://{llm.fqdn}:{llm.port.number}"
+
+
 class LlmIngress(Construct):
     """ServiceAccount, cluster TokenReview RBAC, the settings ConfigMap, Deployment,
     Service, and CiliumNetworkPolicy for the LLM ingress.

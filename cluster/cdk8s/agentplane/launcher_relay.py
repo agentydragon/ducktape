@@ -47,6 +47,8 @@ from cluster.cdk8s.providers.kyverno.cluster_policy import ClusterPolicy, Valida
 from util.settings_contract import env_name
 
 LAUNCHER_LABELS = {"kubevirt.io": "virt-launcher"}
+# Where a masquerade-networked guest reaches its launcher Pod, and so the relay.
+GUEST_GATEWAY = "10.0.2.1"
 CONTROLLER_USERNAME = "system:serviceaccount:kubevirt:kubevirt-controller"
 _KUBEVIRT_API_VERSION = "kubevirt.io/v1"
 _SANDBOX_API_VERSION = f"{GROUP}/{VERSION}"

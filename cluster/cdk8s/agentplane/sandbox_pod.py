@@ -65,11 +65,11 @@ _SUBSTITUTABLE_AUDIENCE_FILES = {
     RUNNER_CONTROL_AUDIENCE: "runner-control-token",
     RUNNER_INGRESS_AUDIENCE: "runner-ingress-token",
 }
-_SIDECAR_LISTEN_PORT = 3128
+SIDECAR_LISTEN_PORT = 3128
 # Shared by a workload's egress-ca volumeMount and the pod-level volume -- Kubernetes matches the
 # two by this name.
 _EGRESS_CA_VOLUME_NAME = "egress-ca"
-_MITM_PROXY_URL = f"http://127.0.0.1:{_SIDECAR_LISTEN_PORT}"
+_MITM_PROXY_URL = f"http://127.0.0.1:{SIDECAR_LISTEN_PORT}"
 _NO_PROXY_HOSTS = "127.0.0.1,localhost"
 _CA_BUNDLE_PATH = "/etc/ssl/certs/ca-certificates.crt"
 # Where Debian's JDKs keep the system trust store; Bazel's embedded JDK reads it only when told to.
@@ -168,14 +168,30 @@ def bazelrc_mount() -> SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts:
     )
 
 
+def kubeconfig(ca_path: str) -> dict[str, object]:
+    """A box's identity at the API server: through the proxy, verified against the bundle at
+    `ca_path`, which carries the interception root, with the placeholder the proxy swaps for the box's
+    own projected token. The box has no token of its own to put there; the sidecar holds it."""
+    return {
+        "apiVersion": "v1",
+        "kind": "Config",
+        "clusters": [
+            {
+                "name": "in-cluster",
+                "cluster": {"server": f"https://{egress.KUBERNETES_HOST}", "certificate-authority": ca_path},
+            }
+        ],
+        "users": [{"name": "workload", "user": {"token": placeholder_of(egress.KUBERNETES_CREDENTIAL)}}],
+        "contexts": [{"name": "in-cluster", "context": {"cluster": "in-cluster", "user": "workload"}}],
+        "current-context": "in-cluster",
+    }
+
+
 def add_tool_config(scope: Construct, env: Environment) -> None:
     """Bazel's system rc, which Bazel in a command box reads before its workspace's own, and the
     kubeconfig. Bazel's JVM fetches through the proxy but trusts only its own store, which lacks the
     interception root; and Bazel scrubs a test's environment, so the box's egress environment reaches
-    a test only when named here. The kubeconfig reaches the API server through the proxy, verified
-    against the bundle that carries the interception root, with the placeholder the proxy swaps for
-    the box's own projected token: the box has no token of its own to put there; the sidecar holds
-    it."""
+    a test only when named here."""
     passthrough = " ".join(f"--test_env={var.name}" for var in egress_env())
     tool_config = ConfigMap(
         scope,
@@ -185,24 +201,7 @@ def add_tool_config(scope: Construct, env: Environment) -> None:
             _BAZELRC_KEY: (
                 f"startup --host_jvm_args=-Djavax.net.ssl.trustStore={_JAVA_TRUST_STORE_PATH}\ncommon {passthrough}\n"
             ),
-            _KUBECONFIG_KEY: yaml_config(
-                {
-                    "apiVersion": "v1",
-                    "kind": "Config",
-                    "clusters": [
-                        {
-                            "name": "in-cluster",
-                            "cluster": {
-                                "server": f"https://{egress.KUBERNETES_HOST}",
-                                "certificate-authority": _CA_BUNDLE_PATH,
-                            },
-                        }
-                    ],
-                    "users": [{"name": "workload", "user": {"token": placeholder_of(egress.KUBERNETES_CREDENTIAL)}}],
-                    "contexts": [{"name": "in-cluster", "context": {"cluster": "in-cluster", "user": "workload"}}],
-                    "current-context": "in-cluster",
-                }
-            ),
+            _KUBECONFIG_KEY: yaml_config(kubeconfig(_CA_BUNDLE_PATH)),
         },
     )
     Role(
@@ -239,7 +238,7 @@ def _egress_sidecar(env: Environment) -> SandboxTemplateSpecPodTemplateSpecConta
                 name=env_name(sidecar.Settings, "proxy_port"), value=str(egress.PROXY_PORT)
             ),
             SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                name=env_name(sidecar.Settings, "listen_port"), value=str(_SIDECAR_LISTEN_PORT)
+                name=env_name(sidecar.Settings, "listen_port"), value=str(SIDECAR_LISTEN_PORT)
             ),
             SandboxTemplateSpecPodTemplateSpecContainersEnv(
                 name=env_name(sidecar.Settings, "readiness_host"), value=sidecar.READINESS_HOST
