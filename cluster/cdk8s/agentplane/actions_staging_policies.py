@@ -1,5 +1,5 @@
 """Staging-only Action Service policy objects: caller ServiceAccounts, reviewed
-ActionPolicySets, and their bindings; also what its sandboxes may reach (the EgressBinding)
+ActionPolicySets, and their bindings; also what its sandboxes may reach (its egress PolicyBinding)
 and read (the Coinbase key). See cluster/k8s/agentplane-staging/README.md § Action policies --
 Sandbox-subject bindings are written by the integration app at runtime and are never checked in here.
 """
@@ -15,8 +15,8 @@ from agentplane_actionpolicybinding_crds.works.allegedly.agentplane import (
     ActionPolicyBindingSpecSubject,
 )
 from agentplane_actionpolicyset_crds.works.allegedly.agentplane import ActionPolicySetSpecAutoApproveIf
-from agentplane_egressbinding_crds.works.allegedly.agentplane import EgressBindingSpecSubjects
 from agentplane_egresspolicy_crds.works.allegedly.agentplane import EgressPolicySpecRules, EgressPolicySpecRulesMethods
+from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBindingSpecSubject
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 from constructs import Construct
@@ -38,6 +38,7 @@ from cluster.cdk8s.agentplane.egress import (
     INFERENCE_EXPERIMENTS_POLICY,
     PACKAGES_POLICY,
 )
+from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.egress_staging_credentials import (
     ACTIVITYWATCH_READ_POLICY,
     AIQUOTA_READ_POLICY,
@@ -49,8 +50,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     PLAID_PGWEB_POLICY,
 )
 from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
-from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
-from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
+from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.public_coder.egress import NAMESPACE, SERVICE_ACCOUNT
@@ -124,8 +124,8 @@ def _binding(
 
 
 def _sandbox_egress_binding(scope: Construct, account: ServiceAccount, *, policies: Sequence[str]) -> None:
-    """What sandboxes running as `account` may reach: the named EgressPolicies."""
-    EgressBinding(
+    """What sandboxes running as `account` may reach: the named egress policies."""
+    PolicyBinding(
         scope,
         f"egressbinding-{account.name}",
         metadata=ApiObjectMetadata(
@@ -133,8 +133,8 @@ def _sandbox_egress_binding(scope: Construct, account: ServiceAccount, *, polici
             namespace=_NAMESPACE,
             annotations={"description": f"What sandboxes running as the {account.name} ServiceAccount may reach."},
         ),
-        subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name=account.name)],
-        policies=policies,
+        subject=PolicyBindingSpecSubject(namespace=_NAMESPACE, name=account.name),
+        policy_sets=policies,
     )
 
 
@@ -357,7 +357,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # rather than reusing it: claude-ai is the Claude.ai MCP connector's principal, and
     # Haku's own credentials (forgejo-haku, haku-mailbox) are bound to claude-ai today only
     # because claude-ai happens to be "the connection Haku runs through" (see the
-    # EgressBinding comment below) -- a historical accident, not a reason to keep growing
+    # egress PolicyBinding comment below) -- a historical accident, not a reason to keep growing
     # that account's authority. haku-agent is a static caller identity, not the per-Sandbox
     # ServiceAccount on managed runner Pods; Coinbase key delivery to those runners is tracked
     # in #8596.
@@ -596,7 +596,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             for index, subject in enumerate(access.profile_subjects("coinbase-credentials"))
         ),
     )
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-coinbase",
         metadata=ApiObjectMetadata(name=COINBASE_POLICY, namespace=_NAMESPACE),
@@ -611,7 +611,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # Browser/OIDC acceptance tests follow the app's public callback and Dex issuer.
     # Neither staging's app nor its real Authentik issuer belongs in this policy.
     testing_login_hosts = [testing.ENV.app.hostname, urlsplit(testing.ENV.app.oidc_issuer).netloc]
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-agentplane-testing",
         metadata=ApiObjectMetadata(name=AGENTPLANE_TESTING_POLICY, namespace=_NAMESPACE),
@@ -650,7 +650,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     )
     # GitHub downloads with nothing substituted: a release asset or a tag archive, which is what a
     # Bazel `http_archive` fetches, without the write-capable PAT `github-agentydragon-agent` carries.
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-github-downloads",
         metadata=ApiObjectMetadata(name=_GITHUB_DOWNLOADS_POLICY, namespace=_NAMESPACE),

@@ -11,6 +11,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
+from agentplane import policy_sets
 from agentplane.egress.policy import (
     Allowed,
     AuthenticatedWorkloadContext,
@@ -50,6 +51,7 @@ from agentplane.egress.resources import (
     WholeValueTarget,
 )
 from agentplane.kubernetes_watch import Freshness
+from agentplane.policy_sets import NumberedRule, PolicySet
 from agentplane.subjects import ServiceAccountRef
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
@@ -723,6 +725,43 @@ def test_body_credential_is_known_even_without_a_binding_naming_it() -> None:
     rules = matrix_index()
     rules.policies["matrix"] = policy("matrix", Rule(hosts=["matrix.test"]))
     assert evaluate(rules, CALLER, matrix_request(), NOW) == Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
+
+
+def policy_binding_index(*sets: PolicySet[Rule], subject: ServiceAccountRef = CALLER) -> Index:
+    """`sets` bound to `subject` by one PolicyBinding, `pb`, which also names a set that does not exist."""
+    rules = index(policies=[], bindings=[])
+    rules.policy_sets = {policy_set.name: policy_set for policy_set in sets}
+    rules.policy_bindings = {
+        "pb": policy_sets.PolicyBinding(
+            metadata=policy_sets.ObjectMeta(name="pb", namespace=NAMESPACE, uid="uid-pb", generation=1),
+            spec=policy_sets.BindingSpec(subject=subject, policy_sets=["absent", *rules.policy_sets]),
+        )
+    }
+    return rules
+
+
+def test_a_policy_binding_grants_its_existing_sets_rules_by_their_set_position() -> None:
+    rules = policy_binding_index(PolicySet(name="github", rules=(NumberedRule(number=2, rule=GITHUB_RULE),)))
+    assert evaluate(rules, CALLER, request(authorization=f"Bearer {PLACEHOLDER}"), NOW) == Allowed(
+        "pb", "github", 2, SWAPPED
+    )
+
+
+@pytest.mark.parametrize(
+    "rules",
+    [
+        pytest.param(policy_binding_index(PolicySet(name="kubernetes-only", rules=())), id="no egress rules"),
+        pytest.param(
+            policy_binding_index(
+                PolicySet(name="github", rules=(NumberedRule(number=0, rule=GITHUB_RULE),)),
+                subject=ServiceAccountRef(namespace=NAMESPACE, name="another"),
+            ),
+            id="another subject",
+        ),
+    ],
+)
+def test_a_policy_binding_without_egress_rules_for_the_caller_is_no_binding(rules: Index) -> None:
+    assert evaluate(rules, CALLER, request(), NOW) == Denied(DenyReason.NO_BINDING)
 
 
 if __name__ == "__main__":

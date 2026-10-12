@@ -1,7 +1,9 @@
 """The decision: bindings to egress policies to the rule the request's placeholder picks, over an in-memory index. No I/O.
 
-`Index` is the proxy's picture of the namespace, kept equal to the API server's by the informer;
-`evaluate` and `resolve_binding` use the caller's clock to decide expiry.
+`Index` is the proxy's picture of the namespace, kept equal to the API server's by the informer.
+A subject's rules come from two kinds of binding: an `EgressBinding` of `EgressPolicy`s, whose
+`expiresAt` the proxy checks against the caller's clock, and a `PolicyBinding` of `PolicySet`s,
+whose egress rules grant while the binding exists (the Policy Controller deletes it at expiry).
 
 Where a credential sits in a request, and what the forwarded headers become, is `presentation.py`:
 one parse per declared target, read by detection and substitution alike.
@@ -40,10 +42,20 @@ from agentplane.egress.resources import (
     Secret,
 )
 from agentplane.kubernetes_watch import Freshness
+from agentplane.policy_sets import (
+    POLICY_BINDINGS_PLURAL,
+    POLICY_SETS_PLURAL,
+    NumberedRule,
+    PolicyBinding,
+    PolicySet,
+    subject_bindings,
+)
 from agentplane.subjects import ServiceAccountRef
 
 CONNECT = "CONNECT"
-WATCHED_KINDS = frozenset({POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, "secrets"})
+WATCHED_KINDS = frozenset(
+    {POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, POLICY_SETS_PLURAL, POLICY_BINDINGS_PLURAL, "secrets"}
+)
 
 
 class DenyReason(StrEnum):
@@ -75,6 +87,8 @@ class Index:
     freshness: Freshness
     policies: dict[str, EgressPolicy] = field(default_factory=dict)
     bindings: dict[str, EgressBinding] = field(default_factory=dict)
+    policy_sets: dict[str, PolicySet[Rule]] = field(default_factory=dict)
+    policy_bindings: dict[str, PolicyBinding] = field(default_factory=dict)
     credentials: dict[str, EgressCredential] = field(default_factory=dict)
     secrets: dict[str, Secret] = field(default_factory=dict, repr=False)
     synced: bool = field(default=False)
@@ -177,14 +191,36 @@ def resolve_binding(index: Index, binding: EgressBinding, now: datetime) -> Bind
     return BindingResolution(binding=binding, policies=policies, missing=missing, reason=reason)
 
 
-def subject_bindings(index: Index, caller: ServiceAccountRef, now: datetime) -> list[BindingResolution]:
-    """The active bindings naming this caller, in name order."""
-    return [
-        resolution
+@dataclass(frozen=True)
+class Grant:
+    """One binding naming the caller, and the egress rules it grants by policy."""
+
+    binding: str
+    policies: tuple[PolicySet[Rule], ...]
+
+
+def _as_policy_set(policy: EgressPolicy) -> PolicySet[Rule]:
+    return PolicySet(
+        name=policy.metadata.name,
+        rules=tuple(NumberedRule(number=number, rule=rule) for number, rule in enumerate(policy.spec.rules)),
+    )
+
+
+def subject_grants(index: Index, caller: ServiceAccountRef, now: datetime) -> list[Grant]:
+    """The bindings of either kind that give this caller egress rules, in name order."""
+    egress_bindings = [
+        Grant(binding=resolution.binding.metadata.name, policies=tuple(map(_as_policy_set, resolution.policies)))
         for name in sorted(index.bindings)
         if (resolution := resolve_binding(index, index.bindings[name], now)).active
         and caller in resolution.binding.spec.subjects
     ]
+    policy_bindings = [
+        Grant(binding=resolution.binding.metadata.name, policies=sets)
+        for resolution in subject_bindings(index.policy_sets, index.policy_bindings, caller)
+        # A set with no egress rules is another reader's, and grants this proxy nothing.
+        if (sets := tuple(policy_set for policy_set in resolution.sets if policy_set.rules))
+    ]
+    return sorted([*egress_bindings, *policy_bindings], key=lambda grant: grant.binding)
 
 
 def host_matches(pattern: str, host: str) -> bool:
@@ -229,14 +265,14 @@ class _Match:
     rule: Rule
 
 
-def _matching_rules(bindings: Sequence[BindingResolution], request: EgressRequest) -> list[_Match]:
+def _matching_rules(grants: Sequence[Grant], request: EgressRequest) -> list[_Match]:
     """Every rule that admits the request, in walk order: bindings by name, egress policies and rules as listed."""
     return [
-        _Match(binding=resolution.binding.metadata.name, policy=policy.metadata.name, number=number, rule=rule)
-        for resolution in bindings
-        for policy in resolution.policies
-        for number, rule in enumerate(policy.spec.rules)
-        if rule_matches(rule, request)
+        _Match(binding=grant.binding, policy=policy.name, number=numbered.number, rule=numbered.rule)
+        for grant in grants
+        for policy in grant.policies
+        for numbered in policy.rules
+        if rule_matches(numbered.rule, request)
     ]
 
 
@@ -275,10 +311,10 @@ def evaluate(
     came. So a placeholder is never forwarded, and widening what a subject may reach never takes a
     credential away from it.
     """
-    bindings = subject_bindings(index, caller, now)
-    if not bindings:
+    grants = subject_grants(index, caller, now)
+    if not grants:
         return Denied(DenyReason.NO_BINDING)
-    matches = _matching_rules(bindings, request)
+    matches = _matching_rules(grants, request)
     if not matches:
         return Denied(DenyReason.NO_RULE)
     # A CONNECT is decided on host alone: its headers belong to the tunnel, and the requests inside

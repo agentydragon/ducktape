@@ -18,14 +18,14 @@ import pytest_bazel
 from agentplane.egress.admin import create_admin_app
 from agentplane.egress.decision_log import DecisionLog
 from agentplane.egress.decision_store import DecisionStore, make_engine
-from agentplane.egress.policy import Index
+from agentplane.egress.policy import WATCHED_KINDS, Index
 from agentplane.egress.resources import EgressBinding, EgressPolicy
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.testing.fake_apiserver import binding, policy
 
 RESYNC_SECONDS = 300
 STARTED = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
-KINDS = ("egresspolicies", "egressbindings", "egresscredentials", "secrets")
+KINDS = sorted(WATCHED_KINDS)
 
 
 @dataclass

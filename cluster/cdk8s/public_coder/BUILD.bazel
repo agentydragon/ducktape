@@ -1,6 +1,6 @@
 # gazelle:resolve py agentplane_egresspolicy_crds //agentplane/crds:egresspolicy
 # gazelle:resolve py agentplane_egresscredential_crds //agentplane/crds:egresscredential
-# gazelle:resolve py agentplane_egressbinding_crds //agentplane/crds:egressbinding
+# gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding
 # gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
 # gazelle:resolve py volsync_replicationsource_crds //cluster/cdk8s/providers/volsync:replicationsource
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
@@ -79,21 +79,21 @@ py_library(
     srcs = ["egress.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
-        "//agentplane/crds:egressbinding",
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:egresspolicy",
+        "//agentplane/crds:policybinding",
         "//agentplane/egress:sidecar",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s/agentplane:actions",
         "//cluster/cdk8s/agentplane:egress",
         "//cluster/cdk8s/agentplane:egress_credentials",
+        "//cluster/cdk8s/agentplane:egress_policies",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/external_secrets:single_secret_store",
         "//cluster/cdk8s/haku:kube_api_proxy",
-        "//cluster/cdk8s/providers/agentplane:egress_binding",
         "//cluster/cdk8s/providers/agentplane:egress_credential",
-        "//cluster/cdk8s/providers/agentplane:egress_policy",
+        "//cluster/cdk8s/providers/agentplane:policy_binding",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//util:settings_contract",
         "@pypi//cdk8s",

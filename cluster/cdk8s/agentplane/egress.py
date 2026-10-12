@@ -52,6 +52,7 @@ from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, database, llm_ingress, notifications
 from cluster.cdk8s.agentplane.egress_credentials import BUILDBUDDY_API_KEY_SECRET, GITHUB_PAT_SECRET
+from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
@@ -64,7 +65,6 @@ from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
 from cluster.cdk8s.ollama import app as ollama
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
-from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -171,7 +171,7 @@ def add_runner_egress(
             )
         ],
     )
-    EgressPolicy(
+    add_egress_policy(
         scope,
         f"{policy}-policy",
         metadata=ApiObjectMetadata(name=policy, namespace=namespace),
@@ -315,7 +315,7 @@ def _egress_credentials(scope: Construct, *, namespace: str) -> None:
 def _egress_policies(scope: Construct, *, namespace: str) -> None:
     (litellm_spec,) = litellm_proxy.proxy_specs()
     litellm_service = litellm_proxy.service(litellm_spec)
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-inference-experiments",
         metadata=ApiObjectMetadata(name=INFERENCE_EXPERIMENTS_POLICY, namespace=namespace),
@@ -369,13 +369,13 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
         ],
     )
     # Available for explicit grants only: no defaults, presets or standing bindings opt in.
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "public-internet-policy",
         metadata=ApiObjectMetadata(name=PUBLIC_INTERNET_POLICY, namespace=namespace),
         rules=[EgressPolicySpecRules(hosts=["*"])],
     )
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-basic",
         metadata=ApiObjectMetadata(name=BASIC_POLICY, namespace=namespace),
@@ -449,7 +449,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             ),
         ],
     )
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-packages",
         metadata=ApiObjectMetadata(name=PACKAGES_POLICY, namespace=namespace),
@@ -502,7 +502,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             )
         ],
     )
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-github-agentydragon-agent",
         metadata=ApiObjectMetadata(name=GITHUB_AGENTYDRAGON_AGENT_POLICY, namespace=namespace),
@@ -514,7 +514,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             )
         ],
     )
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-github-actions-logs",
         metadata=ApiObjectMetadata(name=GITHUB_ACTIONS_LOGS_POLICY, namespace=namespace),
@@ -530,7 +530,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             EgressPolicySpecRules(hosts=["*.blob.core.windows.net"], methods=[EgressPolicySpecRulesMethods.GET])
         ],
     )
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-public-coder-pr-visuals",
         metadata=ApiObjectMetadata(name=PUBLIC_CODER_VISUALS_POLICY, namespace=namespace),
@@ -543,7 +543,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             )
         ],
     )
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-buildbuddy",
         metadata=ApiObjectMetadata(name=BUILDBUDDY_POLICY, namespace=namespace),
@@ -557,7 +557,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             )
         ],
     )
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-github-clone",
         metadata=ApiObjectMetadata(name=GITHUB_CLONE_POLICY, namespace=namespace),
@@ -641,7 +641,7 @@ class Egress(Construct):
         # What the proxy reads to decide a request: policies, bindings, credentials.
         # No Pods (TokenReview already names the subject) and no Secrets (an
         # EgressCredential names one, but the values live in a separate namespace
-        # this Role doesn't grant).
+        # this Role doesn't grant). Its one write is its own EgressReady condition.
         Role(
             self,
             "role",
@@ -650,10 +650,17 @@ class Egress(Construct):
                 RolePolicyRule(
                     resources=[
                         custom_resource(GROUP, resource)
-                        for resource in ["egresspolicies", "egressbindings", "egresscredentials"]
+                        for resource in [
+                            "egresspolicies",
+                            "egressbindings",
+                            "egresscredentials",
+                            "policysets",
+                            "policybindings",
+                        ]
                     ],
                     verbs=["get", "list", "watch"],
-                )
+                ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
             ],
         )
         RoleBinding(

@@ -43,7 +43,17 @@ class CustomObjectsClient(Protocol):
     ) -> object: ...
 
     async def patch_namespaced_custom_object_status(
-        self, group: str, version: str, namespace: str, plural: str, name: str, body: object, *, _content_type: str
+        self,
+        group: str,
+        version: str,
+        namespace: str,
+        plural: str,
+        name: str,
+        body: object,
+        *,
+        _content_type: str,
+        field_manager: str = ...,
+        force: bool = ...,
     ) -> object: ...
 
     async def delete_namespaced_custom_object(

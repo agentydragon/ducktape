@@ -1115,6 +1115,28 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policysets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings/status
+    verbs:
+      - patch
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -1454,6 +1476,73 @@ spec:
         name: litellm-cheap-experiments
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: inference-experiments
+  namespace: agentplane-testing
+spec:
+  rules:
+    - type: egress
+      hosts:
+        - ollama.ollama.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /api/tags
+        - /api/ps
+        - /api/version
+        - /v1/models
+      clusterInternal: true
+      credentialRef:
+        name: ollama
+    - type: egress
+      hosts:
+        - ollama.ollama.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /api/show
+        - /api/chat
+        - /api/generate
+        - /api/embed
+        - /api/embeddings
+        - /v1/chat/completions
+        - /v1/completions
+        - /v1/responses
+        - /v1/embeddings
+      clusterInternal: true
+      credentialRef:
+        name: ollama
+    - type: egress
+      hosts:
+        - litellm.litellm.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /v1/models
+        - /models
+        - /model/info
+      clusterInternal: true
+      credentialRef:
+        name: litellm-cheap-experiments
+    - type: egress
+      hosts:
+        - litellm.litellm.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /v1/chat/completions
+        - /v1/completions
+        - /v1/responses
+        - /v1/messages
+        - /v1/messages/count_tokens
+        - /v1/embeddings
+        - /v1/audio/transcriptions
+      clusterInternal: true
+      credentialRef:
+        name: litellm-cheap-experiments
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
   name: public-internet
@@ -1461,6 +1550,17 @@ metadata:
 spec:
   rules:
     - hosts:
+        - "*"
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: public-internet
+  namespace: agentplane-testing
+spec:
+  rules:
+    - type: egress
+      hosts:
         - "*"
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
@@ -1529,6 +1629,76 @@ spec:
         name: kubernetes-workload
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: basic
+  namespace: agentplane-testing
+spec:
+  rules:
+    - type: egress
+      hosts:
+        - agentplane-llm-ingress.agentplane-testing.svc.cluster.local
+      methods:
+        - GET
+        - POST
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-workload
+    - type: egress
+      hosts:
+        - agentplane-notifications.agentplane-testing.svc.cluster.local
+      methods:
+        - GET
+        - POST
+        - PUT
+        - PATCH
+        - DELETE
+      paths:
+        - /openapi.json
+        - /v1/sources
+        - /v1/subscriptions
+        - /v1/subscriptions/**
+        - /v1/inboxes
+        - /v1/inboxes/**
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-notifications-workload
+    - type: egress
+      hosts:
+        - agentplane-actions.agentplane-testing.svc.cluster.local
+      methods:
+        - GET
+        - POST
+      paths:
+        - /mcp
+        - /openapi.json
+        - /v1/action-groups
+        - /v1/action-groups/**
+        - /v1/action-policy
+        - /v1/action-requests
+        - /v1/action-requests/**
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-workload
+    - type: egress
+      hosts:
+        - agentplane-egress.agentplane-testing.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /openapi.json
+        - /v1/rules
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-workload
+    - type: egress
+      hosts:
+        - kubernetes.default.svc.cluster.local
+      clusterInternal: true
+      credentialRef:
+        name: kubernetes-workload
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
   name: packages
@@ -1536,6 +1706,37 @@ metadata:
 spec:
   rules:
     - hosts:
+        - bcr.bazel.build
+        - cache.nixos.org
+        - channels.nixos.org
+        - code.forgejo.org
+        - data.forgejo.org
+        - files.pythonhosted.org
+        - ftp.gnu.org
+        - ghcr.io
+        - index.crates.io
+        - nixos.org
+        - nodejs.org
+        - pkg-containers.githubusercontent.com
+        - pypi.org
+        - registry.npmjs.org
+        - releases.bazel.build
+        - snapshot.debian.org
+        - static.crates.io
+        - static.rust-lang.org
+      methods:
+        - GET
+        - HEAD
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: packages
+  namespace: agentplane-testing
+spec:
+  rules:
+    - type: egress
+      hosts:
         - bcr.bazel.build
         - cache.nixos.org
         - channels.nixos.org
@@ -1577,6 +1778,25 @@ spec:
         name: github-pat
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: github-agentydragon-agent
+  namespace: agentplane-testing
+spec:
+  rules:
+    - type: egress
+      hosts:
+        - api.github.com
+        - github.com
+        - codeload.github.com
+        - "*.githubusercontent.com"
+      methods:
+        - GET
+        - POST
+      credentialRef:
+        name: github-pat
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
   name: github-actions-logs
@@ -1589,6 +1809,19 @@ spec:
         - GET
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: github-actions-logs
+  namespace: agentplane-testing
+spec:
+  rules:
+    - type: egress
+      hosts:
+        - "*.blob.core.windows.net"
+      methods:
+        - GET
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
   name: public-coder-pr-visuals
@@ -1596,6 +1829,21 @@ metadata:
 spec:
   rules:
     - hosts:
+        - s3.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /pr-visuals/**
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: public-coder-pr-visuals
+  namespace: agentplane-testing
+spec:
+  rules:
+    - type: egress
+      hosts:
         - s3.allegedly.works
       methods:
         - GET
@@ -1616,6 +1864,20 @@ spec:
         name: buildbuddy
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: buildbuddy
+  namespace: agentplane-testing
+spec:
+  rules:
+    - type: egress
+      hosts:
+        - app.buildbuddy.io
+        - remote.buildbuddy.io
+      credentialRef:
+        name: buildbuddy
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy
 metadata:
   name: github-clone
@@ -1623,6 +1885,25 @@ metadata:
 spec:
   rules:
     - hosts:
+        - github.com
+      methods:
+        - GET
+        - POST
+      paths:
+        - /*/*.git/info/refs
+        - /*/*.git/git-upload-pack
+        - /*/*/info/refs
+        - /*/*/git-upload-pack
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: github-clone
+  namespace: agentplane-testing
+spec:
+  rules:
+    - type: egress
+      hosts:
         - github.com
       methods:
         - GET
@@ -2595,6 +2876,24 @@ spec:
       credentialRef:
         name: agentplane-runner-control
 ---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: runner-control
+  namespace: agentplane-testing
+spec:
+  rules:
+    - type: egress
+      hosts:
+        - agentplane-runner-gateway.agentplane-testing.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /agentplane.proto.runner_control.RunnerControl/Connect
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-runner-control
+---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
@@ -2896,6 +3195,24 @@ metadata:
 spec:
   rules:
     - hosts:
+        - agentplane-history-service.agentplane-testing.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /agentplane.proto.runner_ingress.RunnerIngress/Push
+      clusterInternal: true
+      credentialRef:
+        name: agentplane-runner-ingress
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: runner-ingress
+  namespace: agentplane-testing
+spec:
+  rules:
+    - type: egress
+      hosts:
         - agentplane-history-service.agentplane-testing.svc.cluster.local
       methods:
         - POST

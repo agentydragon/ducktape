@@ -9,11 +9,11 @@ import pytest_bazel
 
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
-    check_egress_bindings_resolve_policies,
     check_external_credential_ownership,
     check_forgejo_image_namespace_reflection,
     check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
+    check_policy_bindings_resolve_sets,
 )
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.flux import FluxKustomizationSpec
@@ -144,25 +144,25 @@ def test_specs_rules_checked() -> None:
     assert "multi" in error
 
 
-def _egress_policy(namespace: str, name: str) -> dict:
+def _policy_set(namespace: str, name: str) -> dict:
     return {
         "apiVersion": "agentplane.allegedly.works/v1alpha1",
-        "kind": "EgressPolicy",
+        "kind": "PolicySet",
         "metadata": {"name": name, "namespace": namespace},
-        "spec": {"rules": [{"hosts": ["example.test"]}]},
+        "spec": {"rules": [{"type": "egress", "hosts": ["example.test"]}]},
     }
 
 
-def _egress_binding(namespace: str, policies: list[str]) -> dict:
+def _policy_binding(namespace: str, policy_sets: list[str]) -> dict:
     return {
         "apiVersion": "agentplane.allegedly.works/v1alpha1",
-        "kind": "EgressBinding",
+        "kind": "PolicyBinding",
         "metadata": {"name": "binding", "namespace": namespace},
-        "spec": {"subjects": [{"namespace": namespace, "name": "box"}], "policies": policies},
+        "spec": {"subject": {"namespace": namespace, "name": "box"}, "policySets": policy_sets},
     }
 
 
-def _egress_cluster(docs: list[dict]) -> ParsedCluster:
+def _policy_cluster(docs: list[dict]) -> ParsedCluster:
     return ParsedCluster(
         build_results=[
             KustomizeBuildResult(
@@ -172,17 +172,15 @@ def _egress_cluster(docs: list[dict]) -> ParsedCluster:
     )
 
 
-def test_egress_binding_resolves_policies_in_its_namespace() -> None:
-    cluster = _egress_cluster([_egress_policy("staging", "github"), _egress_binding("staging", ["github"])])
-    assert check_egress_bindings_resolve_policies(cluster) == []
+def test_policy_binding_resolves_sets_in_its_namespace() -> None:
+    cluster = _policy_cluster([_policy_set("staging", "github"), _policy_binding("staging", ["github"])])
+    assert check_policy_bindings_resolve_sets(cluster) == []
 
 
-def test_egress_binding_policy_missing_or_in_other_namespace_is_flagged() -> None:
-    # A policy of the right name in another namespace does not count.
-    cluster = _egress_cluster(
-        [_egress_policy("production", "github"), _egress_binding("staging", ["github", "gitlab"])]
-    )
-    errors = check_egress_bindings_resolve_policies(cluster)
+def test_policy_binding_set_missing_or_in_other_namespace_is_flagged() -> None:
+    # A set of the right name in another namespace does not count.
+    cluster = _policy_cluster([_policy_set("production", "github"), _policy_binding("staging", ["github", "gitlab"])])
+    errors = check_policy_bindings_resolve_sets(cluster)
     assert [error.split("'")[3] for error in errors] == ["github", "gitlab"]
 
 

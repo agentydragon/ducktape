@@ -114,6 +114,7 @@ py_library(
         ":actions",
         ":database",
         ":egress_credentials",
+        ":egress_policies",
         ":environment",
         ":llm_ingress",
         ":migrate_container",
@@ -141,7 +142,6 @@ py_library(
         "//cluster/cdk8s/litellm:proxy",
         "//cluster/cdk8s/ollama:app",
         "//cluster/cdk8s/providers/agentplane:egress_credential",
-        "//cluster/cdk8s/providers/agentplane:egress_policy",
         "//cluster/cdk8s/providers/cert_manager:bundle",
         "//cluster/cdk8s/providers/cert_manager:cert_manager_bundle",
         "//cluster/cdk8s/providers/cilium:network_policy",
@@ -378,26 +378,43 @@ py_library(
 )
 
 py_library(
+    name = "egress_policies",
+    srcs = ["egress_policies.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/public_coder:__pkg__",
+    ],
+    deps = [
+        "//agentplane/crds:egresspolicy",
+        "//agentplane/crds:policyset",
+        "//cluster/cdk8s/providers/agentplane:egress_policy",
+        "//cluster/cdk8s/providers/agentplane:policy_set",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "actions_staging_policies",
     srcs = ["actions_staging_policies.py"],
     deps = [
         ":app",
         ":dex",
         ":egress",
+        ":egress_policies",
         ":egress_staging_credentials",
         ":testing",
         "//agentplane/action_service/policies:resources",
         "//agentplane/action_service/sandbox:actions",
         "//agentplane/crds:actionpolicybinding",
         "//agentplane/crds:actionpolicyset",
-        "//agentplane/crds:egressbinding",
         "//agentplane/crds:egresspolicy",
+        "//agentplane/crds:policybinding",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s/providers/agentplane:action_policy_set",
-        "//cluster/cdk8s/providers/agentplane:egress_binding",
-        "//cluster/cdk8s/providers/agentplane:egress_policy",
+        "//cluster/cdk8s/providers/agentplane:policy_binding",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/public_coder:egress",
@@ -730,6 +747,7 @@ py_library(
     deps = [
         ":egress",
         ":egress_credentials",
+        ":egress_policies",
         "//agentplane/crds:egresscredential",
         "//agentplane/crds:egresspolicy",
         "//cluster/cdk8s:aiquota",
@@ -742,7 +760,6 @@ py_library(
         "//cluster/cdk8s/home_assistant:app",
         "//cluster/cdk8s/plaid_mcp:pgweb",
         "//cluster/cdk8s/providers/agentplane:egress_credential",
-        "//cluster/cdk8s/providers/agentplane:egress_policy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/public_coder:egress",
         "@pypi//cdk8s",

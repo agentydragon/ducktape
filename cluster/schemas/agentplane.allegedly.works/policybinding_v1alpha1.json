@@ -55,7 +55,7 @@
             "type"
           ],
           "items": {
-            "description": "A metav1.Condition. Each reader owns its own condition type, applied with its own field manager: `KubernetesReady` is the Policy Controller's.",
+            "description": "A metav1.Condition. Each reader owns its own condition type, applied with its own field manager: `KubernetesReady` is the Policy Controller's, `EgressReady` the egress proxy's.",
             "type": "object",
             "required": [
               "type",

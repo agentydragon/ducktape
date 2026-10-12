@@ -26,6 +26,12 @@ exclusion. The proxy that enforces the result is <../egress/SPEC.md>; the kinds 
 
 A policy on its own grants nothing; a binding grants by existing and being unexpired.
 
+The generic kinds have the same shape with one subject per binding: a `PolicySet` of the same
+name carries each policy's rules as `egress` rules (cdk8s renders both from one definition), and a
+`PolicyBinding` names one ServiceAccount and N sets, so a multi-subject binding is one
+`PolicyBinding` per subject. The proxy reads both kinds into one decision; Flux-owned bindings are
+`PolicyBinding`s, and Sandboxes still get `EgressBinding`s.
+
 ### The app writes only 1×N
 
 `EgressInventory.grant()` (<../app/egress.py>) hardcodes a single subject: it writes one `subjects`

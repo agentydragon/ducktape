@@ -181,7 +181,7 @@ _ACTION_GROUPS = {
         title="Sandbox",
         description=(
             "Sandboxes that run as the calling ServiceAccount, and bounded commands in them. A "
-            "sandbox reaches what its caller's EgressBindings allow and is admitted back to this "
+            "sandbox reaches what its caller's egress bindings allow and is admitted back to this "
             "service as that same caller, so it confers no authority the caller did not hold."
         ),
         executor=SandboxExecutorBinding(

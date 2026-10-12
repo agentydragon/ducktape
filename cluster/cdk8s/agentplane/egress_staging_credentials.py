@@ -33,6 +33,7 @@ from cluster.cdk8s.agentplane.egress_credentials import (
     credential_external_secret,
     inference_credentials,
 )
+from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.aiquota import AGENTPLANE_STAGING_BEARER, SERVICE as AIQUOTA_SERVICE
 from cluster.cdk8s.authentik import app as authentik
 from cluster.cdk8s.clickhouse import client as clickhouse
@@ -41,7 +42,6 @@ from cluster.cdk8s.haku import mailbox
 from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
 from cluster.cdk8s.plaid_mcp import pgweb as plaid_pgweb
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
-from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.public_coder.egress import add_gateway_resources
 
@@ -148,7 +148,7 @@ def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, c
             EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
         ],
     )
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-forgejo-haku",
         metadata=ApiObjectMetadata(name=FORGEJO_HAKU_POLICY, namespace=namespace),
@@ -213,7 +213,7 @@ def _forgejo_finance_agent(
             EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
         ],
     )
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-forgejo-finance-agent",
         metadata=ApiObjectMetadata(name=FORGEJO_FINANCE_AGENT_POLICY, namespace=namespace),
@@ -255,7 +255,7 @@ def _google_readonly(scope: Construct, *, namespace: str) -> None:
             )
         ],
     )
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-google-readonly",
         metadata=ApiObjectMetadata(name=GOOGLE_READONLY_POLICY, namespace=namespace),
@@ -331,7 +331,7 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
         ],
     )
     # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-grocy-sf-readonly",
         metadata=ApiObjectMetadata(name=GROCY_SF_READONLY_POLICY, namespace=namespace),
@@ -400,7 +400,7 @@ def _home_assistant_readonly(
             )
         ],
     )
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-home-assistant-readonly",
         metadata=ApiObjectMetadata(name=HOME_ASSISTANT_READONLY_POLICY, namespace=namespace),
@@ -457,7 +457,7 @@ def _activitywatch_read(
         ],
     )
     # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-activitywatch-read",
         metadata=ApiObjectMetadata(name=ACTIVITYWATCH_READ_POLICY, namespace=namespace),
@@ -507,7 +507,7 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
         ],
     )
     # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-aiquota-read",
         metadata=ApiObjectMetadata(name=AIQUOTA_READ_POLICY, namespace=namespace),
@@ -568,7 +568,7 @@ def _finance_aiquota_history(
         ],
     )
     # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-finance-aiquota-history",
         metadata=ApiObjectMetadata(name=FINANCE_AIQUOTA_HISTORY_POLICY, namespace=namespace),
@@ -618,7 +618,7 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
         ],
     )
     # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-haku-mailbox",
         metadata=ApiObjectMetadata(name=HAKU_MAILBOX_POLICY, namespace=namespace),
@@ -702,7 +702,7 @@ def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, cr
         # keep-sorted end
     ]
     # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "egresspolicy-plaid-pgweb",
         metadata=ApiObjectMetadata(name=PLAID_PGWEB_POLICY, namespace=namespace),

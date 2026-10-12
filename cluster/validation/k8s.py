@@ -203,14 +203,14 @@ class RoleBindingResource(K8sResource):
     subjects: list[RoleBindingSubject] = Field(default_factory=list)
 
 
-class EgressBindingSpec(BaseModel):
-    model_config = ConfigDict(extra="ignore")
+class PolicyBindingSpec(BaseModel):
+    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
 
-    policies: list[str] = Field(default_factory=list)
+    policy_sets: list[str] = Field(default_factory=list)
 
 
-class EgressBindingResource(K8sResource):
-    spec: EgressBindingSpec = Field(default_factory=EgressBindingSpec)
+class PolicyBindingResource(K8sResource):
+    spec: PolicyBindingSpec = Field(default_factory=PolicyBindingSpec)
 
 
 class SecretStoreKubernetesProvider(BaseModel):
@@ -360,8 +360,8 @@ _KIND_MODELS: dict[str, type[K8sResource]] = {
     "CronJob": CronJobResource,
     "DaemonSet": PodTemplateWorkloadResource,
     "Deployment": PodTemplateWorkloadResource,
-    "EgressBinding": EgressBindingResource,
     "Job": PodTemplateWorkloadResource,
+    "PolicyBinding": PolicyBindingResource,
     "SandboxTemplate": SandboxTemplateResource,
     "StatefulSet": PodTemplateWorkloadResource,
     "VirtualMachine": PodTemplateWorkloadResource,

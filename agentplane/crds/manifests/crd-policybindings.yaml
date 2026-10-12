@@ -34,6 +34,9 @@ spec:
         - name: Kubernetes
           type: string
           jsonPath: .status.conditions[?(@.type=="KubernetesReady")].status
+        - name: Egress
+          type: string
+          jsonPath: .status.conditions[?(@.type=="EgressReady")].status
         - name: Age
           type: date
           jsonPath: .metadata.creationTimestamp
@@ -84,7 +87,8 @@ spec:
                   items:
                     description: >-
                       A metav1.Condition. Each reader owns its own condition type, applied with
-                      its own field manager: `KubernetesReady` is the Policy Controller's.
+                      its own field manager: `KubernetesReady` is the Policy Controller's,
+                      `EgressReady` the egress proxy's.
                     type: object
                     required: [type, status, lastTransitionTime, reason, message]
                     properties:

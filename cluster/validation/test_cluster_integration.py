@@ -25,11 +25,11 @@ from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.validation.agent_rbac import Permission, Rbac, uncovered
 from cluster.validation.checks import (
     check_cilium_policy_rules_nonempty,
-    check_egress_bindings_resolve_policies,
     check_external_credential_ownership,
     check_forgejo_image_namespace_reflection,
     check_goldilocks_explicit_decision,
     check_goldilocks_namespace_labels,
+    check_policy_bindings_resolve_sets,
     check_sops_decryption_blocks,
     find_orphaned_files,
 )
@@ -371,9 +371,9 @@ def test_goldilocks_explicit_decision(cluster: ParsedCluster, repo_root: Path) -
     assert not errors, "\n".join(errors)
 
 
-def test_egress_bindings_resolve_policies(cluster: ParsedCluster) -> None:
-    """Every EgressBinding's policies are EgressPolicies rendered in its namespace."""
-    errors = check_egress_bindings_resolve_policies(cluster)
+def test_policy_bindings_resolve_sets(cluster: ParsedCluster) -> None:
+    """Every PolicyBinding's sets are PolicySets rendered in its namespace."""
+    errors = check_policy_bindings_resolve_sets(cluster)
     assert not errors, "\n".join(errors)
 
 

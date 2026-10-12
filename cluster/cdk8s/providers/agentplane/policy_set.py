@@ -12,6 +12,8 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySet as _PolicySet,
     PolicySetSpec,
     PolicySetSpecRules,
+    PolicySetSpecRulesCredentialRef,
+    PolicySetSpecRulesMethods,
     PolicySetSpecRulesRole,
     PolicySetSpecRulesRoleKind,
     PolicySetSpecRulesType,
@@ -41,6 +43,26 @@ class Rule:
         return PolicySetSpecRules(
             type=PolicySetSpecRulesType.KUBERNETES_UNDERSCORE_CLUSTER_UNDERSCORE_ROLE_UNDERSCORE_BINDING,
             cluster_role=cluster_role,
+        )
+
+    @staticmethod
+    def egress(
+        *,
+        hosts: Sequence[str],
+        methods: Sequence[PolicySetSpecRulesMethods] | None = None,
+        paths: Sequence[str] | None = None,
+        cluster_internal: bool | None = None,
+        credential_ref: PolicySetSpecRulesCredentialRef | None = None,
+    ) -> PolicySetSpecRules:
+        """Lets the subject reach `hosts` through the egress proxy; the other fields narrow it, as
+        the CRD's field descriptions say."""
+        return PolicySetSpecRules(
+            type=PolicySetSpecRulesType.EGRESS,
+            hosts=list(hosts),
+            methods=None if methods is None else list(methods),
+            paths=None if paths is None else list(paths),
+            cluster_internal=cluster_internal,
+            credential_ref=credential_ref,
         )
 
 

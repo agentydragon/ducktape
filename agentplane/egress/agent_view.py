@@ -26,7 +26,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from agentplane.egress.policy import Index, subject_bindings
+from agentplane.egress.policy import Index, subject_grants
 from agentplane.egress.resources import EgressCredential, Rule, Target
 from agentplane.subjects import ServiceAccountRef
 
@@ -95,15 +95,15 @@ def _rule_view(index: Index, rule: Rule) -> RuleView:
 def agent_view(index: Index, caller: ServiceAccountRef, now: datetime) -> AgentEgressView:
     """The caller's own view, from the same bindings the decision reads.
 
-    Built from `subject_bindings`, so what it reports and what the proxy admits cannot drift: an
+    Built from `subject_grants`, so what it reports and what the proxy admits cannot drift: an
     expired binding, a missing policy, or a revoked grant drops out of both at once, and a caller
     sees only the bindings naming it.
     """
     return AgentEgressView(
         subject=caller,
         policies=[
-            PolicyView(name=policy.metadata.name, rules=[_rule_view(index, rule) for rule in policy.spec.rules])
-            for resolution in subject_bindings(index, caller, now)
-            for policy in resolution.policies
+            PolicyView(name=policy.name, rules=[_rule_view(index, numbered.rule) for numbered in policy.rules])
+            for grant in subject_grants(index, caller, now)
+            for policy in grant.policies
         ],
     )

@@ -340,8 +340,6 @@ flowchart LR
     VM_VIRTIOFS[In flight: test KubeVirt virtiofs on v1.8.2]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 8]
     VM_EGRESS[Candidate: production admission and egress integration]
-    EGRESS_POLICY_MIGRATE[Egress policies on PolicySet, section 6]
-    EGRESS_POLICY_MIGRATE -. relay reads PolicyBindings .-> VM_EGRESS
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
@@ -401,7 +399,7 @@ XFS `prjquota` on `/state`, so the PVC size is the only bound.
 VM's relay comes from the admission policy on virt-launcher (#8840,
 `cluster/cdk8s/agentplane/kubevirt_experiment/policy.py`), not from a Pod template, so the
 template-level sidecar check the Action box decision adds covers pods only. The relay's grants are
-the VM ServiceAccount's egress bindings; built after `EGRESS_POLICY_MIGRATE`, it reads
+the VM ServiceAccount's egress bindings; it reads
 `PolicyBinding`s only.
 Verify proxy-only credentials, routing, token replacement and denied cross-environment access;
 check failure scope for the new admission configuration. Do not repeat the entire completed
@@ -475,11 +473,8 @@ flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     ACTION_POLICY_MIGRATE[Candidate: Action policies move to PolicySet]
-    EGRESS_POLICY_MIGRATE[Candidate: egress policies move to PolicySet]
     ACTION_POLICY_MIGRATE --> OLD_POLICY_KINDS_DROP[Blocked: drop the old policy kinds]
-    EGRESS_POLICY_MIGRATE --> OLD_POLICY_KINDS_DROP
     ACTION_POLICY_MIGRATE --> POLICY_SANDBOX_CUTOVER[Blocked: Sandboxes take policy sets]
-    EGRESS_POLICY_MIGRATE --> POLICY_SANDBOX_CUTOVER
     POLICY_SANDBOX_CUTOVER --> POLICY_RUNTIME_GRANTS[Blocked: time-limited grants of any rule type]
     POLICY_SANDBOX_CUTOVER --> SANDBOX_RBAC
     POLICY_SANDBOX_CUTOVER --> OLD_POLICY_KINDS_DROP
@@ -509,7 +504,7 @@ not ad hoc grants. Test an allowed and denied operation; do not add privileges a
 
 ### `POLICY_SANDBOX_CUTOVER` — Sandboxes take policy sets
 
-**Blocked on both policy migrations; decision card before the PR.** Every
+**Blocked on the Action policy migration; decision card before the PR.** Every
 cutover recreates staging Sandboxes rather than converting their bindings, so the Action, egress and
 Kubernetes cutovers share one recreate under one card. Sandbox Service takes set names at create and writes the
 Sandbox's one `PolicyBinding`, owner-referenced to it (the agent-sandbox `Sandbox` until
@@ -533,22 +528,16 @@ the static `ActionPolicySet`/`ActionPolicyBinding` objects as the generic kinds,
 writes action rules into the Sandbox's one `PolicyBinding`.
 
 The Action Service and egress proxy resolve subject, bindings, sets and rules of one type through
-one shared Python module, which the first of the two migrations to land adds; as in the Policy
+the shared `agentplane/policy_sets.py`, which the egress proxy already uses; as in the Policy
 Controller, a missing set does not stop the binding's other sets from granting (operator,
 2026-10-11 PDT).
 
-### `EGRESS_POLICY_MIGRATE` — egress policies move to PolicySet
-
-**Candidate.** The same move for egress rules: the proxy informer reads the generic
-kinds and writes `EgressReady` through the shared resolver; cdk8s and Sandbox Service follow as
-for Actions. An `EgressBinding` with several `subjects` becomes one `PolicyBinding` per subject,
-which replaces the closed singular-subject change (#9843).
-
 ### `OLD_POLICY_KINDS_DROP` — drop the old policy kinds
 
-**Blocked on both migrations and the Sandbox cutover; the operator merges it.** Delete the
+**Blocked on the Action policy migration and the Sandbox cutover; the operator merges it.** Delete the
 `ActionPolicySet`/`ActionPolicyBinding` and `EgressPolicy`/`EgressBinding` CRDs, their readers in
-the Action Service and egress proxy, the Sandbox Service's per-type binding writers and
+the Action Service and egress proxy (with the proxy's admin `/bindings` observations), the
+`EgressPolicy` that cdk8s's `add_egress_policy` renders beside each egress `PolicySet`, the Sandbox Service's per-type binding writers and
 annotations (`egress.py`, `action_policy.py`, `kubernetes_bindings.py` and their views), and the
 presets' separate `egress_policies`, `action_policy_sets` and `kubernetes_grants` fields
 (`app/presets.py`, after the manifests stop setting them).

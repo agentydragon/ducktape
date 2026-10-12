@@ -1,8 +1,8 @@
 # Agentplane egress proxy
 
 The central proxy of Agentplane's credentialless egress: a mitmproxy addon that proves each
-caller's Pod-bound token, decides the request from `EgressPolicy` and `EgressBinding` resources, and
-substitutes the real credential. What it guarantees is in <SPEC.md>. How the two kinds compose into
+caller's Pod-bound token, decides the request from the `egress` rules of `PolicySet`s a
+`PolicyBinding` grants it and from `EgressPolicy` and `EgressBinding` resources, and substitutes the real credential. What it guarantees is in <SPEC.md>. How the two kinds compose into
 one decision is in <../docs/egress_composition.md>.
 
 ```sh
@@ -22,7 +22,8 @@ bbr test //agentplane/egress/...
 - `upstream.py`: the admitted host resolved by the proxy, refused when it points anywhere not
   globally reachable, and pinned so the dial goes to the address checked — through
   `PinnedDialEventLoop`, the event loop the proxy must run on, which answers the dial's own lookup.
-- `informer.py`: read-only list-and-watch of those four kinds into each replica’s `Index`.
+- `informer.py`: list-and-watch of those kinds into each replica’s `Index`, and the `EgressReady`
+  condition on each `PolicyBinding`, through the shared `agentplane/policy_sets.py`.
 - `rules_api.py`: the agent-facing
   `agentplane-egress.agentplane-staging.svc.cluster.local/v1/rules` API and the narrow
   independently authenticated FastAPI listener and shared `RulesProjection`; `addon.py` is the
@@ -156,12 +157,14 @@ an informational snapshot of the answering replica, not a global acknowledgement
 ## ServiceAccount permissions
 
 In the rules namespace (`--rules-namespace`): `get`, `list`, `watch` on `egresspolicies`,
-`egressbindings` and `egresscredentials`. **Nothing at all in an `allowed_service_account_namespaces` entry**: the
+`egressbindings`, `egresscredentials`, `policysets` and `policybindings`, and `patch` on
+`policybindings/status`. **Nothing at all in an `allowed_service_account_namespaces` entry**: the
 TokenReview names the ServiceAccount a bearer's Pod runs as, and that is the subject, so naming a
 second workload namespace needs no Role there. In the credentials namespace
 (required `--credentials-namespace`): `get`, `list`, `watch` on
 `secrets`, and nothing else. Cluster-wide: `create` on `tokenreviews.authentication.k8s.io`. There
-are no Kubernetes status writes or leader election.
+is no leader election: every replica applies the same `EgressReady` under one field manager, and
+writes only when the condition it decides differs from the one the binding carries.
 
 Substituted credentials live in a namespace of their own because RBAC cannot filter Secrets by
 label: a namespace-wide read where the sandboxes run would hand the proxy the model key and the

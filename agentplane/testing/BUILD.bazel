@@ -21,6 +21,7 @@ py_library(
     srcs = ["fake_apiserver.py"],
     deps = [
         "//agentplane:crd_group",
+        "//agentplane:policy_sets",
         "//agentplane/egress:resources",
         "//agentplane/workload_auth:principal",
         "//util:agent_sandbox",

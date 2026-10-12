@@ -66,8 +66,8 @@ state could avoid the new CRs initially.
 Decided (operator, 2026-10-12 PDT): egress, Action and Kubernetes policy merge into one generic
 `PolicySet` of typed rules (a `type` discriminator) and one `PolicyBinding`. Each reader handles
 only its own rule types and writes its own condition type (`KubernetesReady`, `ActionsReady`,
-`EgressReady`) through server-side apply; `EgressCredential` stays separate. Kubernetes rules come
-first; Actions and egress move over afterwards.
+`EgressReady`) through server-side apply; `EgressCredential` stays separate. Kubernetes and egress
+rules have moved over; Actions follow.
 
 The CRDs are `agentplane/crds/manifests/crd-policy{sets,bindings}.yaml`; what the controller
 guarantees is its [SPEC](../policy_controller/SPEC.md).

@@ -1,8 +1,9 @@
 """The resources the proxy reads off the API server, parsed once at the boundary.
 
 `EgressPolicy`, `EgressBinding` and `EgressCredential` are Agentplane's own kinds (group
-`agentplane.allegedly.works`, `v1alpha1`; the CRDs live in `agentplane/crds`).
-A binding names its subjects as ServiceAccounts, and `Secret` holds the credentials the rules
+`agentplane.allegedly.works`, `v1alpha1`; the CRDs live in `agentplane/crds`), and a `Rule` is also
+the shape of a `PolicySet`'s `egress` rules (`agentplane/policy_sets.py` reads those sets and their
+bindings). A binding names its subjects as ServiceAccounts, and `Secret` holds the credentials the rules
 substitute, in the credentials namespace. Only the fields the proxy reads are modelled; everything
 else on the wire is ignored.
 """
@@ -22,6 +23,8 @@ from agentplane.subjects import ServiceAccountRef
 POLICIES_PLURAL = "egresspolicies"
 BINDINGS_PLURAL = "egressbindings"
 CREDENTIALS_PLURAL = "egresscredentials"
+# The `PolicySet` rule type this proxy enforces.
+EGRESS_RULE_TYPE = "egress"
 
 
 class _Wire(BaseModel):

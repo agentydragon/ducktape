@@ -24,6 +24,7 @@ from more_itertools import one
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.resources import BINDINGS_PLURAL, CREDENTIALS_PLURAL, POLICIES_PLURAL
+from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM
 from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND, SANDBOXES_PLURAL
 
@@ -40,6 +41,8 @@ _NAMESPACE_OF = {
     POLICIES_PLURAL: NAMESPACE,
     BINDINGS_PLURAL: NAMESPACE,
     CREDENTIALS_PLURAL: NAMESPACE,
+    POLICY_SETS_PLURAL: NAMESPACE,
+    POLICY_BINDINGS_PLURAL: NAMESPACE,
 }
 
 
@@ -96,6 +99,7 @@ class FakeApiServer:
         metadata = {
             "uid": existing["metadata"]["uid"] if existing else f"uid-{plural}-{name}",
             "generation": (existing["metadata"]["generation"] + 1) if existing else 1,
+            "namespace": self.namespace_of[plural],
             **obj["metadata"],
             "resourceVersion": str(self._version),
         }
@@ -285,11 +289,27 @@ class FakeApiServer:
     async def patch_status(self, request: web.Request) -> web.Response:
         plural, name = request.match_info["plural"], request.match_info["name"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
-        assert request.content_type == "application/merge-patch+json"
         patch = await request.json()
         self.status_patches.append((name, patch["status"]))
         current = self.objects[plural][name]
-        self.put(plural, {**current, "status": patch["status"]})
+        if request.content_type == "application/merge-patch+json":
+            self.put(plural, {**current, "status": patch["status"]})
+        else:
+            # Server-side apply of conditions, a list keyed by `type`: the applied ones replace their
+            # namesakes and the rest stay. A status write leaves `generation` alone, as on a real server.
+            assert request.content_type == "application/apply-patch+yaml"
+            assert request.query["fieldManager"]
+            assert request.query["force"].lower() == "true"
+            applied = {condition["type"]: condition for condition in patch["status"]["conditions"]}
+            kept = [c for c in current.get("status", {}).get("conditions", []) if c["type"] not in applied]
+            self._version += 1
+            stored = {
+                **current,
+                "metadata": {**current["metadata"], "resourceVersion": str(self._version)},
+                "status": {"conditions": [*kept, *applied.values()]},
+            }
+            self.objects[plural][name] = stored
+            self._emit(_Event(self._version, plural, "MODIFIED", stored))
         return web.json_response(self.objects[plural][name])
 
 
@@ -409,6 +429,24 @@ def binding(
     if expires_at is not None:
         spec["expiresAt"] = expires_at
     return {"apiVersion": f"{GROUP}/{VERSION}", "kind": "EgressBinding", "metadata": {"name": name}, "spec": spec}
+
+
+def policy_set(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "apiVersion": f"{GROUP}/{VERSION}",
+        "kind": "PolicySet",
+        "metadata": {"name": name},
+        "spec": {"rules": rules},
+    }
+
+
+def policy_binding(name: str, *, subject: dict[str, str], policy_sets: list[str]) -> dict[str, Any]:
+    return {
+        "apiVersion": f"{GROUP}/{VERSION}",
+        "kind": "PolicyBinding",
+        "metadata": {"name": name},
+        "spec": {"subject": subject, "policySets": policy_sets},
+    }
 
 
 @asynccontextmanager

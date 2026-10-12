@@ -1,7 +1,7 @@
 """The sandbox Actions as a code-owned executor.
 
 A sandbox here is a shell as the caller: it runs as the ServiceAccount that submitted the Action,
-reaches what that account's `EgressBinding`s allow, and is admitted to this service as that same
+reaches what that account's egress bindings allow, and is admitted to this service as that same
 account. No caller obtains authority it did not already hold, which is what makes "is it safe to
 bind this Action for account X" answerable: exactly as safe as X's own authority.
 

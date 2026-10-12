@@ -4,7 +4,6 @@ Only the relay holds the Pod-bound token. Credential values stay in the gateway'
 isolated namespace; the app receives canonical placeholders under its existing env names.
 """
 
-from agentplane_egressbinding_crds.works.allegedly.agentplane import EgressBindingSpecSubjects
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
@@ -14,6 +13,7 @@ from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
     EgressPolicySpecRulesCredentialRef,
     EgressPolicySpecRulesMethods,
 )
+from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBindingSpecSubject
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
@@ -23,12 +23,12 @@ from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, egress
 from cluster.cdk8s.agentplane.egress_credentials import EXTERNAL_CREDS_STORE, credential_external_secret
+from cluster.cdk8s.agentplane.egress_policies import add_egress_policy
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.haku import kube_api_proxy
-from cluster.cdk8s.providers.agentplane.egress_binding import EgressBinding
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
-from cluster.cdk8s.providers.agentplane.egress_policy import EgressPolicy
+from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from util.settings_contract import env_name
 
@@ -162,7 +162,7 @@ def add_gateway_resources(
             )
         ],
     )
-    EgressPolicy(
+    add_egress_policy(
         scope,
         "policy",
         metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
@@ -219,12 +219,12 @@ def add_gateway_resources(
             ),
         ],
     )
-    EgressBinding(
+    PolicyBinding(
         scope,
         "binding",
         metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
-        subjects=[EgressBindingSpecSubjects(namespace=NAMESPACE, name=SERVICE_ACCOUNT)],
-        policies=[POLICY, egress.INFERENCE_EXPERIMENTS_POLICY, egress.PUBLIC_INTERNET_POLICY],
+        subject=PolicyBindingSpecSubject(namespace=NAMESPACE, name=SERVICE_ACCOUNT),
+        policy_sets=[POLICY, egress.INFERENCE_EXPERIMENTS_POLICY, egress.PUBLIC_INTERNET_POLICY],
     )
     NetworkPolicy(
         scope,

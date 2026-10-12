@@ -1,17 +1,20 @@
-"""The informer against the fake API server: sync, watch events, relist, and absence of status writes."""
+"""The informer against the fake API server: sync, watch events, relist, and the one status it writes."""
 
 from __future__ import annotations
 
 import asyncio
+import itertools
 from collections.abc import AsyncIterator
 
 import pytest
 import pytest_bazel
 from kubernetes_asyncio.client import ApiClient
 
-from agentplane.egress.conftest import GITHUB_POLICY, SANDBOX_A, SECRET_NAME, informer
+from agentplane.egress.conftest import GITHUB_POLICY, SANDBOX_A, SECRET_NAME, SUBJECT_A, informer
+from agentplane.egress.informer import EGRESS_READY
 from agentplane.egress.policy import Index
 from agentplane.kubernetes_watch import Freshness
+from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL, ConditionStatus
 from agentplane.testing.fake_apiserver import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
@@ -19,6 +22,8 @@ from agentplane.testing.fake_apiserver import (
     SECRETS_PLURAL,
     FakeApiServer,
     policy,
+    policy_binding,
+    policy_set,
     secret,
 )
 
@@ -69,7 +74,14 @@ async def test_a_completed_cycle_is_what_advances_freshness(fake: FakeApiServer,
     /healthz reads these to tell a wedged informer from a quiet one; a timestamp set anywhere but
     the end of a cycle would keep advancing through exactly the failure it has to catch.
     """
-    assert set(index.freshness.at) == {POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, SECRETS_PLURAL}
+    assert set(index.freshness.at) == {
+        POLICIES_PLURAL,
+        BINDINGS_PLURAL,
+        CREDENTIALS_PLURAL,
+        POLICY_SETS_PLURAL,
+        POLICY_BINDINGS_PLURAL,
+        SECRETS_PLURAL,
+    }
     seeded = index.freshness.at[POLICIES_PLURAL]
 
     async def end_watches_until_the_policies_cycle_completes() -> None:
@@ -83,6 +95,47 @@ async def test_a_completed_cycle_is_what_advances_freshness(fake: FakeApiServer,
 
     # A bound so a regression fails here rather than hanging out the test target's own timeout.
     await asyncio.wait_for(end_watches_until_the_policies_cycle_completes(), timeout=10)
+
+
+async def test_egress_ready_follows_the_sets_and_leaves_other_readers_conditions(
+    fake: FakeApiServer, index: Index
+) -> None:
+    fake.put(
+        POLICY_SETS_PLURAL,
+        policy_set(
+            "web",
+            [
+                {"type": "kubernetes_cluster_role_binding", "clusterRole": "view"},
+                {"type": "egress", "hosts": ["example.com"]},
+            ],
+        ),
+    )
+    kubernetes_ready = {
+        "type": "KubernetesReady",
+        "status": "True",
+        "reason": "Applied",
+        "message": "",
+        "lastTransitionTime": "2026-10-12T00:00:00Z",
+    }
+    fake.put(
+        POLICY_BINDINGS_PLURAL,
+        {
+            **policy_binding("pb", subject=SUBJECT_A.model_dump(), policy_sets=["web", "late"]),
+            "status": {"conditions": [kubernetes_ready]},
+        },
+    )
+
+    def egress_ready() -> ConditionStatus | None:
+        binding = index.policy_bindings.get("pb")
+        condition = None if binding is None else binding.condition(EGRESS_READY)
+        return None if condition is None else condition.status
+
+    await index.wait_for(lambda: egress_ready() is ConditionStatus.FALSE)
+    fake.put(POLICY_SETS_PLURAL, policy_set("late", [{"type": "egress", "hosts": ["late.example.com"]}]))
+    await index.wait_for(lambda: egress_ready() is ConditionStatus.TRUE)
+    assert index.policy_bindings["pb"].condition("KubernetesReady") is not None
+    # Each write says something new: a replica never repeats the condition it last applied.
+    assert all(earlier != later for earlier, later in itertools.pairwise(fake.status_patches))
 
 
 if __name__ == "__main__":
