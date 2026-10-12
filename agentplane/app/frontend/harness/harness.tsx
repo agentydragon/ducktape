@@ -1996,6 +1996,7 @@ routes.push(
         egress_policies: ["github-public"],
         action_policy_sets: ["public-coder"],
         kubernetes_grants: ["workspace-read"],
+        policy_sets: [],
         session_defaults: {
           harness: "HARNESS_CODEX",
           model: "harness-codex-model",
@@ -2270,6 +2271,7 @@ routes.push(
           },
   ],
   ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
+  ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: null })],
   [
     "GET",
     /^\/kubernetes-grants$/,
