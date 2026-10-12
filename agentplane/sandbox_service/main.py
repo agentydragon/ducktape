@@ -37,7 +37,7 @@ def add_sandboxes(settings: Settings, api: k8s_client.ApiClient, server: grpc.ai
                     namespace=settings.sandbox_namespace, core_v1=k8s_client.CoreV1Api(api), custom_objects=custom
                 ),
                 EgressInventory(namespace=settings.sandbox_namespace, custom_objects=custom),
-                default_policy_sets=settings.policy_sets_of_every_sandbox,
+                default_policy_sets=settings.default_policy_sets,
             ),
             caller_accounts=settings.caller_accounts,
             admission_timeout_s=settings.admission_timeout_s,

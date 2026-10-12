@@ -41,8 +41,6 @@ class AppSettingsConfig(YamlFileSettings):
         default_factory=dict,
         description="The deployment's Kubernetes grant catalog, which the manifest generator expands into PolicySets.",
     )
-    # CLEANUP(added 2026-10-12): drop once the manifests stop setting it (the cdk8s PR after this one).
-    own_sandboxes: bool = False
     egress_admin_url: HttpEndpointUrl = Field(description="The egress proxy's admin port, serving /decisions.")
     action_federation: ActionFederationSettings
 
