@@ -1,8 +1,9 @@
 """The subject an Agentplane policy binds to, defined once for every service that binds one.
 
 A subject is a Kubernetes ServiceAccount: the one a workload's Pod runs as, which is what both the
-egress proxy and the Action Service authenticate it by. `EgressBinding` and `ActionPolicyBinding`
-carry this model's JSON schema as their subject, spliced in by `bb run //agentplane/crds:generate_bin`.
+egress proxy and the Action Service authenticate it by, and what the Kubernetes API server
+authorizes. `EgressBinding`, `ActionPolicyBinding` and `PolicyBinding` carry this model's JSON schema
+as their subject, spliced in by `bb run //agentplane/crds:generate_bin`.
 
 Every sandbox runs as a ServiceAccount of its own, so a binding names no Sandbox and follows no Pod
 owner, and an agent hosted outside this cluster is a subject on the same terms as one inside it.

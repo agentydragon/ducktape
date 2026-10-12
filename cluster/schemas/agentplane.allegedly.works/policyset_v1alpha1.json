@@ -1,0 +1,175 @@
+{
+  "type": "object",
+  "required": [
+    "spec"
+  ],
+  "properties": {
+    "spec": {
+      "type": "object",
+      "required": [
+        "rules"
+      ],
+      "properties": {
+        "rules": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "description": "One typed rule: `type` selects the kind, and each kind admits exactly the fields its `oneOf` branch names. `kubernetes_role_binding` binds an existing Role or ClusterRole in each of `namespaces`; `kubernetes_cluster_role_binding` binds an existing ClusterRole cluster-wide.",
+            "type": "object",
+            "required": [
+              "type"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": [
+                  "kubernetes_role_binding",
+                  "kubernetes_cluster_role_binding"
+                ]
+              },
+              "role": {
+                "description": "The role to bind. A `Role` must exist in each of `namespaces`; a rule never defines rules of its own.",
+                "type": "object",
+                "required": [
+                  "kind",
+                  "name"
+                ],
+                "properties": {
+                  "kind": {
+                    "type": "string",
+                    "enum": [
+                      "Role",
+                      "ClusterRole"
+                    ]
+                  },
+                  "name": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "namespaces": {
+                "description": "Named explicitly, never selected, so labeling a namespace grants nothing.",
+                "type": "array",
+                "minItems": 1,
+                "x-kubernetes-list-type": "set",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "clusterRole": {
+                "description": "The ClusterRole bound cluster-wide.",
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "kubernetes_role_binding"
+                    ]
+                  }
+                },
+                "required": [
+                  "role",
+                  "namespaces"
+                ],
+                "not": {
+                  "required": [
+                    "clusterRole"
+                  ]
+                }
+              },
+              {
+                "properties": {
+                  "type": {
+                    "enum": [
+                      "kubernetes_cluster_role_binding"
+                    ]
+                  }
+                },
+                "required": [
+                  "clusterRole"
+                ],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": [
+                        "role"
+                      ]
+                    },
+                    {
+                      "required": [
+                        "namespaces"
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "status": {
+      "type": "object",
+      "properties": {
+        "conditions": {
+          "type": "array",
+          "x-kubernetes-list-type": "map",
+          "x-kubernetes-list-map-keys": [
+            "type"
+          ],
+          "items": {
+            "description": "A metav1.Condition. Each reader owns its own condition type, applied with its own field manager: `KubernetesReady` is the Kubernetes Policy Controller's.",
+            "type": "object",
+            "required": [
+              "type",
+              "status",
+              "lastTransitionTime",
+              "reason",
+              "message"
+            ],
+            "properties": {
+              "type": {
+                "type": "string",
+                "maxLength": 316,
+                "pattern": "^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$"
+              },
+              "status": {
+                "type": "string",
+                "enum": [
+                  "True",
+                  "False",
+                  "Unknown"
+                ]
+              },
+              "observedGeneration": {
+                "type": "integer",
+                "format": "int64",
+                "minimum": 0
+              },
+              "lastTransitionTime": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 1024,
+                "pattern": "^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$"
+              },
+              "message": {
+                "type": "string",
+                "maxLength": 32768
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

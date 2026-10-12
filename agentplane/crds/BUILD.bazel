@@ -74,7 +74,7 @@ py_test(
     ],
 )
 
-# All five CRDs share the agentplane.allegedly.works group; cdk8s import only ingests
+# All the CRDs share the agentplane.allegedly.works group; cdk8s import only ingests
 # one CRD per invocation, so each kind gets its own target and module_name (distinct
 # names so importing several together, as the actions/egress constructs will, doesn't
 # collide on one shared top-level Python package).

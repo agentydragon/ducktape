@@ -6,3 +6,5 @@ resources:
   - crd-egresscredentials.yaml
   - crd-actionpolicysets.yaml
   - crd-actionpolicybindings.yaml
+  - crd-policysets.yaml
+  - crd-policybindings.yaml

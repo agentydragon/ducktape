@@ -19,6 +19,8 @@ an MCP approval gateway for any MCP-capable LLM product.
 - [Runner](runner/README.md) and [native drivers](native/README.md): run Claude Code or Codex in a
   sandbox and journal what they do.
 - [Egress proxy](egress/README.md): authenticates sandbox workloads and substitutes credentials.
+- [Kubernetes Policy Controller](kubernetes_policy/README.md): keeps the RoleBindings that
+  `PolicyBinding`s grant. Not yet deployed.
 - [LLM ingress](llm_ingress/README.md): authenticated hop in front of LiteLLM.
 - [Notification service](notification_service/README.md): subscriptions and session inboxes.
 - [Indexing](indexing/README.md): Git semantic search.

@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -83,6 +83,7 @@ class FakeApiServer:
     _version: int = 0
     _events: list[_Event] = field(default_factory=list)
     _watchers: set[asyncio.Queue[_Event | None]] = field(default_factory=set)
+    _waiters: set[asyncio.Event] = field(default_factory=set)
 
     def __post_init__(self) -> None:
         for plural in self.namespace_of:
@@ -113,6 +114,18 @@ class FakeApiServer:
         self._events.append(event)
         for queue in self._watchers:
             queue.put_nowait(event)
+        for waiter in self._waiters:
+            waiter.set()
+
+    async def wait_for(self, predicate: Callable[[], bool]) -> None:
+        """Returns once `predicate` holds, rechecking it after every stored change."""
+        while not predicate():
+            waiter = asyncio.Event()
+            self._waiters.add(waiter)
+            try:
+                await waiter.wait()
+            finally:
+                self._waiters.discard(waiter)
 
     def close_watches(self) -> None:
         """End every watch stream open right now, as the server does at `timeoutSeconds`.
@@ -283,13 +296,22 @@ class FakeApiServer:
         return web.json_response(self.objects[plural][name])
 
     async def patch_status(self, request: web.Request) -> web.Response:
+        """A JSON merge patch, or a server-side apply, which merges conditions by type the way the
+        list-map key `type` makes the real server do; field ownership is not modelled."""
         plural, name = request.match_info["plural"], request.match_info["name"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
-        assert request.content_type == "application/merge-patch+json"
         patch = await request.json()
         self.status_patches.append((name, patch["status"]))
         current = self.objects[plural][name]
-        self.put(plural, {**current, "status": patch["status"]})
+        status = patch["status"]
+        if request.content_type == "application/apply-patch+yaml":
+            assert request.query.get("fieldManager")
+            conditions = {condition["type"]: condition for condition in current.get("status", {}).get("conditions", [])}
+            conditions |= {condition["type"]: condition for condition in status["conditions"]}
+            status = {**current.get("status", {}), "conditions": list(conditions.values())}
+        else:
+            assert request.content_type == "application/merge-patch+json"
+        self.put(plural, {**current, "status": status})
         return web.json_response(self.objects[plural][name])
 
 

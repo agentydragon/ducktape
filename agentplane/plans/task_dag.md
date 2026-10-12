@@ -473,15 +473,13 @@ observations. New database work follows the task-specific review and rollout req
 flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
-    POLICY_CRDS[In flight: generic PolicySet and PolicyBinding CRDs] --> K8S_POLICY_CONTROLLER[In flight: Kubernetes policy controller in Go]
-    POLICY_CRDS --> ACTION_POLICY_MIGRATE[Blocked: Action policies move to PolicySet]
-    POLICY_CRDS --> EGRESS_POLICY_MIGRATE[Blocked: egress policies move to PolicySet]
+    ACTION_POLICY_MIGRATE[Candidate: Action policies move to PolicySet]
+    EGRESS_POLICY_MIGRATE[Candidate: egress policies move to PolicySet]
     ACTION_POLICY_MIGRATE --> OLD_POLICY_KINDS_DROP[Blocked: drop the old policy kinds]
     EGRESS_POLICY_MIGRATE --> OLD_POLICY_KINDS_DROP
     ACTION_POLICY_MIGRATE --> POLICY_SANDBOX_CUTOVER
     EGRESS_POLICY_MIGRATE --> POLICY_SANDBOX_CUTOVER
-    K8S_POLICY_CONTROLLER --> K8S_POLICY_DEPLOY[Blocked: deploy the controller]
-    K8S_POLICY_DEPLOY --> POLICY_SANDBOX_CUTOVER[Blocked: Sandboxes take policy sets]
+    K8S_POLICY_DEPLOY[Candidate: deploy the controller] --> POLICY_SANDBOX_CUTOVER[Blocked: Sandboxes take policy sets]
     POLICY_SANDBOX_CUTOVER --> POLICY_RUNTIME_GRANTS[Blocked: time-limited grants of any rule type]
     K8S_POLICY_DEPLOY --> MANAGED_SA_RBAC
     POLICY_SANDBOX_CUTOVER --> SANDBOX_RBAC
@@ -511,32 +509,9 @@ into an outage matrix. Source: [public-coder wiring](../../cluster/cdk8s/public_
 Kubernetes scope and egress/Action grants. Record intended authority in generated configuration,
 not ad hoc grants. Test an allowed and denied operation; do not add privileges as part of this review.
 
-### `POLICY_CRDS` — generic PolicySet and PolicyBinding CRDs
-
-**In flight; the RBAC controller thread is building it with `K8S_POLICY_CONTROLLER`; design decided
-(operator, 2026-10-12 PDT) in the [plan](kubernetes_rbac_groups.md).** Egress, Action and
-Kubernetes policy merge into one `PolicySet` of typed rules (a `type` discriminator) and one
-`PolicyBinding` (one `ServiceAccountRef` subject spliced in by `generate.py` as for
-`ActionPolicyBinding`, `policySets`, optional `expiresAt`), both in `agentplane/crds/manifests`,
-namespaced in the instance namespace. Each reader handles only its own rule types and writes its
-own condition type (`KubernetesReady`, `ActionsReady`, `EgressReady`) through server-side apply.
-This node ships only the Kubernetes rule types: a `roleRef` (Role or ClusterRole) with either a
-namespace list or `clusterWide` (ClusterRole only). `EgressCredential` stays separate.
-
-### `K8S_POLICY_CONTROLLER` — Kubernetes policy controller
-
-**In flight with `POLICY_CRDS`, by the RBAC controller thread; the first reader of the generic
-kinds. Written in Go (operator, 2026-10-12 PDT).** A separate controller reconciles bindings live into native RoleBindings
-and ClusterRoleBindings: one per (binding, role, namespace), named from the binding UID, no dedup,
-carrying the instance label and the subject SA's UID; it deletes them when the SA is gone or its
-UID differs. A finalizer cleans up across namespaces. At `expiresAt` it deletes the native bindings
-and sets `KubernetesReady=False` with reason `Expired`, keeping the CR. Missing namespaces and roles are
-conditions, not errors. Watch-driven, with a periodic sweep. Verify add/remove, overlaps, expiry,
-SA replacement and restart.
-
 ### `K8S_POLICY_DEPLOY` — deploy the controller
 
-**Blocked on the controller.** A cdk8s Deployment with its own SA and RBAC: create/delete of
+**Candidate.** A cdk8s Deployment with its own SA and RBAC: create/delete of
 bindings and `bind` limited to the generated `resourceNames`. Flux-owned sets are generated from
 `namespace_access` and `agent_access_profiles`. Alert on a native binding past its `expiresAt`. The
 README diagram gains the controller.
@@ -560,7 +535,7 @@ and the Action Service and egress proxy stop honouring a binding past it.
 
 ### `ACTION_POLICY_MIGRATE` — Action policies move to PolicySet
 
-**Blocked on `POLICY_CRDS`.** Action rule types join `PolicySet`; the Action Service informer reads
+**Candidate.** Action rule types join `PolicySet`; the Action Service informer reads
 `PolicySet`/`PolicyBinding`, filters to action rules and writes `ActionsReady`, ignoring a binding past its `expiresAt` and
 marking it `Expired`. cdk8s regenerates
 the static `ActionPolicySet`/`ActionPolicyBinding` objects as the generic kinds, and Sandbox Service
@@ -568,7 +543,7 @@ writes action rules into the Sandbox's one `PolicyBinding`.
 
 ### `EGRESS_POLICY_MIGRATE` — egress policies move to PolicySet
 
-**Blocked on `POLICY_CRDS`.** The same move for egress rules: the proxy informer reads the generic
+**Candidate.** The same move for egress rules: the proxy informer reads the generic
 kinds and writes `EgressReady`, with the same expiry handling; cdk8s and Sandbox Service follow as
 for Actions. An `EgressBinding` with several `subjects` becomes one `PolicyBinding` per subject,
 which replaces the closed singular-subject change (#9843).

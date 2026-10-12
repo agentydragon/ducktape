@@ -22,8 +22,7 @@ def agentplane_crds(chart: Chart, directory: RenderedDirectory) -> Kustomization
         # for the other CRD Kustomizations (external-secrets-crds, snapshot-controller-crds).
         prune=False,
         description=(
-            "Agentplane's own CRDs (EgressPolicy, EgressBinding, "
-            "EgressCredential, ActionPolicySet, ActionPolicyBinding), "
+            "Agentplane's own CRDs (agentplane/crds/manifests), "
             "cluster-scoped and shared by every Agentplane namespace; the "
             "environment seeds, the egress proxy and the Action Service depend on "
             "this."

@@ -1,9 +1,9 @@
 # Reusable Kubernetes RBAC grant groups
 
-Status: **design decided (operator, 2026-10-12 PDT); implementation in progress.** The
-[task DAG](task_dag.md) tracks it as `POLICY_CRDS` through
-`POLICY_RUNTIME_GRANTS`, plus `MANAGED_SA_RBAC` (accounts without a Sandbox). This plan records a preferred Agentplane-owned controller shape alongside the
-prior art and acceptance checks; CRD fields and migration still need review. Existing
+Status: **design decided (operator, 2026-10-12 PDT); the CRDs and the
+[Kubernetes Policy Controller](../kubernetes_policy/SPEC.md) are built, not yet deployed.** The
+[task DAG](task_dag.md) tracks the rest as `K8S_POLICY_DEPLOY` through `POLICY_RUNTIME_GRANTS`,
+plus `MANAGED_SA_RBAC` (accounts without a Sandbox). Existing
 [agent RBAC documentation](../../cluster/docs/agent_rbac.md) describes deployed/static
 ownership; it remains the source for current grant scope.
 
@@ -67,41 +67,10 @@ Decided (operator, 2026-10-12 PDT): egress, Action and Kubernetes policy merge i
 `PolicySet` of typed rules (a `type` discriminator) and one `PolicyBinding`. Each reader handles
 only its own rule types and writes its own condition type (`KubernetesReady`, `ActionsReady`,
 `EgressReady`) through server-side apply; `EgressCredential` stays separate. Kubernetes rules come
-first; Actions and egress move over afterwards. The sketch below predates the merge and shows the
-Kubernetes rule content.
+first; Actions and egress move over afterwards.
 
-Earlier decision, same day: the two CRs follow the existing policy-set pattern,
-`EgressPolicy`/`EgressBinding` and `ActionPolicySet`/`ActionPolicyBinding` in
-`agentplane/crds/`. A subject-free set names role refs and namespaces; a binding names one
-ServiceAccount subject (`ServiceAccountRef`, `agentplane/subjects.py`), a list of set names and
-an optional `expiresAt`. A Sandbox SA and an SA with no Sandbox (the claude.ai caller) are
-bound the same way. Unlike egress and Actions, which check bindings on each request, the API
-server evaluates the generated RBAC bindings itself, so the controller must delete them when a
-binding expires. Names, API versions and validation rules are not yet final:
-
-```yaml
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: KubernetesPolicySet # cluster-scoped, no subject or SA
-metadata:
-  name: low-privilege-cluster-diagnostics
-spec:
-  bindings:
-    - roleRef: { kind: ClusterRole, name: agent-metadata-reader }
-      namespaces: [team-a, team-b] # explicit, reviewed opt-in initially
-    # Explicit cluster-wide binding is a distinct, more tightly reviewed case:
-    - roleRef: { kind: ClusterRole, name: cluster-diagnostics-reader }
-      clusterWide: true
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: KubernetesPolicyBinding
-metadata:
-  name: coder-diagnostics
-  namespace: agentplane-staging
-spec:
-  subject: { namespace: agentplane-staging, name: coder-123 }
-  sets: [low-privilege-cluster-diagnostics]
-  expiresAt: "2026-10-13T00:00:00Z" # optional
-```
+The CRDs are `agentplane/crds/manifests/crd-policy{sets,bindings}.yaml`; what the controller
+guarantees is its [SPEC](../kubernetes_policy/SPEC.md).
 
 Also decided (operator, 2026-10-12 PDT):
 
@@ -111,8 +80,8 @@ Also decided (operator, 2026-10-12 PDT):
   through an operator-only grant/revoke RPC; Flux writes bindings for static SAs.
 - **`bind` authority**: the controller holds `bind` only on role `resourceNames` generated from
   the same source as the sets.
-- **Ownership**: a Sandbox owns its binding; a finalizer on the binding deletes the native
-  bindings.
+- **Ownership**: a Sandbox owns its binding. No finalizer: every controller pass deletes the
+  labeled native bindings that no live binding grants.
 - **SA identity**: native bindings carry the SA's UID and are deleted when the SA is missing or
   its UID differs, so a same-name replacement inherits nothing.
 - **Native bindings**: one per (binding, role, namespace), no deduplication, each carrying an

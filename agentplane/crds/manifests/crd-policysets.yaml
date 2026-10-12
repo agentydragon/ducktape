@@ -1,0 +1,137 @@
+# A reusable, subject-free set of typed rules. On its own a set grants nothing; a PolicyBinding
+# attaches sets to a ServiceAccount. Each service reads only the rule types it enforces and reports
+# on them in its own status condition, so one set can carry rules for several services and one
+# binding grants them all. Rule types and their readers:
+#   kubernetes_role_binding, kubernetes_cluster_role_binding: the Kubernetes Policy Controller
+#     (agentplane/kubernetes_policy/SPEC.md), which keeps native RoleBindings/ClusterRoleBindings.
+# The kubeconform schema under cluster/schemas/ is dumped from this file by
+# `bb run //agentplane/crds:generate_bin`.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: policysets.agentplane.allegedly.works
+spec:
+  group: agentplane.allegedly.works
+  scope: Namespaced
+  names:
+    kind: PolicySet
+    listKind: PolicySetList
+    plural: policysets
+    singular: policyset
+  versions:
+    - name: v1alpha1
+      served: true
+      storage: true
+      subresources:
+        status: {}
+      additionalPrinterColumns:
+        - name: Kubernetes
+          type: string
+          jsonPath: .status.conditions[?(@.type=="KubernetesReady")].status
+        - name: Age
+          type: date
+          jsonPath: .metadata.creationTimestamp
+      schema:
+        openAPIV3Schema:
+          type: object
+          required: [spec]
+          properties:
+            spec:
+              type: object
+              required: [rules]
+              properties:
+                rules:
+                  type: array
+                  minItems: 1
+                  items:
+                    description: >-
+                      One typed rule: `type` selects the kind, and each kind admits exactly the
+                      fields its `oneOf` branch names. `kubernetes_role_binding` binds an existing
+                      Role or ClusterRole in each of `namespaces`; `kubernetes_cluster_role_binding`
+                      binds an existing ClusterRole cluster-wide.
+                    type: object
+                    required: [type]
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                          - kubernetes_role_binding
+                          - kubernetes_cluster_role_binding
+                      role:
+                        description: >-
+                          The role to bind. A `Role` must exist in each of `namespaces`; a rule
+                          never defines rules of its own.
+                        type: object
+                        required: [kind, name]
+                        properties:
+                          kind:
+                            type: string
+                            enum: [Role, ClusterRole]
+                          name:
+                            type: string
+                            minLength: 1
+                      namespaces:
+                        description: Named explicitly, never selected, so labeling a namespace grants nothing.
+                        type: array
+                        minItems: 1
+                        x-kubernetes-list-type: set
+                        items:
+                          type: string
+                          minLength: 1
+                      clusterRole:
+                        description: The ClusterRole bound cluster-wide.
+                        type: string
+                        minLength: 1
+                    # The discriminated union, as in ActionPolicySet: fields are declared once above,
+                    # and each branch pins `type` and says which of them that kind requires and forbids.
+                    oneOf:
+                      - properties:
+                          type:
+                            enum: [kubernetes_role_binding]
+                        required: [role, namespaces]
+                        not:
+                          required: [clusterRole]
+                      - properties:
+                          type:
+                            enum: [kubernetes_cluster_role_binding]
+                        required: [clusterRole]
+                        not:
+                          anyOf:
+                            - required: [role]
+                            - required: [namespaces]
+            status:
+              type: object
+              properties:
+                conditions:
+                  type: array
+                  x-kubernetes-list-type: map
+                  x-kubernetes-list-map-keys: [type]
+                  items:
+                    description: >-
+                      A metav1.Condition. Each reader owns its own condition type, applied with
+                      its own field manager: `KubernetesReady` is the Kubernetes Policy Controller's.
+                    type: object
+                    required: [type, status, lastTransitionTime, reason, message]
+                    properties:
+                      type:
+                        type: string
+                        maxLength: 316
+                        pattern: '^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$'
+                      status:
+                        type: string
+                        enum: ["True", "False", Unknown]
+                      observedGeneration:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                      lastTransitionTime:
+                        type: string
+                        format: date-time
+                      reason:
+                        type: string
+                        minLength: 1
+                        maxLength: 1024
+                        pattern: "^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$"
+                      message:
+                        type: string
+                        maxLength: 32768

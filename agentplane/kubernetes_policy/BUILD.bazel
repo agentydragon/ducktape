@@ -1,0 +1,85 @@
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+py_binary(
+    name = "main_bin",
+    main_module = "agentplane.kubernetes_policy.main",
+    deps = [":main"],
+)
+
+py_library(
+    name = "controller",
+    srcs = ["controller.py"],
+    deps = [
+        ":expansion",
+        "//agentplane:crd_group",
+        "//agentplane:subjects",
+        "//agentplane/policy:resources",
+        "//util:kubernetes",
+        "//util:kubernetes_watch",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "expansion",
+    srcs = ["expansion.py"],
+    deps = [
+        "//agentplane:subjects",
+        "//agentplane/policy:resources",
+    ],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":controller",
+        ":settings",
+        "//agentplane:service_process",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    deps = [
+        "//util:yaml_file_settings",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_test(
+    name = "test_controller",
+    srcs = ["test_controller.py"],
+    deps = [
+        ":controller",
+        "//:conftest",
+        "//agentplane:crd_group",
+        "//agentplane/policy:resources",
+        "//agentplane/sandbox_service/testing:fake_rbac",
+        "//agentplane/testing:fake_apiserver",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_expansion",
+    srcs = ["test_expansion.py"],
+    deps = [
+        ":expansion",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/policy:resources",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
