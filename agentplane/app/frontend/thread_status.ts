@@ -19,6 +19,9 @@ export function threadStatusFromSnapshot(
   if (!sandboxReady(sandbox)) return { kind: "inactive", label: "Sandbox unavailable", tabLabel: "Unavailable" };
   if (thread.feed_status === "failed")
     return { kind: "failed", label: "Runner feed failed", tabLabel: "Runner failed" };
+  // The harness starts once the setup script succeeds; until then it is not running, but not stopped either.
+  if (thread.setup_state === "SETUP_STATE_RUNNING" && thread.harness_state !== "HARNESS_STATE_RUNNING")
+    return { kind: "inactive", label: "Setup script running", tabLabel: "Setting up" };
   // A stopped harness is down whether its feed is still attached or has ended: a stopped session has no
   // live entries, so a feed attached to it ends at once, and a shutdown settles there.
   const harnessStopped = thread.harness_state === "HARNESS_STATE_STOPPED";

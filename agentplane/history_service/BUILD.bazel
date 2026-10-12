@@ -155,6 +155,7 @@ py_test(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:history_service_pb2",
+        "//agentplane/proto:runner_pb2",
         "@pypi//grpcio",
         "@pypi//grpcio_health_checking",
         "@pypi//protobuf",

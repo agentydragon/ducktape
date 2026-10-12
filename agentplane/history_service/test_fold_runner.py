@@ -29,7 +29,7 @@ from agentplane.history_service.fold_runner import FOLD_EPOCH, HEALTH_SERVICE, F
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.delta_spans import claude_text
 from agentplane.history_service.testing.sessions import WRITER
-from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2
+from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2, runner_pb2
 
 # gazelle:include_dep //agentplane/history_service/storage:conftest
 
@@ -101,6 +101,38 @@ async def test_folds_retained_sessions_a_page_per_cycle_until_caught_up(engine: 
         assert summary.last_turn_status == event_pb2.TURN_STATUS_COMPLETED
         assert await session.get(ThreadHistorySummary, empty) is not None
         assert await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == empty)) is None
+
+
+async def test_a_session_still_in_setup_has_not_ended(engine: AsyncEngine, history: Store) -> None:
+    # The runner announces a Session whose setup script runs before its harness starts.
+    session_id = await retained_session(
+        history,
+        [
+            entry(1, setup_started=event_pb2.SetupStarted()),
+            entry(2, setup_output=event_pb2.SetupOutput(stdout=b"test setup output\n")),
+        ],
+    )
+    announce = runner_pb2.Attached(
+        session_id=str(session_id),
+        harness_state=runner_pb2.HARNESS_STATE_STOPPED,
+        setup_state=runner_pb2.SETUP_STATE_RUNNING,
+    )
+    await history.record_feed_state(session_id, history_service_pb2.SessionFeedState(attached=announce))
+    folder = FoldRunner(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    await folder.cycle()
+    async with sessions() as session:
+        summary = await session.get(ThreadHistorySummary, session_id)
+        assert summary is not None
+        assert summary.end is None
+
+    await history.append(session_id, [entry(3, setup_finished=event_pb2.SetupFinished(exit_code=7))])
+    await folder.cycle()
+    async with sessions() as session:
+        summary = await session.get(ThreadHistorySummary, session_id)
+        assert summary is not None
+        assert summary.end == {}
 
 
 async def test_run_folds_without_waiting_out_the_interval_while_behind(engine: AsyncEngine, history: Store) -> None:

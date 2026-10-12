@@ -96,6 +96,13 @@ describe("a failed last turn colors only an otherwise idle thread", () => {
     [{ ...failed, feed_status: "ended" }, "inactive"],
     [{ ...failed, feed_status: null }, "inactive"],
     [{ ...failed, archived: true }, "archived"],
+    // A Thread whose setup script runs has no harness yet, whether or not the fold has ended its feed.
+    [{ ...failed, harness_state: "HARNESS_STATE_STOPPED", setup_state: "SETUP_STATE_RUNNING" }, "inactive"],
+    [
+      { ...failed, harness_state: "HARNESS_STATE_STOPPED", setup_state: "SETUP_STATE_RUNNING", feed_status: "ended" },
+      "inactive",
+    ],
+    [{ ...failed, harness_state: "HARNESS_STATE_STOPPED", setup_state: "SETUP_STATE_SUCCEEDED" }, "stopped"],
   ] as const)("%o is %s", (overrides, kind) => {
     expect(threadStatusFromSnapshot(thread(overrides), READY_SANDBOX, true).kind).toBe(kind);
   });
