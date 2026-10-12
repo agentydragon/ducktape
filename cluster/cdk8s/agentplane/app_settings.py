@@ -49,8 +49,29 @@ def settings(
     action_federation: ActionFederationSettings,
     action_policy_sets: list[str] | None = None,
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
+    own_sandboxes: bool,
 ) -> AppSettingsConfig:
+    public_coder_policies = [
+        BASIC_POLICY,
+        PACKAGES_POLICY,
+        GITHUB_AGENTYDRAGON_AGENT_POLICY,
+        GITHUB_CLONE_POLICY,
+        GITHUB_ACTIONS_LOGS_POLICY,
+        BUILDBUDDY_POLICY,
+        PUBLIC_CODER_VISUALS_POLICY,
+    ]
+    # Each egress policy has a PolicySet of the same name where Sandboxes are Agentplane's own kind.
+    public_coder_grants: dict[str, list[str]] = (
+        {"policy_sets": public_coder_policies}
+        if own_sandboxes
+        else {
+            "egress_policies": public_coder_policies,
+            **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
+        }
+    )
     return AppSettingsConfig(
+        # Set only where on, so the key stays out of the other environment's settings.
+        **({"own_sandboxes": True} if own_sandboxes else {}),
         models=ModelCatalog(
             models=[
                 ModelOption(
@@ -81,16 +102,7 @@ def settings(
             "public-coder": SandboxPreset(
                 title="Public coder",
                 template="runner",
-                egress_policies=[
-                    BASIC_POLICY,
-                    PACKAGES_POLICY,
-                    GITHUB_AGENTYDRAGON_AGENT_POLICY,
-                    GITHUB_CLONE_POLICY,
-                    GITHUB_ACTIONS_LOGS_POLICY,
-                    BUILDBUDDY_POLICY,
-                    PUBLIC_CODER_VISUALS_POLICY,
-                ],
-                **({"action_policy_sets": action_policy_sets} if action_policy_sets is not None else {}),
+                **public_coder_grants,
                 thread_preset=_THREAD_PRESET_PUBLIC_CODER_CODEX,
                 bootstrap=(
                     "marker=/state/workspaces/.agentplane-public-coder-ready\n"

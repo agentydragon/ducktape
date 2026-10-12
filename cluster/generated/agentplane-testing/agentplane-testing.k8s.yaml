@@ -3381,7 +3381,7 @@ data:
       public-coder:
         title: Public coder
         template: runner
-        egress_policies:
+        policy_sets:
           - basic
           - packages
           - github-agentydragon-agent
@@ -3397,6 +3397,7 @@ data:
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
           fi
     kubernetes_grants: {}
+    own_sandboxes: true
     egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081/
     action_federation:
       service_url: http://agentplane-actions.agentplane-testing.svc:8080/
@@ -3805,6 +3806,14 @@ rules:
       - agentplane.allegedly.works
     resources:
       - actionpolicybindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policysets
     verbs:
       - get
       - list

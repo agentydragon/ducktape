@@ -139,6 +139,8 @@ class App(Construct):
                             "egresscredentials",
                             "actionpolicysets",
                             "actionpolicybindings",
+                            # The create form lists PolicySets where Sandboxes are our own kind.
+                            *(("policysets",) if self.env.own_sandboxes else ()),
                         )
                     ],
                     verbs=["get", "list", "watch"],
