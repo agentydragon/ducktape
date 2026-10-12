@@ -634,9 +634,8 @@ which make the agent-sandbox `Sandbox` its controller owner. Decide: whether the
 goes on it or only the harness files; for VMs, the operator's direction (2026-10-12 PDT) keeps the workspace
 VM-local rather than on a PVC, so it is dropped on a switch from VM to pod, and makes it a mounted
 PVC once the cluster has block storage that can move between kinds (OpenEBS or another
-provisioner); still to confirm whether VM-local survives a stop and start (the reading proposed: a
-disk the VM keeps until the Sandbox is deleted), since a revived conversation refers to files the
-agent made; storage class, since `local-path` pins a volume to one node and so pins every incarnation
+provisioner); VM-local means a disk the VM keeps across stop and start, deleted only with the
+Sandbox, since a revived conversation refers to files the agent made (operator, 2026-10-12 PDT); storage class, since `local-path` pins a volume to one node and so pins every incarnation
 there; file ownership, since files a VM writes are `107:107` (`VM_IMAGE`), so pods run the
 runner as `107:107` too and a Session moves between kinds with no `chown` (checked live); its quota (TODO, deferred by the
 operator 2026-10-12: `local-path` enforces no PVC size, and inside a guest `df` shows the node's
