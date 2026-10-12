@@ -2,9 +2,9 @@
 
 ## Status
 
-Cleared for now; we're waiting to see whether it comes back. GitHub issue #9604 holds the full
-discussion. The cause is not yet known: either the 2.5G cabling is marginal, or one PHY gets
-into a bad state that a renegotiation from the switch side resets.
+Open. The loss comes and goes in episodes on the 2.5G link (22% for ~50 min, then clean for
+stretches). GitHub issue #9604 holds the full discussion. The cause is not yet known: either the
+2.5G cabling is marginal, or one PHY gets into a bad state that a renegotiation resets.
 
 ## Symptom
 
@@ -27,23 +27,27 @@ errors on home-hosted backends.
 - **The switch saw nothing locally:** no pause frames, drops or FCS errors on `ether1`. The link
   does go down and back up about 20 times a day, ~5 s each time (`mktxp_link_downs_total`,
   switch syslog). Those flaps did not clear the loss.
-- **Link-speed test, 2026-10-12 20:36-20:44Z.** 10 Hz pings from `wyrm2` to `192.168.1.254`
-  while changing `ether1`'s `advertise`:
+- **Link-speed tests, 2026-10-12.** Loss to the gateway as measured by 10 Hz pings from `wyrm2`
+  (20:36-20:44Z) and then by the `smokeping_prober` on `optiplex` (from 21:34Z):
 
-  | `ether1`                  | loss to gateway       |
-  | ------------------------- | --------------------- |
-  | 2.5G, as found            | 22% (600 pkts)        |
-  | 1G only                   | 0% (600)              |
-  | 100M only                 | 0% (600)              |
-  | 2.5G again, original list | 0% (1800 over ~3 min) |
+  | Window (Z)  | `ether1`           | loss to gateway                          |
+  | ----------- | ------------------ | ---------------------------------------- |
+  | to 20:37    | 2.5G, as found     | 22%                                      |
+  | 20:38-20:40 | 1G, then 100M      | 0% (60 s each; right after reneg)        |
+  | 20:40-20:55 | 2.5G, renegotiated | 0% (SYN-retransmit ratio dips as well)   |
+  | 20:55-21:45 | 2.5G               | 22% again, no link flap                  |
+  | 21:51-22:15 | 1G                 | 0% (24 min)                              |
+  | 22:15-22:40 | 2.5G, renegotiated | 0%, two brief spikes (22:16, 22:26: 21%) |
 
-  Loss to the switch was 0% throughout.
+  Loss to the switch was ~0% throughout. A freshly renegotiated link starts clean, so only
+  the long windows (21:51-22:15 at 1G against 20:55-21:45 at 2.5G) say anything about 1G.
 
 ## Next
 
-If the loss returns at 2.5G, the cabling is the likelier cause. In that case, set `ether1` to
-advertise 1G in `tf/gitops/home-switch`; 1G is below the line's ~1.25 Gbps. If it stays away,
-a stuck PHY is the likelier cause, and the hourly flaps are the remaining symptom to explain.
+Keep the prober running and see whether the 22% state returns at 2.5G (the `HomeGatewayUplinkLoss`
+alert fires on it). If it does, and a further 1G window stays clean, set `ether1` to advertise
+1G in `tf/gitops/home-switch`: 1G is below the line's ~1.25 Gbps. If 1G also goes bad, the gateway
+is the likelier cause.
 
 ## Recipes
 
