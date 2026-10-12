@@ -150,7 +150,7 @@ function options(container: HTMLElement, label: string): HTMLElement[] {
 
 it("inherits the preset model and replaces incompatible choices when the harness changes", async () => {
   const { container } = await render();
-  expect(input(container, "Template").value).toBe("test-template");
+  expect(input(container, "Sandbox template").value).toBe("test-template");
   expect(input(container, "Model").value).toBe("Test Codex B");
   await choose(container, "Model", "Test Codex A");
   expect(input(container, "Model").value).toBe("Test Codex A");
@@ -236,7 +236,7 @@ it("allows an operator to remove the preset grant and sends an explicit empty gr
 
 it("lets an operator replace the preset template before creating the sandbox", async () => {
   const { container } = await render();
-  await choose(container, "Template", "other-template");
+  await choose(container, "Sandbox template", "other-template");
   const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
   await type(input(container, "Name"), "picked");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
