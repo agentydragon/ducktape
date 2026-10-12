@@ -19,12 +19,7 @@ def chart(app: App) -> Chart:
     chart = Chart(app, "db-backups", disable_resource_name_hashes=True)
     # Staging writes ~17 GB/day of WAL, more than every other backed-up Cluster together; a week of
     # recovery points is enough history for a staging environment.
-    cnpg_backup.CnpgBackup(
-        chart,
-        "backup",
-        ref=database.postgres(ENV),
-        policy=cnpg_backup.BackupPolicy(schedule=cnpg_backup.DAILY_30D.schedule, retention="7d"),
-    )
+    cnpg_backup.CnpgBackup(chart, "backup", ref=database.postgres(ENV), retention="7d")
     return chart
 
 

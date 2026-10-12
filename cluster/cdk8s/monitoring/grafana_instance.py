@@ -110,7 +110,7 @@ def _database(chart: Chart) -> None:
         initdb=cnpg.same_owner_initdb(_NAME, secret=DATABASE.app_secret),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, policy=cnpg_backup.DAILY_30D)
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _secret_env(name: str, key: SecretKey) -> GrafanaSpecDeploymentSpecTemplateSpecContainersEnv:

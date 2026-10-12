@@ -86,7 +86,7 @@ def _cluster(chart: Chart) -> None:
         initdb=cnpg.same_owner_initdb(_DATABASE),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=POSTGRES, policy=cnpg_backup.DAILY_30D)
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=POSTGRES, retention="30d")
 
 
 def _readonly_credentials(chart: Chart) -> None:

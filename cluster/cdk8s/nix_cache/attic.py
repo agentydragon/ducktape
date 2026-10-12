@@ -112,7 +112,7 @@ def _database(scope: Construct) -> None:
         initdb=cnpg.same_owner_initdb("attic"),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, policy=cnpg_backup.DAILY_30D)
+    cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _storage(scope: Construct) -> s3.PrivateBucket:

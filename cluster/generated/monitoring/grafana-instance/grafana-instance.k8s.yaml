@@ -120,7 +120,7 @@ spec:
   method: plugin
   pluginConfiguration:
     name: barman-cloud.cloudnative-pg.io
-  schedule: 0 0 2 * * *
+  schedule: 0 53 2 * * *
 ---
 apiVersion: grafana.integreatly.org/v1beta1
 kind: Grafana

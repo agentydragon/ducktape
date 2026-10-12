@@ -126,7 +126,7 @@ def _database(scope: Construct) -> None:
         initdb=cnpg.same_owner_initdb(_DATABASE),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(scope, "db-backup", ref=POSTGRES, policy=cnpg_backup.DAILY_30D)
+    cnpg_backup.CnpgBackup(scope, "db-backup", ref=POSTGRES, retention="30d")
 
 
 def _readonly_credentials(scope: Construct) -> None:

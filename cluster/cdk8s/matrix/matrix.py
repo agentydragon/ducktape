@@ -114,7 +114,7 @@ def _database(scope: Construct) -> None:
         initdb=cnpg.same_owner_initdb("synapse", locale_c_type="C", locale_collate="C"),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, policy=cnpg_backup.DAILY_30D)
+    cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _synapse(scope: Construct) -> None:

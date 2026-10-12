@@ -36,7 +36,7 @@ def _database(chart: Chart) -> None:
         initdb=cnpg.same_owner_initdb(NAME),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, policy=cnpg_backup.DAILY_30D)
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _http_probe(initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:

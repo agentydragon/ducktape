@@ -16,9 +16,7 @@ OUTPUT_DIR = f"{GENERATED_ROOT}/authentik/db-backups"
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "db-backups", disable_resource_name_hashes=True)
-    cnpg_backup.CnpgBackup(
-        chart, "backup", ref=db.POSTGRES, policy=cnpg_backup.DAILY_30D, secret_name="authentik-db-backup-s3"
-    )
+    cnpg_backup.CnpgBackup(chart, "backup", ref=db.POSTGRES, retention="30d", secret_name="authentik-db-backup-s3")
     return chart
 
 

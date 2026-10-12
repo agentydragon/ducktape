@@ -182,7 +182,7 @@ def _db_chart(app: App) -> Chart:
             + [ClusterSpecManagedRoles(name=_RETIRED_PLAID_DB.role, ensure=ClusterSpecManagedRolesEnsure.ABSENT)]
         ),
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, policy=cnpg_backup.DAILY_30D)
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
 
     for store in STORES:
         Database(

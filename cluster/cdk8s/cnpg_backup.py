@@ -4,7 +4,7 @@ archiver writes to (`cnpg.cluster(wal_archive=True)` names it after the Cluster)
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import zlib
 
 from barman_cloud_objectstore_crds.io.cnpg.barmancloud import (
     ObjectStore,
@@ -35,33 +35,33 @@ from cluster.cdk8s.seaweedfs import s3
 _S3_ENDPOINT = "http://seaweedfs-s3.seaweedfs.svc:8333"
 
 
-@dataclass(frozen=True)
-class BackupPolicy:
-    """When a Cluster's base backups run and how far back it can be recovered. WAL is archived
-    continuously either way, so any moment inside the window is a recovery point.
-
-    `schedule` is CNPG's six-field cron, seconds first, in UTC. `retention` is the ObjectStore's
-    recovery window, `<n>d`, `<n>w` or `<n>m`: barman-cloud keeps every base backup and WAL
-    segment needed to recover to any point within it, and no count-based policy exists.
-    Every base backup is a full copy, so storage grows with (backups in the window) x (DB size)."""
-
-    schedule: str
-    retention: str
+# Base backups start within [01:00, 05:00) UTC, each Cluster at its own minute (`_schedule`).
+_WINDOW_START_MINUTE = 60
+_WINDOW_MINUTES = 4 * 60
 
 
-DAILY_30D = BackupPolicy(schedule="0 0 2 * * *", retention="30d")
+def _schedule(ref: cnpg.PostgresRef) -> str:
+    """A daily six-field cron (seconds first, UTC) at a minute of the window derived from a hash of
+    `ref`, so the Clusters' base backups spread over the window instead of all reading their disks
+    and writing to SeaweedFS at once. Stable across renders; two Clusters can still land close."""
+    hour, minute = divmod(
+        _WINDOW_START_MINUTE + zlib.crc32(f"{ref.namespace}/{ref.name}".encode()) % _WINDOW_MINUTES, 60
+    )
+    return f"0 {minute} {hour} * * *"
 
 
 class CnpgBackup(Construct):
     """`ref`'s backups into a private SeaweedFS bucket `<namespace>-db-backups`: the ObjectStore
-    named `ref.name`, which `cnpg.cluster(wal_archive=True)` archives WAL to, and a ScheduledBackup
-    on `policy.schedule`. `ref.namespace` must be
-    in `seaweedfs.cluster.TENANTS`, and the Flux Kustomization applying this must depend on the
-    SeaweedFS operator's. `secret_name` keeps the name of a credentials Secret the store already
-    reads (`s3.PrivateBucket`)."""
+    named `ref.name`, which `cnpg.cluster(wal_archive=True)` archives WAL to, and a daily
+    ScheduledBackup (`_schedule`). WAL is archived continuously, so any moment within `retention`
+    (the ObjectStore's recovery window, `<n>d`, `<n>w` or `<n>m`) is a recovery point. Every base
+    backup is a full copy, so storage grows with (backups in the window) x (DB size).
+    `ref.namespace` must be in `seaweedfs.cluster.TENANTS`, and the Flux Kustomization applying
+    this must depend on the SeaweedFS operator's. `secret_name` keeps the name of a credentials
+    Secret the store already reads (`s3.PrivateBucket`)."""
 
     def __init__(
-        self, scope: Construct, id: str, *, ref: cnpg.PostgresRef, policy: BackupPolicy, secret_name: str | None = None
+        self, scope: Construct, id: str, *, ref: cnpg.PostgresRef, retention: str, secret_name: str | None = None
     ) -> None:
         super().__init__(scope, id)
         bucket = f"{ref.namespace}-db-backups"
@@ -86,7 +86,7 @@ class CnpgBackup(Construct):
                 },
             ),
             spec=ObjectStoreSpec(
-                retention_policy=policy.retention,
+                retention_policy=retention,
                 configuration=ObjectStoreSpecConfiguration(
                     destination_path=f"s3://{bucket}/",
                     endpoint_url=_S3_ENDPOINT,
@@ -108,7 +108,7 @@ class CnpgBackup(Construct):
             "scheduled-backup",
             metadata=ApiObjectMetadata(name=ref.name, namespace=ref.namespace),
             spec=ScheduledBackupSpec(
-                schedule=policy.schedule,
+                schedule=_schedule(ref),
                 backup_owner_reference=ScheduledBackupSpecBackupOwnerReference.SELF,
                 cluster=ScheduledBackupSpecCluster(name=ref.name),
                 method=ScheduledBackupSpecMethod.PLUGIN,

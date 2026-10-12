@@ -45,7 +45,7 @@ class Db(Construct):
             initdb=cnpg.same_owner_initdb(DATABASE),
             wal_archive=True,
         )
-        cnpg_backup.CnpgBackup(self, "db-backup", ref=POSTGRES, policy=cnpg_backup.DAILY_30D)
+        cnpg_backup.CnpgBackup(self, "db-backup", ref=POSTGRES, retention="30d")
         # `vector`: the console's 0135 migration baseline creates a `halfvec` column on a fresh
         # database (0136 drops it), and the migration role cannot install the extension itself.
         # This Database adopts the one created by `bootstrap.initdb`, hence `retain`: with

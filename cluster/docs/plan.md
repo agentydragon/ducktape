@@ -375,8 +375,8 @@ Proxmox-only gap.)
       backup" in Next Actions.
 - [ ] Extend barman-cloud backups (`cdk8s/cnpg_backup.py`) to the clusters still
       without them. The big two, `claude-session-sync-db` (40Gi) and
-      `agentplane-index-db` (20Gi), want a weekly base backup rather than `DAILY_30D`,
-      since every base backup is a full copy. `seaweedfs-filer-db-ssd` cannot back up into
+      `agentplane-index-db` (20Gi), want a weekly base backup rather than the daily one
+      `CnpgBackup` takes, since every base backup is a full copy. `seaweedfs-filer-db-ssd` cannot back up into
       the SeaweedFS it is the filer of, so it waits for an off-site store.
 - [ ] Off-site copy of the CNPG backups: every `CnpgBackup` writes to SeaweedFS on the
       same OVH nodes as the databases, so losing SeaweedFS loses the backups too.

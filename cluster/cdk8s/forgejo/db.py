@@ -48,7 +48,7 @@ def _chart(app: App) -> Chart:
         initdb=cnpg.same_owner_initdb(DATABASE, secret=POSTGRES.app_secret),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=POSTGRES, policy=cnpg_backup.DAILY_30D)
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=POSTGRES, retention="30d")
     return chart
 
 

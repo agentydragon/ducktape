@@ -288,7 +288,7 @@ spec:
   method: plugin
   pluginConfiguration:
     name: barman-cloud.cloudnative-pg.io
-  schedule: 0 0 2 * * *
+  schedule: 0 34 1 * * *
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

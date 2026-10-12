@@ -153,7 +153,7 @@ spec:
   method: plugin
   pluginConfiguration:
     name: barman-cloud.cloudnative-pg.io
-  schedule: 0 0 2 * * *
+  schedule: 0 31 2 * * *
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret

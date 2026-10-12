@@ -34,7 +34,7 @@ def _chart(app: App) -> Chart:
         initdb=cnpg.same_owner_initdb("litellm"),
         wal_archive=True,
     )
-    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, policy=cnpg_backup.DAILY_30D)
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
     return chart
 
 
