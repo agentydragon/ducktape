@@ -10,7 +10,16 @@ The CronJob runs on the always-on `optiplex` Talos worker. KubeVirt runs a small
 gateway VM there too, with the USB WiFi stick passed through from the host. The
 VM associates with the card AP and exposes a narrow HTTP bridge through the
 internal `cpap-card` Service; the sync job no longer needs host networking or
-WiFi capabilities. On the first run after this migration, the fresh repo is
+WiFi capabilities.
+
+The gateway logs its kernel and journal to the serial console, which KubeVirt's
+`guest-console-log` container ships to Loki. A minute timer (`cpap-gateway-health`)
+logs each change between `connected`, `card-away` (the radio sees other networks
+but not the card, which is normal while the CPAP travels), `card-visible`, and the
+two wedged-adapter states `no-wifi-device` and `radio-deaf` (a scan finds no
+networks at all). The card bridge listens only while `connected`, so a sync against
+an absent card is refused at once. In a wedged state the timer alternately reloads
+`mt7921u` and re-authorizes the USB adapter every five minutes. On the first run after this migration, the fresh repo is
 re-seeded with the card's full history (~17+ min over the card's WiFi; the old
 PVC-era data was discarded).
 
