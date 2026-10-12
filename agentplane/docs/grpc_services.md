@@ -59,12 +59,14 @@ follows it; code that differs converges on it.
 ## Errors
 
 - **Server:** one `errors(context)` async context manager per servicer module wraps each RPC body and
-  maps domain exceptions to status codes. Messages are fixed strings: no exception text, Kubernetes
+  maps domain exceptions to status codes. It is built by `agentplane.grpc_servicer.status_mapping`
+  from the service's own rows; the rejected-bearer, deadline and unavailable-backend rows are shared,
+  each service naming only their messages. Messages are fixed strings: no exception text, Kubernetes
   response, SQL or bearer data reaches a client. A server fault the mapping does not know propagates;
   gRPC logs it and answers `UNKNOWN`. `context.abort` outside the mapping is for request validation
   the RPC itself performs.
-- **Client:** the client class translates `grpc.aio.AioRpcError` in one place into its own exception
-  carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`).
+- **Client:** `agentplane.grpc_calls` translates `grpc.aio.AioRpcError` in one place into a
+  `ServiceError` carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`).
 
 ## Deadlines
 

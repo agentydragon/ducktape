@@ -11,9 +11,9 @@ from uuid import UUID
 
 import grpc
 from google.protobuf.json_format import ParseError
-from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
+from agentplane.grpc_servicer import Abort, ServicerResources, Status, status_mapping
 from agentplane.proto import (
     runner_control_pb2,
     runner_gateway_pb2,
@@ -36,7 +36,6 @@ from agentplane.runner_gateway.session_registry import SessionConflictError, Ses
 from agentplane.sandbox_service.errors import InventoryError, SandboxNotFoundError
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.grpc_caller import authenticate
-from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -45,12 +44,10 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
-class Resources:
+class Resources(ServicerResources):
     """What `RunnerGateway` serves from."""
 
-    principals: WorkloadPrincipalResolver
     destinations: DestinationResolver
-    caller_accounts: frozenset[ServiceAccountRef]
     platform_instructions: str
     runner_admission_ack_timeout_s: float
     sessions: SessionRegistry
@@ -60,49 +57,40 @@ class Resources:
     admission_timeout_s: float
     lifecycle_timeout_s: float
 
-    def __post_init__(self) -> None:
-        if min(self.admission_timeout_s, self.runner_admission_ack_timeout_s, self.lifecycle_timeout_s) <= 0:
-            raise ValueError("timeouts must be positive")
-        if not self.caller_accounts:
-            raise ValueError("at least one service caller is required")
-
-    async def authenticate(self, context: grpc.aio.ServicerContext) -> ServiceAccountRef:
-        return await authenticate(self.principals, self.caller_accounts, context)
-
     @property
     def sealing(self) -> Sealing:
         return Sealing(self.sessions, control=self.control)
 
 
-@asynccontextmanager
-async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
-    """Sanitize backend failures; no Kubernetes wire responses or bearer data reach clients."""
-    try:
-        yield
-    except WorkloadPrincipalRejectedError:
-        await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
-    except SandboxNotFoundError, SessionNotFoundError:
-        await context.abort(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
-    except SessionConflictError:
-        await context.abort(grpc.StatusCode.ALREADY_EXISTS, "session ID already belongs to another Sandbox")
-    except CommandRefusedError as refused:
-        code = {
-            runner_control_pb2.CommandRefused.REASON_COMMAND_CONFLICT: grpc.StatusCode.ALREADY_EXISTS,
-            runner_control_pb2.CommandRefused.REASON_INVALID_COMMAND: grpc.StatusCode.INVALID_ARGUMENT,
-        }.get(refused.refusal.reason, grpc.StatusCode.FAILED_PRECONDITION)
-        await context.abort(code, f"runner refused the command: {refused}")
-    except ControlRefusedError as refused:
-        if refused.refusal.reason == runner_control_pb2.ControlRefused.REASON_INVALID_REQUEST:
-            await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "runner rejected invalid request")
-        await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner rejected session or bootstrap state")
-    except ValueError, ParseError:
-        await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request")
-    except TimeoutError:
-        await context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "service deadline expired")
-    except InventoryError, RunnerError:
-        await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request")
-    except DestinationUnavailableError, ConnectionError, k8s_client.ApiException, SQLAlchemyError:
-        await context.abort(grpc.StatusCode.UNAVAILABLE, "destination unavailable; no offline admission")
+def _command_refused(refused: CommandRefusedError) -> Status:
+    code = {
+        runner_control_pb2.CommandRefused.REASON_COMMAND_CONFLICT: grpc.StatusCode.ALREADY_EXISTS,
+        runner_control_pb2.CommandRefused.REASON_INVALID_COMMAND: grpc.StatusCode.INVALID_ARGUMENT,
+    }.get(refused.refusal.reason, grpc.StatusCode.FAILED_PRECONDITION)
+    return code, f"runner refused the command: {refused}"
+
+
+def _control_refused(refused: ControlRefusedError) -> Status:
+    if refused.refusal.reason == runner_control_pb2.ControlRefused.REASON_INVALID_REQUEST:
+        return grpc.StatusCode.INVALID_ARGUMENT, "runner rejected invalid request"
+    return grpc.StatusCode.FAILED_PRECONDITION, "runner rejected session or bootstrap state"
+
+
+# No Kubernetes wire responses or bearer data reach clients.
+errors = status_mapping(
+    Abort((SandboxNotFoundError, SessionNotFoundError), (grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")),
+    Abort(SessionConflictError, (grpc.StatusCode.ALREADY_EXISTS, "session ID already belongs to another Sandbox")),
+    Abort(CommandRefusedError, _command_refused),
+    Abort(ControlRefusedError, _control_refused),
+    Abort((ValueError, ParseError), (grpc.StatusCode.INVALID_ARGUMENT, "invalid service request")),
+    Abort(
+        (InventoryError, RunnerError),
+        (grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request"),
+    ),
+    deadline="service deadline expired",
+    unavailable="destination unavailable; no offline admission",
+    also_unavailable=(DestinationUnavailableError, SQLAlchemyError),
+)
 
 
 def parse_session_id(session_id: str) -> UUID:

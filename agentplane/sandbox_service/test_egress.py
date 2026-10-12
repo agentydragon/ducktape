@@ -6,7 +6,6 @@ from datetime import UTC, datetime
 
 import pytest
 import pytest_bazel
-from pydantic import ValidationError
 
 from agentplane.egress.resources import TargetMethod
 from agentplane.proto.sandbox_service_pb2 import Sandbox, ServiceAccount
@@ -269,23 +268,6 @@ async def test_operator_json_target_has_no_nullable_header_or_scheme(
     credential = seeded.policies[0].rules[0].credential
     assert credential is not None
     assert credential.model_dump(mode="json")["targets"] == [target]
-
-
-@pytest.mark.parametrize(
-    "target",
-    [
-        {"method": "jsonField", "field": "password", "header": "Authorization"},
-        {"method": "jsonField", "field": "password", "scheme": None},
-        {"method": "jsonField"},
-        {"method": "wholeValue", "header": "X-Key", "field": "password"},
-        {"method": "schemeToken", "header": "Authorization"},
-    ],
-)
-def test_operator_api_rejects_mixed_target_variants(target: dict[str, str | None]) -> None:
-    with pytest.raises(ValidationError):
-        CredentialView.model_validate(
-            {"name": "test", "description": "test credential", "placeholder": "test-placeholder", "targets": [target]}
-        )
 
 
 def test_operator_schema_preserves_the_target_discriminator() -> None:

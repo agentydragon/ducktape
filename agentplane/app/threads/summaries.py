@@ -9,7 +9,8 @@ from uuid import UUID
 
 import grpc
 
-from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
+from agentplane.grpc_calls import ServiceError
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import history_service_pb2, runner_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -57,7 +58,7 @@ class Summaries:
     async def get(self, thread_id: UUID) -> FoldSummary:
         try:
             summary = await self._history.get_session_summary(str(thread_id))
-        except HistoryServiceError as error:
+        except ServiceError as error:
             if error.code != grpc.StatusCode.NOT_FOUND:
                 raise
             return NOTHING_FOLDED

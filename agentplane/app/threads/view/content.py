@@ -23,7 +23,8 @@ from agentplane.app.threads.events.debug import (
 )
 from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.models import Thread
-from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
+from agentplane.grpc_calls import ServiceError
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.views import EntityKind, ThreadCommandEntityView
 from agentplane.proto import command_pb2, event_log_pb2, history_service_pb2
 
@@ -52,7 +53,7 @@ class ContentStore:
     async def current_scope(self, thread_id: UUID) -> ThreadScope | None:
         try:
             summary = await self._history_reader.get_session_summary(str(thread_id))
-        except HistoryServiceError as error:
+        except ServiceError as error:
             if error.code != grpc.StatusCode.NOT_FOUND:
                 raise
             return None
@@ -150,7 +151,7 @@ class ContentStore:
                     ),
                 )
             )
-        except HistoryServiceError as error:
+        except ServiceError as error:
             if error.code not in {grpc.StatusCode.FAILED_PRECONDITION, grpc.StatusCode.NOT_FOUND}:
                 raise
             return None
@@ -187,7 +188,7 @@ def _admission(entry: event_log_pb2.EventEntry, command: command_pb2.Command) ->
 def _evidence_errors() -> Iterator[None]:
     try:
         yield
-    except HistoryServiceError as error:
+    except ServiceError as error:
         if error.code == grpc.StatusCode.FAILED_PRECONDITION:
             raise ThreadScopeChangedError("the thread fold projection epoch has changed") from error
         if error.code == grpc.StatusCode.NOT_FOUND:

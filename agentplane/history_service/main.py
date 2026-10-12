@@ -57,7 +57,7 @@ async def serve(settings: Settings) -> None:
                 summaries=SummaryReader(engine),
                 threads=ThreadReader(engine),
                 evidence=EvidenceReader(engine, history),
-                reader_accounts=settings.reader_accounts,
+                caller_accounts=settings.reader_accounts,
                 request_timeout_s=settings.request_timeout_s,
                 summary_changes=wakeups.changes[Channel.SUMMARIES],
                 session_openings=wakeups.changes[Channel.SESSIONS],

@@ -89,6 +89,7 @@ py_library(
     name = "summaries",
     srcs = ["summaries.py"],
     deps = [
+        "//agentplane:grpc_calls",
         "//agentplane/history_service:client",
         "//agentplane/proto:history_service_pb2",
         "//agentplane/proto:runner_pb2",

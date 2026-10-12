@@ -72,7 +72,6 @@ py_library(
         "//agentplane/app/threads/view:content",
         "//agentplane/egress:decisions",
         "//agentplane/egress:decisions_client",
-        "//agentplane/history_service:client",
         "//agentplane/postgres:wakeups",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:errors",

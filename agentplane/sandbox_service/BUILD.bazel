@@ -274,7 +274,6 @@ py_test(
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "@pypi//protobuf",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
@@ -365,13 +364,10 @@ py_library(
         ":egress_views",
         ":errors",
         ":provisioning",
-        "//agentplane:subjects",
+        "//agentplane:grpc_servicer",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/proto:sandbox_service_pb2_grpc",
-        "//agentplane/workload_auth:grpc_caller",
-        "//agentplane/workload_auth:principal",
         "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
     ],
 )

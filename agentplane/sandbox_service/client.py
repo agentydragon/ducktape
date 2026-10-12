@@ -27,8 +27,6 @@ class SandboxServiceClient:
         request_timeout_s: float,
         lifecycle_timeout_s: float,
     ) -> None:
-        if min(request_timeout_s, lifecycle_timeout_s) <= 0:
-            raise ValueError("timeouts must be positive")
         self.stub: sandbox_service_pb2_grpc.SandboxServiceAsyncStub = sandbox_service_pb2_grpc.SandboxServiceStub(
             channel
         )

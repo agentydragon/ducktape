@@ -18,7 +18,8 @@ from agentplane.app.testing.thread_test_support import event_entry
 from agentplane.app.threads.events.event_log import EventLogStore, SessionAdmissionError
 from agentplane.app.threads.models import Thread
 from agentplane.app.threads.summaries import Summaries
-from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
+from agentplane.grpc_calls import ServiceError
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_pb2, history_service_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -217,16 +218,16 @@ async def test_a_session_the_history_service_has_not_recorded_opens_with_empty_h
     reader: AsyncMock, remote: EventLogStore
 ) -> None:
     # The runner pushes a new Session to the History Service after OpenSession has answered.
-    reader.read_session_events.side_effect = HistoryServiceError(grpc.StatusCode.NOT_FOUND, "test-unrecorded-session")
-    reader.read_session_observations.side_effect = HistoryServiceError(
+    reader.read_session_events.side_effect = ServiceError(grpc.StatusCode.NOT_FOUND, "test-unrecorded-session")
+    reader.read_session_observations.side_effect = ServiceError(
         grpc.StatusCode.NOT_FOUND, "test-unrecorded-session"
     )
     thread_id = await remote.open(str(uuid4()))
     assert await remote.exists(thread_id)
     assert await remote.events(thread_id, limit=10) == []
     assert await remote.read_watermark(thread_id) == 0
-    reader.read_session_events.side_effect = HistoryServiceError(grpc.StatusCode.UNAVAILABLE, "test-history-down")
-    with pytest.raises(HistoryServiceError):
+    reader.read_session_events.side_effect = ServiceError(grpc.StatusCode.UNAVAILABLE, "test-history-down")
+    with pytest.raises(ServiceError):
         await remote.events(thread_id, limit=10)
 
 

@@ -6,6 +6,7 @@ py_library(
     name = "content",
     srcs = ["content.py"],
     deps = [
+        "//agentplane:grpc_calls",
         "//agentplane/app/threads:models",
         "//agentplane/app/threads/events:debug",
         "//agentplane/app/threads/events:event_log",

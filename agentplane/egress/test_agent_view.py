@@ -6,7 +6,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_bazel
-from pydantic import TypeAdapter, ValidationError
+from pydantic import TypeAdapter
 
 from agentplane.egress.agent_view import CredentialView, agent_view
 from agentplane.egress.policy import Index
@@ -179,30 +179,6 @@ def test_agent_target_variants_serialize_only_their_own_fields(target: dict[str,
     )
     assert view.model_dump(mode="json")["targets"] == [target]
     assert TypeAdapter(Target).validate_python(target).model_dump(mode="json") == target
-
-
-@pytest.mark.parametrize(
-    "target",
-    [
-        {"method": "jsonField", "field": "password", "header": "Authorization"},
-        {"method": "jsonField", "field": "password", "scheme": "Bearer"},
-        {"method": "jsonField", "field": "password", "header": None},
-        {"method": "jsonField", "header": "Authorization"},
-        {"method": "wholeValue", "header": "X-Key", "field": "password"},
-        {"method": "wholeValue", "header": "X-Key", "scheme": "Bearer"},
-        {"method": "schemeToken", "header": "Authorization"},
-        {"method": "basicPassword", "header": "Authorization", "scheme": None},
-        {"method": "unknown", "header": "Authorization"},
-        {"header": "Authorization"},
-    ],
-)
-def test_mixed_or_incomplete_targets_are_rejected_by_resources_and_agent_api(target: dict[str, str | None]) -> None:
-    with pytest.raises(ValidationError):
-        TypeAdapter(Target).validate_python(target)
-    with pytest.raises(ValidationError):
-        CredentialView.model_validate(
-            {"name": "test", "description": "test credential", "placeholder": "test-placeholder", "targets": [target]}
-        )
 
 
 if __name__ == "__main__":

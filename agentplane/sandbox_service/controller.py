@@ -61,6 +61,11 @@ class SandboxController:
             self._queued.add(name)
             self._queue.put_nowait(name)
 
+    def _reset_backoff(self, name: str) -> None:
+        self._attempts.pop(name, None)
+        if (retry := self._retries.pop(name, None)) is not None:
+            retry.cancel()
+
     def _names(self) -> set[str]:
         return set(self._seen)
 
@@ -68,10 +73,7 @@ class SandboxController:
         if obj is None:
             self._seen.discard(name)
             self._uids.pop(name, None)
-            retry = self._retries.pop(name, None)
-            if retry is not None:
-                retry.cancel()
-            self._attempts.pop(name, None)
+            self._reset_backoff(name)
             # Deletion (including one missed during a watch gap) needs orphan cleanup.
             self._enqueue(_SWEEP)
         else:
@@ -80,10 +82,7 @@ class SandboxController:
             if self._uids.get(name) != uid:
                 # Name reuse starts fresh, never inheriting an older incarnation's backoff.
                 self._uids[name] = uid
-                retry = self._retries.pop(name, None)
-                if retry is not None:
-                    retry.cancel()
-                self._attempts.pop(name, None)
+                self._reset_backoff(name)
             self._enqueue(name)
 
     async def _on_change(self, kind: WatchedKind) -> None:
@@ -146,10 +145,7 @@ class SandboxController:
                 logger.exception("Sandbox reconciliation failed for %s; retrying in %ss", name or "sweep", delay)
                 self._retries[name] = asyncio.create_task(self._retry(name, delay), name=f"sandbox-retry-{name}")
             else:
-                self._attempts.pop(name, None)
-                retry = self._retries.pop(name, None)
-                if retry is not None:
-                    retry.cancel()
+                self._reset_backoff(name)
             finally:
                 self._queue.task_done()
 

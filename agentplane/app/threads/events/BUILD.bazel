@@ -7,6 +7,7 @@ py_library(
     srcs = ["event_log.py"],
     deps = [
         ":debug",
+        "//agentplane:grpc_calls",
         "//agentplane/app:database_updates",
         "//agentplane/app/threads:models",
         "//agentplane/app/threads:summaries",
@@ -45,6 +46,7 @@ py_test(
     deps = [
         ":event_log",
         "//:conftest",
+        "//agentplane:grpc_calls",
         "//agentplane/app:conftest",
         "//agentplane/app/testing:retained_history",
         "//agentplane/app/testing:thread_test_support",

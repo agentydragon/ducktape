@@ -1,5 +1,5 @@
-"""Channels and authenticated unary calls for the Sandbox Service and Runner Gateway clients, with
-status codes translated in one place."""
+"""Bearer metadata and status translation for the Agentplane gRPC clients. The Sandbox Service and
+Runner Gateway clients also dial through here and read FAILED_PRECONDITION as a `RunnerError`."""
 
 import asyncio
 from collections.abc import Awaitable, Callable
@@ -32,12 +32,16 @@ def dial(target: str) -> grpc.aio.Channel:
     )
 
 
-def _raise(error: grpc.aio.AioRpcError) -> Never:
+def raise_status(error: grpc.aio.AioRpcError) -> Never:
     if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
         raise TimeoutError(f"{error.code().name}: {error.details()}") from error
+    raise ServiceError(error.code(), error.details()) from error
+
+
+def _raise(error: grpc.aio.AioRpcError) -> Never:
     if error.code() == grpc.StatusCode.FAILED_PRECONDITION:
         raise RunnerError(f"{error.code().name}: {error.details()}") from error
-    raise ServiceError(error.code(), error.details()) from error
+    raise_status(error)
 
 
 async def bearer(token_file: Path) -> tuple[tuple[str, str], ...]:

@@ -83,7 +83,6 @@ from agentplane.app.threads.view.content import CommandIdConflictError, ContentS
 from agentplane.egress.decisions import Decision
 from agentplane.egress.decisions_client import DecisionsClient, DecisionsUnavailableError
 from agentplane.grpc_calls import ServiceError
-from agentplane.history_service.client import HistoryServiceError
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import runner_pb2
 from agentplane.runner.errors import RunnerError
@@ -1053,18 +1052,13 @@ def create_app(
     app = FastAPI(title="Agentplane", version="0")
 
     @app.exception_handler(ServiceError)
-    async def sandbox_service_error(request: Request, error: ServiceError) -> JSONResponse:
+    async def service_error(request: Request, error: ServiceError) -> JSONResponse:
         code = {
             grpc.StatusCode.NOT_FOUND: 404,
             grpc.StatusCode.FAILED_PRECONDITION: 409,
             grpc.StatusCode.ALREADY_EXISTS: 409,
             grpc.StatusCode.INVALID_ARGUMENT: 422,
         }.get(error.code, 503)
-        return JSONResponse({"detail": str(error)}, status_code=code)
-
-    @app.exception_handler(HistoryServiceError)
-    async def history_service_error(request: Request, error: HistoryServiceError) -> JSONResponse:
-        code = {grpc.StatusCode.NOT_FOUND: 404, grpc.StatusCode.INVALID_ARGUMENT: 422}.get(error.code, 503)
         return JSONResponse({"detail": str(error)}, status_code=code)
 
     @app.exception_handler(ConnectionError)

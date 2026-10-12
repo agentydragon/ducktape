@@ -14,7 +14,8 @@ from agentplane.app.database_updates import Channel
 from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
 from agentplane.app.threads.models import Thread
 from agentplane.app.threads.summaries import FeedSnapshot, Summaries
-from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
+from agentplane.grpc_calls import ServiceError
+from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.settled_cursors import next_stored, settled_ranges
 from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_log_pb2
@@ -78,7 +79,7 @@ class EventLogStore:
         # Metadata avoids downloading an arbitrary native payload.
         try:
             page = await self._history_reader.read_session_observations(str(thread_id), limit=1)
-        except HistoryServiceError as error:
+        except ServiceError as error:
             if error.code != grpc.StatusCode.NOT_FOUND:
                 raise
             return 0  # The runner has not pushed this Session yet.
@@ -99,7 +100,7 @@ class EventLogStore:
                 page = await self._history_reader.read_session_events(
                     str(thread_id), after_cursor=cursor, limit=requested
                 )
-            except HistoryServiceError as error:
+            except ServiceError as error:
                 if error.code != grpc.StatusCode.NOT_FOUND or through is not None:
                     raise
                 return []  # The runner has not pushed this Session yet.

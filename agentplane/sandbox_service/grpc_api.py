@@ -9,61 +9,40 @@ from typing import override
 import grpc
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.json_format import ParseError
-from kubernetes_asyncio import client as k8s_client
 
+from agentplane.grpc_servicer import Abort, ServicerResources, status_mapping
 from agentplane.proto import sandbox_service_pb2, sandbox_service_pb2_grpc
 from agentplane.proto.sandbox_service_pb2 import Sandbox
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.egress_views import BindingNotFoundError, UnknownPolicyError
 from agentplane.sandbox_service.errors import InventoryError, SandboxConflictError, SandboxNotFoundError
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.grpc_caller import authenticate
-from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
 
 @dataclass(frozen=True)
-class Resources:
+class Resources(ServicerResources):
     """What `SandboxService` serves from."""
 
-    principals: WorkloadPrincipalResolver
     provisioning: Provisioning
-    caller_accounts: frozenset[ServiceAccountRef]
     admission_timeout_s: float
     lifecycle_timeout_s: float
 
-    def __post_init__(self) -> None:
-        if min(self.admission_timeout_s, self.lifecycle_timeout_s) <= 0:
-            raise ValueError("timeouts must be positive")
-        if not self.caller_accounts:
-            raise ValueError("at least one service caller is required")
 
-    async def authenticate(self, context: grpc.aio.ServicerContext) -> ServiceAccountRef:
-        return await authenticate(self.principals, self.caller_accounts, context)
-
-
-@asynccontextmanager
-async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
-    """Sanitize backend failures; no Kubernetes wire responses or bearer data reach clients."""
-    try:
-        yield
-    except WorkloadPrincipalRejectedError:
-        await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
-    except SandboxNotFoundError, BindingNotFoundError:
-        await context.abort(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
-    except SandboxConflictError:
-        await context.abort(grpc.StatusCode.ALREADY_EXISTS, "sandbox name or initialization conflicts")
-    except ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError:
-        await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection")
-    except TimeoutError:
-        await context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "service deadline expired")
-    except InventoryError:
-        await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "sandbox state refused the request")
-    except ConnectionError, k8s_client.ApiException:
-        await context.abort(grpc.StatusCode.UNAVAILABLE, "Kubernetes unavailable")
+# No Kubernetes wire responses or bearer data reach clients.
+errors = status_mapping(
+    Abort((SandboxNotFoundError, BindingNotFoundError), (grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")),
+    Abort(SandboxConflictError, (grpc.StatusCode.ALREADY_EXISTS, "sandbox name or initialization conflicts")),
+    Abort(
+        (ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError),
+        (grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection"),
+    ),
+    Abort(InventoryError, (grpc.StatusCode.FAILED_PRECONDITION, "sandbox state refused the request")),
+    deadline="service deadline expired",
+    unavailable="Kubernetes unavailable",
+)
 
 
 class SandboxService(sandbox_service_pb2_grpc.SandboxServiceServicer):

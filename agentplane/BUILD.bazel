@@ -120,3 +120,15 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_library(
+    name = "grpc_servicer",
+    srcs = ["grpc_servicer.py"],
+    deps = [
+        ":subjects",
+        "//agentplane/workload_auth:grpc_caller",
+        "//agentplane/workload_auth:principal",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+    ],
+)

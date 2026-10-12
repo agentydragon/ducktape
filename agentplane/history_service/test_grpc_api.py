@@ -64,7 +64,7 @@ async def stub(engine: AsyncEngine, history: Store) -> AsyncIterator[history_ser
                     summaries=SummaryReader(engine),
                     threads=ThreadReader(engine),
                     evidence=EvidenceReader(engine, history),
-                    reader_accounts=frozenset({READER}),
+                    caller_accounts=frozenset({READER}),
                     request_timeout_s=10,
                     summary_changes=wakeups.changes[Channel.SUMMARIES],
                     session_openings=wakeups.changes[Channel.SESSIONS],

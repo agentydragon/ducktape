@@ -32,8 +32,6 @@ class SandboxControlClient:
     def __init__(
         self, *, control_target: str, token_file: Path, request_timeout_s: float, lifecycle_timeout_s: float
     ) -> None:
-        if min(request_timeout_s, lifecycle_timeout_s) <= 0:
-            raise ValueError("timeouts must be positive")
         # A template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`.
         self.control_target = control_target
         self.token_file = token_file
@@ -72,8 +70,6 @@ class RunnerGatewayClient:
         request_timeout_s: float,
         control: SandboxControlClient,
     ) -> None:
-        if request_timeout_s <= 0 or (command_admission_timeout_s is not None and command_admission_timeout_s <= 0):
-            raise ValueError("timeouts must be positive")
         self.stub: runner_gateway_pb2_grpc.RunnerGatewayAsyncStub = runner_gateway_pb2_grpc.RunnerGatewayStub(channel)
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
