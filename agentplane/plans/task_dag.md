@@ -655,10 +655,11 @@ flowchart TD
 back (native harness state only, or also its workspace files); who may revive. Each incarnation
 uses the Sandbox's template as it is at that start (`AGENTPLANE_SANDBOX_RESOURCE`), so revival
 picks up template and image updates. Sessions that share a Sandbox revive together,
-since they share its state PVC. Direction (operator, 2026-10-12 PDT): a new user message or a
+since they share its state PVC. Direction (operator, 2026-10-11 PDT): a new user message or a
 notification resumes a stopped Sandbox, never a read. Both reach the Runner Gateway as commands, so
-one hook covers them: it sets the Sandbox back to running and holds the command until the new
-incarnation's runner connects. Open: what the user sees while it starts.
+one hook covers them: the gateway finds the Sandbox in its Session registry, sets the Sandbox
+resource's desired state to running and holds the command until the new incarnation's runner
+connects. Resuming by Session ID works while the Sandbox exists, stopped or not. Open: what the user sees while it starts.
 
 ### `SESSION_STATE_VOLUME_DESIGN` — what the state PVC holds
 
@@ -686,9 +687,15 @@ over, including ownership of the Sandbox's `PolicyBinding`. Its templates are an
 too, read only by the Sandbox Service; Action Service boxes keep a catalog of their own (#10012).
 The spec names its template rather than copying it: each incarnation, a resume included,
 resolves the name to the template as it is then, so an updated template applies at the next start
-(operator, 2026-10-12 PDT), and the state-schema check below refuses one whose runner cannot read
-the kept state. Replaces the imperative-only `CreateSandbox` too. If the Sandbox Service becomes a real
-controller or operator for it, rename the service to say so (operator, 2026-10-11 PDT).
+(operator, 2026-10-11 PDT), and the state-schema check below refuses one whose runner cannot read
+the kept state. Replaces the imperative-only `CreateSandbox` too.
+
+The Sandbox Service becomes this resource's controller, in Go on controller-runtime like the
+Policy Controller, and is renamed to say so (operator, 2026-10-11 PDT). It stays separate from the
+Runner Gateway, so the provisioning permissions (Pods, VMs, PVCs, ServiceAccounts, bindings) stay
+off the runner-facing service. The gateway may write the resource's desired running state, which
+the controller validates; it gets no resume RPC on the Sandbox Service, which already calls the
+gateway to seal.
 
 It also carries the operator's eventual "pause, replace the image, resume" (2026-10-12 PDT), for
 pods and VMs alike. The controller accepts a new `spec.runner.image` only once the current
@@ -743,8 +750,9 @@ that it resumed after a seal.
 
 ### `SESSION_REVIVE` — start a stopped Sandbox again
 
-**Blocked on incarnations and per-harness evidence.** Schedule a new Pod or VM for a stopped
-Sandbox from its template as it is now, possibly on a new image, and resume each harness as
+**Blocked on incarnations and per-harness evidence.** The controller schedules a new Pod or VM
+for a stopped Sandbox, set running by an explicit call or by the gateway's resume hook, from its
+template as it is now, possibly on a new image, and resume each harness as
 a new incarnation of the same Session and history. Ships per harness as its evidence lands. Test
 revival after a long stop, a refused incompatible state PVC, and concurrent revive requests.
 
