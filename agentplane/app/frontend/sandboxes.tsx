@@ -40,6 +40,7 @@ import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from ".
 import { podIp, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { StaleNotice } from "./stream_status";
+import { TopbarTitle } from "./topbar";
 
 const EMPTY_FORM: NewSandbox = {
   name: "",
@@ -216,7 +217,11 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
 
   return (
     <Stack>
-      <Title order={2}>Sandboxes</Title>
+      <TopbarTitle>
+        <Title order={1} size="h4">
+          Sandboxes
+        </Title>
+      </TopbarTitle>
       <StaleNotice streams={[live.stream]} />
       <LiveStatus live={live} />
       {confirmingDelete !== null && (
