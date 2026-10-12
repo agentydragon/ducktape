@@ -161,12 +161,15 @@ spec:
 apiVersion: batch/v1
 kind: Job
 metadata:
+  annotations:
+    kustomize.toolkit.fluxcd.io/force: enabled
   name: grocy-config-ovh-verify-20260520
   namespace: grocy-sf
 spec:
   backoffLimit: 0
   template:
     spec:
+      automountServiceAccountToken: false
       containers:
         - args:
             - |
@@ -177,6 +180,12 @@ spec:
             - -ceu
           image: lscr.io/linuxserver/grocy:v4.6.0-ls318
           name: verifier
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
           volumeMounts:
             - mountPath: /config
               name: config

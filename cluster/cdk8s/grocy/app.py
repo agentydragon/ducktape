@@ -281,14 +281,17 @@ def household_chart(app: App, *, household: str) -> Chart:
     k8s.KubeJob(
         chart,
         "verify-job",
-        metadata=k8s.ObjectMeta(name="grocy-config-ovh-verify-20260520", namespace=namespace),
+        metadata=k8s.ObjectMeta(
+            name="grocy-config-ovh-verify-20260520",
+            namespace=namespace,
+            # A read-only integrity check, so recreating it on a template change is safe.
+            annotations={"kustomize.toolkit.fluxcd.io/force": "enabled"},
+        ),
         spec=k8s.JobSpec(
             backoff_limit=0,
             template=k8s.PodTemplateSpec(
-                # TODO: state automount_service_account_token=False once this Job is renamed or
-                # removed; a Job's pod template is immutable, and without Flux's force annotation
-                # changing it in place fails the apply.
                 spec=k8s.PodSpec(
+                    automount_service_account_token=False,
                     restart_policy="Never",
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
@@ -302,6 +305,14 @@ def household_chart(app: App, *, household: str) -> Chart:
                                 'php -r \'$db=new PDO("sqlite:/config/data/grocy.db"); echo'
                                 ' $db->query("PRAGMA integrity_check")->fetchColumn(), "\\n";\' | grep -Fx ok\n'
                             ],
+                            # php-cli opening one small SQLite database.
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("10m"),
+                                    "memory": k8s.Quantity.from_string("64Mi"),
+                                },
+                                limits={"memory": k8s.Quantity.from_string("256Mi")},
+                            ),
                             volume_mounts=[k8s.VolumeMount(name="config", mount_path="/config")],
                         )
                     ],
@@ -384,13 +395,7 @@ def write_manifests(root: Path, household: str, *, mcp_dir: str) -> None:
         kustomize_kustomization(
             resources=[
                 posixpath.relpath(mcp_dir, directory),
-                write_charts(
-                    root,
-                    directory,
-                    partial(household_chart, household=household),
-                    # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-                    unhardened_pods={"Job/grocy-config-ovh-verify-20260520"},
-                ),
+                write_charts(root, directory, partial(household_chart, household=household)),
             ]
         ),
     )
