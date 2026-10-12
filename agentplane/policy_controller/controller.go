@@ -1,4 +1,4 @@
-package kubernetespolicy
+package policycontroller
 
 import (
 	"context"
@@ -26,12 +26,12 @@ import (
 
 const (
 	KubernetesReady    = "KubernetesReady"
-	FieldManager       = "agentplane-kubernetes-policy-controller"
+	FieldManager       = "agentplane-policy-controller"
 	ManagedByLabel     = "app.kubernetes.io/managed-by"
-	PolicyNamespaceLbl = "kubernetes-policy.agentplane.allegedly.works/policy-namespace"
-	BindingAnnotation  = "kubernetes-policy.agentplane.allegedly.works/binding"
-	BindingUIDAnn      = "kubernetes-policy.agentplane.allegedly.works/binding-uid"
-	SubjectUIDAnn      = "kubernetes-policy.agentplane.allegedly.works/subject-uid"
+	PolicyNamespaceLbl = "policy.agentplane.allegedly.works/policy-namespace"
+	BindingAnnotation  = "policy.agentplane.allegedly.works/binding"
+	BindingUIDAnn      = "policy.agentplane.allegedly.works/binding-uid"
+	SubjectUIDAnn      = "policy.agentplane.allegedly.works/subject-uid"
 
 	setsIndex    = "spec.policySets"
 	subjectIndex = "spec.subject"
@@ -62,13 +62,28 @@ type native struct {
 	Role            RoleRef
 }
 
-func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl.Result, error) {
+func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (result ctrl.Result, err error) {
 	var binding PolicyBinding
 	if err := r.Get(ctx, req.NamespacedName, &binding); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, r.converge(ctx, req.Name, nil)
 		}
 		return ctrl.Result{}, err
+	}
+	if expiresAt := binding.Spec.ExpiresAt; expiresAt != nil {
+		if remaining := time.Until(expiresAt.Time); remaining > 0 {
+			// No event marks the deadline, so a successful reconcile asks to be run again at it (a
+			// failed one is retried with backoff anyway).
+			defer func() {
+				if err == nil {
+					result.RequeueAfter = remaining
+				}
+			}()
+		} else {
+			// Expiry is deletion for every rule type; the NotFound reconcile that follows removes the
+			// native bindings.
+			return ctrl.Result{}, client.IgnoreNotFound(r.Delete(ctx, &binding, client.Preconditions{UID: &binding.UID}))
+		}
 	}
 	desired, reason, message, err := r.expand(ctx, &binding)
 	if err != nil {
@@ -77,22 +92,12 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 	if err := r.converge(ctx, binding.Name, desired); err != nil {
 		reason, message = "ApplyFailed", err.Error()
 	}
-	if err := r.applyCondition(ctx, &binding, reason, message); err != nil {
-		return ctrl.Result{}, err
-	}
-	if reason != "Expired" && binding.Spec.ExpiresAt != nil {
-		// No event marks the deadline, so the reconcile asks to be run again at it.
-		return ctrl.Result{RequeueAfter: time.Until(binding.Spec.ExpiresAt.Time)}, nil
-	}
-	return ctrl.Result{}, nil
+	return ctrl.Result{}, r.applyCondition(ctx, &binding, reason, message)
 }
 
 // expand returns the native bindings the binding grants, with the condition reason and message.
 func (r *Reconciler) expand(ctx context.Context, binding *PolicyBinding) (map[native]client.Object, string, string, error) {
 	spec := binding.Spec
-	if spec.ExpiresAt != nil && !spec.ExpiresAt.After(time.Now()) {
-		return nil, "Expired", "expired at " + spec.ExpiresAt.Format(time.RFC3339), nil
-	}
 	if !slices.Contains(r.SubjectNamespaces, spec.Subject.Namespace) {
 		return nil, "SubjectNotWatched", fmt.Sprintf("subject namespace %s is not one this controller binds", spec.Subject.Namespace), nil
 	}

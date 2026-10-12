@@ -12,7 +12,7 @@
       ],
       "properties": {
         "subject": {
-          "description": "The ServiceAccount this binding grants to. Kubernetes matches an RBAC subject by namespace and name only, so the Kubernetes Policy Controller also stamps each native binding with the account's UID and replaces them when a same-named account is recreated.",
+          "description": "The ServiceAccount this binding grants to. Kubernetes matches an RBAC subject by namespace and name only, so the Policy Controller also stamps each native binding with the account's UID and replaces them when a same-named account is recreated.",
           "type": "object",
           "required": [
             "namespace",
@@ -39,7 +39,7 @@
           }
         },
         "expiresAt": {
-          "description": "After this instant the binding contributes nothing.",
+          "description": "The Policy Controller deletes the binding at this instant. Never set on a binding a GitOps tool owns, which would recreate it.",
           "type": "string",
           "format": "date-time"
         }
@@ -55,7 +55,7 @@
             "type"
           ],
           "items": {
-            "description": "A metav1.Condition. Each reader owns its own condition type, applied with its own field manager: `KubernetesReady` is the Kubernetes Policy Controller's.",
+            "description": "A metav1.Condition. Each reader owns its own condition type, applied with its own field manager: `KubernetesReady` is the Policy Controller's.",
             "type": "object",
             "required": [
               "type",

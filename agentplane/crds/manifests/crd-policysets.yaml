@@ -2,8 +2,8 @@
 # attaches sets to a ServiceAccount. Each service reads only the rule types it enforces and reports
 # on each binding in its own status condition, so one set can carry rules for several services and
 # one binding grants them all. Rule types and their readers:
-#   kubernetes_role_binding, kubernetes_cluster_role_binding: the Kubernetes Policy Controller
-#     (agentplane/kubernetes_policy/SPEC.md), which keeps native RoleBindings/ClusterRoleBindings.
+#   kubernetes_role_binding, kubernetes_cluster_role_binding: the Policy Controller
+#     (agentplane/policy_controller/SPEC.md), which keeps native RoleBindings/ClusterRoleBindings.
 # The kubeconform schema under cluster/schemas/ is dumped from this file by
 # `bb run //agentplane/crds:generate_bin`.
 apiVersion: apiextensions.k8s.io/v1

@@ -1,9 +1,9 @@
 # Attaches PolicySets to one ServiceAccount. The binding's existence is the grant: creating one
-# allows, deleting one takes that back, and it contributes nothing after it expires. Every reader of
-# PolicySet rules honors it for its own rule types and reports in its own status condition.
-# Kubernetes rules are enforced by the API server against the native RoleBindings and
-# ClusterRoleBindings the Kubernetes Policy Controller keeps, so their revocation and expiry take
-# effect when the controller deletes those. The subject schema (`spec.subject`) and the kubeconform
+# allows, deleting one takes that back, and the Policy Controller (agentplane/policy_controller/SPEC.md)
+# deletes it once `expiresAt` passes, so no reader handles expiry itself. Every reader of PolicySet
+# rules honors it for its own rule types and reports in its own status condition. Kubernetes rules
+# are enforced by the API server against the native RoleBindings and ClusterRoleBindings the Policy
+# Controller keeps, so their revocation takes effect when the controller deletes those. The subject schema (`spec.subject`) and the kubeconform
 # schema under cluster/schemas/ are written by `bb run //agentplane/crds:generate_bin` from
 # agentplane.subjects.ServiceAccountRef and this file.
 apiVersion: apiextensions.k8s.io/v1
@@ -49,7 +49,7 @@ spec:
                 subject:
                   description: >-
                     The ServiceAccount this binding grants to. Kubernetes matches an RBAC subject by
-                    namespace and name only, so the Kubernetes Policy Controller also stamps each
+                    namespace and name only, so the Policy Controller also stamps each
                     native binding with the account's UID and replaces them when a same-named
                     account is recreated.
                   type: object
@@ -69,7 +69,9 @@ spec:
                     type: string
                     minLength: 1
                 expiresAt:
-                  description: After this instant the binding contributes nothing.
+                  description: >-
+                    The Policy Controller deletes the binding at this instant. Never set on a
+                    binding a GitOps tool owns, which would recreate it.
                   type: string
                   format: date-time
             status:
@@ -82,7 +84,7 @@ spec:
                   items:
                     description: >-
                       A metav1.Condition. Each reader owns its own condition type, applied with
-                      its own field manager: `KubernetesReady` is the Kubernetes Policy Controller's.
+                      its own field manager: `KubernetesReady` is the Policy Controller's.
                     type: object
                     required: [type, status, lastTransitionTime, reason, message]
                     properties:

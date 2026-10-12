@@ -509,11 +509,11 @@ into an outage matrix. Source: [public-coder wiring](../../cluster/cdk8s/public_
 Kubernetes scope and egress/Action grants. Record intended authority in generated configuration,
 not ad hoc grants. Test an allowed and denied operation; do not add privileges as part of this review.
 
-### `K8S_POLICY_DEPLOY` — deploy the controller
+### `K8S_POLICY_DEPLOY` — deploy the Policy Controller
 
 **Candidate.** A cdk8s Deployment with its own SA and RBAC: create/delete of
 bindings and `bind` limited to the generated `resourceNames`. Flux-owned sets are generated from
-`namespace_access` and `agent_access_profiles`. Alert on a native binding past its `expiresAt`. The
+`namespace_access` and `agent_access_profiles`. Alert on a `PolicyBinding` past its `expiresAt`. The
 README diagram gains the controller.
 
 ### `POLICY_SANDBOX_CUTOVER` — Sandboxes take policy sets
@@ -530,21 +530,21 @@ Sandbox's one `PolicyBinding`, owner-referenced to it (the agent-sandbox `Sandbo
 
 **Blocked on the Sandbox cutover.** An operator-only grant/revoke RPC with optional `expiresAt`
 for sets of any rule type, and UI chips showing each binding's set, expiry and ready conditions.
-One `expiresAt` serves every type: the Kubernetes controller deletes native bindings at expiry,
-and the Action Service and egress proxy stop honouring a binding past it.
+One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry, so no reader
+handles expiry itself.
 
 ### `ACTION_POLICY_MIGRATE` — Action policies move to PolicySet
 
 **Candidate.** Action rule types join `PolicySet`; the Action Service informer reads
-`PolicySet`/`PolicyBinding`, filters to action rules and writes `ActionsReady`, ignoring a binding past its `expiresAt` and
-marking it `Expired`. cdk8s regenerates
+`PolicySet`/`PolicyBinding`, filters to action rules and writes `ActionsReady`; expiry needs nothing, since the Policy Controller
+deletes expired bindings. cdk8s regenerates
 the static `ActionPolicySet`/`ActionPolicyBinding` objects as the generic kinds, and Sandbox Service
 writes action rules into the Sandbox's one `PolicyBinding`.
 
 ### `EGRESS_POLICY_MIGRATE` — egress policies move to PolicySet
 
 **Candidate.** The same move for egress rules: the proxy informer reads the generic
-kinds and writes `EgressReady`, with the same expiry handling; cdk8s and Sandbox Service follow as
+kinds and writes `EgressReady`; cdk8s and Sandbox Service follow as
 for Actions. An `EgressBinding` with several `subjects` becomes one `PolicyBinding` per subject,
 which replaces the closed singular-subject change (#9843).
 

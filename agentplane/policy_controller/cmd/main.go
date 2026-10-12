@@ -1,4 +1,4 @@
-// The Kubernetes Policy Controller's entry point.
+// The Policy Controller's entry point.
 package main
 
 import (
@@ -16,7 +16,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 
-	kubernetespolicy "github.com/agentydragon/ducktape/agentplane/kubernetes_policy"
+	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 )
 
 func main() {
@@ -24,7 +24,7 @@ func main() {
 	subjectNamespaces := flag.String("subject-namespaces", "", "comma-separated namespaces whose ServiceAccounts may be bound")
 	flag.Parse()
 	ctrl.SetLogger(zap.New())
-	log := ctrl.Log.WithName("kubernetes-policy")
+	log := ctrl.Log.WithName("policy-controller")
 	if err := run(*policyNamespace, strings.Split(*subjectNamespaces, ",")); err != nil {
 		log.Error(err, "controller failed")
 		os.Exit(1)
@@ -36,12 +36,12 @@ func run(policyNamespace string, subjectNamespaces []string) error {
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
 		return err
 	}
-	if err := kubernetespolicy.AddToScheme(scheme); err != nil {
+	if err := policycontroller.AddToScheme(scheme); err != nil {
 		return err
 	}
 	ours := labels.SelectorFromSet(labels.Set{
-		kubernetespolicy.ManagedByLabel:     kubernetespolicy.FieldManager,
-		kubernetespolicy.PolicyNamespaceLbl: policyNamespace,
+		policycontroller.ManagedByLabel:     policycontroller.FieldManager,
+		policycontroller.PolicyNamespaceLbl: policyNamespace,
 	})
 	only := func(namespaces ...string) map[string]cache.Config {
 		out := map[string]cache.Config{}
@@ -55,8 +55,8 @@ func run(policyNamespace string, subjectNamespaces []string) error {
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
 		Scheme: scheme,
 		Cache: cache.Options{ByObject: map[client.Object]cache.ByObject{
-			&kubernetespolicy.PolicySet{}:     {Namespaces: only(policyNamespace)},
-			&kubernetespolicy.PolicyBinding{}: {Namespaces: only(policyNamespace)},
+			&policycontroller.PolicySet{}:     {Namespaces: only(policyNamespace)},
+			&policycontroller.PolicyBinding{}: {Namespaces: only(policyNamespace)},
 			&corev1.ServiceAccount{}:          {Namespaces: only(subjectNamespaces...)},
 			&rbacv1.RoleBinding{}:             {Label: ours},
 			&rbacv1.ClusterRoleBinding{}:      {Label: ours},
@@ -65,7 +65,7 @@ func run(policyNamespace string, subjectNamespaces []string) error {
 	if err != nil {
 		return err
 	}
-	reconciler := &kubernetespolicy.Reconciler{
+	reconciler := &policycontroller.Reconciler{
 		Client:            mgr.GetClient(),
 		Roles:             mgr.GetAPIReader(),
 		PolicyNamespace:   policyNamespace,

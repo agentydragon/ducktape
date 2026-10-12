@@ -1,14 +1,14 @@
 load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 
 go_library(
-    name = "kubernetes_policy",
+    name = "policy_controller",
     srcs = [
         "controller.go",
         "types.go",
         "zz_generated.deepcopy.go",
     ],
-    importpath = "github.com/agentydragon/ducktape/agentplane/kubernetes_policy",
-    visibility = ["//agentplane/kubernetes_policy:__subpackages__"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/policy_controller",
+    visibility = ["//agentplane/policy_controller:__subpackages__"],
     deps = [
         "@io_k8s_api//core/v1:core",
         "@io_k8s_api//rbac/v1:rbac",
@@ -28,9 +28,9 @@ go_library(
 )
 
 go_test(
-    name = "kubernetes_policy_test",
+    name = "policy_controller_test",
     srcs = ["controller_test.go"],
-    embed = [":kubernetes_policy"],
+    embed = [":policy_controller"],
     deps = [
         "@io_k8s_api//core/v1:core",
         "@io_k8s_api//rbac/v1:rbac",

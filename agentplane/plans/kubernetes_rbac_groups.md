@@ -1,7 +1,7 @@
 # Reusable Kubernetes RBAC grant groups
 
 Status: **design decided (operator, 2026-10-12 PDT); the CRDs and the
-[Kubernetes Policy Controller](../kubernetes_policy/SPEC.md) are built, not yet deployed.** The
+[Policy Controller](../policy_controller/SPEC.md) are built, not yet deployed.** The
 [task DAG](task_dag.md) tracks the rest as `K8S_POLICY_DEPLOY` through `POLICY_RUNTIME_GRANTS`,
 plus `MANAGED_SA_RBAC` (accounts without a Sandbox). Existing
 [agent RBAC documentation](../../cluster/docs/agent_rbac.md) describes deployed/static
@@ -70,7 +70,7 @@ only its own rule types and writes its own condition type (`KubernetesReady`, `A
 first; Actions and egress move over afterwards.
 
 The CRDs are `agentplane/crds/manifests/crd-policy{sets,bindings}.yaml`; what the controller
-guarantees is its [SPEC](../kubernetes_policy/SPEC.md).
+guarantees is its [SPEC](../policy_controller/SPEC.md).
 
 Also decided (operator, 2026-10-12 PDT):
 
@@ -87,7 +87,8 @@ Also decided (operator, 2026-10-12 PDT):
 - **Native bindings**: one per (binding, role, namespace), no deduplication, each carrying an
   instance label.
 - **Controller**: its own Deployment and ServiceAccount.
-- **Expiry**: the native bindings are deleted at `expiresAt`; an overdue expiry alerts.
+- **Expiry**: the controller deletes the `PolicyBinding` at `expiresAt`, for every rule type, and
+  with it its native bindings; an overdue expiry alerts.
 - **Subjects**: ServiceAccounts only.
 - **Cutover**: clean. Existing staging Sandboxes with grants are recreated, and the PR that does
   it gets a decision card first.

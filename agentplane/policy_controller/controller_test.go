@@ -1,4 +1,4 @@
-package kubernetespolicy
+package policycontroller
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	rbacv1 "k8s.io/api/rbac/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -140,7 +141,7 @@ func TestNativeBindingDeletedByHandIsRecreated(t *testing.T) {
 	}
 }
 
-func TestBindingAsksToRunAgainAtExpiryAndThenGrantsNothing(t *testing.T) {
+func TestExpiredBindingIsDeletedAndItsGrantsWithIt(t *testing.T) {
 	expiresAt := metav1.NewTime(time.Now().Add(time.Hour))
 	r, c := newReconciler(t, &expiresAt, namespaceReader, nodeReader)
 	if result := reconcileOnce(t, r); result.RequeueAfter <= 0 || result.RequeueAfter > time.Hour {
@@ -155,11 +156,13 @@ func TestBindingAsksToRunAgainAtExpiryAndThenGrantsNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	reconcileOnce(t, r)
+	if err := c.Get(context.Background(), grantRequest.NamespacedName, &binding); !apierrors.IsNotFound(err) {
+		t.Fatalf("Get after expiry: err = %v", err)
+	}
+	// The deletion event runs the NotFound reconcile, which removes what the binding granted.
+	reconcileOnce(t, r)
 	if got := nativeScopes(t, c); len(got) != 0 {
 		t.Fatalf("natives after expiry = %v", got)
-	}
-	if got := condition(t, c); got.Reason != "Expired" {
-		t.Fatalf("condition = %+v", got)
 	}
 }
 
