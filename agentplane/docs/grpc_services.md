@@ -8,6 +8,10 @@ follows it; code that differs converges on it.
 - One `agentplane/proto/<name>.proto` per API, `package agentplane.proto.<name>`.
 - Messages build with `py_proto_library_with_mypy_stubs`; the service with `py_grpc_service_library`
   (`<name>_pb2_grpc`, typed by its generated `.pyi`).
+- RPC `X` takes `XRequest` and returns `XResponse`, each its own message even when it wraps a single
+  field, so either side can grow without a new method. The exception is a stream whose messages are
+  frames of a protocol rather than one call's arguments, like `RunnerControl.Connect`'s
+  `RunnerFrame`/`ServiceFrame`.
 
 ## Servicers
 
