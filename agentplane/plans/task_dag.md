@@ -661,8 +661,7 @@ flowchart TD
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
 **Candidate.** Rename the `sandbox_service` database and role
-(and the `postgres-sandbox-service` Secret) for the History Service, resolving the `TODO` in
-`cluster/cdk8s/agentplane/database.py`. Rename in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`)
+(and the `postgres-sandbox-service` Secret) for the History Service. Rename in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`)
 and have the CNPG `Database` and managed role adopt the new names; recreating the database under a
 new name would copy the log. Verify the History Service and Electric reconnect with no data movement.
 The migrate env `AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL` (pinned in

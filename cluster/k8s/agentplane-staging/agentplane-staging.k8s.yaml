@@ -2171,7 +2171,6 @@ data:
       - vm-images-publisher
     kubernetes_cluster_binding_cleanup: true
     port: 8080
-    gateway_target: agentplane-runner-gateway.agentplane-staging.svc.cluster.local:8080
     control_target: "{sandbox}-control.{namespace}.svc:8080"
     gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
     runner_control:

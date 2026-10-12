@@ -72,7 +72,6 @@ class SandboxService(Construct):
                 "kubernetes_binding_cleanup_namespaces": sorted(env.kubernetes_binding_cleanup_namespaces),
                 "kubernetes_cluster_binding_cleanup": env.kubernetes_cluster_binding_cleanup,
                 "port": endpoint.port.number,
-                "gateway_target": runner_gateway.target(env.namespace),
                 "control_target": runner_gateway.control_target(env.namespace),
                 "gateway_token_file": f"{_GATEWAY_TOKEN_DIR}/token",
                 "runner_control": runner_gateway.runner_control_endpoint(env.namespace).model_dump(),

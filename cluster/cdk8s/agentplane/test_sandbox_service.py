@@ -109,8 +109,6 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
         if mount["name"] == "runner-gateway-token"
     )
     assert backend_config["gateway_token_file"] == f"{gateway_mount['mountPath']}/token"
-    gateway = runner_gateway.service(namespace)
-    assert backend_config["gateway_target"] == f"{gateway.fqdn}:{gateway.pod_port}"
     assert gateway_config["token_audience"] != backend_config["token_audience"]
     runner_policy = resource("CiliumNetworkPolicy", "agentplane-runner")["spec"]
     # Runners dial out; nothing connects to them.

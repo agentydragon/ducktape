@@ -1698,7 +1698,6 @@ data:
     kubernetes_binding_cleanup_namespaces: []
     kubernetes_cluster_binding_cleanup: false
     port: 8080
-    gateway_target: agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8080
     control_target: "{sandbox}-control.{namespace}.svc:8080"
     gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
     runner_control:
