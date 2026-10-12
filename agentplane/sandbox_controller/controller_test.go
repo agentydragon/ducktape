@@ -69,7 +69,7 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 		Spec:       SandboxSpec{Template: templateName, Running: running},
 	}
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(append(objects, sandbox)...).
-		WithStatusSubresource(&Sandbox{}, &policycontroller.PolicyBinding{}).Build()
+		WithStatusSubresource(&Sandbox{}).Build()
 	return &Reconciler{Client: c}, c
 }
 

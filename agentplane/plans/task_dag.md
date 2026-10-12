@@ -694,8 +694,7 @@ bootstrap command and runner endpoints, the parts the Sandbox Service now keeps
 as annotations on agent-sandbox's `Sandbox` (`provisioning.py`, `kubernetes_bindings.py`,
 `egress.py`, `action_policy.py`, `runner_endpoints.py`). The controller creates the Sandbox's own
 ServiceAccount and its one `PolicyBinding` of those sets, both owned by the Sandbox; the binding
-never sets `expiresAt`. No Pod starts until the conditions of the readers of the sets' rule types
-are `True` for the binding's current generation. The Sandbox Service never writes
+never sets `expiresAt`. No Pod waits for the binding's readers. The Sandbox Service never writes
 `PolicyBinding`s. Runtime and time-limited grants are separate bindings (`POLICY_RUNTIME_GRANTS`).
 Left after #10162: session defaults, bootstrap command and runner endpoints.
 

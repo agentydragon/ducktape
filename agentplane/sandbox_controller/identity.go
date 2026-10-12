@@ -3,13 +3,10 @@ package sandboxcontroller
 import (
 	"context"
 	"fmt"
-	"maps"
 	"slices"
-	"strings"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
@@ -17,18 +14,11 @@ import (
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 )
 
-// BindingReaders are the PolicyBinding conditions a Pod start may wait on, by the PolicySet rule
-// types each reader enforces: the Policy Controller's, the egress proxy's and the Action Service's.
-var BindingReaders = map[string]string{
-	"kubernetes_role_binding":         policycontroller.KubernetesReady,
-	"kubernetes_cluster_role_binding": policycontroller.KubernetesReady,
-	"egress":                          "EgressReady",
-	"action_auto_approve":             "ActionsReady",
-}
-
 // ensureIdentity keeps the Sandbox's own ServiceAccount and, while it names PolicySets, its one
 // PolicyBinding. Both are controlled by the Sandbox, so deleting the Sandbox revokes them. It
-// returns why no Pod may start yet; a running Pod is never stopped for it.
+// returns why no Pod may start yet; a running Pod is never stopped for it. A Pod does not wait for
+// the binding's readers: a grant that lands after the Pod starts only means early requests are
+// refused, the same as for a running Pod whose PolicySets change.
 func (r *Reconciler) ensureIdentity(ctx context.Context, sandbox *Sandbox) (*unready, error) {
 	account := &corev1.ServiceAccount{ObjectMeta: owned(sandbox)}
 	if err := r.Get(ctx, client.ObjectKeyFromObject(account), account); err != nil {
@@ -56,10 +46,7 @@ func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *Sandbox) (*unre
 			return nil, client.IgnoreNotFound(err)
 		}
 		binding.Spec = spec
-		if err := r.createOwned(ctx, sandbox, binding); err != nil {
-			return nil, err
-		}
-		return &unready{"PolicyBindingNotReady", fmt.Sprintf("PolicyBinding %s is created; its readers have not reported", binding.Name)}, nil
+		return nil, r.createOwned(ctx, sandbox, binding)
 	}
 	if !metav1.IsControlledBy(binding, sandbox) {
 		return &unready{"PolicyBindingConflict", fmt.Sprintf("PolicyBinding %s exists and is not this Sandbox's", binding.Name)}, nil
@@ -67,52 +54,11 @@ func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *Sandbox) (*unre
 	if len(sets) == 0 {
 		return nil, client.IgnoreNotFound(r.Delete(ctx, binding, client.Preconditions{UID: &binding.UID}))
 	}
-	if binding.Spec.Subject != spec.Subject || !slices.Equal(binding.Spec.PolicySets, spec.PolicySets) {
-		binding.Spec.Subject, binding.Spec.PolicySets = spec.Subject, spec.PolicySets
-		if err := r.Update(ctx, binding); err != nil {
-			return nil, err
-		}
-		// The update bumped the generation, so every reader's condition describes the old sets.
-		return &unready{"PolicyBindingNotReady", fmt.Sprintf("PolicyBinding %s is updated; its readers have not reported", binding.Name)}, nil
+	if binding.Spec.Subject == spec.Subject && slices.Equal(binding.Spec.PolicySets, spec.PolicySets) {
+		return nil, nil
 	}
-	readers, blocked, err := r.readers(ctx, sandbox)
-	if readers == nil {
-		return blocked, err
-	}
-	var waiting []string
-	for _, reader := range slices.Sorted(maps.Keys(readers)) {
-		condition := meta.FindStatusCondition(binding.Status.Conditions, reader)
-		if condition == nil || condition.Status != metav1.ConditionTrue || condition.ObservedGeneration != binding.Generation {
-			waiting = append(waiting, reader)
-		}
-	}
-	if waiting != nil {
-		return &unready{"PolicyBindingNotReady", fmt.Sprintf("PolicyBinding %s waits on %s", binding.Name, strings.Join(waiting, ", "))}, nil
-	}
-	return nil, nil
-}
-
-// readers are the conditions of the readers that enforce a rule in the Sandbox's PolicySets, so a
-// Sandbox never waits on a component, such as the optional Action Service, its rules do not use.
-func (r *Reconciler) readers(ctx context.Context, sandbox *Sandbox) (map[string]bool, *unready, error) {
-	readers := map[string]bool{}
-	for _, name := range sandbox.Spec.PolicySets {
-		var set policycontroller.PolicySet
-		if err := r.Get(ctx, client.ObjectKey{Namespace: sandbox.Namespace, Name: name}, &set); err != nil {
-			if apierrors.IsNotFound(err) {
-				return nil, &unready{"PolicySetNotFound", fmt.Sprintf("PolicySet %s not found", name)}, nil
-			}
-			return nil, nil, err
-		}
-		for _, rule := range set.Spec.Rules {
-			reader, ok := BindingReaders[rule.Type]
-			if !ok {
-				return nil, nil, fmt.Errorf("PolicySet %s: rule type %q has no known reader", name, rule.Type)
-			}
-			readers[reader] = true
-		}
-	}
-	return readers, nil, nil
+	binding.Spec.Subject, binding.Spec.PolicySets = spec.Subject, spec.PolicySets
+	return nil, r.Update(ctx, binding)
 }
 
 // owned is the metadata of an object named after the Sandbox and labeled with it.

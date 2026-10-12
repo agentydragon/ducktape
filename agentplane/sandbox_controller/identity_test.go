@@ -34,31 +34,6 @@ func getBinding(t *testing.T, c client.Client) *policycontroller.PolicyBinding {
 	return &binding
 }
 
-// report sets each reader's condition True for the binding's generation plus lag.
-func report(t *testing.T, c client.Client, lag int64, readers ...string) {
-	t.Helper()
-	binding := getBinding(t, c)
-	binding.Status.Conditions = nil
-	for _, reader := range readers {
-		binding.Status.Conditions = append(binding.Status.Conditions, metav1.Condition{
-			Type: reader, Status: metav1.ConditionTrue, Reason: "Applied", ObservedGeneration: binding.Generation + lag,
-			LastTransitionTime: metav1.Now(),
-		})
-	}
-	if err := c.Status().Update(context.Background(), binding); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// testSet is a PolicySet with one rule of each type.
-func testSet(name string, ruleTypes ...string) *policycontroller.PolicySet {
-	set := &policycontroller.PolicySet{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}}
-	for _, ruleType := range ruleTypes {
-		set.Spec.Rules = append(set.Spec.Rules, policycontroller.Rule{Type: ruleType})
-	}
-	return set
-}
-
 func TestPodRunsAsTheSandboxsOwnServiceAccount(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
@@ -77,9 +52,8 @@ func TestPodRunsAsTheSandboxsOwnServiceAccount(t *testing.T) {
 	}
 }
 
-func TestPodWaitsForTheReadersOfItsRuleTypes(t *testing.T) {
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"),
-		testSet("test-set-a", "kubernetes_role_binding"), testSet("test-set-b", "egress", "kubernetes_cluster_role_binding"))
+func TestBindingIsCreatedWithThePodWithoutWaitingForItsReaders(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	setPolicySets(t, c, "test-set-a", "test-set-b")
 	reconcileOnce(t, r)
 
@@ -94,55 +68,14 @@ func TestPodWaitsForTheReadersOfItsRuleTypes(t *testing.T) {
 	if binding.Spec.Subject != want.Subject || !slices.Equal(binding.Spec.PolicySets, want.PolicySets) || binding.Spec.ExpiresAt != nil {
 		t.Errorf("PolicyBinding spec = %+v, want %+v", binding.Spec, want)
 	}
-
-	for _, step := range []struct {
-		name    string
-		lag     int64
-		readers []string
-	}{
-		{"no reader", 0, nil},
-		{"one reader missing", 0, []string{policycontroller.KubernetesReady}},
-		{"a stale generation", -1, []string{policycontroller.KubernetesReady, "EgressReady"}},
-	} {
-		if step.readers != nil {
-			report(t, c, step.lag, step.readers...)
-		}
-		reconcileOnce(t, r)
-		if getPod(t, c) != nil {
-			t.Fatalf("%s: a Pod started before every reader reported the current generation", step.name)
-		}
-		if reason := runningReason(t, c); reason != "PolicyBindingNotReady" {
-			t.Errorf("%s: Running reason = %s, want PolicyBindingNotReady", step.name, reason)
-		}
-	}
-
-	// No rule is the Action Service's, so its condition is never awaited.
-	report(t, c, 0, policycontroller.KubernetesReady, "EgressReady")
-	reconcileOnce(t, r)
 	if getPod(t, c) == nil {
-		t.Fatal("no Pod once the readers of its rule types reported")
-	}
-}
-
-func TestMissingPolicySetBlocksThePod(t *testing.T) {
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
-	setPolicySets(t, c, "test-set-missing")
-	reconcileOnce(t, r)
-	report(t, c, 0, policycontroller.KubernetesReady, "EgressReady", "ActionsReady")
-	reconcileOnce(t, r)
-	if getPod(t, c) != nil {
-		t.Fatal("a Pod started without knowing the rules of a PolicySet it names")
-	}
-	if reason := runningReason(t, c); reason != "PolicySetNotFound" {
-		t.Errorf("Running reason = %s, want PolicySetNotFound", reason)
+		t.Error("no Pod while the PolicyBinding's readers have not reported")
 	}
 }
 
 func TestChangedPolicySetsUpdateTheBindingAndKeepTheRunningPod(t *testing.T) {
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"), testSet("test-set-a", "egress"), testSet("test-set-b", "egress"))
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	setPolicySets(t, c, "test-set-a")
-	reconcileOnce(t, r)
-	report(t, c, 0, "EgressReady")
 	reconcileOnce(t, r)
 	if getPod(t, c) == nil {
 		t.Fatal("no Pod")
@@ -161,18 +94,6 @@ func TestChangedPolicySetsUpdateTheBindingAndKeepTheRunningPod(t *testing.T) {
 	reconcileOnce(t, r)
 	if getBinding(t, c) != nil {
 		t.Error("clearing the PolicySets left the PolicyBinding")
-	}
-}
-
-func TestStopIsNotGatedOnTheBinding(t *testing.T) {
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
-	reconcileOnce(t, r)
-	setPolicySets(t, c, "test-set-a")
-	reconcileOnce(t, r)
-	setRunning(t, c, false)
-	reconcileOnce(t, r)
-	if getPod(t, c) != nil {
-		t.Fatal("a stopped Sandbox kept its Pod while its PolicyBinding was not ready")
 	}
 }
 

@@ -6053,14 +6053,6 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - policysets
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
       - policybindings
     verbs:
       - get
