@@ -864,8 +864,7 @@ optional-with-fallback setting or `CLEANUP` tombstone whose condition is met; th
 `agentplane/README.md` showing exactly the deployed services and the traffic between them in
 `cluster/cdk8s/agentplane`. Known now: the test-only `PostgresListener.wait_until_disconnected`
 (`connected` turns false before the termination callback runs, so its tests cannot wait on
-`connected` instead); egress and app test support each build a throwaway CA; operator routes are
-`/operator/v1/` in notifications but `/v1/operator/` in actions;
+`connected` instead); egress and app test support each build a throwaway CA;
 `cluster/cdk8s/agentplane/kubevirt_experiment` is an experiment outside `x/`. Findings are fixed in
 PRs of their own; this node leaves with the last of them.
 
@@ -931,7 +930,6 @@ flowchart TD
         RUNNER_CORE_SPLIT[Candidate: runner control and ingress clients share their plumbing]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         SERVICE_SETTING_NAMES[Candidate: settings name the service they configure]
-        OPERATOR_ROUTE_PREFIX[Candidate: one operator route prefix]
         NOTIFICATION_WRITE_ONLY_COLUMNS[Decision: audit columns nothing reads]
         EVENT_DRIVEN_WAKEUPS[Decision: which timed polls become event-driven]
     end
@@ -972,12 +970,6 @@ imports `db.py`'s rows: `ActionStore` first moves out of `db.py`, then takes a `
 `sandbox_service_control_target` and `sandbox_service_command_admission_timeout_s` configure the
 Runner Gateway. The settings forbid extra keys, so a rename lands in two steps: accept the new name
 and render it, then drop the old one.
-
-### `OPERATOR_ROUTE_PREFIX` — one operator route prefix
-
-**Candidate.** Notifications serve operator routes under `/operator/v1/`, actions under
-`/v1/operator/`. Unifying them is a wire change between Deployments: the app's clients and the
-services move together.
 
 ### `NOTIFICATION_WRITE_ONLY_COLUMNS` — audit columns nothing reads
 

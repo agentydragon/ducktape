@@ -246,7 +246,7 @@ guarantee. A changed installation/repository identity requires explicit subscrip
 ## Operator notification diagnostics
 
 The integration app (and only the configured `operator_reader_account` in the Notification Service's
-namespace) can read `GET /operator/v1/sandboxes/{namespace}/{name}/notifications/stream?uid=…` with a
+namespace) can read `GET /v1/operator/sandboxes/{namespace}/{name}/notifications/stream?uid=…` with a
 Pod-bound, audience-specific workload token. This endpoint does not delegate agent inbox authority:
 it returns no provider payloads, idempotency keys, notice text or mutation capability. The app verifies
 the browser's operator login and resolves the current Sandbox UID before calling it; a reused name
@@ -259,7 +259,7 @@ when their displayed status changes. The app proxies this stream under the opera
 lifetime; the drawer follows it only while open, retains the last snapshot during an outage, and
 marks it stale.
 
-`GET /operator/v1/notices/stream?session_id=…` (at most 200 Sessions) streams the same kind of
+`GET /v1/operator/notices/stream?session_id=…` (at most 200 Sessions) streams the same kind of
 snapshot for the named Sessions' live inboxes in the operator's own namespace, reduced to what a
 Thread list shows: `queued` entries no notice covers yet, `unacknowledged` entries a notice covers
 that the agent has not acknowledged, the latest notice's stage and error, the wait reason, and while

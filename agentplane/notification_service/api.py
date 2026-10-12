@@ -144,7 +144,7 @@ def sandbox_status_frames(service: Service, namespace: str, name: str, uid: str)
     )
 
 
-@router.get("/operator/v1/sandboxes/{namespace}/{name}/notifications/stream")
+@router.get("/v1/operator/sandboxes/{namespace}/{name}/notifications/stream")
 async def sandbox_notifications_stream(
     namespace: str, name: str, uid: str, caller: Caller, service: Notifications
 ) -> StreamingResponse:
@@ -180,7 +180,7 @@ def session_notice_frames(service: Service, namespace: str, session_ids: set[str
 
 
 # No caller yet: staged for the Thread list's pending-notice indicator.
-@router.get("/operator/v1/notices/stream")
+@router.get("/v1/operator/notices/stream")
 async def session_notices_stream(
     caller: Caller,
     service: Notifications,

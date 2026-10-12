@@ -185,7 +185,7 @@ async def test_operator_status_is_read_only_and_uid_pinned(store: Store) -> None
     await store.record(
         claim, source, [ActionEventView(sequence=1, state=ActionState.DECISION_PENDING, at=datetime.now(UTC))]
     )
-    url = "/operator/v1/sandboxes/test/sandbox/notifications/stream"
+    url = "/v1/operator/sandboxes/test/sandbox/notifications/stream"
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://notifications.test"
     ) as client:
@@ -261,7 +261,7 @@ async def test_session_notice_stream_counts_queued_entries_without_acknowledging
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://notifications.test"
     ) as client:
-        response = await client.get("/operator/v1/notices/stream", params={"session_id": "noticed"})
+        response = await client.get("/v1/operator/notices/stream", params={"session_id": "noticed"})
         assert response.status_code == 403  # An agent reads its own inbox, not other Sessions'.
     sub = await store.subscribe(
         PRINCIPAL,

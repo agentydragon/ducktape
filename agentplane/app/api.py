@@ -235,7 +235,7 @@ async def sandbox_notifications_stream(
         request,
         shutdown,
         updates,
-        f"/operator/v1/sandboxes/{sandbox.namespace}/{sandbox.name}/notifications/stream",
+        f"/v1/operator/sandboxes/{sandbox.namespace}/{sandbox.name}/notifications/stream",
         {"uid": str(sandbox.uid)},
     )
 
@@ -783,7 +783,7 @@ async def thread_notices_stream(
     notice got. Following it acknowledges nothing."""
     _require_operator_login(request)
     return _notifications_proxy(
-        request, shutdown, updates, "/operator/v1/notices/stream", {"session_id": [str(thread) for thread in thread_id]}
+        request, shutdown, updates, "/v1/operator/notices/stream", {"session_id": [str(thread) for thread in thread_id]}
     )
 
 
