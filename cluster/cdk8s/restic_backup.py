@@ -29,6 +29,8 @@ from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 
+_DEFAULT_MOVER_MEMORY_LIMIT = Size.gibibytes(1)
+
 
 class ResticBackup(Construct):
     """Encrypted, deduplicated Restic snapshots of PVC `source_pvc` on `schedule`, taken by
@@ -61,7 +63,7 @@ class ResticBackup(Construct):
         schedule: str,
         cache_storage_class_name: str,
         mover_affinity: ReplicationSourceSpecResticMoverAffinity | None = None,
-        mover_memory_limit: Size = Size.gibibytes(1),
+        mover_memory_limit: Size = _DEFAULT_MOVER_MEMORY_LIMIT,
     ) -> None:
         super().__init__(scope, id)
         mover_labels = {"app.kubernetes.io/name": f"{namespace}-volsync"}
