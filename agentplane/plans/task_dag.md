@@ -345,7 +345,7 @@ flowchart LR
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Candidate: production provider and API]
-    VM_VIRTIOFS[Unscheduled: test KubeVirt virtiofs on v1.8.2]
+    VM_VIRTIOFS[Candidate: test KubeVirt virtiofs on v1.8.2]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 8]
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
@@ -363,6 +363,7 @@ flowchart LR
     VM_PROCESS_ISOLATION --> VM_LIFECYCLE
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
     SANDBOX_VM_ISOLATION --> LOCAL_BAZEL[Blocked: bounded local Bazel client in VM]
+    SANDBOX_VM_ISOLATION --> KUBEVIRT_EXPERIMENT_RETIRE[Blocked: delete the KubeVirt experiment]
 ```
 
 ### `RUNNER_INBOUND_RETIRE` — remove the runner's inbound server
@@ -396,10 +397,13 @@ real credentials baked into the image. Reuse the proven prototype, not another p
 RBAC and UI. Container behavior remains intact. Review the changed service contracts and schema
 rollout as part of this work. For stateful VMs the kind lives on our own Sandbox resource, which
 reconciles to a bare Pod or a `VirtualMachine` (suspend is deleting the Pod or `runStrategy: Halted`).
+Re-type what is worth keeping from draft #8843 (`vm_view` status mapping and ownership checks, the
+`VmTemplate` catalog, halted create then start, DataVolume validation, halted image replacement)
+onto today's code, then close #8843 unmerged; it cannot be rebased.
 
 ### `VM_VIRTIOFS` — the state volume inside a guest
 
-**Unscheduled; the first step toward stateful VMs.** Enable KubeVirt's virtiofs feature gate (only
+**Candidate; the first step toward stateful VMs.** Enable KubeVirt's virtiofs feature gate (only
 `HostDevices` is on, `cluster/cdk8s/kubevirt/app.py`) and check on v1.8.2 that a guest mounts a
 filesystem PVC as a directory, and that a pod and a guest see the same files on it. The guest loses
 its XFS `prjquota` on `/state`, so the PVC size is the only bound.
@@ -430,6 +434,12 @@ unresolved platform risk, not a Cartesian product of every component crash and l
 **Blocked on integrated lifecycle.** Publish the selectable VM environment and measured isolation
 limits, with no implied existing-Sandbox conversion or live migration. Component evidence, not
 absence of every imaginable failure, establishes the delivered contract.
+
+### `KUBEVIRT_EXPERIMENT_RETIRE` — delete the KubeVirt experiment
+
+**Blocked on the VM capstone.** Once the production provider covers it, move anything still needed
+(the launcher relay admission policy, the acceptance driver if it becomes the VM lifecycle test)
+into production code, then delete `cluster/cdk8s/agentplane/kubevirt_experiment/` and the manifests it generates.
 
 ### `LOCAL_BAZEL` — bounded local client in a VM
 
@@ -471,20 +481,20 @@ observations. New database work follows the task-specific review and rollout req
 ```mermaid
 flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
-    CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned Kubernetes grants]
+    CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     POLICY_CRDS[In flight: generic PolicySet and PolicyBinding CRDs] --> K8S_POLICY_CONTROLLER[In flight: Kubernetes policy controller]
     POLICY_CRDS --> ACTION_POLICY_MIGRATE[Blocked: Action policies move to PolicySet]
     POLICY_CRDS --> EGRESS_POLICY_MIGRATE[Blocked: egress policies move to PolicySet]
-    BINDING_SUBJECT_ARITY[Candidate: singular subject shape] --> EGRESS_POLICY_MIGRATE
     ACTION_POLICY_MIGRATE --> OLD_POLICY_KINDS_DROP[Blocked: drop the old policy kinds]
     EGRESS_POLICY_MIGRATE --> OLD_POLICY_KINDS_DROP
-    ACTION_POLICY_MIGRATE --> K8S_POLICY_SANDBOX_CUTOVER
-    EGRESS_POLICY_MIGRATE --> K8S_POLICY_SANDBOX_CUTOVER
+    ACTION_POLICY_MIGRATE --> POLICY_SANDBOX_CUTOVER
+    EGRESS_POLICY_MIGRATE --> POLICY_SANDBOX_CUTOVER
     K8S_POLICY_CONTROLLER --> K8S_POLICY_DEPLOY[Blocked: deploy the controller]
-    K8S_POLICY_DEPLOY --> K8S_POLICY_SANDBOX_CUTOVER[Blocked: Sandboxes take policy sets]
-    K8S_POLICY_SANDBOX_CUTOVER --> K8S_POLICY_RUNTIME_GRANTS[Blocked: time-limited grants]
+    K8S_POLICY_DEPLOY --> POLICY_SANDBOX_CUTOVER[Blocked: Sandboxes take policy sets]
+    POLICY_SANDBOX_CUTOVER --> POLICY_RUNTIME_GRANTS[Blocked: time-limited grants of any rule type]
     K8S_POLICY_DEPLOY --> MANAGED_SA_RBAC
-    K8S_POLICY_SANDBOX_CUTOVER --> SANDBOX_RBAC
+    POLICY_SANDBOX_CUTOVER --> SANDBOX_RBAC
+    POLICY_SANDBOX_CUTOVER --> OLD_POLICY_KINDS_DROP
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_IDLE_EXPIRY[Candidate: delete idle Sandboxes]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
@@ -540,43 +550,51 @@ bindings and `bind` limited to the generated `resourceNames`. Flux-owned sets ar
 `namespace_access` and `agent_access_profiles`. Alert on a native binding past its `expiresAt`. The
 README diagram gains the controller.
 
-### `K8S_POLICY_SANDBOX_CUTOVER` — Sandboxes take policy sets
+### `POLICY_SANDBOX_CUTOVER` — Sandboxes take policy sets
 
 **Blocked on the deployment and both policy migrations; decision card before the PR.** Every
 cutover recreates staging Sandboxes rather than converting their bindings, so the Action, egress and
 Kubernetes cutovers share one recreate under one card. Sandbox Service takes set names at create and writes the
-Sandbox's one `PolicyBinding`, owner-referenced to it; the create form shows one chip per set. Delete the
-KubernetesBindings reconciler, the grant annotation and its finalizer, and the
+Sandbox's one `PolicyBinding`, owner-referenced to it; the create form and Sandbox presets name sets of any rule type, one chip per set, in a new
+`policy_sets` preset field. Delete the KubernetesBindings reconciler, the grant annotation and its finalizer, and the
 [grant catalog](../sandbox_service/kubernetes_grants.py) with its per-namespace preset expansion.
 
-### `K8S_POLICY_RUNTIME_GRANTS` — time-limited grants
+### `POLICY_RUNTIME_GRANTS` — time-limited grants
 
 **Blocked on the Sandbox cutover.** An operator-only grant/revoke RPC with optional `expiresAt`
 for sets of any rule type, and UI chips showing each binding's set, expiry and ready conditions.
+One `expiresAt` serves every type: the Kubernetes controller deletes native bindings at expiry,
+and the Action Service and egress proxy stop honouring a binding past it.
 
 ### `ACTION_POLICY_MIGRATE` — Action policies move to PolicySet
 
 **Blocked on `POLICY_CRDS`.** Action rule types join `PolicySet`; the Action Service informer reads
-`PolicySet`/`PolicyBinding`, filters to action rules and writes `ActionsReady`. cdk8s regenerates
+`PolicySet`/`PolicyBinding`, filters to action rules and writes `ActionsReady`, ignoring a binding past its `expiresAt` and
+marking it `Expired`. cdk8s regenerates
 the static `ActionPolicySet`/`ActionPolicyBinding` objects as the generic kinds, and Sandbox Service
 writes action rules into the Sandbox's one `PolicyBinding`.
 
 ### `EGRESS_POLICY_MIGRATE` — egress policies move to PolicySet
 
-**Blocked on `POLICY_CRDS` and `BINDING_SUBJECT_ARITY`**, since `EgressBinding` still has
-`subjects[]`. The same move for egress rules: the proxy informer reads the generic kinds and writes
-`EgressReady`; cdk8s and Sandbox Service follow as for Actions.
+**Blocked on `POLICY_CRDS`.** The same move for egress rules: the proxy informer reads the generic
+kinds and writes `EgressReady`, with the same expiry handling; cdk8s and Sandbox Service follow as
+for Actions. An `EgressBinding` with several `subjects` becomes one `PolicyBinding` per subject,
+which replaces the closed singular-subject change (#9843).
 
 ### `OLD_POLICY_KINDS_DROP` — drop the old policy kinds
 
-**Blocked on both migrations; the operator merges it.** Delete the `ActionPolicySet`/
-`ActionPolicyBinding` and `EgressPolicy`/`EgressBinding` CRDs and their code.
+**Blocked on both migrations and the Sandbox cutover; the operator merges it.** Delete the
+`ActionPolicySet`/`ActionPolicyBinding` and `EgressPolicy`/`EgressBinding` CRDs, their readers in
+the Action Service and egress proxy, the Sandbox Service's per-type binding writers and
+annotations (`egress.py`, `action_policy.py`, `kubernetes_bindings.py` and their views), and the
+presets' separate `egress_policies`, `action_policy_sets` and `kubernetes_grants` fields
+(`app/presets.py`, after the manifests stop setting them).
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 
 **Blocked on the caller review and the deployed controller.** The claude.ai caller gets a
-Flux-owned `PolicyBinding` of the sets `CLAUDE_AI_SA` approves, replacing its static
-per-namespace grants in `agent_access_profiles.py`. Static Group subjects (Haku OIDC,
+Flux-owned `PolicyBinding` of the sets `CLAUDE_AI_SA` approves, of any rule type, replacing its
+static per-namespace grants in `agent_access_profiles.py`. Static Group subjects (Haku OIDC,
 public-coder) stay Flux bindings. Test an allowed and a denied request.
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
@@ -592,12 +610,6 @@ only unresolved deployed wiring needs a live check, not a repeat of every alread
 cover invalid signatures. Close the remaining route-wiring uncertainty with an unsigned webhook
 request and a private-API request through the public hostname: both must be refused, without
 creating subscriptions or inbox entries. Record the result once; no exhaustive provider matrix.
-
-### `BINDING_SUBJECT_ARITY` — singular subject shape
-
-**Candidate.** Align the
-binding kinds on one explicit subject before adding multi-subject use. Preserve owner/replacement
-and authorization semantics; this cleanup does not authorize broader grants.
 
 ### `BOOTSTRAP_PROGRESS_CONTRACT` — asynchronous start/status
 
@@ -667,6 +679,8 @@ flowchart TD
     SESSION_STATE_VOLUME_DESIGN --> CLAUDE_PORTABLE_STATE
     SESSION_STATE_VOLUME_DESIGN --> CODEX_PORTABLE_STATE
     AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
+    AGENTPLANE_SANDBOX_RESOURCE --> AGENT_SANDBOX_RETIRE[Blocked: Agentplane stops using agent-sandbox]
+    ACTION_SANDBOX_PROVISIONING[Action Service Sandboxes, section 9] --> AGENT_SANDBOX_RETIRE
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
     CLAUDE_PORTABLE_STATE -. per harness .-> SESSION_REVIVE
@@ -721,6 +735,16 @@ that does not declare that version is refused. The VM half is #8843's `ReplaceVm
 
 Deleting the Sandbox seals its last incarnation and deletes its PVC; stopping it never does. Test
 both, and that a Pod or VM going away on its own leaves the Sandbox and its PVC in place.
+
+### `AGENT_SANDBOX_RETIRE` — Agentplane stops using agent-sandbox
+
+**Blocked on our resource and on the Action Service's Sandboxes moving behind the Sandbox Service;
+decision card before the PR.** Staging Sandboxes are recreated on our resource, not converted; if
+`POLICY_SANDBOX_CUTOVER` is close, both share one recreate. Then delete Agentplane's
+`SandboxTemplate`s (`cluster/cdk8s/agentplane/runner_sandbox.py`, `command_sandbox.py`), the Sandbox
+Service's agent-sandbox inventory, views and watch, the annotations it used as its record, the
+`volumeClaimTemplates` state volume and the agent-sandbox RBAC of both services. The controller
+install stays for `cluster/cdk8s/agent_workspaces.py`.
 
 ### `CLAUDE_PORTABLE_STATE` — Claude evidence
 

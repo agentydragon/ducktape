@@ -2,7 +2,7 @@
 
 Status: **design decided (operator, 2026-10-12 PDT); implementation in progress.** The
 [task DAG](task_dag.md) tracks it as `POLICY_CRDS` through
-`K8S_POLICY_RUNTIME_GRANTS`, plus `MANAGED_SA_RBAC` (accounts without a Sandbox). This plan records a preferred Agentplane-owned controller shape alongside the
+`POLICY_RUNTIME_GRANTS`, plus `MANAGED_SA_RBAC` (accounts without a Sandbox). This plan records a preferred Agentplane-owned controller shape alongside the
 prior art and acceptance checks; CRD fields and migration still need review. Existing
 [agent RBAC documentation](../../cluster/docs/agent_rbac.md) describes deployed/static
 ownership; it remains the source for current grant scope.
