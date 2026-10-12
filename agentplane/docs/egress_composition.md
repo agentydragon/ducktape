@@ -19,10 +19,9 @@ exclusion. The proxy that enforces the result is <../egress/SPEC.md>; the kinds 
 - **`EgressBinding.spec.policies`** is an array of policy names, `minItems: 1` and no upper bound,
   in precedence order. A binding may name many policies and a policy may be named by many
   bindings: n:m.
-- **`EgressBinding.spec.subject`** names one ServiceAccount by namespace and name; a binding in the
-  legacy form names it as the single entry of `spec.subjects`, and the CRD admits exactly one of the
-  two. A binding names one account and an account may be named by many bindings: 1:n. Every Pod
-  running as an account is that subject, so the app gives each sandbox an account of its own.
+- **`EgressBinding.spec.subject`** names one ServiceAccount by namespace and name. A binding names
+  one account and an account may be named by many bindings: 1:n. Every Pod running as an account is
+  that subject, so the app gives each sandbox an account of its own.
 
 A policy on its own grants nothing; a binding grants by existing and being unexpired.
 
@@ -42,9 +41,9 @@ Several sandboxes run agents; some need GitHub with a token placeholder, some ne
 Each gets one binding:
 
 ```text
-docs-writer-h2n4q   subjects: [docs-writer]   policies: [pypi-readonly]
-pr-bot-8fj3d        subjects: [pr-bot]        policies: [github-agentydragon-agent]
-researcher-4m9tz    subjects: [researcher]    policies: [github-agentydragon-agent, open-internet]
+docs-writer-h2n4q   subject: docs-writer   policies: [pypi-readonly]
+pr-bot-8fj3d        subject: pr-bot        policies: [github-agentydragon-agent]
+researcher-4m9tz    subject: researcher    policies: [github-agentydragon-agent, open-internet]
 ```
 
 "Extra on top" is a longer policy list, not a second mechanism:

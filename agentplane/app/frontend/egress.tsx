@@ -165,10 +165,7 @@ export function EgressBindings({
           const rows = [
             <Table.Tr key={binding.name}>
               <Table.Td>
-                <Tooltip
-                  label={binding.subjects.map((subject) => `${subject.namespace}/${subject.name}`).join(", ")}
-                  withArrow
-                >
+                <Tooltip label={`${binding.subject.namespace}/${binding.subject.name}`} withArrow>
                   <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
                     {binding.name}
                   </Text>

@@ -131,7 +131,7 @@ def seed(fake: FakeApiServer) -> None:
     )
     fake.put(
         BINDINGS_PLURAL,
-        binding(f"{SANDBOX_A}-{GITHUB_POLICY}", subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY]),
+        binding(f"{SANDBOX_A}-{GITHUB_POLICY}", subject=SUBJECT_A.model_dump(), policies=[GITHUB_POLICY]),
     )
 
 

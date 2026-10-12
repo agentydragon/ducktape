@@ -4,7 +4,7 @@ Only the relay holds the Pod-bound token. Credential values stay in the gateway'
 isolated namespace; the app receives canonical placeholders under its existing env names.
 """
 
-from agentplane_egressbinding_crds.works.allegedly.agentplane import EgressBindingSpecSubjects
+from agentplane_egressbinding_crds.works.allegedly.agentplane import EgressBindingSpecSubject
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
@@ -223,7 +223,7 @@ def add_gateway_resources(
         scope,
         "binding",
         metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
-        subjects=[EgressBindingSpecSubjects(namespace=NAMESPACE, name=SERVICE_ACCOUNT)],
+        subject=EgressBindingSpecSubject(namespace=NAMESPACE, name=SERVICE_ACCOUNT),
         policies=[POLICY, egress.INFERENCE_EXPERIMENTS_POLICY, egress.PUBLIC_INTERNET_POLICY],
     )
     NetworkPolicy(

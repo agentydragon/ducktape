@@ -7,13 +7,8 @@
     "spec": {
       "type": "object",
       "required": [
+        "subject",
         "policies"
-      ],
-      "x-kubernetes-validations": [
-        {
-          "rule": "has(self.subject) != has(self.subjects)",
-          "message": "Name the subject in exactly one of spec.subject and spec.subjects."
-        }
       ],
       "properties": {
         "subject": {
@@ -31,29 +26,6 @@
             "name": {
               "type": "string",
               "minLength": 1
-            }
-          }
-        },
-        "subjects": {
-          "description": "Legacy form of `subject`, a list holding exactly that one subject.",
-          "type": "array",
-          "minItems": 1,
-          "maxItems": 1,
-          "items": {
-            "type": "object",
-            "required": [
-              "namespace",
-              "name"
-            ],
-            "properties": {
-              "namespace": {
-                "type": "string",
-                "minLength": 1
-              },
-              "name": {
-                "type": "string",
-                "minLength": 1
-              }
             }
           }
         },

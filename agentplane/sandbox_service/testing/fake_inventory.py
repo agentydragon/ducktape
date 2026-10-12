@@ -278,7 +278,7 @@ def egress_credential(
 def egress_binding(
     name: str,
     *,
-    subjects: list[dict[str, Any]],
+    subject: dict[str, Any],
     policies: list[str],
     from_git: bool = True,
     expires_at: str | None = None,
@@ -294,7 +294,7 @@ def egress_binding(
             "creationTimestamp": "2026-09-01T11:45:00Z",
         },
         "spec": {
-            "subjects": subjects,
+            "subject": subject,
             "policies": policies,
             **({"expiresAt": expires_at} if expires_at is not None else {}),
         },

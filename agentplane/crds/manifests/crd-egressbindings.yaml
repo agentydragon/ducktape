@@ -1,7 +1,7 @@
 # Attaches EgressPolicies to a subject, a namespaced ServiceAccount. The
 # binding's existence is the grant: creating one allows, deleting one takes that back, and it
 # contributes nothing after it expires. Shared contract with the proxy (agentplane/egress/SPEC.md).
-# The subject schemas (`spec.subject`, `spec.subjects.items`) and the kubeconform schema under
+# The subject schema (`spec.subject`) and the kubeconform schema under
 # cluster/schemas/ are written by `bb run //agentplane/crds:generate_bin` from
 # agentplane.subjects.ServiceAccountRef and this file.
 apiVersion: apiextensions.k8s.io/v1
@@ -34,10 +34,7 @@ spec:
           properties:
             spec:
               type: object
-              required: [policies]
-              x-kubernetes-validations:
-                - rule: has(self.subject) != has(self.subjects)
-                  message: Name the subject in exactly one of spec.subject and spec.subjects.
+              required: [subject, policies]
               properties:
                 subject:
                   description: >-
@@ -55,23 +52,6 @@ spec:
                     name:
                       type: string
                       minLength: 1
-                subjects:
-                  # CLEANUP(added 2026-10-10): Remove once no EgressBinding writes spec.subjects (the
-                  #   sandbox service's grant and the cdk8s EgressBinding construct write spec.subject).
-                  description: Legacy form of `subject`, a list holding exactly that one subject.
-                  type: array
-                  minItems: 1
-                  maxItems: 1
-                  items:
-                    type: object
-                    required: [namespace, name]
-                    properties:
-                      namespace:
-                        type: string
-                        minLength: 1
-                      name:
-                        type: string
-                        minLength: 1
                 policies:
                   description: EgressPolicy names in the binding's namespace.
                   type: array

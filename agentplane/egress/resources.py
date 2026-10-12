@@ -251,23 +251,6 @@ class BindingSpec(_Wire):
     )
     expires_at: AwareDatetime | None = None
 
-    # CLEANUP(added 2026-10-10): Remove once no EgressBinding writes `spec.subjects` (the sandbox
-    #   service's grant and the cdk8s `EgressBinding` construct both write `spec.subject`) and the
-    #   CRD drops the field.
-    @model_validator(mode="before")
-    @classmethod
-    def _decode_legacy_subjects(cls, data: object) -> object:
-        """`spec.subjects`, the legacy form, holds exactly the one subject `spec.subject` names."""
-        if not isinstance(data, dict) or "subjects" not in data:
-            return data
-        if "subject" in data:
-            raise ValueError("An EgressBinding names its subject in spec.subject or spec.subjects, not both")
-        match data["subjects"]:
-            case [subject]:
-                return {**{key: value for key, value in data.items() if key != "subjects"}, "subject": subject}
-            case subjects:
-                raise ValueError(f"spec.subjects must hold exactly one subject, got {subjects=}")
-
 
 class ActiveReason(StrEnum):
     """Why a binding currently contributes rules in one replica's snapshot."""

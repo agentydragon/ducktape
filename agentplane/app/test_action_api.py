@@ -585,7 +585,7 @@ async def test_caller_grants_without_a_sandbox(
     for namespace, name in ((NAMESPACE, "external"), ("other-namespace", "unrelated")):
         custom_objects.objects[("egressbindings", name)] = egress_binding(
             name,
-            subjects=[{"namespace": namespace, "name": "live"}],
+            subject={"namespace": namespace, "name": "live"},
             policies=["missing-policy"],
             expires_at="2000-01-01T00:00:00Z",
         )

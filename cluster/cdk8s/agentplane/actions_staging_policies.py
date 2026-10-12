@@ -15,7 +15,7 @@ from agentplane_actionpolicybinding_crds.works.allegedly.agentplane import (
     ActionPolicyBindingSpecSubject,
 )
 from agentplane_actionpolicyset_crds.works.allegedly.agentplane import ActionPolicySetSpecAutoApproveIf
-from agentplane_egressbinding_crds.works.allegedly.agentplane import EgressBindingSpecSubjects
+from agentplane_egressbinding_crds.works.allegedly.agentplane import EgressBindingSpecSubject
 from agentplane_egresspolicy_crds.works.allegedly.agentplane import EgressPolicySpecRules, EgressPolicySpecRulesMethods
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
@@ -133,7 +133,7 @@ def _sandbox_egress_binding(scope: Construct, account: ServiceAccount, *, polici
             namespace=_NAMESPACE,
             annotations={"description": f"What sandboxes running as the {account.name} ServiceAccount may reach."},
         ),
-        subjects=[EgressBindingSpecSubjects(namespace=_NAMESPACE, name=account.name)],
+        subject=EgressBindingSpecSubject(namespace=_NAMESPACE, name=account.name),
         policies=policies,
     )
 

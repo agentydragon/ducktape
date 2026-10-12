@@ -162,12 +162,12 @@ def app(
     custom_objects.objects[("egresspolicies", "pypi")] = egress_policy("pypi", [{"hosts": ["pypi.org"]}])
     custom_objects.objects[("egressbindings", "live-seeded")] = egress_binding(
         "live-seeded",
-        subjects=[{"namespace": NAMESPACE, "name": "live"}],
+        subject={"namespace": NAMESPACE, "name": "live"},
         policies=["github"],
         active=("True", "Resolved", ""),
     )
     custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
-        "live-granted", subjects=[{"namespace": NAMESPACE, "name": "live"}], policies=["pypi"], from_git=False
+        "live-granted", subject={"namespace": NAMESPACE, "name": "live"}, policies=["pypi"], from_git=False
     )
     custom_objects.objects[("actionpolicysets", "github-reads")] = action_policy_set(
         "github-reads",
@@ -367,7 +367,7 @@ async def test_operator_launch_provisions_the_selected_role_for_its_actual_sandb
     assert row["kubernetes_grants"][0]["grant"]["role_ref"] == {"kind": "Role", "name": "config-reader"}
     (bound,) = sandbox_rbac.bindings.values()
     assert bound.role_ref.name == "config-reader"
-    assert [(subject.namespace, subject.name) for subject in bound.subjects] == [(NAMESPACE, row["name"])]
+    assert (bound.subject.namespace, bound.subject.name) == (NAMESPACE, row["name"])
     stored = custom_objects.objects[("sandboxes", row["name"])]
     assert stored["metadata"]["annotations"]["agentplane.allegedly.works/kubernetes-grants"]
 
@@ -815,7 +815,7 @@ async def test_granting_a_running_sandbox_adds_a_binding_and_leaves_the_others(
 
     assert granted.status_code == 201, granted.text
     binding = granted.json()
-    assert (binding["subjects"], binding["from_git"]) == ([{"namespace": NAMESPACE, "name": "live"}], False)
+    assert (binding["subject"], binding["from_git"]) == ({"namespace": NAMESPACE, "name": "live"}, False)
     assert [policy["name"] for policy in binding["policies"]] == ["pypi", "github"]
     # Owned by the Sandbox, so deleting the sandbox takes the grant with it.
     (owner,) = custom_objects.objects[("egressbindings", binding["name"])]["metadata"]["ownerReferences"]

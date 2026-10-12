@@ -233,7 +233,7 @@ class ProxyUnderTest:
         policies = [*current["spec"]["policies"]]
         if BASIC_POLICY not in policies:
             policies.append(BASIC_POLICY)
-        self.fake.put(BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=policies))
+        self.fake.put(BINDINGS_PLURAL, binding(BINDING, subject=SUBJECT_A.model_dump(), policies=policies))
         await self.index.wait_for(
             lambda: (
                 WORKLOAD_CREDENTIAL in self.index.credentials
@@ -437,7 +437,7 @@ async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest
         ),
     )
     fake.put(
-        BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY, WORKLOAD_POLICY])
+        BINDINGS_PLURAL, binding(BINDING, subject=SUBJECT_A.model_dump(), policies=[GITHUB_POLICY, WORKLOAD_POLICY])
     )
     if bind_b:
         # A faithful second Pod identity reaching the in-process listener from the same loopback
@@ -445,7 +445,7 @@ async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest
         fake.pods[SANDBOX_B] = pod_for(fake, SANDBOX_B, pod_uid=POD_B_UID, ip=POD_A_IP)
         fake.put(
             BINDINGS_PLURAL,
-            binding(f"{SANDBOX_B}-{WORKLOAD_POLICY}", subjects=[SUBJECT_B.model_dump()], policies=[WORKLOAD_POLICY]),
+            binding(f"{SANDBOX_B}-{WORKLOAD_POLICY}", subject=SUBJECT_B.model_dump(), policies=[WORKLOAD_POLICY]),
         )
     await proxy.index.wait_for(
         lambda: (
@@ -655,9 +655,7 @@ async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
             ],
         ),
     )
-    fake.put(
-        BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY, policy_name])
-    )
+    fake.put(BINDINGS_PLURAL, binding(BINDING, subject=SUBJECT_A.model_dump(), policies=[GITHUB_POLICY, policy_name]))
     await proxy.index.wait_for(
         lambda: (
             credential_name in proxy.index.credentials
@@ -766,9 +764,7 @@ async def test_plaintext_grpc_stream_metadata_placeholder_is_substituted(
             ],
         ),
     )
-    fake.put(
-        BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY, policy_name])
-    )
+    fake.put(BINDINGS_PLURAL, binding(BINDING, subject=SUBJECT_A.model_dump(), policies=[GITHUB_POLICY, policy_name]))
     await proxy.index.wait_for(
         lambda: (
             credential_name in proxy.index.credentials
@@ -1266,7 +1262,7 @@ async def install_projected_credential(fake: FakeApiServer, proxy: ProxyUnderTes
         ),
     )
     fake.put(
-        BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY, PROJECTED_POLICY])
+        BINDINGS_PLURAL, binding(BINDING, subject=SUBJECT_A.model_dump(), policies=[GITHUB_POLICY, PROJECTED_POLICY])
     )
     await proxy.index.wait_for(
         lambda: (
@@ -1351,7 +1347,7 @@ async def test_matrix_json_login_through_real_proxy(
             ],
         ),
     )
-    fake.put(BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[name]))
+    fake.put(BINDINGS_PLURAL, binding(BINDING, subject=SUBJECT_A.model_dump(), policies=[name]))
     await proxy.index.wait_for(
         lambda: (
             name in proxy.index.credentials

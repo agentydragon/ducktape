@@ -93,7 +93,7 @@ class EgressInventory(EgressReader):
                     ],
                 },
                 "spec": {
-                    "subjects": [MessageToDict(sandbox.service_account, preserving_proto_field_name=True)],
+                    "subject": MessageToDict(sandbox.service_account, preserving_proto_field_name=True),
                     "policies": policies,
                 },
             },

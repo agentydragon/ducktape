@@ -107,7 +107,7 @@ class BindingView(BaseModel):
 
     name: str
     from_git: bool = Field(description="Flux applied it; removing it is git's.")
-    subjects: list[ServiceAccountRef] = Field(description="The ServiceAccounts this binding names.")
+    subject: ServiceAccountRef = Field(description="The ServiceAccount this binding grants to.")
     expires_at: datetime | None = None
     policies: list[PolicyView] = Field(description="The named egress policies that exist, in the binding's order.")
     missing_policies: list[str] = Field(
@@ -212,7 +212,7 @@ def binding_view(binding: EgressBinding, policies: dict[str, PolicyView]) -> Bin
     return BindingView(
         name=binding.metadata.name,
         from_git=FLUX_KUSTOMIZATION_LABEL in binding.metadata.labels,
-        subjects=[binding.spec.subject],
+        subject=binding.spec.subject,
         expires_at=binding.spec.expires_at,
         policies=[policies[name] for name in binding.spec.policies if name in policies],
         missing_policies=[name for name in binding.spec.policies if name not in policies],

@@ -597,32 +597,6 @@ def test_binding_resolution(
     assert (result.active, result.reason, len(result.policies)) == (status, reason, resolved)
 
 
-WIRE_SUBJECT = {"namespace": NAMESPACE, "name": "sb"}
-
-
-@pytest.mark.parametrize("form", [{"subject": WIRE_SUBJECT}, {"subjects": [WIRE_SUBJECT]}])
-def test_a_binding_reads_its_one_subject_from_either_wire_form(form: dict[str, object]) -> None:
-    spec = BindingSpec.model_validate({**form, "policies": ["github"]})
-    assert (spec.subject, spec.policies) == (CALLER, ["github"])
-
-
-@pytest.mark.parametrize(
-    "form",
-    [
-        {"subject": WIRE_SUBJECT, "subjects": [WIRE_SUBJECT]},
-        {"subjects": []},
-        {"subjects": [WIRE_SUBJECT, {"namespace": NAMESPACE, "name": "other"}]},
-        {},
-    ],
-    ids=["both-forms", "empty-list", "two-subjects", "neither-form"],
-)
-def test_a_binding_without_exactly_one_subject_does_not_parse(form: dict[str, object]) -> None:
-    """A legacy list of two is refused rather than read as one of its entries, which would silently
-    drop the other's grant."""
-    with pytest.raises(ValidationError):
-        BindingSpec.model_validate({**form, "policies": ["github"]})
-
-
 @pytest.mark.parametrize(
     "host", ["example.com", "example.org", "a.b.example.net", "140.82.121.4", "2606:50c0:8000::153"]
 )

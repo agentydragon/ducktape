@@ -55,7 +55,7 @@ it("preserves expired and missing egress references even when Action policy is u
       {
         name: "external-grants",
         from_git: true,
-        subjects: [ACCOUNT],
+        subject: ACCOUNT,
         policies: [],
         missing_policies: ["removed-policy"],
         expires_at: "2000-01-01T00:00:00Z",

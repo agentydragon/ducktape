@@ -69,7 +69,7 @@ def test_public_internet_is_available_but_never_implicitly_granted(
     for doc in docs:
         if doc["kind"] == "EgressBinding":
             if namespace == "agentplane-staging" and doc["metadata"]["name"] == "public-coder-openclaw":
-                assert doc["spec"]["subjects"] == [{"namespace": "public-coder-agent", "name": "openclaw"}]
+                assert doc["spec"]["subject"] == {"namespace": "public-coder-agent", "name": "openclaw"}
                 assert doc["spec"]["policies"] == [
                     "public-coder-openclaw",
                     INFERENCE_EXPERIMENTS_POLICY,

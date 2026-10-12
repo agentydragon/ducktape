@@ -54,20 +54,20 @@ def _seed(custom_objects: FakeCustomObjectsApi) -> None:
     custom_objects.objects[("egresspolicies", "github")] = egress_policy("github", [GITHUB_RULE])
     custom_objects.objects[("egresspolicies", "pypi")] = egress_policy("pypi", [{"hosts": ["pypi.org"]}])
     custom_objects.objects[("egressbindings", "live-seeded")] = egress_binding(
-        "live-seeded", subjects=[LIVE.model_dump()], policies=["github"]
+        "live-seeded", subject=LIVE.model_dump(), policies=["github"]
     )
     custom_objects.objects[("egressbindings", "live-expiring")] = egress_binding(
         "live-expiring",
-        subjects=[LIVE.model_dump()],
+        subject=LIVE.model_dump(),
         policies=["pypi", "vanished"],
         from_git=False,
         expires_at="2026-12-01T00:00:00Z",
     )
     custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
-        "live-granted", subjects=[LIVE.model_dump()], policies=["pypi"], from_git=False
+        "live-granted", subject=LIVE.model_dump(), policies=["pypi"], from_git=False
     )
     custom_objects.objects[("egressbindings", "other-only")] = egress_binding(
-        "other-only", subjects=[{"namespace": NAMESPACE, "name": "other"}], policies=["pypi"]
+        "other-only", subject={"namespace": NAMESPACE, "name": "other"}, policies=["pypi"]
     )
 
 
@@ -87,24 +87,11 @@ async def test_a_like_named_account_in_another_namespace_is_a_different_subject(
     this sandbox."""
     _seed(custom_objects)
     custom_objects.objects[("egressbindings", "elsewhere-only")] = egress_binding(
-        "elsewhere-only", subjects=[{"namespace": "agentplane-elsewhere", "name": "live"}], policies=["pypi"]
+        "elsewhere-only", subject={"namespace": "agentplane-elsewhere", "name": "live"}, policies=["pypi"]
     )
 
     names = [view.name for view in await egress.bindings_for(LIVE)]
     assert ("live-seeded" in names, "elsewhere-only" in names) == (True, False)
-
-
-async def test_a_binding_naming_its_subject_in_the_singular_form_is_listed_for_it(
-    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
-) -> None:
-    _seed(custom_objects)
-    singular = egress_binding("live-singular", subjects=[LIVE.model_dump()], policies=["pypi"])
-    singular["spec"]["subject"] = singular["spec"].pop("subjects")[0]
-    custom_objects.objects[("egressbindings", "live-singular")] = singular
-
-    (view,) = [view for view in await egress.bindings_for(LIVE) if view.name == "live-singular"]
-    assert view.subjects == [LIVE]
-    assert "live-singular" not in [view.name for view in await egress.bindings_for(OTHER)]
 
 
 async def test_a_binding_view_carries_provenance_expiry_and_policies(
@@ -116,7 +103,7 @@ async def test_a_binding_view_carries_provenance_expiry_and_policies(
 
     seed = by_name["live-seeded"]
     assert seed.from_git
-    assert seed.subjects == [LIVE]
+    assert seed.subject == LIVE
     (policy,) = seed.policies
     (rule,) = policy.rules
     assert (policy.name, rule.hosts, rule.methods, rule.paths) == (
@@ -138,7 +125,7 @@ async def test_a_binding_view_carries_provenance_expiry_and_policies(
     assert ([policy.name for policy in expiring.policies], expiring.missing_policies) == (["pypi"], ["vanished"])
 
     granted = by_name["live-granted"]
-    assert granted.subjects == [LIVE]
+    assert granted.subject == LIVE
 
 
 async def test_revoke_deletes_a_runtime_binding_and_refuses_one_from_git(
@@ -177,7 +164,7 @@ async def test_grant_creates_a_binding_the_sandbox_owns(
         "controller": False,
         "blockOwnerDeletion": False,
     }
-    assert created["spec"] == {"subjects": [LIVE.model_dump()], "policies": ["pypi", "github"]}
+    assert created["spec"] == {"subject": LIVE.model_dump(), "policies": ["pypi", "github"]}
     # And the app reads its own grant back like any other binding, not from git.
     (read_back,) = [view for view in await egress.bindings_for(LIVE) if view.name == granted.name]
     assert (read_back.from_git, [policy.name for policy in read_back.policies]) == (False, ["pypi", "github"])

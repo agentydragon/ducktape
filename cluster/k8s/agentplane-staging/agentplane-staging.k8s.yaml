@@ -8157,9 +8157,9 @@ metadata:
   name: claude-ai
   namespace: agentplane-staging
 spec:
-  subjects:
-    - namespace: agentplane-staging
-      name: claude-ai
+  subject:
+    namespace: agentplane-staging
+    name: claude-ai
   policies:
     - basic
     - inference-experiments
@@ -8188,9 +8188,9 @@ metadata:
   name: haku-agent
   namespace: agentplane-staging
 spec:
-  subjects:
-    - namespace: agentplane-staging
-      name: haku-agent
+  subject:
+    namespace: agentplane-staging
+    name: haku-agent
   policies:
     - basic
     - inference-experiments
@@ -9999,9 +9999,9 @@ metadata:
   name: public-coder-openclaw
   namespace: agentplane-staging
 spec:
-  subjects:
-    - namespace: public-coder-agent
-      name: openclaw
+  subject:
+    namespace: public-coder-agent
+    name: openclaw
   policies:
     - public-coder-openclaw
     - inference-experiments

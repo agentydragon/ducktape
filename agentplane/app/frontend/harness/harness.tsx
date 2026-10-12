@@ -232,7 +232,7 @@ const BINDINGS: BindingView[] = [
   {
     name: "ready-sandbox-7q4xk",
     from_git: false,
-    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
+    subject: { namespace: "agentplane-visual", name: "ready-sandbox" },
     expires_at: ago(2 * HOUR),
     policies: [POLICIES[1]],
     missing_policies: [],
@@ -240,7 +240,7 @@ const BINDINGS: BindingView[] = [
   {
     name: "ready-sandbox-github-public",
     from_git: true,
-    subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
+    subject: { namespace: "agentplane-visual", name: "ready-sandbox" },
     expires_at: null,
     policies: [POLICIES[0]],
     missing_policies: [],
@@ -2344,7 +2344,7 @@ routes.push(
     (match) => ({
       egress_bindings: BINDINGS.map((binding) => ({
         ...binding,
-        subjects: [{ namespace: match[1], name: match[2] }],
+        subject: { namespace: match[1], name: match[2] },
       })),
       action_policy: ACTION_POLICY,
     }),
