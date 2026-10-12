@@ -252,7 +252,7 @@ function toolEntity(toolName: string): ThreadEntity {
       completion: "tool",
       tool_succeeded: true,
       recovery: null,
-      recovery_reason: "",
+      recovery_reason: null,
     },
     { argumentsRef: reference("test-tool", "arguments"), outputRef: reference("test-tool", "output") }
   );
@@ -279,7 +279,7 @@ describe("reasoning step marks", () => {
         completion: null,
         tool_succeeded: null,
         recovery: null,
-        recovery_reason: "",
+        recovery_reason: null,
         ...state,
       },
       { textRef: reference("test-reasoning", "text") }
@@ -407,7 +407,7 @@ describe("tool call rows", () => {
           completion: "tool",
           tool_succeeded: false,
           recovery: null,
-          recovery_reason: "",
+          recovery_reason: null,
         },
         { outputRef: reference("test-tool", "output") }
       ),
@@ -438,7 +438,7 @@ describe("tool call rows", () => {
             completion: null,
             tool_succeeded: null,
             recovery: null,
-            recovery_reason: "",
+            recovery_reason: null,
           },
           { outputRef: reference("test-tool", "output") }
         ),
@@ -508,7 +508,7 @@ describe("a row whose body stopped loading", () => {
       completion: "text",
       tool_succeeded: null,
       recovery: null,
-      recovery_reason: "",
+      recovery_reason: null,
     },
     { textRef: reference("test-reasoning", "text") }
   );
@@ -551,7 +551,7 @@ describe("EntityCard", () => {
           completion: PROSE,
           tool_succeeded: null,
           recovery: null,
-          recovery_reason: "",
+          recovery_reason: null,
         },
         { textRef: reference("test-reply", "text") }
       ),

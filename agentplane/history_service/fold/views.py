@@ -87,7 +87,7 @@ class ThreadItemState(BaseModel):
     completion: str | None
     tool_succeeded: bool | None
     recovery: int | None
-    recovery_reason: str
+    recovery_reason: str | None
 
 
 class ThreadConfirmedInputState(BaseModel):

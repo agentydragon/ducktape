@@ -85,7 +85,7 @@ function item(index: number, epoch = "epoch-1", extra: Json = {}): Json {
       completion: null,
       tool_succeeded: null,
       recovery: null,
-      recovery_reason: "",
+      recovery_reason: null,
     }),
     text_ref: null,
     arguments_ref: null,

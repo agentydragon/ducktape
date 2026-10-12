@@ -74,7 +74,7 @@ const stateSchema = z.union([
     completion: z.string().nullable(),
     tool_succeeded: z.boolean().nullable(),
     recovery: z.number().nullable(),
-    recovery_reason: z.string(),
+    recovery_reason: z.string().nullable(),
   }),
   z.object({ harness_message_id: z.string(), origin_command_ids: z.array(z.string()) }),
   z.object({ observation: z.string(), event: z.unknown() }),

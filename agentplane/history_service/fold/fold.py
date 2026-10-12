@@ -83,7 +83,7 @@ class Item:
     output: PayloadRef | None = None
     completion: Completion | None = None
     recovery: int | None = None
-    recovery_reason: str = ""
+    recovery_reason: str | None = None
 
     def payload(self, field: PayloadField) -> PayloadRef | None:
         match field:
@@ -617,7 +617,8 @@ class _Fold:
                             item = self._complete(cursor, item.item_id, PayloadField.TEXT, content.text)
                     self._evidence(
                         self._save_item(
-                            replace(item, recovery=recovered.disposition, recovery_reason=recovered.reason), cursor
+                            replace(item, recovery=recovered.disposition, recovery_reason=recovered.reason or None),
+                            cursor,
                         ),
                         entry,
                     )

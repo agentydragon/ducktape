@@ -1054,7 +1054,7 @@ function item(
       completion: extra.complete === false ? null : kind === ItemKind.TOOL_CALL ? "tool" : "text",
       tool_succeeded: extra.output === undefined ? null : !extra.failed,
       recovery: extra.recovery ?? null,
-      recovery_reason: extra.recoveryReason ?? "",
+      recovery_reason: extra.recoveryReason ?? null,
     },
     {
       thread_id: extra.threadId,

@@ -16,6 +16,7 @@ exports_files([
     "0013_feed_snapshot_public_ids.py",
     "0014_drop_sandbox_locator.py",
     "0015_session_opened_position.py",
+    "0016_recovery_reason_null.py",
 ])
 
 py_library(
@@ -136,4 +137,10 @@ py_library(
         "@pypi//alembic",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "0016_recovery_reason_null",
+    srcs = ["0016_recovery_reason_null.py"],
+    deps = ["@pypi//alembic"],
 )
