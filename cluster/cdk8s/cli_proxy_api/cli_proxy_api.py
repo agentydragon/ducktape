@@ -159,7 +159,8 @@ def _deployment(scope: Construct) -> None:
                                 requests={
                                     "cpu": k8s.Quantity.from_string("10m"),
                                     "memory": k8s.Quantity.from_string("16Mi"),
-                                }
+                                },
+                                limits={"memory": k8s.Quantity.from_string("64Mi")},
                             ),
                             command=["sh", "-c", "mkdir -p /data/auth"],
                             volume_mounts=[k8s.VolumeMount(name="data", mount_path="/data")],

@@ -95,7 +95,8 @@ def _mitmproxy(chart: Chart) -> None:
                                 requests={
                                     "cpu": k8s.Quantity.from_string("10m"),
                                     "memory": k8s.Quantity.from_string("16Mi"),
-                                }
+                                },
+                                limits={"memory": k8s.Quantity.from_string("64Mi")},
                             ),
                             command=["sh", "-c", _MITMPROXY_CA_INIT_SCRIPT],
                             volume_mounts=[
@@ -270,8 +271,6 @@ def write_manifests(root: Path) -> None:
         namespaces.haku_egress_proxy,
         chart,
         egress_fences.haku_cloud_api,
-        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods={"Deployment/haku-egress-proxy"},
         # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
         unpinned_https_egress={"allow-haku-cloud-api-egress"},
     )

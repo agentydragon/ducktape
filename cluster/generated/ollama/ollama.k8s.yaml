@@ -165,6 +165,12 @@ spec:
             - containerPort: 11435
               name: auth-proxy
               protocol: TCP
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              memory: 32Mi
           volumeMounts:
             - mountPath: /etc/nginx/templates
               name: nginx-templates
@@ -177,6 +183,12 @@ spec:
             - /scripts/link-ssd-models.sh
           image: ollama/ollama:0.34.4
           name: link-ssd-models
+          resources:
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           volumeMounts:
             - mountPath: /models
               name: models

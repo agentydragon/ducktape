@@ -698,6 +698,8 @@ spec:
           image: git.allegedly.works/ducktape-ci/public-coder-agent:unset
           name: seed-config
           resources:
+            limits:
+              memory: 64Mi
             requests:
               cpu: 10m
               memory: 32Mi

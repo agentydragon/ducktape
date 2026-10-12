@@ -53,7 +53,8 @@ def chart(app: App) -> Chart:
                                 requests={
                                     "cpu": k8s.Quantity.from_string("50m"),
                                     "memory": k8s.Quantity.from_string("64Mi"),
-                                }
+                                },
+                                limits={"memory": k8s.Quantity.from_string("256Mi")},
                             ),
                             image_pull_policy="Always",
                             env=[

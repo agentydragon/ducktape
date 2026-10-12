@@ -384,7 +384,8 @@ def _deployment(scope: Construct) -> None:
                                 requests={
                                     "cpu": k8s.Quantity.from_string("10m"),
                                     "memory": k8s.Quantity.from_string("32Mi"),
-                                }
+                                },
+                                limits={"memory": k8s.Quantity.from_string("64Mi")},
                             ),
                             command=["sh", "-c", _SEED_CONFIG_SCRIPT],
                             volume_mounts=[
@@ -878,12 +879,5 @@ def app_chart(app: App) -> Chart:
 
 def write_manifests(root: Path) -> None:
     write_charts(
-        root,
-        f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app",
-        namespace_chart,
-        chart,
-        kubeconfig_chart,
-        app_chart,
-        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods={"Deployment/public-coder-agent"},
+        root, f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app", namespace_chart, chart, kubeconfig_chart, app_chart
     )

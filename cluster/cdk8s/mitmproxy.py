@@ -90,7 +90,8 @@ class Mitmproxy(Construct):
                                     requests={
                                         "cpu": k8s.Quantity.from_string("10m"),
                                         "memory": k8s.Quantity.from_string("16Mi"),
-                                    }
+                                    },
+                                    limits={"memory": k8s.Quantity.from_string("64Mi")},
                                 ),
                                 command=[
                                     "sh",

@@ -279,7 +279,8 @@ def _seed_state_container() -> k8s.Container:
         name="seed-state",
         image=_IMAGE,
         resources=k8s.ResourceRequirements(
-            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")}
+            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
+            limits={"memory": k8s.Quantity.from_string("512Mi")},
         ),
         command=["sh", "-c", _SEED_STATE_SCRIPT],
         env=[_env("HOME", _HOME), _CLAUDE_CODE_OAUTH_TOKEN, _HAKU_GIT_USERNAME, _HAKU_GIT_PASSWORD, _GH_PAT],

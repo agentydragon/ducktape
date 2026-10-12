@@ -147,6 +147,8 @@ spec:
           image: busybox:1.38
           name: mitmproxy-ca-init
           resources:
+            limits:
+              memory: 64Mi
             requests:
               cpu: 10m
               memory: 16Mi

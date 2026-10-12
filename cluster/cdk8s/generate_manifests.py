@@ -733,8 +733,6 @@ def generate_manifests(root: Path) -> None:
         mitmproxy.namespace_chart,
         mitmproxy.chart,
         egress_fences.mitmproxy_cloud_api,
-        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods={"Deployment/mitmproxy"},
         # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
         unpinned_https_egress={"allow-cloud-api-egress"},
     )
@@ -819,7 +817,7 @@ def generate_manifests(root: Path) -> None:
             ollama_app.chart,
             config_map_generator=ollama_app.write_config_maps(root),
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"Deployment/ollama", "Job/setup-gpt-oss-v8"},
+            unhardened_pods={"Job/setup-gpt-oss-v8"},
         ),
         external_secrets_operator_kustomization,
         kyverno_kustomization,
@@ -835,13 +833,7 @@ def generate_manifests(root: Path) -> None:
     atuin_user_provisioner_artifact = artifact("atuin-user-provisioner", atuin_user_provisioner.OUTPUT_DIR)
     atuin_user_provisioner.atuin_user_provisioner(
         flux_chart,
-        write_directory(
-            root,
-            atuin_user_provisioner_artifact,
-            atuin_user_provisioner.chart,
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"Job/user-provisioner"},
-        ),
+        write_directory(root, atuin_user_provisioner_artifact, atuin_user_provisioner.chart),
         atuin_kustomization,
         user_agentydragon_kustomization,
     )
@@ -1273,8 +1265,6 @@ def generate_manifests(root: Path) -> None:
             cli_proxy_api.chart,
             siblings=cli_proxy_api.KEY_FILES,
             components=["./image-pins"],
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"Deployment/cli-proxy-api"},
         ),
         external_secrets_operator_kustomization,
         kyverno_kustomization,
@@ -1423,8 +1413,6 @@ def generate_manifests(root: Path) -> None:
             matrix_user_provisioner_artifact,
             matrix_user_provisioner.chart,
             components=[posixpath.relpath(matrix_user_provisioner.PINS_DIR, matrix_user_provisioner.OUTPUT_DIR)],
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"Job/provision-matrix-users"},
         ),
         external_secrets_operator_kustomization,
         matrix_kustomization,
@@ -1437,8 +1425,6 @@ def generate_manifests(root: Path) -> None:
         siblings=["jwt-token.sops.yaml", "cache-keys.sops.yaml"],
         components=["./image-pins"],
         config_map_generator=[nix_cache_attic.SERVER_CONFIG_MAP, nix_cache_attic.ROTATORS_CONFIG_MAP],
-        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods={"Deployment/attic"},
     )
     nix_cache_kustomization = nix_cache_flux_kustomizations.nix_cache(
         flux_chart,
@@ -1482,8 +1468,6 @@ def generate_manifests(root: Path) -> None:
             study_casino_app.chart,
             components=[posixpath.relpath(study_casino_app.PINS_DIR, study_casino_app.OUTPUT_DIR)],
             config_map_generator=study_casino_app.config_maps(root),
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"Job/db-readonly-provisioner"},
         ),
         cnpg_kustomization,
         external_secrets_operator_kustomization,
@@ -1586,8 +1570,6 @@ def generate_manifests(root: Path) -> None:
         components=[posixpath.relpath(haku_openclaw_spike_config.PINS_DIR, haku_openclaw_spike_config.OUTPUT_DIR)],
         generator_options=haku_openclaw_spike_config.GENERATOR_OPTIONS,
         config_map_generator=[haku_openclaw_spike_config.write_kubeconfig_config_map(root)],
-        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods={"Deployment/haku-openclaw-spike"},
     )
     write_directory(
         root,

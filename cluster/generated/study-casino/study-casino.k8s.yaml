@@ -142,6 +142,8 @@ spec:
           image: ghcr.io/cloudnative-pg/postgresql:18.6
           name: psql
           resources:
+            limits:
+              memory: 128Mi
             requests:
               cpu: 10m
               memory: 32Mi

@@ -110,6 +110,8 @@ spec:
           image: python:3.14-alpine
           name: provisioner
           resources:
+            limits:
+              memory: 512Mi
             requests:
               cpu: 50m
               memory: 128Mi

@@ -153,6 +153,8 @@ spec:
           image: busybox:1.38
           name: init-auth-dir
           resources:
+            limits:
+              memory: 64Mi
             requests:
               cpu: 10m
               memory: 16Mi

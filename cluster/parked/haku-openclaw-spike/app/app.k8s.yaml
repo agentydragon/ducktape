@@ -446,6 +446,8 @@ spec:
           image: git.allegedly.works/ducktape-ci/haku-openclaw-spike:unset
           name: seed-state
           resources:
+            limits:
+              memory: 512Mi
             requests:
               cpu: 10m
               memory: 32Mi

@@ -128,7 +128,8 @@ def chart(app: App) -> Chart:
                                 requests={
                                     "cpu": k8s.Quantity.from_string("50m"),
                                     "memory": k8s.Quantity.from_string("128Mi"),
-                                }
+                                },
+                                limits={"memory": k8s.Quantity.from_string("512Mi")},
                             ),
                             command=[
                                 "sh",

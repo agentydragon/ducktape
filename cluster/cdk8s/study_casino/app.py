@@ -193,7 +193,8 @@ def _readonly_provisioner(scope: Construct) -> None:
                                 requests={
                                     "cpu": k8s.Quantity.from_string("10m"),
                                     "memory": k8s.Quantity.from_string("32Mi"),
-                                }
+                                },
+                                limits={"memory": k8s.Quantity.from_string("128Mi")},
                             ),
                             command=["/bin/bash", "-c"],
                             args=[_PROVISIONER_SCRIPT],
