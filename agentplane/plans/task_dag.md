@@ -472,8 +472,12 @@ observations. New database work follows the task-specific review and rollout req
 flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned Kubernetes grants]
-    KUBERNETES_RBAC_POLICY_BINDINGS[In flight: Kubernetes permission-set controller]
-    KUBERNETES_RBAC_POLICY_BINDINGS --> MANAGED_SA_RBAC
+    K8S_POLICY_CRDS[Candidate: permission-set and binding CRDs] --> K8S_POLICY_CONTROLLER[Blocked: permission-set controller]
+    K8S_POLICY_CONTROLLER --> K8S_POLICY_DEPLOY[Blocked: deploy the controller]
+    K8S_POLICY_DEPLOY --> K8S_POLICY_SANDBOX_CUTOVER[Blocked: Sandboxes take permission sets]
+    K8S_POLICY_SANDBOX_CUTOVER --> K8S_POLICY_RUNTIME_GRANTS[Blocked: time-limited grants]
+    K8S_POLICY_DEPLOY --> MANAGED_SA_RBAC
+    K8S_POLICY_SANDBOX_CUTOVER --> SANDBOX_RBAC
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_IDLE_EXPIRY[Candidate: delete idle Sandboxes]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
@@ -499,21 +503,52 @@ into an outage matrix. Source: [public-coder wiring](../../cluster/cdk8s/public_
 Kubernetes scope and egress/Action grants. Record intended authority in generated configuration,
 not ad hoc grants. Test an allowed and denied operation; do not add privileges as part of this review.
 
-### `KUBERNETES_RBAC_POLICY_BINDINGS` — Kubernetes permission-set controller
+### `K8S_POLICY_CRDS` — permission-set and binding CRDs
 
-**In flight; the RBAC controller thread is building it; design decided (operator, 2026-10-12 PDT)
-in the [plan](kubernetes_rbac_groups.md).** Permission-set and binding CRs in the egress and
-Actions pattern, reconciled live into native RBAC bindings by a separate controller, with
-`expiresAt` grants, Sandbox Service writing a Sandbox's binding at create and through an
-operator-only grant/revoke RPC, and the UI showing a set as one named chip, never the bindings it
-expands to. Verify add/remove, overlaps, expiry, SA replacement and restart.
+**Candidate; design decided (operator, 2026-10-12 PDT) in the [plan](kubernetes_rbac_groups.md);
+implementation waits on the operator's go-ahead.** `KubernetesPolicySet` and
+`KubernetesPolicyBinding` in `agentplane/crds/manifests`, both namespaced in the instance namespace.
+A set lists entries of a `roleRef` (Role or ClusterRole) with either a namespace list or
+`clusterWide` (ClusterRole only). A binding has one `subject` (a `ServiceAccountRef`, spliced in by
+`generate.py` as for `ActionPolicyBinding`), `policySets`, optional `expiresAt` and a `Ready`
+condition.
+
+### `K8S_POLICY_CONTROLLER` — permission-set controller
+
+**Blocked on the CRDs.** A separate controller reconciles bindings live into native RoleBindings
+and ClusterRoleBindings: one per (binding, role, namespace), named from the binding UID, no dedup,
+carrying the instance label and the subject SA's UID; it deletes them when the SA is gone or its
+UID differs. A finalizer cleans up across namespaces. At `expiresAt` it deletes the native bindings
+and sets `Ready=False` with reason `Expired`, keeping the CR. Missing namespaces and roles are
+conditions, not errors. Watch-driven, with a periodic sweep. Verify add/remove, overlaps, expiry,
+SA replacement and restart.
+
+### `K8S_POLICY_DEPLOY` — deploy the controller
+
+**Blocked on the controller.** A cdk8s Deployment with its own SA and RBAC: create/delete of
+bindings and `bind` limited to the generated `resourceNames`. Flux-owned sets are generated from
+`namespace_access` and `agent_access_profiles`. Alert on a native binding past its `expiresAt`. The
+README diagram gains the controller.
+
+### `K8S_POLICY_SANDBOX_CUTOVER` — Sandboxes take permission sets
+
+**Blocked on the deployment; decision card before the PR, since it recreates staging Sandboxes that
+carry Kubernetes grants.** Sandbox Service takes set names at create and writes a binding
+owner-referenced to the Sandbox; the create form shows one chip per set. Delete the
+KubernetesBindings reconciler, the grant annotation and its finalizer, and the
+[grant catalog](../sandbox_service/kubernetes_grants.py) with its per-namespace preset expansion.
+
+### `K8S_POLICY_RUNTIME_GRANTS` — time-limited grants
+
+**Blocked on the Sandbox cutover.** An operator-only grant/revoke RPC with optional `expiresAt`,
+and UI chips showing each binding's set, expiry and `Ready` state.
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 
-**Blocked on the caller review and the binding implementation.** An account without a Sandbox,
-such as the claude.ai caller, gets an ordinary binding of the same CR (operator, 2026-10-12 PDT),
-owned by GitOps rather than a Sandbox, so no separate grant model is needed. What remains is
-granting it the sets `CLAUDE_AI_SA` approves and testing an allowed and a denied request.
+**Blocked on the caller review and the deployed controller.** The claude.ai caller gets a
+Flux-owned `KubernetesPolicyBinding` of the sets `CLAUDE_AI_SA` approves, replacing its static
+per-namespace grants in `agent_access_profiles.py`. Static Group subjects (Haku OIDC,
+public-coder) stay Flux bindings. Test an allowed and a denied request.
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
 

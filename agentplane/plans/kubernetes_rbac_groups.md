@@ -1,8 +1,8 @@
 # Reusable Kubernetes RBAC grant groups
 
-Status: **design decided (operator, 2026-10-12 PDT); implementation in progress.** The
-[task DAG](task_dag.md) tracks `KUBERNETES_RBAC_POLICY_BINDINGS` (the controller) and
-`MANAGED_SA_RBAC` (accounts without a Sandbox). This plan records a preferred Agentplane-owned controller shape alongside the
+Status: **design decided (operator, 2026-10-12 PDT); implementation waits on the operator's
+go-ahead.** The [task DAG](task_dag.md) tracks it as `K8S_POLICY_CRDS` through
+`K8S_POLICY_RUNTIME_GRANTS`, plus `MANAGED_SA_RBAC` (accounts without a Sandbox). This plan records a preferred Agentplane-owned controller shape alongside the
 prior art and acceptance checks; CRD fields and migration still need review. Existing
 [agent RBAC documentation](../../cluster/docs/agent_rbac.md) describes deployed/static
 ownership; it remains the source for current grant scope.
