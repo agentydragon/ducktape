@@ -412,6 +412,16 @@ boundaries. Test representative tool/harness termination and bounded exhaustion 
 runner/control state survives and what needs durable recovery. This directly addresses agents
 accidentally killing their own harness; guest or container packaging alone is not that guarantee.
 
+Direction (operator, 2026-10-12 PDT): separate the runner and the harness by what each can see,
+not by uid, since every file on the virtiofs state PVC is `107:107` anyway. In VMs the runner runs
+as guest root under systemd and starts the harness with `systemd-run` as uid 107, in a scope with
+`InaccessiblePaths=/state/runner`, write access only to `/state/harness` and the workspace,
+`ProtectProc=invisible`, `NoNewPrivileges`, no capabilities, `MemoryMax` and `TasksMax`; the
+runner's slice reserves memory. Pods keep today's single container; the strong version there
+(runner and harness in separate containers of one pod with no shared process namespace, the harness
+mounting only its subpath, started through a launcher on a unix socket in an `emptyDir`) waits
+until pods hit the problem. Disk exhaustion is not covered and waits on #4717.
+
 ### `VM_LIFECYCLE` — integrated lifecycle verification
 
 **Blocked on provider, image, selected control networking, egress and isolation.** Exercise both harnesses through real service
@@ -630,12 +640,12 @@ connects. Resuming by Session ID works while the Sandbox exists, stopped or not.
 runner's state, separate from the workspace; each incarnation's runner continues the same journal
 on it. The Sandbox Service creates and owns it, with no owner reference, mounted as a volume in pods
 and through virtiofs in VMs (`VM_IMAGE`), never from agent-sandbox's `volumeClaimTemplates`,
-which make the agent-sandbox `Sandbox` its controller owner. Decide: whether the runner's state
-goes on it or only the harness files; for VMs, the operator's direction (2026-10-12 PDT) keeps the workspace
+which make the agent-sandbox `Sandbox` its controller owner. The runner's state and the harness files sit in
+separate `/state/runner` and `/state/harness` directories (`VM_PROCESS_ISOLATION`). For VMs, the operator's direction (2026-10-12 PDT) keeps the workspace
 VM-local rather than on a PVC, so it is dropped on a switch from VM to pod, and makes it a mounted
 PVC once the cluster has block storage that can move between kinds (OpenEBS or another
 provisioner); VM-local means a disk the VM keeps across stop and start, deleted only with the
-Sandbox, since a revived conversation refers to files the agent made (operator, 2026-10-12 PDT); storage class, since `local-path` pins a volume to one node and so pins every incarnation
+Sandbox, since a revived conversation refers to files the agent made (operator, 2026-10-12 PDT). Decide: storage class, since `local-path` pins a volume to one node and so pins every incarnation
 there; file ownership, since files a VM writes are `107:107` (`VM_IMAGE`), so pods run the
 runner as `107:107` too and a Session moves between kinds with no `chown` (checked live); its quota (TODO, deferred by the
 operator 2026-10-12: `local-path` enforces no PVC size, and inside a guest `df` shows the node's
