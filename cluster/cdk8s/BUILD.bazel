@@ -78,7 +78,21 @@ py_library(
     name = "model_selections",
     srcs = ["model_selections.py"],
     visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
-    deps = ["//model_catalog:catalog"],
+    deps = [
+        "//agentplane/llm_ingress:models",
+        "//model_catalog:catalog",
+    ],
+)
+
+py_test(
+    name = "test_model_selections",
+    srcs = ["test_model_selections.py"],
+    deps = [
+        ":model_selections",
+        "//:conftest",
+        "//model_catalog:catalog",
+        "@pypi//pytest_bazel",
+    ],
 )
 
 py_test(

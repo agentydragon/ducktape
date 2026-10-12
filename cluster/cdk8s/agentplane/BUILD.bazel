@@ -225,11 +225,9 @@ py_library(
     srcs = ["llm_ingress.py"],
     deps = [
         ":environment",
-        "//agentplane/llm_ingress:models",
         "//agentplane/llm_ingress:settings",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:cilium",
-        "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s:pod_policy",
         "//cluster/cdk8s:probes",
@@ -616,7 +614,6 @@ py_library(
         ":egress_staging_credentials",
         ":environment",
         ":generation",
-        ":llm_ingress",
         ":namespaces",
         ":notifications",
         ":policy_controller",
@@ -668,7 +665,6 @@ py_library(
         ":egress_testing_credentials",
         ":environment",
         ":generation",
-        ":llm_ingress",
         ":namespaces",
         ":policy_controller",
         ":sandbox_pod",
@@ -1003,22 +999,6 @@ py_library(
 py_library(
     name = "namespaces",
     srcs = ["namespaces.py"],
-)
-
-py_test(
-    name = "test_llm_ingress",
-    srcs = ["test_llm_ingress.py"],
-    data = [
-        "@nodejs_linux_amd64//:bin/node",
-    ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    deps = [
-        ":llm_ingress",
-        "//:conftest",
-        "//cluster/cdk8s:model_selections",
-        "//model_catalog:catalog",
-        "@pypi//pytest_bazel",
-    ],
 )
 
 py_library(
