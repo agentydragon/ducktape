@@ -53,6 +53,7 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
         self._send = send
         self._call_ids = itertools.count(1)
         self._pending: dict[int, asyncio.Future[grpc_tunnel_pb2.Reply]] = {}
+        self._calls: set[asyncio.Task[object]] = set()
         self._ended = False
         # Never dialed: this interceptor answers every call made on it.
         self.channel = grpc.aio.insecure_channel("grpc-tunnel.invalid", interceptors=[self])
@@ -69,6 +70,9 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
                 waiting.set_exception(
                     _status(grpc.StatusCode.UNAVAILABLE, "the tunnel ended before the callee answered")
                 )
+        # Closing the channel cancels the calls still on it: let them raise their status first.
+        if self._calls:
+            await asyncio.wait(self._calls)
         await self.channel.close()
 
     def answer(self, reply: grpc_tunnel_pb2.Reply) -> None:
@@ -102,6 +106,9 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
             call.timeout.FromTimedelta(timedelta(seconds=timeout))
         waiting: asyncio.Future[grpc_tunnel_pb2.Reply] = asyncio.get_running_loop().create_future()
         self._pending[call.call_id] = waiting
+        current = asyncio.current_task()
+        assert current is not None
+        self._calls.add(current)
         try:
             try:
                 await self._send(call)
@@ -114,6 +121,7 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
                 raise _status(grpc.StatusCode.DEADLINE_EXCEEDED, "the callee did not answer in time") from error
         finally:
             del self._pending[call.call_id]
+            self._calls.discard(current)
         if reply.code != grpc.StatusCode.OK.value[0]:
             raise _status(_CODES.get(reply.code, grpc.StatusCode.UNKNOWN), reply.details)
         return cast(Response, _response_type(call.method).FromString(reply.response))

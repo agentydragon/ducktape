@@ -64,7 +64,7 @@ def _runner_status(error: grpc.aio.AioRpcError) -> Status:
             return code, "destination unavailable; no offline admission"
         case grpc.StatusCode.DEADLINE_EXCEEDED:
             return code, "service deadline expired"
-        case grpc.StatusCode.INVALID_ARGUMENT | grpc.StatusCode.ALREADY_EXISTS:
+        case grpc.StatusCode.INVALID_ARGUMENT:
             return code, f"runner refused the request: {code.name}"
     return grpc.StatusCode.FAILED_PRECONDITION, f"runner refused the request: {code.name}"
 
@@ -226,11 +226,18 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             destination = request.destination
             # Refuses a Sandbox being torn down.
             await self.held(destination.sandbox, writes=True)
-            delivered = await self.resources.control.runner(UUID(destination.sandbox.sandbox_uid)).DeliverCommand(
-                runner_control_pb2.DeliverCommandRequest(
-                    session_id=await self.runner_session_id(destination), command=request.command
-                )
+            delivery = runner_control_pb2.DeliverCommandRequest(
+                session_id=await self.runner_session_id(destination), command=request.command
             )
+            try:
+                delivered = await self.resources.control.runner(UUID(destination.sandbox.sandbox_uid)).DeliverCommand(
+                    delivery
+                )
+            except grpc.aio.AioRpcError as error:
+                # Only here does the runner's conflict mean the caller's own ID clashed.
+                if error.code() == grpc.StatusCode.ALREADY_EXISTS:
+                    await context.abort(error.code(), "the command ID was admitted for other work")
+                raise
             return runner_gateway_pb2.SubmitCommandResponse(admission=delivered.admission)
 
     @override
