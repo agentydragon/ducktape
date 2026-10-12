@@ -24,21 +24,21 @@ from agentplane.action_service.models import DecisionInput, OperatorPrincipal, V
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.testing.fixtures import RecordingExecutor
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.db import Inbox
 from agentplane.notification_service.service import Service
-from agentplane.notification_service.settings import NoticeDebounceSettings
-from agentplane.notification_service.sources.actions import Actions
+from agentplane.notification_service.settings import NoticeDebounceSettings, QuotaSettings
+from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.store import Store
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.instructions import render_platform_instructions
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.kubernetes import (
     ACCOUNT,
     SANDBOX,
@@ -80,344 +80,331 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     action_service = ActionService(
         ActionStore(make_sessionmaker(action_engine)), echo_catalog, {"agentplane": echo_executor}
     )
-    await action_service.start()
-    try:
-        async with kubernetes() as cluster, asyncio.timeout(60):
-            for token, account in [("owner-token", owner), ("delegate-token", delegate), ("other-token", other)]:
-                cluster.fake.tokens[token] = TokenVerdict(
-                    username=f"system:serviceaccount:{account.namespace}:{account.name}",
-                    pod_name=f"{account.name}-pod",
-                    pod_uid=f"{account.name}-pod-uid",
-                    audiences=("test-notifications",),
-                )
-            resolver = WorkloadPrincipalResolver(
-                authentication=k8s_client.AuthenticationV1Api(cluster.api),
+    async with action_service, kubernetes() as cluster, asyncio.timeout(60):
+        for token, account in [("owner-token", owner), ("delegate-token", delegate), ("other-token", other)]:
+            cluster.fake.tokens[token] = TokenVerdict(
+                username=f"system:serviceaccount:{account.namespace}:{account.name}",
+                pod_name=f"{account.name}-pod",
+                pod_uid=f"{account.name}-pod-uid",
+                audiences=("test-notifications",),
+            )
+        resolver = WorkloadPrincipalResolver(
+            authentication=k8s_client.AuthenticationV1Api(cluster.api),
+            audience="test-notifications",
+            allowed_service_account_namespaces={SANDBOX_NAMESPACE},
+        )
+        action_api = actions_app(
+            action_service,
+            resolver,
+            DisabledOperatorAuthenticator(),
+            echo_catalog,
+            callers=admitted_callers(owner, other),
+            updates=ActionUpdateBroker("postgresql://unused-listener"),
+            direct_wait_seconds=0,
+            max_wait_seconds=30,
+            reader_accounts=frozenset({delegate}),
+        )
+        history_wakeups = create_wakeups(make_url(sandbox_service_db_url))
+        token_file = tmp_path / "delegate-token"
+        token_file.write_text("delegate-token")
+        async with (
+            httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=action_api), base_url="http://actions.test"
+            ) as action_http,
+            authenticated_service(
+                cluster,
+                runner.runner,
+                token_file,
+                database_url=sandbox_service_db_url,
+                manager=delegate,
+                token="delegate-token",
                 audience="test-notifications",
-                allowed_service_account_namespaces={SANDBOX_NAMESPACE},
+                platform_instructions=render_platform_instructions(
+                    egress_api_url="http://egress.test",
+                    actions_service_url="http://actions.test",
+                    notifications_service_url="http://notifications.test",
+                ),
+            ) as (sandboxes, remote),
+            ingest(sandbox_service_db_url, runner.runner),
+            history_service(sandbox_service_db_url, tmp_path / "history-token") as history,
+            history_wakeups.listener.listen(),
+        ):
+            source = ActionServiceClient(action_http, token_file)
+            service = Service(
+                store,
+                source,
+                sandboxes,
+                github=None,
+                gateway=remote,
+                history=history,
+                notice_debounce=NoticeDebounceSettings(quiet_seconds=0),
+                stale_confirmation_s=30,
+                operator_reader_account=None,
             )
-            action_api = actions_app(
-                action_service,
-                resolver,
-                DisabledOperatorAuthenticator(),
-                echo_catalog,
-                callers=admitted_callers(owner, other),
-                updates=ActionUpdates("postgresql://unused-listener"),
-                direct_wait_seconds=0,
-                max_wait_seconds=30,
-                reader_accounts=frozenset({delegate}),
-            )
-            history_wakeups = create_wakeups(make_url(sandbox_service_db_url))
-            token_file = tmp_path / "delegate-token"
-            token_file.write_text("delegate-token")
-            async with (
-                httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=action_api), base_url="http://actions.test"
-                ) as action_http,
-                authenticated_service(
-                    cluster,
-                    runner.runner,
-                    token_file,
-                    database_url=sandbox_service_db_url,
-                    manager=delegate,
-                    token="delegate-token",
-                    audience="test-notifications",
-                    platform_instructions=render_platform_instructions(
-                        egress_api_url="http://egress.test",
-                        actions_service_url="http://actions.test",
-                        notifications_service_url="http://notifications.test",
-                    ),
-                ) as remote,
-                ingest(sandbox_service_db_url, runner.runner),
-                history_service(sandbox_service_db_url, tmp_path / "history-token") as history,
-                history_wakeups.listener.listen(),
-            ):
-                source = Actions(action_http, token_file)
-                service = Service(
-                    store,
-                    source,
-                    remote,
-                    history=history,
-                    notice_debounce=NoticeDebounceSettings(quiet_seconds=0),
-                    stale_confirmation_s=30,
+            api = create_app(service, resolver)
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=api),
+                base_url="http://notifications.test",
+                headers={"Authorization": "Bearer owner-token"},
+            ) as agent:
+                destination = SandboxDestination(
+                    owner=ServiceAccount(namespace=owner.namespace, name=owner.name),
+                    sandbox=SANDBOX,
+                    sandbox_uid=SANDBOX_UID,
                 )
-                api = create_app(service, resolver)
-                async with httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=api),
-                    base_url="http://notifications.test",
+                native = remote.runner(destination)
+                session_id = (await native.create(session_id=uuid4(), spec=MessageToDict(spec))).session_id
+
+                async def history_caught_up() -> None:
+                    # Delivery reads entries from the History Service, which copies them behind the runner.
+                    (live,) = [session for session in await native.list_sessions() if session.session_id == session_id]
+                    changed = asyncio.Event()
+                    with history_wakeups.changes[Channel.HISTORY].subscribe(changed):
+                        while (await history.read_session_events(session_id, limit=1)).last_cursor < live.last_cursor:
+                            await changed.wait()
+                            changed.clear()
+
+                submitted = await action_http.post(
+                    "/v1/action-requests",
                     headers={"Authorization": "Bearer owner-token"},
-                ) as agent:
-                    destination = SandboxDestination(
-                        owner=ServiceAccount(namespace=owner.namespace, name=owner.name),
-                        sandbox=SANDBOX,
-                        sandbox_uid=SANDBOX_UID,
+                    json={
+                        "idempotency_key": "notification-test",
+                        "title": "Notification test",
+                        "action": {"group": "agentplane", "name": "echo"},
+                        "arguments": {"text": "hello"},
+                    },
+                )
+                submitted.raise_for_status()
+                request = submitted.json()
+                # Terminal before subscription exists: do not rely on a future source push.
+                await action_service.decide(
+                    UUID(request["id"]),
+                    DecisionInput(
+                        verdict=Verdict.DENY, expected_version=request["version"], idempotency_key="deny-test"
+                    ),
+                    OperatorPrincipal(issuer="test", subject="operator"),
+                )
+                body = {
+                    "destination_ref": {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX, "uid": SANDBOX_UID},
+                    "session_id": session_id,
+                    "source": {"provider": "actions", "request_id": request["id"]},
+                    "idempotency_key": "listen",
+                }
+                assert (
+                    await agent.post("/v1/subscriptions", json=body | {"owner": owner.model_dump()})
+                ).status_code == 422
+                assert (
+                    await agent.post("/v1/subscriptions", json=body, headers={"Authorization": "Bearer other-token"})
+                ).status_code == 404
+                other_request = await action_http.post(
+                    "/v1/action-requests",
+                    headers={"Authorization": "Bearer other-token"},
+                    json={
+                        "idempotency_key": "other",
+                        "title": "Other owner",
+                        "action": {"group": "agentplane", "name": "echo"},
+                        "arguments": {"text": "other"},
+                    },
+                )
+                other_request.raise_for_status()
+                # Destination is owned, source is not: the worker's broad read access is not inherited.
+                assert (
+                    await agent.post(
+                        "/v1/subscriptions",
+                        json=body | {"source": {"provider": "actions", "request_id": other_request.json()["id"]}},
                     )
-                    native = remote.runner(destination)
-                    session_id = (await native.create(session_id=uuid4(), spec=MessageToDict(spec))).session_id
-
-                    async def history_caught_up() -> None:
-                        # Delivery reads entries from the History Service, which copies them behind the runner.
-                        (live,) = [
-                            session for session in await native.list_sessions() if session.session_id == session_id
-                        ]
-                        changed = asyncio.Event()
-                        with history_wakeups.changes[Channel.HISTORY].subscribe(changed):
-                            while (
-                                await history.read_session_events(session_id, limit=1)
-                            ).last_cursor < live.last_cursor:
-                                await changed.wait()
-                                changed.clear()
-
-                    submitted = await action_http.post(
-                        "/v1/action-requests",
-                        headers={"Authorization": "Bearer owner-token"},
-                        json={
-                            "idempotency_key": "notification-test",
-                            "title": "Notification test",
-                            "action": {"group": "agentplane", "name": "echo"},
-                            "arguments": {"text": "hello"},
-                        },
-                    )
-                    submitted.raise_for_status()
-                    request = submitted.json()
-                    # Terminal before subscription exists: do not rely on a future source push.
-                    await action_service.decide(
-                        UUID(request["id"]),
-                        DecisionInput(
-                            verdict=Verdict.DENY, expected_version=request["version"], idempotency_key="deny-test"
-                        ),
-                        OperatorPrincipal(issuer="test", subject="operator"),
-                    )
-                    body = {
-                        "destination_ref": {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX, "uid": SANDBOX_UID},
-                        "session_id": session_id,
-                        "source": {"provider": "actions", "request_id": request["id"]},
-                        "idempotency_key": "listen",
-                    }
-                    assert (
-                        await agent.post("/v1/subscriptions", json=body | {"owner": owner.model_dump()})
-                    ).status_code == 422
-                    assert (
-                        await agent.post(
-                            "/v1/subscriptions", json=body, headers={"Authorization": "Bearer other-token"}
-                        )
-                    ).status_code == 404
-                    other_request = await action_http.post(
-                        "/v1/action-requests",
-                        headers={"Authorization": "Bearer other-token"},
-                        json={
-                            "idempotency_key": "other",
-                            "title": "Other owner",
-                            "action": {"group": "agentplane", "name": "echo"},
-                            "arguments": {"text": "other"},
-                        },
-                    )
-                    other_request.raise_for_status()
-                    # Destination is owned, source is not: the worker's broad read access is not inherited.
-                    assert (
-                        await agent.post(
-                            "/v1/subscriptions",
-                            json=body | {"source": {"provider": "actions", "request_id": other_request.json()["id"]}},
-                        )
-                    ).status_code == 403
-                    response = await agent.post("/v1/subscriptions", json=body)
-                    response.raise_for_status()
-                    subscription = response.json()
-                    assert subscription["idempotency_key"] == "listen"
-                    assert subscription["source"] == {
-                        "provider": "actions",
-                        "request_id": request["id"],
-                        "after_sequence": 0,
-                    }
-                    assert "client_key" not in subscription
-                    assert (await agent.post("/v1/subscriptions", json=body)).json() == subscription
-                    initial = None
-                    if busy:
-                        await remote.command(
-                            session_id,
-                            command_pb2.Command(
-                                command_id="initial", submit_input=command_pb2.SubmitInput(text="Do other work")
-                            ),
-                        )
-                        initial = await model.request()
-                    # Seed the real native journal past one worker replay batch. Each interrupt
-                    # normally adds an admission and a no-op, so stop as soon as the boundary is
-                    # crossed instead of submitting another full batch of unrelated commands.
-                    history_cursor = 0
-                    for index in range(130):
-                        command = command_pb2.Command(
-                            command_id=f"old-{index}",
-                            interrupt_turn=command_pb2.InterruptTurn(turn_id="nonexistent-turn"),
-                        )
-                        logger.info(
-                            "notification journal seed %d: submitting command_id=%s operation=%s",
-                            index + 1,
-                            command.command_id,
-                            command.WhichOneof("operation"),
-                        )
-                        try:
-                            receipt = await remote.command(session_id, command)
-                        except Exception as error:
-                            logger.warning(
-                                "notification journal seed failed at command_id=%s last_cursor=%d: %s",
-                                command.command_id,
-                                history_cursor,
-                                type(error).__name__,
-                            )
-                            try:
-                                async with asyncio.timeout(3):
-                                    status = await remote.get_command(session_id, command.command_id)
-                                logger.warning(
-                                    "notification journal seed retained command_id=%s state=%d admission_cursor=%d",
-                                    command.command_id,
-                                    status.state,
-                                    status.admission.cursor,
-                                )
-                            except Exception as lookup_error:
-                                logger.warning(
-                                    "notification journal seed status unavailable for command_id=%s: %s",
-                                    command.command_id,
-                                    type(lookup_error).__name__,
-                                )
-                            raise
-                        history_cursor = receipt.cursor
-                        logger.info(
-                            "notification journal seed %d: admitted command_id=%s cursor=%d",
-                            index + 1,
-                            command.command_id,
-                            history_cursor,
-                        )
-                        if history_cursor > 128:
-                            break
-                    assert history_cursor > 128
-                    original = SandboxServiceClient.command
-                    lost = False
-                    notice_sent = False
-                    attempted_id: str | None = None
-
-                    async def lose_response(
-                        self: SandboxServiceClient, session_id: str, command: command_pb2.Command
-                    ) -> event_log_pb2.EventEntry:
-                        nonlocal lost, notice_sent, attempted_id
-                        if command.HasField("submit_input"):
-                            if attempted_id is None:
-                                attempted_id = command.command_id
-                            else:
-                                assert command.command_id == attempted_id
-                            if failed_before_rpc and not lost:
-                                lost = True
-                                raise ValueError("simulated local failure before SubmitCommand")
-                        notice_sent = notice_sent or command.HasField("submit_input")
-                        receipt = await original(self, session_id, command)
-                        if not lost and command.HasField("submit_input"):
-                            lost = True
-                            raise ConnectionError("simulated lost admission response")
-                        return receipt
-
-                    monkeypatch.setattr(SandboxServiceClient, "command", lose_response)
-
-                    async def step_until_sent() -> None:
-                        # A step sends only once the History Service has every entry the runner had,
-                        # and the runner can append between the two reads, so steps repeat until it sends.
-                        while not notice_sent:
-                            async with store.sessions.begin() as session:
-                                await session.execute(
-                                    update(Inbox)
-                                    .where(Inbox.id == UUID(subscription["inbox_id"]))
-                                    .values(next_attempt=datetime.now(UTC))
-                                )
-                            await history_caught_up()
-                            await service.step()
-
-                    if failed_before_rpc:
-                        with pytest.raises(ValueError, match="before SubmitCommand"):
-                            await step_until_sent()
-                    else:
-                        await step_until_sent()
-                    assert lost
-                    if initial is not None:
-                        await model.reply(initial, Text("Initial work complete"))
-                    # The durable attempt marker exists, but the runner has not been called.
-                    await step_until_sent()
-                    notice_request = await model.request()
-                    notices = [
-                        text for text in notice_request.user_texts if text.startswith("Agentplane inbox notice: ")
-                    ]
-                    assert len(notices) == 1
-                    hint = json.loads(notices[0].removeprefix("Agentplane inbox notice: "))
-                    assert attempted_id is not None
-                    assert hint == {
-                        "inbox_id": subscription["inbox_id"],
-                        "acknowledged_at_preparation": 0,
-                        "through_at_preparation": 2,
-                    }
-                    assert "GET" not in notices[0]
-                    assert "acknowledgement" not in notices[0]
-                    await model.reply(notice_request, Text("Notifications received"))
-                    # A fresh service object has no in-memory delivery state to lean on.
-                    recovered = Service(
-                        Store(engine),
-                        source,
-                        remote,
-                        history=history,
-                        notice_debounce=service.notice_debounce,
-                        stale_confirmation_s=service.stale_confirmation_s,
-                    )
-                    inbox_id = UUID(hint["inbox_id"])
-                    page = None
-                    while page is None or not page["notice"]["confirmed"]:
-                        await history_caught_up()
-                        async with store.sessions.begin() as session:
-                            await session.execute(
-                                update(Inbox).where(Inbox.id == inbox_id).values(next_attempt=datetime.now(UTC))
-                            )
-                        await recovered.step()
-                        response = await agent.get(
-                            f"/v1/inboxes/{inbox_id}/entries",
-                            params={"after_cursor": hint["acknowledged_at_preparation"], "limit": 128},
-                        )
-                        response.raise_for_status()
-                        page = response.json()
-                    assert page is not None
-                    assert page["notice"]["command_id"] == attempted_id
-                    assert page["inbox"]["acknowledged"] == 0
-                    assert [entry["payload"]["state"] for entry in page["entries"]] == ["decision_pending", "denied"]
-                    assert [entry["event"] for entry in page["entries"]] == [
-                        {"provider": "actions", "request_id": request["id"], "sequence": sequence}
-                        for sequence in [1, 2]
-                    ]
-                    assert (
-                        await agent.get(
-                            f"/v1/inboxes/{inbox_id}/entries", headers={"Authorization": "Bearer other-token"}
-                        )
-                    ).status_code == 404
-                    ack = await agent.put(
-                        f"/v1/inboxes/{inbox_id}/acknowledgement", json={"through_cursor": page["entries"][0]["cursor"]}
-                    )
-                    assert ack.json()["acknowledged"] == 1
-                    remaining = await agent.get(
-                        f"/v1/inboxes/{inbox_id}/entries", params={"after_cursor": 1, "limit": 128}
-                    )
-                    assert remaining.json()["inbox"]["acknowledged"] == 1
-                    assert [entry["cursor"] for entry in remaining.json()["entries"]] == [2]
-                    ack = await agent.put(
-                        f"/v1/inboxes/{inbox_id}/acknowledgement",
-                        json={"through_cursor": page["entries"][-1]["cursor"]},
-                    )
-                    assert ack.json()["acknowledged"] == 2
-                    (native_session,) = runner.runner.sessions.values()
-                    journal = await native_session.journal.since(0, limit=1000)
-                    admitted = [
-                        entry.event.command_admitted.command.command_id
-                        for entry in journal
-                        if entry.event.HasField("command_admitted")
-                    ]
-                    assert admitted.count(page["notice"]["command_id"]) == 1
+                ).status_code == 403
+                response = await agent.post("/v1/subscriptions", json=body)
+                response.raise_for_status()
+                subscription = response.json()
+                assert subscription["idempotency_key"] == "listen"
+                assert subscription["source"] == {
+                    "provider": "actions",
+                    "request_id": request["id"],
+                    "after_sequence": 0,
+                }
+                assert "client_key" not in subscription
+                assert (await agent.post("/v1/subscriptions", json=body)).json() == subscription
+                initial = None
+                if busy:
                     await remote.command(
                         session_id,
-                        command_pb2.Command(command_id="stop", stop_runner_session=command_pb2.StopRunnerSession()),
+                        command_pb2.Command(
+                            command_id="initial", submit_input=command_pb2.SubmitInput(text="Do other work")
+                        ),
                     )
-    finally:
-        await action_service.close()
+                    initial = await model.request()
+                # Seed the real native journal past one worker replay batch. Each interrupt
+                # normally adds an admission and a no-op, so stop as soon as the boundary is
+                # crossed instead of submitting another full batch of unrelated commands.
+                history_cursor = 0
+                for index in range(130):
+                    command = command_pb2.Command(
+                        command_id=f"old-{index}", interrupt_turn=command_pb2.InterruptTurn(turn_id="nonexistent-turn")
+                    )
+                    logger.info(
+                        "notification journal seed %d: submitting command_id=%s operation=%s",
+                        index + 1,
+                        command.command_id,
+                        command.WhichOneof("operation"),
+                    )
+                    try:
+                        receipt = await remote.command(session_id, command)
+                    except Exception as error:
+                        logger.warning(
+                            "notification journal seed failed at command_id=%s last_cursor=%d: %s",
+                            command.command_id,
+                            history_cursor,
+                            type(error).__name__,
+                        )
+                        try:
+                            async with asyncio.timeout(3):
+                                status = await remote.get_command(session_id, command.command_id)
+                            logger.warning(
+                                "notification journal seed retained command_id=%s state=%d admission_cursor=%d",
+                                command.command_id,
+                                status.state,
+                                status.admission.cursor,
+                            )
+                        except Exception as lookup_error:
+                            logger.warning(
+                                "notification journal seed status unavailable for command_id=%s: %s",
+                                command.command_id,
+                                type(lookup_error).__name__,
+                            )
+                        raise
+                    history_cursor = receipt.cursor
+                    logger.info(
+                        "notification journal seed %d: admitted command_id=%s cursor=%d",
+                        index + 1,
+                        command.command_id,
+                        history_cursor,
+                    )
+                    if history_cursor > 128:
+                        break
+                assert history_cursor > 128
+                original = RunnerGatewayClient.command
+                lost = False
+                notice_sent = False
+                attempted_id: str | None = None
+
+                async def lose_response(
+                    self: RunnerGatewayClient, session_id: str, command: command_pb2.Command
+                ) -> event_log_pb2.EventEntry:
+                    nonlocal lost, notice_sent, attempted_id
+                    if command.HasField("submit_input"):
+                        if attempted_id is None:
+                            attempted_id = command.command_id
+                        else:
+                            assert command.command_id == attempted_id
+                        if failed_before_rpc and not lost:
+                            lost = True
+                            raise ValueError("simulated local failure before SubmitCommand")
+                    notice_sent = notice_sent or command.HasField("submit_input")
+                    receipt = await original(self, session_id, command)
+                    if not lost and command.HasField("submit_input"):
+                        lost = True
+                        raise ConnectionError("simulated lost admission response")
+                    return receipt
+
+                monkeypatch.setattr(RunnerGatewayClient, "command", lose_response)
+
+                async def step_until_sent() -> None:
+                    # A step sends only once the History Service has every entry the runner had,
+                    # and the runner can append between the two reads, so steps repeat until it sends.
+                    while not notice_sent:
+                        async with store.sessions.begin() as session:
+                            await session.execute(
+                                update(Inbox)
+                                .where(Inbox.id == UUID(subscription["inbox_id"]))
+                                .values(next_attempt=datetime.now(UTC))
+                            )
+                        await history_caught_up()
+                        await service.step()
+
+                if failed_before_rpc:
+                    with pytest.raises(ValueError, match="before SubmitCommand"):
+                        await step_until_sent()
+                else:
+                    await step_until_sent()
+                assert lost
+                if initial is not None:
+                    await model.reply(initial, Text("Initial work complete"))
+                # The durable attempt marker exists, but the runner has not been called.
+                await step_until_sent()
+                notice_request = await model.request()
+                notices = [text for text in notice_request.user_texts if text.startswith("Agentplane inbox notice: ")]
+                assert len(notices) == 1
+                hint = json.loads(notices[0].removeprefix("Agentplane inbox notice: "))
+                assert attempted_id is not None
+                assert hint == {
+                    "inbox_id": subscription["inbox_id"],
+                    "acknowledged_at_preparation": 0,
+                    "through_at_preparation": 2,
+                }
+                assert "GET" not in notices[0]
+                assert "acknowledgement" not in notices[0]
+                await model.reply(notice_request, Text("Notifications received"))
+                # A fresh service object has no in-memory delivery state to lean on.
+                recovered = Service(
+                    Store(engine, quotas=QuotaSettings()),
+                    source,
+                    sandboxes,
+                    github=None,
+                    gateway=remote,
+                    history=history,
+                    notice_debounce=service.notice_debounce,
+                    stale_confirmation_s=service.stale_confirmation_s,
+                    operator_reader_account=None,
+                )
+                inbox_id = UUID(hint["inbox_id"])
+                page = None
+                while page is None or not page["notice"]["confirmed"]:
+                    await history_caught_up()
+                    async with store.sessions.begin() as session:
+                        await session.execute(
+                            update(Inbox).where(Inbox.id == inbox_id).values(next_attempt=datetime.now(UTC))
+                        )
+                    await recovered.step()
+                    response = await agent.get(
+                        f"/v1/inboxes/{inbox_id}/entries",
+                        params={"after_cursor": hint["acknowledged_at_preparation"], "limit": 128},
+                    )
+                    response.raise_for_status()
+                    page = response.json()
+                assert page is not None
+                assert page["notice"]["command_id"] == attempted_id
+                assert page["inbox"]["acknowledged"] == 0
+                assert [entry["payload"]["state"] for entry in page["entries"]] == ["decision_pending", "denied"]
+                assert [entry["event"] for entry in page["entries"]] == [
+                    {"provider": "actions", "request_id": request["id"], "sequence": sequence} for sequence in [1, 2]
+                ]
+                assert (
+                    await agent.get(f"/v1/inboxes/{inbox_id}/entries", headers={"Authorization": "Bearer other-token"})
+                ).status_code == 404
+                ack = await agent.put(
+                    f"/v1/inboxes/{inbox_id}/acknowledgement", json={"through_cursor": page["entries"][0]["cursor"]}
+                )
+                assert ack.json()["acknowledged"] == 1
+                remaining = await agent.get(f"/v1/inboxes/{inbox_id}/entries", params={"after_cursor": 1, "limit": 128})
+                assert remaining.json()["inbox"]["acknowledged"] == 1
+                assert [entry["cursor"] for entry in remaining.json()["entries"]] == [2]
+                ack = await agent.put(
+                    f"/v1/inboxes/{inbox_id}/acknowledgement", json={"through_cursor": page["entries"][-1]["cursor"]}
+                )
+                assert ack.json()["acknowledged"] == 2
+                (native_session,) = runner.runner.sessions.values()
+                journal = await native_session.journal.since(0, limit=1000)
+                admitted = [
+                    entry.event.command_admitted.command.command_id
+                    for entry in journal
+                    if entry.event.HasField("command_admitted")
+                ]
+                assert admitted.count(page["notice"]["command_id"]) == 1
+                await remote.command(
+                    session_id,
+                    command_pb2.Command(command_id="stop", stop_runner_session=command_pb2.StopRunnerSession()),
+                )
 
 
 if __name__ == "__main__":

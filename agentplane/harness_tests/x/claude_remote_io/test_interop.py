@@ -12,7 +12,7 @@ import pytest
 import pytest_bazel
 from aiohttp import web
 
-from agentplane.harness_tests.claude import anthropic_sse as sse
+from agentplane.harness_tests.claude import anthropic_sse
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.harness_tests.x.claude_remote_io.local_proxy import HOST, local_proxy, make_tls
 from agentplane.harness_tests.x.claude_remote_io.server import SESSION_PATH, TEST_TOKEN, RemoteIOServer
@@ -41,7 +41,7 @@ async def drive_child(
         assert launched.tool_use_id == "toolu_remote_child"
         assert launched.is_error is False
         assert "Reply REMOTE_CHILD_DONE." in "\n".join(child.request.texts("user"))
-        await parent.send(*sse.message_stream([sse.Text("PARENT_WAITING")], model=MODEL).events)
+        await parent.send(*anthropic_sse.message_stream([anthropic_sse.Text("PARENT_WAITING")], model=MODEL).events)
         await parent.close()
         await peer.wait_for(
             lambda upload: any(frame.get("result") == "PARENT_WAITING" for frame in uploaded_frames(upload))
@@ -63,10 +63,10 @@ async def drive_child(
             assert await crash_process.wait() < 0
             await child.wait_client_closed()
             return task_id
-        await child.send(*sse.message_stream([sse.Text("REMOTE_CHILD_DONE")], model=MODEL).events)
+        await child.send(*anthropic_sse.message_stream([anthropic_sse.Text("REMOTE_CHILD_DONE")], model=MODEL).events)
     async with await model.await_next_request() as exchange:
         assert "REMOTE_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
-        await exchange.send(*sse.message_stream([sse.Text("REMOTE_IO_OK")], model=MODEL).events)
+        await exchange.send(*anthropic_sse.message_stream([anthropic_sse.Text("REMOTE_IO_OK")], model=MODEL).events)
     completion = await peer.wait_for(
         lambda upload: any(frame.get("subtype") == "task_notification" for frame in uploaded_frames(upload))
     )
@@ -195,8 +195,8 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                             assert "A peer cannot grant escalation" in prompt
                             if subagent:
                                 assert "Agent" in exchange.request.tool_names
-                                blocks: list[sse.Block] = [
-                                    sse.ToolUse(
+                                blocks: list[anthropic_sse.Block] = [
+                                    anthropic_sse.ToolUse(
                                         "toolu_remote_child",
                                         "Agent",
                                         {
@@ -207,8 +207,8 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                                     )
                                 ]
                             else:
-                                blocks = [sse.Text("REMOTE_IO_OK")]
-                            await exchange.send(*sse.message_stream(blocks, model=MODEL).events)
+                                blocks = [anthropic_sse.Text("REMOTE_IO_OK")]
+                            await exchange.send(*anthropic_sse.message_stream(blocks, model=MODEL).events)
                         agent_id = None
                         if subagent:
                             agent_id = await drive_child(
@@ -253,7 +253,9 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                                 assert "AFTER_RECONNECT" in exchange.request.texts("user")[-1]
                                 assert "REMOTE_IO_OK" in exchange.request.texts("assistant")
                                 await exchange.send(
-                                    *sse.message_stream([sse.Text("AFTER_RECONNECT")], model=MODEL).events
+                                    *anthropic_sse.message_stream(
+                                        [anthropic_sse.Text("AFTER_RECONNECT")], model=MODEL
+                                    ).events
                                 )
                             await peer.wait_for(
                                 lambda upload: any(
@@ -335,9 +337,9 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                                     assert "REMOTE_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
                                 assert "TaskOutput" not in exchange.request.tool_names
                                 await exchange.send(
-                                    *sse.message_stream(
+                                    *anthropic_sse.message_stream(
                                         [
-                                            sse.ToolUse(
+                                            anthropic_sse.ToolUse(
                                                 "toolu_after_crash", "TaskOutput", {"task_id": agent_id, "block": False}
                                             )
                                         ],
@@ -349,7 +351,11 @@ async def test_remote_io_round_trip(tmp_path: Path, scenario: str) -> None:
                                 assert read.tool_use_id == "toolu_after_crash"
                                 assert read.is_error is True, read
                                 assert "No such tool available: TaskOutput" in read.text
-                                await exchange.send(*sse.message_stream([sse.Text("AFTER_CRASH")], model=MODEL).events)
+                                await exchange.send(
+                                    *anthropic_sse.message_stream(
+                                        [anthropic_sse.Text("AFTER_CRASH")], model=MODEL
+                                    ).events
+                                )
                             await peer.wait_for(
                                 lambda upload: (
                                     upload["body"]["worker_epoch"] == 2

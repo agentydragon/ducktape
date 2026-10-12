@@ -5,7 +5,7 @@ import asyncio
 from dataclasses import dataclass
 from uuid import UUID
 
-from agentplane.proto import runner_control_pb2 as control_pb2, runner_pb2
+from agentplane.proto import runner_control_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import Sandbox
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
 from agentplane.runner_gateway.session_registry import SessionRegistry
@@ -29,7 +29,9 @@ class Sealing:
         if self.control.holder(sandbox_uid) is None:
             raise ConnectionNotHeldError(f"Sandbox {sandbox.name}'s runner connection is not held here")
         async with asyncio.timeout(SEAL_S):
-            result = await self.control.request(sandbox_uid, control_pb2.ControlRequest(seal=runner_pb2.SealRequest()))
+            result = await self.control.request(
+                sandbox_uid, runner_control_pb2.ControlRequest(seal=runner_pb2.SealRequest())
+            )
         sealed = result.seal
         for session in sealed.sessions:
             if (

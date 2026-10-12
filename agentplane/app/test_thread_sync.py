@@ -11,7 +11,7 @@ import httpx
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.replication_process import app_process
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
 from agentplane.app.threads.summaries import Summaries
@@ -30,69 +30,66 @@ async def test_materialized_revisions_replicate_with_restricted_role(
     async with (
         electric_service() as service,
         history_service(service.database_url, tmp_path / "history-token") as reader,
+        History(service.database_url) as history,
     ):
-        history = History(service.database_url)
         placements = Placements()
-        event_logs = EventLogStore(
+        event_logs = SeededEventLogStore(
             engine, history=history, gateway=placements, history_reader=reader, summaries=Summaries(engine, reader)
         )
-        try:
-            source = ReplicationSource(placements)
-            source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
-            source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))
+        source = ReplicationSource(placements)
+        source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))
+        source.append(event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")))
+        source.append(
+            event_pb2.Event(
+                item_started=event_pb2.ItemStarted(item_id="first", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+            )
+        )
+        source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="Hello")))
+        thread = await event_logs.seed(SANDBOX, SESSION)
+        await history.set_attached(thread, source.attached)
+        await history.record(thread, source.entries)
+        async with asyncio.timeout(45), httpx.AsyncClient(base_url=service.url, timeout=35) as client:
+            params = {"table": "thread_entity", "where": f"thread_id = '{thread}'", "offset": "-1"}
+            initial = await client.get("/v1/shape", params=params)
+            assert initial.status_code == 200, initial.text
+            entities = [message["value"] for message in initial.json() if "value" in message]
+            first = next(row for row in entities if row["entity_id"] == "first")
+            assert str(first["revision_cursor"]) == "4"
+            offset = initial.headers["electric-offset"]
+            handle = initial.headers["electric-handle"]
+            # A newer item does not prevent the earlier item from receiving a revision.
             source.append(
                 event_pb2.Event(
-                    item_started=event_pb2.ItemStarted(item_id="first", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
+                    item_started=event_pb2.ItemStarted(item_id="second", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
                 )
             )
-            source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text="Hello")))
-            thread = await event_logs.seed(SANDBOX, SESSION)
-            await history.set_attached(thread, source.attached)
-            await history.record(thread, source.entries)
-            async with asyncio.timeout(45), httpx.AsyncClient(base_url=service.url, timeout=35) as client:
-                params = {"table": "thread_entity", "where": f"thread_id = '{thread}'", "offset": "-1"}
-                initial = await client.get("/v1/shape", params=params)
-                assert initial.status_code == 200, initial.text
-                entities = [message["value"] for message in initial.json() if "value" in message]
-                first = next(row for row in entities if row["entity_id"] == "first")
-                assert str(first["revision_cursor"]) == "4"
-                offset = initial.headers["electric-offset"]
-                handle = initial.headers["electric-handle"]
-                # A newer item does not prevent the earlier item from receiving a revision.
-                source.append(
-                    event_pb2.Event(
-                        item_started=event_pb2.ItemStarted(item_id="second", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
-                    )
+            source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" world")))
+            await history.record(thread, source.entries[4:])
+            seen_revision = False
+            while not seen_revision:
+                delta = await client.get(
+                    "/v1/shape", params=params | {"offset": offset, "handle": handle, "live": "true"}
                 )
-                source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="first", text=" world")))
-                await history.record(thread, source.entries[4:])
-                seen_revision = False
-                while not seen_revision:
-                    delta = await client.get(
-                        "/v1/shape", params=params | {"offset": offset, "handle": handle, "live": "true"}
-                    )
-                    delta.raise_for_status()
-                    offset = delta.headers["electric-offset"]
-                    for message in delta.json():
-                        value = message.get("value", {})
-                        if value.get("entity_id") == "first" and str(value.get("revision_cursor")) == "6":
-                            seen_revision = True
-                chunks = await client.get(
-                    "/v1/shape",
-                    params={
-                        "table": "thread_payload_chunk",
-                        "where": f"thread_id = '{thread}' AND owner_id = 'first'",
-                        "offset": "-1",
-                    },
-                )
-                chunks.raise_for_status()
-                assert json.loads(chunks.headers["electric-schema"])["text"]["type"] == "json"
-                values = [message["value"] for message in chunks.json() if "value" in message]
-                ordered = sorted(values, key=lambda row: int(row["chunk_index"]))
-                assert "".join(json.loads(row["text"]) for row in ordered) == "Hello world"
-            await _cross_replica_sync(service, db_url, reader, history, source, thread)
-        finally:
-            await history.close()
+                delta.raise_for_status()
+                offset = delta.headers["electric-offset"]
+                for message in delta.json():
+                    value = message.get("value", {})
+                    if value.get("entity_id") == "first" and str(value.get("revision_cursor")) == "6":
+                        seen_revision = True
+            chunks = await client.get(
+                "/v1/shape",
+                params={
+                    "table": "thread_payload_chunk",
+                    "where": f"thread_id = '{thread}' AND owner_id = 'first'",
+                    "offset": "-1",
+                },
+            )
+            chunks.raise_for_status()
+            assert json.loads(chunks.headers["electric-schema"])["text"]["type"] == "json"
+            values = [message["value"] for message in chunks.json() if "value" in message]
+            ordered = sorted(values, key=lambda row: int(row["chunk_index"]))
+            assert "".join(json.loads(row["text"]) for row in ordered) == "Hello world"
+        await _cross_replica_sync(service, db_url, reader, history, source, thread)
 
 
 Row = dict[str, Any]
@@ -183,14 +180,14 @@ async def _cross_replica_sync(
         asyncio.timeout(60),
         app_process(
             db_url,
-            runner_port=int(reader.target.rsplit(":", 1)[1]),
+            service_port=int(reader.target.rsplit(":", 1)[1]),
             history=reader,
             sandbox_present=False,
             electric_url=service.url,
         ) as first,
         app_process(
             db_url,
-            runner_port=int(reader.target.rsplit(":", 1)[1]),
+            service_port=int(reader.target.rsplit(":", 1)[1]),
             history=reader,
             sandbox_present=False,
             electric_url=service.url,

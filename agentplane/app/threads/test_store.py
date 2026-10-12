@@ -5,7 +5,7 @@ from uuid import UUID
 import pytest
 import pytest_bazel
 
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
 from agentplane.app.threads.store import InvalidPageTokenError, ThreadStore
 from agentplane.history_service.testing.history import History
@@ -16,7 +16,7 @@ from agentplane.runner.harness import Harness
 
 
 async def seed_thread(
-    event_logs: EventLogStore, history: History, *, sandbox: str, session: str, cursor: int, **last: object
+    event_logs: SeededEventLogStore, history: History, *, sandbox: str, session: str, cursor: int, **last: object
 ) -> UUID:
     """A running Thread folded through `cursor`, whose last entry carries `last`."""
     thread = await event_logs.seed(sandbox, session)
@@ -33,7 +33,7 @@ async def seed_thread(
 
 
 async def test_thread_views_and_operator_edits_need_no_raw_events(
-    store: ThreadStore, event_logs: EventLogStore, history: History
+    store: ThreadStore, event_logs: SeededEventLogStore, history: History
 ) -> None:
     thread = await seed_thread(event_logs, history, sandbox="one", session="test-session-one", cursor=7)
     other = await seed_thread(event_logs, history, sandbox="two", session="test-session-two", cursor=3)
@@ -58,7 +58,7 @@ async def test_thread_views_and_operator_edits_need_no_raw_events(
     "status", [None, event_pb2.TURN_STATUS_COMPLETED, event_pb2.TURN_STATUS_FAILED, event_pb2.TURN_STATUS_INTERRUPTED]
 )
 async def test_thread_turn_status_comes_from_the_fold_summary(
-    store: ThreadStore, event_logs: EventLogStore, history: History, status: event_pb2.TurnStatus | None
+    store: ThreadStore, event_logs: SeededEventLogStore, history: History, status: event_pb2.TurnStatus | None
 ) -> None:
     last = {} if status is None else {"turn_completed": event_pb2.TurnCompleted(turn_id="turn", status=status)}
     thread = await seed_thread(event_logs, history, sandbox="one", session="test-session", cursor=7, **last)
@@ -71,7 +71,7 @@ async def test_thread_turn_status_comes_from_the_fold_summary(
 
 
 async def test_a_confirmed_resume_masks_the_ended_feed_until_a_later_incarnation_ends(
-    store: ThreadStore, event_logs: EventLogStore, history: History
+    store: ThreadStore, event_logs: SeededEventLogStore, history: History
 ) -> None:
     thread = await seed_thread(event_logs, history, sandbox="one", session="test-resumed-session", cursor=3)
     await history.end_feed(thread, error=None)
@@ -88,7 +88,7 @@ async def test_a_confirmed_resume_masks_the_ended_feed_until_a_later_incarnation
 
 
 async def test_harness_model_and_cwd_come_from_the_attached_runner_spec(
-    store: ThreadStore, event_logs: EventLogStore, history: History
+    store: ThreadStore, event_logs: SeededEventLogStore, history: History
 ) -> None:
     attached = await seed_thread(event_logs, history, sandbox="one", session="test-attached-session", cursor=1)
     unattached = await event_logs.seed("one", "test-unattached-session")
@@ -101,7 +101,9 @@ async def test_harness_model_and_cwd_come_from_the_attached_runner_spec(
     assert (views[unattached].harness, views[unattached].model, views[unattached].cwd) == (None, None, None)
 
 
-async def test_a_session_not_folded_yet_reads_as_nothing_folded(store: ThreadStore, event_logs: EventLogStore) -> None:
+async def test_a_session_not_folded_yet_reads_as_nothing_folded(
+    store: ThreadStore, event_logs: SeededEventLogStore
+) -> None:
     thread = await event_logs.seed("sb-1", "test-unfolded-session")
     view = await store.get_thread(thread)
     assert view is not None
@@ -123,7 +125,7 @@ async def all_pages(
 
 
 async def test_pages_follow_creation_order_under_each_filter(
-    store: ThreadStore, event_logs: EventLogStore, history: History
+    store: ThreadStore, event_logs: SeededEventLogStore, history: History
 ) -> None:
     oldest, middle, newest = [
         await seed_thread(event_logs, history, sandbox=f"test-sandbox-{n}", session=f"test-session-{n}", cursor=1)
@@ -142,7 +144,7 @@ async def test_pages_follow_creation_order_under_each_filter(
     assert await store.archived_count() == 1
 
 
-async def test_a_page_token_continues_only_its_own_listing(store: ThreadStore, event_logs: EventLogStore) -> None:
+async def test_a_page_token_continues_only_its_own_listing(store: ThreadStore, event_logs: SeededEventLogStore) -> None:
     for n in range(3):
         await event_logs.seed(f"test-sandbox-{n}", f"test-session-{n}")
     first = await store.list_page(limit=1)

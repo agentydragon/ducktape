@@ -34,6 +34,6 @@ class UnansweringRunner(runner_pb2_grpc.RunnerServicer):
     async def ListSessions(
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
-        """None, so an app ingester that discovers sessions here opens no feeds of its own."""
+        """None, so the app's Session discovery opens no feeds of its own here."""
         del request, context
         return runner_pb2.ListSessionsResponse()

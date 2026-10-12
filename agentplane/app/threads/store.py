@@ -25,7 +25,7 @@ from agentplane.app.threads.thread_view import ThreadView
 from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_pb2, runner_gateway_pb2, runner_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.runner_gateway.client import RunnerGatewayClient
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -79,7 +79,7 @@ class ThreadPage(BaseModel):
 
 
 class ThreadStore:
-    def __init__(self, engine: AsyncEngine, summaries: Summaries, *, gateway: SandboxServiceClient) -> None:
+    def __init__(self, engine: AsyncEngine, summaries: Summaries, *, gateway: RunnerGatewayClient) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)
         self._summaries = summaries
         self._gateway = gateway

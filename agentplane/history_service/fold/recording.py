@@ -30,8 +30,8 @@ from agentplane.history_service.fold.views import (
     ThreadOperationalState,
     ThreadViewState,
 )
+from agentplane.history_service.settled_cursors import settled_ranges
 from agentplane.proto import event_log_pb2, history_service_pb2
-from agentplane.sandbox_service.settled_cursors import settled_ranges
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

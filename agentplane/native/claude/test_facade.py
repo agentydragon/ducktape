@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from agentplane.native.async_process import AsyncNativeProcess, NativeProcessEofError
 from agentplane.native.claude import facade, wire
+from agentplane.native.testing.async_process import AsyncNativeProcess, NativeProcessEofError
 
 # A pipe peer, not a mock model: it copies the actual request ID from the
 # facade's outbound frame and deliberately interleaves unrelated traffic.

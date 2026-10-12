@@ -1108,32 +1108,7 @@ agentplane_vitest_test(
 check_vitest_specs()
 
 py_library(
-    name = "visual_assertions",
-    testonly = True,
-    srcs = ["visual_assertions.py"],
-    deps = [
-        "//util/testing:page_capture",
-        "//util/testing:undeclared_outputs",
-        "//util/testing:visual_capture",
-        "@pypi//playwright",
-    ],
-)
-
-py_library(
     name = "visual_app",
     srcs = ["visual_app.py"],
     deps = ["@pypi//playwright"],
-)
-
-py_library(
-    name = "visual_fixtures",
-    testonly = True,
-    srcs = ["visual_fixtures.py"],
-    deps = [
-        ":visual_app",
-        "//util/testing:viewports",
-        "//util/testing:visual_capture",
-        "@pypi//pytest",
-        "@pypi//pytest_asyncio",
-    ],
 )

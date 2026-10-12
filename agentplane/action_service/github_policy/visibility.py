@@ -68,8 +68,8 @@ class RepositoryVisibilityService:
     uncached so a transient outage does not wedge a repository as unknown for the full TTL.
     """
 
-    def __init__(self, http_client: httpx.AsyncClient | None = None, *, ttl_seconds: float = CACHE_TTL_SECONDS) -> None:
-        self._http_client = http_client or httpx.AsyncClient(base_url=API_BASE_URL, timeout=REQUEST_TIMEOUT_SECONDS)
+    def __init__(self, http_client: httpx.AsyncClient, *, ttl_seconds: float = CACHE_TTL_SECONDS) -> None:
+        self._http_client = http_client
         self._ttl_seconds = ttl_seconds
         self._cache: dict[tuple[str, str], _CachedVisibility] = {}
         self._in_flight: dict[tuple[str, str], asyncio.Task[bool]] = {}
@@ -100,6 +100,3 @@ class RepositoryVisibilityService:
         now = time.monotonic()
         for key in [key for key, entry in self._cache.items() if entry.expires_at <= now]:
             del self._cache[key]
-
-    async def aclose(self) -> None:
-        await self._http_client.aclose()

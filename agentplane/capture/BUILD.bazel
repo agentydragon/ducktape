@@ -3,10 +3,10 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_binary(
-    name = "live_capture",
+    name = "demo_live_capture_bin",
     testonly = True,
-    main_module = "agentplane.capture.main",
-    deps = [":main"],
+    main_module = "agentplane.capture.demo_live_capture",
+    deps = [":demo_live_capture"],
 )
 
 py_library(
@@ -16,19 +16,19 @@ py_library(
 )
 
 py_library(
-    name = "main",
+    name = "demo_live_capture",
     testonly = True,
-    srcs = ["main.py"],
+    srcs = ["demo_live_capture.py"],
     deps = [
         ":codex_hook",
         ":llm_recording_proxy",
         ":records",
-        "//agentplane/native:async_process",
-        "//agentplane/native/claude:async_run",
         "//agentplane/native/claude:scenarios",
         "//agentplane/native/claude:wire",
-        "//agentplane/native/codex:async_run",
+        "//agentplane/native/claude/testing:async_run",
         "//agentplane/native/codex:scenarios",
+        "//agentplane/native/codex/testing:async_run",
+        "//agentplane/native/testing:async_process",
     ],
 )
 

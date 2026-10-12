@@ -41,7 +41,8 @@ bbr test //agentplane/app/...
   resolution. Preset names stop at the app boundary; Kubernetes and the runner receive resolved
   fields.
 - Sandbox provisioning and grants are owned by `../sandbox_service/`, Sessions and commands by
-  `../runner_gateway/`; both are reached through the authenticated `SandboxServiceClient`. The app retains read-only Kubernetes projections for UI updates.
+  `../runner_gateway/`, reached through their authenticated clients, `SandboxServiceClient` and
+  `RunnerGatewayClient`. The app retains read-only Kubernetes projections for UI updates.
 - `egress.py`: read-only egress-policy/binding projections for the UI, with mutations delegated to Sandbox
   Service. Bindings remain desired-state grants, with expiry/revocation per binding and Flux-owned
   bindings protected from app revocation ([composition](../docs/egress_composition.md)).
@@ -53,8 +54,8 @@ bbr test //agentplane/app/...
   the feed's end before (`models.py`). Everything folded from a Session's events (summaries, entities,
   payload chunks, evidence) is the History Service's, read over its gRPC API (`summaries.py`,
   `view/`) or replicated by Electric from its database; `summary_watch.py` turns its fold commits into
-  `Channel.THREADS` wake-ups. `store.py` (`ThreadStore`) composes the two. `ingestion.py`'s `Ingester`
-  only discovers the running sandboxes' Sessions and opens a Thread for each; runners push their
+  `Channel.THREADS` wake-ups. `store.py` (`ThreadStore`) composes the two. `session_discovery.py`'s
+  `SessionDiscovery` only discovers the running sandboxes' Sessions and opens a Thread for each; runners push their
   events to the History Service.
 - `threads/bridge.py`: browser-facing composition of session operations with archive synchronization.
   `threads/sessions.py` selects explicit destinations from the app's live index and caches Sandbox
@@ -294,7 +295,7 @@ SIGTERM begins a drain as Uvicorn's shutdown starts: `/readyz` answers 503 (`/he
 liveness check), every other new request is refused, and every open SSE stream -- the live views,
 a session's events, the Actions stream -- ends where it is waiting rather than at its next frame.
 Uvicorn waits at most `--shutdown-timeout` (5 s) for what is still open, then cancels it. Only after
-that does the ingester stop and the store close its connections, which is what
+that does Session discovery stop and the store close its connections, which is what
 the rest of the Deployments' 60-second grace period is for. No preStop delay consumes that budget.
 
 ## Shape
@@ -357,8 +358,7 @@ ServiceAccount share receipts while submitted Actions preserve exact connection 
 ## Action review
 
 `/#/actions` renders canonical Action Service receipts. The app's `GET /actions`,
-`GET /actions/{request_id}`, `GET /actions/{request_id}/events?after_sequence=0`,
-and `POST /actions/{request_id}/decision` are an
+`GET /actions/{request_id}` and `POST /actions/{request_id}/decision` are an
 operator-only BFF over `OperatorActionServiceClient`. They use the service's models
 unchanged, including expected versions, idempotency keys, and the human-authored `decision_note`.
 The same note is visible to the requesting caller and operator; the existing UI displays it.

@@ -23,7 +23,7 @@ from agentplane.app.testing.thread_browser import (
 )
 from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
@@ -37,7 +37,7 @@ async def service_history_db_url(electric: ElectricService) -> str:
 
 
 @pytest.fixture
-def inventory(gateway_client: SandboxServiceClient) -> SandboxServiceClient:
+def gateway(gateway_client: RunnerGatewayClient) -> RunnerGatewayClient:
     return gateway_client
 
 

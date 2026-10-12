@@ -15,14 +15,14 @@ from more_itertools import one
 
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, TeardownPhase
-from agentplane.sandbox_service.inventory import INITIALIZING, SandboxInventory
-from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
-from agentplane.sandbox_service.models import (
+from agentplane.sandbox_service.errors import (
     SandboxConflictError,
     SandboxNotFoundError,
     SandboxRunningError,
     SandboxTearingDownError,
 )
+from agentplane.sandbox_service.inventory import INITIALIZING, SandboxInventory
+from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     POD_TEMPLATE,

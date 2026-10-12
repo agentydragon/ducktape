@@ -37,7 +37,7 @@ from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
 from agentplane.action_service.testing.credentials import OperatorIdp
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -61,7 +61,7 @@ def authority(engine: AsyncEngine) -> ConnectionAuthority:
 
 
 async def test_connection_stream_wakes_on_committed_grant_and_rename(engine: AsyncEngine, db_url: str) -> None:
-    updates = ActionUpdates(db_url)
+    updates = ActionUpdateBroker(db_url)
     service = authority(engine)
     async with updates.listener.listen():
         with updates.subscribe_connections() as subscriber:
@@ -290,7 +290,7 @@ async def test_operator_routes_do_not_expose_binding_or_accept_workload_credenti
         catalog,
         connections=service,
         callers=admitted_callers(),
-        updates=ActionUpdates(db_url),
+        updates=ActionUpdateBroker(db_url),
         direct_wait_seconds=30,
         max_wait_seconds=30,
     )

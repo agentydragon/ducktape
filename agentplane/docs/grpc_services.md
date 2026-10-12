@@ -60,8 +60,7 @@ follows it; code that differs converges on it.
   gRPC logs it and answers `UNKNOWN`. `context.abort` outside the mapping is for request validation
   the RPC itself performs.
 - **Client:** the client class translates `grpc.aio.AioRpcError` in one place into its own exception
-  carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`). Upstream `details()` is never
-  forwarded.
+  carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`).
 
 ## Deadlines
 
@@ -73,15 +72,26 @@ follows it; code that differs converges on it.
 
 ## Clients
 
-- One `<Service>Client` per API, beside the servicer's owner, owns its channel and stub and exposes
-  domain methods. Callers never touch the stub.
+- One `<Service>Client` per API, beside the servicer's owner, exposes domain methods over its stub.
+  Callers never touch the stub. A client that would call two services is two clients.
+- **Clients take channels; the composition root opens them.** A client's constructor takes a
+  `grpc.aio.Channel`, never a target string, and builds its stub from it. Whoever constructs the
+  client (a `main`, a test fixture) opens the channel with `async with` and closes it; the client
+  has no lifetime of its own. Two services behind one test server share one channel. Gotcha: a
+  `grpc.aio` channel answers only on the event loop that opened it, so a test whose app serves on
+  another loop (a sync `TestClient`) opens its channels there.
+- The exception is a channel a client dials for a single call, such as `SandboxControlClient`'s calls
+  to the gateway replica holding a Sandbox's runner: the client takes that target and opens and
+  closes the channel around the call.
 - The stub is annotated `<Service>AsyncStub` and built as `<Service>Stub(channel)`.
 - Channels are `grpc.aio.insecure_channel`: in-cluster traffic is plaintext and identity comes from
-  the bearer (or, for Sandbox workloads, from the egress proxy that substitutes it). Each client sets
-  its own options; a client that receives Session Events adds `LARGE_EVENT_RECEIVE_OPTIONS`
-  (`agentplane/grpc_options.py`). The invariants:
-  - `grpc.use_local_subchannel_pool: 1` for every client that closes and redials. From the
-    process-wide pool a new channel inherits the closed channel's connection.
+  the bearer (or, for Sandbox workloads, from the egress proxy that substitutes it). The client's
+  package says which options its channels need, through a `dial(target)` the composition root
+  calls (`agentplane/grpc_calls.py` for the Sandbox Service and Runner Gateway clients); a client
+  that receives Session Events adds `LARGE_EVENT_RECEIVE_OPTIONS` (`agentplane/grpc_options.py`).
+  The invariants:
+  - `grpc.use_local_subchannel_pool: 1` for every channel that is closed and dialed again to the
+    same target. From the process-wide pool a new channel inherits the closed channel's connection.
   - `grpc.enable_retries: 0` for clients whose mutations must be reconciled, never replayed.
 
 ## Lifetimes
@@ -91,9 +101,9 @@ Everything that holds a connection is closed by a context manager, never by a ha
 
 - A channel used for one call or one stream session is opened with
   `async with grpc.aio.insecure_channel(...) as channel:`.
-- A client class is an async context manager that closes its channel:
-  `async with HistoryServiceClient(...) as history:`. A process that owns several enters them on one
-  `AsyncExitStack`; a test fixture yields from inside the `async with`.
+- A long-lived channel is opened by the composition root, `async with dial(target) as channel:`,
+  and handed to the clients over it. A process that owns several enters them on one `async with`
+  or `AsyncExitStack`; a test fixture yields from inside it.
 - `grpc.aio.Server` has no context-manager form, so one shared async context manager,
   `agentplane.grpc_serving.serving`, registers nothing itself but owns the rest: bind, `start`,
   and `stop` with the given grace on exit. Mains and test fixtures use it rather than repeating the

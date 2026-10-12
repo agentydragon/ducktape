@@ -39,7 +39,7 @@ queue entry becomes `CommandNoop`. The exact native lifecycle remains visible as
 [driver_tools.md](driver_tools.md): its `initialize` never declares `sdkMcpServers`/configs, and it
 rejects an incoming `mcp_message` through its own typed `McpMessage` case of the same "no answer
 path here" branch hook callbacks and dialogs share. [`native/claude/wire.py`](../native/claude/wire.py)
-and [`native/claude/mcp.py`](../native/claude/mcp.py) now declare SDK MCP servers/configs and parse
+and [`native/claude/testing/mcp.py`](../native/claude/testing/mcp.py) now declare SDK MCP servers/configs and parse
 typed `mcp_message` requests, and the full initialize/notification/list/call sequence — including
 the required reply to notification-shaped messages — is scripted-test-pinned in
 `harness_tests/claude/test_driver_tools.py`. That is native-driver evidence, not a runner

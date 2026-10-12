@@ -13,11 +13,11 @@ import pytest
 import pytest_bazel
 from pydantic import BaseModel
 
-from agentplane.harness_tests.codex import responses_sse as sse
+from agentplane.harness_tests.codex import responses_sse
 from agentplane.harness_tests.codex.harness import EFFORT, MODEL, CodexHarness
 from agentplane.harness_tests.codex.responses import OpenAIResponses
-from agentplane.native.async_process import AsyncNativeProcess
 from agentplane.native.codex import driver, scenarios
+from agentplane.native.testing.async_process import AsyncNativeProcess
 
 
 class ProbeRequest(BaseModel):
@@ -105,9 +105,9 @@ async def test_v2_child_discovery_and_resume(
             async with await openai_responses.await_next_request() as exchange:
                 assert "collaboration" in exchange.request.tool_names
                 await exchange.send(
-                    *sse.response_stream(
+                    *responses_sse.response_stream(
                         [
-                            sse.FunctionCall(
+                            responses_sse.FunctionCall(
                                 "call_v2_spawn",
                                 "spawn_agent",
                                 {"message": "Reply V2_CHILD_DONE.", "task_name": "probe", "fork_turns": "none"},
@@ -135,12 +135,16 @@ async def test_v2_child_discovery_and_resume(
                 assert before["sessionId"] == root["sessionId"]
                 assert before["status"]["type"] == "active"
                 assert {root_id, child_id} <= set(await listed(process, "thread/loaded/list"))
-                await parent.send(*sse.response_stream([sse.Message("V2_PARENT_DONE")], model=MODEL).events)
+                await parent.send(
+                    *responses_sse.response_stream([responses_sse.Message("V2_PARENT_DONE")], model=MODEL).events
+                )
                 if active:
                     assert await process.crash() < 0
                     await child.wait_client_closed()
                 else:
-                    await child.send(*sse.response_stream([sse.Message("V2_CHILD_DONE")], model=MODEL).events)
+                    await child.send(
+                        *responses_sse.response_stream([responses_sse.Message("V2_CHILD_DONE")], model=MODEL).events
+                    )
                     # A model response finishing is not yet a native turn completion.
                     while True:
                         finished = (await rpc(process, "thread/read", threadId=child_id, includeTurns=True))["thread"]

@@ -7,6 +7,7 @@ import mimetypes
 import os
 import socket
 from collections.abc import MutableMapping
+from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Any, cast
 
@@ -34,15 +35,17 @@ from agentplane.app.shutdown import Drain, drain_of
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.history_watch import HistoryWatch
-from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
+from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.postgres.wakeups import WakeupListener
+from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.service_process import background, configure_logging, kubernetes_configuration
@@ -107,17 +110,8 @@ async def async_main(settings: Settings) -> None:
         httpx.AsyncClient(base_url=str(settings.notifications_url), timeout=5) as notifications_http,
         httpx.AsyncClient(base_url=str(settings.egress_admin_url), timeout=settings.egress_admin_timeout) as admin_http,
         httpx.AsyncClient(base_url=str(settings.electric_url), timeout=httpx.Timeout(65, connect=5)) as electric_http,
-        SandboxServiceClient(
-            settings.sandbox_service_target,
-            gateway_target=settings.runner_gateway_target,
-            namespace=settings.sandbox_namespace,
-            token_file=settings.sandbox_service_token_file,
-            gateway_token_file=settings.runner_gateway_token_file,
-            command_admission_timeout_s=settings.sandbox_service_command_admission_timeout_s,
-            request_timeout_s=settings.sandbox_service_request_timeout_s,
-            lifecycle_timeout_s=settings.sandbox_service_lifecycle_timeout_s,
-            control_target=settings.sandbox_service_control_target,
-        ) as inventory,
+        dial(settings.sandbox_service_target) as sandbox_service_channel,
+        dial(settings.runner_gateway_target) as gateway_channel,
         HistoryServiceClient(
             settings.history_service_target,
             token_file=settings.history_service_token_file,
@@ -125,6 +119,25 @@ async def async_main(settings: Settings) -> None:
         ) as history,
         history.new_client() as history_watch_client,
     ):
+        inventory = SandboxServiceClient(
+            sandbox_service_channel,
+            namespace=settings.sandbox_namespace,
+            token_file=settings.sandbox_service_token_file,
+            request_timeout_s=settings.sandbox_service_request_timeout_s,
+            lifecycle_timeout_s=settings.sandbox_service_lifecycle_timeout_s,
+        )
+        gateway = RunnerGatewayClient(
+            gateway_channel,
+            token_file=settings.runner_gateway_token_file,
+            command_admission_timeout_s=settings.sandbox_service_command_admission_timeout_s,
+            request_timeout_s=settings.sandbox_service_request_timeout_s,
+            control=SandboxControlClient(
+                control_target=settings.sandbox_service_control_target,
+                token_file=settings.runner_gateway_token_file,
+                request_timeout_s=settings.sandbox_service_request_timeout_s,
+                lifecycle_timeout_s=settings.sandbox_service_lifecycle_timeout_s,
+            ),
+        )
         # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
         egress = EgressAccess(EgressReader(namespace=settings.namespace, custom_objects=custom_objects), inventory)
@@ -150,11 +163,11 @@ async def async_main(settings: Settings) -> None:
         history_watch = HistoryWatch(
             history_watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=1
         )
-        store = ThreadStore(engine, summaries, gateway=inventory)
+        store = ThreadStore(engine, summaries, gateway=gateway)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
-        runners = SandboxSessions(live, inventory)
-        ingester = Ingester(runners=runners, event_logs=event_logs)
-        bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
+        runners = SandboxSessions(live, gateway)
+        discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
+        bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery)
 
         app = create_app(
             inventory,
@@ -200,27 +213,23 @@ async def async_main(settings: Settings) -> None:
                     ),
                     drain_of(app),
                 ),
-                ingester=ingester,
+                discovery=discovery,
                 database_updates=database_updates,
                 engine=engine,
             )
 
 
 async def serve_then_close(
-    server: uvicorn.Server, *, ingester: Ingester, database_updates: Wakeups, engine: AsyncEngine
+    server: uvicorn.Server, *, discovery: SessionDiscovery, database_updates: WakeupListener, engine: AsyncEngine
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
     timeout bounds the requests and streams still open, and stopping discovery and closing the runner
     connections and the database have the rest of the Pod's grace period to themselves."""
-    try:
-        async with database_updates.listener.listen():
-            try:
-                await ingester.start()
-                await server.serve()
-            finally:
-                await ingester.close()
-    finally:
-        await engine.dispose()
+    async with AsyncExitStack() as stack:
+        stack.push_async_callback(engine.dispose)
+        await stack.enter_async_context(database_updates.listener.listen())
+        await stack.enter_async_context(discovery)
+        await server.serve()
 
 
 if __name__ == "__main__":

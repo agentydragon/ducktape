@@ -34,14 +34,15 @@ from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.settings import Settings
 from agentplane.app.shutdown import drain_of
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.session_discovery import SessionDiscovery
+from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
@@ -53,6 +54,7 @@ APP_ENVIRONMENT = {
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
     "AGENTPLANE_SANDBOX_SERVICE_TARGET": "sandbox-service.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_TARGET": "runner-gateway.test:8080",
+    "AGENTPLANE_SANDBOX_SERVICE_CONTROL_TARGET": "{sandbox}-control.{namespace}.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_TOKEN_FILE": "/tokens/runner-gateway",
     "AGENTPLANE_HISTORY_SERVICE_TARGET": "history-service.test:8080",
     "AGENTPLANE_DATABASE_URL": "postgresql+asyncpg://test@test.invalid/test",
@@ -179,7 +181,7 @@ def sigterm_is_survivable() -> Iterator[None]:
 
 
 @pytest.fixture
-def database_updates(engine: AsyncEngine) -> Wakeups:
+def database_updates(engine: AsyncEngine) -> WakeupListener:
     # Unlike the route-only fixtures, this test runs the production owner of the listener scope.
     return create_database_updates(engine.url)
 
@@ -206,11 +208,11 @@ async def _other_connections(database: AsyncEngine) -> int:
 
 
 @pytest.mark.usefixtures("sigterm_is_survivable")
-async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester_and_database(
+async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_discovery_and_database(
     inventory: SandboxServiceClient,
-    bridge: RunnerBridge,
+    runners: SandboxSessions,
     store: ThreadStore,
-    database_updates: Wakeups,
+    database_updates: WakeupListener,
     engine: AsyncEngine,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
@@ -219,9 +221,8 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     action_policy: ActionPolicyInventory,
     reviewer: TokenReviewer,
     database: AsyncEngine,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
-    ingester: Ingester,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     electric_proxy: ElectricProxy,
@@ -235,9 +236,11 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
     live_index.sandboxes[SANDBOX] = raw
     live_index.pods[SANDBOX] = running
     await event_logs.seed(SANDBOX, "shutdown-session")
+    # Not the entered conftest fixture: serve_then_close owns the discovery lifetime.
+    discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
     app = create_app(
         inventory,
-        bridge,
+        RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery),
         store,
         MODELS,
         egress,
@@ -260,7 +263,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_the_ingester
         drain_of(app),
     )
     serving = asyncio.create_task(
-        serve_then_close(server, ingester=ingester, database_updates=database_updates, engine=engine)
+        serve_then_close(server, discovery=discovery, database_updates=database_updates, engine=engine)
     )
     while not server.started:
         if serving.done():

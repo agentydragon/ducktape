@@ -9,15 +9,15 @@ from uuid import UUID, uuid4
 import pytest
 import pytest_bazel
 
-from agentplane.harness_tests.claude import anthropic_sse as sse
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
+from agentplane.harness_tests.claude import anthropic_sse
+from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 
 
 @pytest.mark.parametrize("preselect_id", [False, True])
 @pytest.mark.parametrize("send_input", [False, True])
 async def test_fresh_root_identity_timing(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages, preselect_id: bool, send_input: bool
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages, preselect_id: bool, send_input: bool
 ) -> None:
     requested_id = str(uuid4()) if preselect_id else None
     async with claude.start(anthropic_messages, session_id=requested_id) as run:
@@ -38,7 +38,9 @@ async def test_fresh_root_identity_timing(
             async with asyncio.timeout(30):
                 submitted = await run.send("Reply ROOT_ID_CONFIRMED.")
                 async with await anthropic_messages.await_next_request() as exchange:
-                    await exchange.send(*sse.message_stream([sse.Text("ROOT_ID_CONFIRMED")], model=MODEL).events)
+                    await exchange.send(
+                        *anthropic_sse.message_stream([anthropic_sse.Text("ROOT_ID_CONFIRMED")], model=MODEL).events
+                    )
                 result = await submitted.result()
                 assert result.result == "ROOT_ID_CONFIRMED"
                 assert result.session_id is not None

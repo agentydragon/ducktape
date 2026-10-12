@@ -48,8 +48,8 @@ from agentplane.notification_service.models import (
     SubscriptionUpdate,
 )
 from agentplane.notification_service.service import Service
-from agentplane.notification_service.settings import GitHubSettings, NoticeDebounceSettings, Settings
-from agentplane.notification_service.sources.actions import Actions
+from agentplane.notification_service.settings import GitHubSettings, NoticeDebounceSettings, QuotaSettings, Settings
+from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.sources.github.client import (
     GitHubAccessError,
     GitHubClient,
@@ -78,7 +78,8 @@ from agentplane.notification_service.sources.github.state import (
     SubjectKey,
 )
 from agentplane.notification_service.store import ConflictError, NotFoundError, Store
-from agentplane.sandbox_service.client import Runner, SandboxServiceClient
+from agentplane.runner_gateway.client import Runner, RunnerGatewayClient
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
 
@@ -297,12 +298,14 @@ async def test_signed_http_durable_acceptance_and_disabled_provider(
     github, _ = provider
     service = Service(
         store,
-        create_autospec(Actions),
+        create_autospec(ActionServiceClient),
         create_autospec(SandboxServiceClient),
         github,
+        gateway=create_autospec(RunnerGatewayClient),
         history=create_autospec(HistoryServiceClient),
         notice_debounce=NoticeDebounceSettings(),
         stale_confirmation_s=30,
+        operator_reader_account=None,
     )
     app = create_app(service, create_autospec(WorkloadPrincipalResolver))
     app.dependency_overrides[authenticated_caller] = lambda: PRINCIPAL
@@ -444,7 +447,7 @@ async def test_redelivery_after_restart_replays_one_committed_receipt(
     assert await github.ingest(store, "issue_comment", delivery_id, signature, raw)
 
     # Reconstruct both the provider and store before the inbox worker processes the receipt.
-    recovered = Store(engine)
+    recovered = Store(engine, quotas=QuotaSettings())
     restarted = GitHub(GitHubClient(github.client.http, github.settings))
     assert not await restarted.ingest(recovered, "issue_comment", delivery_id, signature, raw)
     claim = await recovered.claim()
@@ -502,7 +505,7 @@ async def test_replay_boundary_overlapping_matches_and_revocation(
     claim = await store.claim()
     assert claim is not None
     # A fresh provider/Store can finish fanout after HTTP acceptance; no in-memory queue is needed.
-    recovered = Store(engine)
+    recovered = Store(engine, quotas=QuotaSettings())
     for identity in [first.id, second.id]:
         async with recovered.sessions() as session:
             row = await session.get(Subscription, identity)
@@ -569,10 +572,10 @@ async def test_primary_limit_uses_reset_without_retry_after(provider: tuple[GitH
     headers = github.client.app_headers()
     with (
         patch("agentplane.notification_service.sources.github.client.time.time", return_value=1000.25),
-        pytest.raises(GitHubRetryError, match=f"HTTP {status}") as failure,
+        pytest.raises(GitHubRetryError) as failure,
     ):
         await github.client.request("GET", "/repos/owner/repo/installation", headers)
-    assert failure.value.retry_seconds == 2600
+    assert (failure.value.status_code, failure.value.retry_seconds) == (status, 2600)
     assert "private upstream body" not in str(failure.value)
 
 
@@ -585,12 +588,14 @@ async def test_rate_limit_retry_survives_ingress_and_restart(
     upstream.limited = True
     service = Service(
         store,
-        create_autospec(Actions),
+        create_autospec(ActionServiceClient),
         create_autospec(SandboxServiceClient),
         github,
+        gateway=create_autospec(RunnerGatewayClient),
         history=create_autospec(HistoryServiceClient),
         notice_debounce=NoticeDebounceSettings(quiet_seconds=3600, max_wait_seconds=3600),
         stale_confirmation_s=30,
+        operator_reader_account=None,
     )
     runner = create_autospec(Runner)
     with patch.object(Service, "runner", return_value=runner):
@@ -635,15 +640,17 @@ async def test_rate_limit_retry_survives_ingress_and_restart(
             )
             await session.execute(update(Inbox).where(Inbox.id == sub.inbox_id).values(next_attempt=datetime.now(UTC)))
         upstream.limited = False
-        recovered = Store(engine)
+        recovered = Store(engine, quotas=QuotaSettings())
         restarted = Service(
             recovered,
             service.actions,
             service.sandboxes,
             GitHub(GitHubClient(github.client.http, github.settings)),
+            gateway=service.gateway,
             history=service.history,
             notice_debounce=service.notice_debounce,
             stale_confirmation_s=30,
+            operator_reader_account=None,
         )
         assert await restarted.step()
     view = await recovered.subscription(PRINCIPAL.account, sub.id)
@@ -773,7 +780,7 @@ async def test_late_correlation_survives_restart_and_does_not_block_other_events
     # The next association/receipt arrives long after the former grace window, with fresh objects.
     async with store.sessions.begin() as session:
         await session.execute(update(GitHubDelivery).values(received_at=datetime.now(UTC) - timedelta(days=2)))
-    recovered = Store(engine)
+    recovered = Store(engine, quotas=QuotaSettings())
     restarted = GitHub(GitHubClient(github.client.http, github.settings))
     if ci_first:
         await ingest(restarted, recovered, association, event)
@@ -1181,6 +1188,7 @@ actions:
 sandbox_service:
   target: sandboxes:8080
   gateway_target: gateway:8080
+  control_target: "{sandbox}-control.{namespace}.test:8080"
   token_file: /tokens/sandboxes
   gateway_token_file: /tokens/gateway
 history_service:
@@ -1280,7 +1288,7 @@ async def test_shared_refresh_requests_survive_restart(
     assert upstream.requests.count("/repos/owner/repo/pulls/7") == 1
     assert upstream.requests.count("/repos/owner/repo/pulls/8") == 1
     requests = list(upstream.requests)
-    recovered = Store(engine)
+    recovered = Store(engine, quotas=QuotaSettings())
     restarted = GitHub(GitHubClient(github.client.http, github.settings))
     await ingest(restarted, recovered, comment())
     for sub in [first, second]:
@@ -1506,7 +1514,7 @@ async def test_access_refresh_is_single_flight_across_workers(
             await entered.wait()
             other = GitHub(GitHubClient(github.client.http, github.settings))
             with pytest.raises(RefreshDeferredError):
-                await other.refresh_access(Store(engine), key)
+                await other.refresh_access(Store(engine, quotas=QuotaSettings()), key)
             resume.set()
     assert first.result().key == key
     assert upstream.requests.count("/repositories/100") == 1

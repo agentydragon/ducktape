@@ -69,6 +69,7 @@ py_test(
         "//agentplane/notification_service:settings",
         "//agentplane/notification_service:store",
         "//agentplane/notification_service/sources:actions",
+        "//agentplane/runner_gateway:client",
         "//agentplane/sandbox_service:client",
         "//agentplane/workload_auth:principal",
         "@pypi//alembic",

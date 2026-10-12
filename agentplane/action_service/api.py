@@ -88,7 +88,7 @@ from agentplane.action_service.service import (
     ServiceDrainingError,
     UnsupportedActionError,
 )
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -142,8 +142,8 @@ def _catalog(request: Request) -> ActionCatalog:
     return cast(ActionCatalog, request.app.state.action_catalog)
 
 
-def _updates(request: Request) -> ActionUpdates:
-    return cast(ActionUpdates, request.app.state.action_updates)
+def _updates(request: Request) -> ActionUpdateBroker:
+    return cast(ActionUpdateBroker, request.app.state.action_updates)
 
 
 def _workload_authenticator(request: Request) -> WorkloadPrincipalAuthenticator:
@@ -255,7 +255,7 @@ def create_app(
     catalog: ActionCatalog,
     *,
     callers: PolicyIndex,
-    updates: ActionUpdates,
+    updates: ActionUpdateBroker,
     connections: ConnectionAuthority | None = None,
     enrollments: EnrollmentAuthority | None = None,
     oauth: ActionsOAuthProxy | None = None,
@@ -426,7 +426,7 @@ def create_app(
     async def group_health_stream(
         principal: Annotated[OperatorPrincipal, Depends(_operator)],
         action_catalog: Annotated[ActionCatalog, Depends(_catalog)],
-        updates: Annotated[ActionUpdates, Depends(_updates)],
+        updates: Annotated[ActionUpdateBroker, Depends(_updates)],
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
         authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
     ) -> StreamingResponse:
@@ -488,7 +488,7 @@ def create_app(
     async def operator_stream(
         principal: Annotated[OperatorPrincipal, Depends(_operator)],
         action_service: Annotated[ActionService, Depends(_service)],
-        action_updates: Annotated[ActionUpdates, Depends(_updates)],
+        action_updates: Annotated[ActionUpdateBroker, Depends(_updates)],
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
         authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
         state: Annotated[ActionState | None, Query()] = None,
@@ -542,7 +542,7 @@ def create_app(
     @app.get("/v1/operator/push/subscriptions/stream")
     async def push_subscriptions_stream(
         principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        action_updates: Annotated[ActionUpdates, Depends(_updates)],
+        action_updates: Annotated[ActionUpdateBroker, Depends(_updates)],
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
         authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
     ) -> StreamingResponse:
@@ -581,15 +581,6 @@ def create_app(
     ) -> None:
         if push_subscriptions is None or not await push_subscriptions.delete(operator=principal, endpoint=endpoint):
             raise HTTPException(status.HTTP_404_NOT_FOUND, "no such push subscription")
-
-    @app.get("/v1/operator/action-requests/{request_id}/events", response_model=list[ActionEventView])
-    async def operator_events(
-        request_id: UUID,
-        principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        action_service: Annotated[ActionService, Depends(_service)],
-        after_sequence: Annotated[int, Query(ge=0)] = 0,
-    ) -> list[ActionEventView]:
-        return await action_service.events(request_id, principal, after_sequence=after_sequence)
 
     @app.post("/v1/operator/action-requests/{request_id}/decision", response_model=ActionRequestView)
     async def decide(
@@ -634,7 +625,7 @@ def _connection_routes(app: FastAPI, authority: ConnectionAuthority) -> None:
     @app.get("/v1/operator/connections/stream")
     async def connections_stream(
         principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        updates: Annotated[ActionUpdates, Depends(_updates)],
+        updates: Annotated[ActionUpdateBroker, Depends(_updates)],
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
         authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
     ) -> StreamingResponse:
@@ -743,7 +734,7 @@ def _mcp_linkage_routes(app: FastAPI, authority: McpLinkageAuthority) -> None:
     @app.get("/v1/operator/mcp-servers/stream")
     async def mcp_linkages_stream(
         principal: Annotated[OperatorPrincipal, Depends(_operator)],
-        updates: Annotated[ActionUpdates, Depends(_updates)],
+        updates: Annotated[ActionUpdateBroker, Depends(_updates)],
         credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(_operator_bearer)],
         authenticator: Annotated[OperatorAuthenticator, Depends(_operator_authenticator)],
     ) -> StreamingResponse:

@@ -28,11 +28,11 @@ from agentplane.capture.records import (
     RequestRecord,
     ResponseChunkRecord,
 )
-from agentplane.native.async_process import write_jsonl
 from agentplane.native.claude import scenarios as claude, wire as claude_wire
-from agentplane.native.claude.async_run import ClaudeRun
+from agentplane.native.claude.testing.async_run import ClaudeRun
 from agentplane.native.codex import scenarios as codex
-from agentplane.native.codex.async_run import CodexRun
+from agentplane.native.codex.testing.async_run import CodexRun
+from agentplane.native.testing.async_process import write_jsonl
 
 SCENARIOS = (
     # keep-sorted start

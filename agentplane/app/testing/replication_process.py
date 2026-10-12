@@ -37,19 +37,21 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.replication_source import SANDBOX
-from agentplane.app.threads import ingestion as ingestion_module
+from agentplane.app.threads import session_discovery
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.history_watch import HistoryWatch
-from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
+from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
+from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.testing.backend import seed_runner
@@ -159,7 +161,7 @@ class ReadyServer(uvicorn.Server):
 
 def _run(
     database_url: str,
-    runner_port: int,
+    service_port: int,
     history_target: str,
     history_token_file: Path,
     connection: Connection,
@@ -171,7 +173,7 @@ def _run(
     asyncio.run(
         _serve(
             database_url,
-            runner_port,
+            service_port,
             history_target,
             history_token_file,
             connection,
@@ -185,7 +187,7 @@ def _run(
 
 async def _serve(
     database_url: str,
-    runner_port: int,
+    service_port: int,
     history_target: str,
     history_token_file: Path,
     connection: Connection,
@@ -194,7 +196,7 @@ async def _serve(
     replay_after: int | None,
     electric_url: str | None,
 ) -> None:
-    ingestion_module.RECONCILE_S = 0.05
+    session_discovery.RECONCILE_S = 0.05
     engine = connect(database_url)
     database_updates = create_database_updates(engine.url)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
@@ -209,26 +211,13 @@ async def _serve(
     with TemporaryDirectory() as directory:
         token_file = Path(directory) / "token"
         await asyncio.to_thread(token_file.write_text, "test-app-sandbox-peer")
-        inventory = SandboxServiceClient(
-            f"127.0.0.1:{runner_port}",
-            gateway_target=f"127.0.0.1:{runner_port}",
-            namespace=NAMESPACE,
-            token_file=token_file,
-            gateway_token_file=token_file,
-            command_admission_timeout_s=10,
-            request_timeout_s=10,
-            lifecycle_timeout_s=10,
-        )
         history = HistoryServiceClient(history_target, token_file=history_token_file, request_timeout_s=10)
         summaries = Summaries(engine, history)
-        store = ThreadStore(engine, summaries, gateway=inventory)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         content = ContentStore(engine, history_reader=history)
-        runners = SandboxSessions(index, inventory)
-        ingester = Ingester(runners=runners, event_logs=event_logs)
-        bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, ingester=ingester)
         async with (
-            inventory,
+            # One peer serves both services.
+            dial(f"127.0.0.1:{service_port}") as channel,
             history,
             history.new_client() as watch_client,
             httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
@@ -237,6 +226,25 @@ async def _serve(
             ) as electric_http,
             httpx.AsyncClient(base_url="http://test-unused-notifications.invalid") as notifications_http,
         ):
+            inventory = SandboxServiceClient(
+                channel, namespace=NAMESPACE, token_file=token_file, request_timeout_s=10, lifecycle_timeout_s=10
+            )
+            gateway = RunnerGatewayClient(
+                channel,
+                token_file=token_file,
+                command_admission_timeout_s=10,
+                request_timeout_s=10,
+                control=SandboxControlClient(
+                    control_target=f"127.0.0.1:{service_port}",
+                    token_file=token_file,
+                    request_timeout_s=10,
+                    lifecycle_timeout_s=10,
+                ),
+            )
+            store = ThreadStore(engine, summaries, gateway=gateway)
+            runners = SandboxSessions(index, gateway)
+            discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
+            bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery)
             history_watch = HistoryWatch(
                 watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
             )
@@ -288,8 +296,7 @@ async def _serve(
             if frontend_directory is not None:
                 app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
             try:
-                async with database_updates.listener.listen():
-                    await ingester.start()
+                async with database_updates.listener.listen(), discovery:
                     watching = asyncio.create_task(history_watch.run(), name="test-app-history-watch")
                     try:
                         with socket.socket() as listener:
@@ -301,7 +308,6 @@ async def _serve(
                     finally:
                         watching.cancel()
                         await asyncio.gather(watching, return_exceptions=True)
-                        await ingester.close()
             finally:
                 await engine.dispose()
                 await core.close()
@@ -344,7 +350,7 @@ class AppProcess:
 @asynccontextmanager
 async def app_process(
     database_url: str,
-    runner_port: int,
+    service_port: int,
     history: HistoryServiceClient,
     *,
     frontend_directory: Path | None = None,
@@ -358,7 +364,7 @@ async def app_process(
         target=_run,
         args=(
             database_url,
-            runner_port,
+            service_port,
             history.target,
             history.token_file,
             child,

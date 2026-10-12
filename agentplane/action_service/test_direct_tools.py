@@ -49,7 +49,7 @@ from agentplane.action_service.sandbox.models import ExecResult
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, TEST_NAMESPACE, admitted_callers
 from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.exec.models import Exited
 
@@ -222,7 +222,7 @@ async def direct(
         providers=[PolicySetDecisionProvider(visibility=github_visibility())],
         policies=policies,
     )
-    updates = ActionUpdates(db_url)
+    updates = ActionUpdateBroker(db_url)
     mcp_app = create_server(
         service,
         catalog,
@@ -238,11 +238,8 @@ async def direct(
             yield
 
     app = Starlette(routes=[Route("/mcp", TransportDisconnects(mcp_app))], lifespan=lifespan)
-    try:
-        async with lifespan_in_own_task(app):
-            yield Direct(app, store, grant)
-    finally:
-        await service.close()
+    async with service, lifespan_in_own_task(app):
+        yield Direct(app, store, grant)
 
 
 def _text(content: list[ContentBlock]) -> str:

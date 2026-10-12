@@ -64,7 +64,7 @@ The current Agentplane runner does not yet implement this host role: its initial
 declare `sdkMcpServers`/configs and its adapter rejects `mcp_message` as its own typed control
 request kind that gets no answer path here, the same as a hook callback or a dialog. The full round
 trip above is now scripted-test-pinned against the pinned binary and a mocked model endpoint —
-`native/claude/mcp.py`'s `DriverMcpServer` (a real `fastmcp.FastMCP` server reached over an
+`native/claude/testing/mcp.py`'s `DriverMcpServer` (a real `fastmcp.FastMCP` server reached over an
 in-memory `fastmcp` client, not a hand-rolled tool dispatch) and
 `harness_tests/claude/test_driver_tools.py` — including the `tool_use_result` shape a driver-hosted
 tool call actually produces: a list of MCP content blocks, distinct from a built-in tool's
@@ -146,7 +146,7 @@ none of this is reachable — while leaving driver-hosted servers working. The s
 ## Codex: `dynamicTools` on `thread/start`
 
 The declare/call round trip below is scripted-test-pinned against the pinned binary and a mocked
-model endpoint: `native/codex/dynamic_tools.py`'s `DynamicToolServer` and
+model endpoint: `native/codex/testing/dynamic_tools.py`'s `DynamicToolServer` and
 `harness_tests/codex/test_dynamic_tools.py`. This is native-driver evidence, not a runner
 capability — nothing in `runner/codex.py` declares `dynamicTools` or answers `item/tool/call` today.
 

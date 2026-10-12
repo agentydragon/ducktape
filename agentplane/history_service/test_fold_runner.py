@@ -13,7 +13,7 @@ from grpc_health.v1 import health_pb2, health_pb2_grpc
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from agentplane.changes import Changes
+from agentplane.changes import ChangeSignal
 from agentplane.grpc_serving import add_health, serving
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.fold.models import (
@@ -256,7 +256,7 @@ async def test_an_unretried_error_stops_the_fold_and_reports_it(engine: AsyncEng
         grpc.aio.insecure_channel(f"127.0.0.1:{port}") as channel,
     ):
         async with asyncio.timeout(30):
-            await folder.run(interval_s=3600, changes=Changes(), health=health)
+            await folder.run(interval_s=3600, changes=ChangeSignal(), health=health)
         checked = await health_pb2_grpc.HealthStub(channel).Check(health_pb2.HealthCheckRequest(service=HEALTH_SERVICE))
         whole = await health_pb2_grpc.HealthStub(channel).Check(health_pb2.HealthCheckRequest())
     assert (checked.status, whole.status) == (

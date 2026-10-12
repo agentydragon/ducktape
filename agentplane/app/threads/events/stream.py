@@ -15,7 +15,7 @@ from google.protobuf.json_format import MessageToDict
 
 from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.threads.summaries import FeedEnd, FeedError
-from agentplane.changes import Changes
+from agentplane.changes import ChangeSignal
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -24,7 +24,7 @@ KEEPALIVE_S = 15
 
 
 async def follow(
-    event_logs: EventLogStore, changes: Changes, thread_id: UUID, *, after_cursor: int
+    event_logs: EventLogStore, changes: ChangeSignal, thread_id: UUID, *, after_cursor: int
 ) -> AsyncGenerator[bytes]:
     """Follow the committed archive without requiring or starting a runner attachment."""
     if not await event_logs.exists(thread_id):

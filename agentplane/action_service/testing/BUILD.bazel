@@ -26,6 +26,8 @@ py_library(
     srcs = ["lifecycle.py"],
     deps = [
         "//agentplane/action_service:catalog",
+        "//agentplane/action_service:db",
+        "//agentplane/action_service:models",
         "@pypi//tenacity",
     ],
 )

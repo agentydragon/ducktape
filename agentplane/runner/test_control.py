@@ -14,13 +14,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.grpc_serving import serving
-from agentplane.proto import (
-    command_pb2,
-    event_pb2,
-    runner_control_pb2 as control_pb2,
-    runner_control_pb2_grpc,
-    runner_pb2,
-)
+from agentplane.proto import command_pb2, event_pb2, runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import ClaudeLaunch, RunnerConfig
 from agentplane.runner.control import ControlTiming, RunnerControlClient
@@ -37,8 +31,8 @@ STOPPED = "test-stopped-session"
 FAILED_SETUP = "test-failed-setup-session"
 SPEC = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/test-workspace", model="test-model")
 TIMING = ControlTiming(heartbeat_s=0.1, liveness_s=0.5, backoff_initial_s=0.01, backoff_max_s=0.05)
-Reason = control_pb2.CommandRefused
-Refused = control_pb2.ControlRefused
+Reason = runner_control_pb2.CommandRefused
+Refused = runner_control_pb2.ControlRefused
 
 
 class RecordingAdapter(HarnessAdapter):
@@ -86,39 +80,41 @@ class ScriptedService(runner_control_pb2_grpc.RunnerControlServicer):
     """Each connection gets Welcome, then its scripted frames, or the scripted status instead, then
     what the test pushes to it."""
 
-    frames: list[control_pb2.ServiceFrame] = field(default_factory=list)
+    frames: list[runner_control_pb2.ServiceFrame] = field(default_factory=list)
     # Ends the next connections right after Welcome, oldest first.
     closes: list[grpc.StatusCode] = field(default_factory=list)
     # Sends nothing after Welcome on the next connections, oldest first.
     silences: int = 0
-    hellos: list[control_pb2.Hello] = field(default_factory=list)
+    hellos: list[runner_control_pb2.Hello] = field(default_factory=list)
     peers: list[str] = field(default_factory=list)
     authorizations: list[str] = field(default_factory=list)
-    receipts: asyncio.Queue[control_pb2.CommandReceipt] = field(default_factory=asyncio.Queue)
-    control_results: asyncio.Queue[control_pb2.ControlResult] = field(default_factory=asyncio.Queue)
+    receipts: asyncio.Queue[runner_control_pb2.CommandReceipt] = field(default_factory=asyncio.Queue)
+    control_results: asyncio.Queue[runner_control_pb2.ControlResult] = field(default_factory=asyncio.Queue)
     # Each connection's send queue, holding its scripted frames, for the test to push more to.
-    connected: asyncio.Queue[asyncio.Queue[control_pb2.ServiceFrame | grpc.StatusCode]] = field(
+    connected: asyncio.Queue[asyncio.Queue[runner_control_pb2.ServiceFrame | grpc.StatusCode]] = field(
         default_factory=asyncio.Queue
     )
     dial: Callable[[], None] = lambda: None
 
     @override
     async def Connect(  # type: ignore[override]
-        self, request_iterator: AsyncIterator[control_pb2.RunnerFrame], context: grpc.aio.ServicerContext
+        self, request_iterator: AsyncIterator[runner_control_pb2.RunnerFrame], context: grpc.aio.ServicerContext
     ) -> None:
         self.authorizations += [
             str(value) for key, value in context.invocation_metadata() or () if key == "authorization"
         ]
         self.hellos.append((await anext(request_iterator)).hello)
         self.peers.append(context.peer())
-        await context.write(control_pb2.ServiceFrame(welcome=control_pb2.Welcome(connection_epoch=len(self.hellos))))
+        await context.write(
+            runner_control_pb2.ServiceFrame(welcome=runner_control_pb2.Welcome(connection_epoch=len(self.hellos)))
+        )
         if self.closes:
             await context.abort(self.closes.pop(0), "test service closes this connection")
         if self.silences:
             self.silences -= 1
             await asyncio.Event().wait()
         # The frames to send on this connection, or the status that ends it.
-        pushed: asyncio.Queue[control_pb2.ServiceFrame | grpc.StatusCode] = asyncio.Queue()
+        pushed: asyncio.Queue[runner_control_pb2.ServiceFrame | grpc.StatusCode] = asyncio.Queue()
         for scripted in self.frames:
             pushed.put_nowait(scripted)
         await self.connected.put(pushed)
@@ -129,7 +125,7 @@ class ScriptedService(runner_control_pb2_grpc.RunnerControlServicer):
                     await self.receipts.put(frame.receipt)
                 if frame.HasField("control_result"):
                     await self.control_results.put(frame.control_result)
-                await pushed.put(control_pb2.ServiceFrame(heartbeat=control_pb2.Heartbeat()))
+                await pushed.put(runner_control_pb2.ServiceFrame(heartbeat=runner_control_pb2.Heartbeat()))
 
         receiving = asyncio.create_task(receive())
         try:
@@ -142,7 +138,7 @@ class ScriptedService(runner_control_pb2_grpc.RunnerControlServicer):
 
 @pytest.fixture
 async def runner(tmp_path: Path) -> AsyncIterator[Runner]:
-    runner = Runner(
+    async with Runner(
         RunnerConfig(
             state_dir=tmp_path / "state",
             model_config_resolver=HttpModelConfigResolver(
@@ -155,20 +151,17 @@ async def runner(tmp_path: Path) -> AsyncIterator[Runner]:
                 auth_token="test-token",
             ),
         )
-    )
-    for session_id in (RUNNING, STOPPED):
-        runner.store.write(session_id, SessionRecord.from_spec(SPEC))
-        # As a started runner holds every stored session.
-        await runner._load(session_id)
-    running = runner.sessions[RUNNING]
-    running.adapter = RecordingAdapter()
-    running.process = cast(HarnessProcess, RunningProcess())
-    runner.store.write(FAILED_SETUP, SessionRecord.from_spec(SPEC, setup_script="exit 1"))
-    await (await runner._load(FAILED_SETUP)).emit(event_pb2.SetupFinished(exit_code=1), sources=[])
-    try:
+    ) as runner:
+        for session_id in (RUNNING, STOPPED):
+            runner.store.write(session_id, SessionRecord.from_spec(SPEC))
+            # As a started runner holds every stored session.
+            await runner._load(session_id)
+        running = runner.sessions[RUNNING]
+        running.adapter = RecordingAdapter()
+        running.process = cast(HarnessProcess, RunningProcess())
+        runner.store.write(FAILED_SETUP, SessionRecord.from_spec(SPEC, setup_script="exit 1"))
+        await (await runner._load(FAILED_SETUP)).emit(event_pb2.SetupFinished(exit_code=1), sources=[])
         yield runner
-    finally:
-        await runner.stop()
 
 
 @pytest.fixture
@@ -203,8 +196,10 @@ async def service(runner: Runner) -> AsyncIterator[ScriptedService]:
             await asyncio.gather(*tasks, return_exceptions=True)
 
 
-def deliver(session_id: str, command: command_pb2.Command) -> control_pb2.ServiceFrame:
-    return control_pb2.ServiceFrame(deliver=control_pb2.DeliverCommand(session_id=session_id, command=command))
+def deliver(session_id: str, command: command_pb2.Command) -> runner_control_pb2.ServiceFrame:
+    return runner_control_pb2.ServiceFrame(
+        deliver=runner_control_pb2.DeliverCommand(session_id=session_id, command=command)
+    )
 
 
 def submit(command_id: str, text: str = "test input") -> command_pb2.Command:
@@ -285,32 +280,34 @@ async def test_a_lost_connection_is_replaced_by_a_fresh_one(ending: str, service
     assert service.peers[0] != service.peers[1]
 
 
-def control(request: control_pb2.ControlRequest) -> control_pb2.ServiceFrame:
-    return control_pb2.ServiceFrame(control=request)
+def control(request: runner_control_pb2.ControlRequest) -> runner_control_pb2.ServiceFrame:
+    return runner_control_pb2.ServiceFrame(control=request)
 
 
 def open_session(
     request_id: str, session_id: str, spec: runner_pb2.SessionSpec = SPEC, setup_script: str | None = None
-) -> control_pb2.ServiceFrame:
+) -> runner_control_pb2.ServiceFrame:
     return control(
-        control_pb2.ControlRequest(
+        runner_control_pb2.ControlRequest(
             request_id=request_id,
-            open=control_pb2.OpenSession(session_id=session_id, spec=spec, setup_script=setup_script),
+            open=runner_control_pb2.OpenSession(session_id=session_id, spec=spec, setup_script=setup_script),
         )
     )
 
 
-def resume(request_id: str, session_id: str) -> control_pb2.ServiceFrame:
+def resume(request_id: str, session_id: str) -> runner_control_pb2.ServiceFrame:
     return control(
-        control_pb2.ControlRequest(request_id=request_id, resume=control_pb2.ResumeSession(session_id=session_id))
+        runner_control_pb2.ControlRequest(
+            request_id=request_id, resume=runner_control_pb2.ResumeSession(session_id=session_id)
+        )
     )
 
 
-def seal(request_id: str) -> control_pb2.ServiceFrame:
-    return control(control_pb2.ControlRequest(request_id=request_id, seal=runner_pb2.SealRequest()))
+def seal(request_id: str) -> runner_control_pb2.ServiceFrame:
+    return control(runner_control_pb2.ControlRequest(request_id=request_id, seal=runner_pb2.SealRequest()))
 
 
-async def control_results(service: ScriptedService, count: int) -> dict[str, control_pb2.ControlResult]:
+async def control_results(service: ScriptedService, count: int) -> dict[str, runner_control_pb2.ControlResult]:
     async with asyncio.timeout(10):
         results = [await service.control_results.get() for _ in range(count)]
     by_id = {result.request_id: result for result in results}
@@ -320,7 +317,9 @@ async def control_results(service: ScriptedService, count: int) -> dict[str, con
 
 async def test_list_sessions_reports_every_session(service: ScriptedService) -> None:
     service.frames.append(
-        control(control_pb2.ControlRequest(request_id="test-list", list_sessions=runner_pb2.ListSessionsRequest()))
+        control(
+            runner_control_pb2.ControlRequest(request_id="test-list", list_sessions=runner_pb2.ListSessionsRequest())
+        )
     )
     service.dial()
     listed = (await control_results(service, 1))["test-list"]
@@ -387,7 +386,7 @@ async def test_resume_restarts_a_stopped_harness_on_its_retained_spec(
     [(FAILED_SETUP, Refused.REASON_SETUP_FAILED), ("test-unknown-session", Refused.REASON_SESSION_UNKNOWN)],
 )
 async def test_a_resume_the_runner_cannot_serve_is_refused(
-    session_id: str, reason: control_pb2.ControlRefused.Reason, service: ScriptedService, started: list[str]
+    session_id: str, reason: runner_control_pb2.ControlRefused.Reason, service: ScriptedService, started: list[str]
 ) -> None:
     service.frames.append(resume("test-resume", session_id))
     service.dial()
@@ -410,7 +409,7 @@ async def test_a_seal_lands_after_the_commands_delivered_before_it_and_before_th
     monkeypatch.setattr(journal, "get", held_get)
     # The runner handles each frame before reading the next, so asking for the frame after the
     # later delivery shows the Seal and that delivery were both read.
-    read_through: list[control_pb2.ServiceFrame] = []
+    read_through: list[runner_control_pb2.ServiceFrame] = []
     read_past_last = asyncio.Event()
     serve = RunnerControlClient.serve
 
@@ -425,7 +424,7 @@ async def test_a_seal_lands_after_the_commands_delivered_before_it_and_before_th
             if len(read_through) == 3:
                 read_past_last.set()
             frame = await self.call.read()
-            if isinstance(frame, control_pb2.ServiceFrame) and frame.WhichOneof("frame") != "heartbeat":
+            if isinstance(frame, runner_control_pb2.ServiceFrame) and frame.WhichOneof("frame") != "heartbeat":
                 read_through.append(frame)
             return frame
 

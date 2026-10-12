@@ -24,13 +24,7 @@ from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.connections import Connection, ConnectionRebind, ConnectionRename, ConnectionVersion
 from agentplane.action_service.enrollments import EnrollmentDecisionResult
 from agentplane.action_service.mcp_linkage import McpLinkageStart, McpLinkageStartView, McpLinkageView
-from agentplane.action_service.models import (
-    ActionEventView,
-    ActionHistoryPage,
-    ActionRequestView,
-    ActionState,
-    DecisionInput,
-)
+from agentplane.action_service.models import ActionHistoryPage, ActionRequestView, ActionState, DecisionInput
 from agentplane.action_service.policy_view import ActionPolicySetView
 from agentplane.app import auth_routes
 from agentplane.app.action_federation import (
@@ -88,13 +82,14 @@ from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
 from agentplane.egress.decisions import Decision
 from agentplane.egress.decisions_client import DecisionsClient, DecisionsUnavailableError
+from agentplane.grpc_calls import ServiceError
 from agentplane.history_service.client import HistoryServiceError
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import runner_pb2
 from agentplane.runner.errors import OpenTimeoutError, RunnerError
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
-from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
+from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import (
     BindingNotFoundError,
     BindingView,
@@ -102,13 +97,13 @@ from agentplane.sandbox_service.egress_views import (
     PolicyView,
     UnknownPolicyError,
 )
+from agentplane.sandbox_service.errors import SandboxNotFoundError, SandboxRunningError
 from agentplane.sandbox_service.kubernetes_grants import (
     DuplicateKubernetesGrantError,
     KubernetesGrant,
     UnknownKubernetesGrantError,
     resolve_grants,
 )
-from agentplane.sandbox_service.models import SandboxNotFoundError, SandboxRunningError
 from agentplane.subjects import ServiceAccountRef
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -664,15 +659,6 @@ async def get_action(request_id: UUID, client: OperatorActions) -> ActionRequest
     return await client.get(request_id)
 
 
-@actions_router.get("/{request_id}/events")
-async def action_events(
-    request_id: UUID,
-    client: OperatorActions,
-    after_sequence: Annotated[int, Query(ge=0, description="Events with a greater sequence.")] = 0,
-) -> list[ActionEventView]:
-    return await client.events(request_id, after_sequence=after_sequence)
-
-
 @actions_router.post("/{request_id}/decision")
 async def decide_action(request_id: UUID, body: DecisionInput, client: OperatorActions) -> ActionRequestView:
     return await client.decide(request_id, body)
@@ -901,7 +887,7 @@ async def thread_command(
 async def thread_command_status(
     bridge: runner_bridge.Bridge, thread_id: UUID, command_id: str
 ) -> runner_bridge.CommandStatus:
-    """What the Sandbox Service retained for a submitted command, read without the runner.
+    """What the Runner Gateway retained for a submitted command, read without the runner.
 
     Pending admission promises neither delivery nor safe cancellation; 404 means the service holds
     no submission under this id.
@@ -1045,7 +1031,7 @@ def create_app(
     electric: ElectricProxy,
     event_logs: EventLogStore,
     content: ContentStore,
-    database_updates: Wakeups,
+    database_updates: WakeupListener,
     operator_sessions: OperatorSessionStore,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: FilePath,
@@ -1094,12 +1080,12 @@ def create_app(
         return JSONResponse({"detail": str(error)}, status_code=code)
 
     @app.exception_handler(ConnectionError)
-    async def sandbox_service_unavailable(request: Request, error: ConnectionError) -> JSONResponse:
-        return JSONResponse({"detail": "Sandbox Service unavailable; outcome may be uncertain"}, status_code=503)
+    async def upstream_unavailable(request: Request, error: ConnectionError) -> JSONResponse:
+        return JSONResponse({"detail": "Upstream service unavailable"}, status_code=503)
 
     @app.exception_handler(TimeoutError)
-    async def sandbox_service_deadline(request: Request, error: TimeoutError) -> JSONResponse:
-        return JSONResponse({"detail": "Upstream deadline expired; mutation outcome may be uncertain"}, status_code=504)
+    async def upstream_deadline(request: Request, error: TimeoutError) -> JSONResponse:
+        return JSONResponse({"detail": "Upstream deadline expired"}, status_code=504)
 
     app.state.inventory = inventory
     app.state.bridge = bridge

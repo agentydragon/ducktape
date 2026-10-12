@@ -25,7 +25,7 @@ from starlette.types import Receive, Scope, Send
 
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.changes import Changes
+from agentplane.changes import ChangeSignal
 from agentplane.history_service.fold.views import EntityKind, PayloadField
 
 logger = logging.getLogger(__name__)
@@ -150,7 +150,7 @@ class ElectricProxy:
         content: ContentStore,
         *,
         event_logs: EventLogStore,
-        thread_changes: Changes,
+        thread_changes: ChangeSignal,
         scope_hold_seconds: float = SCOPE_HOLD_SECONDS,
     ) -> None:
         self._client = client

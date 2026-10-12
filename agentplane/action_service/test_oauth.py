@@ -50,7 +50,7 @@ from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService, Executor
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, admitted_callers
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
 from util.net import bind_free_port
@@ -271,33 +271,30 @@ async def test_real_sdk_dcr_over_http_persists_client_metadata(
         DisabledOperatorAuthenticator(),
         echo_catalog,
         callers=oauth.callers,
-        updates=ActionUpdates(db_url),
+        updates=ActionUpdateBroker(db_url),
         direct_wait_seconds=30,
         max_wait_seconds=30,
         connections=oauth.connections,
         enrollments=oauth.enrollments,
         oauth=oauth.proxy,
     )
-    try:
-        # PostgreSQL pools belong to the fixture event loop, not serve_app's thread.
-        async with serve_app_in_loop(app, sock=oauth.service_sock):
-            registered = await register_client(f"{oauth.base_url}/mcp", redirect_uri)
-            assert registered.client.client_id is not None
-            # A separately constructed provider reads durable server metadata, not the
-            # client's cache or the registering provider's in-process objects.
-            async with running_oauth(oauth.settings, db_url, oauth.enrollments, oauth.connections) as replacement:
-                restored = await replacement.get_client(registered.client.client_id)
-                assert restored is not None
-                assert restored.client_name == registered.client.client_name
-                assert restored.redirect_uris == registered.client.redirect_uris
-                assert restored.scope == registered.client.scope
-                assert restored.token_endpoint_auth_method == registered.client.token_endpoint_auth_method
-            consent = await oauth.browser.get(registered.authorization_url)
-            assert consent.status_code == 302
-            assert consent.headers["location"].startswith("https://integration.example.test/#/connection-enrollments/")
-            assert await oauth.connections.list() == []
-    finally:
-        await service.close()
+    # PostgreSQL pools belong to the fixture event loop, not serve_app's thread.
+    async with service, serve_app_in_loop(app, sock=oauth.service_sock):
+        registered = await register_client(f"{oauth.base_url}/mcp", redirect_uri)
+        assert registered.client.client_id is not None
+        # A separately constructed provider reads durable server metadata, not the
+        # client's cache or the registering provider's in-process objects.
+        async with running_oauth(oauth.settings, db_url, oauth.enrollments, oauth.connections) as replacement:
+            restored = await replacement.get_client(registered.client.client_id)
+            assert restored is not None
+            assert restored.client_name == registered.client.client_name
+            assert restored.redirect_uris == registered.client.redirect_uris
+            assert restored.scope == registered.client.scope
+            assert restored.token_endpoint_auth_method == registered.client.token_endpoint_auth_method
+        consent = await oauth.browser.get(registered.authorization_url)
+        assert consent.status_code == 302
+        assert consent.headers["location"].startswith("https://integration.example.test/#/connection-enrollments/")
+        assert await oauth.connections.list() == []
 
 
 async def test_dcr_consent_pkce_refresh_and_revocation(oauth: OAuthFixture, db_url: str, engine: AsyncEngine) -> None:
@@ -639,7 +636,7 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
         DisabledOperatorAuthenticator(),
         echo_catalog,
         callers=oauth.callers,
-        updates=ActionUpdates(db_url),
+        updates=ActionUpdateBroker(db_url),
         direct_wait_seconds=30,
         max_wait_seconds=30,
         connections=oauth.connections,
@@ -647,6 +644,7 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
         oauth=oauth.proxy,
     )
     async with (
+        service,
         app.router.lifespan_context(app),
         httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url=oauth.base_url) as http,
     ):
@@ -708,7 +706,6 @@ async def test_external_grant_reaches_canonical_mcp_admission_and_cancel(
         )
         assert refresh_bearer.status_code == 401
         sandbox.resolve_workload.assert_not_awaited()  # Failed local OAuth credentials never reach TokenReview.
-    await service.close()
 
 
 def _no_workload() -> AsyncMock:

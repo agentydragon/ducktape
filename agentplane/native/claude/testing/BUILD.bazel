@@ -1,0 +1,30 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+py_library(
+    name = "async_run",
+    srcs = ["async_run.py"],
+    deps = [
+        "//agentplane/native/claude:blocks",
+        "//agentplane/native/claude:facade",
+        "//agentplane/native/claude:scenarios",
+        "//agentplane/native/claude:wire",
+        "//agentplane/native/testing:async_process",
+    ],
+)
+
+py_library(
+    name = "mcp",
+    srcs = ["mcp.py"],
+    deps = [
+        "//agentplane/native/claude:driver",
+        "//agentplane/native/claude:wire",
+        "@pypi//fastmcp_slim",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+    ],
+)

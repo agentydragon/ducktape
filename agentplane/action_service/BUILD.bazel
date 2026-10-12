@@ -331,6 +331,7 @@ py_test(
         ":service",
         "//:conftest",
         "//agentplane:subjects",
+        "//agentplane/action_service/testing:lifecycle",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",

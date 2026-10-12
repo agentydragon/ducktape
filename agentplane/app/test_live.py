@@ -51,20 +51,21 @@ from agentplane.app.operator_sessions import (
 )
 from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.shutdown import Drain
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events import event_log
-from agentplane.app.threads.ingestion import Ingester
+from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner.harness import Harness
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
@@ -303,6 +304,7 @@ async def test_a_frame_goes_out_per_change_with_health_through_the_quiet(seeded:
 @pytest.fixture
 def app(
     inventory: SandboxServiceClient,
+    gateway: RunnerGatewayClient,
     egress: EgressAccess,
     decisions: DecisionsClient,
     live_index: LiveIndex,
@@ -323,17 +325,17 @@ def app(
         ContentStore(engine, history_reader=history),
     )
     database_updates = create_database_updates(engine.url)
-    runners = SandboxSessions(live_index, inventory)
+    runners = SandboxSessions(live_index, gateway)
     bridge = RunnerBridge(
         runners=runners,
         event_logs=event_logs,
         content=content,
-        ingester=Ingester(runners=runners, event_logs=event_logs),
+        discovery=SessionDiscovery(runners=runners, event_logs=event_logs),
     )
     return create_app(
         inventory,
         bridge,
-        ThreadStore(engine, summaries, gateway=inventory),
+        ThreadStore(engine, summaries, gateway=gateway),
         MODELS,
         egress,
         decisions,
@@ -368,7 +370,11 @@ async def _next_threads(stream: AsyncIterator[str | bytes | memoryview]) -> Thre
 
 
 async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_changes(
-    seeded: LiveIndex, store: ThreadStore, event_logs: EventLogStore, replica: Replica, database_updates: Wakeups
+    seeded: LiveIndex,
+    store: ThreadStore,
+    event_logs: SeededEventLogStore,
+    replica: Replica,
+    database_updates: WakeupListener,
 ) -> None:
     drain = Drain()
     response = await live_threads(
@@ -408,7 +414,7 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
 
 
 async def test_global_thread_stream_carries_its_window_and_the_open_thread(
-    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, database_updates: Wakeups
+    seeded: LiveIndex, event_logs: SeededEventLogStore, replica: Replica, database_updates: WakeupListener
 ) -> None:
     oldest, _, newest = [await event_logs.seed("runner-1", f"test-window-thread-{n}") for n in range(3)]
     drain = Drain()
@@ -427,7 +433,7 @@ async def test_global_thread_stream_carries_its_window_and_the_open_thread(
 
 
 async def test_global_thread_stream_reports_listener_loss_then_rereads_after_reconnect(
-    seeded: LiveIndex, event_logs: EventLogStore, replica: Replica, database_updates: Wakeups, db_url: str
+    seeded: LiveIndex, event_logs: SeededEventLogStore, replica: Replica, database_updates: WakeupListener, db_url: str
 ) -> None:
     drain = Drain()
     response = await live_threads(index=seeded, store=replica.store, updates=database_updates, shutdown=drain)

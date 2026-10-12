@@ -105,15 +105,11 @@ class _Thread:
 @asynccontextmanager
 async def _attached_thread() -> AsyncIterator[_Thread]:
     """An attached Session with nothing recorded yet, in the history database Electric replicates."""
-    async with electric_service() as service:
-        history = History(service.database_url)
-        try:
-            source, thread = ReplicationSource(Placements()), fixture_session_id(SANDBOX, SESSION)
-            await history.open(thread)
-            await history.set_attached(thread, source.attached)
-            yield _Thread(service.url, history, source, thread)
-        finally:
-            await history.close()
+    async with electric_service() as service, History(service.database_url) as history:
+        source, thread = ReplicationSource(Placements()), fixture_session_id(SANDBOX, SESSION)
+        await history.open(thread)
+        await history.set_attached(thread, source.attached)
+        yield _Thread(service.url, history, source, thread)
 
 
 async def test_one_thread_shape_serves_a_moving_window() -> None:

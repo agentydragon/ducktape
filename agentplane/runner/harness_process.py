@@ -29,7 +29,7 @@ class HarnessProcess:
         cwd: Path,
         environment: Mapping[str, str],
         state_owner_descriptor: int,
-        process_isolation: AgentCgroups | None = None,
+        process_isolation: AgentCgroups | None,
     ) -> None:
         self.command = list(command)
         self.cwd = cwd

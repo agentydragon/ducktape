@@ -31,103 +31,100 @@ _BATCH_BYTES = 4 * 1024 * 1024
 async def test_electric_lagging_slot_forces_client_resnapshot_after_wal_cap() -> None:
     """A stopped Electric service loses its slot and cannot continue an old shape cursor."""
     with tempfile.TemporaryDirectory(prefix="electric-wal-state-") as state_dir:
-        async with electric_service(
-            postgres_settings=("max_slot_wal_keep_size=1MB", "max_wal_size=32MB", "min_wal_size=32MB"),
-            electric_storage_dir=Path(state_dir),
-        ) as service:
-            history = History(service.database_url)
+        async with (
+            electric_service(
+                postgres_settings=("max_slot_wal_keep_size=1MB", "max_wal_size=32MB", "min_wal_size=32MB"),
+                electric_storage_dir=Path(state_dir),
+            ) as service,
+            History(service.database_url) as history,
+        ):
+            thread, source = await _project_initial_item(history)
+            params = {"table": "thread_entity", "where": f"thread_id = '{thread}'"}
+            # Do not retain this client across service.stop()/start(): Docker can assign a
+            # different host port when it recreates the published listener.
+            async with httpx.AsyncClient(base_url=service.url, timeout=35) as client:
+                initial = await client.get("/v1/shape", params=params | {"offset": "-1"})
+                initial.raise_for_status()
+                assert {row["entity_id"] for row in _values(initial)} >= {"first"}
+                old_offset = initial.headers["electric-offset"]
+                old_handle = initial.headers["electric-handle"]
+
+            connection = await _connect(service)
+            timeline: list[dict[str, object]] = []
             try:
-                thread, source = await _project_initial_item(history)
-                params = {"table": "thread_entity", "where": f"thread_id = '{thread}'"}
-                # Do not retain this client across service.stop()/start(): Docker can assign a
-                # different host port when it recreates the published listener.
-                async with httpx.AsyncClient(base_url=service.url, timeout=35) as client:
-                    initial = await client.get("/v1/shape", params=params | {"offset": "-1"})
-                    initial.raise_for_status()
-                    assert {row["entity_id"] for row in _values(initial)} >= {"first"}
-                    old_offset = initial.headers["electric-offset"]
-                    old_handle = initial.headers["electric-handle"]
+                timeline.append({"phase": "healthy", "slot": await _slot_state(connection)})
+                await service.stop()
+                await _wait_for_inactive_slot(connection)
+                timeline.append({"phase": "stopped", "slot": await _slot_state(connection)})
+                await connection.execute("CREATE TABLE electric_wal_noise (payload bytea NOT NULL)")
+                start_lsn = await connection.fetchval("SELECT pg_current_wal_lsn()")
+                for batch in range(20):
+                    await connection.executemany(
+                        "INSERT INTO electric_wal_noise (payload) VALUES ($1)",
+                        [(os.urandom(_BATCH_BYTES // 8),) for _ in range(8)],
+                    )
+                    await connection.execute("CHECKPOINT")
+                    state = await _slot_state(connection)
+                    written = int(
+                        await connection.fetchval("SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), $1)", start_lsn)
+                    )
+                    timeline.append({"phase": "outage_write", "batch": batch, "wal_bytes": written, "slot": state})
+                    if state["wal_status"] == "lost":
+                        break
+                _write_artifact("slot-timeline.json", json.dumps(timeline, indent=2, sort_keys=True))
+                latest = timeline[-1]
+                final_wal_bytes = latest["wal_bytes"]
+                slot = latest["slot"]
+                assert isinstance(final_wal_bytes, int)
+                assert isinstance(slot, dict)
+                assert final_wal_bytes >= _WAL_CAP_BYTES
+                assert slot["wal_status"] == "lost"
 
-                connection = await _connect(service)
-                timeline: list[dict[str, object]] = []
-                try:
-                    timeline.append({"phase": "healthy", "slot": await _slot_state(connection)})
-                    await service.stop()
-                    await _wait_for_inactive_slot(connection)
-                    timeline.append({"phase": "stopped", "slot": await _slot_state(connection)})
-                    await connection.execute("CREATE TABLE electric_wal_noise (payload bytea NOT NULL)")
-                    start_lsn = await connection.fetchval("SELECT pg_current_wal_lsn()")
-                    for batch in range(20):
-                        await connection.executemany(
-                            "INSERT INTO electric_wal_noise (payload) VALUES ($1)",
-                            [(os.urandom(_BATCH_BYTES // 8),) for _ in range(8)],
-                        )
-                        await connection.execute("CHECKPOINT")
-                        state = await _slot_state(connection)
-                        written = int(
-                            await connection.fetchval("SELECT pg_wal_lsn_diff(pg_current_wal_lsn(), $1)", start_lsn)
-                        )
-                        timeline.append({"phase": "outage_write", "batch": batch, "wal_bytes": written, "slot": state})
-                        if state["wal_status"] == "lost":
-                            break
-                    _write_artifact("slot-timeline.json", json.dumps(timeline, indent=2, sort_keys=True))
-                    latest = timeline[-1]
-                    final_wal_bytes = latest["wal_bytes"]
-                    slot = latest["slot"]
-                    assert isinstance(final_wal_bytes, int)
-                    assert isinstance(slot, dict)
-                    assert final_wal_bytes >= _WAL_CAP_BYTES
-                    assert slot["wal_status"] == "lost"
-
-                    # This commit must appear only after the client discards its old stream cursor.
-                    source.append(
-                        event_pb2.Event(
-                            item_started=event_pb2.ItemStarted(
-                                item_id="during-outage", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT
-                            )
+                # This commit must appear only after the client discards its old stream cursor.
+                source.append(
+                    event_pb2.Event(
+                        item_started=event_pb2.ItemStarted(
+                            item_id="during-outage", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT
                         )
                     )
-                    source.append(
-                        event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="during-outage", text="fresh"))
-                    )
-                    await history.record(thread, source.entries[-2:])
-                finally:
-                    await connection.close()
+                )
+                source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="during-outage", text="fresh")))
+                await history.record(thread, source.entries[-2:])
+            finally:
+                await connection.close()
 
-                # Electric 1.8.1 deliberately drops the invalid slot and purges persisted shapes.
-                # A healthy replacement service and a rejected old handle prove that reset rather
-                # than continued replay occurred.
-                await service.start()
+            # Electric 1.8.1 deliberately drops the invalid slot and purges persisted shapes.
+            # A healthy replacement service and a rejected old handle prove that reset rather
+            # than continued replay occurred.
+            await service.start()
+            _write_artifact(
+                "automatic-recovery-state.json",
+                json.dumps(
+                    {
+                        "health": await _health_state(service),
+                        "container": await service.state(),
+                        "postgres": await _postgres_recovery_state(service),
+                    },
+                    indent=2,
+                    sort_keys=True,
+                ),
+            )
+            async with httpx.AsyncClient(base_url=service.url, timeout=35) as client:
+                stale = await client.get(
+                    "/v1/shape", params=params | {"offset": old_offset, "handle": old_handle, "live": "true"}
+                )
                 _write_artifact(
-                    "automatic-recovery-state.json",
+                    "stale-shape-response.json",
                     json.dumps(
-                        {
-                            "health": await _health_state(service),
-                            "container": await service.state(),
-                            "postgres": await _postgres_recovery_state(service),
-                        },
+                        {"status": stale.status_code, "headers": dict(stale.headers), "body": stale.text},
                         indent=2,
                         sort_keys=True,
                     ),
                 )
-                async with httpx.AsyncClient(base_url=service.url, timeout=35) as client:
-                    stale = await client.get(
-                        "/v1/shape", params=params | {"offset": old_offset, "handle": old_handle, "live": "true"}
-                    )
-                    _write_artifact(
-                        "stale-shape-response.json",
-                        json.dumps(
-                            {"status": stale.status_code, "headers": dict(stale.headers), "body": stale.text},
-                            indent=2,
-                            sort_keys=True,
-                        ),
-                    )
-                    assert stale.status_code == 409, stale.text
-                    resnapshot = await client.get("/v1/shape", params=params | {"offset": "-1"})
-                    resnapshot.raise_for_status()
-                    assert {row["entity_id"] for row in _values(resnapshot)} >= {"first", "during-outage"}
-            finally:
-                await history.close()
+                assert stale.status_code == 409, stale.text
+                resnapshot = await client.get("/v1/shape", params=params | {"offset": "-1"})
+                resnapshot.raise_for_status()
+                assert {row["entity_id"] for row in _values(resnapshot)} >= {"first", "during-outage"}
 
 
 async def _project_initial_item(history: History) -> tuple[UUID, ReplicationSource]:

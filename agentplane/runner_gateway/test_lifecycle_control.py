@@ -14,9 +14,11 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane.grpc_calls import ServiceError
 from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import TeardownPhase
 from agentplane.runner.errors import RunnerError
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.command_delivery import CommandDelivery
 from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases
@@ -28,13 +30,12 @@ from agentplane.runner_gateway.lifecycle_control import (
     LifecycleControl,
 )
 from agentplane.runner_gateway.runner_control import ControlTiming
-from agentplane.runner_gateway.testing.grpc_service import service
+from agentplane.runner_gateway.testing.grpc_service import connect, service
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.runner_gateway.testing.runner_control import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_replica_control
 from agentplane.runner_gateway.testing.sessions import register_session
-from agentplane.sandbox_service.client import SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.teardown import GatewaySealing, SealNotFlushedError, Teardown
-from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, connect
+from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
@@ -150,10 +151,8 @@ def attached(session_id: str, harness_state: runner_pb2.HarnessState) -> runner_
     )
 
 
-def client(token_file: Path, target: str, *, control_target: str | None) -> SandboxServiceClient:
-    return connect(
-        target, token_file, namespace=SANDBOX_NAMESPACE, command_admission_timeout_s=None, control_target=control_target
-    )
+def client(token_file: Path, target: str, *, control_target: str) -> AbstractAsyncContextManager[RunnerGatewayClient]:
+    return connect(target, token_file, command_admission_timeout_s=None, control_target=control_target)
 
 
 async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
@@ -202,7 +201,7 @@ async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
 
 
 async def test_a_created_running_session_is_not_resumed(holder: Replica, token_file: Path) -> None:
-    async with connected(holder) as call, client(token_file, holder.api, control_target=None) as service:
+    async with connected(holder) as call, client(token_file, holder.api, control_target=holder.api) as service:
         creating = asyncio.create_task(service.runner(DESTINATION).create(session_id=uuid4(), spec=SPEC))
         opened = await next_request(call)
         await answer(
@@ -220,7 +219,7 @@ async def test_listing_and_resuming_go_over_the_channel(holder: Replica, engine:
     await register_session(
         engine, public_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name=SANDBOX, sandbox_uid=UUID(SANDBOX_UID)
     )
-    async with connected(holder) as call, client(token_file, holder.api, control_target=None) as service:
+    async with connected(holder) as call, client(token_file, holder.api, control_target=holder.api) as service:
         runner = service.runner(DESTINATION)
         listing = asyncio.create_task(runner.list_sessions())
         listed = await next_request(call)
@@ -249,14 +248,12 @@ async def test_listing_and_resuming_go_over_the_channel(holder: Replica, engine:
 async def test_a_replica_without_the_connection_refuses_before_acting(
     holder: Replica, other: Replica, token_file: Path
 ) -> None:
-    async with connected(holder):
-        # Called directly, and through a control Service still naming the other replica as during a
-        # roll: the caller's retry resolves the control Service again.
-        for control_target in (None, other.api):
-            async with client(token_file, other.api, control_target=control_target) as caller:
-                with pytest.raises(ServiceError) as refused:
-                    await caller.runner(DESTINATION).create(session_id=uuid4(), spec=SPEC)
-                assert refused.value.code == grpc.StatusCode.UNAVAILABLE
+    # A control Service still naming the other replica, as during a roll: the caller's retry resolves
+    # the control Service again.
+    async with connected(holder), client(token_file, other.api, control_target=other.api) as caller:
+        with pytest.raises(ServiceError) as refused:
+            await caller.runner(DESTINATION).create(session_id=uuid4(), spec=SPEC)
+        assert refused.value.code == grpc.StatusCode.UNAVAILABLE
 
 
 async def test_a_superseded_connection_sends_nothing(holder: Replica, other: Replica, leases: ConnectionLeases) -> None:
@@ -272,7 +269,7 @@ async def test_a_superseded_connection_sends_nothing(holder: Replica, other: Rep
 async def test_a_lost_connection_drops_its_request_and_a_reconnect_replays_none(
     holder: Replica, token_file: Path
 ) -> None:
-    async with client(token_file, holder.api, control_target=None) as service:
+    async with client(token_file, holder.api, control_target=holder.api) as service:
         async with connected(holder) as call:
             listing = asyncio.create_task(service.runner(DESTINATION).list_sessions())
             await next_request(call)
@@ -299,8 +296,8 @@ async def test_an_answer_for_another_verb_fails_the_request(holder: Replica) -> 
             await listing
 
 
-def sandbox_service_teardown(cluster: Cluster, gateway: SandboxServiceClient) -> Teardown:
-    return Teardown(cluster.inventory, GatewaySealing(gateway))
+def sandbox_service_teardown(cluster: Cluster, gateway: RunnerGatewayClient) -> Teardown:
+    return Teardown(cluster.inventory, GatewaySealing(gateway.control))
 
 
 async def test_teardown_seals_over_the_holders_connection(
@@ -316,7 +313,7 @@ async def test_teardown_seals_over_the_holders_connection(
     sealing = await cluster.inventory.get(SANDBOX)
     async with (
         connected(holder) as call,
-        client(token_file, other.api, control_target=None) as unrouted,
+        client(token_file, other.api, control_target=other.api) as unrouted,
         client(token_file, other.api, control_target=holder.api) as routed,
     ):
         # Only the holder seals: a replica without the connection refuses, and the Sandbox Service's

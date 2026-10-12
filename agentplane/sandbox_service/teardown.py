@@ -11,7 +11,7 @@ from dataclasses import dataclass
 
 from agentplane.proto import runner_pb2
 from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxDestination
-from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandbox_service.inventory import SandboxInventory
 
 # gazelle:include_dep @pypi//protobuf
@@ -21,13 +21,13 @@ FLUSH_RETRY_S = 10
 
 @dataclass(frozen=True)
 class GatewaySealing:
-    """Seals through the Runner Gateway, which reaches the Sandbox's runner."""
+    """Seals through the Runner Gateway replica holding the Sandbox's runner connection."""
 
-    gateway: SandboxServiceClient
+    control: SandboxControlClient
 
     async def seal(self, sandbox: Sandbox) -> runner_pb2.SealResponse:
         destination = SandboxDestination(owner=sandbox.service_account, sandbox=sandbox.name, sandbox_uid=sandbox.uid)
-        return await self.gateway.runner(destination).seal()
+        return await self.control.runner(destination).seal()
 
 
 class SealNotFlushedError(Exception):

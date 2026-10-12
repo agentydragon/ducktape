@@ -39,12 +39,6 @@ esbuild(
     deps = [":service_worker_lib"],
 )
 
-filegroup(
-    name = "service_worker",
-    srcs = [":service_worker_bundle"],
-    visibility = ["//agentplane/app:__pkg__"],
-)
-
 # Single-file view: the esbuild target also emits a linked source map.
 filegroup(
     name = "service_worker_js",

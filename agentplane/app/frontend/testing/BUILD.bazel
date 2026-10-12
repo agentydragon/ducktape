@@ -1,0 +1,29 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane/app:__subpackages__"],
+)
+
+py_library(
+    name = "visual_assertions",
+    srcs = ["visual_assertions.py"],
+    deps = [
+        "//util/testing:page_capture",
+        "//util/testing:undeclared_outputs",
+        "//util/testing:visual_capture",
+        "@pypi//playwright",
+    ],
+)
+
+py_library(
+    name = "visual_fixtures",
+    srcs = ["visual_fixtures.py"],
+    deps = [
+        "//agentplane/app/frontend:visual_app",
+        "//util/testing:viewports",
+        "//util/testing:visual_capture",
+        "@pypi//pytest",
+        "@pypi//pytest_asyncio",
+    ],
+)

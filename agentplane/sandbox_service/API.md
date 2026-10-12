@@ -10,9 +10,7 @@ HTTP service adapter.
 The Sandbox Service serves `SandboxService`: Sandbox inventory and lifecycle, templates and egress
 grants. One replica reconciles, and it alone holds the RBAC, ServiceAccount and egress grant
 permissions. Sessions and commands are the [Runner Gateway's API](../runner_gateway/API.md), its own
-server and image. `SandboxServiceClient` takes one target per service: `target` for the Sandbox
-Service and `gateway_target` for the Runner Gateway; authentication and destinations below apply to
-both.
+server and image, with its own client. Authentication and destinations below apply to both.
 
 ## Authentication and destinations
 
@@ -110,11 +108,11 @@ response is lost. Command outcomes: [Runner Gateway API](../runner_gateway/API.m
 ## Server configuration
 
 `//agentplane/sandbox_service:server` uses `AGENTPLANE_SANDBOX_SERVICE_*` environment variables or
-kebab-case CLI flags. The Sandbox Service reaches the gateway at `gateway_target`, and a Sandbox's
-holder replica through `control_target`, with the token in `gateway_token_file`; the gateway accepts
+kebab-case CLI flags. The Sandbox Service reaches a Sandbox's holder replica through
+`control_target`, with the token in `gateway_token_file`; the gateway accepts
 that account for `SealSandbox` through `sealer_accounts`.
 Required settings are `sandbox_namespace`, `caller_accounts` (nonempty), `token_audience`,
-`gateway_target`, `control_target` and `gateway_token_file`. TokenReview namespaces are derived from
+`control_target` and `gateway_token_file`. TokenReview namespaces are derived from
 that allowlist. Kubernetes access is in-cluster unless `kubeconfig` is supplied.
 
 `port` defaults to 8080 for gRPC, which also serves the unauthenticated `grpc.health.v1.Health`;

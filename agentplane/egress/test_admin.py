@@ -53,13 +53,14 @@ def clock() -> Clock:
 
 @pytest.fixture
 async def session(index: Index, clock: Clock) -> AsyncIterator[httpx.AsyncClient]:
-    log = DecisionLog(
+    async with DecisionLog(
         DecisionStore(make_engine("postgresql://test:test@127.0.0.1:1/test"), retention=timedelta(days=7))
-    )
-    app = create_admin_app(log, index, clock=clock)
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://egress-admin.test") as client:
-        yield client
-    await log.close()
+    ) as log:
+        app = create_admin_app(log, index, clock=clock)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://egress-admin.test"
+        ) as client:
+            yield client
 
 
 async def _get(session: httpx.AsyncClient) -> tuple[int, dict]:

@@ -43,7 +43,7 @@ from agentplane.action_service.models import OperatorPrincipal, Verdict
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
 from agentplane.action_service.testing.credentials import OperatorIdp
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
@@ -248,7 +248,7 @@ async def test_operator_routes_require_auth_and_reject_redirect_injection(
         operator_idp.authenticator(),
         catalog,
         callers=admitted_callers(),
-        updates=ActionUpdates(db_url),
+        updates=ActionUpdateBroker(db_url),
         direct_wait_seconds=30,
         max_wait_seconds=30,
         connections=consent.connections,

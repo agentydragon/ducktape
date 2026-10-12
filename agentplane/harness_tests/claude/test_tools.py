@@ -7,8 +7,8 @@ import asyncio
 import pytest
 import pytest_bazel
 
-from agentplane.harness_tests.claude import anthropic_sse as sse, frames
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
+from agentplane.harness_tests.claude import anthropic_sse, frames
+from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 
 PROBE_FAILURE = (
@@ -17,17 +17,17 @@ PROBE_FAILURE = (
 
 
 async def test_parallel_shell_tools_report_both_streams_and_exit_codes(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     async with claude.start(anthropic_messages) as run:
         prompt = await run.send("Use the shell probe and report its outcomes.")
 
         async with await anthropic_messages.await_next_request() as exchange:
-            stream = sse.message_stream(
+            stream = anthropic_sse.message_stream(
                 [
-                    sse.Thinking("run both", "sig_test_1"),
-                    sse.ToolUse("toolu_test_1", "Bash", {"command": "printf 'PROBE_STDOUT\\n'"}),
-                    sse.ToolUse("toolu_test_2", "Bash", {"command": PROBE_FAILURE}),
+                    anthropic_sse.Thinking("run both", "sig_test_1"),
+                    anthropic_sse.ToolUse("toolu_test_1", "Bash", {"command": "printf 'PROBE_STDOUT\\n'"}),
+                    anthropic_sse.ToolUse("toolu_test_2", "Bash", {"command": PROBE_FAILURE}),
                 ],
                 model=MODEL,
             )
@@ -49,7 +49,7 @@ async def test_parallel_shell_tools_report_both_streams_and_exit_codes(
             assert "probe stderr before failure" in second.text
             assert "23" in second.text
             assert second.is_error is True
-            stream = sse.message_stream([sse.Text("SHELL_PROBE_DONE")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("SHELL_PROBE_DONE")], model=MODEL)
             await exchange.send(*stream.events)
 
         assert (await prompt.result()).result == "SHELL_PROBE_DONE"
@@ -62,7 +62,7 @@ async def test_parallel_shell_tools_report_both_streams_and_exit_codes(
 
 
 async def test_file_edit_round_trip_changes_the_workspace(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     editable = claude.workspace / "editable.txt"
     editable.write_text("before\n")
@@ -73,16 +73,18 @@ async def test_file_edit_round_trip_changes_the_workspace(
         )
 
         async with await anthropic_messages.await_next_request() as exchange:
-            stream = sse.message_stream([sse.ToolUse("toolu_test_1", "Read", {"file_path": path})], model=MODEL)
+            stream = anthropic_sse.message_stream(
+                [anthropic_sse.ToolUse("toolu_test_1", "Read", {"file_path": path})], model=MODEL
+            )
             await exchange.send(*stream.events)
 
         async with await anthropic_messages.await_next_request() as exchange:
             (read_result,) = exchange.request.tool_results
             assert read_result.tool_use_id == "toolu_test_1"
             assert "before" in read_result.text
-            stream = sse.message_stream(
+            stream = anthropic_sse.message_stream(
                 [
-                    sse.ToolUse(
+                    anthropic_sse.ToolUse(
                         "toolu_test_2", "Edit", {"file_path": path, "old_string": "before", "new_string": "after"}
                     )
                 ],
@@ -95,7 +97,9 @@ async def test_file_edit_round_trip_changes_the_workspace(
             assert edit_result.tool_use_id == "toolu_test_2"
             assert edit_result.is_error is False
             assert editable.read_text() == "after\n"
-            stream = sse.message_stream([sse.ToolUse("toolu_test_3", "Read", {"file_path": path})], model=MODEL)
+            stream = anthropic_sse.message_stream(
+                [anthropic_sse.ToolUse("toolu_test_3", "Read", {"file_path": path})], model=MODEL
+            )
             await exchange.send(*stream.events)
 
         async with await anthropic_messages.await_next_request() as exchange:
@@ -103,7 +107,7 @@ async def test_file_edit_round_trip_changes_the_workspace(
             assert reread_result.tool_use_id == "toolu_test_3"
             assert "after" in reread_result.text
             assert "before" not in reread_result.text
-            stream = sse.message_stream([sse.Text("FILE_EDIT_DONE")], model=MODEL)
+            stream = anthropic_sse.message_stream([anthropic_sse.Text("FILE_EDIT_DONE")], model=MODEL)
             await exchange.send(*stream.events)
 
         assert (await prompt.result()).result == "FILE_EDIT_DONE"
@@ -113,7 +117,7 @@ async def test_file_edit_round_trip_changes_the_workspace(
 
 
 async def test_subagent_tool_frames_are_correlated_with_the_parent_call(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
     """The pinned Agent launches asynchronously; parent completion does not finish the child."""
     async with claude.start(anthropic_messages, subagents=True) as run:
@@ -122,9 +126,9 @@ async def test_subagent_tool_frames_are_correlated_with_the_parent_call(
 
             async with await anthropic_messages.await_next_request() as exchange:
                 assert "Agent" in exchange.request.tool_names
-                stream = sse.message_stream(
+                stream = anthropic_sse.message_stream(
                     [
-                        sse.ToolUse(
+                        anthropic_sse.ToolUse(
                             "toolu_spawn_child",
                             "Agent",
                             {
@@ -152,13 +156,14 @@ async def test_subagent_tool_frames_are_correlated_with_the_parent_call(
                 assert "Run the child shell probe" in "\n".join(child.request.texts("user"))
                 assert not child.request.tool_results
                 assert "Bash" in child.request.tool_names
-                stream = sse.message_stream([sse.Text("PARENT_WAITING")], model=MODEL)
+                stream = anthropic_sse.message_stream([anthropic_sse.Text("PARENT_WAITING")], model=MODEL)
                 await parent.send(*stream.events)
                 await parent.close()
                 assert (await prompt.result()).result == "PARENT_WAITING"
                 completion = run.events()
-                stream = sse.message_stream(
-                    [sse.ToolUse("toolu_child_shell", "Bash", {"command": "printf CHILD_TOOL_OUTPUT"})], model=MODEL
+                stream = anthropic_sse.message_stream(
+                    [anthropic_sse.ToolUse("toolu_child_shell", "Bash", {"command": "printf CHILD_TOOL_OUTPUT"})],
+                    model=MODEL,
                 )
                 await child.send(*stream.events)
 
@@ -167,13 +172,13 @@ async def test_subagent_tool_frames_are_correlated_with_the_parent_call(
                 assert result.tool_use_id == "toolu_child_shell"
                 assert result.is_error is False
                 assert "CHILD_TOOL_OUTPUT" in result.text
-                stream = sse.message_stream([sse.Text("CHILD_DONE")], model=MODEL)
+                stream = anthropic_sse.message_stream([anthropic_sse.Text("CHILD_DONE")], model=MODEL)
                 await exchange.send(*stream.events)
 
             # Completion arrives as a new parent input, not as the earlier Agent tool result.
             async with await anthropic_messages.await_next_request() as exchange:
                 assert "CHILD_DONE" in "\n".join(exchange.request.texts("user"))
-                stream = sse.message_stream([sse.Text("PARENT_DONE")], model=MODEL)
+                stream = anthropic_sse.message_stream([anthropic_sse.Text("PARENT_DONE")], model=MODEL)
                 await exchange.send(*stream.events)
 
             assert (await completion.result()).result == "PARENT_DONE"
@@ -218,7 +223,7 @@ async def test_subagent_tool_frames_are_correlated_with_the_parent_call(
 
 @pytest.mark.parametrize("resume_parent", [False, True])
 async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_result(
-    claude: ClaudeHarness, anthropic_messages: AnthropicMessages, resume_parent: bool
+    claude: ClaudeLauncher, anthropic_messages: AnthropicMessages, resume_parent: bool
 ) -> None:
     """A SendMessage receipt is not child completion; TaskOutput reads the later result."""
     async with claude.start(anthropic_messages, subagents=True) as run:
@@ -226,9 +231,9 @@ async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_
             prompt = await run.send("Delegate a probe, then send the same child a follow-up.")
             async with await anthropic_messages.await_next_request() as exchange:
                 assert {"Agent", "SendMessage", "TaskOutput"} <= set(exchange.request.tool_names)
-                stream = sse.message_stream(
+                stream = anthropic_sse.message_stream(
                     [
-                        sse.ToolUse(
+                        anthropic_sse.ToolUse(
                             "toolu_spawn_message_child",
                             "Agent",
                             {
@@ -258,19 +263,19 @@ async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_
                 ]
                 (launch_result,) = launch_results
                 agent_id = launch_result["agentId"]
-                stream = sse.message_stream([sse.Text("PARENT_WAITING")], model=MODEL)
+                stream = anthropic_sse.message_stream([anthropic_sse.Text("PARENT_WAITING")], model=MODEL)
                 await parent.send(*stream.events)
                 await parent.close()
                 assert (await prompt.result()).result == "PARENT_WAITING"
                 followup = run.events()
-                stream = sse.message_stream([sse.Text("CHILD_FIRST_DONE")], model=MODEL)
+                stream = anthropic_sse.message_stream([anthropic_sse.Text("CHILD_FIRST_DONE")], model=MODEL)
                 await child.send(*stream.events)
 
             async with await anthropic_messages.await_next_request() as exchange:
                 assert "CHILD_FIRST_DONE" in "\n".join(exchange.request.texts("user"))
-                stream = sse.message_stream(
+                stream = anthropic_sse.message_stream(
                     [
-                        sse.ToolUse(
+                        anthropic_sse.ToolUse(
                             "toolu_followup",
                             "SendMessage",
                             {
@@ -295,18 +300,19 @@ async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_
                 # Prove continuity of the child's transcript as well as delivery of the message.
                 assert "CHILD_FIRST_DONE" in child.request.texts("assistant")
                 assert "FOLLOWUP_PROBE" in "\n".join(child.request.texts("user"))
-                stream = sse.message_stream([sse.Text("PARENT_FOLLOWUP_WAITING")], model=MODEL)
+                stream = anthropic_sse.message_stream([anthropic_sse.Text("PARENT_FOLLOWUP_WAITING")], model=MODEL)
                 await parent.send(*stream.events)
                 await parent.close()
                 assert (await followup.result()).result == "PARENT_FOLLOWUP_WAITING"
                 completion = run.events()
-                stream = sse.message_stream([sse.Text("CHILD_SECOND_DONE")], model=MODEL)
+                stream = anthropic_sse.message_stream([anthropic_sse.Text("CHILD_SECOND_DONE")], model=MODEL)
                 await child.send(*stream.events)
 
             async with await anthropic_messages.await_next_request() as exchange:
                 assert "CHILD_SECOND_DONE" in "\n".join(exchange.request.texts("user"))
-                stream = sse.message_stream(
-                    [sse.ToolUse("toolu_read_child", "TaskOutput", {"task_id": agent_id, "block": False})], model=MODEL
+                stream = anthropic_sse.message_stream(
+                    [anthropic_sse.ToolUse("toolu_read_child", "TaskOutput", {"task_id": agent_id, "block": False})],
+                    model=MODEL,
                 )
                 await exchange.send(*stream.events)
 
@@ -315,7 +321,7 @@ async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_
                 assert read.tool_use_id == "toolu_read_child"
                 assert read.is_error is False
                 assert "CHILD_SECOND_DONE" in read.text
-                stream = sse.message_stream([sse.Text("PARENT_DONE")], model=MODEL)
+                stream = anthropic_sse.message_stream([anthropic_sse.Text("PARENT_DONE")], model=MODEL)
                 await exchange.send(*stream.events)
             assert (await completion.result()).result == "PARENT_DONE"
 
@@ -344,9 +350,9 @@ async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_
                 async with await anthropic_messages.await_next_request() as exchange:
                     assert "CHILD_SECOND_DONE" in "\n".join(exchange.request.texts("user"))
                     await exchange.send(
-                        *sse.message_stream(
+                        *anthropic_sse.message_stream(
                             [
-                                sse.ToolUse(
+                                anthropic_sse.ToolUse(
                                     "toolu_read_after_resume", "TaskOutput", {"task_id": agent_id, "block": False}
                                 )
                             ],
@@ -358,7 +364,9 @@ async def test_send_message_resumes_a_completed_child_and_task_output_reads_its_
                     assert read.tool_use_id == "toolu_read_after_resume"
                     assert read.is_error is True, read
                     assert agent_id in read.text
-                    await exchange.send(*sse.message_stream([sse.Text("RESUME_PROBE_DONE")], model=MODEL).events)
+                    await exchange.send(
+                        *anthropic_sse.message_stream([anthropic_sse.Text("RESUME_PROBE_DONE")], model=MODEL).events
+                    )
                 assert (await recovery.result()).result == "RESUME_PROBE_DONE"
                 assert not [
                     frame

@@ -4,7 +4,9 @@ The [Runner Gateway](README.md) serves `RunnerGateway`
 ([`runner_gateway.proto`](../proto/runner_gateway.proto)) over gRPC: Sessions, commands, Session
 placement and teardown's seal. Its replicas hold the runner connections; a Sandbox's
 `<sandbox>-control` Service reaches the replica holding its runner. Callers use
-`SandboxServiceClient`, whose `gateway_target` names the gateway.
+[`RunnerGatewayClient`](client.py) over a channel to the gateway, and its `SandboxControlClient`,
+which dials the Sandbox's `<sandbox>-control` Service for each call only the holder answers.
+Teardown in the Sandbox Service uses `SandboxControlClient` alone.
 
 Authentication and destinations work as in the
 [Sandbox Service API](../sandbox_service/API.md#authentication-and-destinations), under the gateway's

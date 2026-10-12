@@ -45,7 +45,7 @@ class ActionSubscription:
             )
 
 
-class ActionUpdates:
+class ActionUpdateBroker:
     def __init__(self, database_url: str) -> None:
         self._subscribers: dict[UUID, set[asyncio.Event]] = {}
         self._all_subscribers: set[asyncio.Event] = set()

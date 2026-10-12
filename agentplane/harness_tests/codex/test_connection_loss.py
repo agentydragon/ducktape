@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest_bazel
 
-from agentplane.harness_tests.codex import frames, responses_sse as sse
+from agentplane.harness_tests.codex import frames, responses_sse
 from agentplane.harness_tests.codex.harness import MODEL, CodexHarness
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.harness_tests.model_endpoint import JsonResponse
@@ -18,7 +18,9 @@ async def test_stream_lost_before_content_is_retried(codex: CodexHarness, openai
 
         async with await openai_responses.await_next_request() as exchange:
             await exchange.send(
-                *sse.response_stream([sse.Message("lost")], model=MODEL).through("response.created").events
+                *responses_sse.response_stream([responses_sse.Message("lost")], model=MODEL)
+                .through("response.created")
+                .events
             )
             await exchange.abort()
         assert (await turn.error()).params.will_retry is True
@@ -28,7 +30,7 @@ async def test_stream_lost_before_content_is_retried(codex: CodexHarness, openai
             assert request.stream is True
             assert request.item_kinds == ["message:user"]
             assert request.messages("user")[-1].text == "Reply with exactly: CONNECTION_RETRY_OK"
-            stream = sse.response_stream([sse.Message("CONNECTION_RETRY_OK")], model=MODEL)
+            stream = responses_sse.response_stream([responses_sse.Message("CONNECTION_RETRY_OK")], model=MODEL)
             await exchange.send(*stream.events)
 
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
@@ -47,7 +49,7 @@ async def test_stream_lost_after_visible_text_is_retried_and_the_thread_continue
 
         async with await openai_responses.await_next_request() as exchange:
             await exchange.send(
-                *sse.response_stream([sse.Message("POST_FAILURE_FIRST_OK")], model=MODEL)
+                *responses_sse.response_stream([responses_sse.Message("POST_FAILURE_FIRST_OK")], model=MODEL)
                 .through("response.output_text.delta")
                 .events
             )
@@ -58,7 +60,7 @@ async def test_stream_lost_after_visible_text_is_retried_and_the_thread_continue
             request = exchange.request
             # The retry resends the turn without the partial text.
             assert request.item_kinds == ["message:user"]
-            stream = sse.response_stream([sse.Message("POST_FAILURE_FIRST_OK")], model=MODEL)
+            stream = responses_sse.response_stream([responses_sse.Message("POST_FAILURE_FIRST_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await first.completed()).params.turn.status is wire.TurnStatus.COMPLETED
 
@@ -67,7 +69,7 @@ async def test_stream_lost_after_visible_text_is_retried_and_the_thread_continue
             request = exchange.request
             assert request.item_kinds == ["message:user", "message:assistant", "message:user"]
             assert request.messages("assistant")[0].text == "POST_FAILURE_FIRST_OK"
-            stream = sse.response_stream([sse.Message("POST_FAILURE_FOLLOW_UP_OK")], model=MODEL)
+            stream = responses_sse.response_stream([responses_sse.Message("POST_FAILURE_FOLLOW_UP_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await second.completed()).params.turn.status is wire.TurnStatus.COMPLETED
     captured = run.native_frames()
@@ -91,7 +93,7 @@ async def test_retry_exhaustion_fails_the_turn_and_the_thread_accepts_the_next_i
             request = exchange.request
             assert request.item_kinds == ["message:user", "message:user"]
             assert request.messages("user")[-1].text == "Reply with exactly: POST_EXHAUSTION_FOLLOW_UP_OK"
-            stream = sse.response_stream([sse.Message("POST_EXHAUSTION_FOLLOW_UP_OK")], model=MODEL)
+            stream = responses_sse.response_stream([responses_sse.Message("POST_EXHAUSTION_FOLLOW_UP_OK")], model=MODEL)
             await exchange.send(*stream.events)
         assert (await second.completed()).params.turn.status is wire.TurnStatus.COMPLETED
     captured = run.native_frames()
@@ -121,7 +123,9 @@ async def test_http_502_exhaustion_is_terminal_but_next_input_succeeds(
         second = await run.start_turn("Reply with exactly: HTTP_FOLLOW_UP_OK")
         async with await openai_responses.await_next_request() as exchange:
             assert exchange.request.messages("user")[-1].text == "Reply with exactly: HTTP_FOLLOW_UP_OK"
-            await exchange.send(*sse.response_stream([sse.Message("HTTP_FOLLOW_UP_OK")], model=MODEL).events)
+            await exchange.send(
+                *responses_sse.response_stream([responses_sse.Message("HTTP_FOLLOW_UP_OK")], model=MODEL).events
+            )
         assert (await second.completed()).params.turn.status is wire.TurnStatus.COMPLETED
     assert [turn.status for turn in frames.completed_turns(run.native_frames())] == [
         wire.TurnStatus.FAILED,

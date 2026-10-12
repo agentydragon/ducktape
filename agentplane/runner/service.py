@@ -10,7 +10,8 @@ import os
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, aclosing, asynccontextmanager, suppress
 from pathlib import Path, PurePosixPath
-from typing import Any, assert_never, override
+from types import TracebackType
+from typing import Any, Self, assert_never, override
 
 import grpc
 
@@ -360,6 +361,14 @@ class Runner:
         if candidate == root or root not in candidate.parents:
             raise ValueError(f"spec.cwd must be a child of {root}, not {cwd!r}")
 
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        await self.stop()
+
     async def stop(self) -> None:
         tasks: list[asyncio.Future[object] | asyncio.Task[None]] = [
             asyncio.ensure_future(session.stop()) for session in self.sessions.values()
@@ -595,9 +604,8 @@ async def _consume(
 @asynccontextmanager
 async def serve(config: RunnerConfig, *, address: str, grace_s: float) -> AsyncIterator[tuple[Runner, int]]:
     """A started runner served on `address`; yields it and the bound port."""
-    runner = Runner(config)
     async with AsyncExitStack() as stack:
-        stack.push_async_callback(runner.stop)
+        runner = await stack.enter_async_context(Runner(config))
         await runner.startup()
         server = grpc.aio.server()
         runner_pb2_grpc.add_RunnerServicer_to_server(RunnerService(runner), server)

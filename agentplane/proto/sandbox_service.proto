@@ -131,12 +131,6 @@ message ListCommandsResponse {
   string next_page_token = 2;
 }
 
-// The runner sealed this Sandbox incarnation of the Session at teardown: its journal is final.
-message Sealed {
-  // The incarnation's final cursor. Every entry through it precedes this frame.
-  uint64 cursor = 1;
-}
-
 message SessionDefaults {
   optional agentplane.proto.runner.Harness harness = 1;
   optional string model = 2;

@@ -15,8 +15,8 @@ from util.testing.viewports import DESKTOP, MOBILE, Viewport
 from util.testing.visual_capture import VisualPage
 
 # gazelle:include_dep //util/testing:visual_fixtures
-# gazelle:include_dep //agentplane/app/frontend:visual_fixtures
-pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.visual_fixtures")
+# gazelle:include_dep //agentplane/app/frontend/testing:visual_fixtures
+pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
@@ -420,7 +420,7 @@ async def test_session_pending_failed(view: VisualPage, app: AgentplaneFixture) 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
 async def test_session_pending_stored_by_service(view: VisualPage, app: AgentplaneFixture) -> None:
-    """A lost delivery reply for a command the Sandbox Service holds: stored, runner admission unconfirmed."""
+    """A lost delivery reply for a command the Runner Gateway holds: stored, runner admission unconfirmed."""
     await app.time_out_command_admission()
     await app.retain_command_in_service()
     await app.remember_pending_input()

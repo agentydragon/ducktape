@@ -114,6 +114,11 @@ bug.
     errors). Catch only to transform, add context, or genuinely handle. Don't wrap
     parser/IO exceptions in "invalid file" restatements — the original carries the
     details.
+  - **Wrap only to add information**: a replacement exception keeps what the original
+    carried that a reader acts on (a gRPC status code, an errno, the failing path) and
+    adds context the original lacked. It never trades those for prose, and never claims
+    what the original did not say ("mutation outcome may be uncertain" on a call that
+    may not mutate).
   - **Not control flow**: query preconditions first and execute without catch; don't
     execute-catch-and-parse-the-fault for foreseeable states.
 - **Express code concisely**: every line does work; inline single-use subexpressions;
@@ -136,6 +141,12 @@ bug.
   they do (`record_admission`, `read_submission`), not a noun or state label (`admitted`).
   Follow established conventions where they override this rule, such as properties/accessors,
   framework hooks, and protocol-required names.
+- **Classes name what an instance is**: a singular noun for the one thing an instance is
+  (`SessionStore`, not `Sessions`), so a field holding one can take the same name.
+- **Owned resources are context managers**: an object a caller must `close()` or `release()`
+  implements `__enter__`/`__exit__` (or the async pair), and callers scope it with `with`,
+  `async with` or an `ExitStack`, never a hand-written `finally: x.close()`. A public `close()`
+  stays only where a caller ends the lifetime before the block does.
 - **One concept, one name across representations**: a concept's Pydantic model, ORM
   class, and table share the concept-name; representation-role suffixes (`…Row`,
   `…Body`, `…View`) only where two representations of one concept must coexist in a

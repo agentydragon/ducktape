@@ -41,7 +41,7 @@ from agentplane.action_service.catalog import (
     ActionUnavailableError,
     McpExecutorBinding,
 )
-from agentplane.action_service.db import ActionConflictError, ExecutionRow, make_sessionmaker
+from agentplane.action_service.db import ActionConflictError, ActionStore, ExecutionRow, make_sessionmaker
 from agentplane.action_service.main import async_main
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor, _LinkageBearerAuth
 from agentplane.action_service.mcp_linkage import McpLinkageStatus
@@ -218,12 +218,9 @@ def oauth_settings(tmp_path: Path) -> Iterator[OAuthSettings]:
 @pytest.fixture
 async def executor(http_group: ActionGroup, fake_server: FakeMcpServer) -> AsyncIterator[McpActionGroupExecutor]:
     executor = McpActionGroupExecutor.from_group("remote", http_group, catalog_refresh_interval=timedelta(hours=1))
-    try:
-        await executor.start()
+    async with executor:
         await wait_available(http_group)
         yield executor
-    finally:
-        await executor.close()
 
 
 @pytest.fixture
@@ -244,8 +241,7 @@ async def test_http_session_discovery_call_and_shutdown(
     execution_request: ExecutionRequest,
 ) -> None:
     executor = McpActionGroupExecutor.from_group("remote", http_group)
-    try:
-        await executor.start()
+    async with executor:
         await wait_available(http_group)
         assert http_group.available
         assert set(http_group.actions) == {"echo"}
@@ -269,8 +265,6 @@ async def test_http_session_discovery_call_and_shutdown(
         assert len(fake_server.calls) == 1
         assert fake_server.calls[0]["params"]["name"] == "echo"
         assert fake_server.calls[0]["params"]["arguments"] == {"text": "hi"}
-    finally:
-        await executor.close()
     assert fake_server.requests[-1].method == "DELETE"
     assert all("authorization" not in request.headers for request in fake_server.requests)
     # Neither `server/discover` nor `initialize` itself carries a session id -- the server only
@@ -299,11 +293,8 @@ async def test_http_configured_headers_are_sent_on_every_request(fake_server: Fa
             ),
         )
         executor = McpActionGroupExecutor.from_group("remote", group)
-        try:
-            await executor.start()
+        async with executor:
             await wait_available(group)
-        finally:
-            await executor.close()
     assert fake_server.requests
     assert all(request.headers["x-mcp-toolsets"] == "default,actions" for request in fake_server.requests)
 
@@ -432,8 +423,7 @@ async def test_oauth_group_without_a_usable_linkage_stays_dormant_and_says_why(
             await release.wait()
 
         with patch.object(executor, "_connect_client", connect):
-            await executor.start()
-            try:
+            async with executor:
                 await asyncio.sleep(0)
                 assert not group.available
                 assert group.actions == {}
@@ -444,8 +434,6 @@ async def test_oauth_group_without_a_usable_linkage_stays_dormant_and_says_why(
                 linkage_changed.set()
                 async with asyncio.timeout(1):
                     await connected.wait()
-            finally:
-                await executor.close()
 
 
 async def test_oauth_auth_resolves_the_current_token_for_each_request() -> None:
@@ -751,13 +739,13 @@ async def test_production_http_composition_one_execution_no_replay(
         # Duplicate dispatch and restart recovery must both respect the durable single-Execution claim.
         await service._dispatch_once(pending.id)
         await service.close()
-        await service.start()
-        assert (await service.get(pending.id, caller)).execution == final.execution
-        assert len(fake_server.calls) == (0 if outcome in {"schema_mismatch", "invalid_schema"} else 1)
-        async with make_sessionmaker(engine)() as session:
-            assert await session.scalar(select(func.count()).select_from(ExecutionRow)) == 1
-        if fake_server.calls:
-            assert fake_server.calls[0]["params"]["arguments"] == {"text": "hi"}
+        async with ActionService(ActionStore(make_sessionmaker(engine)), catalog, service._executors) as restarted:
+            assert (await restarted.get(pending.id, caller)).execution == final.execution
+            assert len(fake_server.calls) == (0 if outcome in {"schema_mismatch", "invalid_schema"} else 1)
+            async with make_sessionmaker(engine)() as session:
+                assert await session.scalar(select(func.count()).select_from(ExecutionRow)) == 1
+            if fake_server.calls:
+                assert fake_server.calls[0]["params"]["arguments"] == {"text": "hi"}
 
     with (
         patch("agentplane.service_process.k8s_config.load_incluster_config"),
