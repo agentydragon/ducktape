@@ -680,19 +680,13 @@ flowchart TD
 
 ### `SANDBOX_CONTROLLER_PROVISIONING` — the controller provisions a Sandbox
 
-**In flight; the ServiceAccount and `PolicyBinding` half is #10162, on testing. Staging waits on the
-Kubernetes catalog as `PolicySet`s.** The spec gains the rest of the recipe: `policySets` (names of sets of any rule type), session defaults,
-bootstrap command and runner endpoints, the parts the Sandbox Service now keeps
-as annotations on agent-sandbox's `Sandbox` (`provisioning.py`, `kubernetes_bindings.py`,
-`egress.py`, `action_policy.py`, `runner_endpoints.py`). The controller creates the Sandbox's own
-ServiceAccount and its one `PolicyBinding` of those sets, both owned by the Sandbox; the binding
-never sets `expiresAt`. No Pod waits for the binding's readers. The Sandbox Service never writes
-`PolicyBinding`s. Runtime and time-limited grants are separate bindings (`POLICY_RUNTIME_GRANTS`).
-Left: runner endpoints, which go over the egress sidecar's platform routes (operator, 2026-10-12).
-One cdk8s list of platform services generates our runner template's sidecar routes, sidecar-only
-tokens and runner flags, plus a Cilium rule letting Sandbox-labelled Pods reach those services. This
-replaces the Sandbox Service's `runner_endpoints.py` and the runner-endpoint egress policies for our
-kind.
+**Done on testing; staging waits on the Kubernetes catalog as `PolicySet`s.** Our Sandbox carries
+the whole recipe the Sandbox Service keeps as annotations on agent-sandbox's: `policySets`, session
+defaults and the bootstrap command. The controller makes its ServiceAccount and one `PolicyBinding`,
+which never sets `expiresAt`. Our runner template reaches the Runner Gateway and the ingress over
+the egress sidecar's platform routes (`cluster/cdk8s/agentplane/platform_routes.py`), so no
+runner-endpoint egress policy is bound. Runtime and time-limited grants are separate bindings
+(`POLICY_RUNTIME_GRANTS`).
 
 ### `SANDBOX_IMAGE_REPLACE` — replace the runner image between incarnations
 

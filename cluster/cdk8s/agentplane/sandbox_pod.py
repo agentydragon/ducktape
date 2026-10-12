@@ -87,6 +87,11 @@ NO_PROXY_VAR_NAMES = ("NO_PROXY", "no_proxy")
 CA_BUNDLE_VAR_NAMES = ("SSL_CERT_FILE", "NODE_EXTRA_CA_CERTS", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO", "REQUESTS_CA_BUNDLE")
 
 
+def audience_token_file(audience: str) -> str:
+    """The sidecar-only file holding this Pod's projected token for `audience`."""
+    return f"{_EGRESS_TOKEN_DIR}/{_SUBSTITUTABLE_AUDIENCE_FILES[audience]}"
+
+
 def egress_env() -> list[SandboxTemplateSpecPodTemplateSpecContainersEnv]:
     """The proxy environment, for the workload container itself.
 
@@ -239,10 +244,7 @@ def _egress_sidecar(env: Environment) -> SandboxTemplateSpecPodTemplateSpecConta
             SandboxTemplateSpecPodTemplateSpecContainersEnv(
                 name=env_name(sidecar.Settings, "audience_token_files"),
                 value=json.dumps(
-                    {
-                        audience: f"{_EGRESS_TOKEN_DIR}/{file}"
-                        for audience, file in _SUBSTITUTABLE_AUDIENCE_FILES.items()
-                    }
+                    {audience: audience_token_file(audience) for audience in _SUBSTITUTABLE_AUDIENCE_FILES}
                 ),
             ),
         ],

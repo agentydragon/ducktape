@@ -94,6 +94,8 @@ flowchart TB
     actions -->|MCP servers, GitHub, web push| outside
 
     runner --> sidecar -->|all outbound traffic| proxy
+    sidecar -.->|testing, our Sandboxes: platform routes, RunnerControl Connect| gw
+    sidecar -.->|testing, our Sandboxes: platform routes, RunnerIngress Push| hs
     proxy -->|policy watches, EgressReady| k8s
     proxy -->|RunnerControl Connect: commands, lifecycle| gw
     proxy -->|RunnerIngress Push: Events| hs

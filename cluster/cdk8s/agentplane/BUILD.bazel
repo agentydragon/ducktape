@@ -329,9 +329,11 @@ py_library(
         ":egress",
         ":environment",
         ":llm_ingress",
+        ":platform_routes",
         ":runner_gateway",
         ":sandbox_pod",
         "//agentplane:crd_group",
+        "//agentplane/egress:sidecar",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/providers/agent_sandbox:sandbox_template",
@@ -992,5 +994,24 @@ py_test(
         "//cluster/cdk8s:model_selections",
         "//model_catalog:catalog",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "platform_routes",
+    srcs = ["platform_routes.py"],
+    deps = [
+        ":history_service",
+        ":runner_gateway",
+        ":sandbox_pod",
+        "//agentplane/egress:platform_routes",
+        "//agentplane/egress:sidecar",
+        "//agentplane/history_service:settings",
+        "//agentplane/runner_gateway:settings",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//util:settings_contract",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
     ],
 )

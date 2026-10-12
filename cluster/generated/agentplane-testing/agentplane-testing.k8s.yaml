@@ -3979,6 +3979,71 @@ spec:
   ingress:
     - {}
 ---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-platform-route-clients
+  namespace: agentplane-testing
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner-gateway
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-history-service
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-runner
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-platform-route-control
+  namespace: agentplane-testing
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-runner-gateway
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-platform-route-ingress
+  namespace: agentplane-testing
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-history-service
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+---
 apiVersion: extensions.agents.x-k8s.io/v1beta1
 kind: SandboxTemplate
 metadata:
@@ -4248,6 +4313,14 @@ spec:
             - KUBECONFIG
             - --harness-inherit-env
             - TZDIR
+            - --control-target
+            - 127.0.0.1:3130
+            - --control-bearer
+            - platform-route
+            - --ingress-target
+            - 127.0.0.1:3131
+            - --ingress-bearer
+            - platform-route
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-testing.svc.cluster.local:8080
@@ -4326,6 +4399,8 @@ spec:
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
               value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
+            - name: AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES
+              value: '{"control": {"listen_port": 3130, "upstream": "agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8082", "token_file": "/var/run/agentplane-egress/runner-control-token"}, "ingress": {"listen_port": 3131, "upstream": "agentplane-history-service.agentplane-testing.svc.cluster.local:8081", "token_file": "/var/run/agentplane-egress/runner-ingress-token"}}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
