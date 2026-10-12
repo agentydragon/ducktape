@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from cluster.cdk8s.openclaw_gateway import disabled_commands, session_memory_hook, trusted_proxy_gateway
-from cluster.cdk8s.public_coder.egress import PROXY_URL as _EGRESS_PROXY
+from cluster.cdk8s.public_coder.egress_proxy_url import PROXY_URL as _EGRESS_PROXY
 from model_catalog.catalog import (
     ANTIGRAVITY_FLASH_3,
     ANTIGRAVITY_FLASH_36,

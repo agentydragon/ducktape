@@ -25,7 +25,7 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 
 from cluster.cdk8s import external_creds
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.forgejo_registry import chart as forgejo_images
+from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
@@ -186,7 +186,7 @@ def _graphql_exporter(chart: Chart, service: ServiceRef, account: str) -> None:
         description=f"GitHub GraphQL rate-limit exporter for the {account} account.",
         # The upstream exporter beside this one pulls from Docker Hub; this image comes
         # from the private Forgejo registry and needs the pull secret.
-        image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
+        image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
         container=k8s.Container(
             name="exporter",
             image=_GRAPHQL_IMAGE,
@@ -233,7 +233,7 @@ def _service_monitor(chart: Chart, app: str, endpoint: ServiceMonitorSpecEndpoin
 
 def chart(app: App) -> Chart:
     chart = Chart(app, "github-exporter", disable_resource_name_hashes=True)
-    forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
+    pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=_NAMESPACE)
     # The exporters receive namespace-local copies of the centralized PATs through
     # their source-approved credential edges.
     k8s.KubeServiceAccount(

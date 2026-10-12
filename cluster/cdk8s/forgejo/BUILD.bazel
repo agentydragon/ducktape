@@ -144,7 +144,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:reflector",
         "//cluster/cdk8s/forgejo:secret_copy",
-        "//cluster/cdk8s/forgejo_registry:chart",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/rotators/forgejo_token_rotation:config",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

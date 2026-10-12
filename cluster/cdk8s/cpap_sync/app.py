@@ -33,7 +33,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 from cluster.cdk8s import cilium, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo import secret_copy
-from cluster.cdk8s.forgejo_registry import chart as forgejo_images
+from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -122,7 +122,7 @@ def namespace_chart(app: App) -> Chart:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
+    pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     # tf/gitops/cpap-data's service-user credentials: the writer's for the CronJob, and the
     # reader's for analysis, mirrored into claude-sandbox for Claude Code sessions.
     reader = secret_copy.reader(chart, NAMESPACE)
@@ -132,7 +132,7 @@ def chart(app: App) -> Chart:
         chart,
         "default-service-account",
         metadata=k8s.ObjectMeta(name="default", namespace=NAMESPACE),
-        image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
+        image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
     )
     k8s.KubeCronJob(
         chart,

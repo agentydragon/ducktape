@@ -23,7 +23,7 @@ from att_gateway.settings import Settings, SyslogLevel, SyslogSettings
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.att_gateway_exporter import access_code
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.forgejo_registry import chart as forgejo_images
+from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.grafana_dashboards import DashboardFile
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -71,7 +71,7 @@ def _pod_spec(
     return k8s.PodSpec(
         restart_policy=restart_policy,
         # The pull secret the github-exporter chart provisions in this namespace.
-        image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
+        image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
         automount_service_account_token=False,
         termination_grace_period_seconds=termination_grace_period_seconds,
         security_context=k8s.PodSecurityContext(run_as_non_root=True, run_as_user=65532, run_as_group=65532),

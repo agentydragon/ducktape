@@ -29,7 +29,7 @@ from constructs import Construct
 
 from cluster.cdk8s import cilium, pod_policy
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.forgejo_registry import chart as forgejo_images
+from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
 from cluster.controllers.vm_image_restart.settings import Settings
@@ -137,7 +137,7 @@ class VmImageRestartController(Construct):
             select=False,
             service_account=service_account,
             automount_service_account_token=True,
-            docker_registry_auth=forgejo_images.forgejo_images_creds_secret_ref(self, "image-pull-auth"),
+            docker_registry_auth=pull_credentials.forgejo_images_creds_secret_ref(self, "image-pull-auth"),
             security_context=PodSecurityContextProps(ensure_non_root=True, user=65532, group=65532),
         )
         deployment.select(LabelSelector.of(labels=_LABELS))

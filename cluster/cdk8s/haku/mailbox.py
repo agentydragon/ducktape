@@ -22,7 +22,7 @@ from cilium_crds.io.cilium import (
 from cluster.cdk8s import cilium, cnpg, cnpg_backup, gateway, namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions
-from cluster.cdk8s.forgejo_registry import chart as forgejo_images
+from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.haku import namespace
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -142,7 +142,7 @@ def _add_deployment(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=HTTP.pods.selector),
                 spec=k8s.PodSpec(
-                    image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
+                    image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
                     automount_service_account_token=False,
                     # OVH-only resilience: inbound mail must not depend on Proxmox, and the CNPG
                     # store is pinned to hil-ovh -- co-locate with it (same pin as other
@@ -414,7 +414,7 @@ def chart(app: App) -> Chart:
         },
     )
     _add_store(chart)
-    forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
+    pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     Certificate(
         chart,
         "certificate",

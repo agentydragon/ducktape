@@ -14,6 +14,7 @@ py_library(
     deps = [
         ":config",
         ":egress",
+        ":egress_proxy_url",
         ":proxy",
         ":sshpiper",
         "//agentplane/action_service/policies:resources",
@@ -28,7 +29,7 @@ py_library(
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/clickhouse:client",
         "//cluster/cdk8s/external_secrets:minted_secret",
-        "//cluster/cdk8s/forgejo_registry:chart",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/haku:console",
         "//cluster/cdk8s/haku:kube_api_proxy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
@@ -120,7 +121,7 @@ py_library(
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/cert_manager:interception_ca",
         "//cluster/cdk8s/clickhouse:client",
-        "//cluster/cdk8s/forgejo_registry:chart",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/haku:kube_api_proxy",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
@@ -181,8 +182,13 @@ py_library(
     name = "config",
     srcs = ["config.py"],
     deps = [
-        ":egress",
+        ":egress_proxy_url",
         "//cluster/cdk8s:openclaw_gateway",
         "//model_catalog:catalog",
     ],
+)
+
+py_library(
+    name = "egress_proxy_url",
+    srcs = ["egress_proxy_url.py"],
 )

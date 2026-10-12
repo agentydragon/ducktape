@@ -25,7 +25,7 @@ from cluster.cdk8s import agent_access_profiles as access, external_creds, names
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.forgejo_registry import chart as forgejo_images
+from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -34,6 +34,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.public_coder import (
     config as public_coder_config,
     egress as public_coder_egress,
+    egress_proxy_url,
     proxy as public_coder_proxy,
     sshpiper as public_coder_sshpiper,
 )
@@ -61,7 +62,7 @@ _STATE_CLAIM_NAME = "public-coder-agent-state-v2"
 _DIAGNOSTICS_CLAIM_NAME = "public-coder-agent-diagnostics"
 _GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gateway-password")
 # The OpenClaw config uses the same proxy for Matrix login-password substitution.
-_EGRESS_PROXY = public_coder_egress.PROXY_URL
+_EGRESS_PROXY = egress_proxy_url.PROXY_URL
 _NO_PROXY = "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"
 _KUBECONFIG_CONFIG_MAP_NAME = "kubeconfig"
 # Rendered by the kustomization.yaml's configMapGenerator.
@@ -375,7 +376,7 @@ def _deployment(scope: Construct) -> None:
                     ),
                     # The Secret comes from public_coder_proxy's ExternalSecret, rendered into this
                     # same Flux Kustomization through app/kustomization.yaml's ../proxy.
-                    image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
+                    image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
                     init_containers=[
                         k8s.Container(
                             name="seed-config",

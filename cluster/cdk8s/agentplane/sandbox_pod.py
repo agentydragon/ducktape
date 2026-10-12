@@ -48,7 +48,7 @@ from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.agentplane import egress, notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.forgejo_registry.chart import SECRET_NAME
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
 from util.settings_contract import env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml

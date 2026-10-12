@@ -46,7 +46,6 @@ BRAVE_CREDENTIAL = "brave-search"
 MATRIX_CREDENTIAL = "public-coder-matrix"
 TOKEN_VOLUME = "agentplane-egress-token"
 _TOKEN_DIR = "/var/run/agentplane-egress"
-PROXY_URL = "http://127.0.0.1:3128"
 SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
 
 
