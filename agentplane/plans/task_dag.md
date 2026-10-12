@@ -439,6 +439,7 @@ app/Sandbox Service database changes requires its own migration safety review.
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     SERVICE_LOG_FLAGS[Unscheduled: logging flags in the services]
+    ISOLATED_ACCEPTANCE_CI[Unscheduled: acceptance tests in their own CI workflow]
 ```
 
 ### `CLAUDE_CODE_WEB_BRIDGE` — Claude Code web sessions in Agentplane
@@ -453,6 +454,19 @@ messages, by shimming the web interface's control protocol. Builds on the viewer
 **Unscheduled; operator, 2026-10-12 PDT: would welcome it.** `agentplane/service_process.py` fixes
 every service at `INFO`. A setting for the level, per logger where it helps (request logging in the
 app, the gRPC clients), lets a debugging session turn detail up on one Deployment without an image.
+
+### `ISOLATED_ACCEPTANCE_CI` — acceptance tests in their own CI workflow
+
+**Unscheduled; operator, 2026-10-12 PDT: eventually.** Today the deployed vertical tests under
+`agentplane/acceptance/` run by hand against the stateful `agentplane-testing` environment, and CI
+never runs them. Move them into their own CI workflow that runs in isolation, so the cluster no
+longer carries a stateful environment for them. Options named: an isolated part of the operator's
+cluster, GitHub's runners, or BuildBuddy's; and the cheap-experiments LiteLLM key or a new key
+provisioned for CI. Constraint: an agent can still run, inspect and step through the tests itself.
+Open: where they run. The k3s-on-RBE spike (#10214, draft) shows a real kubelet runs in a
+BuildBuddy action, but with no ClusterIP Services, no KubeVirt and no Cilium, so tests that need
+those stay elsewhere. envtest covers only API-server behavior, not Pods, harnesses or LLM calls, so
+it does not replace these tests.
 
 ## 6. Existing access and lifecycle follow-ups
 
