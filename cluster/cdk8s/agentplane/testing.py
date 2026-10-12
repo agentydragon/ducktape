@@ -278,10 +278,10 @@ _TOKEN_RULE = RolePolicyRule(
 )
 
 # testing's MCP acceptance scenario additionally creates, expires, and deletes the
-# ActionPolicySet/ActionPolicyBinding its Sandbox is auto-approved under, reading
-# their Ready condition to know the Action Service has seen each edit.
+# PolicySet/PolicyBinding its Sandbox is auto-approved under, reading the binding's
+# ActionsReady condition to know the Action Service has seen it.
 _ACTION_POLICY_RULE = RolePolicyRule(
-    resources=[custom_resource(GROUP, "actionpolicysets"), custom_resource(GROUP, "actionpolicybindings")],
+    resources=[custom_resource(GROUP, "policysets"), custom_resource(GROUP, "policybindings")],
     verbs=["create", "get", "patch", "delete"],
 )
 

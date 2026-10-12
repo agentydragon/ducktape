@@ -52,12 +52,13 @@ API as below. Run after the PR's images and manifests have rolled out; remote ad
 not evidence that the real-agent deployed test has run.
 
 `test_policy_binding_auto_approves_the_bound_sandbox` writes, with the caller's own kubeconfig,
-an `ActionPolicySet` that auto-approves `everything/echo` with a string `message` of at most 200
-characters and an `ActionPolicyBinding` naming the Sandbox it launched by name and UID, then
-waits for the Action Service's `Ready` condition on both. A matching echo comes back auto-approved
-and executed, and the BFF receipt's Decision names the binding, the set and the matching policy;
-an over-long message waits for the operator; after the binding is patched to an expiry in the past
-and re-acknowledged, so does a match. The objects are deleted at teardown; the pending requests are
+a `PolicySet` whose `action_auto_approve` rule approves `everything/echo` with a string `message`
+of at most 200 characters and a `PolicyBinding` naming the ServiceAccount of the Sandbox it
+launched, then waits for the Action Service's `ActionsReady` condition on the binding. A matching
+echo comes back auto-approved and executed, and the BFF receipt's Decision names the binding, the
+set and the matching rule; an over-long message waits for the operator; after the binding is
+patched to an expiry in the past, the Policy Controller deletes it and the BFF's caller grants stop
+listing it, a match waits too. The objects are deleted at teardown; the pending requests are
 denied through the BFF so nothing lingers. The role in
 `../../cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml`
 grants create/get/patch/delete on the two kinds for this.
