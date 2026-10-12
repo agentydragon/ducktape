@@ -50,6 +50,7 @@ async def test_session_lookups_carry_the_gateway_bearer(tmp_path: Path) -> None:
         SandboxServiceClient(
             "127.0.0.1:1",
             gateway_target=f"127.0.0.1:{port}",
+            control_target=f"127.0.0.1:{port}",
             namespace="test",
             token_file=service_token,
             gateway_token_file=gateway_token,
