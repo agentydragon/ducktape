@@ -26,7 +26,7 @@ for m in overlay br_netfilter vxlan ip_tables nf_conntrack xt_conntrack iptable_
   if [ -d "/sys/module/$m" ]; then echo "module $m: loaded"; else $SUDO modprobe "$m" 2>/dev/null && echo "module $m: modprobed" || echo "module $m: MISSING"; fi
 done
 grep -w overlay /proc/filesystems || echo "overlay fs: MISSING"
-[ -e /proc/config.gz ] && zcat /proc/config.gz | grep -E 'CONFIG_(BRIDGE_NETFILTER|VXLAN|NETFILTER_XT_MATCH_CONNTRACK|IP_NF_RAW|NF_TABLES|CGROUP_BPF|USER_NS|OVERLAY_FS)='
+[ -e /proc/config.gz ] && zcat /proc/config.gz | grep -E 'CONFIG_(BRIDGE_NETFILTER|VXLAN|NETFILTER_XT_|IP_NF_|NF_TABLES|NFT_|NF_NAT|CGROUP_BPF|USER_NS|OVERLAY_FS|KEYS|IP_SET|BPF_SYSCALL)'
 ls /dev/kvm 2>&1
 
 ts "== download k3s $K3S_VERSION"
@@ -111,13 +111,12 @@ try_config() {
     return 1
   fi
   ts "$name: node Ready after $(($(date +%s) - start))s"
-  local busybox
-  busybox=$($SUDO "$work/k3s" ctr --address "$dir/agent/containerd/containerd.sock" images ls -q 2>/dev/null | grep -m1 busybox)
-  [ -n "$busybox" ] || {
-    $k get pods -A
-    sleep 20
-    busybox=$($SUDO "$work/k3s" ctr --address "$dir/agent/containerd/containerd.sock" images ls -q | grep -m1 busybox)
-  }
+  local busybox=""
+  for _ in $(seq 30); do
+    busybox=$($k get node spike -o jsonpath='{range .status.images[*]}{.names[0]}{"\n"}{end}' | grep -m1 busybox)
+    [ -n "$busybox" ] && break
+    sleep 2
+  done
   echo "busybox image: $busybox"
   echo "${POD_YAML//BUSYBOX/$busybox}" | $k apply -f -
   if ! $k wait --for=condition=Ready pod/server --timeout=180s; then
@@ -137,6 +136,14 @@ try_config() {
   local got
   got=$($k logs client 2>&1)
   $k exec server -- id
+  $k expose pod server --port=8080 --name=server
+  $k run svc-client --image="$busybox" --restart=Never --command -- wget -T 10 -qO- http://server.default.svc.cluster.local:8080/
+  if $k wait --for=jsonpath='{.status.phase}'=Succeeded pod/svc-client --timeout=60s; then
+    echo "service via DNS: $($k logs svc-client)"
+  else
+    echo "service via DNS: FAILED $($k logs svc-client 2>&1 | tail -3)"
+  fi
+  $k get pods -A
   ts "RESULT $name: OK pod-to-pod='$got' total=$(($(date +%s) - start))s"
   cleanup_k3s
   return 0
@@ -144,8 +151,8 @@ try_config() {
 
 fake_kernel_sysctls
 ok=""
-try_config hostgw --flannel-backend=host-gw --disable-network-policy && ok="$ok hostgw"
-try_config default && ok="$ok default"
-[ -n "$ok" ] || try_config native --flannel-backend=host-gw --disable-network-policy --snapshotter=native --kube-proxy-arg=proxy-mode=iptables && ok="$ok native"
+# iptables mode: the kernel has no xt_mark, so kube-proxy's and flannel's rule syncs fail.
+try_config iptables --flannel-backend=host-gw --disable-network-policy && ok="$ok iptables"
+try_config nftables --flannel-backend=host-gw --disable-network-policy --kube-proxy-arg=proxy-mode=nftables && ok="$ok nftables"
 ts "== working configs:${ok:- none}"
 [ -n "$ok" ]
