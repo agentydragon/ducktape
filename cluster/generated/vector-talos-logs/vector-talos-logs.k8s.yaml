@@ -62,6 +62,9 @@ spec:
       hostNetwork: true
       nodeSelector:
         node-vendor: talos
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       tolerations:
         - operator: Exists
       volumes:

@@ -188,6 +188,7 @@ def _readonly_provisioner(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_PROVISIONER_LABELS),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     restart_policy="Never",
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
@@ -195,6 +196,12 @@ def _readonly_provisioner(chart: Chart) -> None:
                         k8s.Container(
                             name="psql",
                             image="ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie",
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("10m"),
+                                    "memory": k8s.Quantity.from_string("32Mi"),
+                                }
+                            ),
                             command=["/bin/bash", "-c"],
                             args=[
                                 "set -euo pipefail\n"

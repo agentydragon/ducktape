@@ -249,6 +249,9 @@ spec:
         - name: forgejo-images-creds
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: tana-firebase-resigner
       volumes:
         - emptyDir: {}
@@ -380,6 +383,9 @@ spec:
             periodSeconds: 5
       imagePullSecrets:
         - name: forgejo-images-creds
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute

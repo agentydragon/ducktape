@@ -250,6 +250,7 @@ def _deployment(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_PODS.selector),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     runtime_class_name="nvidia",
                     node_selector={"feature.node.kubernetes.io/pci-10de.present": "true"},

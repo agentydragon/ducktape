@@ -148,7 +148,11 @@ def _add_deployment(chart: Chart) -> None:
                     # OVH-pinned apps, e.g. paperless).
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     security_context=k8s.PodSecurityContext(
-                        run_as_non_root=True, run_as_user=1000, run_as_group=1000, fs_group=1000
+                        run_as_non_root=True,
+                        run_as_user=1000,
+                        run_as_group=1000,
+                        fs_group=1000,
+                        seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
                     ),
                     init_containers=[
                         k8s.Container(

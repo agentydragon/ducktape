@@ -189,6 +189,9 @@ spec:
       nodeSelector:
         feature.node.kubernetes.io/pci-10de.present: "true"
       runtimeClassName: nvidia
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       tolerations:
         - effect: PreferNoSchedule
           key: nvidia.com/gpu

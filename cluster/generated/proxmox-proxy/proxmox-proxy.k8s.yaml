@@ -58,6 +58,9 @@ spec:
               subPath: nginx.conf
       nodeSelector:
         topology.kubernetes.io/region: proxmox
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
         - configMap:
             name: proxmox-proxy-config

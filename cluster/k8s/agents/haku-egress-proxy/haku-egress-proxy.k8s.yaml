@@ -146,12 +146,19 @@ spec:
               cp /mitmproxy-ca/tls.crt /mitmproxy-data/mitmproxy-ca-cert.pem
           image: busybox:1.38
           name: mitmproxy-ca-init
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
           volumeMounts:
             - mountPath: /mitmproxy-ca
               name: mitmproxy-ca
               readOnly: true
             - mountPath: /mitmproxy-data
               name: mitmproxy-data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
         - name: mitmproxy-ca
           secret:

@@ -222,6 +222,7 @@ def _deployment(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     host_network=True,
@@ -231,6 +232,12 @@ def _deployment(scope: Construct) -> None:
                         k8s.Container(
                             name="provision-components",
                             image=_COMPONENT_INSTALLER_IMAGE,
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("50m"),
+                                    "memory": k8s.Quantity.from_string("128Mi"),
+                                }
+                            ),
                             image_pull_policy="Always",
                             command=["/homeassistant/provisioner/components/install_bin"],
                             env=[_settings_env(components.Settings)],
@@ -366,6 +373,7 @@ def _onboarding_job(scope: Construct) -> None:
                     labels={"app.kubernetes.io/name": _ONBOARDING},
                 ),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     restart_policy="OnFailure",
@@ -681,7 +689,7 @@ def write_manifests(root: Path) -> None:
                     _OUTPUT_DIR,
                     chart,
                     # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-                    unhardened_pods={"Deployment/home-assistant", "Job/onboarding"},
+                    unhardened_pods={"Deployment/home-assistant"},
                 ),
                 "break-glass-credentials.sops.yaml",
                 "home-location.sops.yaml",

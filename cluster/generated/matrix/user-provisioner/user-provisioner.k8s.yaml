@@ -49,7 +49,14 @@ spec:
           image: git.allegedly.works/ducktape-ci/matrix-user-provisioner:unset
           imagePullPolicy: Always
           name: provision
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
       imagePullSecrets:
         - name: forgejo-images-creds
       restartPolicy: OnFailure
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
   ttlSecondsAfterFinished: 3600

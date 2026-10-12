@@ -162,6 +162,8 @@ spec:
         topology.kubernetes.io/region: proxmox
       securityContext:
         fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
         - name: data
           persistentVolumeClaim:

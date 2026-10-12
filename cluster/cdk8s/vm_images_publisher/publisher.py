@@ -91,6 +91,9 @@ def _cron_job(scope: Construct) -> None:
                     active_deadline_seconds=5400,
                     template=k8s.PodTemplateSpec(
                         spec=k8s.PodSpec(
+                            security_context=k8s.PodSecurityContext(
+                                seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
+                            ),
                             automount_service_account_token=False,
                             restart_policy="Never",
                             # The internal SeaweedFS endpoint resolves via normal pod DNS -- no
@@ -235,10 +238,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(
-        root,
-        OUTPUT_DIR,
-        chart,
-        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods={"CronJob/vm-images-publisher"},
-    )
+    write_charts(root, OUTPUT_DIR, chart)

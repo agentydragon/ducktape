@@ -85,6 +85,7 @@ def _tana_deployment(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=MCP_PROXY.pods.selector),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     service_account_name=_RESIGNER,
@@ -285,6 +286,7 @@ def _facade(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_FACADE_HTTP.pods.selector),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     containers=[
@@ -465,10 +467,4 @@ def chart(app: App) -> Chart:
 
 
 def write_manifests(root: Path) -> None:
-    write_charts(
-        root,
-        OUTPUT_DIR,
-        chart,
-        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods={"Deployment/facade", "Deployment/tana-mcp"},
-    )
+    write_charts(root, OUTPUT_DIR, chart)

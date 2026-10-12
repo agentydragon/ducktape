@@ -139,6 +139,7 @@ def _server(scope: Construct, household: str) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=http.pods.selector),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     # Both this workload and its shared CNPG OAuth-state database are pinned to
@@ -241,15 +242,7 @@ def write_manifests(root: Path) -> None:
         write_yaml(
             root / directory / "kustomization.yaml",
             kustomize_kustomization(
-                resources=[
-                    write_charts(
-                        root,
-                        directory,
-                        partial(household_chart, household=household),
-                        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-                        unhardened_pods={"Deployment/grocy-mcp-server"},
-                    )
-                ],
+                resources=[write_charts(root, directory, partial(household_chart, household=household))],
                 components=[posixpath.relpath(PINS_DIR, directory)],
                 config_map_generator=[_config_map(household)],
             ),

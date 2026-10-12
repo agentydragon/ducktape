@@ -697,6 +697,10 @@ spec:
               rm -f /state/openclaw.json5.last-good /state/openclaw.json5.bak*
           image: git.allegedly.works/ducktape-ci/public-coder-agent:unset
           name: seed-config
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
           volumeMounts:
             - mountPath: /cfg
               name: cfg
@@ -704,6 +708,8 @@ spec:
               name: data
       securityContext:
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: openclaw
       volumes:
         - name: agentplane-egress-token

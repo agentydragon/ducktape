@@ -101,6 +101,7 @@ def _server(chart: Chart, namespace: str) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_LABELS),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     node_selector={"topology.kubernetes.io/region": "hil", **node_scheduling.HIL_OVH_NODE_SELECTOR},
                     containers=[
@@ -388,7 +389,7 @@ def write_manifests(root: Path, household: str, *, mcp_dir: str) -> None:
                     directory,
                     partial(household_chart, household=household),
                     # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-                    unhardened_pods={"Deployment/grocy", "Job/grocy-config-ovh-verify-20260520"},
+                    unhardened_pods={"Job/grocy-config-ovh-verify-20260520"},
                 ),
             ]
         ),

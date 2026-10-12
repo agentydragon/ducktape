@@ -180,6 +180,8 @@ spec:
         - name: forgejo-images-creds
       securityContext:
         fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: airlock
       volumes:
         - configMap:

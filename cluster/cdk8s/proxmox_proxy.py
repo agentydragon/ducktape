@@ -93,6 +93,7 @@ def chart(app: App) -> Chart:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     node_selector={"topology.kubernetes.io/region": "proxmox"},
                     containers=[

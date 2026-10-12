@@ -264,6 +264,9 @@ spec:
               name: config
               readOnly: true
               subPath: config.json
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
         - configMap:
             name: element-web-config

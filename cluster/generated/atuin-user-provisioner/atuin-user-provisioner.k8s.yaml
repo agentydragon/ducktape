@@ -109,6 +109,10 @@ spec:
               value: "5432"
           image: python:3.14-alpine
           name: provisioner
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
           volumeMounts:
             - mountPath: /scripts
               name: script
@@ -116,6 +120,9 @@ spec:
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       restartPolicy: OnFailure
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
         - configMap:
             name: user-provisioner-script

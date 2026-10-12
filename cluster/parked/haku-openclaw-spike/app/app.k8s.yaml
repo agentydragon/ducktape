@@ -445,6 +445,10 @@ spec:
               value: proxy-github-placeholder
           image: git.allegedly.works/ducktape-ci/haku-openclaw-spike:unset
           name: seed-state
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:

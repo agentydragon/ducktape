@@ -548,8 +548,6 @@ def generate_manifests(root: Path) -> None:
             dcgm_exporter_exporter.chart,
             namespace=dcgm_exporter_exporter.NAMESPACE,
             config_map_generator=[dcgm_exporter_exporter.COUNTERS_CONFIG_MAP],
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"DaemonSet/dcgm-exporter"},
         ),
         monitoring_crds_kustomization,
     )
@@ -713,27 +711,12 @@ def generate_manifests(root: Path) -> None:
         kyverno_kustomization,
     )
     website_artifact = artifact("website", website.OUTPUT_DIR)
-    website.website(
-        flux_chart,
-        write_directory(
-            root,
-            website_artifact,
-            website.chart,
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"Deployment/website"},
-        ),
-        kyverno_kustomization,
-    )
+    website.website(flux_chart, write_directory(root, website_artifact, website.chart), kyverno_kustomization)
     proxmox_proxy_artifact = artifact("proxmox-proxy", proxmox_proxy.OUTPUT_DIR)
     proxmox_proxy_kustomization = proxmox_proxy.proxmox_proxy(
         flux_chart,
         write_directory(
-            root,
-            proxmox_proxy_artifact,
-            proxmox_proxy.chart,
-            config_map_generator=[proxmox_proxy.config_map(mesh)],
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"Deployment/proxmox-proxy"},
+            root, proxmox_proxy_artifact, proxmox_proxy.chart, config_map_generator=[proxmox_proxy.config_map(mesh)]
         ),
         kyverno_kustomization,
     )
@@ -761,15 +744,7 @@ def generate_manifests(root: Path) -> None:
     )
     atuin_artifact = artifact("atuin", atuin_server.OUTPUT_DIR)
     atuin_kustomization = atuin_server.atuin(
-        flux_chart,
-        write_directory(
-            root,
-            atuin_artifact,
-            atuin_server.chart,
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"Deployment/server"},
-        ),
-        cnpg_kustomization,
+        flux_chart, write_directory(root, atuin_artifact, atuin_server.chart), cnpg_kustomization
     )
     authentik_artifact = artifact("authentik", f"{HAND_WRITTEN_ROOT}/authentik")
     authentik_kustomization = authentik_flux_kustomizations.authentik(
@@ -1038,14 +1013,7 @@ def generate_manifests(root: Path) -> None:
     )
     kubectl_passthrough_mcp_artifact = artifact("kubectl-passthrough-mcp", kubectl_passthrough_mcp.OUTPUT_DIR)
     kubectl_passthrough_mcp.kubectl_passthrough_mcp(
-        flux_chart,
-        write_directory(
-            root,
-            kubectl_passthrough_mcp_artifact,
-            kubectl_passthrough_mcp.chart,
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"Deployment/kubectl-passthrough-mcp"},
-        ),
+        flux_chart, write_directory(root, kubectl_passthrough_mcp_artifact, kubectl_passthrough_mcp.chart)
     )
     forgejo_artifact = artifact("forgejo", f"{HAND_WRITTEN_ROOT}/forgejo")
     forgejo_flux_kustomizations.forgejo(
@@ -1060,14 +1028,7 @@ def generate_manifests(root: Path) -> None:
     matrix_app_artifact = artifact("matrix-app", matrix.OUTPUT_DIR)
     matrix_kustomization = matrix.matrix(
         flux_chart,
-        write_directory(
-            root,
-            matrix_app_artifact,
-            matrix.chart,
-            siblings=matrix.SOPS_FILES,
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"Deployment/element-web"},
-        ),
+        write_directory(root, matrix_app_artifact, matrix.chart, siblings=matrix.SOPS_FILES),
         cnpg_kustomization,
     )
     headlamp_app_artifact = artifact("headlamp-app", headlamp.OUTPUT_DIR)
@@ -1118,8 +1079,6 @@ def generate_manifests(root: Path) -> None:
             vector_talos_logs.chart,
             namespace=vector_talos_logs.NAMESPACE,
             config_map_generator=[vector_talos_logs.CONFIG_MAP],
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"DaemonSet/vector-talos-logs"},
         ),
     )
     monitoring_alloy_artifact = artifact("monitoring-alloy", alloy.OUTPUT_DIR)
@@ -1180,13 +1139,7 @@ def generate_manifests(root: Path) -> None:
     haku_ci_artifact = artifact("haku-ci", haku_ci_runner.OUTPUT_DIR)
     haku_ci_kustomization = haku_ci_runner.haku_ci(
         flux_chart,
-        write_directory(
-            root,
-            haku_ci_artifact,
-            haku_ci_runner.chart,
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"ScaledJob/haku-runner"},
-        ),
+        write_directory(root, haku_ci_artifact, haku_ci_runner.chart),
         keda_kustomization,
         external_secrets_operator_kustomization,
     )
@@ -1265,8 +1218,6 @@ def generate_manifests(root: Path) -> None:
         siblings=airlock.SOPS_FILES,
         components=[posixpath.relpath(airlock.PINS_DIR, airlock.OUTPUT_DIR)],
         config_map_generator=[airlock.CONFIG_MAP],
-        # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-        unhardened_pods={"Deployment/airlock"},
     )
     airlock_kustomization = agents_flux_kustomizations.airlock(
         flux_chart, airlock_directory, external_secrets_operator_kustomization
@@ -1448,8 +1399,6 @@ def generate_manifests(root: Path) -> None:
             siblings=haku_mailbox.SOPS_FILES,
             components=["./image-pins"],
             config_map_generator=[haku_mailbox.CONFIG_MAP, haku_mailbox.INGRESS_CONFIG_MAP],
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"Deployment/haku-mailbox"},
         ),
         cnpg_kustomization,
         cert_manager_kustomization,
@@ -1534,7 +1483,7 @@ def generate_manifests(root: Path) -> None:
             components=[posixpath.relpath(study_casino_app.PINS_DIR, study_casino_app.OUTPUT_DIR)],
             config_map_generator=study_casino_app.config_maps(root),
             # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"Deployment/study-casino", "Job/db-readonly-provisioner"},
+            unhardened_pods={"Job/db-readonly-provisioner"},
         ),
         cnpg_kustomization,
         external_secrets_operator_kustomization,

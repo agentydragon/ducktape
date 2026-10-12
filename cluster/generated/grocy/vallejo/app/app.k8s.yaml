@@ -75,6 +75,9 @@ spec:
       nodeSelector:
         topology.kubernetes.io/region: hil
         topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
         - name: config
           persistentVolumeClaim:

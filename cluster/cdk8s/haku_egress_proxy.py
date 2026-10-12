@@ -70,6 +70,7 @@ def _mitmproxy(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     affinity=k8s.Affinity(
                         pod_anti_affinity=k8s.PodAntiAffinity(
@@ -90,6 +91,12 @@ def _mitmproxy(chart: Chart) -> None:
                         k8s.Container(
                             name="mitmproxy-ca-init",
                             image="busybox:1.38",
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("10m"),
+                                    "memory": k8s.Quantity.from_string("16Mi"),
+                                }
+                            ),
                             command=["sh", "-c", _MITMPROXY_CA_INIT_SCRIPT],
                             volume_mounts=[
                                 k8s.VolumeMount(name="mitmproxy-ca", mount_path="/mitmproxy-ca", read_only=True),

@@ -99,6 +99,9 @@ spec:
               memory: 64Mi
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
 ---
 apiVersion: v1
 kind: Service

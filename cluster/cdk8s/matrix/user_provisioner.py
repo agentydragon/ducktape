@@ -41,6 +41,7 @@ def chart(app: App) -> Chart:
             ttl_seconds_after_finished=3600,
             template=k8s.PodTemplateSpec(
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     restart_policy="OnFailure",
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
@@ -48,6 +49,12 @@ def chart(app: App) -> Chart:
                         k8s.Container(
                             name="provision",
                             image=_IMAGE,
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("50m"),
+                                    "memory": k8s.Quantity.from_string("64Mi"),
+                                }
+                            ),
                             image_pull_policy="Always",
                             env=[
                                 SecretRef(namespace=NAMESPACE, name="synapse-registration-secret")

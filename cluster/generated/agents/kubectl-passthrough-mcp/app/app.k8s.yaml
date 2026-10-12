@@ -85,6 +85,9 @@ spec:
               name: public
               readOnly: true
               subPath: 00-public.toml
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       serviceAccountName: kubectl-passthrough-mcp
       volumes:
         - configMap:

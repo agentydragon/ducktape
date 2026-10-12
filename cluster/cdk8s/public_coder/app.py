@@ -353,7 +353,9 @@ def _deployment(scope: Construct) -> None:
                 spec=k8s.PodSpec(
                     service_account_name=public_coder_egress.SERVICE_ACCOUNT,
                     automount_service_account_token=False,
-                    security_context=k8s.PodSecurityContext(fs_group=1000),
+                    security_context=k8s.PodSecurityContext(
+                        fs_group=1000, seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
+                    ),
                     # Keep Public Coder on the worker class that serves its local state PVC; do
                     # not allow it to fall back onto control-plane nodes.
                     affinity=k8s.Affinity(
@@ -378,6 +380,12 @@ def _deployment(scope: Construct) -> None:
                         k8s.Container(
                             name="seed-config",
                             image=_IMAGE,
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("10m"),
+                                    "memory": k8s.Quantity.from_string("32Mi"),
+                                }
+                            ),
                             command=["sh", "-c", _SEED_CONFIG_SCRIPT],
                             volume_mounts=[
                                 k8s.VolumeMount(name="cfg", mount_path="/cfg"),

@@ -136,6 +136,7 @@ def _deployment(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     # No explicit zone nodeSelector: the PVC's seaweedfs-ovh StorageClass already
@@ -154,6 +155,12 @@ def _deployment(scope: Construct) -> None:
                         k8s.Container(
                             name="init-auth-dir",
                             image="busybox:1.38",
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("10m"),
+                                    "memory": k8s.Quantity.from_string("16Mi"),
+                                }
+                            ),
                             command=["sh", "-c", "mkdir -p /data/auth"],
                             volume_mounts=[k8s.VolumeMount(name="data", mount_path="/data")],
                         )

@@ -57,6 +57,7 @@ def _server(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=SERVER.pods.selector),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
                     containers=[

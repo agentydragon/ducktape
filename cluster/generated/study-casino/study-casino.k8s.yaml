@@ -141,6 +141,10 @@ spec:
               value: studycasino
           image: ghcr.io/cloudnative-pg/postgresql:18.6
           name: psql
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
           terminationMessagePolicy: FallbackToLogsOnError
           volumeMounts:
             - mountPath: /sql
@@ -149,6 +153,9 @@ spec:
       nodeSelector:
         topology.kubernetes.io/region: hil
       restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
         - configMap:
             name: study-casino-db-readonly-sql
@@ -286,6 +293,9 @@ spec:
         - name: forgejo-images-creds
       nodeSelector:
         topology.kubernetes.io/region: hil
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       tolerations:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane

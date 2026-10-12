@@ -131,6 +131,9 @@ spec:
         - name: forgejo-images-creds
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       tolerations:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane

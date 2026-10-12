@@ -181,6 +181,7 @@ def _readonly_provisioner(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels={"app": "study-casino-db-readonly-provisioner"}),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     restart_policy="Never",
                     node_selector={"topology.kubernetes.io/region": _REGION},
@@ -188,6 +189,12 @@ def _readonly_provisioner(scope: Construct) -> None:
                         k8s.Container(
                             name="psql",
                             image="ghcr.io/cloudnative-pg/postgresql:18.6",
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("10m"),
+                                    "memory": k8s.Quantity.from_string("32Mi"),
+                                }
+                            ),
                             command=["/bin/bash", "-c"],
                             args=[_PROVISIONER_SCRIPT],
                             termination_message_policy="FallbackToLogsOnError",
@@ -245,6 +252,7 @@ def _deployment(scope: Construct) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=_SERVICE.pods.selector),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     node_selector={"topology.kubernetes.io/region": _REGION},

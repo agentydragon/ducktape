@@ -25,9 +25,11 @@ valid generated and hand-written consumers pass. No duplicate consumer/provider 
 
 Workloads and proxy policies that already broke a rule when the rules started covering every
 App carry `unhardened_pods` / `unpinned_https_egress` waivers at their write call, each under a
-`CLEANUP(added 2026-10-12)` comment. Fix them in small PRs: RuntimeDefault seccomp first, then
-resources sized from VPA recommendations. For each unpinned proxy, either pin `serverNames` or
-keep the waiver with a comment saying why it is exempt by design, as Agentplane's egress proxy does.
+`CLEANUP(added 2026-10-12)` comment. What keeps most waived workloads failing is a missing memory
+limit; size it, and the requests of long-running containers (Ollama's `auth-proxy`, `attic`), from VPA
+recommendations. Ollama's `setup-gpt-oss` Job and Grocy's verify Job have no Flux force annotation, so
+their immutable pod templates change only with a Job rename. For each unpinned proxy, either pin
+`serverNames` or keep the waiver with a comment saying why it is exempt by design, as Agentplane's egress proxy does.
 Synth fails on a waiver whose object passes, so a fix includes deleting it.
 
 Done: no `CLEANUP(added 2026-10-12)` waiver remains except the documented by-design exemptions.

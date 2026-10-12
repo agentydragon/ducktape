@@ -192,7 +192,9 @@ def _deployment(chart: Chart) -> None:
                     # The token store writes OAuth token Secrets through load_incluster_config()
                     # (airlock/oauth/k8s_client.py).
                     automount_service_account_token=True,
-                    security_context=k8s.PodSecurityContext(fs_group=1000),
+                    security_context=k8s.PodSecurityContext(
+                        fs_group=1000, seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
+                    ),
                     containers=[
                         k8s.Container(
                             name=NAME,

@@ -59,6 +59,9 @@ spec:
       nodeSelector:
         kubernetes.io/hostname: wyrm2
       runtimeClassName: nvidia
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
         - configMap:
             name: dcgm-counters

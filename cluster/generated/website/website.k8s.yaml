@@ -177,6 +177,9 @@ spec:
           volumeMounts:
             - mountPath: /usr/share/nginx/html
               name: html
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
         - configMap:
             name: content

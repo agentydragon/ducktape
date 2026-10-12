@@ -486,6 +486,12 @@ def _add_runner(chart: Chart) -> None:
                     metadata=keda.ScaledJobSpecJobTargetRefTemplateMetadata(labels=_LABELS),
                     spec=keda.ScaledJobSpecJobTargetRefTemplateSpec(
                         restart_policy="Never",
+                        # dind is privileged, so it stays unconfined; this confines register and runner.
+                        security_context=keda.ScaledJobSpecJobTargetRefTemplateSpecSecurityContext(
+                            seccomp_profile=keda.ScaledJobSpecJobTargetRefTemplateSpecSecurityContextSeccompProfile(
+                                type="RuntimeDefault"
+                            )
+                        ),
                         automount_service_account_token=False,
                         # Only matters for eviction/drain now -- nothing deletes this pod mid-build
                         # any more. Slightly above the runner's shutdown timeout so a drained node

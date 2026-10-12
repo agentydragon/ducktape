@@ -116,6 +116,7 @@ def chart(app: App) -> Chart:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels={"app": NAME}),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     automount_service_account_token=False,
                     restart_policy="OnFailure",
                     node_selector=node_scheduling.HIL_OVH_NODE_SELECTOR,
@@ -123,6 +124,12 @@ def chart(app: App) -> Chart:
                         k8s.Container(
                             name="provisioner",
                             image="python:3.14-alpine",
+                            resources=k8s.ResourceRequirements(
+                                requests={
+                                    "cpu": k8s.Quantity.from_string("50m"),
+                                    "memory": k8s.Quantity.from_string("128Mi"),
+                                }
+                            ),
                             command=[
                                 "sh",
                                 "-c",

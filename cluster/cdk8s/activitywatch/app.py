@@ -173,7 +173,9 @@ def _deployment(scope: Construct) -> None:
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
                     # No Kubernetes API access; don't mount a SA token.
                     automount_service_account_token=False,
-                    security_context=k8s.PodSecurityContext(fs_group=999),
+                    security_context=k8s.PodSecurityContext(
+                        fs_group=999, seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
+                    ),
                     node_selector={"topology.kubernetes.io/region": "proxmox"},
                     containers=[_aw_server_container(), _readonly_proxy_container(), _bearer_proxy_container()],
                     volumes=[

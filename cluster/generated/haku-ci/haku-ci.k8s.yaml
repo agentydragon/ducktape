@@ -327,6 +327,9 @@ spec:
               - mountPath: /bazel-cache
                 name: bazel-cache
         restartPolicy: Never
+        securityContext:
+          seccompProfile:
+            type: RuntimeDefault
         terminationGracePeriodSeconds: 1830
         tolerations:
           - effect: NoSchedule

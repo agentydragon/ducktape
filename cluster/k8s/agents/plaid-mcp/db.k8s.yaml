@@ -272,6 +272,10 @@ spec:
               value: plaidmcp
           image: ghcr.io/cloudnative-pg/postgresql:18.6-system-trixie
           name: psql
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
           terminationMessagePolicy: FallbackToLogsOnError
           volumeMounts:
             - mountPath: /sql
@@ -280,6 +284,9 @@ spec:
       nodeSelector:
         topology.kubernetes.io/zone: hil-ovh
       restartPolicy: Never
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
         - configMap:
             name: plaid-mcp-db-readonly-sql

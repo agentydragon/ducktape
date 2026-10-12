@@ -152,9 +152,16 @@ spec:
             - mkdir -p /data/auth
           image: busybox:1.38
           name: init-auth-dir
+          resources:
+            requests:
+              cpu: 10m
+              memory: 16Mi
           volumeMounts:
             - mountPath: /data
               name: data
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       tolerations:
         - effect: NoSchedule
           key: node-role.kubernetes.io/control-plane

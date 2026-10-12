@@ -78,11 +78,20 @@ class Mitmproxy(Construct):
                 template=k8s.PodTemplateSpec(
                     metadata=k8s.ObjectMeta(labels=PROXY.pods.selector),
                     spec=k8s.PodSpec(
+                        security_context=k8s.PodSecurityContext(
+                            seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")
+                        ),
                         automount_service_account_token=False,
                         init_containers=[
                             k8s.Container(
                                 name="mitmproxy-ca-init",
                                 image="busybox:1.38",
+                                resources=k8s.ResourceRequirements(
+                                    requests={
+                                        "cpu": k8s.Quantity.from_string("10m"),
+                                        "memory": k8s.Quantity.from_string("16Mi"),
+                                    }
+                                ),
                                 command=[
                                     "sh",
                                     "-c",

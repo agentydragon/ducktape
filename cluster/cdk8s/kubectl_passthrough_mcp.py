@@ -67,6 +67,7 @@ def _deployment(chart: Chart) -> None:
             template=k8s.PodTemplateSpec(
                 metadata=k8s.ObjectMeta(labels=SERVICE.pods.selector),
                 spec=k8s.PodSpec(
+                    security_context=k8s.PodSecurityContext(seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault")),
                     service_account_name=NAME,
                     # The in-cluster provider builds its client with client-go's InClusterConfig,
                     # which reads this token and CA before passthrough swaps in the caller's JWT.
