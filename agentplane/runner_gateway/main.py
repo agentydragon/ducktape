@@ -13,9 +13,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.grpc_serving import add_health, serving
 from agentplane.proto import runner_control_pb2_grpc
-from agentplane.runner_gateway.command_delivery import CommandDelivery
-from agentplane.runner_gateway.commands.dispatch import DispatchStore
-from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases, ConnectionRecords
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.grpc_api import Resources, add_service
@@ -51,14 +48,10 @@ async def gateway(
         custom_objects=cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api)),
     )
     sessions = SessionRegistry(commands_engine)
-    submissions = SubmissionStore(commands_engine)
     destinations = DestinationResolver(sandboxes, core)
     leases = ConnectionLeases()
     timing = ControlTiming()
     control = LifecycleControl(leases)
-    delivery = CommandDelivery(
-        commands_engine.url, dispatches=DispatchStore(commands_engine), leases=leases, liveness_s=timing.liveness_s
-    )
     resources = Resources(
         principals=WorkloadPrincipalResolver(
             authentication=k8s_client.AuthenticationV1Api(api),
@@ -68,8 +61,6 @@ async def gateway(
             },
         ),
         sessions=sessions,
-        submissions=submissions,
-        delivery=delivery,
         control=control,
         destinations=destinations,
         admission_timeout_s=settings.admission_timeout_s,
@@ -98,14 +89,12 @@ async def gateway(
                 namespace=settings.sandbox_namespace,
                 holder=ConnectionHolder(pod_name=socket.gethostname(), pod_ip=settings.pod_ip, port=settings.port),
             ),
-            delivery=delivery,
             control=control,
             timing=timing,
         ),
         control_server,
     )
     async with AsyncExitStack() as stack:
-        await stack.enter_async_context(delivery.listener.listen())
         await stack.enter_async_context(
             serving(control_server, f"{settings.host}:{settings.runner_control_port}", grace_s=5)
         )

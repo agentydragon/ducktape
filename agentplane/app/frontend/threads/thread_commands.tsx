@@ -2,7 +2,7 @@ import { Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
 import { type Command } from "../../../proto/command_pb";
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { command, CommandSubmissionRefused, displayableError, retainedCommand } from "../client";
+import { command, CommandSubmissionRefused, displayableError } from "../client";
 import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
@@ -12,8 +12,7 @@ import { decimalBigInt, useThreadSync, type ThreadEntity } from "./thread_sync";
 const EMPTY_LOCAL: LocalCommandSnapshot = { commands: [], inputEchoes: [], error: null };
 
 export interface CommandIssue {
-  /** `retained`: the delivery reply was lost, but the Sandbox Service holds the command. */
-  kind: "refused" | "unconfirmed" | "retained";
+  kind: "refused" | "unconfirmed";
   message: string;
 }
 
@@ -29,33 +28,6 @@ interface ProjectedCommands {
   submit: (value: Command) => boolean;
   deliver: (value: LocalCommand) => Promise<void>;
   store: LocalCommands;
-}
-
-/** A lost reply says nothing about how far the command got; ask the Sandbox Service what it
- * retained. Null once it shows the runner's admission, which this browser then records. */
-async function reconcileUnconfirmed(
-  store: LocalCommands,
-  threadId: string,
-  value: LocalCommand,
-  message: string
-): Promise<CommandIssue | null> {
-  try {
-    const retained = await retainedCommand(threadId, value.command.commandId);
-    if (retained === null) return { kind: "unconfirmed", message };
-    switch (retained.state) {
-      case "pending_admission":
-        return { kind: "retained", message };
-      case "rejected":
-        return { kind: "refused", message: retained.rejection ?? message };
-      case "admitted":
-        store.acknowledge(value.command, retained.admission);
-        return null;
-    }
-  } catch (reason) {
-    // A failed read leaves the delivery's own verdict standing.
-    console.warn(`command ${value.command.commandId}: status reconciliation failed`, reason);
-    return { kind: "unconfirmed", message };
-  }
 }
 
 export function useProjectedCommands(threadId: string, entities: ThreadEntity[]): ProjectedCommands {
@@ -98,9 +70,12 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
         settle(null);
       } catch (reason) {
         settle(
-          reason instanceof CommandSubmissionRefused
-            ? { kind: "refused", message: displayableError(reason) }
-            : await reconcileUnconfirmed(store, threadId, value, displayableError(reason))
+          // A lost reply says nothing about how far the command got; the thread's history shows its
+          // admission once the runner journaled it.
+          {
+            kind: reason instanceof CommandSubmissionRefused ? "refused" : "unconfirmed",
+            message: displayableError(reason),
+          }
         );
       } finally {
         active.current.delete(id);

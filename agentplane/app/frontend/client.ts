@@ -366,31 +366,6 @@ export async function command(threadId: string, message: Command): Promise<Event
   }
 }
 
-/** What the Sandbox Service retained for a command; pending admission promises neither delivery nor
- * safe cancellation. */
-export type RetainedCommand =
-  | { state: "pending_admission" }
-  | { state: "admitted"; admission: EventEntry }
-  | { state: "rejected"; rejection: string | null };
-
-/** Read without contacting the runner; null when the service holds no submission under the id. */
-export async function retainedCommand(threadId: string, commandId: string): Promise<RetainedCommand | null> {
-  const { data, error, response } = await api.GET("/threads/{thread_id}/commands/{command_id}", {
-    params: { path: { thread_id: threadId, command_id: commandId } },
-  });
-  if (response.status === 404) return null;
-  if (error) throw new Error(displayableError(error));
-  switch (data.state) {
-    case "pending_admission":
-      return { state: data.state };
-    case "admitted":
-      if (!data.admission) throw new Error("Admitted command status carries no admission");
-      return { state: data.state, admission: fromJson(EventEntrySchema, data.admission as JsonValue) };
-    case "rejected":
-      return { state: data.state, rejection: data.rejection ?? null };
-  }
-}
-
 /**
  * The epoch a thread's shapes are pinned to. A long poll: the server holds the read until the
  * thread has a fold, and answers null if it still has none when the hold runs out.

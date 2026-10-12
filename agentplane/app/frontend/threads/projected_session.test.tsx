@@ -11,16 +11,7 @@ import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import type * as ClientModule from "../client";
-import {
-  command,
-  getThread,
-  models,
-  resumeThread,
-  retainedCommand,
-  type RetainedCommand,
-  type SandboxView,
-  type ThreadView,
-} from "../client";
+import { command, getThread, models, resumeThread, type SandboxView, type ThreadView } from "../client";
 import { historyRows, rowKey } from "./history_rows";
 import { SandboxesLiveProvider, ThreadsLiveProvider, useRequiredThreadsLive } from "../live";
 import { LocalCommands } from "./local_commands";
@@ -49,7 +40,6 @@ vi.mock("../client", async (importOriginal) => ({
   getThread: vi.fn(),
   models: vi.fn(),
   resumeThread: vi.fn(),
-  retainedCommand: vi.fn(),
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -823,63 +813,11 @@ it("shows a delivery that outlives its deadline as unconfirmed and retriable", a
   expect(progressLabel(container, "hung")).not.toContain("signal timed out");
 });
 
-it("shows a command the Sandbox Service holds after a lost reply as stored, not runner-accepted", async () => {
-  new LocalCommands(THREAD.id).remember(message("stored"));
-  vi.mocked(command)
-    .mockRejectedValueOnce(new Error("Command admission unconfirmed: 504"))
-    .mockImplementationOnce(admit);
-  vi.mocked(retainedCommand).mockResolvedValueOnce({ state: "pending_admission" });
-  const container = await render();
-  expect(vi.mocked(retainedCommand)).toHaveBeenCalledWith(THREAD.id, "stored");
-  expect(progressLabel(container, "stored")).toBe(
-    "Stored by Sandbox Service · runner admission unconfirmed: Command admission unconfirmed: 504"
-  );
-  expect(
-    [...pendingRow(container, "stored").querySelectorAll(".agentplane-command-light")].map((light) =>
-      light.getAttribute("data-state")
-    )
-  ).toEqual(["done", "retained", "future"]);
-  // Stored by the service is not proof it never reached the runner: no Cancel, only an exact retry.
-  expect(buttonIn(pendingRow(container, "stored"), "Cancel")).toBeUndefined();
-  await act(async () => retry(container, "stored").click());
-  expect(progressLabel(container, "stored")).toContain("Runner accepted · waiting for agent confirmation");
-});
-
-it("takes the runner admission the Sandbox Service retained when the delivery reply was lost", async () => {
-  new LocalCommands(THREAD.id).remember(message("reply-lost"));
-  vi.mocked(command).mockRejectedValueOnce(new Error("Command admission unconfirmed: connection reset"));
-  vi.mocked(retainedCommand).mockResolvedValueOnce({
-    state: "admitted",
-    admission: admission(message("reply-lost")),
-  });
-  const container = await render();
-  expect(progressLabel(container, "reply-lost")).toBe("Runner accepted · waiting for agent confirmation");
-  expect(new LocalCommands(THREAD.id).getSnapshot().commands[0].admission).toEqual(admission(message("reply-lost")));
-});
-
-const LOST_REPLY_STATUSES: Array<[string, () => Promise<RetainedCommand | null>, string]> = [
-  ["no submission under the id", async () => null, "Runner receipt unconfirmed: Command admission unconfirmed: 503"],
-  [
-    "an unreadable status",
-    async () => {
-      throw new Error("status unavailable");
-    },
-    "Runner receipt unconfirmed: Command admission unconfirmed: 503",
-  ],
-  [
-    "a rejection",
-    async () => ({ state: "rejected" as const, rejection: "turn already ended" }),
-    "Command refused: turn already ended",
-  ],
-];
-
-it.each(LOST_REPLY_STATUSES)("reports %s from the Sandbox Service after a lost reply", async (_case, status, label) => {
-  vi.spyOn(console, "warn").mockImplementation(() => {});
+it("leaves a command whose delivery reply was lost unconfirmed", async () => {
   new LocalCommands(THREAD.id).remember(message("lost"));
   vi.mocked(command).mockRejectedValueOnce(new Error("Command admission unconfirmed: 503"));
-  vi.mocked(retainedCommand).mockImplementationOnce(status);
   const container = await render();
-  expect(progressLabel(container, "lost")).toBe(label);
+  expect(progressLabel(container, "lost")).toBe("Runner receipt unconfirmed: Command admission unconfirmed: 503");
 });
 
 it("redelivers an unconfirmed command when the browser comes back online", async () => {

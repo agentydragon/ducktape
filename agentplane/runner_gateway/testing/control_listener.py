@@ -12,7 +12,6 @@ from agentplane.grpc_serving import serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner import control as runner_control
 from agentplane.runner.service import Runner
-from agentplane.runner_gateway.command_delivery import CommandDelivery
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionRecords
 from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
@@ -25,7 +24,7 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 # gazelle:include_dep //agentplane/proto:runner_control_pb2
 # gazelle:include_dep @pypi//protobuf
 
-# Frequent enough that a connection's Lease stays live under the tests' one-second delivery liveness.
+# Frequent enough that the tests see a connection's Lease promptly.
 GATEWAY_TIMING = ControlTiming(heartbeat_s=0.1, liveness_s=5, touch_s=0.2)
 RUNNER_TIMING = runner_control.ControlTiming(heartbeat_s=0.1, liveness_s=5, backoff_initial_s=0.05, backoff_max_s=0.5)
 HOLDER = ConnectionHolder(pod_name="test-gateway", pod_ip="192.0.2.10", port=18080)
@@ -38,7 +37,6 @@ async def serve_runner_control(
     sandboxes: SandboxReader,
     core: k8s_client.CoreV1Api,
     records: ConnectionRecords,
-    delivery: CommandDelivery,
     control: LifecycleControl,
     timing: ControlTiming = GATEWAY_TIMING,
 ) -> AsyncIterator[int]:
@@ -46,13 +44,7 @@ async def serve_runner_control(
     server = grpc.aio.server()
     runner_control_pb2_grpc.add_RunnerControlServicer_to_server(
         RunnerControlService(
-            principals=principals,
-            sandboxes=sandboxes,
-            core=core,
-            records=records,
-            delivery=delivery,
-            control=control,
-            timing=timing,
+            principals=principals, sandboxes=sandboxes, core=core, records=records, control=control, timing=timing
         ),
         server,
     )
@@ -61,30 +53,24 @@ async def serve_runner_control(
 
 
 async def wait_connected(resources: Resources, sandbox_uid: UUID) -> None:
-    """Until this replica holds the Sandbox's connection and its Lease reads live to command delivery.
-    Renewals rewrite the Lease every `touch_s`, so the Lease watch re-checks after the holder registers."""
-    delivery = resources.delivery
+    """Until this replica holds the Sandbox's connection. Renewals rewrite the Lease every `touch_s`,
+    so the Lease watch re-checks after the holder registers."""
+    control = resources.control
     async with asyncio.timeout(10):
-        await delivery.leases.wait_for(
-            lambda: (
-                resources.control.holder(sandbox_uid) is not None
-                and delivery.leases.read_live_epoch(sandbox_uid, liveness_s=delivery.liveness_s) is not None
-            )
-        )
+        await control.leases.wait_for(lambda: control.holder(sandbox_uid) is not None)
 
 
 @asynccontextmanager
 async def control_plane(
     resources: Resources, *, principals: WorkloadPrincipalResolver, api: k8s_client.ApiClient
 ) -> AsyncIterator[str]:
-    """What the gateway process runs beside `resources` for runners to dial: the control listener,
-    its Postgres wakeups and its Lease watch, keeping connection records through `api`. Yields the
+    """What the gateway process runs beside `resources` for runners to dial: the control listener
+    and its Lease watch, keeping connection records through `api`. Yields the
     listener's target."""
     sandboxes = resources.destinations.sandboxes
     async with (
-        resources.delivery.listener.listen(),
         background(
-            resources.delivery.leases.watch(
+            resources.control.leases.watch(
                 k8s_client.CoordinationV1Api(api), sandboxes.namespace, resync_seconds=60
             ).run(),
             name="runner-connection-leases",
@@ -94,7 +80,6 @@ async def control_plane(
             sandboxes=sandboxes,
             core=resources.destinations.core,
             records=ConnectionRecords(api, namespace=sandboxes.namespace, holder=HOLDER),
-            delivery=resources.delivery,
             control=resources.control,
         ) as port,
     ):

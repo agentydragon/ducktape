@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
 
@@ -16,7 +15,7 @@ from agentplane.app.threads.summaries import FeedError
 from agentplane.app.threads.view.content import ContentStore
 
 # Not `runner_pb2`: that name is the runner's protocol here.
-from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, sandbox_service_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.runner.errors import RunnerError
 from agentplane.runner.harness import Harness
 
@@ -44,28 +43,6 @@ class NewSession(BaseModel):
         description="A fresh UUID the client minted for this Session; a retry of the same Open repeats it."
     )
     setup_script: str | None = Field(default=None, max_length=65_536)
-
-
-class CommandState(StrEnum):
-    # Retained by the Runner Gateway; it may or may not have reached the runner.
-    PENDING_ADMISSION = "pending_admission"
-    ADMITTED = "admitted"
-    REJECTED = "rejected"
-
-
-_COMMAND_STATES = {
-    sandbox_service_pb2.COMMAND_STATE_PENDING_ADMISSION: CommandState.PENDING_ADMISSION,
-    sandbox_service_pb2.COMMAND_STATE_ADMITTED: CommandState.ADMITTED,
-    sandbox_service_pb2.COMMAND_STATE_REJECTED: CommandState.REJECTED,
-}
-
-
-class CommandStatus(BaseModel):
-    state: CommandState
-    admission: dict[str, object] | None = Field(
-        default=None, description="The runner's CommandAdmitted EventEntry as proto-JSON, once admitted."
-    )
-    rejection: str | None = Field(default=None, description="Why the runner refused the command.")
 
 
 class RunnerBridge:
@@ -141,21 +118,11 @@ class RunnerBridge:
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise RunnerError(f"runner history is rejected: {snapshot.end.message}")
+        runner = self._runners.client(await self._runners.sandbox_of(thread_id))
         try:
-            return await self._runners.gateway.command(str(thread_id), command)
+            return await self._runners.gateway.command(runner.destination, str(thread_id), command)
         except TimeoutError as error:
             raise RunnerAdmissionTimeoutError(command.command_id) from error
-
-    async def command_status(self, thread_id: UUID, command_id: str) -> CommandStatus:
-        """What the Runner Gateway retained for the command, without contacting the runner."""
-        if not await self._event_logs.exists(thread_id):
-            raise ThreadNotFoundError(thread_id)
-        status = await self._runners.gateway.get_command(str(thread_id), command_id)
-        return CommandStatus(
-            state=_COMMAND_STATES[status.state],
-            admission=MessageToDict(status.admission) if status.HasField("admission") else None,
-            rejection=status.rejection if status.HasField("rejection") else None,
-        )
 
     async def _session_sandbox(self, thread_id: UUID) -> str:
         if not await self._event_logs.exists(thread_id):

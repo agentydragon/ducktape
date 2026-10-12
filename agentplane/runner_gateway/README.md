@@ -7,11 +7,11 @@ replicas, apart from the Sandbox Service's
 single reconciler and its RBAC. It reads Sandboxes through the Sandbox Service's read-only
 `SandboxReader` (`agentplane.sandbox_service.reader`) and does not provision or delete them.
 
-- `runner_control.py`, `command_delivery.py`, `lifecycle_control.py`, `connection_records.py`: the
-  runner connection, routing commands and lifecycle requests to the replica holding it.
+- `runner_control.py`, `lifecycle_control.py`, `connection_records.py`: the runner connection, and
+  the commands and lifecycle requests the replica holding it sends on it.
 - `session_registry.py`, `session_lifecycle.py`: Session identities, and opening and resuming
   Sessions.
-- `commands/`: the `sandbox_commands` database that holds them.
+- `commands/`: the `sandbox_commands` database that holds the Session identities.
 - `destinations.py`: checking that a request's Sandbox incarnation has a ready runner Pod.
 - `sealing.py`: sealing a Sandbox's runner for teardown, on the Sandbox Service's request.
 - `grpc_api.py`, `settings.py`, `main.py`: the server.

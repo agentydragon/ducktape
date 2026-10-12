@@ -2,11 +2,11 @@
 
 Status: **accepted design, deployed.** The Runner Gateway's
 control listener (`runner_gateway/runner_control.py`), reachable through the egress proxy,
-authenticates, fences and keeps connections alive, and delivers dispatch attempts
-(`runner_gateway/command_delivery.py`) for Sandboxes routed to it. The runner dials it when started
+authenticates, fences and keeps connections alive, and carries command deliveries and lifecycle
+requests (`runner_gateway/lifecycle_control.py`) for Sandboxes routed to it. The runner dials it when started
 with `--control-target` (`runner/control.py`), which the Sandbox Service passes to every Sandbox's
 runner (`runner_control`); runner Pods admit no connections. This is the contract it implements. It
-covers command delivery, authentication, connection ownership and dispatch attempts, lifecycle
+covers command delivery, authentication, connection ownership, lifecycle
 requests (listing, opening, resuming and sealing Sessions), and the push of Events to the runner's
 ingress.
 
@@ -223,8 +223,7 @@ Sandbox in sealing for the operator.
 ## Connection records in Kubernetes
 
 Status: **built in the Runner Gateway.** These records hold connection ownership and liveness
-(§ Connection ownership and fencing); agreed operations, command submissions and dispatch attempts
-stay in Postgres.
+(§ Connection ownership and fencing); the gateway keeps no other connection or command state.
 
 Per Sandbox, all in the Sandbox's namespace and owned by the `Sandbox`, so deleting it removes them:
 
@@ -271,9 +270,9 @@ Sandbox, hence `-control`.
   An EndpointSlice write carrying an older epoch than the one stored is skipped.
 - **Liveness.** The holder renews the Lease with each liveness write. A renew that finds another
   holder or a newer epoch means the connection was superseded, and the replica ends the stream with
-  `ABORTED`. A runner counts as connected while `renewTime` is under 30 s old.
-- **Reading.** Every replica keeps an informer on Leases in the namespace: `SubmitCommand` reads
-  liveness, and the reconciler picks the Leases it holds. No read goes to the API server per request.
+  `ABORTED`.
+- **Reading.** Every replica keeps an informer on Leases in the namespace: a replica checks that no
+  newer connection superseded the one it holds before sending on it. No read goes to the API server per request.
 - **Stale endpoints.** During a roll, DNS can return a replica that no longer holds the stream for a
   few seconds; it refuses, and the client retries. Nothing reads the endpoint as proof of
   ownership.
@@ -329,7 +328,7 @@ The contract's rule becomes: no operation creates a Session or starts a harness 
 sent, so no command delivered before it lands after it. Only the replica holding the runner's
 stream sends control requests: callers reach it through the Sandbox's control Service
 ([Connection records](#connection-records-in-kubernetes)), and background work such as sealing runs on the replica holding the Lease. Requests are bounded by the
-calling RPC's deadline, like dispatch attempts, and a reconnect replays none of them.
+calling RPC's deadline, like command deliveries, and a reconnect replays none of them.
 
 | Runner Gateway caller | Control operation                                     |
 | --------------------- | ----------------------------------------------------- |
@@ -450,73 +449,37 @@ another holder or a newer epoch at its next renewal and ends the stream with `AB
 keeps at most one `Connect` stream: it cancels the old one before opening a new one, and acts only
 on frames from the connection that received its latest `Welcome`.
 
-Every replica keeps a watch cache of these Leases. Liveness reads and the owner's check before
-claiming an attempt come from it, never from the API server per request. Nothing reads the
-EndpointSlice as proof of ownership. Agreed operations stay in the service's own database, one row
-per Sandbox that only grows.
+Every replica keeps a watch cache of these Leases. The holder's check that no newer connection
+superseded its own comes from it, never from the API server per request. Nothing reads the
+EndpointSlice as proof of ownership.
 
 Stale sends are harmless rather than impossible. A replica that has not yet noticed it was
 superseded can write to a dead stream, and a command that reaches the runner twice is deduplicated
-by `command_id`. The epoch decides which replica routes new deliveries and which connection's
+by `command_id`. The epoch decides which replica sends new deliveries and which connection's
 heartbeats count; it is not a Session, Event or command identity, and a new epoch neither starts a
 harness nor proves that anything failed.
 
-## Dispatch attempts
+## Command delivery
 
-A retained `pending_admission` submission is not permission to deliver it later. Delivery always
-belongs to the submission's bounded **attempt**, kept as columns on the submission row.
-`DeliverCommand` and its receipt name the command by the runner's Session ID and the command's own
-ID, which the runner already deduplicates on; no separate attempt ID exists.
+`SubmitCommand` is served only by the replica holding the Sandbox's runner connection; callers reach
+it through the Sandbox's control Service, as they do for lifecycle requests, and any other replica
+refuses with `UNAVAILABLE`. The holder checks that the Session runs in that Sandbox incarnation,
+sends `DeliverCommand` with the runner's Session ID and the command, and waits within the RPC's
+deadline for the `CommandReceipt` naming the same Session and command ID. Concurrent deliveries of
+one command share its receipt, and a receipt nothing awaits is dropped.
 
-| column       | meaning                                                                 |
-| ------------ | ----------------------------------------------------------------------- |
-| destination  | the Sandbox UID and the runner's Session ID; unique with the command ID |
-| `deadline`   | the latest submitting RPC's deadline, capped at 60 s                    |
-| `sent_epoch` | connection epoch it was last sent on, or none                           |
-| `refusal`    | the runner's refusal, or none; admission is the submission's own record |
-
-1. The replica serving the submit RPC persists the submission and opens its attempt, commits, then
-   sends `NOTIFY runner_dispatch` with the Sandbox UID, Session ID and command ID.
-2. Every replica listens on that channel. The one whose connection holds the Sandbox's current
-   epoch, as its Lease cache shows it, claims the attempt with a conditional update that succeeds only before the deadline and when `sent_epoch`
-   is none or older than its epoch, and sends `DeliverCommand` after that commits. An attempt is
-   therefore sent at most once per connection epoch and never after its deadline. No transaction or
-   row lock is held across the send.
-3. On a receipt the owner records the outcome on the submission in one transaction (positive
-   admission evidence never regresses), commits, then sends
-   `NOTIFY command_outcome` with the Session ID and command ID.
-4. The waiting RPC listens on `command_outcome` before its first state check, then re-reads
-   committed state on each notification and every 2 s. While its attempt is open it repeats the
-   `runner_dispatch` notification on each check, which also covers a missed notification and an
-   owner that changed mid-attempt: the new owner's epoch is newer than `sent_epoch`, so it may send
-   again, and the runner answers a duplicate with the existing receipt.
-
-At the deadline the RPC returns without an outcome and the submission stays `pending_admission`. An
-expired attempt is not sent again unless a retry reopens it, but a send already underway cannot be
-retracted, so a late receipt is still recorded on the submission. A caller retry with the same
-command reopens the same attempt: while it is still open to the same Sandbox
-the retry only extends the deadline; after a refusal or the deadline it starts afresh, with no
-refusal and no `sent_epoch`, so it may be sent again on the current connection. A refusal sent
-before the reopen ends the reopened wait too; the submission stays pending either way. Only the
-latest refusal is kept. Reconnecting never scans pending submissions for delivery, so a stale
-interrupt or stop command is never fired at a reconnecting runner.
-
-**Ambiguous submissions settle by redelivery** (built). The Runner Gateway reads no journal to
-settle a submission. One whose receipt was lost is settled when its command is delivered again with
-the same `command_id`, within its attempt or a caller's retry: the runner answers a command it has
-already journaled with its original `CommandAdmitted` entry, even after its harness stopped or its
-journal was sealed. This needs no frame of its own. Without a retry, the submission stays
-`pending_admission`, and no background sweeper delivers or settles it.
-
-Each `Connect` stream carries at most 64 undelivered-receipt attempts; past that, a claim fails and the
-attempt waits for its next re-notification.
+The gateway records no command. A lost reply, a passed deadline or an ended connection leaves the
+outcome to the runner's journal, and the caller retries with the same command: the runner answers a
+command it already journaled with its original `CommandAdmitted` entry, even after its harness
+stopped or its journal was sealed. A reconnect replays no delivery, so a stale interrupt or stop is
+never fired at a reconnecting runner. Where a command stands is read from the Session's history:
+its `CommandAdmitted` entry, which the History Service holds once the runner has pushed it.
 
 ## Heartbeat and liveness
 
 Each side sends `Heartbeat` on `Connect` every 10 s, and ends the stream after 30 s without any
 frame from the peer. A runner reconnects with exponential backoff and jitter, from 0.5 s up to 30 s, and
-retries indefinitely. The service reports a runner as connected while its Lease's `renewTime` is
-under 30 s old. Connected is not ready to act: it says nothing about harness
+retries indefinitely. A live connection is not readiness to act: it says nothing about harness
 state, an active turn or whether a command was carried out, and losing the connection proves none of
 those either.
 

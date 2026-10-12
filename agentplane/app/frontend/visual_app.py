@@ -137,9 +137,6 @@ class AgentplaneFixture:
     async def time_out_command_admission(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.timeOutCommandAdmission()")
 
-    async def retain_command_in_service(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.retainCommandInService()")
-
     async def long_pending_action(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.longPendingAction()")
 

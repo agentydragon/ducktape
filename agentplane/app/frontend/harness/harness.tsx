@@ -2628,15 +2628,6 @@ routes.push(
         ? Response.json({ detail: "runner admission was not confirmed within 15 seconds" }, { status: 504 })
         : UNANSWERED,
   ],
-  // What the Sandbox Service retained for a command whose delivery reply never came.
-  [
-    "GET",
-    /^\/threads\/([0-9a-f-]+)\/commands\/([^/]+)$/,
-    () =>
-      commandRetainedByService
-        ? { state: "pending_admission", admission: null, rejection: null }
-        : Response.json({ detail: "Sandbox Service returned NOT_FOUND" }, { status: 404 }),
-  ],
   ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],
   [
     "GET",
@@ -2905,7 +2896,6 @@ let availableClaudeModels = ["harness-claude-model", "next-model"];
 let pageActionHistory = false;
 let actionGroupsUnavailable = false;
 let commandAdmissionTimedOut = false;
-let commandRetainedByService = false;
 let syncScopeUnavailable = false;
 let entityStreamConnected = true;
 let withholdEntitySegments = false;
@@ -3005,9 +2995,6 @@ const visualHarness = {
   },
   timeOutCommandAdmission(): void {
     commandAdmissionTimedOut = true;
-  },
-  retainCommandInService(): void {
-    commandRetainedByService = true;
   },
   failSyncScope(): void {
     syncScopeUnavailable = true;

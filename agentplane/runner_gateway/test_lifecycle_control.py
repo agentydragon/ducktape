@@ -1,5 +1,6 @@
-"""Lifecycle requests over the runner control stream: a scripted runner on one replica's channel listener,
-the public API on that replica and another, a fake API server and a migrated commands database."""
+"""Lifecycle requests and commands over the runner control stream: a scripted runner on one replica's
+channel listener, the public API on that replica and another, a fake API server and a migrated
+database."""
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
@@ -15,12 +16,10 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.grpc_calls import ServiceError
-from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import TeardownPhase
 from agentplane.runner.errors import RunnerError
 from agentplane.runner_gateway.client import RunnerGatewayClient
-from agentplane.runner_gateway.command_delivery import CommandDelivery
-from agentplane.runner_gateway.commands.dispatch import DispatchStore
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.lifecycle_control import (
@@ -65,7 +64,7 @@ class Replica:
 def replica(
     cluster: Cluster, engine: AsyncEngine, leases: ConnectionLeases
 ) -> Callable[[ConnectionHolder], AbstractAsyncContextManager[Replica]]:
-    """Start a replica; replicas share the cluster, the database and its agreed operations."""
+    """Start a replica; replicas share the cluster and the database."""
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{CALLER.namespace}:{CALLER.name}",
         pod_name="test-caller-pod",
@@ -76,7 +75,6 @@ def replica(
     @asynccontextmanager
     async def start(holder: ConnectionHolder) -> AsyncIterator[Replica]:
         control = LifecycleControl(leases)
-        delivery = CommandDelivery(engine.url, dispatches=DispatchStore(engine), leases=leases, liveness_s=5)
         resources = replace(
             build_resources(
                 engine,
@@ -85,7 +83,6 @@ def replica(
                 caller_accounts=frozenset({CALLER}),
                 platform_instructions="Test platform guidance.",
             ),
-            delivery=delivery,
             control=control,
             sealer_accounts=frozenset({CALLER}),
         )
@@ -93,7 +90,6 @@ def replica(
             serve_replica_control(
                 cluster,
                 holder,
-                delivery=delivery,
                 control=control,
                 timing=ControlTiming(heartbeat_s=0.05, liveness_s=5, touch_s=0.1, max_age_s=60),
             ) as channel,
@@ -152,7 +148,7 @@ def attached(session_id: str, harness_state: runner_pb2.HarnessState) -> runner_
 
 
 def client(token_file: Path, target: str, *, control_target: str) -> AbstractAsyncContextManager[RunnerGatewayClient]:
-    return connect(target, token_file, command_admission_timeout_s=None, control_target=control_target)
+    return connect(target, token_file, command_admission_timeout_s=10, control_target=control_target)
 
 
 async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
@@ -347,6 +343,86 @@ async def test_a_refusal_carries_its_reason(holder: Replica) -> None:
         with pytest.raises(ControlRefusedError) as refused:
             await resuming
         assert refused.value.refusal == refusal
+
+
+COMMAND = command_pb2.Command(command_id="test-command", submit_input=command_pb2.SubmitInput(text="test input"))
+
+
+async def next_delivery(call: Connect) -> runner_control_pb2.DeliverCommand:
+    """The next command delivery, answering heartbeats meanwhile."""
+    async with asyncio.timeout(10):
+        while (frame := await call.read()) is not grpc.aio.EOF:
+            assert isinstance(frame, runner_control_pb2.ServiceFrame)
+            if frame.HasField("deliver"):
+                return frame.deliver
+            await call.write(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.Heartbeat()))
+    raise AssertionError("the service ended the stream")
+
+
+@pytest.fixture
+async def public_id(engine: AsyncEngine) -> UUID:
+    public_id = uuid4()
+    await register_session(
+        engine, public_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name=SANDBOX, sandbox_uid=UUID(SANDBOX_UID)
+    )
+    return public_id
+
+
+async def test_a_command_reaches_the_holder_and_returns_the_runner_admission(
+    holder: Replica, other: Replica, public_id: UUID, token_file: Path
+) -> None:
+    admitted = event_log_pb2.EventEntry(cursor=1)
+    admitted.origin.source_id, admitted.origin.sequence = "test-runner-source", 1
+    admitted.event.command_admitted.command.CopyFrom(COMMAND)
+    # The caller's own target is the other replica; the control Service names the holder.
+    async with connected(holder) as call, client(token_file, other.api, control_target=holder.api) as service:
+        submitting = asyncio.create_task(service.command(DESTINATION, str(public_id), COMMAND))
+        sent = await next_delivery(call)
+        assert (sent.session_id, sent.command) == (str(public_id), COMMAND)
+        await call.write(
+            runner_control_pb2.RunnerFrame(
+                receipt=runner_control_pb2.CommandReceipt(
+                    session_id=sent.session_id, command_id=COMMAND.command_id, admitted=admitted
+                )
+            )
+        )
+        assert await submitting == admitted
+
+
+async def test_a_refused_command_carries_its_reason(holder: Replica, public_id: UUID, token_file: Path) -> None:
+    async with connected(holder) as call, client(token_file, holder.api, control_target=holder.api) as service:
+        submitting = asyncio.create_task(service.command(DESTINATION, str(public_id), COMMAND))
+        sent = await next_delivery(call)
+        await call.write(
+            runner_control_pb2.RunnerFrame(
+                receipt=runner_control_pb2.CommandReceipt(
+                    session_id=sent.session_id,
+                    command_id=COMMAND.command_id,
+                    refused=runner_control_pb2.CommandRefused(
+                        reason=runner_control_pb2.CommandRefused.REASON_COMMAND_CONFLICT
+                    ),
+                )
+            )
+        )
+        with pytest.raises(ServiceError) as refused:
+            await submitting
+        assert refused.value.code == grpc.StatusCode.ALREADY_EXISTS
+
+
+async def test_a_lost_connection_fails_its_command_and_a_retry_delivers_it_again(
+    holder: Replica, public_id: UUID, token_file: Path
+) -> None:
+    async with client(token_file, holder.api, control_target=holder.api) as service:
+        async with connected(holder) as call:
+            submitting = asyncio.create_task(service.command(DESTINATION, str(public_id), COMMAND))
+            await next_delivery(call)
+        with pytest.raises(ServiceError) as lost:
+            await submitting
+        assert lost.value.code == grpc.StatusCode.UNAVAILABLE
+        async with connected(holder) as call:
+            retrying = asyncio.create_task(service.command(DESTINATION, str(public_id), COMMAND))
+            assert (await next_delivery(call)).command == COMMAND
+            retrying.cancel()
 
 
 if __name__ == "__main__":

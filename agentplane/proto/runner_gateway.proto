@@ -13,12 +13,10 @@ service RunnerGateway {
   // Opens the Session the client named. A retry with the same ID and inputs returns it again.
   rpc CreateSession(agentplane.proto.sandbox_service.CreateSessionRequest) returns (agentplane.proto.sandbox_service.CreateSessionResponse);
   rpc ResumeSession(agentplane.proto.sandbox_service.SessionRequest) returns (agentplane.proto.runner.Attached);
-  // Returns the original matching CommandAdmitted entry, not command completion.
+  // Served only by the replica holding the runner connection of the Sandbox the Session runs in.
+  // Returns the runner's CommandAdmitted entry, not command completion; a retry with the same
+  // command returns the original one. The gateway keeps no record of the command.
   rpc SubmitCommand(agentplane.proto.sandbox_service.SubmitCommandRequest) returns (agentplane.proto.event_log.EventEntry);
-  // A command submitted to a public Session ID, as retained: never contacts the runner.
-  rpc GetCommand(agentplane.proto.sandbox_service.GetCommandRequest) returns (agentplane.proto.sandbox_service.CommandStatus);
-  // The Session's submitted commands in acceptance order, as retained: never contacts the runner.
-  rpc ListCommands(agentplane.proto.sandbox_service.ListCommandsRequest) returns (agentplane.proto.sandbox_service.ListCommandsResponse);
   // Teardown's seal, called by the Sandbox Service alone: fence and seal every Session of the
   // incarnation, and return each one's final cursor and whether its ingress has acknowledged it,
   // keyed by public Session ID (or the runner's own ID for a Session opened with a caller-chosen

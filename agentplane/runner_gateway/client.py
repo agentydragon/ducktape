@@ -1,5 +1,5 @@
-"""gRPC clients for the Runner Gateway: Session routing and command admission through its Service,
-and the per-Sandbox calls only the replica holding a runner's connection answers."""
+"""gRPC clients for the Runner Gateway: Session routing through its Service, and the per-Sandbox
+calls, commands included, that only the replica holding a runner's connection answers."""
 
 from collections.abc import Awaitable, Callable
 from pathlib import Path
@@ -101,23 +101,24 @@ class RunnerGatewayClient:
         """Every Session in a Sandbox whose name `request` matches, deleted Sandboxes included."""
         return list((await self.unary(self.stub.FindSessions, request)).sessions)
 
-    async def command(self, session_id: str, command: command_pb2.Command) -> event_log_pb2.EventEntry:
-        """Submit to a public Session; the Runner Gateway routes it to the Sandbox the Session runs in."""
+    async def command(
+        self, destination: SandboxDestination, session_id: str, command: command_pb2.Command
+    ) -> event_log_pb2.EventEntry:
+        """Submit to a public Session running in `destination` and return the runner's admission entry.
+
+        A retry with the same command returns the same entry: the runner deduplicates by command ID.
+        """
         if self.command_admission_timeout_s is None:
             raise ValueError("SubmitCommand requires an explicit client deadline")
-        receipt = await self.unary(
-            self.stub.SubmitCommand,
+        receipt = await self.control.held_unary(
+            destination,
+            lambda stub: stub.SubmitCommand,
             sandbox_service_pb2.SubmitCommandRequest(session_id=session_id, command=command),
             timeout_s=self.command_admission_timeout_s,
         )
         if not receipt.event.HasField("command_admitted") or receipt.event.command_admitted.command != command:
             raise ConnectionError("Runner Gateway did not return the exact command admission")
         return receipt
-
-    async def get_command(self, session_id: str, command_id: str) -> sandbox_service_pb2.CommandStatus:
-        return await self.unary(
-            self.stub.GetCommand, sandbox_service_pb2.GetCommandRequest(session_id=session_id, command_id=command_id)
-        )
 
     def runner(self, destination: SandboxDestination) -> Runner:
         return self.control.runner(destination)

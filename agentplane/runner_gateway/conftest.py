@@ -1,5 +1,5 @@
 """The Sandbox Service's fake cluster, whose Sandboxes the gateway resolves runners in, the gateway's
-migrated commands database, and native runner fixtures."""
+migrated database, and native runner fixtures."""
 
 import asyncio
 from collections.abc import AsyncIterator
@@ -22,7 +22,6 @@ from agentplane.runner.testing.fixtures import (
     workspace,
 )
 from agentplane.runner_gateway.commands.conftest import database_template, db_url, engine
-from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.sandbox_service.conftest import close_fake_clients, cluster, token_file
@@ -40,11 +39,6 @@ from util.testing.postgres_fixtures import (
 @pytest.fixture
 def sessions(engine: AsyncEngine) -> SessionRegistry:
     return SessionRegistry(engine)
-
-
-@pytest.fixture
-def submissions(engine: AsyncEngine) -> SubmissionStore:
-    return SubmissionStore(engine)
 
 
 @pytest.fixture

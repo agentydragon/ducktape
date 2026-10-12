@@ -883,18 +883,6 @@ async def thread_command(
     return MessageToDict(await bridge.command(thread_id, command))
 
 
-@threads.get("/{thread_id}/commands/{command_id}")
-async def thread_command_status(
-    bridge: runner_bridge.Bridge, thread_id: UUID, command_id: str
-) -> runner_bridge.CommandStatus:
-    """What the Runner Gateway retained for a submitted command, read without the runner.
-
-    Pending admission promises neither delivery nor safe cancellation; 404 means the service holds
-    no submission under this id.
-    """
-    return await bridge.command_status(thread_id, command_id)
-
-
 # A fold cursor is 64-bit and a JavaScript number is not, so it travels as a decimal
 # string -- the representation every fold response model already publishes it in. Declaring
 # it `int` here would put `integer` in the schema and make every browser caller cast past it. The

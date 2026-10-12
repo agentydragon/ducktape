@@ -36,30 +36,16 @@ The gateway keeps no Session history; runners push their Events to the
 - `SubmitCommand`: names the public Session ID alone; the gateway routes it to the Sandbox
   incarnation the Session was opened in, and refuses one that is gone or being torn down. It forwards
   an unchanged common-protocol `Command` only to a running harness and returns the original
-  `EventEntry` containing its exact matching `CommandAdmitted`. The submission is recorded in the
-  `sandbox_commands` database before the runner is contacted, keyed by Session and command ID with
-  the caller's identity. An exact retry by the same caller returns the retained receipt without
-  contacting the runner once the admission is known; a different command or caller under the same
-  ID is `ALREADY_EXISTS`. A submission whose reply was lost is settled only by delivering it again:
-  an exact retry sends the same command, and the runner answers a command it already journaled with
-  its original receipt. Nothing reads the runner journal or delivers it again in the background, so
-  a submission nobody retries stays `PENDING_ADMISSION`. The command reaches the runner over its
-  [runner control stream](../docs/runner_control.md), through the submission's dispatch attempt;
-  with no live runner connection the call is `UNAVAILABLE`. A runner refusal returns
-  `FAILED_PRECONDITION` (`ALREADY_EXISTS` for a conflicting command, `INVALID_ARGUMENT` for an
-  invalid one) and leaves the submission pending; an exact retry reopens the attempt and is answered
-  with the original receipt even after the harness stopped or its journal was sealed. A recorded
-  admission or rejection never changes, and submissions are kept forever: nothing expires or deletes
-  them.
-- `GetCommand`, `ListCommands`: what the gateway retained for a public Session's submissions, for
-  any allowed caller, without contacting the runner: the command, its state (`PENDING_ADMISSION`,
-  `ADMITTED` with the same receipt `SubmitCommand` returns, or `REJECTED` with the runner's refusal),
-  and when it was accepted. This is how a caller whose `SubmitCommand` response was lost, or that
-  reconnects, learns the outcome; a pending command is settled only by an exact retry or a late
-  receipt for a delivery already sent, and `PENDING_ADMISSION` does not say whether the runner
-  journaled it. Admission is the runner journaling the command, not the harness acting on it. They
-  name the public Session ID alone, and answer after its Sandbox is gone: the submissions outlive
-  it. `ListCommands` pages in acceptance order and filters by state.
+  `EventEntry` containing its exact matching `CommandAdmitted`. Like the lifecycle calls, it reaches
+  the replica holding the runner's connection through the Sandbox's control Service, and any other
+  replica refuses with `UNAVAILABLE`; the command travels over the
+  [runner control stream](../docs/runner_control.md#command-delivery). The gateway records nothing:
+  a caller whose reply was lost retries with the same command, and the runner answers a command it
+  already journaled with its original receipt, even after the harness stopped or its journal was
+  sealed. A runner refusal returns `FAILED_PRECONDITION` (`ALREADY_EXISTS` for a command ID already
+  used for other work, `INVALID_ARGUMENT` for an invalid command). Admission is the runner
+  journaling the command, not the harness acting on it; the Session's history in the History Service
+  is where a caller reads it back.
 
 Session listing and command RPCs never provision, resume, or wake a Sandbox or harness.
 

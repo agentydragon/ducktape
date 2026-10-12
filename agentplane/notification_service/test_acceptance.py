@@ -228,6 +228,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 initial = None
                 if busy:
                     await remote.command(
+                        destination,
                         session_id,
                         command_pb2.Command(
                             command_id="initial", submit_input=command_pb2.SubmitInput(text="Do other work")
@@ -249,7 +250,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         command.WhichOneof("operation"),
                     )
                     try:
-                        receipt = await remote.command(session_id, command)
+                        receipt = await remote.command(destination, session_id, command)
                     except Exception as error:
                         logger.warning(
                             "notification journal seed failed at command_id=%s last_cursor=%d: %s",
@@ -257,21 +258,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             history_cursor,
                             type(error).__name__,
                         )
-                        try:
-                            async with asyncio.timeout(3):
-                                status = await remote.get_command(session_id, command.command_id)
-                            logger.warning(
-                                "notification journal seed retained command_id=%s state=%d admission_cursor=%d",
-                                command.command_id,
-                                status.state,
-                                status.admission.cursor,
-                            )
-                        except Exception as lookup_error:
-                            logger.warning(
-                                "notification journal seed status unavailable for command_id=%s: %s",
-                                command.command_id,
-                                type(lookup_error).__name__,
-                            )
                         raise
                     history_cursor = receipt.cursor
                     logger.info(
@@ -289,7 +275,10 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 attempted_id: str | None = None
 
                 async def lose_response(
-                    self: RunnerGatewayClient, session_id: str, command: command_pb2.Command
+                    self: RunnerGatewayClient,
+                    destination: SandboxDestination,
+                    session_id: str,
+                    command: command_pb2.Command,
                 ) -> event_log_pb2.EventEntry:
                     nonlocal lost, notice_sent, attempted_id
                     if command.HasField("submit_input"):
@@ -301,7 +290,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             lost = True
                             raise ValueError("simulated local failure before SubmitCommand")
                     notice_sent = notice_sent or command.HasField("submit_input")
-                    receipt = await original(self, session_id, command)
+                    receipt = await original(self, destination, session_id, command)
                     if not lost and command.HasField("submit_input"):
                         lost = True
                         raise ConnectionError("simulated lost admission response")
@@ -402,6 +391,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 ]
                 assert admitted.count(page["notice"]["command_id"]) == 1
                 await remote.command(
+                    destination,
                     session_id,
                     command_pb2.Command(command_id="stop", stop_runner_session=command_pb2.StopRunnerSession()),
                 )

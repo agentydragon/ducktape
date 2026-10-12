@@ -15,18 +15,12 @@ import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.json_format import MessageToDict, ParseDict
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.grpc_calls import ServiceError, dial
 from agentplane.proto import command_pb2, runner_control_pb2, runner_gateway_pb2, runner_pb2, sandbox_service_pb2
 from agentplane.proto.sandbox_service_pb2 import ResolvedGrant, SandboxDestination
 from agentplane.runner_gateway.client import RunnerGatewayClient
-from agentplane.runner_gateway.command_delivery import CommandDelivery
-from agentplane.runner_gateway.commands import db
-from agentplane.runner_gateway.commands.dispatch import DispatchStore
-from agentplane.runner_gateway.commands.store import CommandSubmission, SubmissionState, SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.grpc_api import Resources
@@ -136,22 +130,6 @@ def attached(session_id: str, harness_state: runner_pb2.HarnessState) -> runner_
     )
 
 
-async def wait_attempt_lapsed(engine: AsyncEngine, session_id: UUID, command_id: str) -> None:
-    """Until the submission's dispatch attempt is past its deadline. A retry inside the open attempt
-    only extends it; the gateway's request timeout can end the caller's call before that deadline."""
-    submission = db.CommandSubmission
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(5), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError), reraise=True
-    ):
-        with attempt:
-            async with engine.connect() as connection:
-                assert await connection.scalar(
-                    select(submission.attempt_deadline <= func.now()).where(
-                        submission.session_id == session_id, submission.command_id == command_id
-                    )
-                )
-
-
 async def register(engine: AsyncEngine, session_id: UUID) -> None:
     """Register a Session on the fake cluster's Sandbox."""
     await register_session(
@@ -176,25 +154,18 @@ def resources(cluster: Cluster, engine: AsyncEngine, leases: ConnectionLeases) -
             platform_instructions="Test guidance",
         ),
         admission_timeout_s=1,
-        delivery=CommandDelivery(
-            engine.url, dispatches=DispatchStore(engine), leases=leases, liveness_s=1, recheck_s=0.1
-        ),
         control=LifecycleControl(leases),
     )
 
 
 @pytest.fixture
 async def peer(cluster: Cluster, resources: Resources) -> AsyncIterator[Peer]:
-    async with (
-        resources.delivery.listener.listen(),
-        serve_replica_control(
-            cluster,
-            REPLICA,
-            delivery=resources.delivery,
-            control=resources.control,
-            timing=ControlTiming(heartbeat_s=0.05, liveness_s=5, touch_s=0.1, max_age_s=60),
-        ) as channel,
-    ):
+    async with serve_replica_control(
+        cluster,
+        REPLICA,
+        control=resources.control,
+        timing=ControlTiming(heartbeat_s=0.05, liveness_s=5, touch_s=0.1, max_age_s=60),
+    ) as channel:
         call = channel.Connect(metadata=(("authorization", f"Bearer {RUNNER_TOKEN}"),), timeout=60)
         await call.write(runner_control_pb2.RunnerFrame(hello=runner_control_pb2.Hello(runner_boot_id="test-boot")))
         welcome = await call.read()
@@ -253,107 +224,22 @@ async def test_managed_open_uses_the_client_session_id_and_retries_on_the_runner
         assert await resuming == created.attached
 
 
-async def test_public_session_command_survives_a_lost_reply(
-    cluster: Cluster,
-    resources: Resources,
-    token_file: Path,
-    peer: Peer,
-    engine: AsyncEngine,
-    submissions: SubmissionStore,
+async def test_a_retry_after_a_lost_reply_delivers_the_command_again(
+    cluster: Cluster, resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
 ) -> None:
     session_id = uuid4()
     await register(engine, session_id)
     command = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="hi"))
     async with asyncio.timeout(10), service_client(resources, token_file, cluster.provisioning) as remote:
         with pytest.raises(TimeoutError):
-            await remote.command(str(session_id), command)
+            await remote.command(DESTINATION, str(session_id), command)
         lost = await peer.delivery()
         assert (lost.session_id, lost.command) == (str(session_id), command)
-        # Without the runner's receipt the submission stays pending.
-        assert (await submissions.read(session_id, "durable")).state == SubmissionState.PENDING_ADMISSION
-        await wait_attempt_lapsed(engine, session_id, "durable")
-
-        # Once the attempt has lapsed, the caller's retry delivers it again, and the runner's receipt settles it.
-        retrying = asyncio.create_task(remote.command(str(session_id), command))
+        # The gateway kept nothing: the retry reaches the runner again, which deduplicates it.
+        retrying = asyncio.create_task(remote.command(DESTINATION, str(session_id), command))
         assert await peer.delivery() == lost
         await peer.admit(lost, 1)
-        receipt = await retrying
-        assert receipt == admission(command, 1)
-        assert (await submissions.read(session_id, "durable")).state == SubmissionState.ADMITTED
-
-        assert await remote.command(str(session_id), command) == receipt
-        assert peer.deliveries.empty()  # an admitted retry needs no runner
-        changed = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="changed"))
-        with pytest.raises(ServiceError) as conflict:
-            await remote.command(str(session_id), changed)
-        assert conflict.value.code == grpc.StatusCode.ALREADY_EXISTS
-
-
-async def test_command_status_reads_retained_submissions_without_the_runner(
-    cluster: Cluster,
-    resources: Resources,
-    token_file: Path,
-    engine: AsyncEngine,
-    sessions: SessionRegistry,
-    submissions: SubmissionStore,
-) -> None:
-    session_id = uuid4()
-    await register(engine, session_id)
-    commands = {
-        name: command_pb2.Command(command_id=name, submit_input=command_pb2.SubmitInput(text=name))
-        for name in ("admitted", "pending", "rejected")
-    }
-    for command in commands.values():
-        await submissions.accept(session_id, CommandSubmission(command=command), caller=OWNER)
-    receipt = admission(commands["admitted"], 1)
-    await submissions.record_admission(session_id, receipt)
-    await submissions.record_rejection(session_id, "rejected", "test refusal")
-    async with service_client(
-        replace(resources, sessions=sessions, submissions=submissions), token_file, cluster.provisioning
-    ) as remote:
-
-        async def get(command_id: str, at: str = str(session_id)) -> sandbox_service_pb2.CommandStatus:
-            return await remote.unary(
-                remote.stub.GetCommand, sandbox_service_pb2.GetCommandRequest(session_id=at, command_id=command_id)
-            )
-
-        async def page(request: sandbox_service_pb2.ListCommandsRequest) -> sandbox_service_pb2.ListCommandsResponse:
-            request.session_id = str(session_id)
-            return await remote.unary(remote.stub.ListCommands, request)
-
-        admitted = await get("admitted")
-        assert (admitted.command, admitted.state, admitted.admission) == (
-            commands["admitted"],
-            sandbox_service_pb2.COMMAND_STATE_ADMITTED,
-            receipt,
-        )
-        pending = await get("pending")
-        assert pending.state == sandbox_service_pb2.COMMAND_STATE_PENDING_ADMISSION
-        assert not pending.HasField("admission")
-        rejected = await get("rejected")
-        assert (rejected.state, rejected.rejection) == (sandbox_service_pb2.COMMAND_STATE_REJECTED, "test refusal")
-
-        listed: list[sandbox_service_pb2.CommandStatus] = []
-        token = ""
-        while True:
-            response = await page(sandbox_service_pb2.ListCommandsRequest(page_token=token, page_size=2))
-            listed.extend(response.commands)
-            if not (token := response.next_page_token):
-                break
-        assert listed == [admitted, pending, rejected]
-        only_pending = await page(
-            sandbox_service_pb2.ListCommandsRequest(states=[sandbox_service_pb2.COMMAND_STATE_PENDING_ADMISSION])
-        )
-        assert list(only_pending.commands) == [pending]
-
-        for command_id, at, code in (
-            ("unknown", str(session_id), grpc.StatusCode.NOT_FOUND),
-            ("pending", str(uuid4()), grpc.StatusCode.NOT_FOUND),
-            ("pending", "legacy-runner-session", grpc.StatusCode.INVALID_ARGUMENT),
-        ):
-            with pytest.raises(ServiceError) as refused:
-                await get(command_id, at)
-            assert refused.value.code == code
+        assert await retrying == admission(command, 1)
 
 
 @pytest.mark.parametrize("session_id", ["", "r-not-a-uuid"])
@@ -392,7 +278,7 @@ async def test_command_uses_runner_ack_budget_not_unary_request_budget(
         remote.request_timeout_s = 0.1  # The client also must not use its short generic RPC deadline.
         session_id = uuid4()
         await register(engine, session_id)
-        submitted = asyncio.create_task(remote.command(str(session_id), command))
+        submitted = asyncio.create_task(remote.command(DESTINATION, str(session_id), command))
         delivered = await peer.delivery()
         # Elapsed time is the subject: the ack lands after both 0.1 s budgets but inside the 1 s ack budget.
         await asyncio.sleep(0.2)
@@ -552,7 +438,7 @@ async def test_invalid_command_is_not_submitted(
     remote: RunnerGatewayClient, cluster: Cluster, command: command_pb2.Command
 ) -> None:
     with pytest.raises(ServiceError) as rejected:
-        await remote.command(str(uuid4()), command)
+        await remote.command(DESTINATION, str(uuid4()), command)
     assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
     assert cluster.fake.pod_reads == 0
 

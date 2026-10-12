@@ -84,8 +84,7 @@ async def route_once(page: Page, url: str, handler: Callable[[Route], Awaitable[
 
     Unlike `page.route(..., times=1)`, the route stays registered, so request interception stays on
     until the test unroutes. Dropping the last route disables interception in Chromium, and a request
-    the page issues at that moment can stay paused forever, such as the command status lookup that
-    follows a lost reply.
+    the page issues at that moment can stay paused forever.
     """
     handled = False
 
@@ -1974,7 +1973,6 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
     await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     requests: asyncio.Queue[command_pb2.Command] = asyncio.Queue()
-    status_result = source.gateway.hold_next_command_status()
 
     async def lose_receipt(route: Route) -> None:
         assert route.request.post_data is not None
@@ -1988,16 +1986,9 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
         await composer.press("Enter")
         async with asyncio.timeout(15):
             original = await requests.get()
-            status_request = await source.gateway.command_status_requests.get()
-        assert status_request.command_id == original.command_id
         assert source.gateway.commands.empty(), "the scripted 504 must not reach the runner"
 
         bubble = page.locator(f'[data-command-id="{original.command_id}"]')
-        await expect(bubble.locator('[data-stage="local"]')).to_be_visible()
-        assert not status_result.done(), "the command stays local while status lookup is pending"
-
-        # The command never reached the Runner Gateway, so its explicit status lookup resolves as absent.
-        status_result.set_result(grpc.StatusCode.NOT_FOUND)
         await expect(bubble.locator('[data-stage="unconfirmed"]')).to_be_visible()
         await expect(bubble.locator('[data-stage="failed"]')).to_have_count(0)
         await expect(bubble.get_by_role("button", name="Retry", exact=True)).to_be_visible()
@@ -2018,8 +2009,6 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
         )
         await expect(bubble.locator('[data-stage="unconfirmed"]')).to_have_count(0)
     finally:
-        if not status_result.done():
-            status_result.set_result(grpc.StatusCode.UNAVAILABLE)
         await page.unroute_all(behavior="wait")
 
 
@@ -2047,13 +2036,6 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
     replies: asyncio.Queue[APIResponse] = asyncio.Queue()
     drop_reply = asyncio.Event()
-    status_requests: asyncio.Queue[Request] = asyncio.Queue()
-    release_status_lookup = asyncio.Event()
-
-    async def hold_command_status(route: Route) -> None:
-        status_requests.put_nowait(route.request)
-        await release_status_lookup.wait()
-        await route.fulfill(status=503, content_type="application/json", body='{"detail":"status unavailable"}')
 
     async def lose_committed_reply(route: Route) -> None:
         replies.put_nowait(await route.fetch())
@@ -2061,7 +2043,6 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await route.abort()
 
     await route_once(page, "**/threads/*/commands", lose_committed_reply)
-    await route_once(page, "**/threads/*/commands/*", hold_command_status)
     try:
         composer = message_composer(page)
         await composer.fill("Test input whose admission neither browser channel observed")
@@ -2081,14 +2062,8 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
             drop_reply.set()
         pending = page.get_by_role("region", name="Input messages")
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
-        async with asyncio.timeout(15):
-            status_request = await status_requests.get()
-        assert status_request.url.endswith(f"/commands/{command.command_id}")
-        await expect(pending.locator('[data-stage="local"]')).to_be_visible()
-
-        # The committed receipt is not visible through this transient status lookup. Keep its
-        # unavailable result explicit so reload must recover the same command from the archive.
-        release_status_lookup.set()
+        # The committed receipt is lost, and replay is held, so reload must recover the same command
+        # from the archive.
         await expect(pending.locator('[data-stage="unconfirmed"]')).to_be_visible()
         await expect(page.locator('.agentplane-user-bubble[data-message-phase="local"]')).to_have_count(1)
 
@@ -2130,7 +2105,6 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         archived = await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
         assert [entry for entry in archived if entry.event.HasField("command_admitted")] == [admission]
     finally:
-        release_status_lookup.set()
         drop_reply.set()
         await page.unroute_all(behavior="wait")
 
@@ -2200,7 +2174,6 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
     page.on("request", record_submission)
     replies: asyncio.Queue[APIResponse] = asyncio.Queue()
     drop_reply = asyncio.Event()
-    status_result = source.gateway.hold_next_command_status()
 
     async def lose_committed_reply(route: Route) -> None:
         replies.put_nowait(await route.fetch())
@@ -2222,15 +2195,8 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         assert admission.event.command_admitted.command == command
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):
             drop_reply.set()
-        async with asyncio.timeout(15):
-            status_request = await source.gateway.command_status_requests.get()
-        assert status_request.command_id == command.command_id
         pending = page.get_by_role("region", name="Input messages")
-        await expect(pending.locator('[data-stage="local"]')).to_be_visible()
-
-        # The lost reply leaves the browser asking what the gateway retained; an unavailable answer
-        # leaves the admission unconfirmed.
-        status_result.set_result(grpc.StatusCode.UNAVAILABLE)
+        # The lost reply leaves the admission unconfirmed until the thread's history shows it.
         await expect(pending.locator('[data-stage="unconfirmed"]')).to_be_visible()
 
         # Interrupt real shape delivery. The published Electric client must retry its own
@@ -2275,8 +2241,6 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
         await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
     finally:
-        if not status_result.done():
-            status_result.set_result(grpc.StatusCode.UNAVAILABLE)
         drop_reply.set()
         await page.unroute_all(behavior="wait")
         await document.dispose()

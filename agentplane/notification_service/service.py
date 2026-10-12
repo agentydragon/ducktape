@@ -144,8 +144,8 @@ class Service:
         return list(page.entries)
 
     async def deliver(self, claim: Inbox, runner: Runner, notice: Notice) -> None:
-        # TODO: Observe command-scoped admission/delivery outcomes through the Runner Gateway (GetCommand),
-        # resumable by command ID, rather than checkpointing the shared conversation journal.
+        # TODO: Observe command-scoped admission outcomes by command ID in the History Service, rather
+        # than checkpointing the shared conversation journal.
         # The runner's journal end now; its entries are read from the History Service, which may lag.
         live = first(
             (session for session in await runner.list_sessions() if session.session_id == claim.session_id), None
@@ -189,6 +189,7 @@ class Service:
         if not current.admitted and (current.attempted or await self.store.attempt(claim, current)):
             # Its admission and confirmation are copied by a later claim, once the History Service has them.
             await self.gateway.command(
+                runner.destination,
                 claim.session_id,
                 command_pb2.Command(
                     command_id=str(current.command_id), submit_input=command_pb2.SubmitInput(text=current.text)

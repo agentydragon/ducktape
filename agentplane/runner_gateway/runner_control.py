@@ -1,5 +1,5 @@
-"""The runner-initiated control listener: authentication, ownership, liveness, command delivery and
-lifecycle requests.
+"""The runner-initiated control listener: authentication, ownership, liveness, and the frames that
+carry command deliveries and lifecycle requests.
 
 Contract: `agentplane/docs/runner_control.md`.
 """
@@ -14,12 +14,8 @@ from uuid import UUID
 
 import grpc
 from kubernetes_asyncio import client as k8s_client
-from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc
-from agentplane.runner_gateway.command_delivery import CommandDelivery
-from agentplane.runner_gateway.commands.dispatch import CommandKey, ReceiptMismatchError
-from agentplane.runner_gateway.commands.store import SubmissionConflictError
 from agentplane.runner_gateway.connection_records import ConnectionRecords, ConnectionSupersededError, RecordOwner
 from agentplane.runner_gateway.lifecycle_control import ControlConnection, LifecycleControl
 from agentplane.sandbox_service.errors import SandboxNotFoundError
@@ -35,9 +31,6 @@ from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND
 # gazelle:include_dep @pypi//protobuf
 
 logger = logging.getLogger(__name__)
-
-# Attempts sent on one stream without a receipt yet; past this, a claim waits for re-notification.
-MAX_UNRECEIPTED = 64
 
 
 @dataclass(frozen=True)
@@ -114,7 +107,6 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         sandboxes: SandboxReader,
         core: k8s_client.CoreV1Api,
         records: ConnectionRecords,
-        delivery: CommandDelivery,
         control: LifecycleControl,
         timing: ControlTiming,
     ) -> None:
@@ -122,7 +114,6 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         self.sandboxes = sandboxes
         self.core = core
         self.records = records
-        self.delivery = delivery
         self.control = control
         self.timing = timing
 
@@ -153,8 +144,7 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
                 await context.write(
                     runner_control_pb2.ServiceFrame(welcome=runner_control_pb2.Welcome(connection_epoch=epoch))
                 )
-            with self.delivery.route(peer.sandbox_uid) as attempts:
-                await self.serve(principal, peer, epoch, attempts, request_iterator, context)
+            await self.serve(principal, peer, epoch, request_iterator, context)
         except WorkloadPrincipalRejectedError:
             await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
         except PeerRefusedError:
@@ -163,7 +153,7 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
             await context.abort(closed.code, closed.detail)
         except TimeoutError:
             await context.abort(grpc.StatusCode.UNAVAILABLE, "control stream operation timed out")
-        except k8s_client.ApiException, SQLAlchemyError:
+        except k8s_client.ApiException:
             logger.exception("Runner control stream backend failure")
             await context.abort(grpc.StatusCode.UNAVAILABLE, "control backend unavailable")
 
@@ -172,7 +162,6 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         principal: WorkloadPrincipal,
         peer: ControlPeer,
         epoch: int,
-        attempts: asyncio.Queue[CommandKey],
         frames: AsyncIterator[runner_control_pb2.RunnerFrame],
         context: grpc.aio.ServicerContext,
     ) -> None:
@@ -181,7 +170,6 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         started = last_touch = last_frame = loop.time()
         last_frame_at = datetime.now(UTC)
         writing = asyncio.Lock()
-        unreceipted: dict[tuple[str, str], datetime] = {}  # (runner session, command ID) -> deadline
 
         async def send(frame: runner_control_pb2.ServiceFrame) -> None:
             async with writing, asyncio.timeout(self.timing.liveness_s):
@@ -195,38 +183,11 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
                     case "heartbeat":
                         pass
                     case "receipt":
-                        try:
-                            await self.delivery.dispatches.record(peer.sandbox_uid, frame.receipt)
-                        except (ReceiptMismatchError, SubmissionConflictError) as error:
-                            raise _StreamClosedError(grpc.StatusCode.INVALID_ARGUMENT, str(error)) from error
-                        unreceipted.pop((frame.receipt.session_id, frame.receipt.command_id), None)
+                        control.receive(frame.receipt)
                     case "control_result":
                         control.answer(frame.control_result)
                     case kind:
                         raise _StreamClosedError(grpc.StatusCode.INVALID_ARGUMENT, f"unexpected {kind} frame")
-
-        async def deliver() -> None:
-            while True:
-                key = await attempts.get()
-                now = datetime.now(UTC)
-                for expired in [attempt for attempt, deadline in unreceipted.items() if deadline <= now]:
-                    del unreceipted[expired]
-                if len(unreceipted) >= MAX_UNRECEIPTED:
-                    continue
-                # Superseded, or this replica's cache has not seen the accept yet: the waiter re-notifies.
-                if self.delivery.leases.read_epoch(peer.sandbox_uid) != epoch:
-                    continue
-                delivery = await self.delivery.dispatches.claim(key, sandbox_uid=peer.sandbox_uid, epoch=epoch)
-                if delivery is None:
-                    continue
-                unreceipted[delivery.runner_session_id, key.command_id] = delivery.deadline
-                await send(
-                    runner_control_pb2.ServiceFrame(
-                        deliver=runner_control_pb2.DeliverCommand(
-                            session_id=delivery.runner_session_id, command=delivery.command
-                        )
-                    )
-                )
 
         async def keep_alive() -> None:
             nonlocal last_touch
@@ -249,11 +210,7 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
                 await send(runner_control_pb2.ServiceFrame(heartbeat=runner_control_pb2.Heartbeat()))
 
         with self.control.connect(peer.sandbox_uid, epoch=epoch, send=send) as control:
-            tasks = [
-                asyncio.create_task(read(control)),
-                asyncio.create_task(deliver()),
-                asyncio.create_task(keep_alive()),
-            ]
+            tasks = [asyncio.create_task(read(control)), asyncio.create_task(keep_alive())]
             try:
                 done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             finally:

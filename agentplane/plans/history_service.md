@@ -76,4 +76,5 @@ a node in the [task DAG](task_dag.md):
 
 - **Reads:** for now only the app's ServiceAccount reads history, for every Session; agent reads
   come with `THREAD_READ_POLICY`, enforced in the History Service.
-- **Command submission records** stay in the Runner Gateway for now (`COMMAND_RECORDS_RETIRE`).
+- **Command submissions** (operator, 2026-10-12 PDT): the Runner Gateway keeps none; a command's
+  admission is read back from the Session's history.

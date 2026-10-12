@@ -7,7 +7,6 @@ import grpc
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.proto import runner_control_pb2_grpc
-from agentplane.runner_gateway.command_delivery import CommandDelivery
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionRecords
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
@@ -27,12 +26,7 @@ OTHER_REPLICA = ConnectionHolder(pod_name="test-other-replica", pod_ip="192.0.2.
 
 @asynccontextmanager
 async def serve_replica_control(
-    cluster: Cluster,
-    holder: ConnectionHolder,
-    *,
-    delivery: CommandDelivery,
-    control: LifecycleControl,
-    timing: ControlTiming,
+    cluster: Cluster, holder: ConnectionHolder, *, control: LifecycleControl, timing: ControlTiming
 ) -> AsyncIterator[runner_control_pb2_grpc.RunnerControlAsyncStub]:
     """Serve `holder`'s control listener, and yield a stub that dials it as the Sandbox's runner."""
     cluster.fake.tokens[RUNNER_TOKEN] = TokenVerdict(
@@ -47,7 +41,6 @@ async def serve_replica_control(
             sandboxes=cluster.inventory,
             core=k8s_client.CoreV1Api(cluster.api),
             records=ConnectionRecords(cluster.api, namespace=SANDBOX_NAMESPACE, holder=holder),
-            delivery=delivery,
             control=control,
             timing=timing,
         ) as port,

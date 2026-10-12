@@ -61,9 +61,9 @@ Details: [command admission](../runner_gateway/API.md#sessions-and-commands); la
 **Unscheduled; operator, 2026-10-11 PDT: not a priority, needs more thought.** The Notification
 Service scans a Session's raw history from the History Service for its own command's admission and
 `harness_user_message_confirmed`, and stores one `EventEntry` per notice (`Notice.runner_entry`):
-the one service besides the History Service fold that derives state from Session events. The Runner
-Gateway's command records can say the runner admitted a command, but not that the harness executed
-it or that the message reached the model's context; today that needs the history. Decide where that
+the one service besides the History Service fold that derives state from Session events. A command's
+`CommandAdmitted` entry says the runner admitted it, but not that the harness executed it or that
+the message reached the model's context; today that needs the history. Decide where that
 outcome is recorded before the Notification Service stops reading history.
 
 ### `SESSION_INPUT_METADATA` — later typed annotations on input commands
@@ -72,8 +72,7 @@ outcome is recorded before the Notification Service stops reading history.
 Typed metadata and restricted trusted producer provenance on input commands, so a notice the
 Notification Service sends is not rendered as a user message. The lean: the Runner Gateway stamps
 verified provenance on the runner Command, and the runner echoes it into the Event that journals
-the input, so it reaches history with the input itself and survives the gateway keeping no command
-records (`COMMAND_RECORDS_RETIRE`). The harness never sees it. Notification-specific authorization
+the input, so it reaches history with the input itself; the gateway keeps no command records. The harness never sees it. Notification-specific authorization
 belongs here, not in the generic command-admission path; attachments are invalid on controls. No
 untyped extension dictionary.
 
@@ -802,7 +801,6 @@ flowchart TD
     GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages move to the gateway]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 8]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
-    COMMAND_RECORDS_RETIRE[In flight: drop command submission records]
     RESUME_BY_SESSION_ID[Unscheduled: resume a Session by its ID alone]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
 ```
@@ -845,14 +843,6 @@ the Sandbox's volume, under the Sandbox's own ServiceAccount and egress sidecar 
 Session to its first writer), that pushes the unacknowledged tail and seals. The volume is
 ReadWriteOnce, so the Job starts only once every container of the old Pod is gone.
 
-### `COMMAND_RECORDS_RETIRE` — drop command submission records
-
-**In flight; operator approved 2026-10-12 PDT; the Gateway command queue lane is building it.** The
-runner journal already holds
-every admission, idempotent on `command_id`. Retiring the Runner Gateway's submission records would make it
-stateless, with `GetCommand`, `ListCommands` and the command status UI reading receipts from
-history instead.
-
 ## 12. Coherence refactors
 
 Refactors found by reading devel (2026-10-11 PDT) against the quality bar and
@@ -869,7 +859,7 @@ flowchart TD
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: drop the unread channel-options settings]
-        COMMAND_REJECTED_STATE[Decision: a rejected command state nothing writes]
+        COMMAND_SUBMISSION_DROP[Waits on rollout: drop the command_submission table]
         SERVICE_SETTING_NAMES[Candidate: settings name the service they configure]
         OPERATOR_ROUTE_PREFIX[Candidate: one operator route prefix]
         NOTIFICATION_WRITE_ONLY_COLUMNS[Decision: audit columns nothing reads]
@@ -893,6 +883,14 @@ grpc_services.md, and give the app's `bridge.py` its own error type.
 column, but its model still declares it (a `CLEANUP` tombstone) so the migration drift check passes.
 Testing and staging both pin an app image without the writes; a drop migration removes the column
 and the tombstone.
+
+### `COMMAND_SUBMISSION_DROP` — drop the `command_submission` table
+
+**Waits on rollout.** The Runner Gateway no longer reads or writes `command_submission`, but its
+model still declares the table (a `CLEANUP` tombstone) so the migration drift check passes; replicas
+older than that still write it. Once staging and production run that gateway image, a drop
+migration removes the table and the model, as its own PR the operator merges after an on-demand CNPG
+`Backup`.
 
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 
@@ -920,13 +918,6 @@ imports `db.py`'s rows: `ActionStore` first moves out of `db.py`, then takes a `
 themselves (rolled to testing and staging), and nothing reads the app's
 and Notification Service's channel-options settings. Remove those fields and the values
 `app_settings.py` and `notifications.py` set from `grpc_channel_config.py`, in one PR.
-
-### `COMMAND_REJECTED_STATE` — a rejected command state nothing writes
-
-**Decision; drops a stored state, so the operator decides.** Nothing in production writes
-`COMMAND_STATE_REJECTED` or raises `SubmissionRefusedError` (`runner_gateway/commands/store.py`);
-only tests do, and the app still maps the state. Either persist a runner's refusal of a command as
-`REJECTED`, or drop the state with a migration and reserve its proto field.
 
 ### `SERVICE_SETTING_NAMES` — settings name the service they configure
 

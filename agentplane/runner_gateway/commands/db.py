@@ -1,5 +1,4 @@
-"""The Runner Gateway's own schema, in the `sandbox_commands` database: its Session registry,
-command admission and runner connections.
+"""The Runner Gateway's own schema, in the `sandbox_commands` database: its Session registry.
 
 Session history lives in another database, keyed by the same public Session ID with no foreign key.
 """
@@ -32,9 +31,9 @@ class Session(Base):
     sandbox_uid: Mapped[UUID | None]
 
 
+# CLEANUP(added 2026-10-12): Nothing reads or writes this table. Drop it, and this model, in a
+#   migration once every Runner Gateway replica runs an image built without command submissions.
 class CommandSubmission(Base):
-    """Service-owned command envelope, distinct from the runner's execution journal."""
-
     __tablename__ = "command_submission"
     __table_args__ = (
         CheckConstraint("state IN ('pending_admission', 'admitted', 'rejected')", name="submission_state"),
@@ -52,7 +51,6 @@ class CommandSubmission(Base):
             name="submission_attempt",
         ),
         CheckConstraint("attempt_sent_epoch IS NULL OR attempt_sent_epoch > 0", name="attempt_sent_epoch_positive"),
-        # A receipt names its command by the runner's Session and the command ID.
         UniqueConstraint(
             "attempt_sandbox_uid", "attempt_runner_session_id", "command_id", name="submission_attempt_destination"
         ),
@@ -65,22 +63,12 @@ class CommandSubmission(Base):
     caller_name: Mapped[str] = mapped_column(String)
     accepted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     state: Mapped[str] = mapped_column(String)
-    # TODO: consider trimming the stored admission entry; the runner journal and the History Service
-    # hold it too. Kept for now: commands are few next to model output.
     admission: Mapped[event_log_pb2.EventEntry | None] = mapped_column(ProtobufColumn(event_log_pb2.EventEntry))
     rejection: Mapped[str | None] = mapped_column(String(512))
-    # Delivery over the runner control stream (`agentplane/docs/runner_control.md` § Dispatch attempts), absent
-    # until the first control-stream submit. A pending submission is sent only while its attempt is open,
-    # before `attempt_deadline`, so a reconnecting runner is never sent stale work. Each submit
-    # reopens the same attempt. A submission whose receipt was lost and is never retried stays
-    # `pending_admission`; nothing settles it in the background.
     attempt_sandbox_uid: Mapped[UUID | None] = mapped_column()
-    # The runner's own Session identifier, which `DeliverCommand` carries.
     attempt_runner_session_id: Mapped[str | None] = mapped_column(String)
     attempt_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
-    # The connection epoch the open attempt was sent on; it is sent at most once per epoch.
     attempt_sent_epoch: Mapped[int | None] = mapped_column(BigInteger)
-    # The runner's refusal of the open attempt. The submission stays pending.
     attempt_refusal: Mapped[runner_control_pb2.CommandRefused | None] = mapped_column(
         ProtobufColumn(runner_control_pb2.CommandRefused)
     )

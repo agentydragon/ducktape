@@ -12,7 +12,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -114,18 +114,11 @@ class ConnectionHolder:
 @dataclass(frozen=True)
 class ConnectionLease:
     sandbox_uid: UUID
-    holder: str
     epoch: int
-    renewed_at: datetime
 
     @classmethod
     def parse(cls, lease: k8s_client.V1Lease) -> ConnectionLease:
-        return cls(
-            sandbox_uid=RecordOwner.uid_of(lease),
-            holder=lease.spec.holder_identity,
-            epoch=lease.spec.lease_transitions,
-            renewed_at=lease.spec.renew_time,
-        )
+        return cls(sandbox_uid=RecordOwner.uid_of(lease), epoch=lease.spec.lease_transitions)
 
 
 class ConnectionLeases:
@@ -169,13 +162,6 @@ class ConnectionLeases:
         """The current connection's epoch, live or not."""
         lease = self._leases.get(sandbox_uid)
         return None if lease is None else lease.epoch
-
-    def read_live_epoch(self, sandbox_uid: UUID, *, liveness_s: float) -> int | None:
-        """The current connection's epoch while it was renewed within `liveness_s`, else None."""
-        lease = self._leases.get(sandbox_uid)
-        if lease is None or lease.renewed_at <= datetime.now(UTC) - timedelta(seconds=liveness_s):
-            return None
-        return lease.epoch
 
 
 class ConnectionRecords:

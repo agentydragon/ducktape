@@ -418,22 +418,6 @@ async def test_session_pending_failed(view: VisualPage, app: AgentplaneFixture) 
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_session_pending_stored_by_service(view: VisualPage, app: AgentplaneFixture) -> None:
-    """A lost delivery reply for a command the Runner Gateway holds: stored, runner admission unconfirmed."""
-    await app.time_out_command_admission()
-    await app.retain_command_in_service()
-    await app.remember_pending_input()
-    await app.mount_thread(RUNNING_THREAD)
-    row = '[data-command-id="locally-retained"]'
-    await view.page.wait_for_selector(
-        f'{row} [data-stage="retained"] .agentplane-command-light[data-state="retained"]', state="attached"
-    )
-    await view.page.locator(row).get_by_role("button", name="Retry").wait_for()
-    await view.check(context="fixture ready")
-    await view.capture(target=view.page.locator(row))
-
-
 async def test_session_pending_controls(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.pending_commands()
     await app.mount_thread(RUNNING_THREAD)

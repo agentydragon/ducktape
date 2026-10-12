@@ -1,6 +1,6 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
-load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library")
 load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//agentplane:__subpackages__"])
@@ -14,20 +14,6 @@ py_library(
         "//agentplane/proto:runner_control_pb2",
         "//util:sqlalchemy_protobuf",
         "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "store",
-    srcs = ["store.py"],
-    deps = [
-        ":db",
-        "//agentplane:subjects",
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
-        "@pypi//protobuf",
-        "@pypi//pydantic",
         "@pypi//sqlalchemy",
     ],
 )
@@ -51,28 +37,6 @@ py_library(
         "//util/testing:postgres_fixtures",
         "@pypi//asyncpg",
         "@pypi//psycopg",
-    ],
-)
-
-py_test(
-    name = "test_store",
-    size = "medium",
-    srcs = ["test_store.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":db",
-        ":store",
-        "//:conftest",
-        "//agentplane:subjects",
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/runner_gateway:conftest",
-        "//agentplane/runner_gateway/testing:journal",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
     ],
 )
 
@@ -108,41 +72,4 @@ oci_image(
     tars = [":migration_layers"],
     user = "1000:1000",
     visibility = ["//visibility:public"],
-)
-
-py_library(
-    name = "dispatch",
-    srcs = ["dispatch.py"],
-    deps = [
-        ":db",
-        ":store",
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:runner_control_pb2",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_dispatch",
-    size = "medium",
-    srcs = ["test_dispatch.py"],
-    requires_docker = True,
-    deps = [
-        ":conftest",
-        ":dispatch",
-        ":store",
-        "//:conftest",
-        "//agentplane:subjects",
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:runner_control_pb2",
-        "//agentplane/runner_gateway:conftest",
-        "//agentplane/runner_gateway/testing:journal",
-        "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
 )

@@ -103,7 +103,7 @@ flowchart TB
   stream they dial to the Runner Gateway, routed per Sandbox by its `<sandbox>-control` Service and
   `<sandbox>-runner` Lease ([runner control stream](docs/runner_control.md)).
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
-  `sandbox_commands` (the Runner Gateway's Session registry and command admission),
+  `sandbox_commands` (the Runner Gateway's Session registry),
   `sandbox_service` (Session history, written by the History Service), `actions`,
   `egress` and `notifications`; the Sandbox Service has none. Only the history database is drawn.
 - **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle, grants

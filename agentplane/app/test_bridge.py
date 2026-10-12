@@ -54,7 +54,7 @@ from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntit
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, sandbox_service_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.harness import Harness
 from agentplane.runner.session import Session
@@ -112,17 +112,6 @@ async def failed_bridge_state(
         except Exception as error:
             observed["history_error"] = repr(error)
             logging.getLogger(__name__).warning("bridge failure history state capture failed", exc_info=True)
-        try:
-            async with asyncio.timeout(5):
-                commands = await local_runners.gateway.unary(
-                    local_runners.gateway.stub.ListCommands,
-                    sandbox_service_pb2.ListCommandsRequest(session_id=session_id, page_size=1000),
-                )
-                observed["gateway_commands"] = [MessageToDict(command) for command in commands.commands]
-                observed["gateway_next_page_token"] = commands.next_page_token
-        except Exception as error:
-            observed["gateway_error"] = repr(error)
-            logging.getLogger(__name__).warning("bridge failure gateway state capture failed", exc_info=True)
     evidence.write_json("bridge-state.json", state)
 
 
@@ -982,8 +971,8 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
     original = command_pb2.Command(
         command_id="reused-before-copy", interrupt_turn=command_pb2.InterruptTurn(turn_id="first-target")
     )
-    # Admitted through the Sandbox Service, not the app.
-    await local_runners.gateway.command(str(thread), original)
+    # Admitted through the Runner Gateway, not the app.
+    await local_runners.gateway.command(local_runners.client(SANDBOX).destination, str(thread), original)
 
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         conflict = await http.post(
@@ -997,21 +986,6 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
             "commandId": "reused-before-copy",
             "interruptTurn": {"turnId": "first-target"},
         }
-
-
-async def test_command_status_reads_what_the_runner_gateway_retained(
-    app_url: str, spec: runner_pb2.SessionSpec, failed_bridge_state: None
-) -> None:
-    async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
-        thread_id = await _create(http, spec, uuid4())
-        admitted = await http.post(
-            _commands(thread_id), json={"commandId": "status-read", "interruptTurn": {"turnId": "no-such-turn"}}
-        )
-        assert admitted.status_code == 200, admitted.text
-        status = await http.get(f"{_commands(thread_id)}/status-read")
-        assert status.status_code == 200, status.text
-        assert status.json() == {"state": "admitted", "admission": admitted.json(), "rejection": None}
-        assert (await http.get(f"{_commands(thread_id)}/never-submitted")).status_code == 404
 
 
 async def test_stop_command_returns_after_admission_before_native_shutdown_effect(
@@ -1079,8 +1053,13 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
     event_logs: SeededEventLogStore,
     content: ContentStore,
     history: History,
+    live_index: LiveIndex,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    raw, live_index.pods[SANDBOX] = seed_runner(custom_objects, core_v1, SANDBOX)
+    live_index.sandboxes[SANDBOX] = raw
     thread = await event_logs.seed(SANDBOX, SESSION)
     await history.open(thread)
     await register_gateway_session(history.engine, thread, sandbox=SANDBOX)
@@ -1096,10 +1075,12 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
     )
     called = 0
 
-    async def submit(session_id: str, candidate: command_pb2.Command) -> event_log_pb2.EventEntry:
+    async def submit(
+        destination: SandboxDestination, session_id: str, candidate: command_pb2.Command
+    ) -> event_log_pb2.EventEntry:
         nonlocal called
         called += 1
-        assert session_id == SESSION
+        assert (destination.sandbox, session_id) == (SANDBOX, SESSION)
         assert candidate == command
         return receipt
 

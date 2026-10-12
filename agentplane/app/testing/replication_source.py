@@ -127,17 +127,7 @@ class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
     def __init__(self, source: ReplicationSource) -> None:
         self.source = source
         self.commands: asyncio.Queue[command_pb2.Command] = asyncio.Queue()
-        self.command_status_requests: asyncio.Queue[sandbox_service_pb2.GetCommandRequest] = asyncio.Queue()
-        self._command_status_results: asyncio.Queue[
-            asyncio.Future[sandbox_service_pb2.CommandStatus | grpc.StatusCode]
-        ] = asyncio.Queue()
         self._admissions: dict[str, event_log_pb2.EventEntry] = {}
-
-    def hold_next_command_status(self) -> asyncio.Future[sandbox_service_pb2.CommandStatus | grpc.StatusCode]:
-        """Hold the next GetCommand until the test supplies its status or gRPC error."""
-        result = asyncio.get_running_loop().create_future()
-        self._command_status_results.put_nowait(result)
-        return result
 
     @override
     async def SubmitCommand(
@@ -152,21 +142,6 @@ class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         entry = self.source.append(event_pb2.Event(command_admitted=event_pb2.CommandAdmitted(command=command)))
         self._admissions[command.command_id] = entry
         return entry
-
-    @override
-    async def GetCommand(
-        self, request: sandbox_service_pb2.GetCommandRequest, context: grpc.aio.ServicerContext
-    ) -> sandbox_service_pb2.CommandStatus:
-        """Let browser tests gate command status; unspecified lookups keep the old unsupported behavior."""
-        snapshot = sandbox_service_pb2.GetCommandRequest.FromString(request.SerializeToString())
-        self.command_status_requests.put_nowait(snapshot)
-        try:
-            result = await self._command_status_results.get_nowait()
-        except asyncio.QueueEmpty:
-            await context.abort(grpc.StatusCode.UNIMPLEMENTED, "GetCommand not scripted")
-        if isinstance(result, grpc.StatusCode):
-            await context.abort(result, "scripted command status")
-        return result
 
     @override
     async def BatchGetSessionSandboxes(

@@ -75,60 +75,13 @@ message CreateSessionResponse {
   agentplane.proto.runner.Attached attached = 2;
 }
 
-// Commands name the public Session alone; the Runner Gateway knows where it runs.
+// Commands name the public Session; the Runner Gateway checks that it runs in the Sandbox whose
+// control Service the call reached.
 message SubmitCommandRequest {
   string session_id = 4;
   agentplane.proto.command.Command command = 2;
   reserved 1, 3;
   reserved "destination", "follow";
-}
-
-// Runner admission only: whether the runner journaled the command, never what the harness did.
-enum CommandState {
-  COMMAND_STATE_UNSPECIFIED = 0;
-  // Retained with no admission or rejection recorded. It may or may not have reached the runner;
-  // this promises neither eventual delivery nor safe cancellation. Once its SubmitCommand call has
-  // returned, only a late receipt for a delivery already sent or an exact retry settles it: the
-  // service never delivers it again, or reads the runner journal for it, on its own.
-  COMMAND_STATE_PENDING_ADMISSION = 1;
-  COMMAND_STATE_ADMITTED = 2;
-  COMMAND_STATE_REJECTED = 3;
-}
-
-message CommandStatus {
-  // The command as submitted.
-  agentplane.proto.command.Command command = 1;
-  CommandState state = 2;
-  google.protobuf.Timestamp accepted_at = 3;
-  // Set when admitted: the runner's journal entry with the CommandAdmitted, as SubmitCommand returns it.
-  agentplane.proto.event_log.EventEntry admission = 4;
-  // Set when rejected: the runner's refusal.
-  optional string rejection = 5;
-}
-
-message GetCommandRequest {
-  string session_id = 3;
-  string command_id = 2;
-  reserved 1;
-  reserved "destination";
-}
-
-message ListCommandsRequest {
-  string session_id = 5;
-  // Only commands in these states; empty means every state.
-  repeated CommandState states = 2;
-  // At most this many commands; 0 means 100, and more than 1000 is refused.
-  uint32 page_size = 3;
-  // A previous response's next_page_token.
-  string page_token = 4;
-  reserved 1;
-  reserved "destination";
-}
-
-message ListCommandsResponse {
-  repeated CommandStatus commands = 1;
-  // Empty on the last page.
-  string next_page_token = 2;
 }
 
 message SessionDefaults {

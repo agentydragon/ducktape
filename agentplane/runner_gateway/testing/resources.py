@@ -3,9 +3,6 @@ runner control connection."""
 
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.runner_gateway.command_delivery import CommandDelivery
-from agentplane.runner_gateway.commands.dispatch import DispatchStore
-from agentplane.runner_gateway.commands.store import SubmissionStore
 from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.grpc_api import Resources
@@ -24,8 +21,6 @@ def build_resources(
     platform_instructions: str,
     runner_admission_ack_timeout_s: float = 1,
 ) -> Resources:
-    # Shared, as in production: delivery and control must agree on which replica holds a runner.
-    leases = ConnectionLeases()
     return Resources(
         admission_timeout_s=15,
         runner_admission_ack_timeout_s=runner_admission_ack_timeout_s,
@@ -36,7 +31,5 @@ def build_resources(
         sealer_accounts=frozenset(),
         platform_instructions=platform_instructions,
         sessions=SessionRegistry(engine),
-        submissions=SubmissionStore(engine),
-        delivery=CommandDelivery(engine.url, dispatches=DispatchStore(engine), leases=leases, liveness_s=1),
-        control=LifecycleControl(leases),
+        control=LifecycleControl(ConnectionLeases()),
     )

@@ -100,21 +100,17 @@ bbr test //agentplane/app/...
 ### Replica-safe command delivery
 
 Any app replica relays `POST /threads/{id}/commands` (generated `Command` payloads with stable
-command ids) to the Runner Gateway's `SubmitCommand`, which records the submission in its
-`sandbox_commands` database and delivers it over the runner control stream
+command ids) to the Runner Gateway's `SubmitCommand` through the Thread's Sandbox's control
+Service, which delivers it over the runner control stream and keeps no record of it
 ([command admission](../runner_gateway/API.md#sessions-and-commands)). The runner serializes
 admission and deduplicates retries. HTTP success returns the runner's exact, durable
 `CommandAdmitted` receipt; it does not wait for the History Service to fold it and does not claim
 native execution. The Thread event stream and projected sync publish the archived entry and
 eventual outcome. Once the History Service has folded the admission, identical retries return that
-entry without contacting the gateway; until then the gateway and runner deduplicate the same id and
-payload, rejecting conflicting reuse. The app keeps no command queue.
-
-`GET /threads/{id}/commands/{command_id}` reads what the Runner Gateway retained for a command
-without contacting the runner. After an unconfirmed delivery the browser asks it: an admission it
-records, a rejection it shows as refused, and a command still pending admission gets its own light,
-stored by the service but not yet seen admitted by the runner. That is neither proof the runner never
-saw it nor a promise it will, so the command keeps Retry and never Cancel.
+entry without contacting the gateway; until then the runner deduplicates the same id and payload,
+rejecting conflicting reuse. The app keeps no command queue. After an unconfirmed delivery the
+browser shows the command as unconfirmed until the Thread's history carries its admission, and it
+keeps Retry and never Cancel: an unconfirmed command may have reached the runner.
 
 The app copies no runner events and folds none. Each runner pushes its Sessions' events to the
 History Service's ingress, and the History Service folds them under per-Session leases

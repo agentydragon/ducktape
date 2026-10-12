@@ -429,11 +429,9 @@ sequenceDiagram
     F->>F: Persist local Command C and id
     F->>A: POST /threads/T/commands, Command C
     A->>G: SubmitCommand {command:C}
-    G->>G: Record submission
     G->>R: C over the control stream
     R->>R: Persist C once
     R-->>G: E(101, command_admitted{command:C})
-    G->>G: Record admission
     G-->>A: E101
     A--xF: Connection lost before saved confirmation reaches browser
     Note over F: Reload
@@ -445,7 +443,9 @@ sequenceDiagram
         A-->>F: Current prefix through E100, keep following
         F->>A: POST same Command C to same Thread/execution scope
         A->>G: SubmitCommand {command:C}
-        G-->>A: Retained E101, without contacting the runner
+        G->>R: C over the control stream
+        R-->>G: Journaled E101, not persisted again
+        G-->>A: E101
         A-->>F: HTTP 200 with E101
         R->>HS: Push E101 and later Events
         A-->>F: SSE id:101 with same E101

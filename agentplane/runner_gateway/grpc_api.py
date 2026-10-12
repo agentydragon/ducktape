@@ -2,13 +2,10 @@
 authority."""
 
 import asyncio
-import json
 import logging
-from base64 import urlsafe_b64decode, urlsafe_b64encode
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from datetime import datetime
 from typing import override
 from uuid import UUID
 
@@ -18,7 +15,6 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.proto import (
-    command_pb2,
     event_log_pb2,
     runner_control_pb2,
     runner_gateway_pb2,
@@ -29,18 +25,13 @@ from agentplane.proto import (
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination
 from agentplane.runner.errors import RunnerError
 from agentplane.runner_gateway import session_lifecycle
-from agentplane.runner_gateway.command_delivery import CommandDelivery, CommandRefusedError
-from agentplane.runner_gateway.commands.store import (
-    CommandSubmission,
-    Submission,
-    SubmissionConflictError,
-    SubmissionNotFoundError,
-    SubmissionState,
-    SubmissionStore,
-    submit_command,
-)
 from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
-from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, ControlRefusedError, LifecycleControl
+from agentplane.runner_gateway.lifecycle_control import (
+    CommandRefusedError,
+    ConnectionNotHeldError,
+    ControlRefusedError,
+    LifecycleControl,
+)
 from agentplane.runner_gateway.sealing import SEAL_S, Sealing
 from agentplane.runner_gateway.session_registry import SessionConflictError, SessionNotFoundError, SessionRegistry
 from agentplane.sandbox_service import wire
@@ -65,8 +56,6 @@ class Resources:
     platform_instructions: str
     runner_admission_ack_timeout_s: float
     sessions: SessionRegistry
-    submissions: SubmissionStore
-    delivery: CommandDelivery
     control: LifecycleControl
     # The Sandbox Service's account, which alone may seal a Sandbox for teardown.
     sealer_accounts: frozenset[ServiceAccountRef]
@@ -96,10 +85,6 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")
     except SandboxNotFoundError, SessionNotFoundError:
         await context.abort(grpc.StatusCode.NOT_FOUND, "sandbox incarnation not found")
-    except SubmissionNotFoundError:
-        await context.abort(grpc.StatusCode.NOT_FOUND, "command not found")
-    except SubmissionConflictError:
-        await context.abort(grpc.StatusCode.ALREADY_EXISTS, "command ID already belongs to a different submission")
     except SessionConflictError:
         await context.abort(grpc.StatusCode.ALREADY_EXISTS, "session ID already belongs to another Sandbox")
     except CommandRefusedError as refused:
@@ -130,41 +115,10 @@ def parse_session_id(session_id: str) -> UUID:
     return parsed
 
 
-SUBMISSION_STATES = {
-    sandbox_service_pb2.COMMAND_STATE_PENDING_ADMISSION: SubmissionState.PENDING_ADMISSION,
-    sandbox_service_pb2.COMMAND_STATE_ADMITTED: SubmissionState.ADMITTED,
-    sandbox_service_pb2.COMMAND_STATE_REJECTED: SubmissionState.REJECTED,
-}
-COMMAND_STATES = {value: key for key, value in SUBMISSION_STATES.items()}
-
-
-def command_status(submission: Submission) -> sandbox_service_pb2.CommandStatus:
-    result = sandbox_service_pb2.CommandStatus(command=submission.command, state=COMMAND_STATES[submission.state])
-    result.accepted_at.FromDatetime(submission.accepted_at)
-    if submission.admission is not None:
-        result.admission.CopyFrom(submission.admission)
-    if submission.rejection is not None:
-        result.rejection = submission.rejection
-    return result
-
-
-def write_page_token(accepted_at: datetime, command_id: str) -> str:
-    """An opaque position in a Session's acceptance order."""
-    return urlsafe_b64encode(json.dumps([accepted_at.isoformat(), command_id]).encode()).decode()
-
-
-def read_page_token(token: str) -> tuple[datetime, str]:
-    match json.loads(urlsafe_b64decode(token.encode())):
-        case [str() as accepted_at, str() as command_id]:
-            return datetime.fromisoformat(accepted_at), command_id
-        case _:
-            raise ValueError("invalid page token")
-
-
 class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
     """Every request travels over the Sandbox's runner control stream. Lifecycle requests are served
     only by the replica holding that connection; any other refuses before acting, and the caller
-    retries through the control Service. Commands reach the holder through command delivery."""
+    retries through the control Service."""
 
     def __init__(self, resources: Resources) -> None:
         self.resources = resources
@@ -288,65 +242,16 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
     async def SubmitCommand(
         self, request: sandbox_service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
     ) -> event_log_pb2.EventEntry:
-        async with errors(context), asyncio.timeout(self.resources.runner_admission_ack_timeout_s):
-            caller = await self.resources.authenticate(context)
+        async with self.request(context, timeout_s=self.resources.runner_admission_ack_timeout_s):
             public_id = parse_session_id(request.session_id)
-            submission = CommandSubmission(command=request.command)
-            # Nothing is persisted for a Session whose Sandbox incarnation is gone or going.
+            if not 1 <= len(request.command.command_id) <= 128 or request.command.WhichOneof("operation") is None:
+                raise ValueError("a command needs a 1 to 128 character ID and an operation")
             placement = await self.resources.sessions.placement(public_id)
+            # Refuses a Sandbox incarnation that is gone or being torn down.
             await self.resources.destinations.resolve_incarnation(
                 placement.sandbox_name, placement.sandbox_uid, writes=True
             )
-            delivery = self.resources.delivery
-
-            async def dispatch(command: command_pb2.Command) -> event_log_pb2.EventEntry:
-                return await delivery.deliver(
-                    sandbox_uid=placement.sandbox_uid,
-                    session_id=public_id,
-                    command_id=command.command_id,
-                    runner_session_id=str(public_id),
-                    deadline_s=min(self.resources.runner_admission_ack_timeout_s, 60),
-                )
-
-            return await submit_command(
-                self.resources.submissions, public_id, submission, caller=caller, dispatch=dispatch
-            )
-
-    async def registered_session(self, session_id: str) -> UUID:
-        """A registered public Session ID. Its submissions outlive its Sandbox."""
-        public_id = parse_session_id(session_id)
-        await self.resources.sessions.placement(public_id)
-        return public_id
-
-    @override
-    async def GetCommand(
-        self, request: sandbox_service_pb2.GetCommandRequest, context: grpc.aio.ServicerContext
-    ) -> sandbox_service_pb2.CommandStatus:
-        async with self.request(context):
-            session_id = await self.registered_session(request.session_id)
-            if not 1 <= len(request.command_id) <= 128:
-                raise ValueError("command ID must contain 1 to 128 characters")
-            return command_status(await self.resources.submissions.read(session_id, request.command_id))
-
-    @override
-    async def ListCommands(
-        self, request: sandbox_service_pb2.ListCommandsRequest, context: grpc.aio.ServicerContext
-    ) -> sandbox_service_pb2.ListCommandsResponse:
-        async with self.request(context):
-            session_id = await self.registered_session(request.session_id)
-            if request.page_size > 1000:
-                raise ValueError("page size must not exceed 1000")
-            limit = request.page_size or 100
-            if not set(request.states) <= SUBMISSION_STATES.keys():
-                raise ValueError("unknown command state")
-            states = {SUBMISSION_STATES[state] for state in request.states}
-            after = read_page_token(request.page_token) if request.page_token else None
-            page = await self.resources.submissions.list(session_id, states=states, after=after, limit=limit)
-            result = sandbox_service_pb2.ListCommandsResponse(commands=[command_status(row) for row in page])
-            if len(page) == limit:
-                last = page[-1]
-                result.next_page_token = write_page_token(last.accepted_at, last.command.command_id)
-            return result
+            return await self.resources.control.deliver(placement.sandbox_uid, str(public_id), request.command)
 
     @override
     async def BatchGetSessionSandboxes(
