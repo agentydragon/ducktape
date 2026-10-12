@@ -377,7 +377,9 @@ runs virtiofsd as uid/gid 107 with all capabilities dropped and no setting to ch
 file a guest writes lands on the PVC as `107:107`, `chown` to anything else fails, and only guest
 root and a guest user whose uid and gid are both 107 can write. Checked live: a `107:107` guest user
 creates, renames, `chmod`s and deletes files, and a pod running as `107:107` then edits all of it.
-The guest image therefore runs the runner and harness as a `107:107` user.
+The guest image therefore runs the runner and harness as a `107:107` user. `agentplane-testing`'s
+4Gi container limit caps a guest at about 1.7Gi: raise testing's limits or use small VMs there
+(operator, 2026-10-12 PDT).
 
 ### `VM_PROVIDER` — production provider API and lifecycle intent
 
@@ -387,7 +389,9 @@ rollout as part of this work. For stateful VMs the kind lives on our own Sandbox
 reconciles to a bare Pod or a `VirtualMachine` (suspend is deleting the Pod or `runStrategy: Halted`).
 Re-type what is worth keeping from draft #8843 (`vm_view` status mapping and ownership checks, the
 `VmTemplate` catalog, halted create then start, DataVolume validation, halted image replacement)
-onto today's code, then close #8843 unmerged; it cannot be rebased.
+onto today's code, then close #8843 unmerged; it cannot be rebased. A Sandbox's kind comes only
+from its `SandboxTemplate`, so `CreateSandbox`, its proto and the app need no change (operator,
+2026-10-12 PDT).
 
 ### `VM_EGRESS` — integrate production admission and proxy path
 
@@ -627,9 +631,12 @@ runner's state, separate from the workspace; each incarnation's runner continues
 on it. The Sandbox Service creates and owns it, with no owner reference, mounted as a volume in pods
 and through virtiofs in VMs (`VM_IMAGE`), never from agent-sandbox's `volumeClaimTemplates`,
 which make the agent-sandbox `Sandbox` its controller owner. Decide: whether the runner's state
-goes on it or only the harness files; whether the workspace survives too (operator neutral;
-default: it does, because a revived conversation refers to files the agent made and its cwd must
-exist); storage class, since `local-path` pins a volume to one node and so pins every incarnation
+goes on it or only the harness files; for VMs, the operator's direction (2026-10-12 PDT) keeps the workspace
+VM-local rather than on a PVC, so it is dropped on a switch from VM to pod, and makes it a mounted
+PVC once the cluster has block storage that can move between kinds (OpenEBS or another
+provisioner); still to confirm whether VM-local survives a stop and start (the reading proposed: a
+disk the VM keeps until the Sandbox is deleted), since a revived conversation refers to files the
+agent made; storage class, since `local-path` pins a volume to one node and so pins every incarnation
 there; file ownership, since files a VM writes are `107:107` (`VM_IMAGE`), so pods run the
 runner as `107:107` too and a Session moves between kinds with no `chown` (checked live); its quota (TODO, deferred by the
 operator 2026-10-12: `local-path` enforces no PVC size, and inside a guest `df` shows the node's
