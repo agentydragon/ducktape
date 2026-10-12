@@ -56,10 +56,7 @@ from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSec
 from cluster.cdk8s.public_coder.egress import NAMESPACE, SERVICE_ACCOUNT
 
 _NAMESPACE = "agentplane-staging"
-# The reviewed read sets and sandbox use below are named because a launch preset binds them
-# (staging_config.py), and the module's own rule is that a name a preset refers to is exported and
-# lives beside the object that answers to it. They sat private while only the connector bindings
-# here used them.
+# Exported: launch presets (staging_config.py) bind these by name.
 GITHUB_READS_SET = "github-reads"
 SANDBOX_SELF_SET = "sandbox-self"
 HOME_ASSISTANT_READS_SET = "home-assistant-reads"

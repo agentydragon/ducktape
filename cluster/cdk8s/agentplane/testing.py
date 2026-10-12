@@ -247,13 +247,9 @@ _SANDBOX_RULES = [
     RolePolicyRule(resources=[custom_resource("", "pods/log")], verbs=["get"]),
 ]
 
-# The credential the agent presents to the app's own API: a token scoped to the
-# app's audience, which TokenReview resolves to
-# system:serviceaccount:<namespace>:agentplane-agent. The app accepts that subject
-# because its Deployment names it; the audience is no gate on its own, since a token
-# minted for any other account would carry it just as well. Minting it is not
-# assuming that account -- it holds no RoleBinding, so the token is an identity for
-# the app and nothing else in the cluster.
+# Mints app-audience tokens for `agentplane-agent`, which has no RoleBindings: an identity for the
+# app only. The app admits that subject because its Deployment names it; the audience alone gates
+# nothing, since any account's token can carry it.
 _TOKEN_RULE = RolePolicyRule(
     resources=[named_resource("", "serviceaccounts/token", "agentplane-agent")], verbs=["create"]
 )

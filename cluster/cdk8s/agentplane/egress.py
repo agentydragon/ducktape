@@ -79,13 +79,10 @@ _PROXY_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress"
 _MIGRATE_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-migrate"
 _LABELS = {"app.kubernetes.io/name": NAME}
 PROXY_PORT = 8888
-# The audience the API server validates its own ServiceAccount tokens against. Read off this
-# cluster on 2026-09-19: Talos sets both `--api-audiences` and `--service-account-issuer` to this
-# on every kube-apiserver static pod. It is an issuer identifier and not an address anything dials,
-# so `localhost` here is not a mistake and not reachable -- do not "correct" it to the Service DNS
-# name, which is what the API server would then refuse. The sidecar's projection asks for exactly
-# this string and the proxy reviews against it, so a value that does not match the cluster yields a
-# 401 inside the box rather than a proxy denial. Changing it means changing the cluster.
+# The API server's own ServiceAccount token audience (Talos `--api-audiences`, equal to
+# `--service-account-issuer`): an issuer ID, not an address; never "fix" it to the Service DNS name.
+# The sidecar projects and the proxy reviews this exact string, so a mismatch with the cluster shows
+# up as a 401 inside the sandbox, not a proxy denial.
 KUBERNETES_AUDIENCE = "https://localhost:7445"
 # Where a sandbox's kubectl sends everything. Cluster-internal by definition, hence the rule below.
 KUBERNETES_HOST = "kubernetes.default.svc.cluster.local"

@@ -10,6 +10,8 @@ ServiceRef so selector/port changes propagate; the EgressPolicy still fences hos
 methods and credentials. See cluster/docs/cilium_network_policy.md, "Egress through a local Gateway".
 """
 
+from collections.abc import Sequence
+
 from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
@@ -112,26 +114,117 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     )
 
 
-def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
+_BASIC_PASSWORD = EgressCredentialSpecTargets(
+    header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD
+)
+_BEARER = EgressCredentialSpecTargets(
+    header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
+)
+
+
+def _copy_secret(
+    scope: Construct,
+    store: str,
+    *,
+    reader: ServiceAccount,
+    credentials_namespace: str,
+    source_namespace: str,
+    source: str,
+    key: str,
+    target: str | None = None,
+) -> None:
+    """ESO copy of `source_namespace`/`source` into the credentials namespace as `target` (default:
+    the same name), through a store that reads that one Secret."""
     credential_external_secret(
         scope,
         namespace=credentials_namespace,
-        target="haku-forgejo-git",
-        source="haku-forgejo-git",
-        key="password",
+        target=target or source,
+        source=source,
+        key=key,
         store=single_secret_store(
             scope,
-            "agentplane-staging-forgejo",
+            f"agentplane-staging-{store}",
             reader=reader,
-            source_namespace="haku-sandbox",
-            source_secret="haku-forgejo-git",
+            source_namespace=source_namespace,
+            source_secret=source,
             consumer_namespace=credentials_namespace,
         ),
     )
+
+
+def _rule(
+    credential: str,
+    *hosts: str,
+    method: EgressPolicySpecRulesMethods | None = None,
+    paths: Sequence[str] | None = None,
+    cluster_internal: bool | None = None,
+) -> EgressPolicySpecRules:
+    return EgressPolicySpecRules(
+        hosts=list(hosts),
+        cluster_internal=cluster_internal,
+        methods=None if method is None else [method],
+        paths=None if paths is None else list(paths),
+        credential_ref=EgressPolicySpecRulesCredentialRef(name=credential),
+    )
+
+
+def _present(
+    scope: Construct,
+    policy: str,
+    *,
+    namespace: str,
+    credential: str,
+    description: str,
+    secret: str,
+    key: str,
+    target: EgressCredentialSpecTargets,
+    rules: Sequence[EgressPolicySpecRules],
+) -> None:
+    """The EgressCredential `credential`, read from `secret`/`key`, and the EgressPolicy `policy`
+    that scopes where the proxy presents it."""
     EgressCredential(
         scope,
-        "egresscredential-forgejo-haku",
-        metadata=ApiObjectMetadata(name="forgejo-haku", namespace=namespace),
+        f"egresscredential-{policy}",
+        metadata=ApiObjectMetadata(name=credential, namespace=namespace),
+        description=description,
+        source=Source.secret_ref(name=secret, key=key),
+        targets=[target],
+    )
+    add_egress_policy(
+        scope, f"egresspolicy-{policy}", metadata=ApiObjectMetadata(name=policy, namespace=namespace), rules=rules
+    )
+
+
+def _forgejo_rules(credential: str) -> list[EgressPolicySpecRules]:
+    # No method or path list. The credential is a whole Forgejo account, so a verb or path list
+    # here would narrow the request without narrowing the authority behind it -- the same reason
+    # the Kubernetes rule carries none. What it does admit is the whole Forgejo surface: git
+    # smart-HTTP (clone, fetch and push), the REST API, and the web UI. That holds under every
+    # name: the host list decides which spellings reach the Service, not what the password may do.
+    return [
+        _rule(credential, FORGEJO_HOST, *FORGEJO_HOST_ALIASES, cluster_internal=True),
+        # The public name is a rule of its own so it stays off `cluster_internal`: it resolves to
+        # public addresses, and were it ever to resolve into the cluster the proxy's refusal of
+        # private addresses should still stop the password going there.
+        _rule(credential, FORGEJO_PUBLIC_HOST),
+    ]
+
+
+def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
+    _copy_secret(
+        scope,
+        "forgejo",
+        reader=reader,
+        credentials_namespace=credentials_namespace,
+        source_namespace="haku-sandbox",
+        source="haku-forgejo-git",
+        key="password",
+    )
+    _present(
+        scope,
+        FORGEJO_HAKU_POLICY,
+        namespace=namespace,
+        credential="forgejo-haku",
         description=(
             "The password of the `haku` account on the internal Forgejo, the service user that "
             "owns haku-state and haku's mirrors. Requests carrying it act as that account with "
@@ -140,37 +233,13 @@ def _forgejo_haku(scope: Construct, *, reader: ServiceAccount, namespace: str, c
             "nothing but the host: treat a sandbox bound to this as holding haku's Forgejo "
             "account."
         ),
-        source=Source.secret_ref(name="haku-forgejo-git", key="password"),
+        secret="haku-forgejo-git",
+        key="password",
         # Git over HTTP and Forgejo's REST API both authenticate with `Basic
         # base64(haku:<password>)`, so the placeholder travels as the password half. A client
         # sends the username itself; only the secret half is substituted here.
-        targets=[
-            EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
-        ],
-    )
-    add_egress_policy(
-        scope,
-        "egresspolicy-forgejo-haku",
-        metadata=ApiObjectMetadata(name=FORGEJO_HAKU_POLICY, namespace=namespace),
-        rules=[
-            # No method or path list. The credential is haku's whole account, so a verb or path
-            # list here would narrow the request without narrowing the authority behind it --
-            # the same reason the Kubernetes rule carries none. What it does admit is the whole
-            # Forgejo surface: git smart-HTTP (clone, fetch and push), the REST API, and the
-            # web UI. That holds under every name below: the host list decides which spellings
-            # reach the Service, not what haku's password may do there.
-            EgressPolicySpecRules(
-                hosts=[FORGEJO_HOST, *FORGEJO_HOST_ALIASES],
-                cluster_internal=True,
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-haku"),
-            ),
-            # The public name is a rule of its own so it stays off `cluster_internal`: it
-            # resolves to public addresses, and were it ever to resolve into the cluster the
-            # proxy's refusal of private addresses should still stop haku's password going there.
-            EgressPolicySpecRules(
-                hosts=[FORGEJO_PUBLIC_HOST], credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-haku")
-            ),
-        ],
+        target=_BASIC_PASSWORD,
+        rules=_forgejo_rules("forgejo-haku"),
     )
 
 
@@ -180,25 +249,20 @@ def _forgejo_finance_agent(
     # Sources directly from the `forgejo` namespace, where tf/gitops/finance-agent creates the
     # Secret -- unlike `_forgejo_haku` above, nothing else needs a copy of it, so there is no
     # existing namespace to piggyback on.
-    credential_external_secret(
+    _copy_secret(
         scope,
-        namespace=credentials_namespace,
-        target="finance-agent-git-creds",
+        "forgejo-finance-agent",
+        reader=reader,
+        credentials_namespace=credentials_namespace,
+        source_namespace="forgejo",
         source="finance-agent-git-creds",
         key="password",
-        store=single_secret_store(
-            scope,
-            "agentplane-staging-forgejo-finance-agent",
-            reader=reader,
-            source_namespace="forgejo",
-            source_secret="finance-agent-git-creds",
-            consumer_namespace=credentials_namespace,
-        ),
     )
-    EgressCredential(
+    _present(
         scope,
-        "egresscredential-forgejo-finance-agent",
-        metadata=ApiObjectMetadata(name="forgejo-finance-agent", namespace=namespace),
+        FORGEJO_FINANCE_AGENT_POLICY,
+        namespace=namespace,
+        credential="forgejo-finance-agent",
         description=(
             "The password of the `finance-agent` account on the internal Forgejo, the service "
             "user that owns the finance-agent repo (tf/gitops/finance-agent) -- Rai's personal "
@@ -206,38 +270,23 @@ def _forgejo_finance_agent(
             "full authority, but the account owns exactly one repo, so the blast radius is that "
             "repo alone."
         ),
-        source=Source.secret_ref(name="finance-agent-git-creds", key="password"),
-        # Same Basic-auth shape as forgejo-haku: the password half is substituted, the client
-        # supplies the username itself.
-        targets=[
-            EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
-        ],
-    )
-    add_egress_policy(
-        scope,
-        "egresspolicy-forgejo-finance-agent",
-        metadata=ApiObjectMetadata(name=FORGEJO_FINANCE_AGENT_POLICY, namespace=namespace),
-        rules=[
-            EgressPolicySpecRules(
-                hosts=[FORGEJO_HOST, *FORGEJO_HOST_ALIASES],
-                cluster_internal=True,
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-finance-agent"),
-            ),
-            EgressPolicySpecRules(
-                hosts=[FORGEJO_PUBLIC_HOST],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="forgejo-finance-agent"),
-            ),
-        ],
+        secret="finance-agent-git-creds",
+        key="password",
+        # Same Basic-auth shape as forgejo-haku.
+        target=_BASIC_PASSWORD,
+        rules=_forgejo_rules("forgejo-finance-agent"),
     )
 
 
 def _google_readonly(scope: Construct, *, namespace: str) -> None:
     # The Secret itself arrives by Airlock's ClusterExternalSecret
     # (cluster/cdk8s/airlock.py).
-    EgressCredential(
+    credential = "google-readonly"
+    _present(
         scope,
-        "egresscredential-google-readonly",
-        metadata=ApiObjectMetadata(name="google-readonly", namespace=namespace),
+        GOOGLE_READONLY_POLICY,
+        namespace=namespace,
+        credential=credential,
         description=(
             "A Google OAuth access token minted and refreshed by Airlock "
             "(cluster/k8s/agents/airlock), mirrored into this namespace by ESO: the token of "
@@ -248,73 +297,61 @@ def _google_readonly(scope: Construct, *, namespace: str) -> None:
             "`insufficientPermissions`. `google-readonly`'s rules restrict where the proxy "
             "presents it."
         ),
-        source=Source.secret_ref(name="google-access-token", key="access_token"),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            )
-        ],
-    )
-    add_egress_policy(
-        scope,
-        "egresspolicy-google-readonly",
-        metadata=ApiObjectMetadata(name=GOOGLE_READONLY_POLICY, namespace=namespace),
+        secret="google-access-token",
+        key="access_token",
+        target=_BEARER,
         rules=[
             # One API per host, so read-only methods are the only restriction needed.
-            EgressPolicySpecRules(
-                hosts=[
-                    # keep-sorted start
-                    "docs.googleapis.com",
-                    "gmail.googleapis.com",
-                    "people.googleapis.com",
-                    "sheets.googleapis.com",
-                    "slides.googleapis.com",
-                    "tasks.googleapis.com",
-                    "youtube.googleapis.com",
-                    # keep-sorted end
-                ],
-                methods=[EgressPolicySpecRulesMethods.GET],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
+            _rule(
+                credential,
+                # keep-sorted start
+                "docs.googleapis.com",
+                "gmail.googleapis.com",
+                "people.googleapis.com",
+                "sheets.googleapis.com",
+                "slides.googleapis.com",
+                "tasks.googleapis.com",
+                "youtube.googleapis.com",
+                # keep-sorted end
+                method=EgressPolicySpecRulesMethods.GET,
             ),
             # www.googleapis.com serves many Google APIs, so paths pick the ones meant here.
             # YouTube is reachable on both hosts; client libraries differ on which they use.
-            EgressPolicySpecRules(
-                hosts=["www.googleapis.com"],
-                methods=[EgressPolicySpecRulesMethods.GET],
+            _rule(
+                credential,
+                "www.googleapis.com",
+                method=EgressPolicySpecRulesMethods.GET,
                 paths=["/calendar/v3/**", "/drive/v3/**", "/youtube/v3/**"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
             ),
             # Drive Activity's only read is a POST query.
-            EgressPolicySpecRules(
-                hosts=["driveactivity.googleapis.com"],
-                methods=[EgressPolicySpecRulesMethods.POST],
+            _rule(
+                credential,
+                "driveactivity.googleapis.com",
+                method=EgressPolicySpecRulesMethods.POST,
                 paths=["/v2/activity:query"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="google-readonly"),
             ),
         ],
     )
 
 
 def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
-    credential_external_secret(
+    credential = "grocy-sf-readonly"
+    _copy_secret(
         scope,
-        namespace=credentials_namespace,
-        target="grocy-sf-readonly",
+        "grocy-sf",
+        reader=reader,
+        credentials_namespace=credentials_namespace,
+        source_namespace="agents-infra",
         source=_GROCY_SF_ACCOUNT,
         key="password",
-        store=single_secret_store(
-            scope,
-            "agentplane-staging-grocy-sf",
-            reader=reader,
-            source_namespace="agents-infra",
-            source_secret=_GROCY_SF_ACCOUNT,
-            consumer_namespace=credentials_namespace,
-        ),
+        target=credential,
     )
-    EgressCredential(
+    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
+    _present(
         scope,
-        "egresscredential-grocy-sf-readonly",
-        metadata=ApiObjectMetadata(name="grocy-sf-readonly", namespace=namespace),
+        GROCY_SF_READONLY_POLICY,
+        namespace=namespace,
+        credential=credential,
         description=(
             f"The app password of `{_GROCY_SF_ACCOUNT}`, an Authentik service account admitted to "
             "the grocy-sf application (tf/gitops/agent-machine-access/grocy-sf.tf), copied into "
@@ -322,19 +359,12 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
             "account as a user with no permissions, and `grocy-sf-readonly`'s rule presents the "
             "password only on GETs to Grocy's read routes."
         ),
-        source=Source.secret_ref(name="grocy-sf-readonly", key="password"),
+        secret=credential,
+        key="password",
         # The grocy-sf.allegedly.works outpost turns HTTP Basic into a client_credentials grant
         # against its own proxy provider, so the placeholder travels as the password half. A
         # client sends the username itself; only the password is substituted here.
-        targets=[
-            EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
-        ],
-    )
-    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    add_egress_policy(
-        scope,
-        "egresspolicy-grocy-sf-readonly",
-        metadata=ApiObjectMetadata(name=GROCY_SF_READONLY_POLICY, namespace=namespace),
+        target=_BASIC_PASSWORD,
         rules=[
             # Talks to Grocy's own REST API (grocy-sf.allegedly.works/api/...) rather than
             # the grocy-mcp-sf MCP server: the MCP server's whole tool surface, reads and
@@ -343,9 +373,10 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
             # that distinction directly, so GET-only admits exactly the read routes
             # (entities/stock/user/system/file); PUT, POST and DELETE -- every write -- are
             # refused by the proxy regardless of path.
-            EgressPolicySpecRules(
-                hosts=["grocy-sf.allegedly.works"],
-                methods=[EgressPolicySpecRulesMethods.GET],
+            _rule(
+                credential,
+                "grocy-sf.allegedly.works",
+                method=EgressPolicySpecRulesMethods.GET,
                 paths=[
                     # keep-sorted start
                     "/api/files/**",
@@ -358,7 +389,6 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
                     "/api/user",
                     # keep-sorted end
                 ],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="grocy-sf-readonly"),
             )
         ],
     )
@@ -367,25 +397,22 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
 def _home_assistant_readonly(
     scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str
 ) -> None:
-    credential_external_secret(
+    credential = "home-assistant-readonly"
+    _copy_secret(
         scope,
-        namespace=credentials_namespace,
-        target="home-assistant-readonly",
+        "home-assistant",
+        reader=reader,
+        credentials_namespace=credentials_namespace,
+        source_namespace=AGENTPLANE_READER_TOKEN.secret_namespace,
         source=AGENTPLANE_READER_TOKEN.secret_name,
         key="token",
-        store=single_secret_store(
-            scope,
-            "agentplane-staging-home-assistant",
-            reader=reader,
-            source_namespace=AGENTPLANE_READER_TOKEN.secret_namespace,
-            source_secret=AGENTPLANE_READER_TOKEN.secret_name,
-            consumer_namespace=credentials_namespace,
-        ),
+        target=credential,
     )
-    EgressCredential(
+    _present(
         scope,
-        "egresscredential-home-assistant-readonly",
-        metadata=ApiObjectMetadata(name="home-assistant-readonly", namespace=namespace),
+        HOME_ASSISTANT_READONLY_POLICY,
+        namespace=namespace,
+        credential=credential,
         description=(
             "A long-lived token of `agentplane-reader`, a Home Assistant user in the read-only "
             "group, which the Home Assistant provisioner (homeassistant/provisioner) creates and "
@@ -393,27 +420,19 @@ def _home_assistant_readonly(
             "call, and `home-assistant-readonly`'s rule presents the token only on GETs of "
             "entity states and their history."
         ),
-        source=Source.secret_ref(name="home-assistant-readonly", key="token"),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            )
-        ],
-    )
-    add_egress_policy(
-        scope,
-        "egresspolicy-home-assistant-readonly",
-        metadata=ApiObjectMetadata(name=HOME_ASSISTANT_READONLY_POLICY, namespace=namespace),
+        secret=credential,
+        key="token",
+        target=_BEARER,
         rules=[
             # A path rule sees no query string, so `/api/history/period/*` admits every entity's
             # history, not only the one a `filter_entity_id` names: the same reach as the
             # read-only group's, which covers every entity.
-            EgressPolicySpecRules(
-                hosts=[HOME_ASSISTANT_HOST],
+            _rule(
+                credential,
+                HOME_ASSISTANT_HOST,
                 cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.GET],
+                method=EgressPolicySpecRulesMethods.GET,
                 paths=["/api/states", "/api/states/*", "/api/history/period/*"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="home-assistant-readonly"),
             )
         ],
     )
@@ -423,25 +442,23 @@ def _activitywatch_read(
     scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str
 ) -> None:
     # Exact source access: the activitywatch namespace also holds the write token.
-    credential_external_secret(
+    _copy_secret(
         scope,
-        namespace=credentials_namespace,
-        target="activitywatch-read-token",
+        "activitywatch",
+        reader=reader,
+        credentials_namespace=credentials_namespace,
+        source_namespace="activitywatch",
         source="activitywatch-read-token",
         key="token",
-        store=single_secret_store(
-            scope,
-            "agentplane-staging-activitywatch",
-            reader=reader,
-            source_namespace="activitywatch",
-            source_secret="activitywatch-read-token",
-            consumer_namespace=credentials_namespace,
-        ),
     )
-    EgressCredential(
+    credential = "activitywatch-read"
+    host = "activitywatch-read.allegedly.works"
+    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
+    _present(
         scope,
-        "egresscredential-activitywatch-read",
-        metadata=ApiObjectMetadata(name="activitywatch-read", namespace=namespace),
+        ACTIVITYWATCH_READ_POLICY,
+        namespace=namespace,
+        credential=credential,
         description=(
             "The static bearer of the central ActivityWatch server's read route "
             "(cluster/docs/activitywatch/README.md), copied into this namespace by ESO. The "
@@ -449,75 +466,43 @@ def _activitywatch_read(
             "without the trailing slash) only, so it cannot write; what it reads is every "
             "device's window titles, URLs and AFK history."
         ),
-        source=Source.secret_ref(name="activitywatch-read-token", key="token"),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            )
-        ],
-    )
-    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    add_egress_policy(
-        scope,
-        "egresspolicy-activitywatch-read",
-        metadata=ApiObjectMetadata(name=ACTIVITYWATCH_READ_POLICY, namespace=namespace),
+        secret="activitywatch-read-token",
+        key="token",
+        target=_BEARER,
         rules=[
             # The API half of what the read route admits; its web UI stays unreachable.
-            EgressPolicySpecRules(
-                hosts=["activitywatch-read.allegedly.works"],
-                methods=[EgressPolicySpecRulesMethods.GET],
-                paths=["/api/0/**"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="activitywatch-read"),
-            ),
+            _rule(credential, host, method=EgressPolicySpecRulesMethods.GET, paths=["/api/0/**"]),
             # Both spellings of the query endpoint, as the route answers both (its anchored block in
             # cluster/k8s/activitywatch/bearer-proxy.conf.template): a spelling this fence refuses
             # dies with `403 denied; reason=no-rule` before the route could redirect it. Two paths
             # rather than one glob: `*` does not cross a `/` and `/api/0/query/**` does not match the
             # bare `/api/0/query`, so no single pattern covers both without also admitting
             # `/api/0/queryanything`.
-            EgressPolicySpecRules(
-                hosts=["activitywatch-read.allegedly.works"],
-                methods=[EgressPolicySpecRulesMethods.POST],
-                paths=["/api/0/query", "/api/0/query/"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="activitywatch-read"),
-            ),
+            _rule(credential, host, method=EgressPolicySpecRulesMethods.POST, paths=["/api/0/query", "/api/0/query/"]),
         ],
     )
 
 
 def _aiquota_read(scope: Construct, *, namespace: str) -> None:
     # The Secret arrives by aiquota's own bearer mirror (aiquota.py), not a store here.
-    EgressCredential(
+    credential = "aiquota-read"
+    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
+    _present(
         scope,
-        "egresscredential-aiquota-read",
-        metadata=ApiObjectMetadata(name="aiquota-read", namespace=namespace),
+        AIQUOTA_READ_POLICY,
+        namespace=namespace,
+        credential=credential,
         description=(
             "aiquota's shared API bearer (aiquota.py), mirrored into this namespace by "
             "reflector. The API behind it serves only reads -- the Claude and Codex "
             "subscription quotas and each provider's raw usage response -- and "
             "`aiquota-read`'s rule presents it only on GETs under /v1/."
         ),
-        source=Source.secret_ref(
-            name=AGENTPLANE_STAGING_BEARER.secret_key.secret.name, key=AGENTPLANE_STAGING_BEARER.secret_key.key
-        ),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            )
-        ],
-    )
-    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    add_egress_policy(
-        scope,
-        "egresspolicy-aiquota-read",
-        metadata=ApiObjectMetadata(name=AIQUOTA_READ_POLICY, namespace=namespace),
+        secret=AGENTPLANE_STAGING_BEARER.secret_key.secret.name,
+        key=AGENTPLANE_STAGING_BEARER.secret_key.key,
+        target=_BEARER,
         rules=[
-            EgressPolicySpecRules(
-                hosts=["aiquota.allegedly.works"],
-                methods=[EgressPolicySpecRulesMethods.GET],
-                paths=["/v1/**"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="aiquota-read"),
-            ),
+            _rule(credential, "aiquota.allegedly.works", method=EgressPolicySpecRulesMethods.GET, paths=["/v1/**"]),
             # A second route over the cluster Service, beside the public one, because the public
             # Gateway leg intermittently loses connections to this API's pod in the other region -- a
             # flat-5.0 s `503 ... connection timeout`. Bursty, not a steady rate: 3 in its first 40
@@ -527,12 +512,12 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
             # FQDN dials port 80, which this backend's Cilium grant (8080 only) does not admit, so it
             # blackholes into a client timeout rather than refusing. Spell it
             # `aiquota-api.cli-proxy-api.svc.cluster.local:8080`.
-            EgressPolicySpecRules(
-                hosts=[AIQUOTA_SERVICE.fqdn],
+            _rule(
+                credential,
+                AIQUOTA_SERVICE.fqdn,
                 cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.GET],
+                method=EgressPolicySpecRulesMethods.GET,
                 paths=["/v1/quotas", "/v1/providers/*/raw"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="aiquota-read"),
             ),
         ],
     )
@@ -542,103 +527,67 @@ def _finance_aiquota_history(
     scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str
 ) -> None:
     name = clickhouse.FINANCE_AGENT_CREDENTIALS
-    credential_external_secret(
+    _copy_secret(
         scope,
-        namespace=credentials_namespace,
-        target=name,
+        "finance-clickhouse",
+        reader=reader,
+        credentials_namespace=credentials_namespace,
+        source_namespace=clickhouse.NAMESPACE,
         source=name,
         key=clickhouse.PASSWORD_KEY,
-        store=single_secret_store(
-            scope,
-            "agentplane-staging-finance-clickhouse",
-            reader=reader,
-            source_namespace=clickhouse.NAMESPACE,
-            source_secret=name,
-            consumer_namespace=credentials_namespace,
-        ),
-    )
-    EgressCredential(
-        scope,
-        "egresscredential-finance-aiquota-history",
-        metadata=ApiObjectMetadata(name=name, namespace=namespace),
-        description="Finance-only typed AIQuota ClickHouse reader; HTTP Basic password for finance_agent_aiquota.",
-        source=Source.secret_ref(name=name, key=clickhouse.PASSWORD_KEY),
-        targets=[
-            EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
-        ],
     )
     # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    add_egress_policy(
+    _present(
         scope,
-        "egresspolicy-finance-aiquota-history",
-        metadata=ApiObjectMetadata(name=FINANCE_AIQUOTA_HISTORY_POLICY, namespace=namespace),
+        FINANCE_AIQUOTA_HISTORY_POLICY,
+        namespace=namespace,
+        credential=name,
+        description="Finance-only typed AIQuota ClickHouse reader; HTTP Basic password for finance_agent_aiquota.",
+        secret=name,
+        key=clickhouse.PASSWORD_KEY,
+        target=_BASIC_PASSWORD,
         rules=[
-            EgressPolicySpecRules(
-                hosts=[clickhouse.HTTP.fqdn],
-                cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.GET],
-                paths=["/"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name=name),
+            _rule(
+                name, clickhouse.HTTP.fqdn, cluster_internal=True, method=EgressPolicySpecRulesMethods.GET, paths=["/"]
             )
         ],
     )
 
 
 def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
-    credential_external_secret(
+    _copy_secret(
         scope,
-        namespace=credentials_namespace,
-        target=_HAKU_MAIL_TOKEN,
+        "haku-mail",
+        reader=reader,
+        credentials_namespace=credentials_namespace,
+        source_namespace="flux-system",
         source=_HAKU_MAIL_TOKEN,
         key="jwt",
-        store=single_secret_store(
-            scope,
-            "agentplane-staging-haku-mail",
-            reader=reader,
-            source_namespace="flux-system",
-            source_secret=_HAKU_MAIL_TOKEN,
-            consumer_namespace=credentials_namespace,
-        ),
     )
-    EgressCredential(
+    credential = "haku-mailbox"
+    host = "haku-mailbox.allegedly.works"
+    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
+    _present(
         scope,
-        "egresscredential-haku-mailbox",
-        metadata=ApiObjectMetadata(name="haku-mailbox", namespace=namespace),
+        HAKU_MAILBOX_POLICY,
+        namespace=namespace,
+        credential=credential,
         description=(
             "The Authentik JWT of Haku's mailbox account (haku@allegedly.works on the Stalwart "
             "server, cluster/k8s/haku/mailbox), rotated by authentik-jwt-rotation and copied "
             "into this namespace by ESO. It reads and changes the contents of that one mailbox "
             "over JMAP; it cannot send mail or administer the server (haku/docs/security.md)."
         ),
-        source=Source.secret_ref(name=_HAKU_MAIL_TOKEN, key="jwt"),
-        targets=[
-            EgressCredentialSpecTargets(
-                header="Authorization", method=EgressCredentialSpecTargetsMethod.SCHEME_TOKEN, scheme="Bearer"
-            )
-        ],
-    )
-    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    add_egress_policy(
-        scope,
-        "egresspolicy-haku-mailbox",
-        metadata=ApiObjectMetadata(name=HAKU_MAILBOX_POLICY, namespace=namespace),
+        secret=_HAKU_MAIL_TOKEN,
+        key="jwt",
+        target=_BEARER,
         rules=[
             # JMAP only: the session document and the API, blob and event-source endpoints under
             # /jmap/. The same host serves Stalwart's management API, which stays unreachable.
             # JMAP's reads and writes share one POST endpoint, so no rule here can narrow it
             # to reads; the account itself is what bounds it.
-            EgressPolicySpecRules(
-                hosts=["haku-mailbox.allegedly.works"],
-                methods=[EgressPolicySpecRulesMethods.GET],
-                paths=["/.well-known/jmap", "/jmap/**"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="haku-mailbox"),
-            ),
-            EgressPolicySpecRules(
-                hosts=["haku-mailbox.allegedly.works"],
-                methods=[EgressPolicySpecRulesMethods.POST],
-                paths=["/jmap/**"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="haku-mailbox"),
-            ),
+            _rule(credential, host, method=EgressPolicySpecRulesMethods.GET, paths=["/.well-known/jmap", "/jmap/**"]),
+            _rule(credential, host, method=EgressPolicySpecRulesMethods.POST, paths=["/jmap/**"]),
         ],
     )
 
@@ -657,38 +606,17 @@ def _buildbuddy(scope: Construct, *, namespace: str, credentials_namespace: str)
 
 
 def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
-    credential_external_secret(
+    _copy_secret(
         scope,
-        namespace=credentials_namespace,
-        target=plaid_pgweb.AUTH.name,
+        "plaid-pgweb",
+        reader=reader,
+        credentials_namespace=credentials_namespace,
+        source_namespace=plaid_pgweb.AUTH.namespace,
         source=plaid_pgweb.AUTH.name,
         key=plaid_pgweb.AUTH_KEY,
-        store=single_secret_store(
-            scope,
-            "agentplane-staging-plaid-pgweb",
-            reader=reader,
-            source_namespace=plaid_pgweb.AUTH.namespace,
-            source_secret=plaid_pgweb.AUTH.name,
-            consumer_namespace=credentials_namespace,
-        ),
     )
-    EgressCredential(
-        scope,
-        "egresscredential-plaid-pgweb",
-        metadata=ApiObjectMetadata(name="plaid-pgweb", namespace=namespace),
-        description=(
-            f"The HTTP Basic password of pgweb's `{plaid_pgweb.AUTH_USER}` user "
-            "(cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by "
-            "ESO. Send it as HTTP Basic under that username. pgweb runs SQL as `plaid_ro`, a Postgres "
-            "role that can only SELECT from the Plaid mirror -- every linked account's balances, "
-            "transactions and holdings -- and `plaid-pgweb`'s rules present the password only on pgweb's "
-            "query API."
-        ),
-        source=Source.secret_ref(name=plaid_pgweb.AUTH.name, key=plaid_pgweb.AUTH_KEY),
-        targets=[
-            EgressCredentialSpecTargets(header="Authorization", method=EgressCredentialSpecTargetsMethod.BASIC_PASSWORD)
-        ],
-    )
+    credential = "plaid-pgweb"
+    host = plaid_pgweb.SERVICE.fqdn
     # pgweb's other API routes and its web UI stay unreachable. Its session routes (`connect`,
     # `disconnect`, `switchdb`) are POSTs, so POST is admitted on the query route alone.
     reads = [
@@ -702,24 +630,26 @@ def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, cr
         # keep-sorted end
     ]
     # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    add_egress_policy(
+    _present(
         scope,
-        "egresspolicy-plaid-pgweb",
-        metadata=ApiObjectMetadata(name=PLAID_PGWEB_POLICY, namespace=namespace),
+        PLAID_PGWEB_POLICY,
+        namespace=namespace,
+        credential=credential,
+        description=(
+            f"The HTTP Basic password of pgweb's `{plaid_pgweb.AUTH_USER}` user "
+            "(cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by "
+            "ESO. Send it as HTTP Basic under that username. pgweb runs SQL as `plaid_ro`, a Postgres "
+            "role that can only SELECT from the Plaid mirror -- every linked account's balances, "
+            "transactions and holdings -- and `plaid-pgweb`'s rules present the password only on pgweb's "
+            "query API."
+        ),
+        secret=plaid_pgweb.AUTH.name,
+        key=plaid_pgweb.AUTH_KEY,
+        target=_BASIC_PASSWORD,
         rules=[
-            EgressPolicySpecRules(
-                hosts=[plaid_pgweb.SERVICE.fqdn],
-                cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.GET],
-                paths=reads,
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="plaid-pgweb"),
-            ),
-            EgressPolicySpecRules(
-                hosts=[plaid_pgweb.SERVICE.fqdn],
-                cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.POST],
-                paths=["/api/query"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="plaid-pgweb"),
+            _rule(credential, host, cluster_internal=True, method=EgressPolicySpecRulesMethods.GET, paths=reads),
+            _rule(
+                credential, host, cluster_internal=True, method=EgressPolicySpecRulesMethods.POST, paths=["/api/query"]
             ),
         ],
     )
