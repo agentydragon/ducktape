@@ -71,6 +71,13 @@ class SandboxServiceSettings(BaseModel):
     token_file: Path = Field(
         description="Path to the rotating projected ServiceAccount token used to authenticate to Sandbox Service."
     )
+    # CLEANUP(added 2026-10-12): Remove with `Settings._move_runner_gateway_out_of_sandbox_service`.
+    #   Declared only so a config file of the old shape still checks against this model; `Settings`
+    #   moves them to `runner_gateway` before validating, so they are always None.
+    gateway_target: str | None = None
+    control_target: str | None = None
+    command_admission_timeout_s: float | None = None
+    gateway_token_file: Path | None = None
 
 
 class RunnerGatewaySettings(BaseModel):
