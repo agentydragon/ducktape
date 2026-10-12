@@ -101,7 +101,7 @@ class SandboxService(sandbox_service_pb2_grpc.SandboxServiceServicer):
     ) -> Empty:
         async with self.request(context):
             provisioning, view = await self.checked_sandbox(request)
-            if await provisioning.inventory.pending_grants(view.name) is not None:
+            if view.launch_grants_pending:
                 raise InventoryError("Sandbox provisioning is incomplete")
             await provisioning.inventory.resume(view.name, uid=view.uid)
             return Empty()

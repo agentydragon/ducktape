@@ -1975,6 +1975,10 @@ data:
     default_egress_policies:
       - basic
       - inference-experiments
+    own_sandboxes:
+      default_policy_sets:
+        - basic
+        - inference-experiments
     kubernetes_grants: {}
     kubernetes_binding_cleanup_namespaces: []
     kubernetes_cluster_binding_cleanup: false
@@ -2173,6 +2177,15 @@ rules:
       - get
       - list
       - watch
+      - create
+      - patch
+      - delete
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policysets
+    verbs:
+      - list
   - apiGroups:
       - ""
     resources:

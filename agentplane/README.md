@@ -75,7 +75,7 @@ flowchart TB
     electric -->|logical replication| hist_db
     hist_db -.->|staging: WAL archive, on-demand base backups| outside
 
-    ss -->|Sandbox CRs, grants| k8s
+    ss -->|Sandbox CRs, grants; testing creates ours| k8s
     ss -->|SealSandbox| gw
     k8s -->|creates| sandbox
     gw -->|control Services, Leases; SessionsSealed on our deleting Sandboxes| k8s

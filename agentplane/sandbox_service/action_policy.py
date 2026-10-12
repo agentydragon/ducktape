@@ -72,4 +72,4 @@ class ActionPolicyBindings(ActionPolicyReader):
 
 def _require_known(names: Sequence[str], policy_sets: dict[str, ActionPolicySet | InvalidResource]) -> None:
     if unknown := [name for name in names if name not in policy_sets]:
-        raise UnknownPolicySetError(unknown)
+        raise UnknownPolicySetError(unknown, kind="ActionPolicySet")

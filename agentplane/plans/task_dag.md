@@ -659,7 +659,7 @@ calls the gateway to seal. Action Service boxes keep a catalog of their own ([AD
 flowchart TD
     SANDBOX_CONTROLLER_PROVISIONING[In flight: the controller provisions a Sandbox]
     KUBERNETES_POLICY_SETS[Grant catalog as PolicySets, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
-    SANDBOX_IMAGE_REPLACE[Candidate: replace the runner image between incarnations]
+    VM_PROVIDER[VM provider, section 4] --> SANDBOX_IMAGE_REPLACE[Blocked: replace a VM's runner image between incarnations]
     SANDBOX_CREATE_CUTOVER[Blocked: Sandboxes are created as ours]
     SANDBOX_CONTROLLER_PROVISIONING --> SANDBOX_CREATE_CUTOVER
     SANDBOX_CREATE_CUTOVER --> AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox]
@@ -675,28 +675,34 @@ the egress sidecar's platform routes (`cluster/cdk8s/agentplane/platform_routes.
 runner-endpoint egress policy is bound. Runtime and time-limited grants are separate bindings
 (`POLICY_RUNTIME_GRANTS`).
 
-### `SANDBOX_IMAGE_REPLACE` — replace the runner image between incarnations
+### `SANDBOX_IMAGE_REPLACE` — replace a VM's runner image between incarnations
 
-**Candidate; the operator's "pause, replace the image, resume" (2026-10-12 PDT).** For pods and VMs
-alike, the controller accepts a new runner image only once the current incarnation is gone: the next
-Pod runs it, and a VM gets its containerDisk rewritten while `runStrategy: Halted`. Both keep the
-state PVC. The runner owns its state's versioning: it migrates forward or reports that it cannot,
-and the controller gates nothing on versions. The VM half is #8843's `ReplaceVmImage` and `VmTemplate.state_schema_version`, replaced
-live in [the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
+**Blocked on `VM_PROVIDER`; the operator's "pause, replace the image, resume" (2026-10-12 PDT).**
+Pods already behave so: each incarnation reads its `SandboxTemplate` as it starts, and a running Pod
+never changes (`agentplane/sandbox_controller/SPEC.md` § Incarnations), so a new image in the
+template, or a Sandbox switched to another template, applies at the next resume on the same state
+PVC. Left is the same for VMs once our Sandbox has them: the controller rewrites a VM's containerDisk
+only while `runStrategy: Halted`, keeping its state PVC. The state PVC's contents belong to the
+runner (operator, 2026-10-12 08:41 PDT): it versions and migrates them, or reports that it cannot,
+and the controller has no version gate. So of #8843's `ReplaceVmImage` (replaced live in
+[the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md)) the Halted-only rewrite carries over,
+and the exact `VmTemplate.state_schema_version` match does not.
 
 ### `SANDBOX_CREATE_CUTOVER` — Sandboxes are created as ours
 
 **In flight; the operator chose "both kinds" (2026-10-12): new Sandboxes are ours, existing
 agent-sandbox ones keep working.** The Sandbox Service, the app's live view and the Runner
 Gateway's destination lookup read both kinds, and our spec carries session defaults and the
-bootstrap command. Left: `CreateSandbox`, suspend, resume and delete write ours on testing,
-replacing the imperative-only `CreateSandbox`. That lookup refuses new Sessions and commands for a deleting Sandbox, as it does for
+bootstrap command. `CreateSandbox`, suspend, resume and delete write ours on testing
+(`own_sandboxes` in the Sandbox Service's settings). That lookup refuses new Sessions and commands for a deleting Sandbox, as it does for
 one in agent-sandbox teardown, while the gateway seals it. Existing staging Sandboxes stay on agent-sandbox until `AGENT_SANDBOX_RETIRE`
 recreates them. The Sandbox Controller and our runner `SandboxTemplate`s exist on `agentplane-testing` only
 (`Environment.own_sandboxes`) until then: the cutover
 lands on testing first, and staging gets the controller and the cutover only once testing holds
-(operator, 2026-10-12 PDT: testing down beats staging down). The create form and Sandbox presets
-name policy sets of any rule type, one chip per set, in a new `policy_sets` preset field.
+(operator, 2026-10-12 PDT: testing down beats staging down). Left: the create form and Sandbox presets
+name policy sets of any rule type, one chip per set, in a new `policy_sets` preset field (the app's
+`NewSandbox` already carries it), and the acceptance suite asks for policy sets where the deployment
+creates ours, which refuses egress policy selections.
 
 ### `AGENT_SANDBOX_RETIRE` — Agentplane stops using agent-sandbox
 

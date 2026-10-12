@@ -71,6 +71,9 @@ message CreateSandboxRequest {
   repeated string kubernetes_grants = 5;
   SessionDefaults session_defaults = 6;
   string bootstrap = 7;
+  // PolicySet names to bind, beside the service's defaults. Only for Agentplane's own Sandbox kind,
+  // which takes these in place of egress_policies, action_policy_sets and kubernetes_grants.
+  repeated string policy_sets = 8;
 }
 
 // Kubernetes names/status vocabulary is preserved, not recast as runner state.

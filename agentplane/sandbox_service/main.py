@@ -63,6 +63,7 @@ async def sandboxes(
             or any(isinstance(grant, ClusterRoleBindingGrant) for grant in settings.kubernetes_grants.values()),
         ),
         RunnerEndpoints(control=settings.runner_control, ingress=settings.runner_ingress),
+        own_sandboxes=settings.own_sandboxes,
     )
     add_service(
         Resources(

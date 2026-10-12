@@ -2,17 +2,19 @@
 
 Kubernetes is the inventory in this slice — this component persists no private database — so every
 fact it knows about a sandbox is a label or annotation on its Sandbox. It projects the Sandbox CR
-status and its same-name Pod status separately, without deriving a combined provisioning state. It
-creates standalone Sandboxes: the Pod and volume shape is copied from the namespace's
-`SandboxTemplate` at creation, so the manifest stays the one place the runner Pod is defined, and no
-claim or warm pool sits in between.
+status and its same-name Pod status separately, without deriving a combined provisioning state.
+
+It creates either kind. Agentplane's own Sandbox names its `SandboxTemplate` and policy sets, and
+the Sandbox Controller does the rest. Agent-sandbox's standalone Sandbox copies the Pod and volume
+shape from the namespace's `SandboxTemplate` at creation, so the manifest stays the one place the
+runner Pod is defined, and no claim or warm pool sits in between.
 """
 
 from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Set
 from typing import Any, cast
 
 from google.protobuf.json_format import MessageToDict
@@ -23,7 +25,9 @@ from tenacity import retry, retry_if_exception, stop_after_attempt
 from agentplane import sandbox_resource
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Sandbox, SandboxBinding, TeardownPhase
+from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.binding_storage import read_binding
 from agentplane.sandbox_service.errors import (
     SandboxConflictError,
@@ -120,9 +124,7 @@ class SandboxInventory(SandboxReader):
     async def list_sandboxes(self) -> list[Sandbox]:
         """Both kinds: agent-sandbox's Agentplane-managed ones, then all of Agentplane's own."""
         sandboxes_page, own_page, pods = await asyncio.gather(
-            self._custom_objects.list_namespaced_custom_object(
-                *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, label_selector=f"{MANAGED_LABEL}=true"
-            ),
+            self._agent_sandboxes_page(),
             self._custom_objects.list_namespaced_custom_object(
                 GROUP, VERSION, self._namespace, sandbox_resource.SANDBOXES_PLURAL
             ),
@@ -134,6 +136,20 @@ class SandboxInventory(SandboxReader):
             *sandbox_views(_ResourceList.model_validate(sandboxes_page).items, pods.items, api_client=api_client),
             *own_sandbox_views(_ResourceList.model_validate(own_page).items, pods.items, api_client=api_client),
         ]
+
+    async def list_agent_sandboxes(self) -> list[Sandbox]:
+        """Agent-sandbox's Agentplane-managed ones alone: the ones whose grants and teardown this
+        service drives. The Sandbox Controller drives Agentplane's own."""
+        sandboxes_page, pods = await asyncio.gather(
+            self._agent_sandboxes_page(), self._core_v1.list_namespaced_pod(self._namespace)
+        )
+        api_client = self._core_v1.api_client  # type: ignore[attr-defined]
+        return sandbox_views(_ResourceList.model_validate(sandboxes_page).items, pods.items, api_client=api_client)
+
+    async def _agent_sandboxes_page(self) -> dict[str, Any]:
+        return await self._custom_objects.list_namespaced_custom_object(
+            *SANDBOX_API, self._namespace, SANDBOXES_PLURAL, label_selector=f"{MANAGED_LABEL}=true"
+        )
 
     async def create(
         self,
@@ -195,12 +211,62 @@ class SandboxInventory(SandboxReader):
         return sandbox_view(sandbox, None, api_client=api_client)
 
     async def retry(self, spec: CreateSandboxRequest, *, caller: ServiceAccountRef) -> Sandbox | None:
-        """Find the recorded Create before resolving mutable template/policy catalogues."""
+        """Find the recorded Create, of either kind, before resolving mutable template/policy
+        catalogues. A Sandbox of the other kind holds the name too: both would own the Pod's."""
+        intent = self._intent(spec, caller)
+        own = await sandbox_resource.read_sandbox(self._custom_objects, self._namespace, spec.name)
+        if own is not None:
+            if own.metadata.deletion_timestamp or own.metadata.annotations.get(CREATE_INTENT) != intent:
+                raise SandboxConflictError(spec.name)
+            return await self.get(spec.name)
         try:
             existing = await self._sandbox(spec.name)
         except SandboxNotFoundError:
             return None
-        self._check_intent(existing, self._intent(spec, caller))
+        self._check_intent(existing, intent)
+        return await self.get(spec.name)
+
+    async def require_policy_sets(self, names: Set[str]) -> None:
+        listed = await self._custom_objects.list_namespaced_custom_object(
+            GROUP, VERSION, self._namespace, POLICY_SETS_PLURAL
+        )
+        held = {
+            _NamedResource.model_validate(item).metadata.name for item in _ResourceList.model_validate(listed).items
+        }
+        if missing := sorted(names - held):
+            raise UnknownPolicySetError(missing, kind="PolicySet")
+
+    async def create_own(
+        self, spec: CreateSandboxRequest, *, policy_sets: Set[str], caller: ServiceAccountRef
+    ) -> Sandbox:
+        """Agentplane's own Sandbox, running from the start: the Sandbox Controller makes its
+        ServiceAccount and `PolicyBinding` beside its Pod, so nothing here waits for grants.
+        `retry` has already found no Sandbox of the name."""
+        intent = self._intent(spec, caller)
+        body = {
+            "apiVersion": sandbox_resource.SANDBOX_API_VERSION,
+            "kind": sandbox_resource.SANDBOX_KIND,
+            "metadata": {"name": spec.name, "annotations": {CREATE_INTENT: intent}},
+            "spec": {
+                "template": spec.template,
+                "running": True,
+                "policySets": sorted(policy_sets),
+                **(
+                    {"sessionDefaults": MessageToDict(spec.session_defaults)}
+                    if spec.HasField("session_defaults")
+                    else {}
+                ),
+                **({"bootstrap": spec.bootstrap} if spec.bootstrap else {}),
+            },
+        }
+        try:
+            await self._custom_objects.create_namespaced_custom_object(
+                GROUP, VERSION, self._namespace, sandbox_resource.SANDBOXES_PLURAL, body
+            )
+        except Exception:
+            # As for agent-sandbox's: the create may have committed, so the receipt decides.
+            if await self.retry(spec, caller=caller) is None:
+                raise
         return await self.get(spec.name)
 
     @staticmethod
@@ -329,19 +395,78 @@ class SandboxInventory(SandboxReader):
             )
 
     async def suspend(self, name: str, *, uid: str) -> None:
-        await self._set_operating_mode(name, OperatingMode.SUSPENDED, uid=uid)
+        if await self._is_own(name):
+            await self._set_running(name, False, uid=uid)
+        else:
+            await self._set_operating_mode(name, OperatingMode.SUSPENDED, uid=uid)
 
     async def resume(self, name: str, *, uid: str) -> None:
-        await self._set_operating_mode(name, OperatingMode.RUNNING, uid=uid)
+        if await self._is_own(name):
+            await self._set_running(name, True, uid=uid)
+        else:
+            await self._set_operating_mode(name, OperatingMode.RUNNING, uid=uid)
 
-    @_retry_on_conflict
     async def begin_teardown(self, name: str, *, uid: str) -> None:
         """Start deleting a suspended Sandbox, which deletes its volume and everything on it. A running
         one is refused, so the irreversible step is a deliberate second one for a browser and for an
-        agent calling the API alike.
+        agent calling the API alike. Asking again changes nothing.
 
-        The Sandbox runs again, fenced, so that its runner can seal every Session; the controller
-        drives the rest. Asking again changes nothing."""
+        Either kind runs again, fenced, so that its runner can seal every Session. Agentplane's own is
+        deleted at once and its controller does that; agent-sandbox's is marked here, and this
+        service's teardown drives the rest."""
+        if await self._is_own(name):
+            await self._delete_own(name, uid=uid)
+        else:
+            await self._begin_agent_sandbox_teardown(name, uid=uid)
+
+    async def _is_own(self, name: str) -> bool:
+        return await sandbox_resource.read_sandbox(self._custom_objects, self._namespace, name) is not None
+
+    async def _own_incarnation(self, name: str, *, uid: str) -> sandbox_resource.Sandbox:
+        sandbox = await sandbox_resource.read_sandbox(self._custom_objects, self._namespace, name)
+        if sandbox is None or str(sandbox.metadata.uid) != uid:
+            raise SandboxNotFoundError(name)
+        return sandbox
+
+    @_retry_on_conflict
+    async def _set_running(self, name: str, running: bool, *, uid: str) -> None:
+        sandbox = await self._own_incarnation(name, uid=uid)
+        if sandbox.metadata.deletion_timestamp is not None:
+            raise SandboxTearingDownError(name)
+        # Guarded, so that a concurrent delete is never answered by a stale read's mode.
+        await self._custom_objects.patch_namespaced_custom_object(
+            GROUP,
+            VERSION,
+            self._namespace,
+            sandbox_resource.SANDBOXES_PLURAL,
+            name,
+            {
+                "metadata": {"uid": uid, "resourceVersion": sandbox.metadata.resource_version},
+                "spec": {"running": running},
+            },
+            _content_type=_MERGE_PATCH,
+        )
+
+    @_retry_on_conflict
+    async def _delete_own(self, name: str, *, uid: str) -> None:
+        sandbox = await self._own_incarnation(name, uid=uid)
+        if sandbox.metadata.deletion_timestamp is not None:
+            return
+        if sandbox.spec.running:
+            raise SandboxRunningError(name)
+        await self._custom_objects.delete_namespaced_custom_object(
+            GROUP,
+            VERSION,
+            self._namespace,
+            sandbox_resource.SANDBOXES_PLURAL,
+            name,
+            body=k8s_client.V1DeleteOptions(
+                preconditions=k8s_client.V1Preconditions(uid=uid, resource_version=sandbox.metadata.resource_version)
+            ),
+        )
+
+    @_retry_on_conflict
+    async def _begin_agent_sandbox_teardown(self, name: str, *, uid: str) -> None:
         sandbox = await self._mutable_sandbox(name, uid=uid)
         if sandbox.teardown != TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED:
             return

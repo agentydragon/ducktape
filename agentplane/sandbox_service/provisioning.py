@@ -7,10 +7,12 @@ Existing labels/finalizers and deletion semantics are retained for an in-place o
 import json
 import logging
 import re
+from collections.abc import Set
 from dataclasses import dataclass
 
 from google.protobuf.json_format import MessageToDict
 from more_itertools import unique_everseen
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.proto import runner_pb2
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Sandbox, SandboxBinding
@@ -32,6 +34,14 @@ from agentplane.subjects import ServiceAccountRef
 logger = logging.getLogger(__name__)
 
 
+class OwnSandboxes(BaseModel):
+    """CreateSandbox creates Agentplane's own Sandbox kind, which takes policy sets alone."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    default_policy_sets: Set[str] = Field(description="PolicySets every new Sandbox is bound to.")
+
+
 @dataclass(frozen=True)
 class Provisioning:
     inventory: SandboxInventory
@@ -40,6 +50,8 @@ class Provisioning:
     grants: dict[str, KubernetesGrant]
     bindings: KubernetesBindings
     endpoints: RunnerEndpoints
+    # Absent, CreateSandbox creates agent-sandbox's kind.
+    own_sandboxes: OwnSandboxes | None
 
     async def create(self, spec: CreateSandboxRequest, *, caller: ServiceAccountRef) -> Sandbox:
         if not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", spec.name) or len(spec.name) > 57 or not spec.template:
@@ -51,6 +63,10 @@ class Provisioning:
             runner_pb2.HARNESS_CODEX,
         ):
             raise ValueError("unsupported harness")
+        if self.own_sandboxes is not None:
+            return await self._create_own(spec, self.own_sandboxes, caller=caller)
+        if spec.policy_sets:
+            raise ValueError("policy sets are for Agentplane's own Sandbox kind")
         self.endpoints.require_unreserved(spec.egress_policies)
         existing = await self.inventory.retry(spec, caller=caller)
         if existing is not None:
@@ -95,6 +111,18 @@ class Provisioning:
             else None,
         )
 
+    async def _create_own(self, spec: CreateSandboxRequest, own: OwnSandboxes, *, caller: ServiceAccountRef) -> Sandbox:
+        # Its runner reaches Agentplane's services over the egress sidecar's platform routes, so no
+        # endpoint policy is granted, and a PolicySet holds any rule type.
+        if spec.egress_policies or spec.action_policy_sets or spec.kubernetes_grants:
+            raise ValueError("Agentplane's own Sandbox takes policy sets, not egress, Action or Kubernetes grants")
+        existing = await self.inventory.retry(spec, caller=caller)
+        if existing is not None:
+            return existing
+        policy_sets = {*own.default_policy_sets, *spec.policy_sets}
+        await self.inventory.require_policy_sets(policy_sets)
+        return await self.inventory.create_own(spec, policy_sets=policy_sets, caller=caller)
+
     async def ensure(self, sandbox: Sandbox) -> None:
         if sandbox.deleting:
             return
@@ -120,7 +148,7 @@ class Provisioning:
 
     async def reconcile_once(self) -> None:
         await self.bindings.reconcile_once()
-        for sandbox in await self.inventory.list_sandboxes():
+        for sandbox in await self.inventory.list_agent_sandboxes():
             try:
                 await self.ensure(sandbox)
             except Exception:

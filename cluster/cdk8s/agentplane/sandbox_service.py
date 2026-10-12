@@ -65,6 +65,12 @@ class SandboxService(Construct):
                 ],
                 "token_audience": TOKEN_AUDIENCE,
                 "default_egress_policies": list(egress.DEFAULT_POLICIES),
+                # Each egress policy has a PolicySet twin of its name (egress_policies.py).
+                **(
+                    {"own_sandboxes": {"default_policy_sets": sorted(egress.DEFAULT_POLICIES)}}
+                    if env.own_sandboxes
+                    else {}
+                ),
                 "kubernetes_grants": {
                     name: grant.model_dump(mode="json", exclude_none=True)
                     for name, grant in env.app_config.kubernetes_grants.items()
@@ -220,7 +226,15 @@ class SandboxService(Construct):
                     resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
                     verbs=["create", "get", "list", "watch", "patch", "delete"],
                 ),
-                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
+                RolePolicyRule(
+                    resources=[custom_resource(GROUP, "sandboxes")],
+                    verbs=["get", "list", "watch", *(("create", "patch", "delete") if self.env.own_sandboxes else ())],
+                ),
+                *(
+                    [RolePolicyRule(resources=[custom_resource(GROUP, "policysets")], verbs=["list"])]
+                    if self.env.own_sandboxes
+                    else []
+                ),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 # Read the UID-owned ServiceAccount metadata when replaying Create; never read its tokens.
                 RolePolicyRule(

@@ -1,7 +1,9 @@
 """Headless provisioning, restart recovery, and incarnation-safe administrative APIs."""
 
 import json
+import logging
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -14,9 +16,11 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from more_itertools import one
 
+from agentplane import sandbox_resource
+from agentplane.crd_group import GROUP
 from agentplane.grpc_calls import ServiceError
 from agentplane.proto import runner_pb2, sandbox_service_pb2
-from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, SandboxDestination
+from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, SandboxDestination, TeardownPhase
 from agentplane.runner.errors import RunnerError
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -26,7 +30,7 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.kubernetes_views import SANDBOX_BINDING_ANNOTATION
-from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandbox_service.provisioning import OwnSandboxes, Provisioning
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     RUNNER_ENDPOINTS,
@@ -93,6 +97,7 @@ def case() -> Case:
             },
             KubernetesBindings(inventory, cast(k8s_client.RbacAuthorizationV1Api, rbac)),
             RUNNER_ENDPOINTS,
+            own_sandboxes=None,
         ),
         custom,
         core,
@@ -100,8 +105,10 @@ def case() -> Case:
     )
 
 
-@pytest.fixture
-async def api(case: Case, cluster: Cluster, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
+@asynccontextmanager
+async def _client(
+    provisioning: Provisioning, cluster: Cluster, token_file: Path
+) -> AsyncIterator[SandboxServiceClient]:
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{ADMIN.namespace}:{ADMIN.name}",
         pod_name="test-provisioner-pod",
@@ -110,12 +117,18 @@ async def api(case: Case, cluster: Cluster, token_file: Path) -> AsyncIterator[S
     )
     resources = Resources(
         principals=cluster.build_principal_resolver(AUDIENCE),
-        provisioning=case.service,
+        provisioning=provisioning,
         caller_accounts=frozenset({ADMIN}),
         admission_timeout_s=15,
         lifecycle_timeout_s=300,
     )
     async with service_client(resources, token_file) as client:
+        yield client
+
+
+@pytest.fixture
+async def api(case: Case, cluster: Cluster, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
+    async with _client(case.service, cluster, token_file) as client:
         yield client
 
 
@@ -405,6 +418,123 @@ async def test_a_template_that_names_an_endpoint_is_refused(api: SandboxServiceC
     with pytest.raises(RunnerError):  # How the client reports FAILED_PRECONDITION.
         await api.create(CreateSandboxRequest(name="test", template=TEMPLATE))
     assert ("sandboxes", "test") not in case.custom.objects
+
+
+# Agentplane's own Sandbox kind: the deployment's `own_sandboxes` setting.
+
+OWN_STORE = f"{sandbox_resource.SANDBOXES_PLURAL}.{GROUP}"
+
+
+@pytest.fixture
+async def own_api(case: Case, cluster: Cluster, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
+    for name in ("test-default-set", "test-chosen-set"):
+        case.custom.objects[("policysets", name)] = {"metadata": {"name": name}, "spec": {"rules": []}}
+    case.service = replace(case.service, own_sandboxes=OwnSandboxes(default_policy_sets={"test-default-set"}))
+    async with _client(case.service, cluster, token_file) as client:
+        yield client
+
+
+def _own(case: Case, name: str) -> dict[str, Any]:
+    return case.custom.objects[(OWN_STORE, name)]
+
+
+async def test_create_writes_our_kind_running_with_its_whole_recipe(own_api: SandboxServiceClient, case: Case) -> None:
+    spec = CreateSandboxRequest(
+        name="test",
+        template=TEMPLATE,
+        policy_sets=["test-chosen-set"],
+        bootstrap="printf ready",
+        session_defaults=sandbox_service_pb2.SessionDefaults(harness=runner_pb2.HARNESS_CODEX, setup_script="true"),
+    )
+    view = await own_api.create(spec)
+    assert _own(case, "test")["spec"] == {
+        "template": TEMPLATE,
+        "running": True,
+        "policySets": ["test-chosen-set", "test-default-set"],
+        "sessionDefaults": {"harness": "HARNESS_CODEX", "setupScript": "true"},
+        "bootstrap": "printf ready",
+    }
+    assert view.operating_mode == "Running"
+    assert view.binding.bootstrap == "printf ready"
+    assert ("sandboxes", "test") not in case.custom.objects
+    # Nothing to provision here: the controller makes the ServiceAccount and the PolicyBinding.
+    assert not case.core.service_accounts
+    assert (await own_api.create(spec)).uid == view.uid
+    with pytest.raises(ServiceError) as conflict:
+        await own_api.create(CreateSandboxRequest(name="test", template=TEMPLATE))
+    assert conflict.value.code == grpc.StatusCode.ALREADY_EXISTS
+
+
+@pytest.mark.parametrize(
+    "spec",
+    [
+        CreateSandboxRequest(name="test", template=TEMPLATE, policy_sets=["test-missing-set"]),
+        CreateSandboxRequest(name="test", template=TEMPLATE, egress_policies=["test-basic"]),
+        CreateSandboxRequest(name="test", template=TEMPLATE, action_policy_sets=["test-actions"]),
+        CreateSandboxRequest(name="test", template=TEMPLATE, kubernetes_grants=["test-read"]),
+    ],
+    ids=["unknown-policy-set", "egress-policy", "action-policy-set", "kubernetes-grant"],
+)
+async def test_our_kind_takes_known_policy_sets_alone(
+    own_api: SandboxServiceClient, case: Case, spec: CreateSandboxRequest
+) -> None:
+    before = dict(case.custom.objects)
+    with pytest.raises(ServiceError) as rejected:
+        await own_api.create(spec)
+    assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
+    assert case.custom.objects == before
+
+
+async def test_policy_sets_are_refused_for_agent_sandboxes(api: SandboxServiceClient, case: Case) -> None:
+    with pytest.raises(ServiceError) as rejected:
+        await api.create(CreateSandboxRequest(name="test", template=TEMPLATE, policy_sets=["test-chosen-set"]))
+    assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
+    assert ("sandboxes", "test") not in case.custom.objects
+
+
+async def test_a_name_held_by_the_other_kind_is_refused(
+    api: SandboxServiceClient, own_api: SandboxServiceClient, case: Case
+) -> None:
+    await api.create(CreateSandboxRequest(name="test", template=TEMPLATE))
+    with pytest.raises(ServiceError) as conflict:
+        await own_api.create(CreateSandboxRequest(name="test", template=TEMPLATE, policy_sets=["test-chosen-set"]))
+    assert conflict.value.code == grpc.StatusCode.ALREADY_EXISTS
+    assert (OWN_STORE, "test") not in case.custom.objects
+
+
+async def test_our_kind_suspends_resumes_and_deletes_by_its_spec(own_api: SandboxServiceClient, case: Case) -> None:
+    view = await own_api.create(CreateSandboxRequest(name="test", template=TEMPLATE))
+    _own(case, "test")["metadata"]["finalizers"] = ["test-controller-finalizer"]
+    with pytest.raises(RunnerError):  # How the client reports FAILED_PRECONDITION: running.
+        await own_api.delete("test")
+    stale = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=str(uuid4()))
+    for operation in (own_api.stub.SuspendSandbox, own_api.stub.ResumeSandbox, own_api.stub.DeleteSandbox):
+        with pytest.raises(ServiceError) as rejected:
+            await own_api.unary(operation, sandbox_service_pb2.SandboxRequest(destination=stale))
+        assert rejected.value.code == grpc.StatusCode.NOT_FOUND
+    await own_api.suspend("test")
+    assert _own(case, "test")["spec"]["running"] is False
+    await own_api.resume("test")
+    assert _own(case, "test")["spec"]["running"] is True
+    await own_api.suspend("test")
+    await own_api.delete("test")
+    await own_api.delete("test")
+    # The controller runs it again to seal its Sessions, then deletes the rest.
+    assert (await own_api.get("test")).teardown == TeardownPhase.TEARDOWN_PHASE_SEALING
+    assert case.custom.deleted == [(OWN_STORE, "test")]
+    with pytest.raises(RunnerError):
+        await own_api.resume("test")
+
+
+async def test_provisioning_leaves_our_kind_to_its_controller(
+    own_api: SandboxServiceClient, case: Case, caplog: pytest.LogCaptureFixture
+) -> None:
+    await own_api.create(CreateSandboxRequest(name="test", template=TEMPLATE))
+    before = deepcopy(_own(case, "test"))
+    with caplog.at_level(logging.ERROR):
+        await case.service.reconcile_once()
+    assert not caplog.records
+    assert _own(case, "test") == before
 
 
 if __name__ == "__main__":
