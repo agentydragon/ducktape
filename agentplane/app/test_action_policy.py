@@ -10,7 +10,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.action_service.client import OperatorActionServiceClient
-from agentplane.action_service.models import PolicyKind
+from agentplane.action_service.models import PolicyKind, PolicySource
 from agentplane.action_service.policy_view import (
     ActionPolicySetView,
     EffectivePolicyView,
@@ -19,7 +19,9 @@ from agentplane.action_service.policy_view import (
     SubjectActionPolicyView,
     SubjectBindingView,
 )
+from agentplane.action_service.providers import BindingKind
 from agentplane.app.action_policy import ActionPolicyInventory, BindingProvenance
+from agentplane.policy_sets import ConditionStatus
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.egress_views import FLUX_KUSTOMIZATION_LABEL
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi
@@ -33,11 +35,12 @@ def inventory(custom_objects: FakeCustomObjectsApi) -> ActionPolicyInventory:
     return ActionPolicyInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects))
 
 
-READY = ReadyConditionView(status="True", reason="Valid", message="spec accepted", observed_generation=1)
+READY = ReadyConditionView(status=ConditionStatus.TRUE, reason="Valid", message="spec accepted", observed_generation=1)
 ANSWER = SubjectActionPolicyView(
     synced=True,
     bindings=[
         SubjectBindingView(
+            kind=BindingKind.POLICY_BINDING,
             name="live-afternoon",
             labels={},
             expires_at=datetime(2026, 9, 12, 20, tzinfo=UTC),
@@ -46,6 +49,7 @@ ANSWER = SubjectActionPolicyView(
             missing_policy_sets=["vanished"],
         ),
         SubjectBindingView(
+            kind=BindingKind.ACTION_POLICY_BINDING,
             name="live-k2m9x",
             labels={MANAGED_BY_LABEL: MANAGED_BY_APP},
             ready=READY,
@@ -53,6 +57,7 @@ ANSWER = SubjectActionPolicyView(
             missing_policy_sets=[],
         ),
         SubjectBindingView(
+            kind=BindingKind.ACTION_POLICY_BINDING,
             name="live-seeded",
             labels={FLUX_KUSTOMIZATION_LABEL: "test-actions", MANAGED_BY_LABEL: "someone-else"},
             ready=READY,
@@ -64,6 +69,7 @@ ANSWER = SubjectActionPolicyView(
         EffectivePolicyView(
             binding="live-k2m9x",
             policy_set="reads",
+            source=PolicySource.AUTO_APPROVE_IF,
             index=0,
             policy=ExactActionsView(type=PolicyKind.EXACT_ACTIONS, actions={"github": ["search_code"]}),
         )
@@ -99,7 +105,8 @@ async def test_for_subject_asks_the_service_and_adds_only_who_wrote_each_binding
         ("live-seeded", BindingProvenance.GIT),
     ]
     afternoon, app_written, _ = view.bindings
-    assert (afternoon.expires_at, afternoon.ready, afternoon.missing_policy_sets) == (
+    assert (afternoon.kind, afternoon.expires_at, afternoon.ready, afternoon.missing_policy_sets) == (
+        BindingKind.POLICY_BINDING,
         datetime(2026, 9, 12, 20, tzinfo=UTC),
         None,
         ["vanished"],

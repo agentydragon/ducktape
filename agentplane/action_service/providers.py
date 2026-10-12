@@ -2,22 +2,48 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, JsonValue
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, JsonValue
 
 from agentplane.action_service.catalog import ActionIdentity
-from agentplane.action_service.policies.resources import ActionPolicyBinding, ActionPolicySet
+from agentplane.action_service.models import PolicySource
+from agentplane.action_service.policies.registry import Policy
 from agentplane.subjects import ServiceAccountRef
 
 
-class ResolvedBinding(BaseModel):
-    """One unexpired, valid binding naming the caller, with the valid sets it names that exist."""
+class ResolvedPolicySet(BaseModel):
+    """One valid set a binding names, with its auto-approve policies in evaluation order: an
+    `ActionPolicySet`'s `autoApproveIf`, or a `PolicySet`'s `action_auto_approve` rules, each at its
+    position in that list."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    binding: ActionPolicyBinding
-    policy_sets: tuple[ActionPolicySet, ...]
+    namespace: str
+    name: str
+    generation: int
+    source: PolicySource
+    policies: tuple[tuple[int, Policy], ...]
+
+
+class BindingKind(StrEnum):
+    ACTION_POLICY_BINDING = "ActionPolicyBinding"
+    POLICY_BINDING = "PolicyBinding"
+
+
+class ResolvedBinding(BaseModel):
+    """One binding naming the caller, with the valid sets it names that exist: an unexpired, valid
+    `ActionPolicyBinding`, or a `PolicyBinding`."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: BindingKind
+    namespace: str
+    name: str
+    resource_version: str
+    expires_at: AwareDatetime | None
+    policy_sets: tuple[ResolvedPolicySet, ...]
 
 
 class DecisionContext(BaseModel):

@@ -12,8 +12,10 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 
+from agentplane import policy_sets
 from agentplane.action_service.models import NamespacedName
 from agentplane.action_service.policies.resources import (
+    ACTIONS_READY_CONDITION,
     BINDINGS_PLURAL,
     CALLER_LABEL,
     POLICY_SETS_PLURAL,
@@ -35,8 +37,18 @@ VALID_SET = "reads"
 GITHUB_SET = "github-reads"
 INVALID_SET = "broken"
 BINDING = "caller-reads"
+RULES_SET = "test-rules"
+REFUSING_SET = "test-refused-rules"
+POLICY_BINDING = "test-policy-binding"
 CALLER = "test-caller"
 UNLABELED = "test-bystander"
+KUBERNETES_READY = {
+    "type": "KubernetesReady",
+    "status": "True",
+    "reason": "Applied",
+    "message": "test",
+    "lastTransitionTime": "2026-09-12T11:00:00Z",
+}
 
 
 def policy_set(name: str, spec: dict[str, Any]) -> dict[str, Any]:
@@ -54,6 +66,24 @@ def binding(name: str, subject: dict[str, Any], policy_sets: list[str]) -> dict[
         "kind": "ActionPolicyBinding",
         "metadata": {"name": name, "namespace": NAMESPACE},
         "spec": {"subject": subject, "policySets": policy_sets},
+    }
+
+
+def generic_set(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "apiVersion": f"{GROUP}/{VERSION}",
+        "kind": "PolicySet",
+        "metadata": {"name": name, "namespace": NAMESPACE},
+        "spec": {"rules": rules},
+    }
+
+
+def policy_binding(policy_sets: list[str]) -> dict[str, Any]:
+    return {
+        "apiVersion": f"{GROUP}/{VERSION}",
+        "kind": "PolicyBinding",
+        "metadata": {"name": POLICY_BINDING, "namespace": NAMESPACE},
+        "spec": {"subject": {"namespace": NAMESPACE, "name": CALLER}, "policySets": policy_sets},
     }
 
 
@@ -88,6 +118,25 @@ def seed(fake: FakeApiServer) -> None:
         policy_set(INVALID_SET, {"autoApproveIf": [{"type": "no_such_kind", "actions": {"g": ["a"]}}]}),
     )
     fake.put(BINDINGS_PLURAL, binding(BINDING, {"namespace": NAMESPACE, "name": CALLER}, [VALID_SET]))
+    fake.put(
+        policy_sets.POLICY_SETS_PLURAL,
+        generic_set(
+            RULES_SET,
+            [
+                {"type": "kubernetes_cluster_role_binding", "clusterRole": "test-reader"},
+                {"type": "action_auto_approve", "policy": {"type": "exact_actions", "actions": {"g": ["a"]}}},
+            ],
+        ),
+    )
+    fake.put(
+        policy_sets.POLICY_SETS_PLURAL,
+        generic_set(REFUSING_SET, [{"type": "action_auto_approve", "policy": {"type": "no_such_kind", "actions": {}}}]),
+    )
+    # Another reader's condition already on the binding, which this service's writes must keep.
+    fake.put(
+        policy_sets.POLICY_BINDINGS_PLURAL,
+        {**policy_binding([RULES_SET, REFUSING_SET, "test-missing"]), "status": {"conditions": [KUBERNETES_READY]}},
+    )
     fake.put(SERVICE_ACCOUNTS_PLURAL, service_account(CALLER, labeled=True))
     fake.put(SERVICE_ACCOUNTS_PLURAL, service_account(UNLABELED, labeled=False))
 
@@ -95,7 +144,13 @@ def seed(fake: FakeApiServer) -> None:
 @pytest.fixture
 async def fake() -> AsyncIterator[FakeApiServer]:
     async with fake_apiserver(
-        namespace_of={POLICY_SETS_PLURAL: NAMESPACE, BINDINGS_PLURAL: NAMESPACE, SERVICE_ACCOUNTS_PLURAL: NAMESPACE}
+        namespace_of={
+            POLICY_SETS_PLURAL: NAMESPACE,
+            BINDINGS_PLURAL: NAMESPACE,
+            SERVICE_ACCOUNTS_PLURAL: NAMESPACE,
+            policy_sets.POLICY_SETS_PLURAL: NAMESPACE,
+            policy_sets.POLICY_BINDINGS_PLURAL: NAMESPACE,
+        }
     ) as server:
         seed(server)
         yield server
@@ -164,7 +219,9 @@ async def test_ready_is_written_once_per_generation_and_names_the_fault(
     assert written[INVALID_SET]["observedGeneration"] == 1
     assert written[VALID_SET]["lastTransitionTime"] == "2026-09-12T12:00:00Z"
     # The MODIFIED event carrying the written status is not a reason to write it again.
-    assert sorted(name for name, _ in fake.status_patches) == sorted([BINDING, GITHUB_SET, INVALID_SET, VALID_SET])
+    assert sorted(name for name, _ in fake.status_patches if name != POLICY_BINDING) == sorted(
+        [BINDING, GITHUB_SET, INVALID_SET, VALID_SET]
+    )
 
     fake.put(
         POLICY_SETS_PLURAL,
@@ -173,6 +230,30 @@ async def test_ready_is_written_once_per_generation_and_names_the_fault(
     await index.wait_for(lambda: _ready(index, INVALID_SET, "True", 2))
     assert isinstance(index.policy_sets[key(INVALID_SET)], ActionPolicySet)
     assert [name for name, _ in fake.status_patches].count(INVALID_SET) == 2
+
+
+def _actions_ready(fake: FakeApiServer) -> dict[str, Any] | None:
+    conditions = (
+        fake.objects[policy_sets.POLICY_BINDINGS_PLURAL][POLICY_BINDING].get("status", {}).get("conditions", [])
+    )
+    return next((c for c in conditions if c["type"] == ACTIONS_READY_CONDITION), None)
+
+
+async def test_actions_ready_names_unavailable_sets_and_keeps_other_readers_conditions(
+    fake: FakeApiServer, index: PolicyIndex
+) -> None:
+    await index.wait_for(lambda: (ready := _actions_ready(fake)) is not None and ready["status"] == "False")
+    ready = _actions_ready(fake)
+    assert ready is not None
+    assert ready["reason"] == "PolicySetUnavailable"
+    assert "test-missing" in ready["message"]
+    assert REFUSING_SET in ready["message"]
+    assert RULES_SET not in ready["message"]
+    assert KUBERNETES_READY in fake.objects[policy_sets.POLICY_BINDINGS_PLURAL][POLICY_BINDING]["status"]["conditions"]
+
+    fake.put(policy_sets.POLICY_BINDINGS_PLURAL, policy_binding([RULES_SET]))
+    await index.wait_for(lambda: (ready := _actions_ready(fake)) is not None and ready["status"] == "True")
+    assert KUBERNETES_READY in fake.objects[policy_sets.POLICY_BINDINGS_PLURAL][POLICY_BINDING]["status"]["conditions"]
 
 
 async def test_label_removal_and_deletion_reach_the_index(fake: FakeApiServer, index: PolicyIndex) -> None:

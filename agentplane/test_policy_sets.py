@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 import pytest
 import pytest_bazel
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel
 
 from agentplane.policy_sets import (
     BindingSpec,
@@ -13,6 +14,7 @@ from agentplane.policy_sets import (
     NumberedRule,
     PolicyBinding,
     PolicySet,
+    RefusedPolicySet,
     parse_policy_set,
     set_condition,
     subject_bindings,
@@ -28,9 +30,13 @@ class HostRule(BaseModel):
     hosts: list[str]
 
 
+def parse_host_rule(raw: dict[str, Any]) -> HostRule | None:
+    return HostRule.model_validate(raw) if raw["type"] == "egress" else None
+
+
 def raw_set(*rules: dict[str, object]) -> dict[str, object]:
     return {
-        "metadata": {"name": "mixed", "namespace": NAMESPACE, "uid": "u", "generation": 1},
+        "metadata": {"name": "mixed", "namespace": NAMESPACE, "uid": "u", "generation": 1, "resourceVersion": "7"},
         "spec": {"rules": rules},
     }
 
@@ -40,7 +46,13 @@ def binding(
 ) -> PolicyBinding:
     return PolicyBinding.model_validate(
         {
-            "metadata": {"name": name, "namespace": NAMESPACE, "uid": f"uid-{name}", "generation": 4},
+            "metadata": {
+                "name": name,
+                "namespace": NAMESPACE,
+                "uid": f"uid-{name}",
+                "generation": 4,
+                "resourceVersion": "9",
+            },
             "spec": BindingSpec(subject=subject, policy_sets=list(sets)).model_dump(by_alias=True),
             "status": {"conditions": [c.model_dump(by_alias=True) for c in conditions or []]},
         }
@@ -52,28 +64,34 @@ def test_a_reader_keeps_its_own_rule_types_numbered_among_all_rules() -> None:
         raw_set(
             {"type": "kubernetes_cluster_role_binding", "clusterRole": "view"}, {"type": "egress", "hosts": ["a.test"]}
         ),
-        types={"egress"},
-        parse_rule=HostRule.model_validate,
+        parse_rule=parse_host_rule,
     )
-    assert parsed == PolicySet(name="mixed", rules=(NumberedRule(number=1, rule=HostRule(hosts=["a.test"])),))
+    assert parsed == PolicySet(
+        name="mixed", rules=(NumberedRule(number=1, rule=HostRule(hosts=["a.test"])),), generation=1
+    )
 
 
-def test_a_malformed_rule_of_the_readers_own_type_raises() -> None:
-    with pytest.raises(ValidationError):
-        parse_policy_set(raw_set({"type": "egress"}), types={"egress"}, parse_rule=HostRule.model_validate)
+def test_a_malformed_rule_of_the_readers_own_type_refuses_the_set() -> None:
+    parsed = parse_policy_set(
+        raw_set({"type": "egress", "hosts": ["a.test"]}, {"type": "egress"}), parse_rule=parse_host_rule
+    )
+    assert isinstance(parsed, RefusedPolicySet)
+    assert (parsed.name, parsed.reason.startswith("rules[1]:")) == ("mixed", True)
 
 
-def test_a_subjects_bindings_resolve_in_name_order_and_a_missing_set_leaves_the_rest() -> None:
+def test_a_subjects_bindings_resolve_in_name_order_and_a_missing_or_refused_set_leaves_the_rest() -> None:
     present = PolicySet[HostRule](name="present", rules=())
+    refused = RefusedPolicySet(name="refused", generation=1, reason="rules[0]: bad")
     bindings = {
-        "b": binding("b", "absent", "present"),
+        "b": binding("b", "absent", "refused", "present"),
         "a": binding("a", "present"),
         "other": binding("other", "present", subject=ServiceAccountRef(namespace=NAMESPACE, name="other")),
     }
-    resolved = subject_bindings({"present": present}, bindings, SUBJECT)
-    assert [(r.binding.metadata.name, r.sets, r.missing) for r in resolved] == [
-        ("a", (present,), ()),
-        ("b", (present,), ("absent",)),
+    sets: dict[str, PolicySet[HostRule] | RefusedPolicySet] = {"present": present, "refused": refused}
+    resolved = subject_bindings(sets, bindings, SUBJECT)
+    assert [(r.binding.metadata.name, r.sets, r.missing, r.refused) for r in resolved] == [
+        ("a", (present,), (), ()),
+        ("b", (present,), ("absent",), (refused,)),
     ]
 
 

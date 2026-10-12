@@ -20,6 +20,7 @@ from agentplane.action_service.policy_view import (
     SubjectActionPolicyView,
     SubjectBindingView,
 )
+from agentplane.action_service.providers import BindingKind
 from agentplane.app.action_federation import UpstreamFailure
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL, ActionPolicyReader
 from agentplane.sandbox_service.egress_views import FLUX_KUSTOMIZATION_LABEL
@@ -37,6 +38,7 @@ class ActionPolicyBindingView(BaseModel):
 
     model_config = ConfigDict(extra="forbid")
 
+    kind: BindingKind
     name: str
     provenance: BindingProvenance = Field(
         description="git: Flux applied it; app: this app wrote it at Sandbox creation; operator: anything else."
@@ -102,6 +104,7 @@ def action_policy_view(view: SubjectActionPolicyView) -> ActionPolicyView:
 
 def _binding_view(binding: SubjectBindingView) -> ActionPolicyBindingView:
     return ActionPolicyBindingView(
+        kind=binding.kind,
         name=binding.name,
         provenance=_provenance(binding.labels),
         expires_at=binding.expires_at,

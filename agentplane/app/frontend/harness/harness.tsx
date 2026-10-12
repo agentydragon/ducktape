@@ -256,6 +256,7 @@ const ACTION_POLICY: ActionPolicyView = {
   synced: true,
   bindings: [
     {
+      kind: "ActionPolicyBinding",
       name: "ready-sandbox-k2m9x",
       provenance: "app",
       expires_at: null,
@@ -278,6 +279,7 @@ const ACTION_POLICY: ActionPolicyView = {
       missing_policy_sets: [],
     },
     {
+      kind: "ActionPolicyBinding",
       name: "ready-sandbox-push-afternoon",
       provenance: "operator",
       expires_at: new Date(NOW + 3 * HOUR).toISOString(),
@@ -308,12 +310,14 @@ const ACTION_POLICY: ActionPolicyView = {
     {
       binding: "ready-sandbox-k2m9x",
       policy_set: "public-coder",
+      source: "autoApproveIf",
       index: 0,
       policy: { type: "exact_actions", actions: { github: ["get_file_contents", "list_commits", "search_code"] } },
     },
     {
       binding: "ready-sandbox-k2m9x",
       policy_set: "public-coder",
+      source: "autoApproveIf",
       index: 1,
       policy: {
         type: "argument_schema",
@@ -327,12 +331,14 @@ const ACTION_POLICY: ActionPolicyView = {
     {
       binding: "ready-sandbox-k2m9x",
       policy_set: "harness-reviews",
+      source: "autoApproveIf",
       index: 0,
       policy: { type: "exact_actions", actions: { github: ["pull_request_read", "list_pull_requests"] } },
     },
     {
       binding: "ready-sandbox-push-afternoon",
       policy_set: "harness-push",
+      source: "autoApproveIf",
       index: 0,
       policy: {
         type: "argument_schema",

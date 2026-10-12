@@ -19,6 +19,9 @@ the external-caller principal.
 | `ActionPolicySet`     | `autoApproveIf`: a list of typed policies                                      |
 | `ActionPolicyBinding` | `subject` (`{namespace, name}` of a ServiceAccount), `policySets`, `expiresAt` |
 
+The generic `PolicySet`/`PolicyBinding` ([Policy Controller](../policy_controller/SPEC.md)) carry the same grant: a
+set's `action_auto_approve` rule holds one policy, and the Action Service reads both pairs.
+
 **Every caller is a Kubernetes ServiceAccount.** One principal then carries native permissions
 through ordinary RoleBindings and Action permissions through an `ActionPolicyBinding`, and an
 in-cluster workload is the account its Pod runs as, so there is one identity vocabulary and one

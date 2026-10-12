@@ -733,7 +733,9 @@ def policy_binding_index(*sets: PolicySet[Rule], subject: ServiceAccountRef = CA
     rules.policy_sets = {policy_set.name: policy_set for policy_set in sets}
     rules.policy_bindings = {
         "pb": policy_sets.PolicyBinding(
-            metadata=policy_sets.ObjectMeta(name="pb", namespace=NAMESPACE, uid="uid-pb", generation=1),
+            metadata=policy_sets.ObjectMeta(
+                name="pb", namespace=NAMESPACE, uid="uid-pb", generation=1, resource_version="1"
+            ),
             spec=policy_sets.BindingSpec(subject=subject, policy_sets=["absent", *rules.policy_sets]),
         )
     }

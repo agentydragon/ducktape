@@ -57,6 +57,13 @@ namespaces, so a binding can target an account outside the policy namespace. The
 whether the spec parsed;
 an invalid set or binding contributes nothing.
 
+The generic `PolicySet` and `PolicyBinding` carry the same grant: each `action_auto_approve` rule of
+a set holds one policy, and the service unions those bindings with the `ActionPolicyBinding`s of the
+same subject. A `PolicySet` with a rule that does not parse contributes nothing; a set a binding
+names that is missing or refused does not stop its other sets from granting. The service reports
+which in the binding's `ActionsReady` condition, beside the other readers' conditions, and never
+judges a `PolicyBinding`'s `expiresAt`: the Policy Controller deletes an expired binding.
+
 Five policy kinds exist. `exact_actions` matches a listed Action by name alone; `argument_schema`
 also requires the arguments to satisfy a JSON Schema with plain JSON Schema semantics, so
 `properties` alone never implies presence. `github_repository` requires a listed GitHub MCP call to

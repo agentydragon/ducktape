@@ -12,6 +12,11 @@ import type {
   ReadyConditionView,
 } from "./client";
 
+const SET_KIND: Record<ActionPolicyBindingView["kind"], string> = {
+  ActionPolicyBinding: "ActionPolicySet",
+  PolicyBinding: "PolicySet",
+};
+
 const PROVENANCE: Record<ActionPolicyBindingView["provenance"], string> = {
   git: "from git",
   app: "app, at launch",
@@ -86,7 +91,7 @@ function PolicySets({ binding }: { binding: ActionPolicyBindingView }): JSX.Elem
         )
       )}
       {binding.missing_policy_sets.map((name) => (
-        <Tooltip key={name} label="No such ActionPolicySet in the namespace" withArrow>
+        <Tooltip key={name} label={`No such ${SET_KIND[binding.kind]} in the namespace`} withArrow>
           <Badge color="red" variant="light">
             {name}?
           </Badge>
@@ -119,7 +124,7 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
           </Table.Tr>
         )}
         {bindings.map((binding) => (
-          <Table.Tr key={binding.name}>
+          <Table.Tr key={`${binding.kind}/${binding.name}`}>
             <Table.Td>
               <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
                 {binding.name}
@@ -159,8 +164,10 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
 
 /** Every set a binding names, once each, with the verdict the Action Service wrote on it. */
 function SetsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): JSX.Element | null {
+  // An ActionPolicySet and a PolicySet may share a name; each is its own row.
   const sets = new Map<string, ActionPolicySetView>();
-  for (const binding of bindings) for (const policySet of binding.policy_sets) sets.set(policySet.name, policySet);
+  for (const binding of bindings)
+    for (const policySet of binding.policy_sets) sets.set(`${binding.kind}/${policySet.name}`, policySet);
   if (sets.size === 0) return null;
   return (
     <Table>
@@ -172,8 +179,8 @@ function SetsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): JSX.E
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
-        {[...sets.values()].map((policySet) => (
-          <Table.Tr key={policySet.name}>
+        {[...sets].map(([key, policySet]) => (
+          <Table.Tr key={key}>
             <Table.Td>
               <Text size="sm" fw={600}>
                 {policySet.name}
@@ -236,7 +243,7 @@ function PolicyList({
           </Table.Thead>
           <Table.Tbody>
             {policies.map((effective, position) => (
-              <Table.Tr key={`${effective.binding}/${effective.policy_set}/${effective.index}`}>
+              <Table.Tr key={`${effective.binding}/${effective.policy_set}/${effective.source}/${effective.index}`}>
                 <Table.Td>
                   <Text size="sm">{position + 1}</Text>
                 </Table.Td>

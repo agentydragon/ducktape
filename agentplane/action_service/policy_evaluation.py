@@ -18,14 +18,16 @@ from agentplane.action_service.models import (
     NamespacedName,
     PolicyEvidence,
     PolicySetEvidence,
+    PolicySource,
     ProviderOutcome,
     ProviderVerdict,
 )
 from agentplane.action_service.policies.kind import Matched, NotMatched
-from agentplane.action_service.policies.registry import evaluate, lists
-from agentplane.action_service.policies.resources import ActionPolicyBinding, ActionPolicySet, InvalidResource
+from agentplane.action_service.policies.registry import Policy, evaluate, lists
+from agentplane.action_service.policies.resources import ActionPolicySet, InvalidResource
 from agentplane.action_service.policy_informer import PolicyIndex
-from agentplane.action_service.providers import DecisionContext, ResolvedBinding
+from agentplane.action_service.providers import BindingKind, DecisionContext, ResolvedBinding, ResolvedPolicySet
+from agentplane.policy_sets import PolicyBinding, PolicySet, subject_bindings
 from agentplane.subjects import ServiceAccountRef
 
 PROVIDER_NAME = "action_policy_set"
@@ -36,14 +38,14 @@ _DESCRIPTION_LIMIT = 500
 
 
 def resolve_bindings(index: PolicyIndex, caller: ServiceAccountRef, now: datetime) -> tuple[ResolvedBinding, ...]:
-    """The caller's unexpired, valid bindings in key order, each with the valid sets it names that
-    exist; a set it names that is missing or invalid contributes nothing. Nothing before sync.
+    """The caller's bindings, each with the valid sets it names that exist; a set it names that is
+    missing or invalid contributes nothing. Nothing before sync.
 
-    A grant's caller is matched by the ServiceAccount behind it; the operator asks about that
-    ServiceAccount directly, without a grant."""
+    First its unexpired, valid `ActionPolicyBinding`s in key order, then its `PolicyBinding`s in name
+    order, which the Policy Controller deletes at expiry. A grant's caller is matched by the
+    ServiceAccount behind it; the operator asks about that ServiceAccount directly, without a grant."""
     if not index.synced:
         return ()
-    named = caller
     resolved: list[ResolvedBinding] = []
     for key in sorted(index.bindings):
         binding = index.bindings[key]
@@ -52,51 +54,85 @@ def resolve_bindings(index: PolicyIndex, caller: ServiceAccountRef, now: datetim
         spec = binding.spec
         if spec.expires_at is not None and spec.expires_at <= now:
             continue
-        if spec.subject != named:
+        if spec.subject != caller:
             continue
-        sets = tuple(
-            policy_set
-            for name in spec.policy_sets
-            if isinstance(
-                policy_set := index.policy_sets.get(NamespacedName(binding.metadata.namespace, name)), ActionPolicySet
+        resolved.append(
+            ResolvedBinding(
+                kind=BindingKind.ACTION_POLICY_BINDING,
+                namespace=binding.metadata.namespace,
+                name=binding.metadata.name,
+                resource_version=binding.metadata.resource_version,
+                expires_at=spec.expires_at,
+                policy_sets=tuple(
+                    _action_policy_set(policy_set)
+                    for name in spec.policy_sets
+                    if isinstance(
+                        policy_set := index.policy_sets.get(NamespacedName(binding.metadata.namespace, name)),
+                        ActionPolicySet,
+                    )
+                ),
             )
         )
-        resolved.append(ResolvedBinding(binding=binding, policy_sets=sets))
+    resolved.extend(
+        ResolvedBinding(
+            kind=BindingKind.POLICY_BINDING,
+            namespace=resolution.binding.metadata.namespace,
+            name=resolution.binding.metadata.name,
+            resource_version=resolution.binding.metadata.resource_version,
+            expires_at=resolution.binding.spec.expires_at,
+            policy_sets=tuple(_rule_set(resolution.binding, policy_set) for policy_set in resolution.sets),
+        )
+        for resolution in subject_bindings(index.rule_sets, index.policy_bindings, caller)
+    )
     return tuple(resolved)
 
 
+def _action_policy_set(policy_set: ActionPolicySet) -> ResolvedPolicySet:
+    return ResolvedPolicySet(
+        namespace=policy_set.metadata.namespace,
+        name=policy_set.metadata.name,
+        generation=policy_set.metadata.generation,
+        source=PolicySource.AUTO_APPROVE_IF,
+        policies=tuple(enumerate(policy_set.spec.auto_approve_if)),
+    )
+
+
+def _rule_set(binding: PolicyBinding, policy_set: PolicySet[Policy]) -> ResolvedPolicySet:
+    assert policy_set.generation is not None, "the informer's sets are read off the API server"
+    return ResolvedPolicySet(
+        namespace=binding.metadata.namespace,
+        name=policy_set.name,
+        generation=policy_set.generation,
+        source=PolicySource.RULES,
+        policies=tuple((numbered.number, numbered.rule) for numbered in policy_set.rules),
+    )
+
+
 def auto_approvable(bindings: Sequence[ResolvedBinding]) -> frozenset[ActionIdentity]:
-    """Every Action some `autoApproveIf` policy of these bindings names, whatever its arguments."""
+    """Every Action some auto-approve policy of these bindings names, whatever its arguments."""
     return frozenset(
         ActionIdentity(group=group, name=name)
         for resolved in bindings
         for policy_set in resolved.policy_sets
-        for policy in policy_set.spec.auto_approve_if
+        for _, policy in policy_set.policies
         for group, names in policy.actions.items()
         for name in names
     )
 
 
 def _evidence(context: DecisionContext, matched: MatchedPolicy) -> PolicyEvidence:
-    bindings: list[ActionPolicyBinding] = [resolved.binding for resolved in context.bindings]
     sets = {
-        policy_set.namespaced_name: policy_set for resolved in context.bindings for policy_set in resolved.policy_sets
+        (policy_set.source, policy_set.namespace, policy_set.name): policy_set
+        for resolved in context.bindings
+        for policy_set in resolved.policy_sets
     }
     return PolicyEvidence(
         bindings=[
-            BindingEvidence(
-                namespace=binding.metadata.namespace,
-                name=binding.metadata.name,
-                resource_version=binding.metadata.resource_version,
-            )
-            for binding in bindings
+            BindingEvidence(namespace=binding.namespace, name=binding.name, resource_version=binding.resource_version)
+            for binding in context.bindings
         ],
         policy_sets=[
-            PolicySetEvidence(
-                namespace=policy_set.metadata.namespace,
-                name=policy_set.metadata.name,
-                generation=policy_set.metadata.generation,
-            )
+            PolicySetEvidence(namespace=policy_set.namespace, name=policy_set.name, generation=policy_set.generation)
             for policy_set in sets.values()
         ],
         matched=matched,
@@ -106,8 +142,9 @@ def _evidence(context: DecisionContext, matched: MatchedPolicy) -> PolicyEvidenc
 class PolicySetDecisionProvider:
     """Allows a request the caller's bindings auto-approve; anything else is no opinion.
 
-    `autoApproveIf` is the only list an `ActionPolicySet` carries, and the only one anything decides
-    from; a set has no deny form, so what does not match waits for a human.
+    Auto-approval is the only form an Action policy takes, an `ActionPolicySet`'s `autoApproveIf` or a
+    `PolicySet`'s `action_auto_approve` rules; there is no deny form, so what does not match waits for
+    a human.
     """
 
     name = PROVIDER_NAME
@@ -121,23 +158,22 @@ class PolicySetDecisionProvider:
         declined: list[str] = []
         for resolved in context.bindings:
             for policy_set in resolved.policy_sets:
-                for index, policy in enumerate(policy_set.spec.auto_approve_if):
+                for index, policy in policy_set.policies:
                     match await evaluate(policy, context.action, context.arguments, self._visibility):
                         case Matched(explanation=explanation, repository=repository):
-                            binding, metadata = resolved.binding.metadata, policy_set.metadata
                             return ProviderOutcome(
                                 verdict=ProviderVerdict.ALLOW,
                                 reason_code=AUTO_APPROVE_REASON,
                                 reason_description=(
-                                    f"binding {binding.namespace}/{binding.name} set {metadata.name} "
-                                    f"autoApproveIf[{index}] {policy.type}: {explanation}"
+                                    f"binding {resolved.namespace}/{resolved.name} set {policy_set.name} "
+                                    f"{policy_set.source}[{index}] {policy.type}: {explanation}"
                                 )[:_DESCRIPTION_LIMIT],
                                 evidence=_evidence(
                                     context,
                                     MatchedPolicy(
-                                        namespace=metadata.namespace,
-                                        policy_set=metadata.name,
-                                        source="autoApproveIf",
+                                        namespace=policy_set.namespace,
+                                        policy_set=policy_set.name,
+                                        source=policy_set.source,
                                         index=index,
                                         type=policy.type,
                                         repository=repository,
@@ -147,7 +183,7 @@ class PolicySetDecisionProvider:
                         case NotMatched(reason=reason):
                             if lists(policy, context.action):
                                 declined.append(
-                                    f"set {policy_set.metadata.name} autoApproveIf[{index}] {policy.type}: {reason}"
+                                    f"set {policy_set.name} {policy_set.source}[{index}] {policy.type}: {reason}"
                                 )
         action = context.action
         return ProviderOutcome(
@@ -156,6 +192,6 @@ class PolicySetDecisionProvider:
             reason_description=(
                 "; ".join(declined)
                 if declined
-                else f"no autoApproveIf policy bound to the caller lists {action.group}/{action.name}"
+                else f"no auto-approve policy bound to the caller lists {action.group}/{action.name}"
             )[:_DESCRIPTION_LIMIT],
         )

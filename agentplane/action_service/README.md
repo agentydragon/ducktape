@@ -441,6 +441,13 @@ edit and a writer can wait for the service to have seen a spec change. The statu
 the informer's only write, and the rendered Roles grant these permissions independently in the
 namespaces that need them.
 
+The generic `PolicySet`/`PolicyBinding` go through `agentplane/policy_sets.py`, the resolver every
+rule type's reader shares: `parse_action_rule` keeps a set's `action_auto_approve` rules and skips
+the others, and `ConditionReporter` writes this service's `ActionsReady` by server-side apply under
+its own field manager, so the Policy Controller's `KubernetesReady` on the same binding stays.
+`policy_evaluation.resolve_bindings` flattens both pairs into one `ResolvedBinding` shape, old kind
+first, which admission, the evidence and the policy views all read.
+
 Each policy kind is one module under `policies/` holding its wire model and its evaluator
 (`exact_actions`; `argument_schema` over the `jsonschema` package; `github_repository` and
 `github_public_repository` over the `github_policy` package, which lives here and holds the search-qualifier
@@ -477,8 +484,8 @@ composition against a fake API server.
 ## Authentication boundaries
 
 `caller_service_account_namespaces` lists the Kubernetes namespaces whose labeled ServiceAccounts
-may authenticate callers. `policy_namespace` names where ActionPolicySets and ActionPolicyBindings
-are read and their Ready statuses are written. These settings are independent: a binding in a policy
+may authenticate callers. `policy_namespace` names where ActionPolicySets, ActionPolicyBindings, PolicySets and
+PolicyBindings are read and their conditions are written. These settings are independent: a binding in a policy
 namespace can name a ServiceAccount in another caller namespace. Neither setting approves Actions or
 selects an MCP destination.
 

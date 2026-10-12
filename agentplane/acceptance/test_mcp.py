@@ -38,6 +38,7 @@ from agentplane.action_service.models import (
     MatchedPolicy,
     OperatorPrincipal,
     PolicyKind,
+    PolicySource,
     Verdict,
 )
 from agentplane.action_service.policies.resources import BINDINGS_PLURAL, POLICY_SETS_PLURAL, READY_CONDITION
@@ -460,7 +461,7 @@ infer or fabricate a result.
     assert evidence.matched == MatchedPolicy(
         namespace=policy_objects.namespace,
         policy_set=set_name,
-        source="autoApproveIf",
+        source=PolicySource.AUTO_APPROVE_IF,
         index=0,
         type=PolicyKind.ARGUMENT_SCHEMA,
     )

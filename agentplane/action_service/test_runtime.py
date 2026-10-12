@@ -25,6 +25,7 @@ from more_itertools import one
 from pydantic import JsonValue, ValidationError
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane import policy_sets
 from agentplane.action_service.api import create_app
 from agentplane.action_service.auth import DisabledOperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
@@ -469,7 +470,13 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
             assert pending.execution is None
 
     async with fake_apiserver(
-        namespace_of={POLICY_SETS_PLURAL: namespace, BINDINGS_PLURAL: namespace, SERVICE_ACCOUNTS_PLURAL: namespace}
+        namespace_of={
+            POLICY_SETS_PLURAL: namespace,
+            BINDINGS_PLURAL: namespace,
+            SERVICE_ACCOUNTS_PLURAL: namespace,
+            policy_sets.POLICY_SETS_PLURAL: namespace,
+            policy_sets.POLICY_BINDINGS_PLURAL: namespace,
+        }
     ) as fake:
         fake.put(
             POLICY_SETS_PLURAL,

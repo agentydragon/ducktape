@@ -31,6 +31,7 @@ from agentplane.action_service.models import (
     OperatorPrincipal,
     PolicyKind,
     PolicySetEvidence,
+    PolicySource,
     ProviderOutcome,
     ProviderVerdict,
     Verdict,
@@ -449,7 +450,7 @@ async def test_bound_subject_is_auto_approved_with_evidence_and_an_execution(
         assert allowed.decision.policy_evidence.matched == MatchedPolicy(
             namespace=NAMESPACE,
             policy_set="bounded-echo",
-            source="autoApproveIf",
+            source=PolicySource.AUTO_APPROVE_IF,
             index=0,
             type=PolicyKind.ARGUMENT_SCHEMA,
         )

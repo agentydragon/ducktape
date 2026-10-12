@@ -144,14 +144,19 @@ class Actions(Construct):
             namespace: [
                 RolePolicyRule(
                     resources=[
-                        custom_resource(GROUP, resource) for resource in ("actionpolicysets", "actionpolicybindings")
+                        custom_resource(GROUP, resource)
+                        for resource in ("actionpolicysets", "actionpolicybindings", "policysets", "policybindings")
                     ],
                     verbs=["get", "list", "watch"],
                 ),
                 RolePolicyRule(
                     resources=[
                         custom_resource(GROUP, resource)
-                        for resource in ("actionpolicysets/status", "actionpolicybindings/status")
+                        for resource in (
+                            "actionpolicysets/status",
+                            "actionpolicybindings/status",
+                            "policybindings/status",
+                        )
                     ],
                     verbs=["patch"],
                 ),

@@ -75,6 +75,7 @@ it("shows each set's state, the missing one, and the effective lists in evaluati
     synced: true,
     bindings: [
       {
+        kind: "ActionPolicyBinding",
         name: "test-sandbox-launch",
         provenance: "app",
         expires_at: null,
@@ -105,6 +106,7 @@ it("shows each set's state, the missing one, and the effective lists in evaluati
       {
         binding: "test-sandbox-launch",
         policy_set: "test-reads",
+        source: "autoApproveIf",
         index: 1,
         policy: {
           type: "argument_schema",

@@ -4479,6 +4479,22 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
+      - policysets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
       - actionpolicysets/status
     verbs:
       - patch
@@ -4486,6 +4502,12 @@ rules:
       - agentplane.allegedly.works
     resources:
       - actionpolicybindings/status
+    verbs:
+      - patch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings/status
     verbs:
       - patch
   - apiGroups:

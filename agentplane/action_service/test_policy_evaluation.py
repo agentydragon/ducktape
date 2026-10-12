@@ -13,12 +13,14 @@ import pytest
 import pytest_bazel
 from pydantic import JsonValue
 
+from agentplane import policy_sets
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.models import (
     MatchedPolicy,
     MatchedRepository,
     PolicyKind,
+    PolicySource,
     ProviderVerdict,
     service_account_key,
 )
@@ -26,6 +28,7 @@ from agentplane.action_service.policies.resources import (
     ActionPolicyBinding,
     ActionPolicySet,
     InvalidResource,
+    parse_action_rule,
     parse_binding,
     parse_policy_set,
 )
@@ -40,8 +43,9 @@ from agentplane.action_service.policy_view import (
     caller_view,
     subject_view,
 )
-from agentplane.action_service.providers import DecisionContext, ResolvedBinding
+from agentplane.action_service.providers import BindingKind, DecisionContext
 from agentplane.kubernetes_watch import Freshness
+from agentplane.policy_sets import PolicyBinding
 from agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-test"
@@ -118,13 +122,10 @@ def test_resolution_takes_unexpired_valid_bindings_naming_the_caller_with_their_
         binding("b-invalid", {"name": "coder"}, ["set-reads"]),
     )
     for_workload = resolve_bindings(index, WORKLOAD, NOW)
-    assert [resolved.binding.metadata.name for resolved in for_workload] == ["b-later", "b-workload"]
-    assert [[s.metadata.name for s in resolved.policy_sets] for resolved in for_workload] == [
-        ["set-reads"],
-        ["set-reads"],
-    ]
+    assert [resolved.name for resolved in for_workload] == ["b-later", "b-workload"]
+    assert [[s.name for s in resolved.policy_sets] for resolved in for_workload] == [["set-reads"], ["set-reads"]]
     for_account = resolve_bindings(index, CALLER, NOW)
-    assert [resolved.binding.metadata.name for resolved in for_account] == ["b-granted"]
+    assert [resolved.name for resolved in for_account] == ["b-granted"]
     assert resolve_bindings(index, ServiceAccountRef(namespace="agentplane-other", name=WORKLOAD.name), NOW) == ()
     assert resolve_bindings(index, ServiceAccountRef(namespace=NAMESPACE, name="x"), NOW) == ()
 
@@ -277,6 +278,81 @@ async def test_an_entry_is_named_as_the_decision_names_the_policy_that_matched(
     assert entry.binding in {b.name for b in outcome.evidence.bindings}
 
 
+def with_policy_binding(index: PolicyIndex, sets: dict[str, list[dict[str, Any]]], named: list[str]) -> PolicyIndex:
+    """`index` plus PolicySets `sets` and one PolicyBinding of WORKLOAD naming `named`."""
+    for name, rules in sets.items():
+        index.rule_sets[name] = policy_sets.parse_policy_set(
+            {"metadata": _meta(name), "spec": {"rules": rules}}, parse_rule=parse_action_rule
+        )
+    index.policy_bindings["pb-workload"] = PolicyBinding.model_validate(
+        {"metadata": _meta("pb-workload"), "spec": {"subject": WORKLOAD.model_dump(), "policySets": named}}
+    )
+    return index
+
+
+KUBERNETES_RULE: dict[str, Any] = {"type": "kubernetes_cluster_role_binding", "clusterRole": "test-reader"}
+ECHO_RULE: dict[str, Any] = {
+    "type": "action_auto_approve",
+    "policy": {"type": "exact_actions", "actions": {"everything": ["echo"]}},
+}
+
+
+async def test_a_policy_binding_auto_approves_by_its_sets_action_rules_alone(
+    github_visibility: Callable[..., RepositoryVisibilityService],
+) -> None:
+    index = with_policy_binding(
+        index_of(),
+        {
+            "ps-mixed": [KUBERNETES_RULE, ECHO_RULE],
+            "ps-kubernetes": [KUBERNETES_RULE],
+            "ps-refused": [{"type": "action_auto_approve", "policy": {"type": "nope", "actions": {}}}],
+        },
+        ["ps-mixed", "ps-kubernetes", "ps-refused", "ps-missing"],
+    )
+    outcome = await PolicySetDecisionProvider(visibility=github_visibility()).decide(
+        DecisionContext(
+            request_id=uuid4(),
+            action=ActionIdentity(group="everything", name="echo"),
+            arguments={},
+            caller=WORKLOAD,
+            bindings=resolve_bindings(index, WORKLOAD, NOW),
+        )
+    )
+    assert outcome.verdict is ProviderVerdict.ALLOW
+    assert outcome.evidence is not None
+    # The index counts every rule of the set, so it points at the rule an operator reads in it.
+    assert outcome.evidence.matched == MatchedPolicy(
+        namespace=NAMESPACE, policy_set="ps-mixed", source=PolicySource.RULES, index=1, type=PolicyKind.EXACT_ACTIONS
+    )
+
+    operator = subject_view(index, WORKLOAD, NOW)
+    assert [(b.kind, b.name) for b in operator.bindings] == [(BindingKind.POLICY_BINDING, "pb-workload")]
+    standing = {view.name: view.refused for view in operator.bindings[0].policy_sets}
+    assert standing.keys() == {"ps-mixed", "ps-kubernetes", "ps-refused"}
+    assert standing["ps-mixed"] is None
+    assert standing["ps-refused"] is not None
+    assert "nope" in standing["ps-refused"]
+    assert operator.bindings[0].missing_policy_sets == ["ps-missing"]
+    assert [b.policy_sets for b in caller_view(index, WORKLOAD, NOW).bindings] == [["ps-mixed", "ps-kubernetes"]]
+
+
+def test_both_binding_kinds_resolve_for_one_caller_old_kind_first() -> None:
+    index = with_policy_binding(
+        index_of(
+            policy_set("set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}]),
+            binding("b-workload", WORKLOAD.model_dump(), ["set-reads"]),
+        ),
+        {"ps-echo": [ECHO_RULE]},
+        ["ps-echo"],
+    )
+    assert [(resolved.kind, resolved.name) for resolved in resolve_bindings(index, WORKLOAD, NOW)] == [
+        (BindingKind.ACTION_POLICY_BINDING, "b-workload"),
+        (BindingKind.POLICY_BINDING, "pb-workload"),
+    ]
+    index.listed = False
+    assert resolve_bindings(index, WORKLOAD, NOW) == ()
+
+
 GITHUB_READ_ACTIONS = {"github": ["get_file_contents", "search_pull_requests", "search_code"]}
 GET_FILE = ActionIdentity(group="github", name="get_file_contents")
 REPOSITORY_SET = policy_set(
@@ -288,13 +364,12 @@ PUBLIC_SET = policy_set("set-public", [{"type": "github_public_repository", "act
 
 def _context(action: ActionIdentity, arguments: dict[str, JsonValue], *sets: ActionPolicySet) -> DecisionContext:
     bound = binding("b-github", WORKLOAD.model_dump(), [s.metadata.name for s in sets])
-    assert isinstance(bound, ActionPolicyBinding)
     return DecisionContext(
         request_id=uuid4(),
         action=action,
         arguments=arguments,
         caller=WORKLOAD,
-        bindings=(ResolvedBinding(binding=bound, policy_sets=sets),),
+        bindings=resolve_bindings(index_of(*sets, bound), WORKLOAD, NOW),
     )
 
 
@@ -312,7 +387,7 @@ async def test_github_repository_set_auto_approves_its_repository_with_the_repos
     assert outcome.evidence.matched == MatchedPolicy(
         namespace=NAMESPACE,
         policy_set="set-repository",
-        source="autoApproveIf",
+        source=PolicySource.AUTO_APPROVE_IF,
         index=0,
         type=PolicyKind.GITHUB_REPOSITORY,
         repository=MatchedRepository(owner="Test-Owner", repository="test-repo", confirmed_public=False),
@@ -417,7 +492,7 @@ async def test_home_assistant_set_auto_approves_a_configured_service_call(
     assert outcome.evidence.matched == MatchedPolicy(
         namespace=NAMESPACE,
         policy_set="set-home-assistant",
-        source="autoApproveIf",
+        source=PolicySource.AUTO_APPROVE_IF,
         index=0,
         type=PolicyKind.HOME_ASSISTANT_ENTITY_CONTROL,
     )

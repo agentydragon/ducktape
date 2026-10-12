@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 from functools import partial
+from typing import Any
 
 from kubernetes_asyncio.client import CoreV1Api
 
@@ -32,6 +33,7 @@ from agentplane.policy_sets import (
     parse_policy_set,
     resolve_binding,
     set_condition,
+    unavailable_message,
 )
 from util.kubernetes import CustomObjectsClient
 from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
@@ -44,16 +46,20 @@ def _name(obj: EgressPolicy | EgressBinding | EgressCredential | PolicyBinding) 
     return obj.metadata.name
 
 
+def _egress_rule(raw: dict[str, Any]) -> Rule | None:
+    return Rule.model_validate(raw) if raw["type"] == EGRESS_RULE_TYPE else None
+
+
 def egress_ready(index: Index, binding: PolicyBinding, now: datetime) -> Condition:
-    """Whether every set the binding names exists; the sets that do grant either way."""
+    """Whether every set the binding names exists and parses; the sets that do grant either way."""
     resolution = resolve_binding(index.policy_sets, binding)
-    if resolution.missing:
+    if resolution.missing or resolution.refused:
         return set_condition(
             binding,
             EGRESS_READY,
             ready=False,
             reason=POLICY_SET_UNAVAILABLE,
-            message=f"missing PolicySets: {', '.join(resolution.missing)}",
+            message=unavailable_message(resolution),
             now=now,
         )
     rules = sum(len(policy_set.rules) for policy_set in resolution.sets)
@@ -101,7 +107,7 @@ class Informer:
                     name=POLICY_SETS_PLURAL,
                     list=custom_objects.list_namespaced_custom_object,
                     args=(GROUP, VERSION, namespace, POLICY_SETS_PLURAL),
-                    parse=partial(parse_policy_set, types={EGRESS_RULE_TYPE}, parse_rule=Rule.model_validate),
+                    parse=partial(parse_policy_set, parse_rule=_egress_rule),
                     key=lambda policy_set: policy_set.name,
                     names=lambda: set(index.policy_sets),
                     apply=lambda name, obj: apply_to(index.policy_sets, name, obj),

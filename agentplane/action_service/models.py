@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
@@ -109,6 +108,13 @@ class MatchedRepository(BaseModel):
     )
 
 
+class PolicySource(StrEnum):
+    """Which list of a set the matched policy sits in. Persisted in Decisions: append-only."""
+
+    AUTO_APPROVE_IF = "autoApproveIf"  # an ActionPolicySet's
+    RULES = "rules"  # a PolicySet's
+
+
 class MatchedPolicy(BaseModel):
     """The leaf policy that produced the Decision: which set, which list, which entry, which kind."""
 
@@ -116,7 +122,7 @@ class MatchedPolicy(BaseModel):
 
     namespace: str
     policy_set: str
-    source: Literal["autoApproveIf"]
+    source: PolicySource
     index: int = Field(ge=0)
     type: PolicyKind
     repository: MatchedRepository | None = Field(

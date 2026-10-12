@@ -48,6 +48,7 @@ from agentplane.policy_sets import (
     NumberedRule,
     PolicyBinding,
     PolicySet,
+    RefusedPolicySet,
     subject_bindings,
 )
 from agentplane.subjects import ServiceAccountRef
@@ -87,7 +88,7 @@ class Index:
     freshness: Freshness
     policies: dict[str, EgressPolicy] = field(default_factory=dict)
     bindings: dict[str, EgressBinding] = field(default_factory=dict)
-    policy_sets: dict[str, PolicySet[Rule]] = field(default_factory=dict)
+    policy_sets: dict[str, PolicySet[Rule] | RefusedPolicySet] = field(default_factory=dict)
     policy_bindings: dict[str, PolicyBinding] = field(default_factory=dict)
     credentials: dict[str, EgressCredential] = field(default_factory=dict)
     secrets: dict[str, Secret] = field(default_factory=dict, repr=False)

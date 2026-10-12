@@ -2,7 +2,9 @@
 
 The one write is each set's and binding's `Ready` condition: `True` once the spec parsed, `False`
 with the validation report otherwise, stamped with the generation it judged so `kubectl get`
-shows a bad runtime edit and a watcher can tell when a spec change has been seen.
+shows a bad runtime edit and a watcher can tell when a spec change has been seen. On a generic
+`PolicyBinding` it is `ActionsReady` instead, `False` while a set it names is missing or holds an
+Action rule this service refuses; a `PolicySet` has no status of its own.
 """
 
 from __future__ import annotations
@@ -18,8 +20,12 @@ from typing import Literal
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
 
+from agentplane import policy_sets
 from agentplane.action_service.models import CallerPrincipal, NamespacedName, service_account_key
+from agentplane.action_service.policies.registry import Policy
 from agentplane.action_service.policies.resources import (
+    ACTIONS_FIELD_MANAGER,
+    ACTIONS_READY_CONDITION,
     BINDINGS_PLURAL,
     CALLER_LABEL,
     CALLER_LABEL_SELECTOR,
@@ -31,11 +37,23 @@ from agentplane.action_service.policies.resources import (
     Condition,
     InvalidResource,
     ObjectMeta,
+    parse_action_rule,
     parse_binding,
     parse_policy_set,
 )
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.kubernetes_watch import Freshness
+from agentplane.policy_sets import (
+    POLICY_BINDINGS_PLURAL,
+    POLICY_SET_UNAVAILABLE,
+    ConditionReporter,
+    PolicyBinding,
+    PolicySet,
+    RefusedPolicySet,
+    resolve_binding,
+    set_condition,
+    unavailable_message,
+)
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient
 from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
@@ -53,6 +71,9 @@ class PolicyIndex:
     freshness: Freshness
     policy_sets: dict[NamespacedName, ActionPolicySet | InvalidResource] = field(default_factory=dict)
     bindings: dict[NamespacedName, ActionPolicyBinding | InvalidResource] = field(default_factory=dict)
+    # The generic kinds in the policy namespace, of which this service reads the Action rules.
+    rule_sets: dict[str, PolicySet[Policy] | RefusedPolicySet] = field(default_factory=dict)
+    policy_bindings: dict[str, PolicyBinding] = field(default_factory=dict)
     service_accounts: dict[NamespacedName, ServiceAccountRef] = field(default_factory=dict)
     # Every kind listed at least once. A latch: true from the first full list and never false again,
     # which is why it is not on its own the question `synced` answers.
@@ -132,6 +153,25 @@ def ready_condition(obj: ActionPolicySet | ActionPolicyBinding | InvalidResource
     )
 
 
+def actions_ready(index: PolicyIndex, binding: PolicyBinding, now: datetime) -> policy_sets.Condition:
+    """The ActionsReady condition this replica wants on a `PolicyBinding`: whether every set it
+    names exists and parses; the sets that do grant either way."""
+    resolution = resolve_binding(index.rule_sets, binding)
+    if resolution.missing or resolution.refused:
+        return set_condition(
+            binding,
+            ACTIONS_READY_CONDITION,
+            ready=False,
+            reason=POLICY_SET_UNAVAILABLE,
+            message=unavailable_message(resolution),
+            now=now,
+        )
+    rules = sum(len(policy_set.rules) for policy_set in resolution.sets)
+    return set_condition(
+        binding, ACTIONS_READY_CONDITION, ready=True, reason="Applied", message=f"Action rules: {rules}", now=now
+    )
+
+
 class PolicyInformer:
     def __init__(
         self,
@@ -151,6 +191,7 @@ class PolicyInformer:
         # What this replica last wrote, by object UID, so a write is not repeated while its own MODIFIED
         # event is in flight and a recreated object (same name, new UID) is judged afresh.
         self._written: dict[str, Condition] = {}
+        self._reporter = ConditionReporter(custom_objects, field_manager=ACTIONS_FIELD_MANAGER)
         kinds: list[WatchedKind] = [
             WatchedKind(
                 name=f"{policy_namespace}/{POLICY_SETS_PLURAL}",
@@ -169,6 +210,24 @@ class PolicyInformer:
                 key=lambda obj: obj.namespaced_name,
                 names=partial(_keys_in, index.bindings, policy_namespace),
                 apply=lambda key, obj: apply_to(index.bindings, key, obj),
+            ),
+            WatchedKind(
+                name=f"{policy_namespace}/{policy_sets.POLICY_SETS_PLURAL}",
+                list=custom_objects.list_namespaced_custom_object,
+                args=(GROUP, VERSION, policy_namespace, policy_sets.POLICY_SETS_PLURAL),
+                parse=partial(policy_sets.parse_policy_set, parse_rule=parse_action_rule),
+                key=lambda policy_set: policy_set.name,
+                names=lambda: set(index.rule_sets),
+                apply=lambda name, obj: apply_to(index.rule_sets, name, obj),
+            ),
+            WatchedKind(
+                name=f"{policy_namespace}/{POLICY_BINDINGS_PLURAL}",
+                list=custom_objects.list_namespaced_custom_object,
+                args=(GROUP, VERSION, policy_namespace, POLICY_BINDINGS_PLURAL),
+                parse=PolicyBinding.model_validate,
+                key=lambda binding: binding.metadata.name,
+                names=lambda: set(index.policy_bindings),
+                apply=lambda name, obj: apply_to(index.policy_bindings, name, obj),
             ),
         ]
         kinds.extend(
@@ -220,6 +279,10 @@ class PolicyInformer:
         held = {obj.metadata.uid for _, store in self._stores() for obj in store.values()}
         for uid in set(self._written) - held:
             del self._written[uid]
+        await self._reporter.report(
+            (binding, actions_ready(self._index, binding, now))
+            for binding in list(self._index.policy_bindings.values())
+        )
 
     def _stores(
         self,

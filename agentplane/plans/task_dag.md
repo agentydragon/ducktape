@@ -521,16 +521,9 @@ handles expiry itself.
 
 ### `ACTION_POLICY_MIGRATE` — Action policies move to PolicySet
 
-**Candidate.** Action rule types join `PolicySet`; the Action Service informer reads
-`PolicySet`/`PolicyBinding`, filters to action rules and writes `ActionsReady`; expiry needs nothing, since the Policy Controller
-deletes expired bindings. cdk8s regenerates
-the static `ActionPolicySet`/`ActionPolicyBinding` objects as the generic kinds, and Sandbox Service
-writes action rules into the Sandbox's one `PolicyBinding`.
-
-The Action Service and egress proxy resolve subject, bindings, sets and rules of one type through
-the shared `agentplane/policy_sets.py`, which the egress proxy already uses; as in the Policy
-Controller, a missing set does not stop the binding's other sets from granting (operator,
-2026-10-11 PDT).
+**Candidate.** The Action Service already reads `PolicySet`/`PolicyBinding` beside the old kinds.
+cdk8s regenerates the static `ActionPolicySet`/`ActionPolicyBinding` objects as the generic kinds;
+the Sandbox Service's writer moves with `POLICY_SANDBOX_CUTOVER`.
 
 ### `OLD_POLICY_KINDS_DROP` — drop the old policy kinds
 

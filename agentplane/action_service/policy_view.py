@@ -19,7 +19,8 @@ from typing import Annotated, Final, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
-from agentplane.action_service.models import NamespacedName, PolicyKind
+from agentplane import policy_sets
+from agentplane.action_service.models import NamespacedName, PolicyKind, PolicySource
 from agentplane.action_service.policies.argument_schema import ArgumentSchema
 from agentplane.action_service.policies.exact_actions import ExactActions
 from agentplane.action_service.policies.github_public_repository import GitHubPublicRepository
@@ -27,6 +28,7 @@ from agentplane.action_service.policies.github_repository import GitHubRepositor
 from agentplane.action_service.policies.home_assistant_entity_control import HomeAssistantEntityControl
 from agentplane.action_service.policies.registry import Policy
 from agentplane.action_service.policies.resources import (
+    ACTIONS_READY_CONDITION,
     ActionPolicyBinding,
     ActionPolicySet,
     Condition,
@@ -34,7 +36,8 @@ from agentplane.action_service.policies.resources import (
 )
 from agentplane.action_service.policy_evaluation import resolve_bindings
 from agentplane.action_service.policy_informer import PolicyIndex
-from agentplane.action_service.providers import ResolvedBinding
+from agentplane.action_service.providers import BindingKind, ResolvedBinding
+from agentplane.policy_sets import ConditionStatus, PolicySet, RefusedPolicySet
 from agentplane.subjects import ServiceAccountRef
 
 
@@ -55,7 +58,7 @@ type PolicyTarget = SelfTarget | ServiceAccountTarget
 class ReadyConditionView(_View):
     """The service's verdict on an object's spec, as its informer last wrote it."""
 
-    status: Literal["True", "False", "Unknown"]
+    status: ConditionStatus
     reason: str
     message: str
     observed_generation: int | None = Field(
@@ -110,6 +113,7 @@ class EffectivePolicyView(_View):
 
     binding: str
     policy_set: str
+    source: PolicySource = Field(description="The list of the set the policy sits in.")
     index: int = Field(ge=0)
     policy: PolicyView
 
@@ -146,7 +150,9 @@ class ActionPolicySetView(_View):
     name: str
     generation: int
     ready: ReadyConditionView | None = Field(
-        default=None, description="Absent until the service has judged the set at all."
+        default=None,
+        description="Absent until the service has judged the set at all, and on a PolicySet, which has no "
+        "status of its own: its standing is `refused`, and each binding's `ActionsReady`.",
     )
     refused: str | None = Field(
         default=None, description="Why the spec does not parse, when it does not; such a set contributes nothing."
@@ -154,18 +160,21 @@ class ActionPolicySetView(_View):
 
 
 class SubjectBindingView(_View):
+    kind: BindingKind
     name: str
     labels: dict[str, str] = Field(
         description="The binding's metadata labels, for a reader that tells writers apart by them."
     )
     expires_at: datetime | None = Field(default=None, description="After this instant the binding contributes nothing.")
     ready: ReadyConditionView | None = Field(
-        default=None, description="Absent until the service has judged the binding at all."
+        default=None,
+        description="Absent until the service has judged the binding at all: an ActionPolicyBinding's Ready, "
+        "a PolicyBinding's ActionsReady.",
     )
     policy_sets: list[ActionPolicySetView] = Field(
         description="The named sets that exist, valid or refused, in the binding's order."
     )
-    missing_policy_sets: list[str] = Field(description="Names in the binding that no ActionPolicySet answers to.")
+    missing_policy_sets: list[str] = Field(description="Names in the binding that no set of its kind answers to.")
 
 
 class SubjectActionPolicyView(_EffectivePolicy):
@@ -199,66 +208,81 @@ def _policy_view(policy: Policy) -> PolicyView:
 
 
 def _effective(bindings: tuple[ResolvedBinding, ...]) -> list[EffectivePolicyView]:
-    """`autoApproveIf` in the order `PolicySetDecisionProvider` walks it: binding, then set, then entry."""
-    auto_approve_if: list[EffectivePolicyView] = []
-    for resolved in bindings:
-        for policy_set in resolved.policy_sets:
-            auto_approve_if.extend(
-                EffectivePolicyView(
-                    binding=resolved.binding.metadata.name,
-                    policy_set=policy_set.metadata.name,
-                    index=index,
-                    policy=_policy_view(policy),
-                )
-                for index, policy in enumerate(policy_set.spec.auto_approve_if)
-            )
-    return auto_approve_if
+    """Auto-approve policies in the order `PolicySetDecisionProvider` walks them: binding, then set,
+    then entry."""
+    return [
+        EffectivePolicyView(
+            binding=resolved.name,
+            policy_set=policy_set.name,
+            source=policy_set.source,
+            index=index,
+            policy=_policy_view(policy),
+        )
+        for resolved in bindings
+        for policy_set in resolved.policy_sets
+        for index, policy in policy_set.policies
+    ]
 
 
 def caller_view(index: PolicyIndex, subject: ServiceAccountRef, now: datetime) -> CallerActionPolicyView:
     """The caller-facing view of a subject, from the same bindings admission resolves."""
     bindings = resolve_bindings(index, subject, now)
-    auto_approve_if = _effective(bindings)
     return CallerActionPolicyView(
         subject=subject,
         synced=index.synced,
         bindings=[
             CallerBindingView(
-                name=resolved.binding.metadata.name,
-                expires_at=resolved.binding.spec.expires_at,
-                policy_sets=[policy_set.metadata.name for policy_set in resolved.policy_sets],
+                name=resolved.name,
+                expires_at=resolved.expires_at,
+                policy_sets=[policy_set.name for policy_set in resolved.policy_sets],
             )
             for resolved in bindings
         ],
-        auto_approve_if=auto_approve_if,
+        auto_approve_if=_effective(bindings),
     )
 
 
 def subject_view(index: PolicyIndex, subject: ServiceAccountRef, now: datetime) -> SubjectActionPolicyView:
     """The operator's view of one subject: the same resolution, with each named set's standing."""
     bindings = resolve_bindings(index, subject, now)
-    auto_approve_if = _effective(bindings)
     return SubjectActionPolicyView(
         synced=index.synced,
-        bindings=[_subject_binding(index, resolved.binding) for resolved in bindings],
-        auto_approve_if=auto_approve_if,
+        bindings=[_subject_binding(index, resolved) for resolved in bindings],
+        auto_approve_if=_effective(bindings),
     )
 
 
-def _subject_binding(index: PolicyIndex, binding: ActionPolicyBinding) -> SubjectBindingView:
-    # In the binding's own order, duplicates included: what `resolve_bindings` walks.
-    named = [
-        (name, index.policy_sets.get(NamespacedName(binding.metadata.namespace, name)))
-        for name in binding.spec.policy_sets
-    ]
-    return SubjectBindingView(
-        name=binding.metadata.name,
-        labels=binding.metadata.labels,
-        expires_at=binding.spec.expires_at,
-        ready=_ready_view(binding.status.ready()),
-        policy_sets=[set_view(policy_set) for _, policy_set in named if policy_set is not None],
-        missing_policy_sets=[name for name, policy_set in named if policy_set is None],
-    )
+def _subject_binding(index: PolicyIndex, resolved: ResolvedBinding) -> SubjectBindingView:
+    match resolved.kind:
+        case BindingKind.ACTION_POLICY_BINDING:
+            binding = index.bindings[NamespacedName(resolved.namespace, resolved.name)]
+            assert isinstance(binding, ActionPolicyBinding), "resolution keeps only valid bindings"
+            # In the binding's own order, duplicates included: what `resolve_bindings` walks.
+            named = [
+                (name, index.policy_sets.get(NamespacedName(binding.metadata.namespace, name)))
+                for name in binding.spec.policy_sets
+            ]
+            return SubjectBindingView(
+                kind=resolved.kind,
+                name=binding.metadata.name,
+                labels=binding.metadata.labels,
+                expires_at=binding.spec.expires_at,
+                ready=_ready_view(binding.status.ready()),
+                policy_sets=[set_view(policy_set) for _, policy_set in named if policy_set is not None],
+                missing_policy_sets=[name for name, policy_set in named if policy_set is None],
+            )
+        case BindingKind.POLICY_BINDING:
+            generic = index.policy_bindings[resolved.name]
+            found = [(name, index.rule_sets.get(name)) for name in generic.spec.policy_sets]
+            return SubjectBindingView(
+                kind=resolved.kind,
+                name=generic.metadata.name,
+                labels=generic.metadata.labels,
+                expires_at=generic.spec.expires_at,
+                ready=_ready_view(generic.condition(ACTIONS_READY_CONDITION)),
+                policy_sets=[rules_set_view(policy_set) for _, policy_set in found if policy_set is not None],
+                missing_policy_sets=[name for name, policy_set in found if policy_set is None],
+            )
 
 
 def set_view(policy_set: ActionPolicySet | InvalidResource) -> ActionPolicySetView:
@@ -270,11 +294,20 @@ def set_view(policy_set: ActionPolicySet | InvalidResource) -> ActionPolicySetVi
     )
 
 
-def _ready_view(condition: Condition | None) -> ReadyConditionView | None:
+def rules_set_view(policy_set: PolicySet[Policy] | RefusedPolicySet) -> ActionPolicySetView:
+    assert policy_set.generation is not None, "the informer's sets are read off the API server"
+    return ActionPolicySetView(
+        name=policy_set.name,
+        generation=policy_set.generation,
+        refused=policy_set.reason if isinstance(policy_set, RefusedPolicySet) else None,
+    )
+
+
+def _ready_view(condition: Condition | policy_sets.Condition | None) -> ReadyConditionView | None:
     if condition is None:
         return None
     return ReadyConditionView(
-        status=condition.status,
+        status=ConditionStatus(condition.status),
         reason=condition.reason,
         message=condition.message,
         observed_generation=condition.observed_generation,
