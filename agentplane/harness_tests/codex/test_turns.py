@@ -10,7 +10,7 @@ from more_itertools import one
 from agentplane.harness_tests.codex import frames, responses_sse as sse
 from agentplane.harness_tests.codex.harness import MODEL, CodexHarness
 from agentplane.harness_tests.codex.responses import OpenAIResponses
-from agentplane.native.codex import driver, wire
+from agentplane.native.codex import scenarios, wire
 
 TOOLS = ["exec_command", "write_stdin", "request_user_input", "get_goal", "create_goal", "update_goal"]
 IN_FLIGHT_INPUT = "Reply with exactly: CODEX_CRASHED_IN_FLIGHT_REPLAYED"
@@ -30,7 +30,7 @@ async def test_baseline_turn(codex: CodexHarness, openai_responses: OpenAIRespon
             request = exchange.request
             assert request.model == MODEL
             assert request.stream is True
-            assert request.instructions == driver.BASE_INSTRUCTIONS
+            assert request.instructions == scenarios.BASE_INSTRUCTIONS
             assert request.tool_names == TOOLS
             assert request.item_kinds == ["message:user"]
             assert request.messages("user")[-1].text == "Reply with exactly: CAPTURE_BASELINE_OK"

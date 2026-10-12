@@ -7,8 +7,8 @@ from typing import Any
 
 from agentplane.native.claude import driver, wire
 
+# The scenarios need no coding-agent policy.
 SYSTEM_PROMPT = "You are a concise test assistant. Follow user requests using the available tools."
-# A preset session title stops Claude's separate title-generating model call.
 SESSION_NAME = "agentplane-capture"
 TOOLS = ("Bash", "Edit", "Read")
 # The events a hooks capture registers: the blocking events a single-agent turn without compaction
@@ -46,13 +46,15 @@ def command(
     binary: str,
     *,
     model: str,
+    system_prompt: str,
+    session_name: str,
+    tools: tuple[str, ...],
     resume_id: str | None = None,
     session_id: str | None = None,
     replay_user_messages: bool = False,
     effort: str | None = None,
     hooks: bool = False,
     slash_commands: bool = False,
-    tools: tuple[str, ...] = TOOLS,
 ) -> list[str]:
     """`session_id` fixes a fresh session's id; with `resume_id` the resumed session keeps its own.
 
@@ -75,12 +77,13 @@ def command(
         "--setting-sources=",
         # With no --mcp-config, this also excludes MCP servers configured on disk.
         "--strict-mcp-config",
-        # Replaces Claude Code's default system prompt; the scenarios need no coding-agent policy.
+        # Replaces Claude Code's default system prompt.
         "--system-prompt",
-        SYSTEM_PROMPT,
+        system_prompt,
+        # A preset session title stops Claude's separate title-generating model call.
         "--name",
-        SESSION_NAME,
-        # Retain only the tools the scenarios exercise, not Claude's full tool catalog.
+        session_name,
+        # Retain only these tools, not Claude's full tool catalog.
         "--tools",
         ",".join(tools),
         "--output-format",
@@ -112,12 +115,12 @@ def command(
 MAX_RETRIES = 2
 
 
-def environment(*, endpoint: str, token: str, config_dir: str) -> dict[str, str]:
+def environment(*, endpoint: str, token: str, config_dir: str, max_retries: int) -> dict[str, str]:
     return {
         "ANTHROPIC_AUTH_TOKEN": token,
         "ANTHROPIC_BASE_URL": endpoint,
         "CLAUDE_CONFIG_DIR": config_dir,
-        "CLAUDE_CODE_MAX_RETRIES": str(MAX_RETRIES),
+        "CLAUDE_CODE_MAX_RETRIES": str(max_retries),
         # No telemetry, update checks, or other traffic beside the model endpoint.
         "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
     }

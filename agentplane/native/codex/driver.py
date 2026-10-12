@@ -6,18 +6,14 @@ from typing import Any
 
 from agentplane.native.codex import wire
 
-# This replaces Codex's broad default coding-agent policy while preserving the
-# app-server's native tool behavior for each scenario.
-BASE_INSTRUCTIONS = "You are a concise test assistant. Follow user requests using the available tools."
 
-
-def initialize(request_id: str, *, experimental_api: bool = False) -> wire.InitializeRequest:
+def initialize(request_id: str, *, client_name: str, experimental_api: bool = False) -> wire.InitializeRequest:
     """`experimental_api` sets `capabilities.experimentalApi`, required before `thread/start` will
     accept `dynamicTools`."""
     return wire.InitializeRequest(
         id=request_id,
         params=wire.InitializeParams(
-            client_info=wire.ClientInfo(name="agentplane-capture", version="0.1"),
+            client_info=wire.ClientInfo(name=client_name, version="0.1"),
             capabilities={"experimentalApi": True} if experimental_api else None,
         ),
     )
@@ -33,6 +29,7 @@ def thread_start(
     cwd: str,
     model: str,
     effort: str,
+    base_instructions: str,
     persist: bool = False,
     config: dict[str, Any] | None = None,
     instructions: str = "",
@@ -54,7 +51,7 @@ def thread_start(
             ephemeral=not persist,
             model=model,
             # Replaces the broad default coding-agent policy in recorded model requests.
-            base_instructions=BASE_INSTRUCTIONS,
+            base_instructions=base_instructions,
             developer_instructions=instructions or None,
             config={"model_reasoning_effort": effort, **(config or {})},
             dynamic_tools=dynamic_tools,

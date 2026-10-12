@@ -41,6 +41,12 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# The launch every Session gets; its standing instructions are added at initialize.
+SYSTEM_PROMPT = "You are a concise test assistant. Follow user requests using the available tools."
+SESSION_NAME = "agentplane"
+TOOLS = ("Bash", "Edit", "Read")
+MAX_RETRIES = 2
+
 
 class ClaudeAdapter(HarnessAdapter):
     def __init__(self, session: Session, launch: ClaudeLaunch) -> None:
@@ -75,6 +81,9 @@ class ClaudeAdapter(HarnessAdapter):
             *scenarios.command(
                 str(self.launch.binary),
                 model=self.session.record.model,
+                system_prompt=SYSTEM_PROMPT,
+                session_name=SESSION_NAME,
+                tools=TOOLS,
                 resume_id=resume_id,
                 session_id=None if resume_id else self._native_session_id,
                 replay_user_messages=True,
@@ -88,7 +97,10 @@ class ClaudeAdapter(HarnessAdapter):
         environment = {
             **self.session.config.harness_environment,
             **scenarios.environment(
-                endpoint=self.launch.base_url, token=self.launch.auth_token, config_dir=str(config_dir)
+                endpoint=self.launch.base_url,
+                token=self.launch.auth_token,
+                config_dir=str(config_dir),
+                max_retries=MAX_RETRIES,
             ),
         }
         if context_window := self.session.record.total_context_budget_tokens:

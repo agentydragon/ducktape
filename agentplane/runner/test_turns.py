@@ -140,7 +140,7 @@ async def test_model_connection_loss_through_runner(
     """Pin native retries, runner outcomes, and a later input in the same session."""
     async with await client.attach(f"model-failure-{partial}", spec=spec) as session:
         await submit_input(session, "first-input", "Reply with exactly: FIRST_OK")
-        # Both pinned harness scenarios cap retries at two; see the native
+        # Both runner adapters cap retries at two; see the native
         # harness_tests/*/test_connection_loss.py for the raw retry frames.
         attempts = 2 if partial else 3
         for attempt in range(attempts):

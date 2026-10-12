@@ -195,13 +195,23 @@ async def run(args: argparse.Namespace) -> None:
 async def _capture_claude(args: argparse.Namespace, *, endpoint: str, key: str, hook_decision: str | None) -> None:
     environment = {
         **os.environ,
-        **claude.environment(endpoint=endpoint, token=key, config_dir=str(args.workspace / ".claude")),
+        **claude.environment(
+            endpoint=endpoint, token=key, config_dir=str(args.workspace / ".claude"), max_retries=claude.MAX_RETRIES
+        ),
     }
 
     def start(*, resume_id: str | None = None) -> ClaudeRun:
         return ClaudeRun(
             args.output,
-            claude.command(args.binary, model=args.model, resume_id=resume_id, hooks=hook_decision is not None),
+            claude.command(
+                args.binary,
+                model=args.model,
+                system_prompt=claude.SYSTEM_PROMPT,
+                session_name=claude.SESSION_NAME,
+                tools=claude.TOOLS,
+                resume_id=resume_id,
+                hooks=hook_decision is not None,
+            ),
             cwd=args.workspace,
             environment=environment,
             responder=None if hook_decision is None else claude.hook_answers(deny_tools=hook_decision == "deny"),
@@ -256,7 +266,7 @@ async def _capture_codex(args: argparse.Namespace, *, endpoint: str, key: str, h
     def start(*, resume_thread_id: str | None = None) -> CodexRun:
         return CodexRun(
             args.output,
-            codex.command(args.binary, endpoint=endpoint),
+            codex.command(args.binary, endpoint=endpoint, max_retries=codex.MAX_RETRIES),
             cwd=args.workspace,
             environment=environment,
             thread_cwd=str(args.workspace),

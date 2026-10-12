@@ -44,7 +44,7 @@ async def server(codex: CodexHarness, model: OpenAIResponses, incarnation: str) 
     logs.mkdir()
     async with AsyncNativeProcess(
         logs,
-        scenarios.command(codex.binary, endpoint=endpoint),
+        scenarios.command(codex.binary, endpoint=endpoint, max_retries=scenarios.MAX_RETRIES),
         cwd=codex.workspace,
         environment={
             **codex.base_environment,
@@ -89,7 +89,7 @@ async def test_v2_child_discovery_and_resume(
                     approvalPolicy="never",
                     sandbox="danger-full-access",
                     ephemeral=False,
-                    baseInstructions=driver.BASE_INSTRUCTIONS,
+                    baseInstructions=scenarios.BASE_INSTRUCTIONS,
                     config={
                         "model_reasoning_effort": EFFORT,
                         "features.multi_agent": True,

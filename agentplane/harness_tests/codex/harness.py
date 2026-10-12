@@ -39,7 +39,7 @@ class CodexHarness:
             **self.base_environment,
             **scenarios.environment(endpoint=endpoint, token="test-key", codex_home=str(self.codex_home)),
         }
-        command = scenarios.command(self.binary, endpoint=endpoint)
+        command = scenarios.command(self.binary, endpoint=endpoint, max_retries=scenarios.MAX_RETRIES)
         return async_run.CodexRun(
             self.logs,
             command,

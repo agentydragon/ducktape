@@ -23,11 +23,15 @@ def hooks_config(command: str) -> dict[str, Any]:
     }
 
 
+# This replaces Codex's broad default coding-agent policy while preserving the
+# app-server's native tool behavior for each scenario.
+BASE_INSTRUCTIONS = "You are a concise test assistant. Follow user requests using the available tools."
+CLIENT_NAME = "agentplane-capture"
 # Bounded upstream retries keep connection-loss scenarios short.
 MAX_RETRIES = 2
 
 
-def config(*, endpoint: str, model_context_window: int | None = None) -> dict[str, Any]:
+def config(*, endpoint: str, max_retries: int, model_context_window: int | None = None) -> dict[str, Any]:
     """Native app-server configuration; a direct setup, not a Haku adapter."""
     result: dict[str, Any] = {
         # The environment supplies OPENAI_API_KEY; the provider keeps the Responses endpoint explicit.
@@ -42,7 +46,7 @@ def config(*, endpoint: str, model_context_window: int | None = None) -> dict[st
                 # visible as native `error` notices; a request-level retry budget would
                 # multiply the upstream attempts silently.
                 "request_max_retries": 0,
-                "stream_max_retries": MAX_RETRIES,
+                "stream_max_retries": max_retries,
             }
         },
         # Run deterministic tool probes without an interactive approval round-trip.
@@ -90,10 +94,10 @@ def _overrides(config: dict[str, Any], prefix: str = "") -> list[str]:
     return result
 
 
-def command(binary: str, *, endpoint: str, model_context_window: int | None = None) -> list[str]:
+def command(binary: str, *, endpoint: str, max_retries: int, model_context_window: int | None = None) -> list[str]:
     return [
         binary,
-        *_overrides(config(endpoint=endpoint, model_context_window=model_context_window)),
+        *_overrides(config(endpoint=endpoint, max_retries=max_retries, model_context_window=model_context_window)),
         "app-server",
         "--listen",
         "stdio://",

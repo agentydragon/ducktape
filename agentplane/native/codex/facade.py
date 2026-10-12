@@ -26,12 +26,20 @@ class CodexReceipt:
 class CodexHarness:
     """Codex-native JSON-RPC operations over an append-only transport."""
 
-    def __init__(self, transport: NativeTransport, *, request_prefix: str) -> None:
+    def __init__(
+        self, transport: NativeTransport, *, request_prefix: str, client_name: str, base_instructions: str
+    ) -> None:
+        """`client_name` goes in `initialize`'s `clientInfo`; `base_instructions` replaces Codex's
+        coding-agent policy in every thread this facade starts."""
         self.transport = transport
+        self._client_name = client_name
+        self._base_instructions = base_instructions
         self._request_ids = (f"{request_prefix}-{n}" for n in itertools.count(1))
 
     async def initialize(self, *, experimental_api: bool = False) -> CodexReceipt:
-        response = await self.request(driver.initialize(self._request_id(), experimental_api=experimental_api))
+        response = await self.request(
+            driver.initialize(self._request_id(), client_name=self._client_name, experimental_api=experimental_api)
+        )
         await self.transport.send(driver.initialized())
         return response
 
@@ -52,6 +60,7 @@ class CodexHarness:
                 cwd=cwd,
                 model=model,
                 effort=effort,
+                base_instructions=self._base_instructions,
                 persist=persist,
                 config=config,
                 instructions=instructions,

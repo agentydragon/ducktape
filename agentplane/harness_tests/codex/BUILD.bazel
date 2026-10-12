@@ -147,7 +147,7 @@ py_test(
         ":responses_sse",
         "//:conftest",
         "//agentplane/harness_tests:conftest",
-        "//agentplane/native/codex:driver",
+        "//agentplane/native/codex:scenarios",
         "//agentplane/native/codex:wire",
         "@pypi//more_itertools",
         "@pypi//pytest_bazel",

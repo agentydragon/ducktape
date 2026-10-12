@@ -19,6 +19,7 @@ py_library(
     srcs = ["async_run.py"],
     deps = [
         ":facade",
+        ":scenarios",
         ":wire",
         "//agentplane/native:async_process",
     ],

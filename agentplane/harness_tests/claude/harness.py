@@ -43,16 +43,23 @@ class ClaudeHarness:
         command = scenarios.command(
             self.binary,
             model=model,
+            system_prompt=scenarios.SYSTEM_PROMPT,
+            session_name=scenarios.SESSION_NAME,
+            tools=(*scenarios.TOOLS, "Agent", "SendMessage", "TaskOutput") if subagents else scenarios.TOOLS,
             resume_id=resume_id,
             session_id=session_id,
             replay_user_messages=replay_user_messages,
             hooks=hooks,
             slash_commands=slash_commands,
-            tools=(*scenarios.TOOLS, "Agent", "SendMessage", "TaskOutput") if subagents else scenarios.TOOLS,
         )
         environment = {
             **self.base_environment,
-            **scenarios.environment(endpoint=anthropic_messages.origin, token="test-key", config_dir=str(self.config)),
+            **scenarios.environment(
+                endpoint=anthropic_messages.origin,
+                token="test-key",
+                config_dir=str(self.config),
+                max_retries=scenarios.MAX_RETRIES,
+            ),
         }
         # The inbound permission frame is recorded before this responder writes its approval, so
         # the run's native trace includes both sides of every fixture-injected approval.

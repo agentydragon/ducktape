@@ -32,6 +32,11 @@ from agentplane.runner.recovery import ObservedItem, compare_item, observed_item
 if TYPE_CHECKING:
     from agentplane.runner.session import Frame, Session
 
+# The launch every thread gets; Session instructions are its developer instructions.
+BASE_INSTRUCTIONS = "You are a concise test assistant. Follow user requests using the available tools."
+CLIENT_NAME = "agentplane"
+MAX_RETRIES = 2
+
 _TURN_STATUSES: dict[wire.TurnStatus | str, event_pb2.TurnStatus] = {
     wire.TurnStatus.COMPLETED: event_pb2.TURN_STATUS_COMPLETED,
     wire.TurnStatus.INTERRUPTED: event_pb2.TURN_STATUS_INTERRUPTED,
@@ -56,7 +61,9 @@ class CodexAdapter(HarnessAdapter):
         self.session = session
         self.launch = launch
         self._thread_id = session.record.native_session_id or ""
-        self.harness = facade.CodexHarness(session, request_prefix="agentplane")
+        self.harness = facade.CodexHarness(
+            session, request_prefix="agentplane", client_name=CLIENT_NAME, base_instructions=BASE_INSTRUCTIONS
+        )
         self._adapter_id = str(uuid4())
         # Codex chooses the model in turn/start. A received ChangeModel remains here until a
         # subsequent user command actually starts a turn using it.
@@ -72,7 +79,10 @@ class CodexAdapter(HarnessAdapter):
         # (Codex local model catalogue). Independent of the central proxy/logging decision.
         context_window = self.session.record.total_context_budget_tokens
         return scenarios.command(
-            str(self.launch.binary), endpoint=self.launch.base_url, model_context_window=context_window
+            str(self.launch.binary),
+            endpoint=self.launch.base_url,
+            max_retries=MAX_RETRIES,
+            model_context_window=context_window,
         )
 
     def environment(self) -> Mapping[str, str]:

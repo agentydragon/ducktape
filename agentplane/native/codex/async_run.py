@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from agentplane.native.async_process import AsyncNativeProcess, FrameCursor, FrameResponder
-from agentplane.native.codex import facade, wire
+from agentplane.native.codex import facade, scenarios, wire
 
 
 class CodexEvents:
@@ -137,7 +137,12 @@ class CodexRun:
             frame_responder=self._responder,
         )
         self._process = await process.__aenter__()
-        self._harness = facade.CodexHarness(process, request_prefix="capture")
+        self._harness = facade.CodexHarness(
+            process,
+            request_prefix="capture",
+            client_name=scenarios.CLIENT_NAME,
+            base_instructions=scenarios.BASE_INSTRUCTIONS,
+        )
         try:
             await self._initialize()
             if self._resume_thread_id is None:
