@@ -101,4 +101,6 @@ main = do
 postCtx :: Context String
 postCtx = dateField "date" "%Y-%m-%d" `mappend` defaultContext
 
-feedCtx = postCtx `mappend` bodyField "description"
+-- The feed templates splice title unescaped into XML, so a title like "A & B" breaks the feed.
+feedCtx :: Context String
+feedCtx = mapContextBy (== "title") escapeHtml postCtx `mappend` bodyField "description"

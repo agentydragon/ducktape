@@ -788,6 +788,8 @@ spec:
     - copy:
         - from: "@repo/cluster/generated/website/**"
           to: "@artifact/cluster/generated/website/"
+        - from: "@repo/cluster/k8s/website-image-pins/**"
+          to: "@artifact/cluster/k8s/website-image-pins/"
       name: website
       originRevision: "@repo"
     - copy:

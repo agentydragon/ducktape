@@ -1,8 +1,8 @@
 My homepage. Everything is CC BY-NC-SA 3.0.
 
-Uses Haskell/Hakyll tooling.
-
-Hosted on my VPS.
+Hakyll (`site.hs`) renders it into an OCI image served by `static-web-server`
+(`default.nix`). The cluster runs it (`cluster/cdk8s/website/website.py`); a push to
+`devel` that touches this directory publishes a new image, and Flux rolls it out.
 
 # Important linked URLs
 
@@ -14,21 +14,12 @@ Hosted on my VPS.
 
 # Develop
 
-`//website` is a nested Bazel module (its own `MODULE.bazel`), listed in the
-root `.bazelignore` so the root workspace doesn't need `rules_haskell` /
-GHC just to expand `//...`. Build the site from inside this directory:
+From the repo root:
 
 ```bash
-cd website
-sass css/default.scss > css/default.css
-bazelisk build //:site
-./bazel-bin/site build
-```
-
-To push:
-
-```bash
-rsync -av --progress _site/ vps.agentydragon.com:/var/www/agentydragon.com
+sass website/css/default.scss > website/css/default.css  # after editing the SCSS
+nix build .#website-image
+docker load < result && docker run --rm -p 8080:8080 website:latest
 ```
 
 To convert a Jupyter notebook into Markdown:
@@ -55,13 +46,3 @@ stack install --flag skylighting-core:executable skylighting-core
 ```bash
 skylighting --help
 ```
-
-# Upgrades
-
-Might need:
-
-```bash
-stack upgrade
-```
-
-Maybe try to upgrade resolver in `stack.yaml`.

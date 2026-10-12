@@ -158,6 +158,7 @@ def chart(app: App) -> Chart:
             "tana-mcp",
             "thrive-scraper",  # gaffer-private (not cdk8s); ESO lives in that repo's k8s/
             "wayback-cache",
+            "website",
             # keep-sorted end
         ],
         remote_namespace="forgejo-images",

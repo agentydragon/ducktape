@@ -15,6 +15,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
         "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/forgejo_registry:chart",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
     ],

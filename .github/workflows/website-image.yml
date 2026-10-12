@@ -1,0 +1,54 @@
+# Build the homepage image (website/default.nix) and push it to the Forgejo registry.
+# Pull requests build and smoke-test it; only devel pushes.
+name: Website Image
+
+on:
+  pull_request:
+    paths:
+      # keep-sorted start
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/nix-image.yml"
+      - ".github/workflows/website-image.yml"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/flake/packages.nix"
+      - "website/**"
+      # keep-sorted end
+  push:
+    branches: [devel]
+    paths:
+      # keep-sorted start
+      - ".github/actions/setup-nix-attic/action.yml"
+      - ".github/workflows/nix-image.yml"
+      - ".github/workflows/website-image.yml"
+      - "flake.lock"
+      - "flake.nix"
+      - "nix/flake/packages.nix"
+      - "website/**"
+      # keep-sorted end
+  workflow_dispatch:
+
+concurrency:
+  group: website-image-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  image:
+    uses: ./.github/workflows/nix-image.yml
+    with:
+      attr: website-image
+      image: git.allegedly.works/ducktape-ci/website
+      registry: forgejo
+      smoke: |
+        image="$(docker load -i "$(readlink -f result)" | sed -n 's/^Loaded image: //p')"
+        docker run -d --rm --name website -p 8080:8080 "$image"
+        for path in / /about.html /found.html /nfc.html /atom.xml /rss.xml; do
+          curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 \
+            -o /dev/null "http://127.0.0.1:8080$path"
+        done
+        docker stop website
+    secrets:
+      SOPS_AGE_KEY: ${{ secrets.SOPS_AGE_KEY }}

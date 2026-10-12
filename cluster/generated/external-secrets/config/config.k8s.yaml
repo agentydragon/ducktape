@@ -164,6 +164,7 @@ spec:
         - tana-mcp
         - thrive-scraper
         - wayback-cache
+        - website
   provider:
     kubernetes:
       auth:

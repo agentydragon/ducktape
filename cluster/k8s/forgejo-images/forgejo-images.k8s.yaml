@@ -441,6 +441,11 @@ spec:
       name: vm-image-restart
       namespace: flux-system
     - apiVersion: image.toolkit.fluxcd.io/v1
+      filter: req.package.name == 'website'
+      kind: ImageRepository
+      name: website
+      namespace: flux-system
+    - apiVersion: image.toolkit.fluxcd.io/v1
       kind: ImageUpdateAutomation
       name: all-images
       namespace: flux-system

@@ -167,6 +167,8 @@ ducktapePkgs
       ruffLatest
       ;
   };
+  # The homepage (Hakyll-rendered, static-web-server). Recipe in website/default.nix.
+  website-image = import ../../website { inherit pkgs; };
   # Haku's Claude-backed OpenClaw spike. Same Nix build mechanism as
   # openclaw-image; both images use the gateway and source metadata pinned by
   # the shared nix-openclaw input in flake.lock.
