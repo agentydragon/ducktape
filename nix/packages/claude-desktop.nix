@@ -15,7 +15,7 @@
   pkgs,
 }:
 let
-  version = "1.17180.0";
+  version = "2.31226.1";
 in
 pkgs.stdenv.mkDerivation {
   pname = "claude-desktop";
@@ -23,7 +23,7 @@ pkgs.stdenv.mkDerivation {
 
   src = pkgs.fetchurl {
     url = "https://downloads.claude.ai/claude-desktop/apt/stable/pool/main/c/claude-desktop/claude-desktop_${version}_amd64.deb";
-    hash = "sha256-eY43Ovb6Ru3FmxyzIpphBPw4zPZsub/u6mmEN/oD9b0=";
+    hash = "sha256-Wpvr38sd9s44dns3Pzp/q/dxVqLd2KP10Elh2lveMF4=";
   };
 
   nativeBuildInputs = with pkgs; [
