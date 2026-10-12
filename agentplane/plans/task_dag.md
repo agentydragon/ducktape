@@ -946,6 +946,89 @@ keys in `sandbox_service`, which `Settings` moves to `runner_gateway` as it load
 (`cluster/cdk8s/agentplane/notifications.py`) renders a `runner_gateway` block, regenerate, and
 delete the `CLEANUP` move in `notification_service/settings.py` with its test.
 
+## 12. The Runner Gateway serves the runner's own service
+
+Target and decisions: [History Service plan](history_service.md#decided-operator-2026-10-10-pdt)
+(Runner Gateway shape, Session specs). Today `RunnerGateway` wraps every `Runner` call with a
+Session registry, spec assembly, readiness checks and seals; these nodes move each job to its owner
+until the gateway is the `Connect` listener plus a proxy of `Runner` with per-method authorization.
+Sandboxes of agent-sandbox's kind keep the wrapping path until `AGENT_SANDBOX_RETIRE`.
+
+```mermaid
+flowchart TD
+    GATEWAY_RUNNER_PROXY[Candidate: the gateway proxies Runner at the control address]
+    RUNNER_SESSION_LAUNCH[Candidate: the runner owns bootstrap, platform text and starting]
+    APP_SESSION_DEFAULTS[Candidate: the app sends complete Session specs]
+    HISTORY_SESSION_SANDBOX[Candidate: the History Service records each Session's Sandbox]
+    CONTROLLER_SEALS[Blocked: the Sandbox controller seals]
+    GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
+    GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
+    AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox, section 7]
+    GATEWAY_RUNNER_PROXY --> CONTROLLER_SEALS
+    GATEWAY_RUNNER_PROXY --> GATEWAY_WRAPPER_RETIRE
+    RUNNER_SESSION_LAUNCH --> APP_SESSION_DEFAULTS
+    APP_SESSION_DEFAULTS --> GATEWAY_WRAPPER_RETIRE
+    HISTORY_SESSION_SANDBOX --> GATEWAY_WRAPPER_RETIRE
+    CONTROLLER_SEALS --> GATEWAY_WRAPPER_RETIRE
+    AGENT_SANDBOX_RETIRE --> GATEWAY_WRAPPER_RETIRE
+    GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
+```
+
+### `GATEWAY_RUNNER_PROXY` — the gateway proxies `Runner` at the control address
+
+**Candidate.** The replica holding a Sandbox's connection serves `agentplane.proto.runner_control.Runner`
+at `<sandbox>-control` as a generic unary handler: it forwards the serialized request as a tunnel
+`Call` and returns the `Reply`'s status and bytes. It names the Sandbox by `:authority`; if
+grpc-python does not expose that to the server, the shared client sets a header from the same
+target. Per-method authorization: callers' accounts as `RunnerGateway` allows them now, `Seal` for
+the Sandbox controller only. Nothing calls it yet.
+
+### `RUNNER_SESSION_LAUNCH` — the runner owns bootstrap, platform text and starting
+
+**Candidate; Sandboxes of our own kind.** The Sandbox controller gives the runner its Sandbox's
+`bootstrap` and the rendered platform instructions with the runner's other configuration. The
+runner runs the bootstrap once before its first Session opens, prepends the platform instructions
+and its own Sandbox and Session ID to every Session's instructions, and `OpenSession` starts a
+stopped harness whose setup succeeded. The gateway's `launch_spec` and `open_session` stop adding
+them for our kind.
+
+### `APP_SESSION_DEFAULTS` — the app sends complete Session specs
+
+**Candidate after `RUNNER_SESSION_LAUNCH`; a for-now choice.** The app records which preset a
+Sandbox was made from on the Sandbox (a label) and fills a complete `SessionSpec` and setup script
+from it. `session_defaults` leaves `CreateSandboxRequest`, `SandboxBinding` and our Sandbox's spec,
+and `CreateSessionRequest` loses its field mask.
+
+### `HISTORY_SESSION_SANDBOX` — the History Service records each Session's Sandbox
+
+**Candidate.** The ingress records, with each Session's writer, the Sandbox that writer is. Decide
+in the node: from the Pod-bound token's Pod claim (the Pod is named for its Sandbox) or from a
+lookup, which would make the History Service read Kubernetes. The read API answers which Sandbox
+each Session ran in, and which Sessions a Sandbox name matches, deleted Sandboxes included. The
+History Service learns a Session at its first push, so the app keeps the Sandbox it opened a
+Session in until the History Service has it. Existing Sessions are backfilled from the gateway's
+registry.
+
+### `CONTROLLER_SEALS` — the Sandbox controller seals
+
+**Blocked on `GATEWAY_RUNNER_PROXY`.** For a deleting Sandbox of our kind the Sandbox controller
+calls `Runner.Seal` through the proxy, repeats it until every seal is flushed, and sets
+`SessionsSealed` itself. `runner_gateway/deletion_seals.py` and the gateway's write to Sandboxes go.
+
+### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
+
+**Blocked on the nodes above and `AGENT_SANDBOX_RETIRE`.** The app and the Notification Service
+call `Runner` through the proxy and ask the History Service where a Session runs. Delete the
+`RunnerGateway` service and proto, its client, `session_registry.py`, `destinations.py`,
+`sealing.py`, `session_lifecycle.py`, `wire.py` and `instructions.py`. This makes
+`GATEWAY_CLIENT_SPLIT` and `SANDBOX_DATABASE_RENAME` moot; delete them here.
+
+### `GATEWAY_DATABASE_DROP` — drop the `sandbox_commands` database
+
+**Blocked on `GATEWAY_WRAPPER_RETIRE`; a data drop, merged by the operator.** Drop the database,
+its role, Secret and migration init container once `HISTORY_SESSION_SANDBOX` holds every Session's
+Sandbox.
+
 ## Scope and retirement of stale gates
 
 - Notifications keep workers in the HTTP service. Retention, worker extraction, idle-polling
