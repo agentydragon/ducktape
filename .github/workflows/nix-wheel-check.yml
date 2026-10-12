@@ -147,15 +147,17 @@ jobs:
           echo "bazel_targets=$bazel_targets" >> "$GITHUB_OUTPUT"
           echo "nix_checks=$nix_checks" >> "$GITHUB_OUTPUT"
 
-      # Every one of these artifacts must come back, because "Assemble artifact
-      # overrides" below exits 1 on a missing file — this gate fails closed. It
-      # relies on `bb remote build`'s post-run download, which returns an
-      # arbitrary subset for a large enough request: measured on devel, 50 targets
-      # yielded 12 files. A previous 8-output set yielded all 8; this change brings
-      # the current set to 11. If it starts flaking on
-      # "missing artifact for pin", read the outputs from the build event stream
-      # instead (devinfra/ci/bes.py) rather than raising a retry count.
-      #
+      # `bb remote build`'s post-run download returns an arbitrary subset of a
+      # large request (12 of these 13 outputs), so "Fetch artifacts" below reads
+      # every output from the build event stream instead. Its own role keeps the
+      # id apart from bazel-ci's when trusted-fork-pr-ci.yml calls both in one run.
+      - name: Choose artifact build invocation
+        id: invocation
+        run: |
+          invocation_id="$(python3 devinfra/ci/invocation_ids.py \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --role nix-wheel-build)"
+          echo "id=$invocation_id" >> "$GITHUB_OUTPUT"
+
       # run_from_commit: actions/checkout in PR mode doesn't fetch a local
       # `devel` ref, so bb remote's default base-branch patch sync fails with
       # `git rev-parse devel: exit status 128`. On pull_request events,
@@ -165,11 +167,26 @@ jobs:
       - name: Build artifacts from source
         uses: ./.github/actions/bb-remote
         with:
-          args: build ${{ steps.inputs.outputs.bazel_targets }}
+          args: build --invocation_id=${{ steps.invocation.outputs.id }} ${{ steps.inputs.outputs.bazel_targets }}
+          linkage_roles: nix-wheel-build
+          bazel_invocation_ids: ${{ steps.invocation.outputs.id }}
           # Rotate away from the exhausted workspace while retaining warm
           # runner reuse for subsequent artifact builds.
           runner_recycling_key: ducktape-nix-wheel-v2
           run_from_commit: ${{ steps.source.outputs.sha }}
+
+      - name: Fetch artifacts
+        env:
+          INVOCATIONS: ${{ steps.invocation.outputs.id }}
+        run: |
+          set -euo pipefail
+          mapfile -t outputs < <(jq -r '
+            . as $doc |
+            $doc.pins | to_entries[] |
+            select($doc.releases[.value.release].nixPackage) |
+            .value.output
+          ' devinfra/ci/artifact_targets.json)
+          python3 -m devinfra.ci.fetch_build_outputs --invocations "$INVOCATIONS" "${outputs[@]}"
 
       # Emit the JSON blob flake.nix's artifacts logic consumes. Every pin
       # in an in-gate release gets an override entry (including every asset in
