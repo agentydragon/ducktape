@@ -34,7 +34,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cnpg, namespaces, node_scheduling, pod_policy
+from cluster.cdk8s import cnpg, cnpg_backup, namespaces, node_scheduling, pod_policy
 from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
@@ -154,8 +154,9 @@ def _database(scope: Construct) -> None:
         storage_class="local-path-ovh-hdd",
         size="2Gi",
         initdb=cnpg.same_owner_initdb(NAME),
-        wal_archive=False,
+        wal_archive=True,
     )
+    cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, policy=cnpg_backup.DAILY_30D)
 
 
 class Ntfy(Construct):
@@ -266,6 +267,7 @@ def ntfy(
     external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
     kyverno: Kustomization,
+    seaweedfs_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -279,5 +281,6 @@ def ntfy(
             monitoring_crds,
             # Kyverno's failurePolicy: Fail webhooks admit the Deployment and HTTPRoute.
             kyverno,
+            seaweedfs_operator,
         ),
     )

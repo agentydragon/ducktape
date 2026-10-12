@@ -26,7 +26,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from gateway_api_crds.io.k8s.networking.gateway import HttpRouteSpecRules, HttpRouteSpecRulesBackendRefs
 
-from cluster.cdk8s import cnpg, namespaces, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref, https_route
 from cluster.cdk8s.helm import helm_release, https_helm_repository
@@ -112,8 +112,9 @@ def _database(scope: Construct) -> None:
         storage_class="local-path-ovh",
         size="10Gi",
         initdb=cnpg.same_owner_initdb("synapse", locale_c_type="C", locale_collate="C"),
-        wal_archive=False,
+        wal_archive=True,
     )
+    cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, policy=cnpg_backup.DAILY_30D)
 
 
 def _synapse(scope: Construct) -> None:
@@ -340,7 +341,9 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def matrix(chart: Chart, directory: RenderedDirectory, cnpg: Kustomization) -> Kustomization:
+def matrix(
+    chart: Chart, directory: RenderedDirectory, cnpg: Kustomization, seaweedfs_operator: Kustomization
+) -> Kustomization:
     name = "matrix"
     return flux_kustomization(
         chart,
@@ -348,5 +351,5 @@ def matrix(chart: Chart, directory: RenderedDirectory, cnpg: Kustomization) -> K
         directory,
         timeout="10m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(cnpg),
+        depends_on=flux_kustomization_depends_on_many(cnpg, seaweedfs_operator),
     )

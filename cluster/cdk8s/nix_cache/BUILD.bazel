@@ -21,6 +21,7 @@ py_library(
     ],
     deps = [
         "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:flux",

@@ -26,6 +26,11 @@ spec:
   instances: 2
   monitoring:
     enablePodMonitor: true
+  plugins:
+    - isWALArchiver: true
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: gatus-db
   probes:
     liveness:
       isolationCheck:
@@ -33,6 +38,96 @@ spec:
   storage:
     size: 1Gi
     storageClass: local-path-ovh
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for gatus/gatus-db.
+  name: gatus-db-backups
+  namespace: gatus
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: gatus-db-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: gatus-db-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for gatus/gatus-db.
+  name: gatus-db-backups
+  namespace: gatus
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: gatus-db-backups
+  namespace: gatus
+spec:
+  identityRef:
+    name: gatus-db-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: gatus-db-backups-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  annotations:
+    description: SeaweedFS S3 destination for gatus/gatus-db base backups and WAL.
+  name: gatus-db
+  namespace: gatus
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://gatus-db-backups/
+    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
+    s3Credentials:
+      accessKeyId:
+        key: AWS_ACCESS_KEY_ID
+        name: gatus-db-backups-s3-credentials
+      secretAccessKey:
+        key: AWS_SECRET_ACCESS_KEY
+        name: gatus-db-backups-s3-credentials
+    wal:
+      compression: gzip
+  retentionPolicy: 30d
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: gatus-db
+  namespace: gatus
+spec:
+  backupOwnerReference: self
+  cluster:
+    name: gatus-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  schedule: 0 0 2 * * *
 ---
 apiVersion: source.toolkit.fluxcd.io/v1
 kind: HelmRepository

@@ -23,7 +23,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from cluster.cdk8s import cilium, cnpg, node_scheduling
+from cluster.cdk8s import cilium, cnpg, cnpg_backup, node_scheduling
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.generation import write_charts
@@ -84,8 +84,9 @@ def _cluster(chart: Chart) -> None:
             ]
         ),
         initdb=cnpg.same_owner_initdb(_DATABASE),
-        wal_archive=False,
+        wal_archive=True,
     )
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=POSTGRES, policy=cnpg_backup.DAILY_30D)
 
 
 def _readonly_credentials(chart: Chart) -> None:

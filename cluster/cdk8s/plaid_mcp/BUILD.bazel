@@ -31,6 +31,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",

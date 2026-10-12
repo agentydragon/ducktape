@@ -14,6 +14,7 @@ def haku_mailbox(
     cnpg: Kustomization,
     cert_manager: Kustomization,
     external_secrets_operator: Kustomization,
+    seaweedfs_operator: Kustomization,
 ) -> Kustomization:
     name = "haku-mailbox"
     return flux_kustomization(
@@ -28,5 +29,6 @@ def haku_mailbox(
             cert_manager,
             # ExternalSecret and ClusterExternalSecret CRDs and webhooks
             external_secrets_operator,
+            seaweedfs_operator,
         ),
     )

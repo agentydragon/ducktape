@@ -147,9 +147,9 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
 - [ ] **Set up offsite tofu-state backup** — the Proxmox-pinned `pg_dump` CronJob
       (`cluster/k8s/tofu-state/backup/`) was deleted 2026-06-02: it couldn't run with
       wyrm2/Proxmox down and only wrote to a `local-path-proxmox` PVC (same failure
-      domain as the DB, not actually offsite). Set up a real offsite backup of the
-      `tfstate` DB — e.g. CNPG `barmanObjectStore` → SeaweedFS S3, or an
-      always-on OVH-node CronJob streaming dumps to S3.
+      domain as the DB, not actually offsite). `tofu-state-db-ovh` now has barman-cloud
+      backups in SeaweedFS (`cdk8s/cnpg_backup.py`), which share the OVH failure domain;
+      the off-site copy is the CNPG Backup Strategy item below.
 - [ ] Repoint Talos containerd mirrors (`machine.registries.mirrors` in
       `terraform/main/infrastructure.tf`) at `oci-cache`; machine-config changes reboot nodes,
       so use the maintenance procedure in <../k8s/oci-cache/README.md> § Node-level pull-through.
@@ -373,8 +373,13 @@ Proxmox-only gap.)
       OVH-hosted PVC or object storage. No such CronJob exists today — the one
       precedent (tofu-state's) was deleted 2026-06-02; see "Set up offsite tofu-state
       backup" in Next Actions.
-- [ ] Extend CNPG `ScheduledBackup` + Barman to the remaining clusters for continuous
-      WAL archiving and point-in-time recovery.
+- [ ] Extend barman-cloud backups (`cdk8s/cnpg_backup.py`) to the clusters still
+      without them. The big two, `claude-session-sync-db` (40Gi) and
+      `agentplane-index-db` (20Gi), want a weekly base backup rather than `DAILY_30D`,
+      since every base backup is a full copy. `seaweedfs-filer-db-ssd` cannot back up into
+      the SeaweedFS it is the filer of, so it waits for an off-site store.
+- [ ] Off-site copy of the CNPG backups: every `CnpgBackup` writes to SeaweedFS on the
+      same OVH nodes as the databases, so losing SeaweedFS loses the backups too.
 - [ ] Verify Proxmox ZFS auto-snapshot schedule covers CNPG data directories
 
 ### Velero PVC Backup

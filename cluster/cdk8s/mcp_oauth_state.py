@@ -33,7 +33,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cnpg, namespaces, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup, namespaces, node_scheduling
 from cluster.cdk8s.external_secrets.kubernetes_store import cluster_secret_store
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import (
@@ -168,7 +168,7 @@ def _db_chart(app: App) -> Chart:
         storage_class="local-path-ovh-hdd",
         size="5Gi",
         initdb=cnpg.same_owner_initdb("app"),
-        wal_archive=False,
+        wal_archive=True,
         managed=ClusterSpecManaged(
             roles=[
                 ClusterSpecManagedRoles(
@@ -182,6 +182,7 @@ def _db_chart(app: App) -> Chart:
             + [ClusterSpecManagedRoles(name=_RETIRED_PLAID_DB.role, ensure=ClusterSpecManagedRolesEnsure.ABSENT)]
         ),
     )
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, policy=cnpg_backup.DAILY_30D)
 
     for store in STORES:
         Database(
@@ -247,6 +248,7 @@ def mcp_oauth_state_db(
     external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
     kyverno: Kustomization,
+    seaweedfs_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         chart,
@@ -260,7 +262,7 @@ def mcp_oauth_state_db(
             )
         ],
         depends_on=flux_kustomization_depends_on_many(
-            cnpg_operator, external_secrets_operator, monitoring_crds, kyverno
+            cnpg_operator, external_secrets_operator, monitoring_crds, kyverno, seaweedfs_operator
         ),
         description="Shared OVH-HA CNPG cluster and per-MCP databases for OAuth client state.",
     )

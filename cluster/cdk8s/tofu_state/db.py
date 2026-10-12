@@ -25,7 +25,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
-from cluster.cdk8s import cnpg, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup, node_scheduling
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -72,7 +72,7 @@ def chart(app: App) -> Chart:
         # CNPG's default bootstrap: an `app` database and owner. Terraform's `tfstate` role is
         # managed below.
         initdb=None,
-        wal_archive=False,
+        wal_archive=True,
         managed=ClusterSpecManaged(
             roles=[
                 ClusterSpecManagedRoles(
@@ -84,6 +84,7 @@ def chart(app: App) -> Chart:
             ]
         ),
     )
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, policy=cnpg_backup.DAILY_30D)
     return chart
 
 
@@ -99,7 +100,9 @@ def write_manifests(root: Path) -> None:
     )
 
 
-def tofu_state_db(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomization) -> Kustomization:
+def tofu_state_db(
+    chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: Kustomization, seaweedfs_operator: Kustomization
+) -> Kustomization:
     return flux_kustomization(
         chart,
         "tofu-state-db",
@@ -112,5 +115,5 @@ def tofu_state_db(chart: Chart, artifact: ArtifactGeneratorSpecArtifacts, cnpg: 
             )
         ],
         decryption=SOPS_DECRYPTION,
-        depends_on=flux_kustomization_depends_on_many(cnpg),
+        depends_on=flux_kustomization_depends_on_many(cnpg, seaweedfs_operator),
     )

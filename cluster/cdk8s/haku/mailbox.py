@@ -19,7 +19,7 @@ from cilium_crds.io.cilium import (
     CiliumNetworkPolicySpecIngressToPortsPortsProtocol,
 )
 
-from cluster.cdk8s import cilium, cnpg, gateway, namespaces, node_scheduling
+from cluster.cdk8s import cilium, cnpg, cnpg_backup, gateway, namespaces, node_scheduling
 from cluster.cdk8s.cert_manager.config import LETSENCRYPT_ISSUER
 from cluster.cdk8s.flux import ConfigMapArgs, GeneratorOptions
 from cluster.cdk8s.forgejo_registry import chart as forgejo_images
@@ -117,8 +117,9 @@ def _add_store(chart: Chart) -> None:
         storage_class="local-path-ovh",
         size="10Gi",
         initdb=cnpg.same_owner_initdb("stalwart"),
-        wal_archive=False,
+        wal_archive=True,
     )
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, policy=cnpg_backup.DAILY_30D)
 
 
 def _add_deployment(chart: Chart) -> None:

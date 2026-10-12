@@ -16,7 +16,7 @@ from cnpg_database_crds.io.cnpg.postgresql import (
 )
 from constructs import Construct
 
-from cluster.cdk8s import cnpg, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup, node_scheduling
 from cluster.cdk8s.providers.cnpg.database import Database
 
 NAMESPACE = "haku-console"
@@ -33,8 +33,8 @@ class Db(Construct):
             self,
             "cluster",
             ref=POSTGRES,
-            # CNPG owns the data PVCs through this object, and nothing backs this database
-            # up, so a prune is unrecoverable. The annotation exempts it whichever
+            # CNPG owns the data PVCs through this object, so a prune loses them and leaves
+            # only a restore from backup. The annotation exempts it whichever
             # Kustomization's inventory lists it (cluster/cdk8s/AGENTS.md) -- including
             # while ownership moves between them. Removing this Cluster is a deliberate
             # `kubectl delete`, never a manifest edit.
@@ -43,8 +43,9 @@ class Db(Construct):
             storage_class="local-path-ovh",
             size="2Gi",
             initdb=cnpg.same_owner_initdb(DATABASE),
-            wal_archive=False,
+            wal_archive=True,
         )
+        cnpg_backup.CnpgBackup(self, "db-backup", ref=POSTGRES, policy=cnpg_backup.DAILY_30D)
         # `vector`: the console's 0135 migration baseline creates a `halfvec` column on a fresh
         # database (0136 drops it), and the migration role cannot install the extension itself.
         # This Database adopts the one created by `bootstrap.initdb`, hence `retain`: with

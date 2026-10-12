@@ -20,7 +20,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
-from cluster.cdk8s import cnpg, external_creds, namespaces, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup, external_creds, namespaces, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import ConfigMapArgs
 from cluster.cdk8s.forgejo_registry import chart as forgejo_images
@@ -110,8 +110,9 @@ def _database(scope: Construct) -> None:
         storage_class="local-path-ovh",
         size="2Gi",
         initdb=cnpg.same_owner_initdb("attic"),
-        wal_archive=False,
+        wal_archive=True,
     )
+    cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, policy=cnpg_backup.DAILY_30D)
 
 
 def _storage(scope: Construct) -> s3.PrivateBucket:

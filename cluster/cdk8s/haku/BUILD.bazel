@@ -20,6 +20,7 @@ py_library(
     srcs = ["database.py"],
     deps = [
         "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/external_secrets:minted_secret",
         "//cluster/cdk8s/providers/cnpg:cluster",
@@ -231,6 +232,7 @@ py_library(
         ":namespace",
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:manifest_roots",

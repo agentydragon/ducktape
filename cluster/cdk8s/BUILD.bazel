@@ -54,6 +54,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":cnpg",
+        ":cnpg_backup",
         ":flux",
         ":generation",
         ":manifest_roots",
@@ -1105,6 +1106,7 @@ py_library(
     deps = [
         ":artifact_generators",
         ":cnpg",
+        ":cnpg_backup",
         ":flux",
         ":gateway",
         ":manifest_roots",

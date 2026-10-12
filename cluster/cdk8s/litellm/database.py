@@ -14,7 +14,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s import cnpg, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup, node_scheduling
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 
@@ -32,8 +32,9 @@ def _chart(app: App) -> Chart:
         storage_class="local-path-ovh",
         size="5Gi",
         initdb=cnpg.same_owner_initdb("litellm"),
-        wal_archive=False,
+        wal_archive=True,
     )
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, policy=cnpg_backup.DAILY_30D)
     return chart
 
 

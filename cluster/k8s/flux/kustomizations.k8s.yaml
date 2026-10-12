@@ -1300,6 +1300,8 @@ spec:
   dependsOn:
     - name: cnpg
       namespace: ducktape-flux
+    - name: seaweedfs-operator
+      namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
       current: has(status.applied) && status.applied && has(status.observedGeneration) && status.observedGeneration == metadata.generation
@@ -1332,6 +1334,8 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
     - name: kyverno
+      namespace: ducktape-flux
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1
@@ -1443,6 +1447,8 @@ spec:
   deletionPolicy: Orphan
   dependsOn:
     - name: cnpg
+      namespace: ducktape-flux
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/atuin
@@ -1666,6 +1672,8 @@ spec:
     - name: monitoring-crds
       namespace: ducktape-flux
     - name: kyverno
+      namespace: ducktape-flux
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/ntfy
@@ -2237,6 +2245,8 @@ spec:
   dependsOn:
     - name: cnpg
       namespace: ducktape-flux
+    - name: seaweedfs-operator
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/matrix
   prune: true
@@ -2277,6 +2287,8 @@ spec:
       namespace: ducktape-flux
     - name: cnpg
       namespace: ducktape-flux
+    - name: seaweedfs-operator
+      namespace: ducktape-flux
   healthChecks:
     - apiVersion: postgresql.cnpg.io/v1
       kind: Cluster
@@ -2307,6 +2319,8 @@ spec:
     - name: cnpg
       namespace: ducktape-flux
     - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/gatus
@@ -2861,6 +2875,8 @@ spec:
       namespace: ducktape-flux
     - name: authentik
       namespace: ducktape-flux
+    - name: seaweedfs-operator
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/agents/plaid-mcp
   prune: true
@@ -3180,6 +3196,8 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
+    - name: seaweedfs-operator
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/haku/mailbox
   prune: true
@@ -3361,6 +3379,8 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
+    - name: seaweedfs-operator
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/study-casino
   prune: true
@@ -3390,6 +3410,8 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/k8s/litellm
@@ -3836,6 +3858,8 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
     - name: monitoring-crds
+      namespace: ducktape-flux
+    - name: seaweedfs-operator
       namespace: ducktape-flux
   healthCheckExprs:
     - apiVersion: postgresql.cnpg.io/v1

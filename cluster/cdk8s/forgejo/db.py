@@ -7,7 +7,7 @@ from pathlib import Path
 
 from cdk8s import App, Chart
 
-from cluster.cdk8s import cnpg, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup, node_scheduling
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.secret_ref import SecretRef
@@ -46,8 +46,9 @@ def _chart(app: App) -> Chart:
         # not exist here. CNPG keeps that role's password in sync with the Secret,
         # which Forgejo also authenticates with.
         initdb=cnpg.same_owner_initdb(DATABASE, secret=POSTGRES.app_secret),
-        wal_archive=False,
+        wal_archive=True,
     )
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=POSTGRES, policy=cnpg_backup.DAILY_30D)
     return chart
 
 

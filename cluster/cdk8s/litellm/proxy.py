@@ -428,6 +428,7 @@ def litellm(
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
+    seaweedfs_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -436,5 +437,7 @@ def litellm(
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         decryption=SOPS_DECRYPTION,
         timeout="10m",
-        depends_on=flux_kustomization_depends_on_many(cnpg, external_secrets_operator, monitoring_crds),
+        depends_on=flux_kustomization_depends_on_many(
+            cnpg, external_secrets_operator, monitoring_crds, seaweedfs_operator
+        ),
     )
