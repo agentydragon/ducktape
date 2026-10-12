@@ -225,7 +225,7 @@ async def test_listing_and_resuming_go_over_the_channel(holder: Replica, engine:
         await answer(call, result)
         assert [(row.session_id, row.last_cursor) for row in await listing] == [(str(public_id), 7)]
 
-        resuming = asyncio.create_task(runner.resume(str(public_id)))
+        resuming = asyncio.create_task(service.resume(DESTINATION, str(public_id)))
         resume = await next_request(call)
         assert resume.resume.session_id == str(public_id)
         await answer(

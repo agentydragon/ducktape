@@ -94,13 +94,6 @@ class SessionRegistry:
             raise SessionNotFoundError(session_id)
         return SessionPlacement(sandbox_name=row.sandbox_name, sandbox_uid=row.sandbox_uid)
 
-    async def require(self, session_id: UUID, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID) -> None:
-        """Raise `SessionNotFoundError` unless the Session was registered in this Sandbox incarnation."""
-        if not await self.registered(
-            session_id, sandbox_namespace=sandbox_namespace, sandbox_name=sandbox_name, sandbox_uid=sandbox_uid
-        ):
-            raise SessionNotFoundError(session_id)
-
     async def public_id(
         self, runner_session_id: str, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID
     ) -> UUID | None:

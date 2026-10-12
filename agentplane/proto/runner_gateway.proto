@@ -12,7 +12,8 @@ service RunnerGateway {
   rpc ListSessions(agentplane.proto.sandbox_service.SandboxRequest) returns (agentplane.proto.runner.ListSessionsResponse);
   // Opens the Session the client named. A retry with the same ID and inputs returns it again.
   rpc CreateSession(agentplane.proto.sandbox_service.CreateSessionRequest) returns (agentplane.proto.sandbox_service.CreateSessionResponse);
-  rpc ResumeSession(agentplane.proto.sandbox_service.SessionRequest) returns (agentplane.proto.runner.Attached);
+  // Served only by the replica holding the runner connection of the Sandbox the Session runs in.
+  rpc ResumeSession(ResumeSessionRequest) returns (agentplane.proto.runner.Attached);
   // Served only by the replica holding the runner connection of the Sandbox the Session runs in.
   // Returns the runner's CommandAdmitted entry, not command completion; a retry with the same
   // command returns the original one. The gateway keeps no record of the command.
@@ -29,6 +30,8 @@ service RunnerGateway {
   // included, in no particular order.
   rpc FindSessions(FindSessionsRequest) returns (SessionSandboxes);
 }
+
+message ResumeSessionRequest { string session_id = 1; }
 
 // Where a Session runs: the Sandbox incarnation the gateway routes it to.
 message SessionSandbox {

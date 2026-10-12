@@ -25,12 +25,12 @@ The gateway keeps no Session history; runners push their Events to the
   UUID and an attachment snapshot with it. A `{session_id}` placeholder in a selected `cwd` override
   is expanded to that UUID, just like the stored default cwd. A retry with the same UUID and inputs
   returns the Session again; the runner refuses changed inputs and the gateway refuses another
-  Sandbox; a request without a UUID is invalid. `ResumeSession` accepts the public ID of a Session
-  registered within the pinned Sandbox UID. The UUID does not apply to runner-discovered native
+  Sandbox; a request without a UUID is invalid. The UUID does not apply to runner-discovered native
   child sessions. The app opens every new Thread through it.
 - `CreateSession`'s bootstrap and setup use the runner's existing idempotence; the response is the
   native attachment snapshot, not a claim that all setup or a model turn has completed.
-- `ResumeSession`: uses exactly the runner-retained spec, without applying today's
+- `ResumeSession`: names the public Session ID alone and is routed like `SubmitCommand`. It uses
+  exactly the runner-retained spec, without applying today's
   defaults/instructions or rerunning setup. Missing sessions and failed/interrupted setup are
   refused.
 - `SubmitCommand`: names the public Session ID alone; the gateway routes it to the Sandbox

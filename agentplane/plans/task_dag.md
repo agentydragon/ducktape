@@ -880,7 +880,7 @@ flowchart TD
     GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages move to the gateway]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 8]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
-    RESUME_BY_SESSION_ID[Unscheduled: resume a Session by its ID alone]
+    HOLDER_FORWARDING[Unscheduled: reach a Session without its Sandbox]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
 ```
 
@@ -893,12 +893,12 @@ handle is renamed, its
 `command_admission_timeout_s` stops being nullable, and the Notification Service's
 `SandboxServiceSettings` splits too.
 
-### `RESUME_BY_SESSION_ID` — resume a Session by its ID alone
+### `HOLDER_FORWARDING` — reach a Session without its Sandbox
 
-**Unscheduled.** Commands reach the gateway by Session ID alone (operator, 2026-10-11).
-`ResumeSession` still names the Sandbox, because only the replica holding its runner connection
-serves it and the client reaches that replica through the Sandbox's control Service. Resume by
-Session ID needs the gateway to forward to the holder itself.
+**Unscheduled.** `SubmitCommand` and `ResumeSession` name the Session ID alone (operator,
+2026-10-11), but only the replica holding the runner connection serves them, so the client still
+looks up the Session's Sandbox to dial that Sandbox's control Service. Dropping that lookup needs
+the gateway to forward to the holder itself.
 
 ### `SEAL_FINALIZER` — seal as a finalizer on every delete
 

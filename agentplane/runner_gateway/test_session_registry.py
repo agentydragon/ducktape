@@ -7,7 +7,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.runner_gateway.session_registry import SessionConflictError, SessionNotFoundError, SessionRegistry
+from agentplane.runner_gateway.session_registry import SessionConflictError, SessionRegistry
 
 
 async def test_a_session_registers_in_one_sandbox_incarnation(sessions: SessionRegistry, engine: AsyncEngine) -> None:
@@ -26,8 +26,6 @@ async def test_a_session_registers_in_one_sandbox_incarnation(sessions: SessionR
     assert await replica.public_id(str(session_id), **where, sandbox_uid=uid) == session_id
     assert await replica.public_id(str(session_id), **where, sandbox_uid=uuid4()) is None
     assert await replica.public_id("not-a-uuid", **where, sandbox_uid=uid) is None
-    with pytest.raises(SessionNotFoundError):
-        await sessions.require(session_id, **where, sandbox_uid=uuid4())
 
 
 if __name__ == "__main__":

@@ -49,7 +49,6 @@ message SessionDestination {
 }
 
 message SandboxRequest { SandboxDestination destination = 1; }
-message SessionRequest { SessionDestination destination = 1; }
 message GetSandboxRequest { string name = 1; }
 
 message CreateSessionRequest {

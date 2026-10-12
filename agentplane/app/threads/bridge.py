@@ -103,7 +103,7 @@ class RunnerBridge:
             raise RunnerError("runner's retained session spec does not match this Thread's harness and workspace")
         # The Thread mapping already exists. Do not make runner Resume depend on archive
         # catch-up; its feed exposes that later, and a stale view remains non-authoritative.
-        return await self._runners.client(sandbox).resume(session_id)
+        return await self._runners.gateway.resume(self._runners.client(sandbox).destination, session_id)
 
     async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """Return the runner's durable receipt; the app archive can catch up later.

@@ -213,7 +213,7 @@ async def test_managed_open_uses_the_client_session_id_and_retries_on_the_runner
         assert await peer.open() == first
         assert await retrying == created
 
-        resuming = asyncio.create_task(runner.resume(public))
+        resuming = asyncio.create_task(remote.resume(DESTINATION, public))
         resume = await peer.request()
         assert resume.resume.session_id == public
         await peer.answer(
@@ -348,7 +348,6 @@ async def test_unlisted_callers_rejected_before_lookup(
         resources, caller_accounts=frozenset({ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="allowed-service")})
     )
     cluster.fake.objects[SANDBOXES_PLURAL].clear()
-    destination = sandbox_service_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
     async with service(configured, cluster.provisioning) as target, dial(target) as channel:
         sandboxes = sandbox_client(channel, token_file, namespace=SANDBOX_NAMESPACE)
         remote = gateway_client(channel, token_file, command_admission_timeout_s=None, control_target=target)
@@ -368,7 +367,7 @@ async def test_unlisted_callers_rejected_before_lookup(
             assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
         for gateway_call, gateway_request in (
             (remote.stub.ListSessions, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
-            (remote.stub.ResumeSession, sandbox_service_pb2.SessionRequest(destination=destination)),
+            (remote.stub.ResumeSession, runner_gateway_pb2.ResumeSessionRequest(session_id=str(uuid4()))),
             (remote.stub.SubmitCommand, sandbox_service_pb2.SubmitCommandRequest(session_id=str(uuid4()))),
         ):
             with pytest.raises(ServiceError) as rejected:
@@ -421,7 +420,7 @@ async def test_open_and_resume_refuse_unready_grants_without_app(
             await runner.create(session_id=uuid4(), spec={"harness": "HARNESS_CODEX", "cwd": "/w", "model": "test"})
         assert opened.value.code == grpc.StatusCode.UNAVAILABLE
         with pytest.raises(ServiceError) as resumed:
-            await runner.resume(str(session_id))
+            await caller.resume(DESTINATION, str(session_id))
         assert resumed.value.code == grpc.StatusCode.UNAVAILABLE
     assert not peer.received
 

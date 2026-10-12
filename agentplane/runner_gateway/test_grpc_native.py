@@ -176,7 +176,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         replace(resources, platform_instructions="New platform guidance."), token_file
     ) as restarted:
         destination = restarted.runner(DESTINATION)
-        resumed = await destination.resume(session)
+        resumed = await restarted.resume(DESTINATION, session)
         assert resumed.spec == opened.spec
         assert resumed.harness_state == runner_pb2.HARNESS_STATE_RUNNING
         await complete_turn(restarted, runner, model, session, "grpc-resumed")
@@ -200,7 +200,7 @@ async def test_observe_command_and_resume_do_not_create_unknown_session(remote: 
         )
     assert commanded.value.code == grpc.StatusCode.NOT_FOUND
     with pytest.raises(ServiceError) as resumed:
-        await runner.resume(unknown)
+        await remote.resume(DESTINATION, unknown)
     assert resumed.value.code == grpc.StatusCode.NOT_FOUND
     assert not await runner.list_sessions()
 
@@ -216,7 +216,7 @@ async def test_failed_setup_cannot_be_resumed(remote: RunnerGatewayClient, spec:
             assert opened.setup_state != runner_pb2.SETUP_STATE_RUNNING
     assert opened.setup_state == runner_pb2.SETUP_STATE_FAILED
     with pytest.raises(RunnerError):
-        await runner.resume(created.session_id)
+        await remote.resume(DESTINATION, created.session_id)
 
 
 async def test_invalid_launch_and_failed_bootstrap_never_create(

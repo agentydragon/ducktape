@@ -120,6 +120,15 @@ class RunnerGatewayClient:
             raise ConnectionError("Runner Gateway did not return the exact command admission")
         return receipt
 
+    async def resume(self, destination: SandboxDestination, session_id: str) -> runner_pb2.Attached:
+        """Restart the stopped harness of a public Session running in `destination` on its retained spec."""
+        return await self.control.held_unary(
+            destination,
+            lambda stub: stub.ResumeSession,
+            runner_gateway_pb2.ResumeSessionRequest(session_id=session_id),
+            timeout_s=self.control.lifecycle_timeout_s,
+        )
+
     def runner(self, destination: SandboxDestination) -> Runner:
         return self.control.runner(destination)
 
@@ -154,15 +163,5 @@ class Runner:
             self.destination,
             lambda stub: stub.SealSandbox,
             sandbox_service_pb2.SandboxRequest(destination=self.destination),
-            timeout_s=self.control.lifecycle_timeout_s,
-        )
-
-    async def resume(self, session_id: str) -> runner_pb2.Attached:
-        return await self.control.held_unary(
-            self.destination,
-            lambda stub: stub.ResumeSession,
-            sandbox_service_pb2.SessionRequest(
-                destination=sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
-            ),
             timeout_s=self.control.lifecycle_timeout_s,
         )

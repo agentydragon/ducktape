@@ -165,17 +165,6 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 sessions.append(summary)
             return runner_pb2.ListSessionsResponse(sessions=sessions)
 
-    async def runner_session_id(self, destination: sandbox_service_pb2.SessionDestination) -> str:
-        """The runner's ID for a Session registered in the destination's Sandbox incarnation."""
-        session_id = parse_session_id(destination.session_id)
-        await self.resources.sessions.require(
-            session_id,
-            sandbox_namespace=self.resources.destinations.sandboxes.namespace,
-            sandbox_name=destination.sandbox.sandbox,
-            sandbox_uid=UUID(destination.sandbox.sandbox_uid),
-        )
-        return str(session_id)
-
     @override
     async def CreateSession(
         self, request: sandbox_service_pb2.CreateSessionRequest, context: grpc.aio.ServicerContext
@@ -224,18 +213,19 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def ResumeSession(
-        self, request: sandbox_service_pb2.SessionRequest, context: grpc.aio.ServicerContext
+        self, request: runner_gateway_pb2.ResumeSessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.Attached:
         async with self.request(context, timeout_s=self.resources.lifecycle_timeout_s):
-            destination = request.destination
-            if not destination.session_id:
-                raise ValueError("session ID is required")
-            # Refuses a Sandbox being torn down.
-            await self.held(destination.sandbox, writes=True)
-            result = await session_lifecycle.resume_session(
-                self.resources.control, UUID(destination.sandbox.sandbox_uid), await self.runner_session_id(destination)
+            public_id = parse_session_id(request.session_id)
+            placement = await self.resources.sessions.placement(public_id)
+            # Refuses a Sandbox incarnation that is gone or being torn down.
+            await self.resources.destinations.resolve_incarnation(
+                placement.sandbox_name, placement.sandbox_uid, writes=True
             )
-            result.session_id = destination.session_id
+            result = await session_lifecycle.resume_session(
+                self.resources.control, placement.sandbox_uid, str(public_id)
+            )
+            result.session_id = str(public_id)
             return result
 
     @override
