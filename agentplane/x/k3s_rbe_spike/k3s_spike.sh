@@ -115,6 +115,7 @@ try_config() {
   node_ip=$($k get node spike -o jsonpath='{.status.addresses[?(@.type=="InternalIP")].address}')
   # Without kube-proxy no ClusterIP works, so in-cluster API clients go to the apiserver directly.
   for d in local-path-provisioner coredns; do
+    until $k -n kube-system get "deploy/$d" >/dev/null 2>&1; do sleep 1; done
     $k -n kube-system set env "deploy/$d" KUBERNETES_SERVICE_HOST="$node_ip" KUBERNETES_SERVICE_PORT=6443
   done
   # Stands in for a gateway the test process serves on the host, which a runner Pod dials.
