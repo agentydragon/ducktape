@@ -853,7 +853,15 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 7]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
+    RUNNER_JOURNAL_TRIM[Unscheduled: runners stop keeping what the ingress committed]
 ```
+
+### `RUNNER_JOURNAL_TRIM` — runners stop keeping what the ingress committed
+
+**Unscheduled; the operator's direction, 2026-10-12 PDT: later.** A runner could stop persisting
+journal entries its ingress has already acknowledged, behind a flag, with full persistence kept
+selectable. Not designed: what the runner still needs locally (cursors, seal state, entries a
+resumed harness or a lost push reads back) once acknowledged entries are gone.
 
 ### `GATEWAY_CLIENT_SPLIT` — the gateway client stands alone
 
