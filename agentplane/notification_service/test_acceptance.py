@@ -19,11 +19,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.api import create_app as actions_app
 from agentplane.action_service.auth import DisabledOperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog
-from agentplane.action_service.db import ActionStore, make_sessionmaker
+from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.models import DecisionInput, OperatorPrincipal, Verdict
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
 from agentplane.action_service.testing.fixtures import RecordingExecutor
+from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.history_service.channels import Channel, create_wakeups
@@ -36,7 +37,7 @@ from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.store import Store
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
-from agentplane.runner.service import Runner
+from agentplane.runner.runner import Runner
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.instructions import render_platform_instructions
@@ -79,7 +80,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     delegate = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="notifications")
     other = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="other")
     action_service = ActionService(
-        ActionStore(make_sessionmaker(action_engine)),
+        action_store(make_sessionmaker(action_engine)),
         echo_catalog,
         {"agentplane": echo_executor},
         dispatches=ChangeSignal(),

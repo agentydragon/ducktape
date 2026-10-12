@@ -30,7 +30,7 @@ from agentplane.action_service import api as service_api
 from agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
 from agentplane.action_service.connections import ConnectionAuthority, GrantBinding, GrantStatus, NewConnection
 from agentplane.action_service.database_migrate import RUNNER as ACTIONS_RUNNER
-from agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker
+from agentplane.action_service.db import make_engine, make_sessionmaker
 from agentplane.action_service.enrollments import ConfirmedReconnectConnection, EnrollmentAuthority, EnrollmentInput
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.models import ActionRequestInput, ActionState, CallerPrincipal, OperatorPrincipal
@@ -41,6 +41,7 @@ from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import PERSONAL, admitted_callers
 from agentplane.action_service.testing.lifecycle import wait_available
+from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_federation_settings import DirectFederationSettings, ExchangeFederationSettings
@@ -202,7 +203,7 @@ async def review(
         policies = admitted_callers(PERSONAL)
         service = await stack.enter_async_context(
             ActionService(
-                ActionStore(make_sessionmaker(engine)),
+                action_store(make_sessionmaker(engine)),
                 catalog,
                 {"test_review": executor},
                 policies=policies,

@@ -35,7 +35,7 @@ from agentplane.action_service.api import create_app
 from agentplane.action_service.auth import DisabledOperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog
 from agentplane.action_service.connections import ConnectionAuthority, GrantRejectedError, GrantStatus, NewConnection
-from agentplane.action_service.db import ActionStore, EnrollmentRow, make_sessionmaker
+from agentplane.action_service.db import EnrollmentRow, make_sessionmaker
 from agentplane.action_service.enrollments import (
     ConfirmedReconnectConnection,
     EnrollmentAllow,
@@ -49,6 +49,7 @@ from agentplane.action_service.oauth import ActionsOAuthProxy, running_oauth
 from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService, Executor
+from agentplane.action_service.store import ActionStore
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, admitted_callers
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal

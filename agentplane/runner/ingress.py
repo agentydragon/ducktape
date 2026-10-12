@@ -8,11 +8,10 @@ import logging
 from contextlib import AsyncExitStack, aclosing
 
 import grpc
-from tenacity import AsyncRetrying, RetryCallState, retry_if_exception_type, wait_random_exponential
 
 from agentplane.proto import runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
-from agentplane.runner.control import ControlTiming
-from agentplane.runner.service import Runner, build_attached, follow_journal
+from agentplane.runner.reconnect import StreamLostError, StreamTiming, reconnect
+from agentplane.runner.runner import Runner, build_attached, follow_journal
 from agentplane.runner.session import Session
 from agentplane.runner.store import IngressAcknowledgement, SessionStore
 
@@ -26,14 +25,6 @@ IN_FLIGHT = 1024
 OPERATOR_CODES = frozenset({grpc.StatusCode.PERMISSION_DENIED, grpc.StatusCode.FAILED_PRECONDITION})
 
 
-class PushLostError(Exception):
-    """A call ended before the ingress acknowledged anything new; the next waits out the backoff."""
-
-    def __init__(self, code: grpc.StatusCode | None, detail: str) -> None:
-        super().__init__(f"{code=} {detail}")
-        self.code = code
-
-
 class _Push:
     """One `Push` call for one Session."""
 
@@ -42,7 +33,7 @@ class _Push:
         call: grpc.aio.StreamStreamCall[runner_ingress_pb2.PushFrame, runner_ingress_pb2.Acknowledgement],
         session: Session,
         store: SessionStore,
-        timing: ControlTiming,
+        timing: StreamTiming,
     ) -> None:
         self.call = call
         self.session = session
@@ -66,7 +57,7 @@ class _Push:
 
     def record(self, acknowledgement: runner_ingress_pb2.Acknowledgement) -> None:
         if acknowledgement.cursor < self.acknowledged or acknowledgement.cursor > self.sent:
-            raise PushLostError(
+            raise StreamLostError(
                 grpc.StatusCode.FAILED_PRECONDITION,
                 f"the ingress acknowledged cursor {acknowledgement.cursor} after {self.acknowledged}, "
                 f"having been sent through {self.sent}",
@@ -87,10 +78,10 @@ class _Push:
         async with asyncio.timeout(self.timing.liveness_s):
             first = await self.call.read()
         if not isinstance(first, runner_ingress_pb2.Acknowledgement):
-            raise PushLostError(await self.call.code(), await self.call.details())
+            raise StreamLostError(await self.call.code(), await self.call.details())
         # The ingress then holds entries this journal never wrote.
         if first.cursor > journal.last_cursor:
-            raise PushLostError(
+            raise StreamLostError(
                 grpc.StatusCode.FAILED_PRECONDITION,
                 f"the ingress acknowledged cursor {first.cursor} beyond the journal's last cursor {journal.last_cursor}",
             )
@@ -104,7 +95,7 @@ class _Push:
                 await self.receive()
                 for task in others:
                     task.cancel()
-        except* (grpc.aio.AioRpcError, asyncio.InvalidStateError, PushLostError) as group:
+        except* (grpc.aio.AioRpcError, asyncio.InvalidStateError, StreamLostError) as group:
             # The first failure ends the call; the rest are its consequences.
             raise group.exceptions[0] from None
 
@@ -132,14 +123,14 @@ class _Push:
             self.progressed |= self.acknowledged > before
             if acknowledgement.sealed:
                 return
-        raise PushLostError(await self.call.code(), await self.call.details())
+        raise StreamLostError(await self.call.code(), await self.call.details())
 
     async def keep_alive(self) -> None:
         loop = asyncio.get_running_loop()
         while True:
             await asyncio.sleep(self.timing.heartbeat_s)
             if loop.time() - self.last_received > self.timing.liveness_s:
-                raise PushLostError(None, "no frame from the ingress")
+                raise StreamLostError(None, "no frame from the ingress")
             if not self.sealed_sent and loop.time() - self.last_sent >= self.timing.heartbeat_s:
                 await self.write(runner_ingress_pb2.PushFrame(heartbeat=runner_ingress_pb2.Heartbeat()))
 
@@ -153,7 +144,7 @@ class IngressPusher:
     """Pushes every Session whose seal the ingress has not acknowledged, for as long as the runner
     runs. Commands never wait on it: the journal is the buffer."""
 
-    def __init__(self, runner: Runner, *, target: str, bearer: str, timing: ControlTiming) -> None:
+    def __init__(self, runner: Runner, *, target: str, bearer: str, timing: StreamTiming) -> None:
         self.runner = runner
         self.target = target
         # A placeholder the egress proxy swaps for this Pod's ingress token; the runner never holds it.
@@ -161,18 +152,6 @@ class IngressPusher:
         self.timing = timing
         # Each Session's push, ending once the ingress acknowledged its seal.
         self.pushes: dict[str, asyncio.Task[None]] = {}
-
-    def _backoff(self, state: RetryCallState) -> float:
-        error = state.outcome.exception() if state.outcome is not None else None
-        if isinstance(error, PushLostError) and error.code in OPERATOR_CODES:
-            return self.timing.backoff_max_s
-        return wait_random_exponential(multiplier=self.timing.backoff_initial_s, max=self.timing.backoff_max_s)(state)
-
-    @staticmethod
-    def _log_lost(session_id: str, state: RetryCallState) -> None:
-        error = state.outcome.exception() if state.outcome is not None else None
-        level = logging.ERROR if isinstance(error, PushLostError) and error.code in OPERATOR_CODES else logging.WARNING
-        logger.log(level, "session %s: push to the ingress lost: %s", session_id, error)
 
     async def run(self) -> None:
         async with AsyncExitStack() as stack:
@@ -210,17 +189,13 @@ class IngressPusher:
         await asyncio.gather(*self.pushes.values(), return_exceptions=True)
 
     async def push(self, stub: runner_ingress_pb2_grpc.RunnerIngressAsyncStub, session: Session) -> None:
-        while True:
-            # A call that got anything new acknowledged returns and resets the backoff; one that
-            # did not raises, so a refusing ingress cannot spin.
-            async for attempt in AsyncRetrying(
-                retry=retry_if_exception_type(PushLostError),
-                wait=self._backoff,
-                before_sleep=lambda state: self._log_lost(session.session_id, state),
-            ):
-                with attempt:
-                    if await self.push_once(stub, session):
-                        return
+        # A call that got anything new acknowledged returns False and resets the backoff.
+        await reconnect(
+            lambda: self.push_once(stub, session),
+            timing=self.timing,
+            operator_codes=OPERATOR_CODES,
+            describe=f"session {session.session_id}: push to the ingress",
+        )
 
     async def push_once(self, stub: runner_ingress_pb2_grpc.RunnerIngressAsyncStub, session: Session) -> bool:
         """True once the ingress acknowledged the seal; False after a call that made progress."""
@@ -230,13 +205,13 @@ class IngressPusher:
             await push.run()
             return True
         except grpc.aio.AioRpcError as error:
-            lost = PushLostError(error.code(), error.details() or "")
+            lost = StreamLostError(error.code(), error.details() or "")
         except TimeoutError:
-            lost = PushLostError(None, "no acknowledgement from the ingress")
+            lost = StreamLostError(None, "no acknowledgement from the ingress")
         except asyncio.InvalidStateError:
             # A write after the ingress ended the call.
-            lost = PushLostError(await call.code(), await call.details())
-        except PushLostError as error:
+            lost = StreamLostError(await call.code(), await call.details())
+        except StreamLostError as error:
             lost = error
         finally:
             call.cancel()

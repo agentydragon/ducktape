@@ -14,7 +14,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity
-from agentplane.action_service.db import ActionNotFoundError, ActionStore, make_sessionmaker
+from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,
@@ -28,6 +28,8 @@ from agentplane.action_service.models import (
     Verdict,
 )
 from agentplane.action_service.service import ActionService
+from agentplane.action_service.store import ActionNotFoundError, ActionStore
+from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import CHANNEL, ActionUpdateBroker, UpdatesUnavailableError
 from agentplane.action_service.waits import ActionWaiter, WaitOptions, WaitUntil
 from agentplane.changes import ChangeSignal
@@ -63,8 +65,8 @@ class Waiting:
 @pytest.fixture
 async def waiting(engine: AsyncEngine, db_url: str, echo_catalog: ActionCatalog) -> AsyncIterator[Waiting]:
     # The writer uses a separate session/store from the reader; only PostgreSQL connects them.
-    writer = ActionStore(make_sessionmaker(engine))
-    reader = ObservedService(ActionStore(make_sessionmaker(engine)), echo_catalog)
+    writer = action_store(make_sessionmaker(engine))
+    reader = ObservedService(action_store(make_sessionmaker(engine)), echo_catalog)
     request = await writer.submit(
         ActionRequestInput(
             action=ActionIdentity(group="agentplane", name="echo"),

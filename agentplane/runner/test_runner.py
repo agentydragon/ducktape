@@ -12,7 +12,7 @@ from agentplane.proto import event_pb2, runner_pb2
 from agentplane.proto.runner_control_pb2 import ControlRefused
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
 from agentplane.runner.model_config import HttpModelConfigResolver
-from agentplane.runner.service import Runner
+from agentplane.runner.runner import Runner
 from agentplane.runner.store import SessionRecord, StateOwner, StateOwnershipError
 from agentplane.runner.testing.driver import RunnerDriver
 from agentplane.runner_gateway.lifecycle_control import ControlRefusedError

@@ -28,7 +28,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.api import create_app
 from agentplane.action_service.auth import DisabledOperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog, ActionGroup, ActionIdentity, McpExecutorBinding
-from agentplane.action_service.db import ActionConflictError, ActionStore, make_sessionmaker
+from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.main import ActionServer, async_main
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.models import (
@@ -47,8 +47,10 @@ from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.runtime import running_executor
 from agentplane.action_service.service import ActionService, ExecutionLease, UnsupportedActionError
 from agentplane.action_service.settings import Settings
+from agentplane.action_service.store import ActionConflictError
 from agentplane.action_service.testing.callers import in_sync_index
 from agentplane.action_service.testing.lifecycle import wait_available
+from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.crd_group import GROUP, VERSION
@@ -88,7 +90,7 @@ async def test_empty_catalog_has_no_echo_fallback(engine: AsyncEngine) -> None:
     async with running_executor(catalog) as executors:
         assert executors == {}
         assert catalog.group_views(with_detail=False) == []
-        service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, executors, dispatches=ChangeSignal())
+        service = ActionService(action_store(make_sessionmaker(engine)), catalog, executors, dispatches=ChangeSignal())
         for identity in (ActionIdentity(group="agentplane", name="echo"),):
             with pytest.raises(UnsupportedActionError):
                 await service.submit(
@@ -514,7 +516,7 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
 
 async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine: AsyncEngine, db_url: str) -> None:
     catalog = ActionCatalog(groups={})
-    service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
+    service = ActionService(action_store(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
     app = create_app(
         service,
         MagicMock(spec=WorkloadPrincipalResolver),

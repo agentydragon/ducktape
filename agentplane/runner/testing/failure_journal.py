@@ -18,7 +18,7 @@ from pathlib import Path
 import pytest
 from google.protobuf.json_format import MessageToDict
 
-from agentplane.runner.service import Runner
+from agentplane.runner.runner import Runner
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 logger = logging.getLogger(__name__)

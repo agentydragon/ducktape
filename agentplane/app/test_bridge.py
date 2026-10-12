@@ -57,7 +57,7 @@ from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.harness import Harness
-from agentplane.runner.service import Runner
+from agentplane.runner.runner import Runner
 from agentplane.runner.session import Session
 from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text

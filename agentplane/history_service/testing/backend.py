@@ -26,9 +26,9 @@ from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.thread_reads import ThreadReader
 from agentplane.postgres.wakeups import notify
-from agentplane.runner.control import ControlTiming
 from agentplane.runner.ingress import IngressPusher
-from agentplane.runner.service import Runner
+from agentplane.runner.reconnect import StreamTiming
+from agentplane.runner.runner import Runner
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 from util.testing.sqlalchemy_engines import managed_async_engine
@@ -147,7 +147,7 @@ async def ingest(database_url: str, runner: Runner) -> AsyncIterator[None]:
                     runner,
                     target=f"127.0.0.1:{port}",
                     bearer=WRITER_TOKEN,
-                    timing=ControlTiming(backoff_initial_s=0.05, backoff_max_s=0.5),
+                    timing=StreamTiming(backoff_initial_s=0.05, backoff_max_s=0.5),
                 ).run()
             )
             try:

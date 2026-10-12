@@ -5,8 +5,8 @@ from uuid import UUID
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.action_service.catalog import ActionGroup
-from agentplane.action_service.db import ActionStore
 from agentplane.action_service.models import ActionState, CallerPrincipal
+from agentplane.action_service.store import ActionStore
 
 
 async def wait_available(group: ActionGroup) -> None:

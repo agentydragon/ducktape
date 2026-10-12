@@ -408,7 +408,7 @@ py_test(
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/runner:errors",
-        "//agentplane/runner:service",
+        "//agentplane/runner:runner",
         "//agentplane/runner/testing:events",
         "//agentplane/runner/testing:scripted_model",
         "//agentplane/runner_gateway/testing:grpc_service",

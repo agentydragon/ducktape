@@ -20,7 +20,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.grpc_calls import ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SessionDefaults
-from agentplane.runner import service
+from agentplane.runner import runner as local_runner  # the gateway client also defines `Runner`
 from agentplane.runner.errors import RunnerError
 from agentplane.runner.testing import events
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
@@ -40,7 +40,7 @@ AUDIENCE = "test-native-grpc"
 
 
 @pytest.fixture
-def resources(cluster: Cluster, runner: service.Runner, engine: AsyncEngine) -> Resources:
+def resources(cluster: Cluster, runner: local_runner.Runner, engine: AsyncEngine) -> Resources:
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
         pod_name="test-native-caller",
@@ -60,7 +60,7 @@ def resources(cluster: Cluster, runner: service.Runner, engine: AsyncEngine) -> 
 
 
 @pytest.fixture(autouse=True)
-async def connected(cluster: Cluster, resources: Resources, runner: service.Runner) -> AsyncIterator[None]:
+async def connected(cluster: Cluster, resources: Resources, runner: local_runner.Runner) -> AsyncIterator[None]:
     async with runner_connected(cluster, resources, runner):
         yield
 
@@ -76,7 +76,7 @@ async def inspect(runner: Runner, session_id: str) -> runner_pb2.SessionSummary:
 
 
 async def complete_turn(
-    remote: RunnerGatewayClient, local: service.Runner, model: ScriptedModel, session_id: str, command_id: str
+    remote: RunnerGatewayClient, local: local_runner.Runner, model: ScriptedModel, session_id: str, command_id: str
 ) -> list[event_log_pb2.EventEntry]:
     command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="Reply: GRPC_OK"))
     receipt = await remote.command(DESTINATION, session_id, command)
@@ -94,7 +94,7 @@ async def complete_turn(
     entries: list[event_log_pb2.EventEntry] = []
     async with (
         asyncio.timeout(20),
-        aclosing(service.follow_journal(local.sessions[session_id].journal, receipt.cursor - 1)) as journal,
+        aclosing(local_runner.follow_journal(local.sessions[session_id].journal, receipt.cursor - 1)) as journal,
     ):
         async for entry in journal:
             entries.append(entry)
@@ -115,7 +115,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     spec: runner_pb2.SessionSpec,
     cluster: Cluster,
     workspace: Path,
-    runner: service.Runner,
+    runner: local_runner.Runner,
 ) -> None:
     bootstrap_marker = workspace / "bootstrap-runs"
     setup_marker = workspace / "setup-runs"
@@ -154,7 +154,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         stop = command_pb2.Command(command_id="grpc-stop", stop_runner_session=command_pb2.StopRunnerSession())
         await remote.command(DESTINATION, session, stop)
         journal = runner.sessions[session].journal
-        async with asyncio.timeout(20), aclosing(service.follow_journal(journal, entries[-1].cursor)) as tail:
+        async with asyncio.timeout(20), aclosing(local_runner.follow_journal(journal, entries[-1].cursor)) as tail:
             async for entry in tail:
                 if events.kind(entry) == "harness_exited":
                     break

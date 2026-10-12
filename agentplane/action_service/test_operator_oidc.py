@@ -12,11 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.api import create_app
 from agentplane.action_service.catalog import ActionCatalog
-from agentplane.action_service.db import ActionStore, make_sessionmaker
+from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings, OperatorTokenProfile
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
+from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -35,7 +36,7 @@ async def test_signed_operator_admission(
     issuer = f"http://127.0.0.1:{sock.getsockname()[1]}"
     idp = build_mock_oidc_app(issuer_url=issuer, private_key=private, public_key=public)
     catalog = ActionCatalog()
-    service = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
+    service = ActionService(action_store(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
     app = create_app(
         service,
         cast(WorkloadPrincipalResolver, None),

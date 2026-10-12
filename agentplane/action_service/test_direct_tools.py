@@ -36,7 +36,7 @@ from agentplane.action_service.catalog import (
     McpExecutorBinding,
 )
 from agentplane.action_service.connections import ConnectionAuthority, Grant, GrantBinding, NewConnection
-from agentplane.action_service.db import ActionStore, make_sessionmaker
+from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.mcp_frontend import DisconnectSignalMiddleware, create_server
@@ -47,6 +47,7 @@ from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.action_service.sandbox.models import ExecResult
 from agentplane.action_service.service import ActionService
+from agentplane.action_service.store import ActionStore
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, TEST_NAMESPACE, admitted_callers
 from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
 from agentplane.action_service.updates import ActionUpdateBroker

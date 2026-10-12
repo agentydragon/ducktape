@@ -27,7 +27,6 @@ import jsonschema
 from tenacity import AsyncRetrying, RetryCallState, before_sleep_log, retry_if_not_exception_type, wait_exponential
 
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity, UnknownActionError
-from agentplane.action_service.db import ActionConflictError, ActionNotFoundError, ActionStore
 from agentplane.action_service.models import (
     ActionEventView,
     ActionRequestInput,
@@ -58,6 +57,7 @@ from agentplane.action_service.policy_view import (
     subject_view,
 )
 from agentplane.action_service.providers import DecisionContext
+from agentplane.action_service.store import ActionConflictError, ActionNotFoundError, ActionStore
 from agentplane.changes import ChangeSignal
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef

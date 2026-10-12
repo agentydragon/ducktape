@@ -15,7 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.action_service.api import create_app
 from agentplane.action_service.auth import DisabledOperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog
-from agentplane.action_service.db import ActionStore, McpOAuthTokenStateRow, make_sessionmaker
+from agentplane.action_service.db import McpOAuthTokenStateRow, make_sessionmaker
 from agentplane.action_service.mcp_linkage import (
     McpLinkageAuthority,
     McpLinkageConflictError,
@@ -27,6 +27,7 @@ from agentplane.action_service.mcp_settings import McpClientMetadataSettings, Mc
 from agentplane.action_service.models import OperatorPrincipal
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import admitted_callers
+from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -122,7 +123,7 @@ async def callback_client(
     linkage: McpLinkageAuthority, engine: AsyncEngine, db_url: str
 ) -> AsyncIterator[httpx.AsyncClient]:
     catalog = ActionCatalog(groups={})
-    actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
+    actions = ActionService(action_store(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
     app = create_app(
         actions,
         Mock(spec=WorkloadPrincipalResolver),

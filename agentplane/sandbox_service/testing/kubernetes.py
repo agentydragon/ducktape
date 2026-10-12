@@ -12,7 +12,7 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.grpc_calls import dial
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination, ServiceAccount
-from agentplane.runner.service import Runner
+from agentplane.runner.runner import Runner
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.grpc_api import Resources

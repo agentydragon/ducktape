@@ -9,7 +9,7 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.catalog import ActionIdentity
-from agentplane.action_service.db import ActionConflictError, ActionNotFoundError, ActionStore, make_sessionmaker
+from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.models import (
     ActionRequestInput,
     ActionRequestView,
@@ -24,6 +24,8 @@ from agentplane.action_service.models import (
     Verdict,
 )
 from agentplane.action_service.service import ActionService
+from agentplane.action_service.store import ActionConflictError, ActionNotFoundError, ActionStore
+from agentplane.action_service.testing.stores import action_store
 from agentplane.subjects import ServiceAccountRef
 
 CALLER = CallerPrincipal(account=ServiceAccountRef(namespace="agentplane-test", name="sandbox-a"))
@@ -34,7 +36,7 @@ LEASE_DURATION = timedelta(seconds=30)
 
 @pytest.fixture
 def store(engine: AsyncEngine) -> ActionStore:
-    return ActionStore(make_sessionmaker(engine))
+    return action_store(make_sessionmaker(engine))
 
 
 @pytest.fixture
@@ -71,7 +73,7 @@ async def test_pending_cancellation_is_durable_and_idempotent(
     assert result.request.decision is None
     assert result.request.execution is None
     assert result.request.version == pending.version + 1
-    restarted = ActionStore(make_sessionmaker(engine))
+    restarted = action_store(make_sessionmaker(engine))
     duplicate = await restarted.cancel(pending.id, CALLER)
     assert duplicate.outcome is CancellationOutcome.ALREADY_CANCELLED
     assert duplicate.request == result.request
@@ -105,7 +107,7 @@ async def test_allowed_cancellation_preserves_decision_and_prevents_dispatch(
     assert result.request.execution.started_at is None
     assert result.request.execution.completed_at == result.request.updated_at
     assert result.request.execution.result is result.request.execution.error is None
-    restarted = ActionStore(make_sessionmaker(engine))
+    restarted = action_store(make_sessionmaker(engine))
     assert await restarted.pending_dispatches() == []
     assert (
         await restarted.claim_execution(allowed.id, executor_id="queued-worker", lease_duration=LEASE_DURATION) is None

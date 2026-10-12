@@ -36,7 +36,7 @@ from agentplane.action_service.catalog import (
     ExecutorBinding,
     McpExecutorBinding,
 )
-from agentplane.action_service.db import ActionStore, make_sessionmaker
+from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.mcp_frontend import CancellationView, PolicyField, Receipt, RequestField
 from agentplane.action_service.models import (
     ActionRequestInput,
@@ -57,9 +57,11 @@ from agentplane.action_service.policy_view import CallerActionPolicyView
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.action_service.sandbox.models import ExecResult
 from agentplane.action_service.service import ActionService, Executor
+from agentplane.action_service.store import ActionStore
 from agentplane.action_service.testing.callers import in_sync_index
 from agentplane.action_service.testing.credentials import WORKLOAD_CREDENTIAL_PLACEHOLDER
 from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
+from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionSubscription, ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
@@ -243,7 +245,7 @@ async def _serve(
         )
 
     authentication.create_token_review = AsyncMock(side_effect=review)
-    store = ActionStore(make_sessionmaker(engine))
+    store = action_store(make_sessionmaker(engine))
     policies = _policy_index()
     # Tests move requests through the store by hand (decide, claim); only the startup pass of the
     # dispatch and lease-sweep loops may run, so nothing dispatches or expires behind their back.

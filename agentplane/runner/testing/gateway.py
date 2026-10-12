@@ -22,16 +22,17 @@ from agentplane.proto import (
     runner_ingress_pb2_grpc,
 )
 from agentplane.runner.config import ServiceEndpoint
-from agentplane.runner.control import ControlTiming, RunnerControlClient
+from agentplane.runner.control import RunnerControlClient
 from agentplane.runner.ingress import IngressPusher
-from agentplane.runner.service import Runner
+from agentplane.runner.reconnect import StreamTiming
+from agentplane.runner.runner import Runner
 from agentplane.service_process import background
 
 # gazelle:include_dep @pypi//protobuf
 
 BEARER = "test-runner-bearer"
 # Prompt enough that an in-process runner connects at once and survives a test's idle stretches.
-TIMING = ControlTiming(heartbeat_s=0.1, liveness_s=5, backoff_initial_s=0.05, backoff_max_s=0.5)
+TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=5, backoff_initial_s=0.05, backoff_max_s=0.5)
 
 
 class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):

@@ -18,7 +18,7 @@ from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.proto import runner_pb2
 from agentplane.runner.config import RunnerConfig
-from agentplane.runner.service import Runner
+from agentplane.runner.runner import Runner
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.claude_model import ClaudeModel
 from agentplane.runner.testing.codex_model import CodexModel

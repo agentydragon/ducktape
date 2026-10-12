@@ -928,8 +928,6 @@ flowchart TD
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         RUNNER_ERRORS_REHOME[Unscheduled: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
-        RUNNER_CORE_SPLIT[Candidate: runner control and ingress clients share their plumbing]
-        ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         SERVICE_SETTING_OLD_NAMES_DROP[Waits on rollout: drop the old setting names]
         NOTIFICATION_GATEWAY_SETTINGS[Candidate: the notification service's Runner Gateway block]
     end
@@ -949,19 +947,6 @@ grpc_services.md, and give the app's `bridge.py` its own error type.
 **Unscheduled; operator, 2026-10-11 PDT: keep the flag for debugging for now, may retire it later.**
 Settlement is on by default; `ingress.settle_deltas` turns it off. Retiring the flag makes
 settlement unconditional: delete the setting, `Environment.settle_deltas` and the `Store` flag.
-
-### `RUNNER_CORE_SPLIT` — runner control and ingress clients share their plumbing
-
-**Candidate.** The control and ingress clients share one lost-stream error and backoff, and
-`IngressPusher` stops borrowing `ControlTiming`.
-`runner/service.py` holds the runner's sessions and lifecycle, not a servicer, and takes a name
-that says so.
-
-### `ACTION_PROTOCOLS_CONCRETE` — concrete external-grant authority
-
-**Candidate.** `ActionStore`'s `ExternalGrantAuthority` Protocol (also a footgun `| None = None`) has
-one production implementation, `ConnectionAuthority`. `db.py` cannot name it, because `connections.py`
-imports `db.py`'s rows: `ActionStore` first moves out of `db.py`, then takes a `ConnectionAuthority`.
 
 ### `SERVICE_SETTING_OLD_NAMES_DROP` — drop the old setting names
 

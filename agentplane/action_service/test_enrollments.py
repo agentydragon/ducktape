@@ -26,7 +26,7 @@ from agentplane.action_service.connections import (
     NewConnection,
     ReconnectConnection,
 )
-from agentplane.action_service.db import ActionStore, EnrollmentRow, make_sessionmaker
+from agentplane.action_service.db import EnrollmentRow, make_sessionmaker
 from agentplane.action_service.enrollments import (
     ConfirmedReconnectConnection,
     EnrollmentAllow,
@@ -43,6 +43,7 @@ from agentplane.action_service.models import OperatorPrincipal, Verdict
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, UNLABELED, admitted_callers
 from agentplane.action_service.testing.credentials import OperatorIdp
+from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
@@ -242,7 +243,7 @@ async def test_operator_routes_require_auth_and_reject_redirect_injection(
     consent: Consent, engine: AsyncEngine, db_url: str, operator_idp: OperatorIdp
 ) -> None:
     catalog = ActionCatalog(groups={})
-    actions = ActionService(ActionStore(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
+    actions = ActionService(action_store(make_sessionmaker(engine)), catalog, {}, dispatches=ChangeSignal())
     app = create_app(
         actions,
         Mock(spec=WorkloadPrincipalResolver),

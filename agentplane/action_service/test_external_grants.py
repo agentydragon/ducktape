@@ -3,6 +3,7 @@
 import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from typing import override
 from uuid import uuid4
 
 import pytest
@@ -21,13 +22,7 @@ from agentplane.action_service.connections import (
     NewConnection,
     ReconnectConnection,
 )
-from agentplane.action_service.db import (
-    ActionConflictError,
-    ActionStore,
-    ConnectionRow,
-    ExternalGrantNotAuthorizedError,
-    make_sessionmaker,
-)
+from agentplane.action_service.db import ConnectionRow, make_sessionmaker
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.models import (
     ActionRequestInput,
@@ -46,6 +41,7 @@ from agentplane.action_service.policies.resources import parse_binding, parse_po
 from agentplane.action_service.policy_evaluation import PROVIDER_NAME, PolicySetDecisionProvider
 from agentplane.action_service.providers import DecisionContext
 from agentplane.action_service.service import ActionService
+from agentplane.action_service.store import ActionConflictError, ActionStore, ExternalGrantNotAuthorizedError
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, admitted_callers, in_sync_index
 from agentplane.action_service.testing.fixtures import RecordingExecutor
 from agentplane.changes import ChangeSignal
@@ -152,11 +148,11 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
                 vote=None,
                 external_grant=grant.provenance().model_copy(update=changes),
             )
-    for checker in [None, ConnectionAuthority(make_sessionmaker(engine), admitted_callers(OTHER))]:
-        with pytest.raises(ExternalGrantNotAuthorizedError):
-            await ActionStore(make_sessionmaker(engine), external_grants=checker).submit(
-                envelope, grant.principal(), request_id=uuid4(), vote=None, external_grant=grant.provenance()
-            )
+    other = ConnectionAuthority(make_sessionmaker(engine), admitted_callers(OTHER))
+    with pytest.raises(ExternalGrantNotAuthorizedError):
+        await ActionStore(make_sessionmaker(engine), external_grants=other).submit(
+            envelope, grant.principal(), request_id=uuid4(), vote=None, external_grant=grant.provenance()
+        )
     await authority.revoke(grant.id)
     with pytest.raises(ExternalGrantNotAuthorizedError):
         await store.submit(
@@ -167,7 +163,7 @@ async def test_admission_fails_closed_on_missing_disabled_revoked_or_mismatched_
         ActionRequestInput.model_validate({**envelope.model_dump(), "external_grant": grant.provenance().model_dump()})
 
 
-@pytest.mark.parametrize("invalidate", ["revoke", "unlabel", "missing_authority", "reconnect_same", "reconnect_other"])
+@pytest.mark.parametrize("invalidate", ["revoke", "unlabel", "reconnect_same", "reconnect_other"])
 @pytest.mark.parametrize("available", [True, False])
 async def test_original_authority_is_rechecked_before_dispatch_without_rewriting_decision(
     engine: AsyncEngine,
@@ -200,9 +196,7 @@ async def test_original_authority_is_rechecked_before_dispatch_without_rewriting
             )
         )
         await authority.activate(replacement.id)
-    restarted = ActionStore(
-        make_sessionmaker(engine), external_grants=None if invalidate == "missing_authority" else authority
-    )
+    restarted = ActionStore(make_sessionmaker(engine), external_grants=authority)
     assert (
         await restarted.claim_execution(
             request.id, executor_id="worker", lease_duration=LEASE_DURATION, can_dispatch=lambda identity: available
@@ -251,15 +245,16 @@ async def test_claimed_work_continues_with_original_provenance_after_revocation(
 
 
 async def test_admission_and_claim_hold_revocation_lock_until_transaction_end(
-    engine: AsyncEngine, authority: ConnectionAuthority, grant: Grant, envelope: ActionRequestInput
+    engine: AsyncEngine, grant: Grant, envelope: ActionRequestInput
 ) -> None:
     sessions = make_sessionmaker(engine)
 
-    class CheckingAuthority:
+    class CheckingAuthority(ConnectionAuthority):
         calls = 0
 
+        @override
         async def authorize_action(self, session: AsyncSession, snapshot: ExternalGrantProvenance) -> bool:
-            authorized = await authority.authorize_action(session, snapshot)
+            authorized = await super().authorize_action(session, snapshot)
             assert authorized
             async with sessions.begin() as observer:
                 with pytest.raises(DBAPIError, match="could not obtain lock on row"):
@@ -271,7 +266,7 @@ async def test_admission_and_claim_hold_revocation_lock_until_transaction_end(
             self.calls += 1
             return authorized
 
-    checker = CheckingAuthority()
+    checker = CheckingAuthority(sessions, admitted_callers(PERSONAL, OTHER))
     store = ActionStore(sessions, external_grants=checker)
     request = await store.submit(
         envelope, grant.principal(), request_id=uuid4(), vote=None, external_grant=grant.provenance()

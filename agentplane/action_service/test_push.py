@@ -12,7 +12,7 @@ from pydantic import SecretStr
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.catalog import ActionIdentity
-from agentplane.action_service.db import ActionStore, PushSubscriptionRow, make_sessionmaker
+from agentplane.action_service.db import PushSubscriptionRow, make_sessionmaker
 from agentplane.action_service.models import (
     ActionRequestInput,
     CallerPrincipal,
@@ -32,6 +32,7 @@ from agentplane.action_service.push import (
     PushSubscriptionStore,
 )
 from agentplane.action_service.push_settings import WebPushSettings
+from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.subjects import ServiceAccountRef
 
@@ -86,7 +87,7 @@ async def test_replica_delivery_and_recovery(engine: AsyncEngine, db_url: str) -
     subscriptions = PushSubscriptionStore(sessions)
     for endpoint in ("https://push.example/a", "https://push.example/b"):
         await subscriptions.save(operator=OPERATOR, endpoint=endpoint, p256dh="test", auth="test", user_agent="test")
-    store = ActionStore(sessions)
+    store = action_store(sessions)
     request = await store.submit(
         ActionRequestInput(
             action=ActionIdentity(group="test", name="echo"),
@@ -129,7 +130,7 @@ async def test_auto_approved_request_is_never_pushed(engine: AsyncEngine, db_url
     await PushSubscriptionStore(sessions).save(
         operator=OPERATOR, endpoint="https://push.example/a", p256dh="test", auth="test", user_agent="test"
     )
-    await ActionStore(sessions).submit(
+    await action_store(sessions).submit(
         ActionRequestInput(
             action=ActionIdentity(group="test", name="echo"),
             arguments={},

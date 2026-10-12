@@ -11,7 +11,8 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane.grpc_serving import serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner import control as runner_control
-from agentplane.runner.service import Runner
+from agentplane.runner.reconnect import StreamTiming
+from agentplane.runner.runner import Runner
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionRecords
 from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
@@ -26,7 +27,7 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # Frequent enough that the tests see a connection's Lease promptly.
 GATEWAY_TIMING = ControlTiming(heartbeat_s=0.1, liveness_s=5, touch_s=0.2)
-RUNNER_TIMING = runner_control.ControlTiming(heartbeat_s=0.1, liveness_s=5, backoff_initial_s=0.05, backoff_max_s=0.5)
+RUNNER_TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=5, backoff_initial_s=0.05, backoff_max_s=0.5)
 HOLDER = ConnectionHolder(pod_name="test-gateway", pod_ip="192.0.2.10", port=18080)
 
 

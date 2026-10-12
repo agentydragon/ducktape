@@ -41,7 +41,7 @@ from agentplane.action_service.catalog import (
     ActionUnavailableError,
     McpExecutorBinding,
 )
-from agentplane.action_service.db import ActionConflictError, ActionStore, ExecutionRow, make_sessionmaker
+from agentplane.action_service.db import ExecutionRow, make_sessionmaker
 from agentplane.action_service.main import async_main
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor, _LinkageBearerAuth
 from agentplane.action_service.mcp_linkage import McpLinkageStatus
@@ -59,7 +59,9 @@ from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.runtime import running_executor
 from agentplane.action_service.service import ActionService, ExecutionLease, ExecutionOutcomeUnknownError
 from agentplane.action_service.settings import Settings
+from agentplane.action_service.store import ActionConflictError
 from agentplane.action_service.testing.lifecycle import wait_available, wait_retry
+from agentplane.action_service.testing.stores import action_store
 from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
 from util.net import bind_free_port
@@ -741,7 +743,7 @@ async def test_production_http_composition_one_execution_no_replay(
         await service._dispatch_once(pending.id)
         await service.close()
         async with ActionService(
-            ActionStore(make_sessionmaker(engine)), catalog, service._executors, dispatches=ChangeSignal()
+            action_store(make_sessionmaker(engine)), catalog, service._executors, dispatches=ChangeSignal()
         ) as restarted:
             assert (await restarted.get(pending.id, caller)).execution == final.execution
             assert len(fake_server.calls) == (0 if outcome in {"schema_mismatch", "invalid_schema"} else 1)

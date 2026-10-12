@@ -42,7 +42,6 @@ from agentplane.action_service.connections import (
     ConnectionVersion,
     GrantRejectedError,
 )
-from agentplane.action_service.db import ActionConflictError, ActionNotFoundError, ExternalGrantNotAuthorizedError
 from agentplane.action_service.enrollments import (
     EnrollmentAuthority,
     EnrollmentConflictError,
@@ -88,6 +87,7 @@ from agentplane.action_service.service import (
     ServiceDrainingError,
     UnsupportedActionError,
 )
+from agentplane.action_service.store import ActionConflictError, ActionNotFoundError, ExternalGrantNotAuthorizedError
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator

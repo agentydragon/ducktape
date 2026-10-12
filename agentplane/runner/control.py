@@ -7,16 +7,15 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import Iterable
-from dataclasses import dataclass
 from uuid import uuid4
 
 import grpc
 from sqlalchemy.exc import SQLAlchemyError
-from tenacity import AsyncRetrying, RetryCallState, retry_if_exception_type, wait_random_exponential
 
 from agentplane.proto import command_pb2, runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.runner.journal import CommandConflictError, JournalSealedError
-from agentplane.runner.service import (
+from agentplane.runner.reconnect import StreamLostError, StreamTiming, reconnect
+from agentplane.runner.runner import (
     InitializationConflictError,
     InvalidRequestError,
     OpenError,
@@ -35,20 +34,8 @@ from agentplane.runner.session import Session
 logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True)
-class ControlTiming:
-    heartbeat_s: float = 10
-    liveness_s: float = 30
-    backoff_initial_s: float = 0.5
-    backoff_max_s: float = 30
-
-
-class ControlStreamLostError(Exception):
-    """A connection ended before it carried anything; the next one waits out the backoff."""
-
-    def __init__(self, code: grpc.StatusCode | None, detail: str) -> None:
-        super().__init__(f"{code=} {detail}")
-        self.code = code
+# Only an operator resolves a refused token, so it backs off at the maximum.
+OPERATOR_CODES = frozenset({grpc.StatusCode.PERMISSION_DENIED})
 
 
 def _refused(
@@ -164,7 +151,7 @@ class RunnerControlClient:
     would hand a reconnect the stale connection that just failed.
     """
 
-    def __init__(self, runner: Runner, *, target: str, bearer: str, timing: ControlTiming) -> None:
+    def __init__(self, runner: Runner, *, target: str, bearer: str, timing: StreamTiming) -> None:
         self.runner = runner
         self.target = target
         # A placeholder the egress proxy swaps for this Pod's control token; the runner never holds it.
@@ -172,30 +159,18 @@ class RunnerControlClient:
         self.timing = timing
         self.boot_id = str(uuid4())
 
-    def _backoff(self, state: RetryCallState) -> float:
-        error = state.outcome.exception() if state.outcome is not None else None
-        if isinstance(error, ControlStreamLostError) and error.code == grpc.StatusCode.PERMISSION_DENIED:
-            return self.timing.backoff_max_s
-        return wait_random_exponential(multiplier=self.timing.backoff_initial_s, max=self.timing.backoff_max_s)(state)
-
     async def run(self) -> None:
-        while True:
-            # A connection that carried traffic returns normally and resets the backoff; one that
-            # ended before that raises, so a connection superseded straight away cannot spin.
-            async for attempt in AsyncRetrying(
-                retry=retry_if_exception_type(ControlStreamLostError),
-                wait=self._backoff,
-                before_sleep=lambda state: logger.warning(
-                    "runner control stream lost: %s", state.outcome.exception() if state.outcome is not None else None
-                ),
-            ):
-                with attempt:
-                    await self.connect()
+        async def attempt() -> bool:
+            # A connection that carried traffic returns and resets the backoff.
+            await self.connect()
+            return False
+
+        await reconnect(attempt, timing=self.timing, operator_codes=OPERATOR_CODES, describe="runner control stream")
 
     async def connect(self) -> None:
         loop = asyncio.get_running_loop()
         welcomed_at: float | None = None
-        lost = ControlStreamLostError(None, "the stream ended")
+        lost = StreamLostError(None, "the stream ended")
         async with grpc.aio.insecure_channel(self.target, options=(("grpc.use_local_subchannel_pool", 1),)) as channel:
             try:
                 stub = runner_control_pb2_grpc.RunnerControlStub(channel)
@@ -206,17 +181,17 @@ class RunnerControlClient:
                 async with asyncio.timeout(self.timing.liveness_s):
                     first = await call.read()
                 if not isinstance(first, runner_control_pb2.ServiceFrame):
-                    raise ControlStreamLostError(await call.code(), await call.details())
+                    raise StreamLostError(await call.code(), await call.details())
                 if first.WhichOneof("frame") != "welcome":
-                    raise ControlStreamLostError(None, f"expected Welcome, got {first.WhichOneof('frame')}")
+                    raise StreamLostError(None, f"expected Welcome, got {first.WhichOneof('frame')}")
                 welcomed_at = loop.time()
                 logger.info("runner control stream connected at epoch %d", first.welcome.connection_epoch)
                 await self.serve(call)
             except grpc.aio.AioRpcError as error:
-                lost = ControlStreamLostError(error.code(), error.details() or "")
+                lost = StreamLostError(error.code(), error.details() or "")
             except TimeoutError:
-                lost = ControlStreamLostError(None, "no frame from the Runner Gateway")
-            except ControlStreamLostError as error:
+                lost = StreamLostError(None, "no frame from the Runner Gateway")
+            except StreamLostError as error:
                 lost = error
         if welcomed_at is not None and loop.time() - welcomed_at >= self.timing.liveness_s:
             logger.warning("runner control stream ended: %s", lost)
@@ -289,8 +264,8 @@ class RunnerControlClient:
                     case "control":
                         handle_control(tasks, frame.control)
                     case kind:
-                        raise ControlStreamLostError(grpc.StatusCode.INVALID_ARGUMENT, f"unexpected {kind} frame")
-            raise ControlStreamLostError(await call.code(), await call.details())
+                        raise StreamLostError(grpc.StatusCode.INVALID_ARGUMENT, f"unexpected {kind} frame")
+            raise StreamLostError(await call.code(), await call.details())
 
         async def keep_alive() -> None:
             while True:
@@ -303,7 +278,7 @@ class RunnerControlClient:
             async with asyncio.TaskGroup() as tasks:
                 tasks.create_task(read(tasks))
                 tasks.create_task(keep_alive())
-        except* (grpc.aio.AioRpcError, ControlStreamLostError, TimeoutError) as group:
+        except* (grpc.aio.AioRpcError, StreamLostError, TimeoutError) as group:
             # The first failure ends the connection; the rest are its consequences.
             raise group.exceptions[0] from None
         finally:

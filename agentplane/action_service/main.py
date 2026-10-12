@@ -16,7 +16,7 @@ from agentplane.action_service.api import create_app
 from agentplane.action_service.auth import DisabledOperatorAuthenticator, OperatorAuthenticator
 from agentplane.action_service.catalog import ActionCatalog
 from agentplane.action_service.connections import ConnectionAuthority
-from agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker, verify_schema
+from agentplane.action_service.db import make_engine, make_sessionmaker, verify_schema
 from agentplane.action_service.enrollments import EnrollmentAuthority
 from agentplane.action_service.github_policy.visibility import REQUEST_TIMEOUT_SECONDS, RepositoryVisibilityService
 from agentplane.action_service.mcp_linkage import McpLinkageAuthority
@@ -29,6 +29,7 @@ from agentplane.action_service.runtime import running_executor
 from agentplane.action_service.sandbox.inventory import SandboxClients
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.settings import Settings
+from agentplane.action_service.store import ActionStore
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.service_process import background, configure_logging, kubernetes_configuration

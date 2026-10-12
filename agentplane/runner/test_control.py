@@ -17,10 +17,11 @@ from agentplane.grpc_serving import serving
 from agentplane.proto import command_pb2, event_pb2, runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import ClaudeLaunch, RunnerConfig
-from agentplane.runner.control import ControlTiming, RunnerControlClient
+from agentplane.runner.control import RunnerControlClient
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.model_config import HttpModelConfigResolver
-from agentplane.runner.service import Runner
+from agentplane.runner.reconnect import StreamTiming
+from agentplane.runner.runner import Runner
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord
 
@@ -30,7 +31,7 @@ RUNNING = "test-running-session"
 STOPPED = "test-stopped-session"
 FAILED_SETUP = "test-failed-setup-session"
 SPEC = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/test-workspace", model="test-model")
-TIMING = ControlTiming(heartbeat_s=0.1, liveness_s=0.5, backoff_initial_s=0.01, backoff_max_s=0.05)
+TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=0.5, backoff_initial_s=0.01, backoff_max_s=0.05)
 Reason = runner_control_pb2.CommandRefused
 Refused = runner_control_pb2.ControlRefused
 

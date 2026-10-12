@@ -9,7 +9,7 @@ import pytest_bazel
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.proto.runner_control_pb2 import ControlRefused
 from agentplane.runner.config import RunnerConfig
-from agentplane.runner.service import Runner
+from agentplane.runner.runner import Runner
 from agentplane.runner.store import SessionRecord
 from agentplane.runner.testing.driver import RunnerDriver, SessionFollow, SessionSealedError, refusal, running
 from agentplane.runner.testing.gateway import Gateway
