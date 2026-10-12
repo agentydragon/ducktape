@@ -23,7 +23,7 @@ FAILING = "/test.Echo/Failing"
 @dataclass
 class SeenCall:
     method: str
-    metadata: dict[str, str]
+    metadata: dict[str, str | bytes]
     time_remaining: float | None
 
 
@@ -37,13 +37,18 @@ class Upstream(grpc.GenericRpcHandler):
         method = handler_call_details.method
 
         async def echo(requests: AsyncIterator[bytes], context: grpc.aio.ServicerContext) -> AsyncIterator[bytes]:
-            self.seen.append(SeenCall(method, dict(context.invocation_metadata() or ()), context.time_remaining()))
+            metadata: dict[str, str | bytes] = dict(context.invocation_metadata() or grpc.aio.Metadata())
+            self.seen.append(SeenCall(method, metadata, context.time_remaining()))
             if method == FAILING:
                 await context.abort(grpc.StatusCode.NOT_FOUND, "no such thing")
             async for request in requests:
                 yield request[::-1]
 
         return grpc.stream_stream_rpc_method_handler(echo)
+
+
+def _unary(channel: grpc.aio.Channel, method: str) -> grpc.aio.UnaryUnaryMultiCallable[bytes, bytes]:
+    return channel.unary_unary(method)
 
 
 @pytest.fixture
@@ -79,7 +84,7 @@ async def test_unary_call_carries_the_routes_token_instead_of_the_workloads(
     route_channel: grpc.aio.Channel, upstream: tuple[Upstream, int]
 ) -> None:
     handler, _ = upstream
-    response = await route_channel.unary_unary(UNARY)(
+    response = await _unary(route_channel, UNARY)(
         b"abc", metadata=(("authorization", "Bearer placeholder"), ("x-session", "s-1")), timeout=30
     )
     assert response == b"cba"
@@ -94,14 +99,15 @@ async def test_token_is_reread_on_every_call(
     route_channel: grpc.aio.Channel, upstream: tuple[Upstream, int], token_file: Path
 ) -> None:
     handler, _ = upstream
-    await route_channel.unary_unary(UNARY)(b"a")
+    await _unary(route_channel, UNARY)(b"a")
     await asyncio.to_thread(token_file.write_text, "route-token-2\n")
-    await route_channel.unary_unary(UNARY)(b"a")
+    await _unary(route_channel, UNARY)(b"a")
     assert [c.metadata["authorization"] for c in handler.seen] == ["Bearer route-token-1", "Bearer route-token-2"]
 
 
 async def test_stream_flows_both_ways(route_channel: grpc.aio.Channel) -> None:
-    call = route_channel.stream_stream(STREAM)()
+    stream: grpc.aio.StreamStreamMultiCallable[bytes, bytes] = route_channel.stream_stream(STREAM)
+    call = stream()
     replies = []
     for request in (b"ab", b"cd"):
         await call.write(request)
@@ -112,7 +118,7 @@ async def test_stream_flows_both_ways(route_channel: grpc.aio.Channel) -> None:
 
 async def test_upstream_status_reaches_the_workload(route_channel: grpc.aio.Channel) -> None:
     with pytest.raises(grpc.aio.AioRpcError) as raised:
-        await route_channel.unary_unary(FAILING)(b"a")
+        await _unary(route_channel, FAILING)(b"a")
     assert raised.value.code() == grpc.StatusCode.NOT_FOUND
     assert raised.value.details() == "no such thing"
 
@@ -123,7 +129,7 @@ async def test_missing_token_refuses_without_calling_upstream(
     handler, _ = upstream
     await asyncio.to_thread(token_file.unlink)
     with pytest.raises(grpc.aio.AioRpcError) as raised:
-        await route_channel.unary_unary(UNARY)(b"a")
+        await _unary(route_channel, UNARY)(b"a")
     assert raised.value.code() == grpc.StatusCode.UNAVAILABLE
     assert handler.seen == []
 

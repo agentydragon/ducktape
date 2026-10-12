@@ -56,7 +56,8 @@ class _Forward(grpc.GenericRpcHandler):
                 if key not in _REPLACED_METADATA and not key.startswith((":", "grpc-"))
             ]
             # Without serializers the call passes requests and responses through as bytes.
-            call = self._channel.stream_stream(method)(
+            upstream: grpc.aio.StreamStreamMultiCallable[bytes, bytes] = self._channel.stream_stream(method)
+            call = upstream(
                 requests, metadata=(*metadata, ("authorization", f"Bearer {token}")), timeout=context.time_remaining()
             )
             try:
