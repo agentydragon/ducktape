@@ -36,10 +36,6 @@ class Settings(YamlFileSettings):
         description="The Runner Gateway endpoint every new Sandbox's runner dials for its control stream."
     )
     runner_ingress: RunnerEndpoint = Field(description="The ingress every new Sandbox's runner pushes its Events to.")
-    # CLEANUP(added 2026-10-12): Nothing reads or renders this; teardown reaches the gateway only through
-    #   `control_target`. Remove the field once staging's sandbox-service config no longer sets it
-    #   (the manifests stopped rendering it; Flux applies them with the next devel sync).
-    gateway_target: str | None = Field(default=None, description="Unread; see the CLEANUP above.")
     control_target: str = Field(
         min_length=1,
         description="A Sandbox's control Service, which reaches the gateway replica holding its runner connection, "
