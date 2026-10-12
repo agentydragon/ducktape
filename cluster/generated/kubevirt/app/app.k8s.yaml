@@ -11,6 +11,7 @@ spec:
     developerConfiguration:
       featureGates:
         - HostDevices
+        - EnableVirtioFsStorageVolumes
     imagePullPolicy: IfNotPresent
     permittedHostDevices:
       usb:

@@ -337,7 +337,7 @@ flowchart LR
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Candidate: production provider and API]
-    VM_VIRTIOFS[Candidate: test KubeVirt virtiofs on v1.8.2]
+    VM_VIRTIOFS[In flight: test KubeVirt virtiofs on v1.8.2]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 8]
     VM_EGRESS[Candidate: production admission and egress integration]
     EGRESS_POLICY_MIGRATE[Egress policies on PolicySet, section 6]
@@ -389,10 +389,11 @@ onto today's code, then close #8843 unmerged; it cannot be rebased.
 
 ### `VM_VIRTIOFS` — the state volume inside a guest
 
-**Candidate; the first step toward stateful VMs.** Enable KubeVirt's virtiofs feature gate (only
-`HostDevices` is on, `cluster/cdk8s/kubevirt/app.py`) and check on v1.8.2 that a guest mounts a
-filesystem PVC as a directory, and that a pod and a guest see the same files on it. The guest loses
-its XFS `prjquota` on `/state`, so the PVC size is the only bound.
+**In flight; the first step toward stateful VMs.** The PVC gate is `EnableVirtioFsStorageVolumes`,
+alpha in v1.8.2, and is on in `cluster/cdk8s/kubevirt/app.py`. Left: check live that a guest mounts a
+filesystem PVC as a directory through `spec.domain.devices.filesystems`, that a pod and a guest see
+the same files on it, and which file ownership and permissions the guest sees. The guest loses its
+XFS `prjquota` on `/state`, so the PVC size is the only bound.
 
 ### `VM_EGRESS` — integrate production admission and proxy path
 

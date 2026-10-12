@@ -53,7 +53,11 @@ def chart(app: App) -> Chart:
         spec=KubeVirtSpec(
             certificate_rotate_strategy=KubeVirtSpecCertificateRotateStrategy(),
             configuration=KubeVirtSpecConfiguration(
-                developer_configuration=KubeVirtSpecConfigurationDeveloperConfiguration(feature_gates=["HostDevices"]),
+                developer_configuration=KubeVirtSpecConfigurationDeveloperConfiguration(
+                    # EnableVirtioFsStorageVolumes (alpha in v1.8.2) lets a guest mount a PVC as a
+                    # directory over virtiofs, which Agentplane VM Sandboxes need for their state volume.
+                    feature_gates=["HostDevices", "EnableVirtioFsStorageVolumes"]
+                ),
                 image_pull_policy=_IF_NOT_PRESENT,
                 permitted_host_devices=KubeVirtSpecConfigurationPermittedHostDevices(
                     usb=[
