@@ -20,7 +20,7 @@ an MCP approval gateway for any MCP-capable LLM product.
   sandbox and journal what they do.
 - [Egress proxy](egress/README.md): authenticates sandbox workloads and substitutes credentials.
 - [Policy Controller](policy_controller/README.md): expires `PolicyBinding`s and keeps the
-  RoleBindings they grant. Staging only; nothing writes a `PolicyBinding` yet.
+  RoleBindings they grant. Runs on staging and `agentplane-testing`; only Flux writes `PolicyBinding`s yet.
 - [Sandbox Controller](sandbox_controller/README.md): reconciles our own `Sandbox` into its state
   PVC and Pods. Runs on `agentplane-testing` only; nothing creates our `Sandbox` yet.
 - [LLM ingress](llm_ingress/README.md): authenticated hop in front of LiteLLM.

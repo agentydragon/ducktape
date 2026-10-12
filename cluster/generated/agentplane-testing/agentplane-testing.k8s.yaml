@@ -6117,6 +6117,292 @@ spec:
       app.kubernetes.io/name: agentplane-sandbox-controller
 ---
 apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-testing
+automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-policy-controller
+  name: agentplane-policy-controller
+  namespace: agentplane-testing
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-policy-controller-deployment-c883d3e9
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-policy-controller
+        cdk8s.io/metadata.addr: agentplane-policy-controller-deployment-c883d3e9
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - args:
+            - --policy-namespace=agentplane-testing
+            - --subject-namespaces=agentplane-testing
+          image: git.allegedly.works/ducktape-ci/agentplane-policy-controller:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          name: policy-controller
+          ports:
+            - containerPort: 8080
+              name: metrics
+              protocol: TCP
+            - containerPort: 8081
+              name: health
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /readyz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-policy-controller
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-policy-controller
+  name: agentplane-policy-controller
+  namespace: agentplane-testing
+spec:
+  externalIPs: []
+  ports:
+    - name: metrics
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-policy-controller-deployment-c883d3e9
+  type: ClusterIP
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-testing
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policysets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings
+    verbs:
+      - get
+      - list
+      - watch
+      - delete
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings/status
+    verbs:
+      - patch
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - create
+      - update
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - rolebindings
+    verbs:
+      - create
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-testing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-policy-controller
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-policy-controller
+    namespace: agentplane-testing
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-testing-policy-controller
+rules:
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - rolebindings
+      - clusterrolebindings
+      - roles
+      - clusterroles
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resources:
+      - clusterrolebindings
+    verbs:
+      - create
+      - delete
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-testing-policy-controller
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-testing-policy-controller
+subjects:
+  - kind: ServiceAccount
+    name: agentplane-policy-controller
+    namespace: agentplane-testing
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-testing
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-policy-controller
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-testing
+spec:
+  endpoints:
+    - path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-policy-controller
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-testing
+spec:
+  groups:
+    - name: agentplane-policy-controller
+      rules:
+        - alert: AgentplanePolicyBindingExpiryOverdue
+          annotations:
+            description: The Policy Controller deletes a PolicyBinding at its expiresAt; this one has outlived it, so its grants are still live. Check the agentplane-policy-controller Deployment and its logs.
+            summary: PolicyBinding {{ $labels.name }} still grants after its expiresAt
+          expr: time() - kube_customresource_agentplane_policybinding_expires_at{namespace="agentplane-testing"} > 300
+          labels:
+            severity: warning
+---
+apiVersion: v1
 kind: Namespace
 metadata:
   annotations:

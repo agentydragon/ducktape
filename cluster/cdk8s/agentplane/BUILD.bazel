@@ -644,6 +644,7 @@ py_library(
         ":generation",
         ":llm_ingress",
         ":namespaces",
+        ":policy_controller",
         ":sandbox_controller",
         "//agentplane:crd_group",
         "//agentplane/action_service:catalog",

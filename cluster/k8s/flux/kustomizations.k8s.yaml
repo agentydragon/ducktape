@@ -3761,6 +3761,10 @@ spec:
       kind: Deployment
       name: agentplane-sandbox-controller
       namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-policy-controller
+      namespace: agentplane-testing
     - apiVersion: cert-manager.io/v1
       kind: Certificate
       name: agentplane-egress-root-ca

@@ -17,8 +17,9 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
 
 ## Running
 
-Staging runs it from [`cluster/cdk8s/agentplane/policy_controller.py`](../../cluster/cdk8s/agentplane/policy_controller.py),
-which also renders the Flux-owned PolicySets from the grant catalog in
+Staging and `agentplane-testing` run it from
+[`cluster/cdk8s/agentplane/policy_controller.py`](../../cluster/cdk8s/agentplane/policy_controller.py),
+which also renders staging's Flux-owned PolicySets from the grant catalog in
 [`agent_access_profiles.py`](../../cluster/cdk8s/agent_access_profiles.py) and alerts when a
 `PolicyBinding` outlives its `expiresAt`. Locally:
 
