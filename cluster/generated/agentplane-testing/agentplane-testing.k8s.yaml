@@ -6817,6 +6817,20 @@ spec:
             - port: "5556"
               protocol: TCP
 ---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: sandbox-tool-config
+  namespace: agentplane-testing
+spec:
+  rules:
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: agentplane-sandbox-tool-config-reader
+      namespaces:
+        - agentplane-testing
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -6989,6 +7003,14 @@ rules:
     verbs:
       - create
       - delete
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - agentplane-sandbox-tool-config-reader
+    resources:
+      - roles
+    verbs:
+      - bind
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

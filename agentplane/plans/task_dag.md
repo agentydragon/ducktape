@@ -482,8 +482,6 @@ observations. New database work follows the task-specific review and rollout req
 flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
-    KUBERNETES_POLICY_SETS[Candidate: the grant catalog as named PolicySets]
-    KUBERNETES_POLICY_SETS --> SANDBOX_CONTROLLER_PROVISIONING[The controller provisions a Sandbox, section 7]
     SANDBOX_CREATE_CUTOVER[Sandboxes are created as ours, section 7] --> POLICY_RUNTIME_GRANTS[Blocked: time-limited grants of any rule type]
     SANDBOX_CREATE_CUTOVER --> SANDBOX_RBAC
     AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox, section 7] --> OLD_POLICY_KINDS_DROP[Blocked: drop the old policy kinds]
@@ -511,12 +509,6 @@ into an outage matrix. Source: [public-coder wiring](../../cluster/cdk8s/public_
 **Decision.** Review the claude.ai account's Connection and arbitrary-shell Sandbox privileges,
 Kubernetes scope and egress/Action grants. Record intended authority in generated configuration,
 not ad hoc grants. Test an allowed and denied operation; do not add privileges as part of this review.
-
-### `KUBERNETES_POLICY_SETS` — the grant catalog as named PolicySets
-
-**Candidate.** Render the entries of the
-[grant catalog](../sandbox_service/kubernetes_grants.py) as named `PolicySet`s with `kubernetes`
-rules, including its per-namespace preset expansion, so a Sandbox can name them.
 
 ### `POLICY_RUNTIME_GRANTS` — time-limited grants
 
@@ -667,7 +659,6 @@ calls the gateway to seal. Action Service boxes keep a catalog of their own ([AD
 ```mermaid
 flowchart TD
     SANDBOX_CONTROLLER_PROVISIONING[In flight: the controller provisions a Sandbox]
-    KUBERNETES_POLICY_SETS[Grant catalog as PolicySets, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
     VM_PROVIDER[VM provider, section 4] --> SANDBOX_IMAGE_REPLACE[Blocked: replace a VM's runner image between incarnations]
     SANDBOX_CREATE_CUTOVER[Blocked: Sandboxes are created as ours]
     SANDBOX_CONTROLLER_PROVISIONING --> SANDBOX_CREATE_CUTOVER
@@ -676,7 +667,7 @@ flowchart TD
 
 ### `SANDBOX_CONTROLLER_PROVISIONING` — the controller provisions a Sandbox
 
-**Done on testing; staging waits on the Kubernetes catalog as `PolicySet`s.** Our Sandbox carries
+**Done on testing.** Our Sandbox carries
 the whole recipe the Sandbox Service keeps as annotations on agent-sandbox's: `policySets`, session
 defaults and the bootstrap command. The controller makes its ServiceAccount and one `PolicyBinding`,
 which never sets `expiresAt`. Our runner template reaches the Runner Gateway and the ingress over

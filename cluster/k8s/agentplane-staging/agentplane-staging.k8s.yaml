@@ -7721,6 +7721,20 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
+  name: sandbox-tool-config
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: agentplane-sandbox-tool-config-reader
+      namespaces:
+        - agentplane-staging
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
   name: shared-diagnostics
   namespace: agentplane-staging
 spec:
@@ -8042,6 +8056,14 @@ rules:
     verbs:
       - create
       - delete
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
+      - agentplane-sandbox-tool-config-reader
+    resources:
+      - roles
+    verbs:
+      - bind
   - apiGroups:
       - rbac.authorization.k8s.io
     resourceNames:

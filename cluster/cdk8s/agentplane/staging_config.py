@@ -11,7 +11,6 @@ from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.settings import AppSettingsConfig
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane.actions_staging_policies import (
     AGENTPLANE_TESTING_POLICY,
@@ -54,7 +53,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     HOME_ASSISTANT_READONLY_POLICY,
     PLAID_PGWEB_POLICY,
 )
-from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_READER_ROLE_NAME
+from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_GRANT, tool_config_grant
 from cluster.cdk8s.model_selections import HarnessRoutes
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_256K
 
@@ -107,14 +106,7 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
         action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
-        kubernetes_grants={
-            "sandbox-tool-config": RoleBindingGrant(
-                kind="RoleBinding",
-                namespace=namespace,
-                role_ref=RoleRef(kind="Role", name=TOOL_CONFIG_READER_ROLE_NAME),
-            ),
-            **agent_access_profiles.catalog(),
-        },
+        kubernetes_grants={TOOL_CONFIG_GRANT: tool_config_grant(namespace), **agent_access_profiles.catalog()},
     )
     cfg.sandbox_presets["public-coder"].kubernetes_grants = list(agent_access_profiles.MANAGED_GRANTS["public-coder"])
     # The "haku" and "finance-agent" launch presets live only here, not in app_settings.py:

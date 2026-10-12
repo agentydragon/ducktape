@@ -53,6 +53,7 @@ from cluster.cdk8s.agentplane.environment import (
 from cluster.cdk8s.agentplane.llm_ingress import model_configs
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.agentplane.runner_sandbox import RunnerTemplate
+from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_GRANT
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
@@ -411,14 +412,17 @@ def chart(app: App) -> Chart:
         ingress=[IngressRule.from_gateway(notification_service.pod_port)],
     )
     command_sandbox.CommandSandbox(chart, "command-sandbox", ENV)
-    # Staging alone: the grant catalog its sets draw on, and the delegation of RoleBinding writes in
-    # other namespaces, exist only here.
+    # Staging alone: the grant catalog the shared sets draw on, and the delegation of RoleBinding
+    # writes in other namespaces, exist only here.
     catalog = ENV.app_config.kubernetes_grants
     policy_controller.PolicyController(
         chart,
         "policy-controller",
         ENV,
-        sets={name: [catalog[grant] for grant in grants] for name, grants in agent_access_profiles.POLICY_SETS.items()},
+        sets={
+            name: [catalog[grant] for grant in grants]
+            for name, grants in {**agent_access_profiles.POLICY_SETS, TOOL_CONFIG_GRANT: (TOOL_CONFIG_GRANT,)}.items()
+        },
     )
     reader = ServiceAccount(
         chart,

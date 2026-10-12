@@ -46,6 +46,7 @@ from cluster.cdk8s.agentplane import (
     dex,
     egress,
     policy_controller,
+    sandbox_pod,
 )
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
     MCP_EVERYTHING_NAME,
@@ -372,9 +373,14 @@ def chart(app: App) -> Chart:
     )
     add_testing_fixtures(chart)
     dex.Dex(chart, "dex")
-    # No grant catalog here, so no Kubernetes-rule sets: it reports KubernetesReady on testing's
-    # PolicyBindings.
-    policy_controller.PolicyController(chart, "policy-controller", ENV, sets={})
+    # No grant catalog here: the only Kubernetes-rule set is the tool config every environment
+    # serves, and the controller reports KubernetesReady on testing's PolicyBindings.
+    policy_controller.PolicyController(
+        chart,
+        "policy-controller",
+        ENV,
+        sets={sandbox_pod.TOOL_CONFIG_GRANT: [sandbox_pod.tool_config_grant(ENV.namespace)]},
+    )
     EgressCredentials(
         chart, "egress-credentials", namespace=ENV.egress.credentials_namespace, proxy_namespace=ENV.namespace
     )

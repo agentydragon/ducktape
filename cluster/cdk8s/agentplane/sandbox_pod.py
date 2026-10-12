@@ -42,6 +42,7 @@ from agentplane.egress import sidecar
 from agentplane.egress.resources import placeholder_of
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE
+from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.agentplane import egress, notifications
@@ -76,6 +77,8 @@ _JAVA_TRUST_STORE_PATH = "/etc/ssl/certs/java/cacerts"
 # Configuration files for the box's tools, one key each, mounted file by file.
 TOOL_CONFIG_MAP_NAME = "agentplane-sandbox-tool-config"
 TOOL_CONFIG_READER_ROLE_NAME = "agentplane-sandbox-tool-config-reader"
+# The grant catalog entry and the PolicySet that let a Sandbox read the tool config.
+TOOL_CONFIG_GRANT = "sandbox-tool-config"
 _TOOL_CONFIG_VOLUME_NAME = "tool-config"
 _BAZELRC_KEY = "bazel.bazelrc"
 _KUBECONFIG_KEY = "kubeconfig"
@@ -207,6 +210,12 @@ def add_tool_config(scope: Construct, env: Environment) -> None:
         "sandbox-tool-config-reader-role",
         metadata=ApiObjectMetadata(name=TOOL_CONFIG_READER_ROLE_NAME, namespace=env.namespace),
         rules=[RolePolicyRule(resources=[tool_config], verbs=["get"])],
+    )
+
+
+def tool_config_grant(namespace: str) -> RoleBindingGrant:
+    return RoleBindingGrant(
+        kind="RoleBinding", namespace=namespace, role_ref=RoleRef(kind="Role", name=TOOL_CONFIG_READER_ROLE_NAME)
     )
 
 
