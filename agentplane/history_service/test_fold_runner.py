@@ -3,10 +3,9 @@
 import asyncio
 import typing
 from datetime import UTC, datetime, timedelta
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import grpc
-import pytest
 import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
 from grpc_health.v1 import health_pb2, health_pb2_grpc
@@ -28,12 +27,8 @@ from agentplane.history_service.fold.views import EntityKind
 from agentplane.history_service.fold_runner import FOLD_EPOCH, HEALTH_SERVICE, FoldBacklog, FoldRunner
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.delta_spans import claude_text
-from agentplane.history_service.testing.sessions import WRITER
+from agentplane.history_service.testing.sessions import retained_session
 from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2, runner_pb2
-
-# gazelle:include_dep //agentplane/history_service/storage:conftest
-
-pytest_plugins = ("agentplane.history_service.storage.conftest",)
 
 PAGE_SIZE = 8
 
@@ -66,18 +61,6 @@ def turn(start: int) -> list[event_log_pb2.EventEntry]:
             turn_completed=event_pb2.TurnCompleted(turn_id="test-turn", status=event_pb2.TURN_STATUS_COMPLETED),
         ),
     ]
-
-
-@pytest.fixture
-def history(engine: AsyncEngine) -> Store:
-    return Store(engine)
-
-
-async def retained_session(history: Store, entries: list[event_log_pb2.EventEntry]) -> UUID:
-    session_id = uuid4()
-    await history.bind_writer(session_id, WRITER)
-    await history.append(session_id, entries)
-    return session_id
 
 
 async def test_folds_retained_sessions_a_page_per_cycle_until_caught_up(engine: AsyncEngine, history: Store) -> None:

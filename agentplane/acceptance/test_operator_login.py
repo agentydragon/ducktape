@@ -140,6 +140,16 @@ def _mcp_authorization() -> str:
     )
 
 
+async def _follow_mcp_linkage(browser: httpx.AsyncClient) -> tuple[str, str]:
+    return await follow_dex_authorization(
+        _mcp_authorization(),
+        browser,
+        DEX_CREDENTIALS,
+        callback_app=httpx.URL(APP),
+        callback_path="/mcp-linkage/callback",
+    )
+
+
 def test_secret_is_one_named_get_through_current_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
     data = {name: base64.b64encode(value.get_secret_value().encode()).decode() for name, value in CREDENTIALS}
     run = Mock(
@@ -285,8 +295,6 @@ async def test_login_follows_bff_flow_csrf_and_callback(combined: bool, csrf_coo
 
 
 async def test_dex_login_uses_simple_local_form_and_preserves_app_oidc_flow() -> None:
-    dex = DEX
-    credentials = DEX_CREDENTIALS
     steps: list[str] = []
 
     def respond(request: httpx.Request) -> httpx.Response:
@@ -295,14 +303,14 @@ async def test_dex_login_uses_simple_local_form_and_preserves_app_oidc_flow() ->
             return httpx.Response(
                 302,
                 headers={
-                    "location": f"{dex}/dex/auth?state=server-state&code_challenge=server-pkce",
+                    "location": f"{DEX}/dex/auth?state=server-state&code_challenge=server-pkce",
                     "set-cookie": f"{SECURE_COOKIE}=pending; Path=/; Secure; HttpOnly",
                 },
             )
         if request.url.path == "/dex/auth":
             assert dict(request.url.params) == {"state": "server-state", "code_challenge": "server-pkce"}
             return httpx.Response(
-                302, headers={"location": f"{dex}/dex/auth/local?state=server-state&code_challenge=server-pkce"}
+                302, headers={"location": f"{DEX}/dex/auth/local?state=server-state&code_challenge=server-pkce"}
             )
         if request.url.path == "/dex/auth/local" and request.method == "GET":
             assert dict(request.url.params) == {"state": "server-state", "code_challenge": "server-pkce"}
@@ -324,7 +332,7 @@ async def test_dex_login_uses_simple_local_form_and_preserves_app_oidc_flow() ->
         raise AssertionError(f"unexpected request: {request.url}")
 
     async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
-        await login_operator(http, credentials, provider=IdentityProvider.DEX)
+        await login_operator(http, DEX_CREDENTIALS, provider=IdentityProvider.DEX)
     assert steps == [
         "GET /auth/login",
         "GET /dex/auth",
@@ -380,9 +388,7 @@ async def test_dex_linkage_uses_a_fresh_local_form_and_preserves_bff_state_pkce(
         raise AssertionError(f"unexpected request: {request.url}")
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond), follow_redirects=False) as browser:
-        assert await follow_dex_authorization(
-            authorization, browser, DEX_CREDENTIALS, callback_app=httpx.URL(APP), callback_path="/mcp-linkage/callback"
-        ) == ("bff-state", "provider-code")
+        assert await _follow_mcp_linkage(browser) == ("bff-state", "provider-code")
     assert steps == ["GET /dex/auth", "GET /dex/auth/local", "GET /dex/auth/local/login", "POST /dex/auth/local/login"]
 
 
@@ -402,13 +408,7 @@ async def test_dex_linkage_refuses_nonlocal_form_targets_without_sending_credent
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond), follow_redirects=False) as browser:
         with pytest.raises(LoginBlockedError) as caught:
-            await follow_dex_authorization(
-                _mcp_authorization(),
-                browser,
-                DEX_CREDENTIALS,
-                callback_app=httpx.URL(APP),
-                callback_path="/mcp-linkage/callback",
-            )
+            await _follow_mcp_linkage(browser)
     assert marker not in str(caught.value)
     assert posts == 0
 
@@ -429,13 +429,7 @@ async def test_dex_linkage_refuses_credential_post_replay() -> None:
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond), follow_redirects=False) as browser:
         with pytest.raises(LoginBlockedError, match="replay"):
-            await follow_dex_authorization(
-                _mcp_authorization(),
-                browser,
-                DEX_CREDENTIALS,
-                callback_app=httpx.URL(APP),
-                callback_path="/mcp-linkage/callback",
-            )
+            await _follow_mcp_linkage(browser)
     assert posts == 1
 
 
@@ -456,13 +450,7 @@ async def test_dex_linkage_does_not_retry_a_rejected_password_form() -> None:
 
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond), follow_redirects=False) as browser:
         with pytest.raises(LoginBlockedError) as caught:
-            await follow_dex_authorization(
-                _mcp_authorization(),
-                browser,
-                DEX_CREDENTIALS,
-                callback_app=httpx.URL(APP),
-                callback_path="/mcp-linkage/callback",
-            )
+            await _follow_mcp_linkage(browser)
     assert marker not in str(caught.value)
     assert posts == 1
 
@@ -478,13 +466,7 @@ async def test_dex_linkage_refuses_a_browser_with_an_app_session_cookie() -> Non
     async with httpx.AsyncClient(transport=httpx.MockTransport(respond), follow_redirects=False) as browser:
         browser.cookies.set(SECURE_COOKIE, "app-issued", domain="app.test.invalid", path="/")
         with pytest.raises(LoginBlockedError, match="fresh browser"):
-            await follow_dex_authorization(
-                _mcp_authorization(),
-                browser,
-                DEX_CREDENTIALS,
-                callback_app=httpx.URL(APP),
-                callback_path="/mcp-linkage/callback",
-            )
+            await _follow_mcp_linkage(browser)
     assert requests == 0
 
 

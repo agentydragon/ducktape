@@ -1,6 +1,8 @@
 """The work queue responds to watches, retries failures, and survives missed events."""
 
 import asyncio
+from collections.abc import AsyncIterator, Coroutine
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, cast
 
@@ -81,6 +83,18 @@ def controller(provisioner: Provisioner, *, resync_seconds: int = 300) -> Sandbo
     )
 
 
+@asynccontextmanager
+async def running(work: Coroutine[Any, Any, None]) -> AsyncIterator[None]:
+    """`work` as a task for the block, cancelled after it."""
+    task = asyncio.create_task(work)
+    try:
+        yield
+    finally:
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+
 async def _until(predicate: Any) -> None:
     async def wait() -> None:
         while not predicate():  # noqa: ASYNC110 - test waits on unrelated fake callbacks.
@@ -133,43 +147,35 @@ async def test_worker_reconciles_current_uid_and_deletion() -> None:
     result._apply("b", {"metadata": {"name": "b"}})
     result._apply("c", {"metadata": {"name": "c"}})
     result._apply("gone", {"metadata": {"name": "gone"}})
-    worker = asyncio.create_task(result._worker())
-    try:
+    async with running(result._worker()):
         await asyncio.wait_for(result._queue.join(), 2)
         assert provisioner.bindings.ensured == ["a", "c"]
         assert provisioner.ensured == ["a", "c"]
         assert provisioner.bindings.cleaned == ["b"]
         assert provisioner.teardown.advanced == ["c"]
-    finally:
-        worker.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await worker
 
 
 async def test_retry_is_per_name_and_new_event_is_not_lost() -> None:
     provisioner = Provisioner(fail_once=True, release=asyncio.Event())
     provisioner.inventory.sandboxes["a"] = Sandbox(name="a", uid="test")
     result = controller(provisioner)
-    worker = asyncio.create_task(result._worker())
     try:
-        result._apply("a", {"metadata": {"name": "a"}})
-        await _until(lambda: provisioner.ensured == ["a"])
-        # An update while the first reconcile is blocked must cause a second pass.
-        result._apply("a", {"metadata": {"name": "a"}})
-        assert provisioner.release is not None
-        provisioner.release.set()
-        await _until(lambda: result._attempts.get("a") == 1)
-        # An event cannot bypass the first failure's backoff (e.g. our own error annotation).
-        result._apply("a", {"metadata": {"name": "a"}})
-        await asyncio.wait_for(result._queue.join(), 2)
-        assert provisioner.ensured == ["a"]
-        await _until(lambda: len(provisioner.ensured) == 2)
-        await asyncio.wait_for(result._queue.join(), 2)
-        assert result._attempts == {}
+        async with running(result._worker()):
+            result._apply("a", {"metadata": {"name": "a"}})
+            await _until(lambda: provisioner.ensured == ["a"])
+            # An update while the first reconcile is blocked must cause a second pass.
+            result._apply("a", {"metadata": {"name": "a"}})
+            assert provisioner.release is not None
+            provisioner.release.set()
+            await _until(lambda: result._attempts.get("a") == 1)
+            # An event cannot bypass the first failure's backoff (e.g. our own error annotation).
+            result._apply("a", {"metadata": {"name": "a"}})
+            await asyncio.wait_for(result._queue.join(), 2)
+            assert provisioner.ensured == ["a"]
+            await _until(lambda: len(provisioner.ensured) == 2)
+            await asyncio.wait_for(result._queue.join(), 2)
+            assert result._attempts == {}
     finally:
-        worker.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await worker
         for task in result._retries.values():
             task.cancel()
         await asyncio.gather(*result._retries.values(), return_exceptions=True)
@@ -179,18 +185,13 @@ async def test_failed_name_retries_without_another_watch_event() -> None:
     provisioner = Provisioner(fail_once=True)
     provisioner.inventory.sandboxes["a"] = Sandbox(name="a", uid="test")
     result = controller(provisioner)
-    worker = asyncio.create_task(result._worker())
-    try:
+    async with running(result._worker()):
         result._apply("a", {"metadata": {"name": "a"}})
         await _until(lambda: len(provisioner.ensured) >= 2)
         await asyncio.wait_for(result._queue.join(), 2)
         assert provisioner.ensured == ["a", "a"]
         assert result._attempts == {}
         assert result._retries == {}
-    finally:
-        worker.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await worker
 
 
 async def test_safety_sweep_runs_when_watch_is_quiet_or_unavailable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -201,14 +202,9 @@ async def test_safety_sweep_runs_when_watch_is_quiet_or_unavailable(monkeypatch:
         await asyncio.Event().wait()
 
     monkeypatch.setattr(result._watch, "run", unavailable)
-    task = asyncio.create_task(result.run())
-    try:
+    async with running(result.run()):
         await _until(lambda: provisioner.sweeps >= 1)  # startup recovery
         await asyncio.wait_for(_until(lambda: provisioner.sweeps >= 2), 2)  # missed event repair
-    finally:
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
 
 
 if __name__ == "__main__":

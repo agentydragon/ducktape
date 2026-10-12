@@ -11,6 +11,12 @@ from agentplane.indexing.source import GitSource
 
 NO_IGNORE = pathspec.GitIgnoreSpec.from_lines([])
 SUBMODULE_COMMIT = "1" * 40
+# A first fetch: no revision is indexed yet.
+NOTHING_CURRENT: dict[str, str | None] = {
+    "current_tree_id": None,
+    "current_revision": None,
+    "current_repository_url": None,
+}
 
 
 def source(
@@ -28,9 +34,7 @@ async def test_snapshot_reads_regular_files_only(upstream: Upstream, tmp_path: P
         symlinks={"link": "empty.txt"},
         submodules={"vendor/dependency": SUBMODULE_COMMIT},
     )
-    snapshot = await source(upstream, tmp_path / "clone").snapshot(
-        current_tree_id=None, current_revision=None, current_repository_url=None
-    )
+    snapshot = await source(upstream, tmp_path / "clone").snapshot(**NOTHING_CURRENT)
     assert snapshot is not None
     assert snapshot.files == {"src/example.py": b"print('test')\n", "empty.txt": b"", "bin/tool": b"#!/bin/sh\n"}
     assert snapshot.revision == revision
@@ -42,7 +46,7 @@ async def test_snapshot_reads_regular_files_only(upstream: Upstream, tmp_path: P
 async def test_skip_unchanged_and_follow_new_commits(upstream: Upstream, tmp_path: Path) -> None:
     upstream.commit({"doc.txt": b"one\n", "gone.txt": b"bye\n"})
     reader = source(upstream, tmp_path / "clone")
-    first = await reader.snapshot(current_tree_id=None, current_revision=None, current_repository_url=None)
+    first = await reader.snapshot(**NOTHING_CURRENT)
     assert first is not None
     current = {
         "current_tree_id": first.tree_id,
@@ -68,7 +72,7 @@ async def test_ignore_patterns_prune_directories_and_match_globs(upstream: Upstr
     )
     snapshot = await source(
         upstream, tmp_path / "clone", ignore=pathspec.GitIgnoreSpec.from_lines(["props/specimens/", "*.gz"])
-    ).snapshot(current_tree_id=None, current_revision=None, current_repository_url=None)
+    ).snapshot(**NOTHING_CURRENT)
     assert snapshot is not None
     assert snapshot.files == {"keep.txt": b"keep\n", "props/a.md": b"a\n"}
 
@@ -86,16 +90,12 @@ async def test_limits_reject_the_whole_snapshot(
 ) -> None:
     upstream.commit({"a.txt": b"aaaa", "b.txt": b"bb"})
     with pytest.raises(ValueError, match=message):
-        await source(upstream, tmp_path / "clone", limits=limits).snapshot(
-            current_tree_id=None, current_revision=None, current_repository_url=None
-        )
+        await source(upstream, tmp_path / "clone", limits=limits).snapshot(**NOTHING_CURRENT)
 
 
 async def test_relocated_remote_refetches_from_the_new_url(upstream: Upstream, tmp_path: Path) -> None:
     upstream.commit({"doc.txt": b"old home\n"})
-    first = await source(upstream, tmp_path / "clone").snapshot(
-        current_tree_id=None, current_revision=None, current_repository_url=None
-    )
+    first = await source(upstream, tmp_path / "clone").snapshot(**NOTHING_CURRENT)
     assert first is not None
     moved = Upstream(pygit2.init_repository(str(tmp_path / "moved"), initial_head="main"))
     moved.commit({"doc.txt": b"new home\n"})

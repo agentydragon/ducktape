@@ -46,13 +46,22 @@ from agentplane.sandbox_service.testing.teardown import seal_and_delete
 from agentplane.subjects import ServiceAccountRef
 
 
+@pytest.fixture
+def rbac() -> FakeRbac:
+    return FakeRbac()
+
+
 def _grant(name: str) -> RoleBindingGrant:
     return RoleBindingGrant(kind="RoleBinding", namespace=NAMESPACE, role_ref=RoleRef(kind="Role", name=name))
 
 
+def _cluster_grant(name: str) -> ClusterRoleBindingGrant:
+    return ClusterRoleBindingGrant(kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name=name))
+
+
 async def _sandbox(
     inventory: SandboxInventory,
-    core: FakeCoreV1Api,
+    core_v1: FakeCoreV1Api,
     names: list[str],
     catalog: Mapping[str, KubernetesGrant],
     *,
@@ -74,7 +83,7 @@ async def _sandbox(
     )
     await inventory.ensure_service_account(view)
     await inventory.complete_initialization(view)
-    core.pods[view.name] = pod(view.name, phase="Running", ready=True, ip="10.0.0.1")
+    core_v1.pods[view.name] = pod(view.name, phase="Running", ready=True, ip="10.0.0.1")
     return view.name, selected
 
 
@@ -90,12 +99,12 @@ def test_catalog_rejects_unknown_and_invalid_scope() -> None:
         )
 
 
-async def test_distinct_sandboxes_bind_only_their_own_service_accounts() -> None:
-    custom, core, rbac = FakeCustomObjectsApi(), FakeCoreV1Api(), FakeRbac()
-    inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
+async def test_distinct_sandboxes_bind_only_their_own_service_accounts(
+    inventory: SandboxInventory, core_v1: FakeCoreV1Api, rbac: FakeRbac
+) -> None:
     catalog = {"config": _grant("config-reader")}
-    first, selection = await _sandbox(inventory, core, ["config"], catalog, name="haku-first")
-    second, _ = await _sandbox(inventory, core, ["config"], catalog, name="haku-second")
+    first, selection = await _sandbox(inventory, core_v1, ["config"], catalog, name="haku-first")
+    second, _ = await _sandbox(inventory, core_v1, ["config"], catalog, name="haku-second")
     bindings = KubernetesBindings(inventory, cast(Any, rbac))
     assert not (await inventory.get(first)).kubernetes_grants_ready
     await bindings.reconcile_once()
@@ -115,16 +124,11 @@ async def test_distinct_sandboxes_bind_only_their_own_service_accounts() -> None
     assert rbac.creates == 2
 
 
-async def test_missing_role_ref_never_reports_grants_ready() -> None:
-    custom, core, rbac = FakeCustomObjectsApi(), FakeCoreV1Api(), FakeRbac()
-    inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
-    catalog: dict[str, KubernetesGrant] = {
-        "local": _grant("config-reader"),
-        "cluster": ClusterRoleBindingGrant(
-            kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name="diagnostics")
-        ),
-    }
-    name, _ = await _sandbox(inventory, core, ["local", "cluster"], catalog)
+async def test_missing_role_ref_never_reports_grants_ready(
+    inventory: SandboxInventory, core_v1: FakeCoreV1Api, rbac: FakeRbac
+) -> None:
+    catalog: dict[str, KubernetesGrant] = {"local": _grant("config-reader"), "cluster": _cluster_grant("diagnostics")}
+    name, _ = await _sandbox(inventory, core_v1, ["local", "cluster"], catalog)
     bindings = KubernetesBindings(inventory, cast(Any, rbac))
     rbac.missing_roles.add((NAMESPACE, "config-reader"))
     await bindings.ensure(await inventory.get(name))
@@ -148,11 +152,11 @@ async def test_missing_role_ref_never_reports_grants_ready() -> None:
     assert (await inventory.get(name)).kubernetes_grants_ready
 
 
-async def test_partial_creation_recovers_from_persisted_selection_after_catalog_removal() -> None:
-    custom, core, rbac = FakeCustomObjectsApi(), FakeCoreV1Api(), FakeRbac()
-    inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
+async def test_partial_creation_recovers_from_persisted_selection_after_catalog_removal(
+    inventory: SandboxInventory, core_v1: FakeCoreV1Api, rbac: FakeRbac
+) -> None:
     name, selected = await _sandbox(
-        inventory, core, ["config", "other"], {"config": _grant("config-reader"), "other": _grant("other-reader")}
+        inventory, core_v1, ["config", "other"], {"config": _grant("config-reader"), "other": _grant("other-reader")}
     )
     rbac.fail_on_create = 2
     bindings = KubernetesBindings(inventory, cast(Any, rbac))
@@ -171,10 +175,10 @@ async def test_partial_creation_recovers_from_persisted_selection_after_catalog_
     assert len(rbac.bindings) == 2
 
 
-async def test_same_name_with_another_subject_is_never_adopted() -> None:
-    custom, core, rbac = FakeCustomObjectsApi(), FakeCoreV1Api(), FakeRbac()
-    inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
-    name, selected = await _sandbox(inventory, core, ["config"], {"config": _grant("config-reader")})
+async def test_same_name_with_another_subject_is_never_adopted(
+    inventory: SandboxInventory, core_v1: FakeCoreV1Api, rbac: FakeRbac
+) -> None:
+    name, selected = await _sandbox(inventory, core_v1, ["config"], {"config": _grant("config-reader")})
     view = await inventory.get(name)
     binding = k8s_client.V1RoleBinding(
         metadata=k8s_client.V1ObjectMeta(name=binding_name(view, selected[0]), namespace=NAMESPACE),
@@ -188,20 +192,18 @@ async def test_same_name_with_another_subject_is_never_adopted() -> None:
     assert rbac.bindings[(NAMESPACE, binding.metadata.name)] is binding
 
 
-async def test_external_scopes_recover_and_clean_up_after_deletion() -> None:
-    custom, core, rbac = FakeCustomObjectsApi(), FakeCoreV1Api(), FakeRbac()
-    inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
+async def test_external_scopes_recover_and_clean_up_after_deletion(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, rbac: FakeRbac
+) -> None:
     catalog: dict[str, KubernetesGrant] = {
         "logs": RoleBindingGrant(
             kind="RoleBinding",
             namespace="another-namespace",
             role_ref=RoleRef(kind="ClusterRole", name="logs-configmaps-reader"),
         ),
-        "cluster": ClusterRoleBindingGrant(
-            kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name="cluster-diagnostics-reader")
-        ),
+        "cluster": _cluster_grant("cluster-diagnostics-reader"),
     }
-    name, selected = await _sandbox(inventory, core, ["logs", "cluster"], catalog)
+    name, selected = await _sandbox(inventory, core_v1, ["logs", "cluster"], catalog)
     bindings = KubernetesBindings(
         inventory, cast(Any, rbac), cleanup_namespaces={"another-namespace"}, cleanup_cluster_bindings=True
     )
@@ -238,18 +240,14 @@ async def test_external_scopes_recover_and_clean_up_after_deletion() -> None:
     ).reconcile_once()
     assert not rbac.bindings
     assert not rbac.cluster_bindings
-    assert ("sandboxes", name) not in custom.objects
+    assert ("sandboxes", name) not in custom_objects.objects
 
 
-async def test_external_name_collision_is_not_deleted() -> None:
-    custom, core, rbac = FakeCustomObjectsApi(), FakeCoreV1Api(), FakeRbac()
-    inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
-    catalog: dict[str, KubernetesGrant] = {
-        "cluster": ClusterRoleBindingGrant(
-            kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name="cluster-diagnostics-reader")
-        )
-    }
-    name, selected = await _sandbox(inventory, core, ["cluster"], catalog)
+async def test_external_name_collision_is_not_deleted(
+    inventory: SandboxInventory, core_v1: FakeCoreV1Api, rbac: FakeRbac
+) -> None:
+    catalog: dict[str, KubernetesGrant] = {"cluster": _cluster_grant("cluster-diagnostics-reader")}
+    name, selected = await _sandbox(inventory, core_v1, ["cluster"], catalog)
     view = await inventory.get(name)
     binding = k8s_client.V1ClusterRoleBinding(
         metadata=k8s_client.V1ObjectMeta(name=binding_name(view, selected[0])),
@@ -264,18 +262,16 @@ async def test_external_name_collision_is_not_deleted() -> None:
     assert (await inventory.get(name)).kubernetes_grant_error == "BindingConflictError"
 
 
-async def test_partial_launch_deletion_and_name_reuse_leave_no_old_binding() -> None:
-    custom, core, rbac = FakeCustomObjectsApi(), FakeCoreV1Api(), FakeRbac()
-    inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
+async def test_partial_launch_deletion_and_name_reuse_leave_no_old_binding(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, rbac: FakeRbac
+) -> None:
     catalog: dict[str, KubernetesGrant] = {
         "cross": RoleBindingGrant(
             kind="RoleBinding", namespace="another-namespace", role_ref=RoleRef(kind="Role", name="reader")
         ),
-        "cluster": ClusterRoleBindingGrant(
-            kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name="diagnostics")
-        ),
+        "cluster": _cluster_grant("diagnostics"),
     }
-    name, selected = await _sandbox(inventory, core, ["cross", "cluster"], catalog)
+    name, selected = await _sandbox(inventory, core_v1, ["cross", "cluster"], catalog)
     bindings = KubernetesBindings(
         inventory, cast(Any, rbac), cleanup_namespaces={"another-namespace"}, cleanup_cluster_bindings=True
     )
@@ -286,7 +282,7 @@ async def test_partial_launch_deletion_and_name_reuse_leave_no_old_binding() -> 
     await inventory.suspend(name, uid=old_view.uid)
     await seal_and_delete(inventory, name)
     await bindings.reconcile_once()
-    assert ("sandboxes", name) not in custom.objects
+    assert ("sandboxes", name) not in custom_objects.objects
     assert not rbac.bindings
     # Model an in-flight writer landing after finalizer release. A new Sandbox may use
     # the same name but gets a distinct UID; the sweep must remove only the old grant.
@@ -295,7 +291,7 @@ async def test_partial_launch_deletion_and_name_reuse_leave_no_old_binding() -> 
     replacement["metadata"]["annotations"] = {
         KUBERNETES_GRANTS_ANNOTATION: json.dumps([MessageToDict(selected[0], preserving_proto_field_name=True)])
     }
-    custom.objects[("sandboxes", name)] = replacement
+    custom_objects.objects[("sandboxes", name)] = replacement
     await bindings.reconcile_once()
     new_view = await inventory.get(name)
     assert new_view.uid != old_view.uid
@@ -303,17 +299,12 @@ async def test_partial_launch_deletion_and_name_reuse_leave_no_old_binding() -> 
     assert ("another-namespace", binding_name(new_view, selected[0])) in rbac.bindings
 
 
-async def test_orphan_sweep_checks_sandbox_created_after_list_snapshot() -> None:
-    custom, core = FakeCustomObjectsApi(), FakeCoreV1Api()
-    inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
+async def test_orphan_sweep_checks_sandbox_created_after_list_snapshot(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+) -> None:
     selected = ResolvedGrant(
         name="cluster",
-        grant=ParseDict(
-            ClusterRoleBindingGrant(
-                kind="ClusterRoleBinding", role_ref=ClusterRoleRef(kind="ClusterRole", name="diagnostics")
-            ).model_dump(mode="json"),
-            sandbox_service_pb2.KubernetesGrant(),
-        ),
+        grant=ParseDict(_cluster_grant("diagnostics").model_dump(mode="json"), sandbox_service_pb2.KubernetesGrant()),
     )
 
     class LateRbac(FakeRbac):
@@ -325,8 +316,8 @@ async def test_orphan_sweep_checks_sandbox_created_after_list_snapshot() -> None
                         [MessageToDict(selected, preserving_proto_field_name=True)]
                     )
                 }
-                custom.objects[("sandboxes", "late")] = raw
-                binding = _binding(sandbox_view(raw, None, api_client=core.api_client), selected)
+                custom_objects.objects[("sandboxes", "late")] = raw
+                binding = _binding(sandbox_view(raw, None, api_client=core_v1.api_client), selected)
                 assert isinstance(binding, k8s_client.V1ClusterRoleBinding)
                 assert binding.metadata is not None
                 assert binding.metadata.name is not None
@@ -340,10 +331,7 @@ async def test_orphan_sweep_checks_sandbox_created_after_list_snapshot() -> None
 
 
 @pytest.mark.parametrize("status", [404, 403])
-async def test_orphan_sweep_skips_only_missing_namespaces(status: int) -> None:
-    custom, core = FakeCustomObjectsApi(), FakeCoreV1Api()
-    inventory = SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom), core_v1=cast(Any, core))
-
+async def test_orphan_sweep_skips_only_missing_namespaces(inventory: SandboxInventory, status: int) -> None:
     class MissingNamespaceRbac(FakeRbac):
         def __init__(self) -> None:
             super().__init__()

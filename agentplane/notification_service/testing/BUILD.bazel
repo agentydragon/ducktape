@@ -1,0 +1,18 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane/notification_service:__subpackages__"],
+)
+
+py_library(
+    name = "store",
+    srcs = ["store.py"],
+    deps = [
+        "//agentplane/notification_service:database_migrate",
+        "//agentplane/notification_service:db",
+        "//agentplane/notification_service:store",
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)

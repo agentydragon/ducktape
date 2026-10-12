@@ -42,7 +42,6 @@ from agentplane.app.live import (
     live_threads,
     threads_frame,
 )
-from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import (
     LoginTokens,
@@ -54,7 +53,7 @@ from agentplane.app.operator_sessions import (
 from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.shutdown import Drain
 from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
+from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events import event_log
@@ -66,7 +65,6 @@ from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
@@ -90,17 +88,6 @@ from util.net import pick_free_port
 # gazelle:include_dep @pypi//httpx
 
 NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
-MODELS = ModelCatalog(
-    models=[
-        ModelOption(
-            model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
-        ),
-        ModelOption(
-            model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
-        ),
-    ],
-    harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
-)
 
 
 @pytest.fixture
@@ -354,7 +341,7 @@ def app(
         inventory,
         RunnerBridge(runners=RunnerDirectory(live_index, gateway), event_logs=event_logs, content=content),
         ThreadStore(engine, summaries, gateway=gateway),
-        MODELS,
+        TEST_MODELS,
         egress,
         decisions,
         live_index,

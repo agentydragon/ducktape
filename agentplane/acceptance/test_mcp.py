@@ -4,7 +4,7 @@ import json
 import logging
 import os
 import subprocess
-from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from collections.abc import AsyncIterator, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
@@ -18,7 +18,7 @@ from pydantic import BaseModel, ConfigDict, JsonValue
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.acceptance.agent import Agent
-from agentplane.acceptance.conftest import NAMESPACE, TESTING_NAMESPACE
+from agentplane.acceptance.conftest import NAMESPACE, TESTING_NAMESPACE, Sandboxes
 from agentplane.acceptance.operator_login import (
     IdentityProvider,
     LoginBlockedError,
@@ -71,6 +71,26 @@ class PendingMcpReport(BaseModel):
     state: Literal["decision_pending"]
 
 
+def _execute_echo(group: str, message: str) -> str:
+    """A prompt to run echo to its terminal result, answered as an `McpReport`."""
+    return f"""
+This is an Agentplane infrastructure test. Use the Actions Service to execute the echo Action in
+the {group} group with message {message}. Wait for its terminal result. Return only JSON with
+exactly request_id, state, and output, where output is the request's execution result. Do not
+infer or fabricate a result.
+"""
+
+
+def _queue_echo(message: str) -> str:
+    """A prompt to submit an echo that waits for the operator, answered as a `PendingMcpReport`."""
+    return f"""
+This is an Agentplane infrastructure test. Request the echo Action in the everything group with
+message {message}. This request requires operator approval. Confirm that it is queued for approval;
+return only JSON with exactly request_id and state, where state must be decision_pending. Do not
+wait for an operator decision in this turn.
+"""
+
+
 def operator_idp() -> IdentityProvider:
     value = os.environ.get("AGENTPLANE_ACCEPTANCE_IDP", IdentityProvider.DEX)
     if value not in set(IdentityProvider):
@@ -118,6 +138,15 @@ class PolicyObjects:
             {"subject": {"namespace": self.namespace, "name": sandbox.name}, "policySets": policy_sets},
         )
 
+    def bind(self, sandbox: SandboxView, name: str, auto_approve_if: list[dict[str, Any]]) -> tuple[str, str]:
+        """One policy set bound to `sandbox`, both Ready: the set's and the binding's names."""
+        suffix = uuid4().hex[:8]
+        set_name = self.create_policy_set(f"accept-{name}-{suffix}", auto_approve_if)
+        binding_name = self.create_binding(f"{sandbox.name}-{name}-{suffix}", sandbox=sandbox, policy_sets=[set_name])
+        self.wait_ready(POLICY_SETS_PLURAL, set_name)
+        self.wait_ready(BINDINGS_PLURAL, binding_name)
+        return set_name, binding_name
+
     def expire_binding(self, name: str) -> None:
         past = (datetime.now(UTC) - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
         self._kubectl("patch", BINDINGS_PLURAL, name, "--type=merge", "-p", json.dumps({"spec": {"expiresAt": past}}))
@@ -154,28 +183,13 @@ def policy_objects() -> Iterator[PolicyObjects]:
 
 
 async def test_agent_executes_mcp_action(
-    client: Client,
-    sandbox: Callable[..., Awaitable[SandboxView]],
-    harness: runner_pb2.Harness,
-    model: str,
-    policy_objects: PolicyObjects,
+    client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str, policy_objects: PolicyObjects
 ) -> None:
     view = await sandbox(f"accept-mcp-{harness}")
-    suffix = uuid4().hex[:8]
-    set_name = policy_objects.create_policy_set(
-        f"accept-exact-echo-{suffix}", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}]
-    )
-    binding_name = policy_objects.create_binding(f"{view.name}-exact-{suffix}", sandbox=view, policy_sets=[set_name])
-    policy_objects.wait_ready(POLICY_SETS_PLURAL, set_name)
-    policy_objects.wait_ready(BINDINGS_PLURAL, binding_name)
+    policy_objects.bind(view, "exact-echo", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}])
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     marker = f"MCP0-{uuid4()}"
-    turn = await agent.run(f"""
-This is an Agentplane infrastructure test. Use the Actions Service to execute the echo Action in
-the everything group with message {marker}. Wait for its terminal result. Return only JSON with
-exactly request_id, state, and output, where output is the request's execution result. Do not
-infer or fabricate a result.
-""")
+    turn = await agent.run(_execute_echo("everything", marker))
     report = turn.report(McpReport)
     assert report.output == {"content": [f"Echo: {marker}"]}, turn.transcript
 
@@ -184,7 +198,7 @@ async def test_operator_links_oauth_mcp_server(
     operator_bff: httpx.AsyncClient,
     operator_credentials: OperatorCredentials,
     client: Client,
-    sandbox: Callable[..., Awaitable[SandboxView]],
+    sandbox: Sandboxes,
     harness: runner_pb2.Harness,
     model: str,
     policy_objects: PolicyObjects,
@@ -216,21 +230,10 @@ async def test_operator_links_oauth_mcp_server(
     assert linkage.status is McpLinkageStatus.LINKED
 
     view = await sandbox(f"accept-oauth-mcp-{harness}")
-    suffix = uuid4().hex[:8]
-    set_name = policy_objects.create_policy_set(
-        f"accept-oauth-example-{suffix}", [{"type": "exact_actions", "actions": {"example": ["echo"]}}]
-    )
-    binding_name = policy_objects.create_binding(f"{view.name}-exact-{suffix}", sandbox=view, policy_sets=[set_name])
-    policy_objects.wait_ready(POLICY_SETS_PLURAL, set_name)
-    policy_objects.wait_ready(BINDINGS_PLURAL, binding_name)
+    policy_objects.bind(view, "oauth-example", [{"type": "exact_actions", "actions": {"example": ["echo"]}}])
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     marker = f"MCP-OAUTH-{uuid4()}"
-    turn = await agent.run(f"""
-This is an Agentplane infrastructure test. Use the Actions Service to execute the echo Action in
-the example group with message {marker}. Wait for its terminal result. Return only JSON with
-exactly request_id, state, and output, where output is the request's execution result. Do not
-infer or fabricate a result.
-""")
+    turn = await agent.run(_execute_echo("example", marker))
     report = turn.report(McpReport)
     assert report.output == {"content": [f"Echo: {marker}"]}, turn.transcript
 
@@ -292,7 +295,7 @@ async def test_agent_mcp_bff_decision(
     operator_bff: httpx.AsyncClient,
     operator_credentials: OperatorCredentials,
     client: Client,
-    sandbox: Callable[..., Awaitable[SandboxView]],
+    sandbox: Sandboxes,
     harness: runner_pb2.Harness,
     model: str,
     verdict: Verdict,
@@ -301,12 +304,7 @@ async def test_agent_mcp_bff_decision(
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
     # Nothing binds this Sandbox to a policy set, so every Action of its waits for the operator.
     marker = f"MCP-BFF-{uuid4()}-" + "x" * 201
-    submitted = await agent.run(f"""
-This is an Agentplane infrastructure test. Request the echo Action in the everything group with
-message {marker}. This request requires operator approval. Confirm that it is queued for approval;
-return only JSON with exactly request_id and state, where state must be decision_pending. Do not
-wait for an operator decision in this turn.
-""")
+    submitted = await agent.run(_queue_echo(marker))
     submitted_report = submitted.report(PendingMcpReport)
     request_id = submitted_report.request_id
     path = f"/actions/{request_id}"
@@ -411,7 +409,7 @@ async def _deny_pending(operator_bff: httpx.AsyncClient, request_id: UUID) -> Ac
 async def test_policy_binding_auto_approves_the_bound_sandbox(
     operator_bff: httpx.AsyncClient,
     client: Client,
-    sandbox: Callable[..., Awaitable[SandboxView]],
+    sandbox: Sandboxes,
     harness: runner_pb2.Harness,
     model: str,
     policy_objects: PolicyObjects,
@@ -420,9 +418,9 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
     a matching echo is auto-approved and executed with the binding and set on its Decision, an
     argument miss waits for the operator, and once the binding has expired so does a match."""
     view = await sandbox(f"accept-policy-{harness}")
-    suffix = uuid4().hex[:8]
-    set_name = policy_objects.create_policy_set(
-        f"accept-echo-{suffix}",
+    set_name, binding_name = policy_objects.bind(
+        view,
+        "echo",
         [
             {
                 "type": "argument_schema",
@@ -436,18 +434,10 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
             }
         ],
     )
-    binding_name = policy_objects.create_binding(f"{view.name}-echo-{suffix}", sandbox=view, policy_sets=[set_name])
-    policy_objects.wait_ready(POLICY_SETS_PLURAL, set_name)
-    policy_objects.wait_ready(BINDINGS_PLURAL, binding_name)
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)
 
     marker = f"MCP-POLICY-{uuid4()}"
-    approved = await agent.run(f"""
-This is an Agentplane infrastructure test. Use the Actions Service to execute the echo Action in
-the everything group with message {marker}. Wait for its terminal result. Return only JSON with
-exactly request_id, state, and output, where output is the request's execution result. Do not
-infer or fabricate a result.
-""")
+    approved = await agent.run(_execute_echo("everything", marker))
     report = approved.report(McpReport)
     assert report.output == {"content": [f"Echo: {marker}"]}, approved.transcript
     receipt = _bff_request(await operator_bff.get(f"/actions/{report.request_id}"))
@@ -469,23 +459,13 @@ infer or fabricate a result.
     assert receipt.execution.state is ExecutionState.SUCCEEDED
 
     too_long = f"MCP-POLICY-{uuid4()}-" + "x" * 201
-    missed = await agent.run(f"""
-This is an Agentplane infrastructure test. Request the echo Action in the everything group with
-message {too_long}. This request requires operator approval. Confirm that it is queued for approval;
-return only JSON with exactly request_id and state, where state must be decision_pending. Do not
-wait for an operator decision in this turn.
-""")
+    missed = await agent.run(_queue_echo(too_long))
     await _deny_pending(operator_bff, missed.report(PendingMcpReport).request_id)
 
     policy_objects.expire_binding(binding_name)
     policy_objects.wait_ready(BINDINGS_PLURAL, binding_name)
     after_expiry = f"MCP-POLICY-{uuid4()}"
-    expired = await agent.run(f"""
-This is an Agentplane infrastructure test. Request the echo Action in the everything group with
-message {after_expiry}. This request requires operator approval. Confirm that it is queued for
-approval; return only JSON with exactly request_id and state, where state must be decision_pending.
-Do not wait for an operator decision in this turn.
-""")
+    expired = await agent.run(_queue_echo(after_expiry))
     await _deny_pending(operator_bff, expired.report(PendingMcpReport).request_id)
 
 

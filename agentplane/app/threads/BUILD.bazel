@@ -26,7 +26,6 @@ py_test(
     size = "large",
     srcs = ["test_indexing.py"],
     deps = [
-        ":store",
         "//:conftest",
         "//agentplane/app:conftest",
         "//agentplane/app/testing:history",

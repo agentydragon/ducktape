@@ -78,50 +78,35 @@ async def _allowed_execution(store: ActionStore, *, idempotency_key: str) -> Any
     return view.id
 
 
-async def test_worker_dies_before_start_becomes_unknown_without_ever_calling_the_backend(engine: AsyncEngine) -> None:
-    store = action_store(make_sessionmaker(engine))
-    request_id = await _allowed_execution(store, idempotency_key="dies-before-start")
+@pytest.mark.parametrize(
+    ("started", "reason"),
+    [(False, UnknownOutcomeReason.EXECUTOR_LOST), (True, UnknownOutcomeReason.LEASE_EXPIRED)],
+    ids=["before-start", "after-start"],
+)
+async def test_worker_dies_with_its_claim_becomes_unknown_and_is_not_retried(
+    store: ActionStore, started: bool, reason: UnknownOutcomeReason
+) -> None:
+    request_id = await _allowed_execution(store, idempotency_key="doomed")
 
     claim = await store.claim_execution(request_id, executor_id="doomed-executor", lease_duration=ALREADY_EXPIRED)
     assert claim is not None
-    # The worker crashes before ever calling mark_running; the backend was never touched.
+    # Before start the worker crashes before ever calling mark_running; the backend was never touched.
+    if started:
+        await store.mark_running(request_id)
+        await store.record_executor_heartbeat("doomed-executor")  # the executor itself is otherwise healthy
 
     expired = await store.expire_stale_leases(executor_health_timeout=timedelta(seconds=30))
     assert expired == [request_id]
     view = await store.get(request_id, CALLER)
     assert view.state is ActionState.EXECUTION_UNKNOWN
     assert view.execution is not None
-    assert view.execution.error == {
-        "kind": UnknownOutcomeReason.EXECUTOR_LOST,
-        "message": "dispatch outcome unknown; not replayed",
-    }
-
-
-async def test_worker_dies_after_start_becomes_unknown_and_is_not_retried(engine: AsyncEngine) -> None:
-    store = action_store(make_sessionmaker(engine))
-    request_id = await _allowed_execution(store, idempotency_key="dies-after-start")
-
-    claim = await store.claim_execution(request_id, executor_id="doomed-executor", lease_duration=ALREADY_EXPIRED)
-    assert claim is not None
-    await store.mark_running(request_id)
-    await store.record_executor_heartbeat("doomed-executor")  # the executor itself is otherwise healthy
-
-    expired = await store.expire_stale_leases(executor_health_timeout=timedelta(seconds=30))
-    assert expired == [request_id]
-    view = await store.get(request_id, CALLER)
-    assert view.state is ActionState.EXECUTION_UNKNOWN
-    assert view.execution is not None
-    assert view.execution.error == {
-        "kind": UnknownOutcomeReason.LEASE_EXPIRED,
-        "message": "dispatch outcome unknown; not replayed",
-    }
+    assert view.execution.error == {"kind": reason, "message": "dispatch outcome unknown; not replayed"}
 
     # Never called a second time: no dispatch method exists that would re-run a claimed request.
     assert await store.pending_dispatches() == []
 
 
-async def test_heartbeat_renewal_keeps_the_lease_alive_past_its_original_duration(engine: AsyncEngine) -> None:
-    store = action_store(make_sessionmaker(engine))
+async def test_heartbeat_renewal_keeps_the_lease_alive_past_its_original_duration(store: ActionStore) -> None:
     request_id = await _allowed_execution(store, idempotency_key="renewed-lease")
 
     claim = await store.claim_execution(request_id, executor_id="healthy-executor", lease_duration=ALREADY_EXPIRED)
@@ -137,8 +122,7 @@ async def test_heartbeat_renewal_keeps_the_lease_alive_past_its_original_duratio
     assert (await store.get(request_id, CALLER)).state is ActionState.RUNNING
 
 
-async def test_heartbeat_from_the_wrong_lease_token_is_rejected(engine: AsyncEngine) -> None:
-    store = action_store(make_sessionmaker(engine))
+async def test_heartbeat_from_the_wrong_lease_token_is_rejected(store: ActionStore) -> None:
     request_id = await _allowed_execution(store, idempotency_key="wrong-token-heartbeat")
     claim = await store.claim_execution(request_id, executor_id="executor-a", lease_duration=timedelta(seconds=30))
     assert claim is not None
@@ -147,8 +131,9 @@ async def test_heartbeat_from_the_wrong_lease_token_is_rejected(engine: AsyncEng
     assert accepted is False
 
 
-async def test_late_completion_from_the_original_executor_reconciles_the_unknown_execution(engine: AsyncEngine) -> None:
-    store = action_store(make_sessionmaker(engine))
+async def test_late_completion_from_the_original_executor_reconciles_the_unknown_execution(
+    engine: AsyncEngine, store: ActionStore
+) -> None:
     request_id = await _allowed_execution(store, idempotency_key="late-completion")
 
     claim = await store.claim_execution(request_id, executor_id="slow-executor", lease_duration=ALREADY_EXPIRED)
@@ -178,21 +163,17 @@ async def test_late_completion_from_the_original_executor_reconciles_the_unknown
         assert row.reconciled_by == "slow-executor"
 
 
-async def test_late_completion_with_a_different_lease_token_is_rejected(engine: AsyncEngine) -> None:
-    store = action_store(make_sessionmaker(engine))
+async def test_late_completion_with_a_different_lease_token_is_rejected(store: ActionStore) -> None:
     request_id = await _allowed_execution(store, idempotency_key="late-completion-wrong-token")
     claim = await store.claim_execution(request_id, executor_id="slow-executor", lease_duration=ALREADY_EXPIRED)
     assert claim is not None
     await store.mark_running(request_id)
     await store.expire_stale_leases(executor_health_timeout=timedelta(seconds=30))
 
-    try:
+    with pytest.raises(ActionConflictError):
         await store.finish_execution(
             request_id, "slow-executor", uuid4(), ExecutionResult(state=ExecutionState.SUCCEEDED, result={})
         )
-        raise AssertionError("expected ActionConflictError")
-    except ActionConflictError:
-        pass
     assert (await store.get(request_id, CALLER)).state is ActionState.EXECUTION_UNKNOWN
 
 
@@ -257,9 +238,8 @@ class GatedExecutor(Executor):
 
 
 async def test_drain_fences_queued_dispatch_and_another_replica_claims_it(
-    engine: AsyncEngine, echo_catalog: ActionCatalog
+    store: ActionStore, echo_catalog: ActionCatalog
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
     executor = GatedExecutor()
     executor.release.set()
     request_id = await _allowed_execution(store, idempotency_key="queued-drain")
@@ -282,9 +262,8 @@ async def test_drain_fences_queued_dispatch_and_another_replica_claims_it(
 
 
 async def test_running_replica_wakes_for_a_dispatch_committed_elsewhere(
-    engine: AsyncEngine, db_url: str, echo_catalog: ActionCatalog
+    store: ActionStore, db_url: str, echo_catalog: ActionCatalog
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
     executor = GatedExecutor()
     executor.release.set()
     updates = ActionUpdateBroker(db_url)
@@ -299,8 +278,7 @@ async def test_running_replica_wakes_for_a_dispatch_committed_elsewhere(
     assert executor.calls == 2
 
 
-async def test_failed_claim_is_retried_without_another_wake(engine: AsyncEngine, echo_catalog: ActionCatalog) -> None:
-    store = action_store(make_sessionmaker(engine))
+async def test_failed_claim_is_retried_without_another_wake(store: ActionStore, echo_catalog: ActionCatalog) -> None:
     executor = GatedExecutor()
     executor.release.set()
     claim_execution = store.claim_execution
@@ -332,9 +310,8 @@ async def test_failed_claim_is_retried_without_another_wake(engine: AsyncEngine,
 
 
 async def test_drain_includes_a_claim_whose_database_reply_is_still_in_flight(
-    engine: AsyncEngine, echo_catalog: ActionCatalog
+    store: ActionStore, echo_catalog: ActionCatalog
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
     executor = GatedExecutor()
     claimed, return_claim = asyncio.Event(), asyncio.Event()
     claim_execution = store.claim_execution
@@ -377,9 +354,8 @@ async def test_drain_includes_a_claim_whose_database_reply_is_still_in_flight(
 
 
 async def test_drain_waits_for_terminal_persistence_and_renews_its_lease(
-    engine: AsyncEngine, echo_catalog: ActionCatalog
+    store: ActionStore, echo_catalog: ActionCatalog
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
     executor = GatedExecutor()
     persisting, release_persistence, renewed = (asyncio.Event() for _ in range(3))
     finish = store.finish_execution
@@ -427,10 +403,7 @@ async def test_drain_waits_for_terminal_persistence_and_renews_its_lease(
             release_persistence.set()
 
 
-async def test_forced_drain_persists_unknown_and_never_replays(
-    engine: AsyncEngine, echo_catalog: ActionCatalog
-) -> None:
-    store = action_store(make_sessionmaker(engine))
+async def test_forced_drain_persists_unknown_and_never_replays(store: ActionStore, echo_catalog: ActionCatalog) -> None:
     executor = GatedExecutor()
     request_id = await _allowed_execution(store, idempotency_key="forced-drain")
     first = ActionService(
@@ -454,9 +427,8 @@ async def test_forced_drain_persists_unknown_and_never_replays(
 
 
 async def test_forced_drain_bounds_unavailable_outcome_persistence(
-    engine: AsyncEngine, echo_catalog: ActionCatalog
+    store: ActionStore, echo_catalog: ActionCatalog
 ) -> None:
-    store = action_store(make_sessionmaker(engine))
     executor = GatedExecutor()
     request_id = await _allowed_execution(store, idempotency_key="hung-persistence")
     service = ActionService(

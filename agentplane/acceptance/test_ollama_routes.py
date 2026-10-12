@@ -5,14 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-from collections.abc import Awaitable, Callable
 
 import pytest
 import pytest_bazel
 
 from agentplane.acceptance.agent import Agent
+from agentplane.acceptance.conftest import Sandboxes
 from agentplane.acceptance.ollama_catalog import ollama_cases
-from agentplane.app.sandbox_models import SandboxView
 from agentplane.app.testing.client import Client
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
@@ -21,7 +20,6 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 
-Sandboxes = Callable[..., Awaitable[SandboxView]]
 CASES = ollama_cases(get_required_path("ducktape/cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml"))
 
 

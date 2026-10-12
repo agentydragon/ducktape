@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import os
 import textwrap
-from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 
 import pytest_bazel
@@ -32,7 +31,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.acceptance.agent import Agent
-from agentplane.app.sandbox_models import SandboxView
+from agentplane.acceptance.conftest import Sandboxes
 from agentplane.app.testing.client import Client
 from agentplane.egress.decisions import Decision, Outcome
 from agentplane.proto import runner_pb2
@@ -70,7 +69,6 @@ LLM_INGRESS_HOST = f"agentplane-llm-ingress.{ACCEPTANCE_NAMESPACE}.svc.cluster.l
 DECISION_SECONDS = 30.0
 BINDING_SECONDS = 60.0
 
-Sandboxes = Callable[..., Awaitable[SandboxView]]
 
 PROBE = textwrap.dedent(f"""\
     You are inside a sandbox whose outbound network goes through a proxy. Work out what it lets you

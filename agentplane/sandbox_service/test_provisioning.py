@@ -186,6 +186,9 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
             template=TEMPLATE,
             session_defaults=sandbox_service_pb2.SessionDefaults(harness=runner_pb2.HARNESS_UNSPECIFIED),
         ),
+        # The runner's endpoints are the service's to grant, never the request's to pick.
+        CreateSandboxRequest(name="test", template=TEMPLATE, egress_policies=[RUNNER_ENDPOINTS.ingress.egress_policy]),
+        CreateSandboxRequest(name="test", template=TEMPLATE, egress_policies=[RUNNER_ENDPOINTS.control.egress_policy]),
     ],
     ids=[
         "empty-name",
@@ -195,6 +198,8 @@ async def test_headless_create_list_and_uid_pinned_lifecycle(api: SandboxService
         "long-bootstrap",
         "long-setup",
         "unsupported-harness",
+        "picks-ingress-policy",
+        "picks-control-policy",
     ],
 )
 async def test_invalid_protobuf_create_does_not_mutate(
@@ -268,20 +273,11 @@ async def test_authorization_precedes_creation(api: SandboxServiceClient, cluste
 
 async def test_manual_egress_grants_cross_the_service_boundary(api: SandboxServiceClient, case: Case) -> None:
     view = await api.create(CreateSandboxRequest(name="test", template=TEMPLATE))
+    account = ServiceAccountRef(namespace=view.service_account.namespace, name=view.service_account.name)
     name = await api.grant_egress(view, ["test-basic"])
-    assert name in {
-        binding.name
-        for binding in await case.service.egress.bindings_for(
-            ServiceAccountRef(namespace=view.service_account.namespace, name=view.service_account.name)
-        )
-    }
+    assert name in {binding.name for binding in await case.service.egress.bindings_for(account)}
     await api.revoke_egress(name)
-    assert name not in {
-        binding.name
-        for binding in await case.service.egress.bindings_for(
-            ServiceAccountRef(namespace=view.service_account.namespace, name=view.service_account.name)
-        )
-    }
+    assert name not in {binding.name for binding in await case.service.egress.bindings_for(account)}
     with pytest.raises(ServiceError) as missing:
         await api.revoke_egress(name)
     assert missing.value.code is grpc.StatusCode.NOT_FOUND
@@ -390,24 +386,6 @@ async def test_create_points_the_runner_at_its_endpoints_and_grants_their_egress
         RUNNER_ENDPOINTS.ingress.egress_policy,
         "test-basic",
     ]
-
-
-@pytest.mark.parametrize(
-    "spec",
-    [
-        CreateSandboxRequest(name="test", template=TEMPLATE, egress_policies=[RUNNER_ENDPOINTS.ingress.egress_policy]),
-        CreateSandboxRequest(name="test", template=TEMPLATE, egress_policies=[RUNNER_ENDPOINTS.control.egress_policy]),
-    ],
-    ids=["picks-ingress-policy", "picks-control-policy"],
-)
-async def test_a_request_cannot_pick_an_endpoint_egress_policy(
-    api: SandboxServiceClient, case: Case, spec: CreateSandboxRequest
-) -> None:
-    before = dict(case.custom.objects)
-    with pytest.raises(ServiceError) as rejected:
-        await api.create(spec)
-    assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
-    assert case.custom.objects == before
 
 
 async def test_endpoint_egress_cannot_be_granted_afterwards(api: SandboxServiceClient, case: Case) -> None:

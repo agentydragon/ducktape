@@ -12,6 +12,7 @@ from datetime import timedelta
 from unittest.mock import AsyncMock
 from uuid import UUID
 
+import fastmcp.client.client
 import httpx2
 import pytest
 import pytest_bazel
@@ -21,7 +22,7 @@ from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.exceptions import ToolError
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import AuthenticationV1Api
-from mcp.types import CallToolResult, ContentBlock, ImageContent, TextContent
+from mcp.types import CallToolResult, ImageContent, TextContent
 from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.types import Message, Scope
@@ -61,6 +62,7 @@ from agentplane.action_service.store import ActionStore
 from agentplane.action_service.testing.callers import in_sync_index
 from agentplane.action_service.testing.credentials import WORKLOAD_CREDENTIAL_PLACEHOLDER
 from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
+from agentplane.action_service.testing.mcp_client import asgi_mcp_client, text_of
 from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionSubscription, ActionUpdateBroker
 from agentplane.changes import ChangeSignal
@@ -169,29 +171,9 @@ class Frontend:
     tokens: dict[str, WorkloadPrincipal]
 
     def client(self, token: str = "test-token-a", *, egress: bool = False) -> Client[StreamableHttpTransport]:
-        def factory(
-            headers: dict[str, str] | None = None,
-            timeout: httpx2.Timeout | None = None,
-            auth: httpx2.Auth | None = None,
-            *,
-            follow_redirects: bool = True,
-        ) -> httpx2.AsyncClient:
-            transport = EgressSubstitution(self.app, token) if egress else httpx2.ASGITransport(self.app)
-            return httpx2.AsyncClient(
-                transport=transport,
-                headers=headers,
-                timeout=timeout or httpx2.Timeout(30),
-                auth=auth,
-                follow_redirects=follow_redirects,
-            )
-
-        return Client(
-            StreamableHttpTransport(
-                "http://actions.test/mcp",
-                headers={"Authorization": f"Bearer {WORKLOAD_CREDENTIAL_PLACEHOLDER if egress else token}"},
-                httpx_client_factory=factory,
-            )
-        )
+        if egress:
+            return asgi_mcp_client(lambda: EgressSubstitution(self.app, token), WORKLOAD_CREDENTIAL_PLACEHOLDER)
+        return asgi_mcp_client(lambda: httpx2.ASGITransport(self.app), token)
 
 
 def _test_group_catalog() -> ActionCatalog:
@@ -325,10 +307,6 @@ async def _decide(frontend: Frontend, request: ActionRequestView, verdict: Verdi
         ),
         OPERATOR,
     )
-
-
-def _text(content: list[ContentBlock]) -> str:
-    return one(block.text for block in content if isinstance(block, TextContent))
 
 
 async def test_compact_catalog_opt_in_pagination_and_small_generic_schema(frontend: Frontend) -> None:
@@ -936,6 +914,17 @@ async def test_cancellation_wakes_mcp_receipt_wait(frontend: Frontend, subscript
         assert not frontend.updates._subscribers
 
 
+async def _allowed_result(frontend: Frontend, group: str) -> fastmcp.client.client.CallToolResult:
+    """`get_action_result` for a request to `group` the operator allowed, waiting for it to run."""
+    request = await _submitted(frontend, group)
+    await _decide(frontend, request, Verdict.ALLOW)
+    client = frontend.client()
+    async with client:
+        return await client.call_tool(
+            "get_action_result", {"request_id": str(request.id), "wait": {"wait_seconds": 10}}, raise_on_error=False
+        )
+
+
 async def test_action_result_relays_the_mcp_tools_own_answer(
     results_frontend: Frontend, scripted: ScriptedExecutor
 ) -> None:
@@ -951,12 +940,7 @@ async def test_action_result_relays_the_mcp_tools_own_answer(
     scripted.results[ActionIdentity(group="test-mcp", name="act")] = ExecutionResult(
         state=ExecutionState.SUCCEEDED, result=answer.model_dump(mode="json", by_alias=True, exclude_none=True)
     )
-    request = await _submitted(results_frontend, "test-mcp")
-    await _decide(results_frontend, request, Verdict.ALLOW)
-    async with results_frontend.client() as client:
-        result = await client.call_tool(
-            "get_action_result", {"request_id": str(request.id), "wait": {"wait_seconds": 10}}, raise_on_error=False
-        )
+    result = await _allowed_result(results_frontend, "test-mcp")
     # The tool's own error answer stays an error, beside the image the receipt could only carry as text.
     assert result.content == answer.content
     assert result.structured_content == {"width": 1}
@@ -970,16 +954,11 @@ async def test_action_result_presents_a_sandbox_result_as_a_returned_model(
     scripted.results[ActionIdentity(group="test-sandbox", name="act")] = ExecutionResult(
         state=ExecutionState.SUCCEEDED, result=ran.model_dump(mode="json")
     )
-    request = await _submitted(results_frontend, "test-sandbox")
-    await _decide(results_frontend, request, Verdict.ALLOW)
-    async with results_frontend.client() as client:
-        result = await client.call_tool(
-            "get_action_result", {"request_id": str(request.id), "wait": {"wait_seconds": 10}}
-        )
+    result = await _allowed_result(results_frontend, "test-sandbox")
     # A nonzero exit is the command's answer, not a failed call.
     assert not result.is_error
     assert ExecResult.model_validate(result.structured_content) == ran
-    assert ExecResult.model_validate_json(_text(result.content)) == ran
+    assert ExecResult.model_validate_json(text_of(result.content)) == ran
 
 
 async def test_action_result_says_what_it_waits_on_and_why_nothing_ran(results_frontend: Frontend) -> None:
@@ -993,7 +972,7 @@ async def test_action_result_says_what_it_waits_on_and_why_nothing_ran(results_f
     assert not pending.is_error
     assert pending.structured_content == {"request_id": str(request.id), "state": ActionState.DECISION_PENDING}
     assert denied.is_error
-    assert "test-denial-note" in _text(denied.content)
+    assert "test-denial-note" in text_of(denied.content)
 
 
 async def test_action_result_of_a_failed_execution_carries_its_reason(
@@ -1002,14 +981,9 @@ async def test_action_result_of_a_failed_execution_carries_its_reason(
     scripted.results[ActionIdentity(group="test-sandbox", name="act")] = ExecutionResult(
         state=ExecutionState.FAILED, error={"kind": "sandbox_unavailable", "message": "test box is not ready"}
     )
-    request = await _submitted(results_frontend, "test-sandbox")
-    await _decide(results_frontend, request, Verdict.ALLOW)
-    async with results_frontend.client() as client:
-        result = await client.call_tool(
-            "get_action_result", {"request_id": str(request.id), "wait": {"wait_seconds": 10}}, raise_on_error=False
-        )
+    result = await _allowed_result(results_frontend, "test-sandbox")
     assert result.is_error
-    assert "sandbox_unavailable" in _text(result.content)
+    assert "sandbox_unavailable" in text_of(result.content)
 
 
 def _act_request(key: str) -> dict[str, object]:
@@ -1058,7 +1032,7 @@ async def test_request_action_answering_with_its_result_says_what_it_waits_on(re
     assert not pending.is_error
     assert pending.structured_content is not None
     assert pending.structured_content["state"] == ActionState.DECISION_PENDING
-    assert "get_action_result" in _text(pending.content)
+    assert "get_action_result" in text_of(pending.content)
 
 
 async def test_request_action_refuses_receipt_fields_without_a_receipt(results_frontend: Frontend) -> None:
@@ -1068,7 +1042,7 @@ async def test_request_action_refuses_receipt_fields_without_a_receipt(results_f
         )
     # Refused before submission: the caller asked for receipt fields the answer would silently drop.
     assert refused.is_error
-    assert 'respond_with="receipt"' in _text(refused.content)
+    assert 'respond_with="receipt"' in text_of(refused.content)
     principal = CallerPrincipal(account=workload("a"))
     assert await results_frontend.store.list_requests(principal, idempotency_key="test-fields") == []
 

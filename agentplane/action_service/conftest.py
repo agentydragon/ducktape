@@ -12,6 +12,7 @@ from agentplane.action_service.testing.fixtures import (
     mcp_executor,
     operator_idp,
     scripted,
+    store,
 )
 from util.testing.postgres_fixtures import (
     database_clones,

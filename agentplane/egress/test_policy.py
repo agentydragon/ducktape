@@ -385,14 +385,17 @@ def test_evaluate(case: Case) -> None:
     assert evaluate(case.index, CALLER, case.request, NOW) == case.expected
 
 
+def scoped_index(policy_name: str, credential_: EgressCredential) -> Index:
+    """The caller bound to one policy whose only rule is GITHUB_RULE presenting `credential_`."""
+    rule = GITHUB_RULE.model_copy(update={"credential_ref": CredentialRef(name=credential_.metadata.name)})
+    return index(
+        policies=[policy(policy_name, rule)], bindings=[binding("b", policies=[policy_name])], credentials=[credential_]
+    )
+
+
 def test_authenticated_workload_source_substitutes_only_the_validated_context_bearer() -> None:
     dynamic = workload_credential("agentplane-workload", BEARER)
-    dynamic_rule = GITHUB_RULE.model_copy(update={"credential_ref": CredentialRef(name=dynamic.metadata.name)})
-    scoped = index(
-        policies=[policy("workload", dynamic_rule)],
-        bindings=[binding("b", policies=["workload"])],
-        credentials=[dynamic],
-    )
+    scoped = scoped_index("workload", dynamic)
     token = "pod-a-authenticated-workload-token"
     decision = evaluate(
         scoped,
@@ -407,12 +410,7 @@ def test_authenticated_workload_source_substitutes_only_the_validated_context_be
 
 def test_authenticated_workload_source_fails_without_authenticated_context() -> None:
     dynamic = workload_credential("agentplane-workload", BEARER)
-    dynamic_rule = GITHUB_RULE.model_copy(update={"credential_ref": CredentialRef(name=dynamic.metadata.name)})
-    scoped = index(
-        policies=[policy("workload", dynamic_rule)],
-        bindings=[binding("b", policies=["workload"])],
-        credentials=[dynamic],
-    )
+    scoped = scoped_index("workload", dynamic)
     egress = request(authorization=f"Bearer {dynamic.placeholder}")
     assert evaluate(scoped, CALLER, egress, NOW) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
     stale = AuthenticatedWorkloadContext(
@@ -422,13 +420,6 @@ def test_authenticated_workload_source_fails_without_authenticated_context() -> 
     )
     assert evaluate(scoped, CALLER, egress, NOW, authenticated_workload=stale) == Denied(
         DenyReason.CREDENTIAL_UNAVAILABLE
-    )
-
-
-def _projected_index(credential_: EgressCredential) -> Index:
-    rule = GITHUB_RULE.model_copy(update={"credential_ref": CredentialRef(name=credential_.metadata.name)})
-    return index(
-        policies=[policy("projected", rule)], bindings=[binding("b", policies=["projected"])], credentials=[credential_]
     )
 
 
@@ -444,7 +435,7 @@ def test_projected_workload_source_substitutes_the_token_for_its_own_audience() 
         projected={KUBERNETES_AUDIENCE: api_server_token, "https://other.test.invalid": "not-this-one"},
     )
     decision = evaluate(
-        _projected_index(projected),
+        scoped_index("projected", projected),
         CALLER,
         request(authorization=f"Bearer {projected.placeholder}"),
         NOW,
@@ -461,7 +452,7 @@ def test_projected_workload_source_fails_when_its_audience_did_not_survive_revie
     """A token the verifier dropped is absent rather than present and unusable, so the rule naming
     it denies where it is used instead of spending some other audience's token."""
     projected = projected_credential("kubernetes-workload", BEARER)
-    scoped = _projected_index(projected)
+    scoped = scoped_index("projected", projected)
     egress = request(authorization=f"Bearer {projected.placeholder}")
     assert evaluate(scoped, CALLER, egress, NOW) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
     without = AuthenticatedWorkloadContext(bearer="hop", caller=CALLER, pod_uid="pod-a-uid", projected={})
@@ -481,7 +472,7 @@ def test_projected_workload_source_is_unusable_by_another_caller() -> None:
         projected={KUBERNETES_AUDIENCE: "pod-b-api-server-token"},
     )
     decision = evaluate(
-        _projected_index(projected),
+        scoped_index("projected", projected),
         CALLER,
         request(authorization=f"Bearer {projected.placeholder}"),
         NOW,
@@ -510,11 +501,9 @@ def test_credential_source_requires_exactly_one_known_tag() -> None:
 def test_a_basic_username_target_takes_the_half_before_the_first_colon() -> None:
     """What `https://<token>@github.com` sends. The placeholder carries no `:` -- it is derived, and
     the separator is `-` for exactly this reason -- so it can be a whole username component."""
-    credentials = [
-        credential("github-pat", BasicUsernameTarget(header=AUTHORIZATION, method=TargetMethod.BASIC_USERNAME))
-    ]
-    scoped = index(
-        policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"])], credentials=credentials
+    scoped = scoped_index(
+        "github",
+        credential("github-pat", BasicUsernameTarget(header=AUTHORIZATION, method=TargetMethod.BASIC_USERNAME)),
     )
     decision = evaluate(scoped, CALLER, request(authorization=basic(f"{PLACEHOLDER}:")), NOW)
     rewritten = (HeaderRewrite(header=AUTHORIZATION, values=(basic(f"{SECRET_VALUE}:"),)),)
@@ -524,9 +513,8 @@ def test_a_basic_username_target_takes_the_half_before_the_first_colon() -> None
 def test_a_whole_value_target_takes_the_header_entire() -> None:
     """The shape an API key travels in: `x-api-key: <key>`, no scheme to strip."""
     header = "X-Api-Key"
-    credentials = [credential("github-pat", WholeValueTarget(header=header, method=TargetMethod.WHOLE_VALUE))]
-    scoped = index(
-        policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"])], credentials=credentials
+    scoped = scoped_index(
+        "github", credential("github-pat", WholeValueTarget(header=header, method=TargetMethod.WHOLE_VALUE))
     )
     decision = evaluate(scoped, CALLER, request(**{"x-api-key": PLACEHOLDER}), NOW)
     assert decision == Allowed("b", "github", 0, (HeaderRewrite(header=header, values=(SECRET_VALUE,)),))
@@ -562,6 +550,8 @@ def test_a_rule_naming_a_credential_the_namespace_does_not_hold_forwards_untouch
         ("*.github.com", "a.b.github.com", True),
         ("*.github.com", "github.com", False),
         ("*.github.com", "evilgithub.com", False),
+        *(("*", host, True) for host in ["example.com", "a.b.example.net", "140.82.121.4", "2606:50c0:8000::153"]),
+        ("*", "", False),
     ],
 )
 def test_host_matches(pattern: str, host: str, expected: bool) -> None:
@@ -605,17 +595,6 @@ def test_binding_resolution(
 ) -> None:
     result = resolve_binding(index(policies=policies, bindings=[binding_]), binding_, NOW)
     assert (result.active, result.reason, len(result.policies)) == (status, reason, resolved)
-
-
-@pytest.mark.parametrize(
-    "host", ["example.com", "example.org", "a.b.example.net", "140.82.121.4", "2606:50c0:8000::153"]
-)
-def test_blanket_hosts_match(host: str) -> None:
-    assert host_matches("*", host)
-
-
-def test_blanket_does_not_match_an_empty_host() -> None:
-    assert not host_matches("*", "")
 
 
 @pytest.mark.parametrize("hosts", [["*"], ["api.github.com", "*"]])

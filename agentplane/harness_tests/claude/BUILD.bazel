@@ -149,6 +149,7 @@ py_test(
         ":frames",
         ":harness",
         ":messages",
+        ":requests",
         "//:conftest",
         "//agentplane/harness_tests:conftest",
         "//agentplane/native/claude:blocks",

@@ -23,7 +23,8 @@ def inventory(custom_objects: FakeCustomObjectsApi) -> ActionPolicyBindings:
     return ActionPolicyBindings(namespace=NAMESPACE, custom_objects=cast(CustomObjectsClient, custom_objects))
 
 
-def _seed(custom_objects: FakeCustomObjectsApi) -> None:
+@pytest.fixture(autouse=True)
+def seeded(custom_objects: FakeCustomObjectsApi) -> None:
     custom_objects.objects[("actionpolicysets", "reads")] = action_policy_set(
         "reads", auto_approve_if=[READS], ready=("True", "Valid", "spec accepted")
     )
@@ -40,7 +41,6 @@ async def test_bind_creates_a_labelled_binding_the_sandbox_owns(
 ) -> None:
     """Creating the binding is the whole grant. The API server names it, the app's label says who
     wrote it, and the owner reference lets the Sandbox's deletion collect it."""
-    _seed(custom_objects)
     before = set(custom_objects.objects)
 
     await inventory.bind(LIVE, ["reads", "issues"])
@@ -66,7 +66,6 @@ async def test_a_binding_naming_a_set_the_namespace_lacks_writes_nothing(
 ) -> None:
     """The Action Service would answer the dangling name with nothing; the app refuses to mint it.
     A refused set still exists, so binding to it is the operator's call, not a typo."""
-    _seed(custom_objects)
     before = set(custom_objects.objects)
 
     with pytest.raises(UnknownPolicySetError) as refused:

@@ -7,14 +7,13 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 from typing import cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest_bazel
 from sqlalchemy import select
 
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
-from agentplane.app.threads.store import ThreadStore
 from agentplane.history_service.fold.models import (
     ThreadCheckpoint,
     ThreadEntity,
@@ -57,6 +56,20 @@ class _HarnessOutputRecorder:
         self.observations.append((observation, list(sources)))
 
 
+async def view_state(history: History, thread: UUID) -> tuple[ThreadCheckpoint, ThreadEntity]:
+    """The thread's checkpoint and its current `view_state` row."""
+    async with history.sessions() as session:
+        checkpoint = await session.get(ThreadCheckpoint, thread)
+        assert checkpoint is not None
+        view = await session.get(ThreadEntity, (thread, checkpoint.projection_epoch, "view_state", "current"))
+        assert view is not None
+    return checkpoint, view
+
+
+def operational_state(view: ThreadEntity) -> dict[str, object]:
+    return ThreadOperationalState.model_validate(view.state["operational"]).model_dump()
+
+
 async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_projection(
     event_logs: SeededEventLogStore, history: History
 ) -> None:
@@ -64,50 +77,27 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     attached = runner_pb2.Attached(session_id="s-operational", spec=SPEC)
     await history.set_attached(thread, attached)
     await history.record(thread, [event_entry(1, harness_started=event_pb2.HarnessStarted())])
-    async with history.sessions() as session:
-        checkpoint_before = await session.get(ThreadCheckpoint, thread)
-        assert checkpoint_before is not None
-        view_before = await session.get(
-            ThreadEntity, (thread, checkpoint_before.projection_epoch, "view_state", "current")
-        )
-        assert view_before is not None
-        semantic_revision = (view_before.cursor, view_before.revision_cursor)
+    checkpoint_before, view_before = await view_state(history, thread)
+    semantic_revision = (view_before.cursor, view_before.revision_cursor)
 
     await history.fail_feed(thread, error="expected runner cursor 2, received 3", error_cursor=3)
-    async with history.sessions() as session:
-        checkpoint_after = await session.get(ThreadCheckpoint, thread)
-        assert checkpoint_after is not None
-        view_after = await session.get(
-            ThreadEntity, (thread, checkpoint_after.projection_epoch, "view_state", "current")
-        )
-        assert view_after is not None
-        operational = ThreadOperationalState.model_validate(view_after.state["operational"])
+    checkpoint_after, view_after = await view_state(history, thread)
     assert checkpoint_after.through_cursor == checkpoint_before.through_cursor == 1
     assert (view_after.cursor, view_after.revision_cursor) == semantic_revision == (1, 1)
-    assert operational.model_dump() == {
+    assert operational_state(view_after) == {
         "status": "failed",
         "last_verified_cursor": "1",
         "feed_error": {"cursor": "3", "message": "expected runner cursor 2, received 3"},
     }
 
     await history.set_attached(thread, runner_pb2.Attached(session_id="s-operational", spec=SPEC, last_cursor=1))
-    async with history.sessions() as session:
-        view_reset = await session.get(
-            ThreadEntity, (thread, checkpoint_after.projection_epoch, "view_state", "current")
-        )
-        assert view_reset is not None
-        reset = ThreadOperationalState.model_validate(view_reset.state["operational"])
+    _, view_reset = await view_state(history, thread)
     assert (view_reset.cursor, view_reset.revision_cursor) == semantic_revision
-    assert reset.model_dump() == {"status": "active", "last_verified_cursor": "1", "feed_error": None}
+    assert operational_state(view_reset) == {"status": "active", "last_verified_cursor": "1", "feed_error": None}
 
     await history.fail_feed(thread, error="projection invariant failed")
-    async with history.sessions() as session:
-        unknown_failure = await session.get(
-            ThreadEntity, (thread, checkpoint_after.projection_epoch, "view_state", "current")
-        )
-        assert unknown_failure is not None
-        operational = ThreadOperationalState.model_validate(unknown_failure.state["operational"])
-    assert operational.model_dump() == {
+    _, unknown_failure = await view_state(history, thread)
+    assert operational_state(unknown_failure) == {
         "status": "failed",
         "last_verified_cursor": "1",
         "feed_error": {"cursor": None, "message": "projection invariant failed"},
@@ -115,7 +105,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
 
 
 async def test_codex_harness_nul_reaches_the_persisted_thread_payload(
-    store: ThreadStore, event_logs: SeededEventLogStore, history: History
+    event_logs: SeededEventLogStore, history: History
 ) -> None:
     """An escaped NUL in Codex's stdout frame must survive adapter translation and thread folding."""
     thread = await event_logs.seed("sb-1", "s-codex-nul")
@@ -163,7 +153,7 @@ async def test_codex_harness_nul_reaches_the_persisted_thread_payload(
 
 
 async def test_record_materializes_exact_payload_revisions_and_stalls_on_unknown_observations(
-    store: ThreadStore, event_logs: SeededEventLogStore, history: History
+    event_logs: SeededEventLogStore, history: History
 ) -> None:
     thread = await event_logs.seed("sb-1", "s-1")
     first = event_entry(1, text_delta=event_pb2.TextDelta(item_id="old", text="hello"))
@@ -235,16 +225,12 @@ async def test_record_materializes_exact_payload_revisions_and_stalls_on_unknown
     # The fold stalls on what it does not model: nothing of the batch applies and the view reports it.
     await history.record(thread, [event_entry(5)])
     assert await event_logs.last_cursor(thread) == 4
-    async with history.sessions() as session:
-        checkpoint = await session.get(ThreadCheckpoint, thread)
-        assert checkpoint is not None
-        view = await session.get(ThreadEntity, (thread, checkpoint.projection_epoch, "view_state", "current"))
-        assert view is not None
-    assert ThreadOperationalState.model_validate(view.state["operational"]).status == "failed"
+    _, view = await view_state(history, thread)
+    assert operational_state(view)["status"] == "failed"
 
 
 async def test_a_completion_that_is_the_streamed_text_keeps_the_body_and_stores_nothing(
-    store: ThreadStore, event_logs: SeededEventLogStore, history: History
+    event_logs: SeededEventLogStore, history: History
 ) -> None:
     thread = await event_logs.seed("sb-1", "s-1")
     await history.record(
@@ -298,7 +284,7 @@ async def test_a_completion_that_is_the_streamed_text_keeps_the_body_and_stores_
 
 
 async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
-    store: ThreadStore, event_logs: SeededEventLogStore, history: History
+    event_logs: SeededEventLogStore, history: History
 ) -> None:
     thread = await event_logs.seed("sb-1", "s-1")
     command = command_pb2.Command(command_id="input", submit_input=command_pb2.SubmitInput(text="question"))
@@ -376,7 +362,7 @@ async def test_record_projects_confirmed_input_and_parallel_tool_revisions(
 
 
 async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
-    store: ThreadStore, event_logs: SeededEventLogStore, history: History
+    event_logs: SeededEventLogStore, history: History
 ) -> None:
     thread = await event_logs.seed("sb-1", "s-1")
     await history.record(
@@ -409,7 +395,7 @@ async def test_a_later_batch_touching_a_completed_item_keeps_its_completion(
 
 
 async def test_every_row_is_numbered_densely_in_thread_order_and_never_renumbered(
-    store: ThreadStore, event_logs: SeededEventLogStore, history: History
+    event_logs: SeededEventLogStore, history: History
 ) -> None:
     """The index is a position in the thread, so it is dense, ordered and fixed once given."""
     thread = await event_logs.seed("sb-1", "s-1")

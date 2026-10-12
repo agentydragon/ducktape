@@ -1,6 +1,5 @@
 """Authenticated grant snapshots and transactional admission/dispatch authorization."""
 
-import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import override
@@ -44,6 +43,7 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.store import ActionConflictError, ActionStore, ExternalGrantNotAuthorizedError
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, admitted_callers, in_sync_index
 from agentplane.action_service.testing.fixtures import RecordingExecutor
+from agentplane.action_service.testing.lifecycle import wait_for_state
 from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
 
@@ -307,11 +307,7 @@ async def test_service_preserves_human_approval_and_canonical_external_provenanc
         (context,) = provider.contexts
         assert context.caller == PERSONAL
         assert context.bindings == ()
-        async with asyncio.timeout(10):
-            view = await service.get(receipt.id, grant.principal())
-            while view.state is not ActionState.SUCCEEDED:
-                await asyncio.sleep(0.01)
-                view = await service.get(receipt.id, grant.principal())
+        await wait_for_state(service, receipt.id, grant.principal(), want=ActionState.SUCCEEDED)
     (executed,) = echo_executor.requests
     assert executed.external_grant == grant.provenance()
     assert executed.caller == grant.principal().account

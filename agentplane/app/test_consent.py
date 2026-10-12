@@ -19,7 +19,7 @@ from fastapi import HTTPException
 from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.action_service.connections import NewConnection
 from agentplane.app.action_federation import OperatorFederationError
-from agentplane.app.conftest import stored_login
+from agentplane.app.conftest import OPERATOR_TOKEN, operator_token, stored_login
 from agentplane.app.consent import ConsentAllow, ConsentDeny, decide_enrollment, preview_enrollment
 from agentplane.app.operator_sessions import OperatorSession, OperatorSessionStore, SessionRow
 from agentplane.subjects import ServiceAccountRef
@@ -38,14 +38,10 @@ def _preview() -> dict[str, Any]:
     }
 
 
-async def token() -> str:
-    return "test-only-token"
-
-
 @asynccontextmanager
 async def _client(downstream: httpx.MockTransport) -> AsyncIterator[OperatorActionServiceClient]:
     async with httpx.AsyncClient(transport=downstream, base_url="https://actions.test") as http:
-        yield OperatorActionServiceClient(http, token)
+        yield OperatorActionServiceClient(http, operator_token)
 
 
 async def _stored(row: SessionRow) -> dict[str, Any]:
@@ -60,7 +56,7 @@ async def test_lost_response_preserves_binding_and_exact_decision(operator_sessi
     decisions: list[dict] = []
 
     def downstream(request: httpx.Request) -> httpx.Response:
-        assert request.headers["Authorization"] == "Bearer test-only-token"
+        assert request.headers["Authorization"] == f"Bearer {OPERATOR_TOKEN}"
         if request.url.path.endswith("/caller-service-accounts"):
             return httpx.Response(200, json=[PUBLIC_CODER.model_dump()])
         if request.url.path.endswith("/connections"):

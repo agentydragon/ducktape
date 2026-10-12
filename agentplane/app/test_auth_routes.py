@@ -29,17 +29,15 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
-from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
 from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
+from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.fake_inventory import TEMPLATE, FakeAuthenticationV1Api
 from util.net import bind_free_port
@@ -50,17 +48,6 @@ OPERATOR = "agentydragon"
 SUBJECT = "op-subject-1"
 SESSION_SECRET = "test-session-secret"  # a test literal, not a real credential
 ACTIVITY_STEP = timedelta(minutes=5)
-MODELS = ModelCatalog(
-    models=[
-        ModelOption(
-            model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
-        ),
-        ModelOption(
-            model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
-        ),
-    ],
-    harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
-)
 
 
 # Serves the app accepting tokens from exactly the subjects passed, yielding its base URL.
@@ -136,7 +123,7 @@ def serve(
             inventory,
             bridge,
             store,
-            MODELS,
+            TEST_MODELS,
             egress,
             decisions,
             live_index,
@@ -201,18 +188,6 @@ async def test_a_non_json_token_exchange_failure_is_reported_as_an_upstream_erro
 
     assert refused.status_code == 502
     assert refused.json() == {"detail": "Identity provider returned an invalid response; please retry."}
-
-
-async def test_an_unsafe_method_from_another_origin_is_refused(browser: httpx.AsyncClient, served: str) -> None:
-    """SameSite=lax still lets a cross-site form post carry the cookie; the Origin check is what does not."""
-    await browser.get("/auth/login")
-    body = {"name": "demo", "template": TEMPLATE}
-
-    refused = await browser.post("/sandboxes", json=body, headers={"Origin": "https://evil.test"})
-
-    assert refused.status_code == 403
-    assert "cross-origin" in refused.json()["detail"]
-    assert (await browser.post("/sandboxes", json=body, headers={"Origin": served})).status_code == 201
 
 
 async def test_a_kubernetes_token_reaches_the_same_app_without_a_session(served: str) -> None:
@@ -320,11 +295,14 @@ async def test_activity_extends_a_session_up_to_its_absolute_deadline(
 
 
 async def test_logout_and_mutations_require_exact_origin(browser: httpx.AsyncClient, served: str) -> None:
+    """SameSite=lax still lets a cross-site form post carry the cookie; the Origin check is what does not."""
     await browser.get("/auth/login")
+    body = {"name": "demo", "template": TEMPLATE}
     for headers in ({}, {"Origin": "https://evil.test"}, {"Origin": served + "/"}):
         assert (await browser.post("/auth/logout", headers=headers)).status_code == 403
-        assert (await browser.post("/sandboxes", json={"name": "blocked"}, headers=headers)).status_code == 403
+        assert (await browser.post("/sandboxes", json=body, headers=headers)).status_code == 403
     assert (await browser.get("/auth/me")).status_code == 200
+    assert (await browser.post("/sandboxes", json=body, headers={"Origin": served})).status_code == 201
 
 
 @pytest.mark.parametrize("id_failure", ["issuer", "audience", "azp", "expired", "subject", "signature"])

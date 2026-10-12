@@ -21,8 +21,7 @@ import pytest_bazel
 from fastmcp import Client
 from fastmcp.client.transports import StreamableHttpTransport
 from fastmcp.exceptions import ToolError
-from mcp.types import CallToolResult, ContentBlock, ImageContent, TextContent, ToolAnnotations
-from more_itertools import one
+from mcp.types import CallToolResult, ImageContent, ToolAnnotations
 from sqlalchemy.ext.asyncio import AsyncEngine
 from starlette.applications import Starlette
 from starlette.routing import Route
@@ -50,6 +49,7 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.store import ActionStore
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, TEST_NAMESPACE, admitted_callers
 from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
+from agentplane.action_service.testing.mcp_client import asgi_mcp_client, text_of
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -167,26 +167,7 @@ class Direct:
     grant: Grant
 
     def client(self, token: str) -> Client[StreamableHttpTransport]:
-        def factory(
-            headers: dict[str, str] | None = None,
-            timeout: httpx2.Timeout | None = None,
-            auth: httpx2.Auth | None = None,
-            *,
-            follow_redirects: bool = True,
-        ) -> httpx2.AsyncClient:
-            return httpx2.AsyncClient(
-                transport=httpx2.ASGITransport(self.app),
-                headers=headers,
-                timeout=timeout or httpx2.Timeout(60),
-                auth=auth,
-                follow_redirects=follow_redirects,
-            )
-
-        return Client(
-            StreamableHttpTransport(
-                "http://actions.test/mcp", headers={"Authorization": f"Bearer {token}"}, httpx_client_factory=factory
-            )
-        )
+        return asgi_mcp_client(lambda: httpx2.ASGITransport(self.app), token)
 
 
 @pytest.fixture
@@ -243,10 +224,6 @@ async def direct(
     app = Starlette(routes=[Route("/mcp", DisconnectSignalMiddleware(mcp_app))], lifespan=lifespan)
     async with service, lifespan_in_own_task(app):
         yield Direct(app, store, grant)
-
-
-def _text(content: list[ContentBlock]) -> str:
-    return one(block.text for block in content if isinstance(block, TextContent))
 
 
 async def test_external_caller_sees_configured_tools_its_policy_can_approve(direct: Direct) -> None:
@@ -322,10 +299,10 @@ async def test_call_no_policy_approves_is_refused_with_its_reason_and_leaves_not
         unlisted = await client.call_tool("test-mcp__unapproved", {}, raise_on_error=False)
         private = await client.call_tool("test-mcp__search", {"public": False}, raise_on_error=False)
     assert unlisted.is_error
-    assert "lists test-mcp/unapproved" in _text(unlisted.content)
+    assert "lists test-mcp/unapproved" in text_of(unlisted.content)
     assert private.is_error
-    assert "argument_schema" in _text(private.content)
-    assert "request_action" in _text(private.content)
+    assert "argument_schema" in text_of(private.content)
+    assert "request_action" in text_of(private.content)
     assert await direct.store.list_requests(direct.grant.principal()) == []
 
 

@@ -49,6 +49,17 @@ async def _open_raw_switches(page: Page) -> None:
     await expect(page.locator('input[type="checkbox"]:checked').first).to_be_attached()
 
 
+async def _open_phone_navigation(page: Page) -> None:
+    """Open the navigation drawer a phone-width page keeps behind its toggle; wider pages show it."""
+    if page.viewport_size and page.viewport_size["width"] < 600:
+        await page.get_by_role("button", name="Toggle navigation").click()
+
+
+async def _open_settings(page: Page) -> None:
+    await _open_phone_navigation(page)
+    await page.get_by_role("button", name="Settings").click()
+
+
 async def _select_reconnect(page: Page) -> None:
     connection = page.locator('select[name="connection"]')
     await connection.select_option(index=1)
@@ -206,7 +217,7 @@ async def _expand_tool_steps(page: Page) -> None:
     await expect(steps.locator('[aria-busy="true"]')).to_have_count(0)
     await expect(page.locator("[aria-label='Thread history'][data-layout-settled='true']")).to_be_attached()
     # Open each tool-call line once; leave reasoning folded.
-    tool_steps = steps.filter(has_not=page.locator(".agentplane-step-title:text-is('Reasoning')"))
+    tool_steps = _tool_steps(page)
     count = await tool_steps.count()
     assert count > 0, "tool run contained no call lines"
     for index in range(count):
@@ -235,3 +246,20 @@ async def _open_select(
         await expect(page.get_by_role("option", name=re.compile(re.escape(picked)))).to_have_count(0)
     await page.mouse.move(0, 0)
     await wait_for_stable(page)
+
+
+def _tool_steps(page: Page) -> Locator:
+    """The step lines of tool calls, not reasoning."""
+    return page.locator(".agentplane-step-details").filter(
+        has_not=page.locator(".agentplane-step-title:text-is('Reasoning')")
+    )
+
+
+async def _open_standalone_reasoning(page: Page) -> Locator:
+    """Open the reasoning step at thread anchor 20 and wait for its body to render."""
+    reasoning = page.locator('[data-thread-anchor="20"] .agentplane-step-details')
+    summary = reasoning.locator(".agentplane-disclosure-summary").first
+    await summary.click()
+    await expect(summary).to_have_attribute("aria-expanded", "true")
+    await expect(reasoning.locator(".agentplane-disclosure-panel .agentplane-markdown")).to_be_visible()
+    return reasoning

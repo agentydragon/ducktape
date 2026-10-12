@@ -35,10 +35,9 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
-from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.testing.history import SeededEventLogStore, register_gateway_session
-from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
+from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.history_watch import SessionOpenings
@@ -237,14 +236,7 @@ async def app_url(
         inventory,
         bridge,
         store,
-        ModelCatalog(
-            models=[
-                ModelOption(
-                    model="bridge-model", display_name="Bridge Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
-                )
-            ],
-            harnesses={harness: ["bridge-model"] for harness in Harness},
-        ),
+        TEST_MODELS,
         egress,
         decisions,
         live_index,

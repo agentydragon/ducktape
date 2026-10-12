@@ -44,29 +44,14 @@ py_library(
     ],
 )
 
-py_library(
-    name = "conftest",
-    testonly = True,
-    srcs = ["conftest.py"],
-    deps = [
-        ":database_migrate",
-        "//agentplane/testing:electric_role",
-        "//util/testing:postgres",
-        "//util/testing:postgres_fixtures",
-        "@pypi//asyncpg",
-        "@pypi//psycopg",
-        "@pypi//pytest",
-    ],
-)
-
 py_test(
     name = "test_store",
     srcs = ["test_store.py"],
     deps = [
-        ":conftest",
         ":store",
         "//:conftest",
         "//agentplane/history_service:channels",
+        "//agentplane/history_service:conftest",
         "//agentplane/history_service/testing:delta_spans",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
@@ -129,9 +114,9 @@ py_test(
     name = "test_settlement",
     srcs = ["test_settlement.py"],
     deps = [
-        ":conftest",
         ":settlement",
         "//:conftest",
+        "//agentplane/history_service:conftest",
         "//agentplane/history_service/testing:delta_spans",
         "//agentplane/native:delta_templates",
         "//agentplane/proto:event_log_pb2",
@@ -147,9 +132,9 @@ py_test(
     name = "test_database_migrate",
     srcs = ["test_database_migrate.py"],
     deps = [
-        ":conftest",
         ":database_migrate",
         "//:conftest",
+        "//agentplane/history_service:conftest",
         "//agentplane/proto:history_service_pb2",
         "//agentplane/proto:runner_pb2",
         "@pypi//protobuf",

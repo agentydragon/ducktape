@@ -157,3 +157,26 @@ py_library(
         "@pypi//protobuf",
     ],
 )
+
+py_library(
+    name = "adapters",
+    srcs = ["adapters.py"],
+    deps = [
+        "//agentplane/proto:event_pb2",
+        "//agentplane/runner:adapter",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "sessions",
+    srcs = ["sessions.py"],
+    deps = [
+        "//agentplane/runner:adapter",
+        "//agentplane/runner:config",
+        "//agentplane/runner:harness",
+        "//agentplane/runner:journal",
+        "//agentplane/runner:session",
+        "//agentplane/runner:store",
+    ],
+)

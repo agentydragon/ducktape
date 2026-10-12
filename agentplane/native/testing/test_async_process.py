@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import sys
+from pathlib import Path
 
 import pytest
 import pytest_bazel
@@ -18,9 +19,13 @@ class Trigger(BaseModel):
     trigger: str
 
 
+def _python(tmp_path: Path, script: str) -> AsyncNativeProcess:
+    return AsyncNativeProcess(tmp_path, [sys.executable, "-c", script], cwd=tmp_path, environment=dict(os.environ))
+
+
 async def test_independent_cursors_observe_the_same_native_frame(tmp_path) -> None:
-    command = [sys.executable, "-c", "import sys; sys.stdin.readline(); print('{\"sequence\": 1}', flush=True)"]
-    async with AsyncNativeProcess(tmp_path, command, cwd=tmp_path, environment=dict(os.environ)) as process:
+    script = "import sys; sys.stdin.readline(); print('{\"sequence\": 1}', flush=True)"
+    async with _python(tmp_path, script) as process:
         first = process.frames()
         second = process.frames()
         await process.send(Trigger(trigger="go"))
@@ -29,12 +34,10 @@ async def test_independent_cursors_observe_the_same_native_frame(tmp_path) -> No
 
 
 async def test_request_matching_does_not_consume_another_native_observer(tmp_path) -> None:
-    command = [
-        sys.executable,
-        "-c",
-        "import sys; sys.stdin.readline(); print('{\"notice\": 1}', flush=True); print('{\"reply\": 2}', flush=True)",
-    ]
-    async with AsyncNativeProcess(tmp_path, command, cwd=tmp_path, environment=dict(os.environ)) as process:
+    script = (
+        "import sys; sys.stdin.readline(); print('{\"notice\": 1}', flush=True); print('{\"reply\": 2}', flush=True)"
+    )
+    async with _python(tmp_path, script) as process:
         observer = process.frames()
         receipt = await process.request(Trigger(trigger="go"), matches=lambda frame: frame.get("reply") == 2)
 
@@ -45,17 +48,14 @@ async def test_request_matching_does_not_consume_another_native_observer(tmp_pat
 
 
 async def test_waiting_for_a_frame_reports_stdout_eof(tmp_path) -> None:
-    async with AsyncNativeProcess(
-        tmp_path, [sys.executable, "-c", "pass"], cwd=tmp_path, environment=dict(os.environ)
-    ) as process:
+    async with _python(tmp_path, "pass") as process:
         with pytest.raises(NativeProcessEofError, match="stdout closed"):
             await process.frames().next()
 
 
 async def test_waiting_for_a_frame_reports_reader_failure(tmp_path) -> None:
-    command = [sys.executable, "-c", "print('not json', flush=True)"]
     with pytest.raises(json.JSONDecodeError):
-        async with AsyncNativeProcess(tmp_path, command, cwd=tmp_path, environment=dict(os.environ)) as process:
+        async with _python(tmp_path, "print('not json', flush=True)") as process:
             await process.frames().next()
 
 
@@ -71,9 +71,7 @@ time.sleep(3600)
 
 
 async def test_assertion_failure_reaps_process_group_and_retains_trace(tmp_path) -> None:
-    process = AsyncNativeProcess(
-        tmp_path, [sys.executable, "-c", HUNG_TREE], cwd=tmp_path, environment=dict(os.environ)
-    )
+    process = _python(tmp_path, HUNG_TREE)
 
     async def fail() -> None:
         async with process:
@@ -93,9 +91,7 @@ async def test_assertion_failure_reaps_process_group_and_retains_trace(tmp_path)
 
 
 async def test_cancellation_reaps_process_group_without_swallowing_cancel(tmp_path) -> None:
-    process = AsyncNativeProcess(
-        tmp_path, [sys.executable, "-c", HUNG_TREE], cwd=tmp_path, environment=dict(os.environ)
-    )
+    process = _python(tmp_path, HUNG_TREE)
     ready = asyncio.Event()
 
     async def drive() -> None:
@@ -120,12 +116,10 @@ async def test_cancellation_reaps_process_group_without_swallowing_cancel(tmp_pa
 
 
 async def test_successful_exit_remains_graceful(tmp_path) -> None:
-    command = [
-        sys.executable,
-        "-c",
-        "import sys; print('{\"ready\": true}', flush=True); sys.stdin.read(); print('{\"closed\": true}', flush=True)",
-    ]
-    async with AsyncNativeProcess(tmp_path, command, cwd=tmp_path, environment=dict(os.environ)) as process:
+    script = (
+        "import sys; print('{\"ready\": true}', flush=True); sys.stdin.read(); print('{\"closed\": true}', flush=True)"
+    )
+    async with _python(tmp_path, script) as process:
         assert await process.frames().next() == {"ready": True}
     assert process.process is not None
     assert process.process.returncode == 0

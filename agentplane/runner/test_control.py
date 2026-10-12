@@ -3,27 +3,26 @@ and answered from the journal, refusals name their cause, lifecycle requests sta
 they say so, and a lost connection is replaced by a fresh one."""
 
 import asyncio
-from collections.abc import AsyncIterator, Callable, Mapping
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, cast, override
 
 import grpc
-import httpx
 import pytest
 import pytest_bazel
 
 from agentplane.grpc_serving import serving
 from agentplane.proto import command_pb2, event_pb2, runner_control_pb2, runner_control_pb2_grpc, runner_pb2
-from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import ClaudeLaunch, RunnerConfig
 from agentplane.runner.control import RunnerControlClient
 from agentplane.runner.harness_process import HarnessProcess
-from agentplane.runner.model_config import HttpModelConfigResolver
 from agentplane.runner.reconnect import StreamTiming
 from agentplane.runner.runner import Runner
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord
+from agentplane.runner.testing import launches
+from agentplane.runner.testing.adapters import UnexpectedAdapter
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -36,36 +35,12 @@ Reason = runner_control_pb2.CommandRefused
 Refused = runner_control_pb2.ControlRefused
 
 
-class RecordingAdapter(HarnessAdapter):
+class RecordingAdapter(UnexpectedAdapter):
     def __init__(self) -> None:
         self.submitted: list[str] = []
 
-    def command(self) -> list[str]:
-        return []
-
-    def environment(self) -> Mapping[str, str]:
-        return {}
-
-    async def handshake(self) -> str:
-        return "test-native-session"
-
-    async def reconcile(self, turn_id: str, *, resumed: bool) -> event_pb2.ConversationReconciled:
-        return event_pb2.ConversationReconciled(turn_id=turn_id)
-
     async def submit(self, command_id: str, text: str) -> None:
         self.submitted.append(command_id)
-
-    async def interrupt(self, turn_id: str) -> None:
-        raise AssertionError(f"unexpected interrupt of {turn_id}")
-
-    async def change_model(self, command_id: str, model: str) -> None:
-        raise AssertionError(f"unexpected model change {command_id}")
-
-    async def change_reasoning_effort(self, command_id: str, effort: str) -> None:
-        raise AssertionError(f"unexpected effort change {command_id}")
-
-    async def on_frame(self, frame: dict[str, Any], source_sequence: int) -> None:
-        raise AssertionError(f"unexpected native frame {source_sequence}")
 
 
 class RunningProcess:
@@ -142,9 +117,7 @@ async def runner(tmp_path: Path) -> AsyncIterator[Runner]:
     async with Runner(
         RunnerConfig(
             state_dir=tmp_path / "state",
-            model_config_resolver=HttpModelConfigResolver(
-                transport=httpx.MockTransport(lambda _request: httpx.Response(200, content=b"null"))
-            ),
+            model_config_resolver=launches.unconfigured_models(),
             # Never launched: `started` stands in for the harness.
             claude=ClaudeLaunch(
                 binary=tmp_path / "test-unlaunched-harness",

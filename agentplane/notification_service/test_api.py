@@ -29,6 +29,7 @@ from agentplane.notification_service.models import (
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.store import Store
+from agentplane.notification_service.testing.store import claimed
 from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
 
 PRINCIPAL = WorkloadPrincipal(
@@ -41,6 +42,15 @@ PRINCIPAL = WorkloadPrincipal(
 )
 
 
+def body(key: str, session_id: str = "session") -> Subscribe:
+    return Subscribe(
+        destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
+        session_id=session_id,
+        idempotency_key=key,
+        source=ActionsSource(provider="actions", request_id=uuid4()),
+    )
+
+
 async def test_subscription_patch_renews_without_pause(store: Store) -> None:
     service = create_autospec(Service, instance=True)
     service.github = None
@@ -48,15 +58,7 @@ async def test_subscription_patch_renews_without_pause(store: Store) -> None:
     resolver = create_autospec(WorkloadPrincipalResolver, instance=True)
     app = create_app(service, resolver)
     app.dependency_overrides[authenticated_caller] = lambda: PRINCIPAL
-    subscription = await store.subscribe(
-        PRINCIPAL,
-        Subscribe(
-            destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
-            session_id="session",
-            idempotency_key="renew",
-            source=ActionsSource(provider="actions", request_id=uuid4()),
-        ),
-    )
+    subscription = await store.subscribe(PRINCIPAL, body("renew"))
     path = f"/v1/subscriptions/{subscription.id}"
     async with httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app), base_url="http://notifications.test"
@@ -169,19 +171,8 @@ async def test_operator_status_is_read_only_and_uid_pinned(store: Store) -> None
     app = create_app(service, create_autospec(WorkloadPrincipalResolver, instance=True))
     principal = PRINCIPAL
     app.dependency_overrides[authenticated_caller] = lambda: principal
-    subscription: SubscriptionView = await store.subscribe(
-        PRINCIPAL,
-        Subscribe(
-            destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
-            session_id="session",
-            idempotency_key="status",
-            source=ActionsSource(provider="actions", request_id=uuid4()),
-        ),
-    )
-    claim = await store.claim()
-    assert claim is not None
-    source = await store.source(claim)
-    assert source is not None
+    subscription: SubscriptionView = await store.subscribe(PRINCIPAL, body("status"))
+    claim, source = await claimed(store)
     await store.record(
         claim, source, [ActionEventView(sequence=1, state=ActionState.DECISION_PENDING, at=datetime.now(UTC))]
     )
@@ -232,15 +223,7 @@ async def test_status_stream_replays_snapshot_and_follows_committed_changes(stor
         try:
             initial = await asyncio.wait_for(anext(frames), 5)
             assert b'"inboxes": []' in initial
-            sub = await store.subscribe(
-                PRINCIPAL,
-                Subscribe(
-                    destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
-                    session_id="stream",
-                    idempotency_key="stream",
-                    source=ActionsSource(provider="actions", request_id=uuid4()),
-                ),
-            )
+            sub = await store.subscribe(PRINCIPAL, body("stream", session_id="stream"))
             updated = await asyncio.wait_for(anext(frames), 5)
             assert str(sub.inbox_id).encode() in updated
             await store.change(PRINCIPAL.account, sub.id, None)
@@ -263,25 +246,14 @@ async def test_session_notice_stream_counts_queued_entries_without_acknowledging
     ) as client:
         response = await client.get("/v1/operator/notices/stream", params={"session_id": "noticed"})
         assert response.status_code == 403  # An agent reads its own inbox, not other Sessions'.
-    sub = await store.subscribe(
-        PRINCIPAL,
-        Subscribe(
-            destination_ref=DestinationRef(namespace="test", name="sandbox", uid="sandbox-uid"),
-            session_id="noticed",
-            idempotency_key="notice-state",
-            source=ActionsSource(provider="actions", request_id=uuid4()),
-        ),
-    )
+    sub = await store.subscribe(PRINCIPAL, body("notice-state", session_id="noticed"))
     async with store.wakeups.listener.listen():
         frames = session_notice_frames(service, "test", {"noticed", "unknown"})
         try:
             initial = json.loads((await asyncio.wait_for(anext(frames), 5)).decode().split("data: ", 1)[1])
             assert [(inbox["session_id"], inbox["queued"]) for inbox in initial["inboxes"]] == [("noticed", 0)]
             assert initial["inboxes"][0]["notice"] is None
-            claim = await store.claim()
-            assert claim is not None
-            source = await store.source(claim)
-            assert source is not None
+            claim, source = await claimed(store)
             await store.record(
                 claim, source, [ActionEventView(sequence=1, state=ActionState.DECISION_PENDING, at=datetime.now(UTC))]
             )

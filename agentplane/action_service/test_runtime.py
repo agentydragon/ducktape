@@ -50,7 +50,7 @@ from agentplane.action_service.service import ActionService, ExecutionLease, Uns
 from agentplane.action_service.settings import Settings
 from agentplane.action_service.store import ActionConflictError
 from agentplane.action_service.testing.callers import in_sync_index
-from agentplane.action_service.testing.lifecycle import wait_available
+from agentplane.action_service.testing.lifecycle import wait_available, wait_for_state
 from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
@@ -332,14 +332,7 @@ async def test_main_serves_real_stdio_execution_and_closes_in_order(db_url: str,
             DecisionInput(verdict=Verdict.ALLOW, expected_version=view.version, idempotency_key="allow"),
             OPERATOR,
         )
-        async with asyncio.timeout(10):
-            for _ in range(1000):
-                view = await service.get(view.id, CALLER)
-                if view.state is ActionState.SUCCEEDED:
-                    break
-                await asyncio.sleep(0.01)
-            else:
-                pytest.fail("stdio execution did not succeed")
+        view = await wait_for_state(service, view.id, CALLER, want=ActionState.SUCCEEDED)
         assert view.execution is not None
         assert CallToolResult.model_validate(view.execution.result).structured_content == {"echoed": "wired"}
         assert await asyncio.to_thread((tmp_path / "called").read_text) == "started"
@@ -444,10 +437,7 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
         assert view.decision.policy_evidence is not None
         assert [b.name for b in view.decision.policy_evidence.bindings] == ["fixture-echo"]
         assert view.decision.policy_evidence.matched.policy_set == "bounded-echo"
-        async with asyncio.timeout(10):
-            while view.state is not ActionState.SUCCEEDED:
-                await asyncio.sleep(0.01)
-                view = await service.get(view.id, bound_caller)
+        view = await wait_for_state(service, view.id, bound_caller, want=ActionState.SUCCEEDED)
         assert view.execution is not None
         assert CallToolResult.model_validate(view.execution.result).structured_content == {"result": "Echo: MCP0-ok"}
         with pytest.raises(ActionConflictError):

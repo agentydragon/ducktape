@@ -14,7 +14,6 @@ from sqlalchemy import event, func, select
 
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.thread_test_support import event_entry
-from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.history_service.fold.models import (
     ThreadCheckpoint,
@@ -37,7 +36,6 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
     ids=["one-hundred-items", "two-thousand-items", "twenty-thousand-items"],
 )
 async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_large_history(
-    store: ThreadStore,
     event_logs: SeededEventLogStore,
     content: ContentStore,
     history: History,

@@ -36,6 +36,9 @@ AUDIENCE = "agentplane"
 # A sandbox's first Pod has to be scheduled and pull the runner image.
 SANDBOX_READY_SECONDS = 300.0
 
+# What the `sandbox` fixture yields: create a sandbox by name and wait until it runs.
+Sandboxes = Callable[..., Awaitable[SandboxView]]
+
 
 class TokenNotMintedError(Exception):
     """`kubectl create token` refused; its own message says why."""
@@ -111,7 +114,7 @@ async def model(client: Client, harness: runner_pb2.Harness) -> str:
     return offered[0]
 
 
-async def _running(client: Client, name: str) -> SandboxView:
+async def wait_until_running(client: Client, name: str) -> SandboxView:
     """Wait for the sandbox's Pod to be scheduled, pulled and Ready — the condition, not a delay."""
     async for attempt in AsyncRetrying(stop=stop_after_delay(SANDBOX_READY_SECONDS), wait=wait_fixed(2), reraise=True):
         with attempt:
@@ -123,7 +126,7 @@ async def _running(client: Client, name: str) -> SandboxView:
 
 
 @pytest.fixture
-async def sandbox(client: Client) -> AsyncIterator[Callable[..., Awaitable[SandboxView]]]:
+async def sandbox(client: Client) -> AsyncIterator[Sandboxes]:
     """Creates sandboxes and deletes every one it created, whatever the test did.
 
     Deletion is refused while a sandbox runs, so each is suspended first. A sandbox that will not go
@@ -152,7 +155,7 @@ async def sandbox(client: Client) -> AsyncIterator[Callable[..., Awaitable[Sandb
             )
         )
         created.append(view.name)
-        return await _running(client, view.name)
+        return await wait_until_running(client, view.name)
 
     yield create
 

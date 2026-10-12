@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any, cast
 
 import httpx
-import pytest
 import pytest_bazel
 
 from agentplane.action_service.client import OperatorActionServiceClient
@@ -21,18 +19,14 @@ from agentplane.action_service.policy_view import (
 )
 from agentplane.action_service.providers import BindingKind
 from agentplane.app.action_policy import ActionPolicyInventory, BindingProvenance
+from agentplane.app.conftest import operator_token
 from agentplane.policy_sets import ConditionStatus
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.egress_views import FLUX_KUSTOMIZATION_LABEL
-from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE
 from agentplane.subjects import ServiceAccountRef
 
 LIVE = ServiceAccountRef(namespace=NAMESPACE, name="live")
-
-
-@pytest.fixture
-def inventory(custom_objects: FakeCustomObjectsApi) -> ActionPolicyInventory:
-    return ActionPolicyInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects))
 
 
 READY = ReadyConditionView(status=ConditionStatus.TRUE, reason="Valid", message="spec accepted", observed_generation=1)
@@ -77,12 +71,8 @@ ANSWER = SubjectActionPolicyView(
 )
 
 
-async def token() -> str:
-    return "test-operator-token"
-
-
 async def test_for_subject_asks_the_service_and_adds_only_who_wrote_each_binding(
-    inventory: ActionPolicyInventory,
+    action_policy: ActionPolicyInventory,
 ) -> None:
     """The live frame goes through here: the service's answer for the ServiceAccount the sandbox
     runs as, with labels read into provenance and nothing else re-derived."""
@@ -93,10 +83,11 @@ async def test_for_subject_asks_the_service_and_adds_only_who_wrote_each_binding
         return httpx.Response(200, json=ANSWER.model_dump(mode="json"))
 
     client = OperatorActionServiceClient(
-        httpx.AsyncClient(transport=httpx.MockTransport(service), base_url="http://test-actions.invalid"), token
+        httpx.AsyncClient(transport=httpx.MockTransport(service), base_url="http://test-actions.invalid"),
+        operator_token,
     )
 
-    view = await inventory.for_subject(client, LIVE)
+    view = await action_policy.for_subject(client, LIVE)
 
     assert asked == [f"/v1/operator/action-policy/service-accounts/{NAMESPACE}/live"]
     assert [(b.name, b.provenance) for b in view.bindings] == [

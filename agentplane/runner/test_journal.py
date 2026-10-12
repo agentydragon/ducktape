@@ -6,7 +6,6 @@ durability beyond process death relies on SQLite EXTRA synchronization and the s
 
 import asyncio
 import sqlite3
-from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -61,12 +60,6 @@ def commit_gate(monkeypatch: pytest.MonkeyPatch) -> CommitGate:
 
     monkeypatch.setattr(aiosqlite.Connection, "commit", gated)
     return gate
-
-
-@pytest.fixture
-async def journal(tmp_path: Path) -> AsyncIterator[Journal]:
-    async with Journal.open(tmp_path / "journal.sqlite", "test-source") as opened:
-        yield opened
 
 
 @pytest.mark.parametrize(

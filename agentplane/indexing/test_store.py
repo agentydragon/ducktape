@@ -106,9 +106,16 @@ async def test_gc_retains_served_versions_then_collects_orphans(store: Store, em
             assert await session.scalar(select(func.count()).select_from(entity)) == 1
 
 
-async def test_batches_are_durable_before_publication(empty_engine: AsyncEngine, embedder: FakeEmbedder) -> None:
+@pytest.fixture
+async def small_chunk_store(empty_engine: AsyncEngine, embedder: FakeEmbedder) -> Store:
+    """An index whose chunk budget splits even a few words."""
     store = Store(empty_engine, budget=ChunkBudget(target_bytes=5, max_bytes=5), model_key=embedder.model_key)
     await store.initialize()
+    return store
+
+
+async def test_batches_are_durable_before_publication(small_chunk_store: Store, embedder: FakeEmbedder) -> None:
+    store = small_chunk_store
     await ingest(store, "A", {"a": b"alpha beta gamma"})
     assert await store.advance(embedder, batch_size=1)
     assert (await store.status()).served_files == 0
@@ -195,9 +202,8 @@ async def test_a_component_too_small_for_half_precision_rounds_to_zero(store: St
         assert await session.scalar(select(cast(Embedding.vector, Text))) == "[0,0.5,-0]"
 
 
-async def test_new_layout_revives_cached_content(empty_engine: AsyncEngine, embedder: FakeEmbedder) -> None:
-    store = Store(empty_engine, budget=ChunkBudget(target_bytes=5, max_bytes=5), model_key=embedder.model_key)
-    await store.initialize()
+async def test_new_layout_revives_cached_content(small_chunk_store: Store, embedder: FakeEmbedder) -> None:
+    store = small_chunk_store
     await ingest(store, "A", {"a": b"alpha"})
     await drain(store, embedder)
     await ingest(store, "B", {})

@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from uuid import UUID, uuid4
 
 import pytest_bazel
 
 from agentplane.acceptance.agent import Agent, runner_startup_retries
-from agentplane.app.sandbox_models import SandboxView, SessionDefaults
+from agentplane.acceptance.conftest import Sandboxes
+from agentplane.app.sandbox_models import SessionDefaults
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
@@ -19,8 +19,6 @@ from agentplane.runner.harness import Harness
 PUBLIC_CODER = "public-coder"
 GITHUB_AGENTYDRAGON_AGENT = "github-agentydragon-agent"
 INSTRUCTIONS = "For this acceptance thread, end the final answer with PRESET-INSTRUCTIONS-OK."
-
-Sandboxes = Callable[..., Awaitable[SandboxView]]
 
 
 async def test_public_coder_preset_launches_an_initialized_editable_codex_thread(

@@ -3,16 +3,20 @@
 import re
 
 import pytest
+import pytest_asyncio
 import pytest_bazel
 from playwright.async_api import expect
 
 from agentplane.app.frontend.testing.visual_assertions import (
     _focus,
     _in_viewport,
+    _open_phone_navigation,
     _open_raw_switches,
     _open_select,
+    _open_settings,
     _select_reconnect,
 )
+from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
 from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, Viewport
@@ -24,14 +28,13 @@ pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testi
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_actions_sidebar_queue(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+@DESKTOP_AND_MOBILE
+async def test_actions_sidebar_queue(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_pending_actions()
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    if viewport == MOBILE:
-        await page.get_by_role("button", name="Toggle navigation").click()
+    await _open_phone_navigation(page)
     section = page.locator(".agentplane-actions-sidebar")
     await expect(section.locator(".agentplane-actions-sidebar-toggle")).to_have_attribute("aria-expanded", "true")
     await expect(section.get_by_text("restart the test backup service")).to_be_visible()
@@ -64,16 +67,13 @@ async def test_actions_sidebar_resize(view: VisualPage, app: AgentplaneFixture) 
     await view.capture(target=page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 @pytest.mark.parametrize("expanded", [False, True], ids=["collapsed", "expanded"])
-async def test_sidebar_compact_pod_approval(
-    view: VisualPage, app: AgentplaneFixture, viewport: Viewport, expanded: bool
-) -> None:
+async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFixture, expanded: bool) -> None:
     await app.show_compact_pod_action()
     await app.mount_thread(IDLE_THREAD)
     page = view.page
-    if viewport == MOBILE:
-        await page.get_by_role("button", name="Toggle navigation").click()
+    await _open_phone_navigation(page)
     section = page.locator(".agentplane-actions-sidebar")
     await expect(section.get_by_text("inspect running demo pods")).to_be_visible()
     await expect(section.locator(".agentplane-actions-sidebar-name")).to_contain_text(
@@ -106,7 +106,7 @@ async def test_sidebar_compact_pod_approval(
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 @pytest.mark.parametrize(
     ("group", "name", "arguments", "visible"),
     [
@@ -195,18 +195,11 @@ async def test_sidebar_compact_pod_approval(
     ],
 )
 async def test_compact_action_chips(
-    view: VisualPage,
-    app: AgentplaneFixture,
-    viewport: Viewport,
-    group: str,
-    name: str,
-    arguments: dict[str, object],
-    visible: str,
+    view: VisualPage, app: AgentplaneFixture, group: str, name: str, arguments: dict[str, object], visible: str
 ) -> None:
     await app.show_action_preview(group, name, arguments)
     await app.mount_thread(IDLE_THREAD)
-    if viewport == MOBILE:
-        await view.page.get_by_role("button", name="Toggle navigation").click()
+    await _open_phone_navigation(view.page)
     section = view.page.locator(".agentplane-actions-sidebar")
     if group == "kubernetes_admin" and name == "pods_list_in_namespace":
         title = "inspect running demo pods"
@@ -263,10 +256,8 @@ async def test_action_argument_fallbacks_use_json_view(
     await view.capture(target=section)
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_compact_pr_with_description_requires_review(
-    view: VisualPage, app: AgentplaneFixture, viewport: Viewport
-) -> None:
+@DESKTOP_AND_MOBILE
+async def test_compact_pr_with_description_requires_review(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_action_preview(
         "github",
         "create_pull_request",
@@ -281,8 +272,7 @@ async def test_compact_pr_with_description_requires_review(
     )
     await app.mount_thread(IDLE_THREAD)
     section = view.page.locator(".agentplane-actions-sidebar")
-    if viewport == MOBILE:
-        await view.page.get_by_role("button", name="Toggle navigation").click()
+    await _open_phone_navigation(view.page)
     await section.get_by_role("button", name="Expand review create pull request").click()
     await expect(section.get_by_text("description: open Review")).to_be_visible()
     await expect(section.get_by_role("button", name="Approve review create pull request")).to_have_count(0)
@@ -290,7 +280,7 @@ async def test_compact_pr_with_description_requires_review(
     await view.capture(target=section)
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_wide_action_decisions(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     await app.show_pending_actions()
     await app.mount_app("/actions")
@@ -305,7 +295,7 @@ async def test_wide_action_decisions(view: VisualPage, app: AgentplaneFixture, v
     await view.capture(target=page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_action_detail_ssh_raw_view(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
     await app.show_pending_actions()
     await app.mount_app("/actions/70000000-0000-4000-8000-000000000006")
@@ -323,8 +313,8 @@ async def test_action_detail_ssh_raw_view(view: VisualPage, app: AgentplaneFixtu
     await view.capture(target=page.locator("#app"), name=f"action_detail_ssh_raw_{viewport.width}")
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_action_detail_external_grant_audit(view: VisualPage, app: AgentplaneFixture, viewport: Viewport) -> None:
+@DESKTOP_AND_MOBILE
+async def test_action_detail_external_grant_audit(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_pending_actions()
     await app.mount_app("/actions/70000000-0000-4000-8000-000000000001")
     await view.check(context="fixture ready")
@@ -336,42 +326,32 @@ async def test_action_detail_external_grant_audit(view: VisualPage, app: Agentpl
     await view.capture(target=page.locator("#app"))
 
 
+async def capture_long_ssh_preview_scrolled(view: VisualPage, app: AgentplaneFixture) -> None:
+    """The fully expanded 55-line SSH preview stays a bounded box that scrolls to its end."""
+    await app.show_pending_actions()
+    await app.long_pending_action()
+    await app.mount_thread(IDLE_THREAD)
+    await view.check(context="fixture ready")
+    page = view.page
+    await _open_phone_navigation(page)
+    section = page.locator(".agentplane-actions-sidebar")
+    await section.get_by_role("button", name="Expand restart the test backup service").click()
+    preview = section.locator(".agentplane-actions-sidebar-preview").last
+    await expect(preview.get_by_role("button", name="Show all 55 lines")).to_be_visible()
+    await preview.get_by_role("button", name="Show all 55 lines").click()
+    await preview.evaluate("element => { element.scrollTop = element.scrollHeight; }")
+    await wait_for_stable(page)
+    assert await preview.evaluate("element => element.scrollTop") > 0
+    await view.capture(target=section)
+
+
 async def test_sidebar_long_ssh_preview_is_bounded_desktop(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.show_pending_actions()
-    await app.long_pending_action()
-    await app.mount_thread(IDLE_THREAD)
-    await view.check(context="fixture ready")
-    page = view.page
-    section = page.locator(".agentplane-actions-sidebar")
-    await section.get_by_role("button", name="Expand restart the test backup service").click()
-    preview = section.locator(".agentplane-actions-sidebar-preview").last
-    await expect(preview.get_by_role("button", name="Show all 55 lines")).to_be_visible()
-    await preview.get_by_role("button", name="Show all 55 lines").click()
-    await preview.evaluate("element => { element.scrollTop = element.scrollHeight; }")
-    await wait_for_stable(page)
-    assert await preview.evaluate("element => element.scrollTop") > 0
-    await view.capture(target=section)
+    await capture_long_ssh_preview_scrolled(view, app)
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
-async def test_sidebar_long_ssh_preview_is_bounded_phone(
-    view: VisualPage, app: AgentplaneFixture, viewport: Viewport
-) -> None:
-    await app.show_pending_actions()
-    await app.long_pending_action()
-    await app.mount_thread(IDLE_THREAD)
-    await view.check(context="fixture ready")
-    page = view.page
-    await page.get_by_role("button", name="Toggle navigation").click()
-    section = page.locator(".agentplane-actions-sidebar")
-    await section.get_by_role("button", name="Expand restart the test backup service").click()
-    preview = section.locator(".agentplane-actions-sidebar-preview").last
-    await expect(preview.get_by_role("button", name="Show all 55 lines")).to_be_visible()
-    await preview.get_by_role("button", name="Show all 55 lines").click()
-    await preview.evaluate("element => { element.scrollTop = element.scrollHeight; }")
-    await wait_for_stable(page)
-    assert await preview.evaluate("element => element.scrollTop") > 0
-    await view.capture(target=section)
+@MOBILE_ONLY
+async def test_sidebar_long_ssh_preview_is_bounded_phone(view: VisualPage, app: AgentplaneFixture) -> None:
+    await capture_long_ssh_preview_scrolled(view, app)
 
 
 async def test_actions_raw_switches(view: VisualPage, app: AgentplaneFixture) -> None:
@@ -385,7 +365,7 @@ async def test_actions_raw_switches(view: VisualPage, app: AgentplaneFixture) ->
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_sandbox_status_raw_switches(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=status")
     await view.check(context="fixture ready")
@@ -395,13 +375,11 @@ async def test_sandbox_status_raw_switches(view: VisualPage, app: AgentplaneFixt
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_external_caller_grants(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     page = view.page
-    if page.viewport_size and page.viewport_size["width"] < 600:
-        await page.get_by_role("button", name="Toggle navigation").click()
-    await page.get_by_role("button", name="Settings").click()
+    await _open_settings(page)
     await page.get_by_role("button", name="View grants", exact=True).first.click()
     grants = page.get_by_role("region", name="Grants for agentplane-test/personal")
     await expect(grants.get_by_role("heading", name="Egress", exact=True)).to_be_visible()
@@ -414,14 +392,12 @@ async def test_external_caller_grants(view: VisualPage, app: AgentplaneFixture) 
     await view.capture(target=page.locator(".mantine-Modal-content"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_connections_settings_modal_connections(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     await view.check(context="fixture ready")
     page = view.page
-    if page.viewport_size and page.viewport_size["width"] < 600:
-        await page.get_by_role("button", name="Toggle navigation").click()
-    await page.get_by_role("button", name="Settings").click()
+    await _open_settings(page)
     await expect(page.locator("[data-connection-id]").first).to_be_visible()
     if page.viewport_size and page.viewport_size["width"] < 600:
         assert await page.locator(".mantine-Modal-content").evaluate("el => el.scrollWidth <= el.clientWidth")
@@ -430,14 +406,12 @@ async def test_connections_settings_modal_connections(view: VisualPage, app: Age
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_connection_sa_rebind_confirmation(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     await view.check(context="fixture ready")
     page = view.page
-    if page.viewport_size and page.viewport_size["width"] < 600:
-        await page.get_by_role("button", name="Toggle navigation").click()
-    await page.get_by_role("button", name="Settings").click()
+    await _open_settings(page)
     picker = page.get_by_role("combobox", name="Service account for Claude desktop")
     await picker.click()
     await page.get_by_role("option", name="agentplane-visual/operator-assistant").click()
@@ -454,14 +428,12 @@ async def test_connection_sa_rebind_confirmation(view: VisualPage, app: Agentpla
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_connection_unlink_confirmation(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     await view.check(context="fixture ready")
     page = view.page
-    if page.viewport_size and page.viewport_size["width"] < 600:
-        await page.get_by_role("button", name="Toggle navigation").click()
-    await page.get_by_role("button", name="Settings").click()
+    await _open_settings(page)
     row = page.locator("[data-connection-id]").filter(has_text="Claude desktop")
     await row.get_by_role("button", name="Unlink", exact=True).click()
     confirm = row.get_by_role("button", name="Confirm unlink")
@@ -477,35 +449,41 @@ async def test_connection_unlink_confirmation(view: VisualPage, app: AgentplaneF
 async def test_oauth_clients_update_while_settings_stays_open(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     page = view.page
-    await page.get_by_role("button", name="Settings").click()
+    await _open_settings(page)
     await expect(page.get_by_text("Claude desktop")).to_be_visible()
     await app.publish_connection_rename()
     await expect(page.get_by_text("Updated OAuth client")).to_be_visible()
     await view.capture(name="oauth_clients_live_rename")
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_connections_settings_modal_connections_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     await view.check(context="fixture ready")
     page = view.page
-    await page.get_by_role("button", name="Toggle navigation").click()
-    await page.get_by_role("button", name="Settings").click()
+    await _open_settings(page)
     await expect(page.locator("[data-connection-id]").first).to_be_visible()
     await page.mouse.move(0, 0)
     await view.capture(target=view.page.locator("#app"))
 
 
-async def test_consent_reconnect_warning_desktop(view: VisualPage, app: AgentplaneFixture) -> None:
+@pytest_asyncio.fixture(loop_scope="session")
+async def reconnect_review(view: VisualPage, app: AgentplaneFixture) -> VisualPage:
+    """The consent page with an existing Connection picked for reconnecting."""
     await app.mount_app("/connection-enrollments/test-only-opaque-handle")
     await view.check(context="fixture ready")
+    await _select_reconnect(view.page)
+    return view
+
+
+async def test_consent_reconnect_warning_desktop(reconnect_review: VisualPage) -> None:
+    view = reconnect_review
     page = view.page
-    await _select_reconnect(page)
     await _in_viewport(page.locator("[data-reconnect-review]").get_by_text("Replace authorization", exact=False))
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_pending_actions()
     await app.mount_app("/actions")
@@ -519,10 +497,8 @@ async def test_action_history_receipt(view: VisualPage, app: AgentplaneFixture) 
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_gmail_draft_history_keeps_request_and_result_together(
-    view: VisualPage, app: AgentplaneFixture, viewport: Viewport
-) -> None:
+@DESKTOP_AND_MOBILE
+async def test_gmail_draft_history_keeps_request_and_result_together(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_gmail_draft_history()
     await app.mount_app("/actions")
     page = view.page
@@ -535,7 +511,7 @@ async def test_gmail_draft_history_keeps_request_and_result_together(
     await view.capture(target=page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_action_history_diagram(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.show_pending_actions()
     await app.mount_app("/actions")
@@ -580,7 +556,7 @@ async def test_action_history_paging_control(view: VisualPage, app: AgentplaneFi
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_mcp_servers_linked_and_expired(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/mcp-servers")
     await view.page.wait_for_selector("[data-mcp-server]", state="attached")
@@ -641,23 +617,19 @@ async def test_mcp_servers_lower_statuses_mcp_servers(view: VisualPage, app: Age
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
-async def test_consent_reconnect_warning_phone(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_app("/connection-enrollments/test-only-opaque-handle")
-    await view.check(context="fixture ready")
+@MOBILE_ONLY
+async def test_consent_reconnect_warning_phone(reconnect_review: VisualPage) -> None:
+    view = reconnect_review
     page = view.page
-    await _select_reconnect(page)
     await _in_viewport(page.locator("[data-reconnect-review]").get_by_text("Replace authorization", exact=False))
     await _in_viewport(page.get_by_text(re.compile("I confirm replacing this Connection")))
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
-async def test_consent_reconnect_decision_phone(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_app("/connection-enrollments/test-only-opaque-handle")
-    await view.check(context="fixture ready")
+@MOBILE_ONLY
+async def test_consent_reconnect_decision_phone(reconnect_review: VisualPage) -> None:
+    view = reconnect_review
     page = view.page
-    await _select_reconnect(page)
     authorize = page.get_by_role("button", name="Authorize")
     await _focus(page, authorize)
     await _in_viewport(page.get_by_role("button", name="Deny"))
@@ -665,7 +637,7 @@ async def test_consent_reconnect_decision_phone(view: VisualPage, app: Agentplan
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_action_policy_selector_hides_picked_option(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes?preset=public-coder")
     await view.page.wait_for_selector(".mantine-Pill-root", state="attached")
@@ -675,7 +647,7 @@ async def test_action_policy_selector_hides_picked_option(view: VisualPage, app:
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_egress_policy_selector_hides_picked_option(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes?preset=public-coder")
     await view.page.wait_for_selector('.mantine-Pill-root:has-text("github-public")', state="attached")
@@ -685,7 +657,7 @@ async def test_egress_policy_selector_hides_picked_option(view: VisualPage, app:
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_grant_selector_hides_picked_option(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes?preset=public-coder")
     await view.page.wait_for_selector(".mantine-Pill-root", state="attached")
@@ -695,7 +667,7 @@ async def test_grant_selector_hides_picked_option(view: VisualPage, app: Agentpl
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_sandbox_egress_pick_updates_options(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox?tab=egress&rules=ready-sandbox-github-public")
     await view.check(context="fixture ready")

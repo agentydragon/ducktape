@@ -39,24 +39,20 @@ async def test_not_found_returns_false() -> None:
     assert await service.is_public(owner="test-owner", repository="test-private") is False
 
 
-async def test_200_with_private_true_is_unavailable_not_public() -> None:
-    """Should never happen unauthenticated, but this check exists not to trust inference."""
-    service = _service(_json_handler(200, {"private": True}))
-
-    with pytest.raises(RepositoryVisibilityUnavailableError):
-        await service.is_public(owner="someone", repository="somewhere")
-
-
-async def test_200_missing_private_field_is_unavailable() -> None:
-    service = _service(_json_handler(200, {}))
-
-    with pytest.raises(RepositoryVisibilityUnavailableError):
-        await service.is_public(owner="someone", repository="somewhere")
-
-
-@pytest.mark.parametrize("status_code", [403, 500, 502])
-async def test_other_status_codes_are_unavailable(status_code: int) -> None:
-    service = _service(_json_handler(status_code))
+@pytest.mark.parametrize(
+    ("status_code", "json"),
+    [
+        # Should never happen unauthenticated, but this check exists not to trust inference.
+        (200, {"private": True}),
+        (200, {}),
+        (403, None),
+        (500, None),
+        (502, None),
+    ],
+    ids=["private-true", "missing-private-field", "403", "500", "502"],
+)
+async def test_unrecognized_responses_are_unavailable(status_code: int, json: dict[str, object] | None) -> None:
+    service = _service(_json_handler(status_code, json))
 
     with pytest.raises(RepositoryVisibilityUnavailableError):
         await service.is_public(owner="someone", repository="somewhere")
@@ -83,15 +79,15 @@ class _CountingHandler:
         return httpx.Response(self._status_code, json=self._json)
 
 
-async def test_second_check_within_ttl_reuses_the_first() -> None:
-    handler = _CountingHandler()
+@pytest.mark.parametrize(("status_code", "public"), [(200, True), (404, False)], ids=["public", "not-public"])
+async def test_second_check_within_ttl_reuses_the_first(status_code: int, public: bool) -> None:
+    handler = _CountingHandler(status_code=status_code)
     service = _service(handler)
 
-    first = await service.is_public(owner="test-owner", repository="test-public")
-    second = await service.is_public(owner="test-owner", repository="test-public")
+    first = await service.is_public(owner="test-owner", repository="test-repo")
+    second = await service.is_public(owner="test-owner", repository="test-repo")
 
-    assert first is True
-    assert second is True
+    assert first is second is public
     assert handler.calls == 1
 
 
@@ -115,26 +111,15 @@ async def test_zero_ttl_checks_again_on_the_next_call() -> None:
     assert handler.calls == 2
 
 
-async def test_confirmed_not_public_is_cached_too() -> None:
-    handler = _CountingHandler(status_code=404)
-    service = _service(handler)
-
-    first = await service.is_public(owner="test-owner", repository="test-private")
-    second = await service.is_public(owner="test-owner", repository="test-private")
-
-    assert first is False
-    assert second is False
-    assert handler.calls == 1
-
-
 async def test_failure_is_not_cached() -> None:
     """A transient outage must not wedge a repository as unknown for the full TTL."""
-    service = _service(_json_handler(500))
+    handler = _CountingHandler(status_code=500)
+    service = _service(handler)
 
-    with pytest.raises(RepositoryVisibilityUnavailableError):
-        await service.is_public(owner="test-owner", repository="test-public")
-    with pytest.raises(RepositoryVisibilityUnavailableError):
-        await service.is_public(owner="test-owner", repository="test-public")
+    for _ in range(2):
+        with pytest.raises(RepositoryVisibilityUnavailableError):
+            await service.is_public(owner="test-owner", repository="test-public")
+    assert handler.calls == 2
 
 
 if __name__ == "__main__":

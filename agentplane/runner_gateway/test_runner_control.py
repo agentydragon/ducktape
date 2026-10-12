@@ -20,13 +20,18 @@ from agentplane.runner_gateway.connection_records import (
 )
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
-from agentplane.runner_gateway.testing.runner_control import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_replica_control
+from agentplane.runner_gateway.testing.runner_control import (
+    HELLO,
+    OTHER_REPLICA,
+    REPLICA,
+    RUNNER_TOKEN,
+    serve_replica_control,
+)
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.agent_sandbox import SANDBOX_KIND, SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
-HELLO = runner_control_pb2.RunnerFrame(hello=runner_control_pb2.Hello(runner_boot_id="test-boot"))
 OWNER = RecordOwner(name=SANDBOX, uid=UUID(SANDBOX_UID))
 
 type Replica = Callable[[ConnectionHolder], AbstractAsyncContextManager[runner_control_pb2_grpc.RunnerControlAsyncStub]]

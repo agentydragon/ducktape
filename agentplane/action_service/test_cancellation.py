@@ -35,11 +35,6 @@ LEASE_DURATION = timedelta(seconds=30)
 
 
 @pytest.fixture
-def store(engine: AsyncEngine) -> ActionStore:
-    return action_store(make_sessionmaker(engine))
-
-
-@pytest.fixture
 def envelope() -> ActionRequestInput:
     return ActionRequestInput(
         idempotency_key="test-cancellation",

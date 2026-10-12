@@ -138,6 +138,7 @@ py_test(
         ":fold",
         ":views",
         "//:conftest",
+        "//agentplane/history_service:conftest",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",

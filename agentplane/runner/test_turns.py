@@ -400,11 +400,21 @@ async def test_interrupt_ends_the_turn_as_interrupted(
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
 
 
-async def _interrupt_and_reconcile(session: SessionFollow, turn_id: str) -> event_pb2.ConversationReconciled:
+async def _interrupt_and_reconcile(session: SessionFollow) -> event_pb2.ConversationReconciled:
+    turn_id = events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
     await interrupt_turn(session, "interrupt-thinking", turn_id)
     done = await session.until(events.turn_completed)
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
     return (await session.until(events.is_kind("conversation_reconciled"))).event.conversation_reconciled
+
+
+async def _reasoning_replayed_next_turn(session: SessionFollow, model: ScriptedModel) -> list[str]:
+    """Run a turn after the interrupt; the reasoning its model request carries from the one before."""
+    await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
+    request = await model.request()
+    await model.reply(request, Text("AFTER_INTERRUPT_OK"))
+    await session.until(events.turn_completed)
+    return request.reasoning_texts
 
 
 def _dispositions(reconciled: event_pb2.ConversationReconciled) -> dict[str, event_pb2.RecoveryDisposition]:
@@ -429,17 +439,12 @@ async def test_claude_interrupt_right_after_thinking_reports_it_absent_and_does_
         lambda event: event.kind == "content_block_stop",
     )
     await session.until(events.is_kind("item_completed"))
-    turn_id = events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
 
-    reconciled = await _interrupt_and_reconcile(session, turn_id)
+    reconciled = await _interrupt_and_reconcile(session)
 
     (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
     assert _dispositions(reconciled) == {thought: event_pb2.RECOVERY_DISPOSITION_ABSENT}
-    await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
-    request = await model.request()
-    assert request.reasoning_texts == []
-    await model.reply(request, Text("AFTER_INTERRUPT_OK"))
-    await session.until(events.turn_completed)
+    assert await _reasoning_replayed_next_turn(session, model) == []
 
 
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CLAUDE])
@@ -454,17 +459,12 @@ async def test_claude_interrupt_after_thinking_and_some_text_keeps_the_thinking(
         lambda event: event.kind == "text_delta",
     )
     await session.until(_is_streamed("PARTIAL_ANSWER"))
-    turn_id = events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
 
-    reconciled = await _interrupt_and_reconcile(session, turn_id)
+    reconciled = await _interrupt_and_reconcile(session)
 
     (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
     assert _dispositions(reconciled)[thought] == event_pb2.RECOVERY_DISPOSITION_RETAINED
-    await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
-    request = await model.request()
-    assert request.reasoning_texts == ["KEPT_THOUGHT"]
-    await model.reply(request, Text("AFTER_INTERRUPT_OK"))
-    await session.until(events.turn_completed)
+    assert await _reasoning_replayed_next_turn(session, model) == ["KEPT_THOUGHT"]
 
 
 @pytest.mark.parametrize("harness", [runner_pb2.HARNESS_CLAUDE])
@@ -476,17 +476,12 @@ async def test_claude_interrupt_after_thinking_and_a_tool_call_keeps_the_thinkin
     # Only shell builtins: the harness's tool environment has no external commands.
     await model.reply(await model.request(), Reasoning("KEPT_THOUGHT"), ShellCall("call_test_1", "while :; do :; done"))
     await session.until(events.is_kind("tool_arguments"))
-    turn_id = events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
 
-    reconciled = await _interrupt_and_reconcile(session, turn_id)
+    reconciled = await _interrupt_and_reconcile(session)
 
     (thought,) = events.items(session.seen, event_pb2.ITEM_KIND_REASONING)
     assert _dispositions(reconciled)[thought] == event_pb2.RECOVERY_DISPOSITION_RETAINED
-    await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
-    request = await model.request()
-    assert request.reasoning_texts == ["KEPT_THOUGHT"]
-    await model.reply(request, Text("AFTER_INTERRUPT_OK"))
-    await session.until(events.turn_completed)
+    assert await _reasoning_replayed_next_turn(session, model) == ["KEPT_THOUGHT"]
 
 
 if __name__ == "__main__":

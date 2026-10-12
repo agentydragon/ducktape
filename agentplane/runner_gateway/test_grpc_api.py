@@ -32,8 +32,14 @@ from agentplane.runner_gateway.testing.control_listener import wait_connected
 from agentplane.runner_gateway.testing.grpc_service import gateway_client, service, service_client
 from agentplane.runner_gateway.testing.journal import admission
 from agentplane.runner_gateway.testing.resources import build_resources
-from agentplane.runner_gateway.testing.runner_control import REPLICA, RUNNER_TOKEN, serve_replica_control
-from agentplane.runner_gateway.testing.sessions import register_session
+from agentplane.runner_gateway.testing.runner_control import (
+    HELLO,
+    REPLICA,
+    RUNNER_TOKEN,
+    attached,
+    serve_replica_control,
+)
+from agentplane.runner_gateway.testing.sessions import register_on_fake_sandbox, register_session
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.sandbox_service.kubernetes_views import (
     KUBERNETES_GRANTS_ANNOTATION,
@@ -124,19 +130,6 @@ class Peer:
         )
 
 
-def attached(session_id: str, harness_state: runner_pb2.HarnessState) -> runner_pb2.Attached:
-    return runner_pb2.Attached(
-        session_id=session_id, harness_state=harness_state, setup_state=runner_pb2.SETUP_STATE_NOT_REQUIRED
-    )
-
-
-async def register(engine: AsyncEngine, session_id: UUID) -> None:
-    """Register a Session on the fake cluster's Sandbox."""
-    await register_session(
-        engine, session_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name=SANDBOX, sandbox_uid=UUID(SANDBOX_UID)
-    )
-
-
 @pytest.fixture
 def resources(cluster: Cluster, engine: AsyncEngine, leases: ConnectionLeases) -> Resources:
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
@@ -167,7 +160,7 @@ async def peer(cluster: Cluster, resources: Resources) -> AsyncIterator[Peer]:
         timing=ControlTiming(heartbeat_s=0.05, liveness_s=5, touch_s=0.1, max_age_s=60),
     ) as channel:
         call = channel.Connect(metadata=(("authorization", f"Bearer {RUNNER_TOKEN}"),), timeout=60)
-        await call.write(runner_control_pb2.RunnerFrame(hello=runner_control_pb2.Hello(runner_boot_id="test-boot")))
+        await call.write(HELLO)
         welcome = await call.read()
         assert isinstance(welcome, runner_control_pb2.ServiceFrame)
         assert welcome.HasField("welcome")
@@ -228,7 +221,7 @@ async def test_a_retry_after_a_lost_reply_delivers_the_command_again(
     cluster: Cluster, resources: Resources, token_file: Path, peer: Peer, engine: AsyncEngine
 ) -> None:
     session_id = uuid4()
-    await register(engine, session_id)
+    await register_on_fake_sandbox(engine, session_id)
     command = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="hi"))
     async with asyncio.timeout(10), service_client(resources, token_file, cluster.provisioning) as remote:
         with pytest.raises(TimeoutError):
@@ -277,7 +270,7 @@ async def test_command_uses_runner_ack_budget_not_unary_request_budget(
     ) as remote:
         remote.request_timeout_s = 0.1  # The client also must not use its short generic RPC deadline.
         session_id = uuid4()
-        await register(engine, session_id)
+        await register_on_fake_sandbox(engine, session_id)
         submitted = asyncio.create_task(remote.command(DESTINATION, str(session_id), command))
         delivered = await peer.delivery()
         # Elapsed time is the subject: the ack lands after both 0.1 s budgets but inside the 1 s ack budget.
@@ -393,7 +386,7 @@ async def test_open_and_resume_refuse_unready_grants_without_app(
     pending_launch: bool,
 ) -> None:
     session_id = uuid4()
-    await register(engine, session_id)
+    await register_on_fake_sandbox(engine, session_id)
     annotations = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"].setdefault("annotations", {})
     if pending_launch:
         annotations[PROVISIONING_ANNOTATION] = "{}"
@@ -480,7 +473,7 @@ async def test_session_sandboxes_answer_from_the_registry_including_deleted_sand
     cluster: Cluster, resources: Resources, token_file: Path, engine: AsyncEngine
 ) -> None:
     live_id, deleted_id, unknown_id = uuid4(), uuid4(), uuid4()
-    await register(engine, live_id)
+    await register_on_fake_sandbox(engine, live_id)
     await register_session(
         engine, deleted_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name="Deleted-Sandbox", sandbox_uid=None
     )

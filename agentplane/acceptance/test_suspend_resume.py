@@ -2,20 +2,21 @@
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
 from uuid import uuid4
 
 import pytest_bazel
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.acceptance.agent import Agent
-from agentplane.app.sandbox_models import SandboxView, sandbox_has_ready_pod
+from agentplane.acceptance.conftest import Sandboxes, wait_until_running
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 from util.agent_sandbox import OperatingMode
 
-Sandboxes = Callable[..., Awaitable[SandboxView]]
+# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# gazelle:include_dep @pypi//protobuf
+
 POD_TRANSITION_SECONDS = 300.0
 
 
@@ -58,11 +59,7 @@ async def test_two_harness_threads_keep_their_context_after_sandbox_suspend_resu
     await _wait_until_suspended_without_pod(client, view.name)
     await client.resume_sandbox(view.name)
 
-    async for attempt in AsyncRetrying(stop=stop_after_delay(POD_TRANSITION_SECONDS), wait=wait_fixed(2), reraise=True):
-        with attempt:
-            resumed = await client.sandbox(view.name)
-            if not sandbox_has_ready_pod(resumed):
-                raise AssertionError(f"{view.name} has no ready, authorized Pod: {resumed.pod}")
+    await wait_until_running(client, view.name)
 
     for harness, agent in agents.items():
         await agent.resume()

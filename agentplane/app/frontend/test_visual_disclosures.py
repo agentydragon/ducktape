@@ -2,7 +2,7 @@
 
 import pytest
 import pytest_bazel
-from playwright.async_api import expect
+from playwright.async_api import Page, expect
 
 from agentplane.app.frontend.testing.visual_assertions import (
     _INNER,
@@ -21,7 +21,8 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _scroll_to,
     _scroll_to_copy,
 )
-from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
+from agentplane.app.frontend.testing.visual_fixtures import MOBILE_ONLY
+from agentplane.app.frontend.visual_app import AgentplaneFixture
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE
 from util.testing.visual_capture import VisualPage
@@ -32,40 +33,34 @@ pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testi
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
-async def test_collapsed_disclosure(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_disclosure(open=False)
-    await view.page.wait_for_selector(
-        ".demo-main .agentplane-disclosure-summary[aria-expanded='false']", state="attached"
-    )
+async def mount(view: VisualPage, app: AgentplaneFixture, *attached: str, **disclosure: bool) -> Page:
+    """Mount the disclosure demo, wait for each `attached` selector, and check it rendered cleanly."""
+    await app.mount_disclosure(**disclosure)
+    for selector in attached:
+        await view.page.wait_for_selector(selector, state="attached")
     await view.check(context="fixture ready")
-    page = view.page
+    return view.page
+
+
+@MOBILE_ONLY
+async def test_collapsed_disclosure(view: VisualPage, app: AgentplaneFixture) -> None:
+    page = await mount(view, app, ".demo-main .agentplane-disclosure-summary[aria-expanded='false']", open=False)
     await expect(page.locator(_MAIN)).to_have_attribute("data-expanded", "false")
     assert await page.locator(_SCROLL).evaluate("element => element.scrollTop") == 0
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_short_disclosure_fits(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_disclosure(short=True)
-    await view.page.wait_for_selector(
-        ".demo-main .agentplane-disclosure-summary[aria-expanded='true']", state="attached"
-    )
-    await view.check(context="fixture ready")
-    page = view.page
+    page = await mount(view, app, ".demo-main .agentplane-disclosure-summary[aria-expanded='true']", short=True)
     assert not await page.locator(_SCROLL).evaluate("element => element.scrollHeight > element.clientHeight")
     await expect(page.locator(_MAIN)).to_have_attribute("data-expanded", "true")
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_long_disclosure_before_sticking(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_disclosure()
-    await view.page.wait_for_selector(
-        ".demo-main .agentplane-disclosure-summary[aria-expanded='true']", state="attached"
-    )
-    await view.check(context="fixture ready")
-    page = view.page
+    page = await mount(view, app, ".demo-main .agentplane-disclosure-summary[aria-expanded='true']")
     assert await page.locator(_SCROLL).evaluate("element => element.scrollHeight > element.clientHeight")
     assert await page.locator(_SCROLL).evaluate("element => element.scrollTop") == 0
     top = await _heading_top(page, _MAIN)
@@ -74,37 +69,25 @@ async def test_long_disclosure_before_sticking(view: VisualPage, app: Agentplane
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_long_disclosure_sticks(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_disclosure()
-    await view.page.wait_for_selector(
-        ".demo-main .agentplane-disclosure-heading[data-expanded='true']", state="attached"
-    )
-    await view.check(context="fixture ready")
-    page = view.page
+    page = await mount(view, app, ".demo-main .agentplane-disclosure-heading[data-expanded='true']")
     await _scroll_to_copy(page, "long-paragraph", 64)
     await _expect_at(page, _MAIN, 0)
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_disclosure_releases_after_content(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_disclosure(following_section=True)
-    await view.page.wait_for_selector("[data-demo-target='following-disclosure']", state="attached")
-    await view.check(context="fixture ready")
-    page = view.page
+    page = await mount(view, app, "[data-demo-target='following-disclosure']", following_section=True)
     await _scroll_to_copy(page, "following-disclosure", 64)
     await _expect_released(page, _MAIN)
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_nested_parent_sticks_before_child(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_disclosure(nested=True)
-    await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
-    await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading", state="attached")
-    await view.check(context="fixture ready")
-    page = view.page
+    page = await mount(view, app, _OUTER, _INNER, nested=True)
     outer_height = await _height(page, _OUTER)
     await _scroll_to_copy(page, "outer-paragraph", outer_height + 8)
     await _expect_at(page, _OUTER, 0)
@@ -114,18 +97,17 @@ async def test_nested_parent_sticks_before_child(view: VisualPage, app: Agentpla
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 @pytest.mark.parametrize("wrapped_headings", [False, True], ids=["short", "wrapped"])
 async def test_nested_headings_stack(view: VisualPage, app: AgentplaneFixture, wrapped_headings: bool) -> None:
-    await app.mount_disclosure(nested=True, wrapped_headings=wrapped_headings)
-    await view.page.wait_for_selector(
-        ".demo-outer .agentplane-disclosure-heading[data-expanded='true']", state="attached"
+    page = await mount(
+        view,
+        app,
+        f"{_OUTER}[data-expanded='true']",
+        f"{_INNER}[data-expanded='true']",
+        nested=True,
+        wrapped_headings=wrapped_headings,
     )
-    await view.page.wait_for_selector(
-        ".demo-inner .agentplane-disclosure-heading[data-expanded='true']", state="attached"
-    )
-    await view.check(context="fixture ready")
-    page = view.page
     outer_height = await _height(page, _OUTER)
     inner_height = await _height(page, _INNER)
     await _scroll_to_copy(page, "nested-paragraph", outer_height + inner_height + 16)
@@ -137,14 +119,9 @@ async def test_nested_headings_stack(view: VisualPage, app: AgentplaneFixture, w
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_nested_child_releases_behind_parent(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_disclosure(nested=True)
-    await view.page.wait_for_selector(
-        ".demo-outer .agentplane-disclosure-heading[data-expanded='true']", state="attached"
-    )
-    await view.check(context="fixture ready")
-    page = view.page
+    page = await mount(view, app, f"{_OUTER}[data-expanded='true']", nested=True)
     outer_height = await _height(page, _OUTER)
     await _scroll_to_copy(page, "following-nested", outer_height + 16)
     await _expect_at(page, _OUTER, 0)
@@ -156,27 +133,18 @@ async def test_nested_child_releases_behind_parent(view: VisualPage, app: Agentp
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_nested_parent_releases_after_content(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_disclosure(nested=True)
-    await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
-    await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading", state="attached")
-    await view.check(context="fixture ready")
-    page = view.page
+    page = await mount(view, app, _OUTER, _INNER, nested=True)
     await _scroll_to_copy(page, "following-outer", 64)
     await _expect_released(page, _INNER)
     await _expect_released(page, _OUTER)
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_output_heading_stacks_below_tool(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_disclosure(nested=True, tool_output=True, after_output=False)
-    await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
-    await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading", state="attached")
-    await view.page.wait_for_selector(".demo-output .agentplane-disclosure-heading", state="attached")
-    await view.check(context="fixture ready")
-    page = view.page
+    page = await mount(view, app, _OUTER, _INNER, _OUTPUT, nested=True, tool_output=True, after_output=False)
     outer_height, inner_height, output_height = (
         await _height(page, _OUTER),
         await _height(page, _INNER),
@@ -189,14 +157,9 @@ async def test_output_heading_stacks_below_tool(view: VisualPage, app: Agentplan
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_output_heading_enters_below_tool(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_disclosure(nested=True, tool_output=True)
-    await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
-    await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading", state="attached")
-    await view.page.wait_for_selector(".demo-output .agentplane-disclosure-heading", state="attached")
-    await view.check(context="fixture ready")
-    page = view.page
+    page = await mount(view, app, _OUTER, _INNER, _OUTPUT, nested=True, tool_output=True)
     outer_height, inner_height = (await _height(page, _OUTER), await _height(page, _INNER))
     await _scroll_to_copy(page, "before-output", outer_height + inner_height + 16)
     await _expect_at(page, _OUTER, 0)
@@ -207,14 +170,11 @@ async def test_output_heading_enters_below_tool(view: VisualPage, app: Agentplan
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_collapsed_output_keeps_its_sticky_slot(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_disclosure(nested=True, tool_output=True, output_open=False, before_output=False)
-    await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
-    await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading", state="attached")
-    await view.page.wait_for_selector(".demo-output .agentplane-disclosure-heading", state="attached")
-    await view.check(context="fixture ready")
-    page = view.page
+    page = await mount(
+        view, app, _OUTER, _INNER, _OUTPUT, nested=True, tool_output=True, output_open=False, before_output=False
+    )
     outer_height, inner_height = (await _height(page, _OUTER), await _height(page, _INNER))
     await _scroll_to(page, _OUTPUT, outer_height + inner_height)
     await _expect_at(page, _OUTER, 0)
@@ -224,14 +184,9 @@ async def test_collapsed_output_keeps_its_sticky_slot(view: VisualPage, app: Age
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_output_heading_releases_after_content(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_disclosure(nested=True, tool_output=True)
-    await view.page.wait_for_selector(".demo-outer .agentplane-disclosure-heading", state="attached")
-    await view.page.wait_for_selector(".demo-inner .agentplane-disclosure-heading", state="attached")
-    await view.page.wait_for_selector(".demo-output .agentplane-disclosure-heading", state="attached")
-    await view.check(context="fixture ready")
-    page = view.page
+    page = await mount(view, app, _OUTER, _INNER, _OUTPUT, nested=True, tool_output=True)
     outer_height, inner_height = (await _height(page, _OUTER), await _height(page, _INNER))
     await _scroll_to_copy(page, "following-output", outer_height + inner_height + 16)
     await _expect_at(page, _OUTER, 0)
@@ -263,11 +218,8 @@ async def test_output_heading_releases_after_content(view: VisualPage, app: Agen
         "expanded-focus-mobile",
     ],
 )
-async def test_disclosure_control_reaches_card_edges(view: VisualPage, app: AgentplaneFixture, state: str) -> None:
-    await app.shell_calls()
-    await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
-    await view.check(context="fixture ready")
+async def test_disclosure_control_reaches_card_edges(shell_calls: VisualPage, state: str) -> None:
+    view = shell_calls
     page = view.page
     if state != "collapsed-hover":
         await _open_tool_run(page)

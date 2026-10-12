@@ -6,28 +6,25 @@ import asyncio
 from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, cast
-from uuid import uuid4
+from typing import cast
 
 import httpx
 import pytest
 import pytest_bazel
 
 from agentplane.proto import command_pb2, event_pb2
-from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import CodexLaunch, RunnerConfig
-from agentplane.runner.harness import Harness
 from agentplane.runner.harness_process import HarnessProcess
-from agentplane.runner.journal import Journal
 from agentplane.runner.model_config import HttpModelConfigResolver
 from agentplane.runner.session import Session
-from agentplane.runner.store import SessionRecord, SessionStore, StateOwner
+from agentplane.runner.testing.adapters import UnexpectedAdapter
+from agentplane.runner.testing.sessions import codex_record, open_session
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
 
-class BlockingAdapter(HarnessAdapter):
+class BlockingAdapter(UnexpectedAdapter):
     def __init__(self) -> None:
         self.submit_started = asyncio.Event()
         self.release_submit = asyncio.Event()
@@ -35,18 +32,6 @@ class BlockingAdapter(HarnessAdapter):
         self.interrupt_started = asyncio.Event()
         self.interrupted_turn_ids: list[str] = []
         self.model_changes: list[tuple[str, str]] = []
-
-    def command(self) -> list[str]:
-        return []
-
-    def environment(self) -> Mapping[str, str]:
-        return {}
-
-    async def handshake(self) -> str:
-        return "native-session"
-
-    async def reconcile(self, turn_id: str, *, resumed: bool) -> event_pb2.ConversationReconciled:
-        return event_pb2.ConversationReconciled(turn_id=turn_id)
 
     async def submit(self, command_id: str, text: str) -> None:
         assert (command_id, text) == ("input-1", "blocked native input")
@@ -60,12 +45,6 @@ class BlockingAdapter(HarnessAdapter):
 
     async def change_model(self, command_id: str, model: str) -> None:
         self.model_changes.append((command_id, model))
-
-    async def change_reasoning_effort(self, command_id: str, effort: str) -> None:
-        raise AssertionError(f"unexpected effort command {(command_id, effort)!r}")
-
-    async def on_frame(self, frame: dict[str, Any], source_sequence: int) -> None:
-        raise AssertionError(f"unexpected native frame {(frame, source_sequence)!r}")
 
 
 class RunningProcess:
@@ -86,44 +65,24 @@ def model_config_resolver(windows: Mapping[str, int]) -> HttpModelConfigResolver
 async def session_with_blocked_adapter(
     tmp_path: Path, *, model_configs: Mapping[str, int] | None = None, initial_model: str = "test-model"
 ) -> AsyncIterator[tuple[Session, BlockingAdapter]]:
-    state_dir = tmp_path / "state"
-    store = SessionStore(state_dir / "sessions")
-    owner = StateOwner(state_dir)
     windows = model_configs or {}
-    record = SessionRecord(
-        harness=Harness.CODEX,
-        cwd=str(tmp_path / "workspace"),
-        model=initial_model,
-        total_context_budget_tokens=windows.get(initial_model),
-        reasoning_effort="low",
-        instructions="",
-        event_source_id=uuid4(),
-    )
-    store.write("scheduling-1", record)
     adapter = BlockingAdapter()
-    try:
-        async with Journal.open(
-            store.directory("scheduling-1") / "journal.sqlite", str(record.event_source_id)
-        ) as journal:
-            session = Session(
-                "scheduling-1",
-                record=record,
-                journal=journal,
-                store=store,
-                config=RunnerConfig(
-                    state_dir=state_dir,
-                    model_config_resolver=model_config_resolver(windows),
-                    codex=CodexLaunch(binary=Path("/bin/true"), base_url="http://ingress/v1", api_key="test"),
-                ),
-                make_adapter=lambda _session: adapter,
-                state_owner_descriptor=owner.descriptor,
-            )
-            session.adapter = adapter
-            session.process = cast(HarnessProcess, RunningProcess())
-            session.active_turn_id = "turn-1"
-            yield session, adapter
-    finally:
-        owner.close()
+    async with open_session(
+        "scheduling-1",
+        codex_record(
+            tmp_path / "workspace", model=initial_model, total_context_budget_tokens=windows.get(initial_model)
+        ),
+        config=RunnerConfig(
+            state_dir=tmp_path / "state",
+            model_config_resolver=model_config_resolver(windows),
+            codex=CodexLaunch(binary=Path("/bin/true"), base_url="http://ingress/v1", api_key="test"),
+        ),
+        make_adapter=lambda _session: adapter,
+    ) as session:
+        session.adapter = adapter
+        session.process = cast(HarnessProcess, RunningProcess())
+        session.active_turn_id = "turn-1"
+        yield session, adapter
 
 
 async def test_interrupt_is_admitted_and_dispatched_while_a_prior_input_blocks(tmp_path: Path) -> None:

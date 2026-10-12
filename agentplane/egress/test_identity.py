@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import pytest
 import pytest_bazel
-from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
 
 from agentplane.egress.conftest import (
     AUDIENCE,
@@ -19,18 +18,7 @@ from agentplane.egress.conftest import (
 from agentplane.egress.identity import IdentityRejectedError, ProjectedTokenVerifier, WorkloadIdentityVerifier
 from agentplane.egress.policy import DenyReason
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict
-from agentplane.workload_auth.principal import WorkloadPrincipal, WorkloadPrincipalResolver
-
-
-@pytest.fixture
-def verifier(api_client: ApiClient) -> WorkloadIdentityVerifier:
-    return WorkloadIdentityVerifier(
-        WorkloadPrincipalResolver(
-            authentication=AuthenticationV1Api(api_client),
-            audience=AUDIENCE,
-            allowed_service_account_namespaces=(SANDBOX_NAMESPACE,),
-        )
-    )
+from agentplane.workload_auth.principal import WorkloadPrincipal
 
 
 async def test_a_good_token_is_the_service_account_its_pod_runs_as(verifier: WorkloadIdentityVerifier) -> None:
@@ -46,30 +34,37 @@ async def test_a_good_token_is_the_service_account_its_pod_runs_as(verifier: Wor
     assert identity.account == SUBJECT_A
 
 
-async def test_unknown_token(verifier: WorkloadIdentityVerifier) -> None:
+@pytest.mark.parametrize(
+    "verdict",
+    [
+        pytest.param(None, id="unknown-token"),
+        pytest.param(
+            TokenVerdict(
+                username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:sandbox",
+                pod_name=SANDBOX_A,
+                pod_uid=POD_A_UID,
+                audiences=("someone-else",),
+            ),
+            id="wrong-audience",
+        ),
+        pytest.param(
+            TokenVerdict(
+                username="system:serviceaccount:elsewhere:sandbox",
+                pod_name=SANDBOX_A,
+                pod_uid=POD_A_UID,
+                audiences=(AUDIENCE,),
+            ),
+            id="other-namespace-service-account",
+        ),
+    ],
+)
+async def test_a_token_review_the_proxy_does_not_accept_is_rejected(
+    fake: FakeApiServer, verifier: WorkloadIdentityVerifier, verdict: TokenVerdict | None
+) -> None:
+    if verdict is not None:
+        fake.tokens["test-token"] = verdict
     with pytest.raises(IdentityRejectedError) as rejected:
-        await verifier.identify("not-a-token")
-    assert rejected.value.reason is DenyReason.TOKEN_REJECTED
-
-
-async def test_wrong_audience(fake: FakeApiServer, verifier: WorkloadIdentityVerifier) -> None:
-    fake.tokens["other-aud"] = TokenVerdict(
-        username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:sandbox",
-        pod_name=SANDBOX_A,
-        pod_uid=POD_A_UID,
-        audiences=("someone-else",),
-    )
-    with pytest.raises(IdentityRejectedError) as rejected:
-        await verifier.identify("other-aud")
-    assert rejected.value.reason is DenyReason.TOKEN_REJECTED
-
-
-async def test_other_namespace_service_account(fake: FakeApiServer, verifier: WorkloadIdentityVerifier) -> None:
-    fake.tokens["elsewhere"] = TokenVerdict(
-        username="system:serviceaccount:elsewhere:sandbox", pod_name=SANDBOX_A, pod_uid=POD_A_UID, audiences=(AUDIENCE,)
-    )
-    with pytest.raises(IdentityRejectedError) as rejected:
-        await verifier.identify("elsewhere")
+        await verifier.identify("test-token")
     assert rejected.value.reason is DenyReason.TOKEN_REJECTED
 
 
@@ -81,19 +76,6 @@ async def test_the_proxy_never_reads_a_pod(fake: FakeApiServer, verifier: Worklo
     assert fake.pod_reads == 0
 
 
-@pytest.fixture
-def projected(api_client: ApiClient) -> ProjectedTokenVerifier:
-    return ProjectedTokenVerifier(
-        resolvers={
-            PROJECTED_AUDIENCE: WorkloadPrincipalResolver(
-                authentication=AuthenticationV1Api(api_client),
-                audience=PROJECTED_AUDIENCE,
-                allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
-            )
-        }
-    )
-
-
 async def test_a_projected_token_for_the_presenting_pod_is_kept(
     projected: ProjectedTokenVerifier, verifier: WorkloadIdentityVerifier
 ) -> None:
@@ -103,31 +85,25 @@ async def test_a_projected_token_for_the_presenting_pod_is_kept(
     }
 
 
-async def test_another_pods_projected_token_is_dropped(
-    projected: ProjectedTokenVerifier, verifier: WorkloadIdentityVerifier
+@pytest.mark.parametrize(
+    "offered",
+    [
+        # The check the substitution rests on: a caller that somehow holds another Pod's token for
+        # this audience cannot have the proxy spend it, even though the hop it arrived on authenticated.
+        pytest.param({PROJECTED_AUDIENCE: PROJECTED_TOKEN_B}, id="another-pods-token"),
+        # Which audiences may be substituted for is the deployment's to list, so one it never named
+        # is refused whatever the token proves.
+        pytest.param({"https://unlisted.test.invalid": PROJECTED_TOKEN_A}, id="unconfigured-audience"),
+        # Audiences do not substitute for one another: the proxy's own bearer proves the same Pod and
+        # is still refused for a destination that validates a different audience.
+        pytest.param({PROJECTED_AUDIENCE: TOKEN_A}, id="hop-bearer"),
+    ],
+)
+async def test_a_projected_token_not_proven_for_the_presenting_pod_is_dropped(
+    projected: ProjectedTokenVerifier, verifier: WorkloadIdentityVerifier, offered: dict[str, str]
 ) -> None:
-    """The check the substitution rests on: a caller that somehow holds another Pod's token for this
-    audience cannot have the proxy spend it, even though the hop it arrived on authenticated."""
     identity = await verifier.identify(TOKEN_A)
-    assert await projected.verified({PROJECTED_AUDIENCE: PROJECTED_TOKEN_B}, identity) == {}
-
-
-async def test_a_token_for_an_unconfigured_audience_is_dropped(
-    projected: ProjectedTokenVerifier, verifier: WorkloadIdentityVerifier
-) -> None:
-    """Which audiences may be substituted for is the deployment's to list, so one it never named is
-    refused whatever the token proves."""
-    identity = await verifier.identify(TOKEN_A)
-    assert await projected.verified({"https://unlisted.test.invalid": PROJECTED_TOKEN_A}, identity) == {}
-
-
-async def test_a_hop_bearer_presented_as_a_projected_token_is_dropped(
-    projected: ProjectedTokenVerifier, verifier: WorkloadIdentityVerifier
-) -> None:
-    """Audiences do not substitute for one another: the proxy's own bearer proves the same Pod and is
-    still refused for a destination that validates a different audience."""
-    identity = await verifier.identify(TOKEN_A)
-    assert await projected.verified({PROJECTED_AUDIENCE: TOKEN_A}, identity) == {}
+    assert await projected.verified(offered, identity) == {}
 
 
 if __name__ == "__main__":

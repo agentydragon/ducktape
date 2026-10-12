@@ -8,7 +8,6 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 from alembic import command
-from alembic.config import Config
 from sqlalchemy import func, select, text, update
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
@@ -27,6 +26,7 @@ from agentplane.notification_service.models import (
 )
 from agentplane.notification_service.settings import QuotaSettings
 from agentplane.notification_service.store import ClaimLostError, ConflictError, NotFoundError, QuotaError, Store
+from agentplane.notification_service.testing.store import claimed, due_source, migration_config
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal
@@ -144,10 +144,7 @@ async def test_configured_inbox_and_entry_quotas(engine: AsyncEngine) -> None:
         await limited.subscribe(PRINCIPAL, BODY.model_copy(update={"session_id": "second"}))
     # Another account has its own capacity, even under the same configuration.
     other = WorkloadPrincipal("test", "other", "system:serviceaccount:test:other", "pod", "pod-uid", "account-uid")
-    claim = await limited.claim()
-    assert claim is not None
-    source = await limited.source(claim)
-    assert source is not None
+    claim, source = await claimed(limited)
     await limited.record(claim, source, events(2))
     await limited.record(claim, source, events(2))  # replay needs no capacity
     with pytest.raises(QuotaError, match="2-entry lifetime limit"):
@@ -207,10 +204,7 @@ async def test_actions_subscription_state_is_source_specific(store: Store, value
 @pytest.mark.parametrize("revision", ["0001_notifications", "0003_remove_pause"])
 async def test_creation_migrations_preserve_populated_inbox(store: Store, engine: AsyncEngine, revision: str) -> None:
     subscription = await store.subscribe(PRINCIPAL, BODY)
-    claim = await store.claim()
-    assert claim is not None
-    source = await store.source(claim)
-    assert source is not None
+    claim, source = await claimed(store)
     await store.record(claim, source, events())
     notice = await store.notice(claim)
     assert notice is not None
@@ -219,9 +213,7 @@ async def test_creation_migrations_preserve_populated_inbox(store: Store, engine
     before = await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
 
     def round_trip(connection: Connection) -> None:
-        config = Config()
-        config.set_main_option("script_location", str(RUNNER.migrations_dir))
-        config.attributes["connection"] = connection
+        config = migration_config(connection)
         command.downgrade(config, revision)
         legacy = BODY.model_dump(mode="json", exclude={"source"}) | BODY.source.model_dump(mode="json")
         if revision == "0001_notifications":
@@ -267,10 +259,7 @@ async def test_remove_pause_migration_preserves_inbox_and_stopped_intent(
     store: Store, engine: AsyncEngine, paused: bool, cancelled: bool
 ) -> None:
     subscription = await store.subscribe(PRINCIPAL, BODY)
-    claim = await store.claim()
-    assert claim is not None
-    source = await store.source(claim)
-    assert source is not None
+    claim, source = await claimed(store)
     await store.record(claim, source, events())
     notice = await store.notice(claim)
     assert notice is not None
@@ -282,9 +271,7 @@ async def test_remove_pause_migration_preserves_inbox_and_stopped_intent(
     inbox_before = await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
 
     def round_trip(connection: Connection) -> None:
-        config = Config()
-        config.set_main_option("script_location", str(RUNNER.migrations_dir))
-        config.attributes["connection"] = connection
+        config = migration_config(connection)
         command.downgrade(config, "0002_idempotency_key")
         connection.execute(
             text("UPDATE subscription SET paused = :paused WHERE id = :id"), {"id": subscription.id, "paused": paused}
@@ -330,10 +317,7 @@ async def test_remove_pause_migration_preserves_inbox_and_stopped_intent(
 async def test_overlapping_subscriptions_commit_one_prefix_and_read_does_not_ack(store: Store) -> None:
     first = await store.subscribe(PRINCIPAL, BODY)
     await store.subscribe(PRINCIPAL, BODY.model_copy(update={"idempotency_key": "overlap"}))
-    claim = await store.claim()
-    assert claim is not None
-    source = await store.source(claim)
-    assert source is not None
+    claim, source = await claimed(store)
     payload = events()
     await store.record(claim, source, payload)
     overlapping = await store.source(claim)
@@ -370,10 +354,7 @@ async def test_overlapping_subscriptions_commit_one_prefix_and_read_does_not_ack
 
 async def test_cancellation_fences_inflight_source_and_claim_loss_fences_worker(store: Store) -> None:
     subscription = await store.subscribe(PRINCIPAL, BODY)
-    claim = await store.claim()
-    assert claim is not None
-    source = await store.source(claim)
-    assert source is not None
+    claim, source = await claimed(store)
     await store.change(PRINCIPAL.account, subscription.id, None)
     await store.record(claim, source, events())
     assert not (await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)).entries
@@ -423,10 +404,7 @@ async def test_concurrent_sources_allocate_one_committed_prefix(store: Store) ->
 @pytest.mark.parametrize("baseline", [0, 100_000])
 async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store, baseline: int) -> None:
     subscription = await store.subscribe(PRINCIPAL, BODY)
-    claim = await store.claim()
-    assert claim is not None
-    source = await store.source(claim)
-    assert source is not None
+    claim, source = await claimed(store)
     await store.record(claim, source, events(1))
     notice = await store.notice(claim)
     assert notice is not None
@@ -489,10 +467,7 @@ async def test_receipts_not_ack_and_no_reminders_after_confirmation(store: Store
 
 async def test_retention_gap_is_visible_and_replay_keeps_tombstone(store: Store) -> None:
     subscription = await store.subscribe(PRINCIPAL, BODY)
-    claim = await store.claim()
-    assert claim is not None
-    source = await store.source(claim)
-    assert source is not None
+    claim, source = await claimed(store)
     await store.record(claim, source, events())
     async with store.sessions.begin() as session:
         await session.execute(update(Entry).values(created_at=datetime.now(UTC) - timedelta(days=31)))
@@ -502,8 +477,7 @@ async def test_retention_gap_is_visible_and_replay_keeps_tombstone(store: Store)
     assert page.inbox.acknowledged == 0
     assert not page.entries
     await store.subscribe(PRINCIPAL, BODY.model_copy(update={"idempotency_key": "late-overlap"}))
-    source = await store.source(claim)
-    assert source is not None
+    source = await due_source(store, claim)
     await store.record(claim, source, events())
     assert (await store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)).inbox.last_cursor == 3
 
@@ -513,10 +487,7 @@ async def test_health_is_durable_introspection_without_inbox_events(
     store: Store, engine: AsyncEngine, existing_events: bool
 ) -> None:
     subscription = await store.subscribe(PRINCIPAL, BODY)
-    claim = await store.claim()
-    assert claim is not None
-    source = await store.source(claim)
-    assert source is not None
+    claim, source = await claimed(store)
     if existing_events:
         await store.record(claim, source, events())
         assert await store.notice(claim) is not None

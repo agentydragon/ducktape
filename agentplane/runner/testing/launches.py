@@ -44,13 +44,16 @@ def environment(home: Path) -> dict[str, str]:
     }
 
 
+def unconfigured_models() -> HttpModelConfigResolver:
+    """An ingress that configures no model, so every session uses its harness's defaults."""
+    return HttpModelConfigResolver(transport=httpx.MockTransport(lambda _request: httpx.Response(200, content=b"null")))
+
+
 def config(harness: runner_pb2.Harness, endpoint: str, *, state_dir: Path, home: Path) -> RunnerConfig:
     return RunnerConfig(
         state_dir=state_dir,
         harness_environment=environment(home),
-        model_config_resolver=HttpModelConfigResolver(
-            transport=httpx.MockTransport(lambda _request: httpx.Response(200, content=b"null"))
-        ),
+        model_config_resolver=unconfigured_models(),
         claude=claude_launch(endpoint) if harness == runner_pb2.HARNESS_CLAUDE else None,
         codex=codex_launch(endpoint) if harness == runner_pb2.HARNESS_CODEX else None,
     )

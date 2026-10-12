@@ -18,19 +18,16 @@ would pass on a model that says it anyway.
 
 from __future__ import annotations
 
-from collections.abc import Awaitable, Callable
-
 import pytest_bazel
 
 from agentplane.acceptance.agent import Agent
-from agentplane.app.sandbox_models import SandboxView
+from agentplane.acceptance.conftest import Sandboxes
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
 
-Sandboxes = Callable[..., Awaitable[SandboxView]]
 
 # Not a word, not a plausible identifier, and in no harness's vocabulary: a model reaches for it
 # only because it was told to. It appears nowhere in the prompt, so the instruction is the only

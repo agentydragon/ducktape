@@ -12,6 +12,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.harness_tests.claude import anthropic_sse, frames
 from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
+from agentplane.harness_tests.claude.requests import MessagesRequest
 from agentplane.native.claude import wire
 from agentplane.native.claude.blocks import TextBlock, ThinkingBlock, blocks_of
 from agentplane.native.claude.scenarios import SYSTEM_PROMPT, TOOLS
@@ -45,6 +46,11 @@ async def _until(condition: Callable[[], bool]) -> None:
 def _transcript(claude: ClaudeLauncher) -> str:
     (path,) = (claude.config / "projects").glob(f"*/{CRASHED_SESSION}.jsonl")
     return path.read_text()
+
+
+def _conversation_user_texts(request: MessagesRequest) -> list[str]:
+    """The request's user texts minus the system reminders Claude Code injects among them."""
+    return [text for text in request.texts("user") if not text.startswith("<system-reminder>")]
 
 
 async def _thinking_completed(run: async_run.ClaudeRun) -> None:
@@ -157,10 +163,7 @@ async def test_resume_after_an_interrupted_partial_turn_replays_only_completed_m
         recovery = await resumed.send(INTERRUPTED_RESUME_RECOVERY)
         async with await anthropic_messages.await_next_request() as exchange:
             replay = exchange.request
-            conversation_user_texts = [
-                text for text in replay.texts("user") if not text.startswith("<system-reminder>")
-            ]
-            assert conversation_user_texts == [SEED_INPUT, INTERRUPTED_RESUME_RECOVERY]
+            assert _conversation_user_texts(replay) == [SEED_INPUT, INTERRUPTED_RESUME_RECOVERY]
             assert replay.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
             await exchange.send(
                 *anthropic_sse.message_stream(
@@ -208,13 +211,8 @@ async def test_resume_after_interrupt_then_crash_drops_retained_queued_inputs(
         recovery = await resumed.send(RETAINED_QUEUE_RECOVERY)
         async with await anthropic_messages.await_next_request() as exchange:
             replay = exchange.request
-            conversation_user_texts = [
-                text for text in replay.texts("user") if not text.startswith("<system-reminder>")
-            ]
-            assert conversation_user_texts == [SEED_INPUT, RETAINED_QUEUE_RECOVERY]
+            assert _conversation_user_texts(replay) == [SEED_INPUT, RETAINED_QUEUE_RECOVERY]
             assert replay.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
-            assert RETAINED_QUEUE_FIRST not in replay.texts("user")
-            assert RETAINED_QUEUE_SECOND not in replay.texts("user")
             await exchange.send(
                 *anthropic_sse.message_stream(
                     [anthropic_sse.Text("RETAINED_QUEUE_CRASH_RECOVERY_OK")], model=MODEL
@@ -260,11 +258,7 @@ async def test_resume_after_crash_replays_completed_history_but_drops_active_and
         prompt = await resumed.send(RECOVERY_INPUT)
         async with await anthropic_messages.await_next_request() as exchange:
             replay = exchange.request
-            user_texts = replay.texts("user")
-            assert user_texts[-1] == RECOVERY_INPUT
-            assert SEED_INPUT in user_texts
-            assert QUEUED_INPUT not in user_texts
-            assert IN_FLIGHT_INPUT not in user_texts
+            assert _conversation_user_texts(replay) == [SEED_INPUT, RECOVERY_INPUT]
             assert replay.texts("assistant") == ["CRASH_RESUME_SEED_OK"]
             stream = anthropic_sse.message_stream([anthropic_sse.Text("CRASH_RESUME_OK")], model=MODEL)
             await exchange.send(*stream.events)

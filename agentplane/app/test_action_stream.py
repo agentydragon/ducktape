@@ -26,18 +26,16 @@ from agentplane.app.database_updates import Channel, create_database_updates
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
-from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import OperatorSession, OperatorSessionStore, request_session
 from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
+from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 
 APP_URL = "http://test-app.invalid"
@@ -182,14 +180,7 @@ def serve(
             inventory,
             bridge,
             store,
-            ModelCatalog(
-                models=[
-                    ModelOption(
-                        model="test-model", display_name="Test Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
-                    )
-                ],
-                harnesses={harness: ["test-model"] for harness in Harness},
-            ),
+            TEST_MODELS,
             egress,
             decisions,
             live_index,

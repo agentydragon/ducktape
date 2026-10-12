@@ -31,8 +31,15 @@ from agentplane.runner_gateway.lifecycle_control import (
 from agentplane.runner_gateway.runner_control import ControlTiming
 from agentplane.runner_gateway.testing.grpc_service import connect, service
 from agentplane.runner_gateway.testing.resources import build_resources
-from agentplane.runner_gateway.testing.runner_control import OTHER_REPLICA, REPLICA, RUNNER_TOKEN, serve_replica_control
-from agentplane.runner_gateway.testing.sessions import register_session
+from agentplane.runner_gateway.testing.runner_control import (
+    HELLO,
+    OTHER_REPLICA,
+    REPLICA,
+    RUNNER_TOKEN,
+    attached,
+    serve_replica_control,
+)
+from agentplane.runner_gateway.testing.sessions import register_on_fake_sandbox
 from agentplane.sandbox_service.teardown import GatewaySealing, SealNotFlushedError, Teardown
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION, SANDBOX, SANDBOX_UID, Cluster
@@ -44,7 +51,6 @@ from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 
 CALLER_AUDIENCE = "test-sandbox-service"
 CALLER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-caller")
-HELLO = runner_control_pb2.RunnerFrame(hello=runner_control_pb2.Hello(runner_boot_id="test-boot"))
 SPEC: dict[str, object] = {"harness": "HARNESS_CLAUDE", "cwd": "/test-workspace/{session_id}", "model": "test-model"}
 Reason = runner_control_pb2.ControlRefused.Reason
 
@@ -112,6 +118,14 @@ async def other(replica: Callable[[ConnectionHolder], AbstractAsyncContextManage
         yield started
 
 
+@pytest.fixture
+async def public_id(engine: AsyncEngine) -> UUID:
+    """A Session registered on the fake cluster's Sandbox."""
+    public_id = uuid4()
+    await register_on_fake_sandbox(engine, public_id)
+    return public_id
+
+
 @asynccontextmanager
 async def connected(replica: Replica) -> AsyncIterator[Connect]:
     """A scripted runner's `Connect` stream, welcomed."""
@@ -139,12 +153,6 @@ async def next_request(call: Connect) -> runner_control_pb2.ControlRequest:
 
 async def answer(call: Connect, result: runner_control_pb2.ControlResult) -> None:
     await call.write(runner_control_pb2.RunnerFrame(control_result=result))
-
-
-def attached(session_id: str, harness_state: runner_pb2.HarnessState) -> runner_pb2.Attached:
-    return runner_pb2.Attached(
-        session_id=session_id, harness_state=harness_state, setup_state=runner_pb2.SETUP_STATE_NOT_REQUIRED
-    )
 
 
 def client(token_file: Path, target: str, *, control_target: str) -> AbstractAsyncContextManager[RunnerGatewayClient]:
@@ -210,11 +218,7 @@ async def test_a_created_running_session_is_not_resumed(holder: Replica, token_f
         assert (await creating).attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
 
 
-async def test_listing_and_resuming_go_over_the_channel(holder: Replica, engine: AsyncEngine, token_file: Path) -> None:
-    public_id = uuid4()
-    await register_session(
-        engine, public_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name=SANDBOX, sandbox_uid=UUID(SANDBOX_UID)
-    )
+async def test_listing_and_resuming_go_over_the_channel(holder: Replica, public_id: UUID, token_file: Path) -> None:
     async with connected(holder) as call, client(token_file, holder.api, control_target=holder.api) as service:
         runner = service.runner(DESTINATION)
         listing = asyncio.create_task(runner.list_sessions())
@@ -297,12 +301,8 @@ def sandbox_service_teardown(cluster: Cluster, gateway: RunnerGatewayClient) -> 
 
 
 async def test_teardown_seals_over_the_holders_connection(
-    holder: Replica, other: Replica, cluster: Cluster, engine: AsyncEngine, token_file: Path
+    holder: Replica, other: Replica, cluster: Cluster, public_id: UUID, token_file: Path
 ) -> None:
-    public_id = uuid4()
-    await register_session(
-        engine, public_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name=SANDBOX, sandbox_uid=UUID(SANDBOX_UID)
-    )
     cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["spec"]["operatingMode"] = OperatingMode.SUSPENDED
     view = await cluster.inventory.get(SANDBOX)
     await cluster.inventory.begin_teardown(SANDBOX, uid=view.uid)
@@ -357,15 +357,6 @@ async def next_delivery(call: Connect) -> runner_control_pb2.DeliverCommand:
                 return frame.deliver
             await call.write(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.Heartbeat()))
     raise AssertionError("the service ended the stream")
-
-
-@pytest.fixture
-async def public_id(engine: AsyncEngine) -> UUID:
-    public_id = uuid4()
-    await register_session(
-        engine, public_id, sandbox_namespace=SANDBOX_NAMESPACE, sandbox_name=SANDBOX, sandbox_uid=UUID(SANDBOX_UID)
-    )
-    return public_id
 
 
 async def test_a_command_reaches_the_holder_and_returns_the_runner_admission(

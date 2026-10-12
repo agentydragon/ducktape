@@ -38,6 +38,7 @@ py_library(
     deps = [
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:models",
+        "//agentplane/action_service:service",
         "//agentplane/action_service:store",
         "@pypi//tenacity",
     ],
@@ -49,12 +50,14 @@ py_library(
     deps = [
         ":credentials",
         ":lifecycle",
+        ":stores",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:database_migrate",
         "//agentplane/action_service:db",
         "//agentplane/action_service:mcp_executor",
         "//agentplane/action_service:models",
         "//agentplane/action_service:service",
+        "//agentplane/action_service:store",
         "//agentplane/action_service/github_policy:visibility",
         "//mcp_infra/testing:remote_server",
         "//util:net",
@@ -159,5 +162,17 @@ py_library(
         "//agentplane/action_service:operator_oidc_settings",
         "//util/testing:mock_oidc",
         "@pypi//cryptography",
+    ],
+)
+
+py_library(
+    name = "mcp_client",
+    srcs = ["mcp_client.py"],
+    deps = [
+        "@pypi//fastmcp_slim",
+        "@pypi//httpx2",
+        "@pypi//mcp",
+        "@pypi//mcp_types",
+        "@pypi//more_itertools",
     ],
 )

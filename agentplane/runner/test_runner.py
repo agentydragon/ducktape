@@ -4,16 +4,15 @@ summaries describe the published log."""
 import textwrap
 from pathlib import Path
 
-import httpx
 import pytest
 import pytest_bazel
 
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.proto.runner_control_pb2 import ControlRefused
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
-from agentplane.runner.model_config import HttpModelConfigResolver
 from agentplane.runner.runner import Runner
 from agentplane.runner.store import SessionRecord, StateOwner, StateOwnershipError
+from agentplane.runner.testing import launches
 from agentplane.runner.testing.driver import RunnerDriver
 from agentplane.runner_gateway.lifecycle_control import ControlRefusedError
 
@@ -43,9 +42,7 @@ def config(harness: runner_pb2.Harness, harness_binary: Path, tmp_path: Path) ->
     """Overrides the package fixture: the session's harness is `harness_binary`, not the pinned one."""
     return RunnerConfig(
         state_dir=tmp_path / "state",
-        model_config_resolver=HttpModelConfigResolver(
-            transport=httpx.MockTransport(lambda _request: httpx.Response(200, content=b"null"))
-        ),
+        model_config_resolver=launches.unconfigured_models(),
         native_state_dir=tmp_path / "native-state",
         claude=ClaudeLaunch(binary=harness_binary, base_url=TEST_ENDPOINT, auth_token="test-token")
         if harness == runner_pb2.HARNESS_CLAUDE

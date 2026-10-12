@@ -1,8 +1,9 @@
 """Delivery-policy tests with real durable inbox state and worker scheduling."""
 
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import cast
-from unittest.mock import AsyncMock, create_autospec
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
@@ -11,17 +12,14 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.models import ActionEventView, ActionState
-from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.db import Entry, Inbox, Subscription
 from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionView
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings, QuotaSettings
-from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.store import ConflictError, Store
+from agentplane.notification_service.testing.store import claimed
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.proto.sandbox_service_pb2 import Sandbox, ServiceAccount
-from agentplane.runner_gateway.client import RunnerGatewayClient
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.errors import SandboxNotFoundError
 from agentplane.workload_auth.principal import WorkloadPrincipal
 
@@ -36,21 +34,6 @@ BODY = Subscribe(
 )
 
 
-@pytest.fixture
-async def service(store: Store) -> Service:
-    return Service(
-        store,
-        create_autospec(ActionServiceClient),
-        create_autospec(SandboxServiceClient),
-        github=None,
-        gateway=create_autospec(RunnerGatewayClient),
-        history=create_autospec(HistoryServiceClient),
-        notice_debounce=NoticeDebounceSettings(),
-        stale_confirmation_s=30,
-        operator_reader_account=None,
-    )
-
-
 def events(count: int) -> list[ActionEventView]:
     return [
         ActionEventView(sequence=i, state=ActionState.DECISION_PENDING, at=datetime.now(UTC))
@@ -60,15 +43,12 @@ def events(count: int) -> list[ActionEventView]:
 
 @pytest.mark.parametrize("quiet_seconds", [0, 60])
 async def test_notice_debounce_deadline_is_durable_and_reads_are_immediate(
-    service: Service, engine: AsyncEngine, quiet_seconds: float
+    service: Service, restart: Callable[[Service], Service], quiet_seconds: float
 ) -> None:
     store = service.store
     service.notice_debounce = NoticeDebounceSettings(quiet_seconds=quiet_seconds, max_wait_seconds=300)
     subscription = await store.subscribe(PRINCIPAL, BODY)
-    claim = await store.claim()
-    assert claim is not None
-    source = await store.source(claim)
-    assert source is not None
+    claim, source = await claimed(store)
     await store.record(claim, source, events(2))
     now = datetime.now(UTC)
     first, last = now - timedelta(seconds=120), now - timedelta(seconds=1)
@@ -89,17 +69,7 @@ async def test_notice_debounce_deadline_is_durable_and_reads_are_immediate(
     await store.change(PRINCIPAL.account, subscription.id, None)
     await store.change(PRINCIPAL.account, overlap.id, None)
     await store.release(claim, None, notice_due_at=await service.get_notice_due_at(claim))
-    restarted = Service(
-        Store(engine, quotas=QuotaSettings()),
-        service.actions,
-        service.sandboxes,
-        github=None,
-        gateway=service.gateway,
-        history=service.history,
-        notice_debounce=service.notice_debounce,
-        stale_confirmation_s=service.stale_confirmation_s,
-        operator_reader_account=None,
-    )
+    restarted = restart(service)
     recovered = restarted.store
     async with recovered.sessions() as session:
         inbox = await session.get(Inbox, claim.id)
@@ -111,13 +81,13 @@ async def test_notice_debounce_deadline_is_durable_and_reads_are_immediate(
     # Age just the quiet window; recovery needs no process-local timer or new NOTIFY.
     async with recovered.sessions.begin() as session:
         await session.execute(update(Inbox).where(Inbox.id == claim.id).values(next_attempt=now))
-    claim = await recovered.claim()
-    assert claim is not None
+    reclaimed = await recovered.claim()
+    assert reclaimed is not None
     if quiet_seconds:
-        assert await restarted.prepare_notice(claim) is None
+        assert await restarted.prepare_notice(reclaimed) is None
         async with recovered.sessions.begin() as session:
             await session.execute(update(Entry).where(Entry.cursor == 2).values(created_at=now - timedelta(seconds=61)))
-    notice = await restarted.prepare_notice(claim)
+    notice = await restarted.prepare_notice(reclaimed)
     assert notice is not None
     assert notice.through_cursor == 2
 
@@ -126,10 +96,7 @@ async def test_notice_max_wait_and_inflight_notice_are_not_extended(service: Ser
     store = service.store
     service.notice_debounce = NoticeDebounceSettings(quiet_seconds=60, max_wait_seconds=300)
     subscription = await store.subscribe(PRINCIPAL, BODY)
-    claim = await store.claim()
-    assert claim is not None
-    source = await store.source(claim)
-    assert source is not None
+    claim, source = await claimed(store)
     await store.record(claim, source, events(2))
     assert await service.prepare_notice(claim) is None
     # A recent entry cannot postpone an older pending entry beyond the maximum wait.
@@ -179,10 +146,7 @@ async def _due_inbox(service: Service, *, prepare_notice: bool = False) -> tuple
     service.sandboxes.namespace = "test"
     cast(AsyncMock, service.actions.events).return_value = []
     subscription = await service.store.subscribe(PRINCIPAL, BODY)
-    claim = await service.store.claim()
-    assert claim is not None
-    source = await service.store.source(claim)
-    assert source is not None
+    claim, source = await claimed(service.store)
     await service.store.record(claim, source, events(3))
     if prepare_notice:
         assert await service.store.notice(claim, prepare=True) is not None
@@ -197,7 +161,7 @@ async def _due_inbox(service: Service, *, prepare_notice: bool = False) -> tuple
 @pytest.mark.parametrize("reason", ["not_found", "uid_changed"])
 @pytest.mark.parametrize("prepare_notice", [False, True])
 async def test_stale_inbox_retires_after_persisted_recheck(
-    service: Service, engine: AsyncEngine, reason: str, prepare_notice: bool
+    service: Service, engine: AsyncEngine, restart: Callable[[Service], Service], reason: str, prepare_notice: bool
 ) -> None:
     claim, subscription = await _due_inbox(service, prepare_notice=prepare_notice)
     if reason == "not_found":
@@ -226,17 +190,7 @@ async def test_stale_inbox_retires_after_persisted_recheck(
                 next_attempt=datetime.now(UTC) - timedelta(seconds=1),
             )
         )
-    restarted = Service(
-        Store(engine, quotas=QuotaSettings()),
-        service.actions,
-        service.sandboxes,
-        github=None,
-        gateway=service.gateway,
-        history=service.history,
-        notice_debounce=service.notice_debounce,
-        stale_confirmation_s=service.stale_confirmation_s,
-        operator_reader_account=None,
-    )
+    restarted = restart(service)
     assert await restarted.step()
     async with service.store.sessions() as session:
         retired = await session.get(Inbox, claim.id)

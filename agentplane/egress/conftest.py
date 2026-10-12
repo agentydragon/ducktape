@@ -9,11 +9,12 @@ from typing import Any, cast
 
 import pytest
 from kubernetes_asyncio import client as k8s_client
-from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
+from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 
 from agentplane.egress.database_migrate import RUNNER
 from agentplane.egress.decision_log import DecisionLog
 from agentplane.egress.decision_store import DecisionStore, make_engine
+from agentplane.egress.identity import ProjectedTokenVerifier, WorkloadIdentityVerifier
 from agentplane.egress.informer import Informer
 from agentplane.egress.policy import Index
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
@@ -37,6 +38,7 @@ from agentplane.testing.fake_apiserver import (
     sandbox,
     secret,
 )
+from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 from util.testing.postgres_fixtures import (
     database_clones,
@@ -161,6 +163,34 @@ async def api_client(fake: FakeApiServer) -> AsyncIterator[ApiClient]:
     configuration = k8s_client.Configuration(host=f"http://127.0.0.1:{fake.port}")
     async with ApiClient(configuration=configuration) as api:
         yield api
+
+
+@pytest.fixture
+def workload_resolver(api_client: ApiClient) -> WorkloadPrincipalResolver:
+    """TokenReview for the proxy's own audience, admitting the sandbox namespace."""
+    return WorkloadPrincipalResolver(
+        authentication=AuthenticationV1Api(api_client),
+        audience=AUDIENCE,
+        allowed_service_account_namespaces=(SANDBOX_NAMESPACE,),
+    )
+
+
+@pytest.fixture
+def verifier(workload_resolver: WorkloadPrincipalResolver) -> WorkloadIdentityVerifier:
+    return WorkloadIdentityVerifier(workload_resolver)
+
+
+@pytest.fixture
+def projected(api_client: ApiClient) -> ProjectedTokenVerifier:
+    return ProjectedTokenVerifier(
+        resolvers={
+            PROJECTED_AUDIENCE: WorkloadPrincipalResolver(
+                authentication=AuthenticationV1Api(api_client),
+                audience=PROJECTED_AUDIENCE,
+                allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
+            )
+        }
+    )
 
 
 database_template, history_db_url = migrated_database_fixtures(

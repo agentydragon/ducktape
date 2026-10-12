@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import itertools
-import json
-from dataclasses import asdict
 
 import pytest
 import pytest_bazel
 
-from agentplane.indexing.chunking import CHUNKER_VERSION, DEFAULT_CHUNK_BUDGET, ChunkBudget, chunk_text, git_chunker_key
+from agentplane.indexing.chunking import DEFAULT_CHUNK_BUDGET, ChunkBudget, chunk_text, git_chunker_key
 
 
 def test_offsets_slice_the_embedded_text_back_out() -> None:
@@ -55,12 +53,9 @@ def test_single_oversized_line_is_hard_split_at_code_point_boundaries() -> None:
     assert chunks[-1].text.endswith(blob[-1:])
 
 
-def test_whitespace_only_spans_are_dropped() -> None:
-    assert chunk_text("\n\n   \n\t\n") == []
-
-
-def test_empty_blob_yields_nothing() -> None:
-    assert chunk_text("") == []
+@pytest.mark.parametrize("blob", ["", "\n\n   \n\t\n"])
+def test_blank_text_yields_nothing(blob: str) -> None:
+    assert chunk_text(blob) == []
 
 
 def test_a_budget_packs_to_its_own_size() -> None:
@@ -77,14 +72,6 @@ def test_overlap_is_part_of_what_identifies_a_retrieval_regime() -> None:
     assert git_chunker_key(budget) != git_chunker_key(
         ChunkBudget(target_bytes=200, max_bytes=400, overlap_codepoints=32)
     )
-
-
-def test_the_key_carries_every_field_of_the_budget() -> None:
-    """Serializing the budget means a field lands in the key automatically."""
-    assert json.loads(git_chunker_key(DEFAULT_CHUNK_BUDGET)) == {
-        "version": CHUNKER_VERSION,
-        **asdict(DEFAULT_CHUNK_BUDGET),
-    }
 
 
 def test_the_key_is_canonical() -> None:

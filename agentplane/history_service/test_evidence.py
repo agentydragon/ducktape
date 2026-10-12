@@ -1,6 +1,6 @@
 """Entity evidence and native frames over a migrated history database, folded by the shadow."""
 
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import pytest
 import pytest_bazel
@@ -11,14 +11,11 @@ from agentplane.history_service.fold.views import EntityKind
 from agentplane.history_service.fold_runner import FOLD_EPOCH, FoldRunner
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.testing.delta_spans import claude_text
-from agentplane.history_service.testing.sessions import WRITER
+from agentplane.history_service.testing.sessions import retained_session
 from agentplane.history_service.thread_reads import ThreadScopeResetError
 from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/history_service/storage:conftest
-
-pytest_plugins = ("agentplane.history_service.storage.conftest",)
 
 REPLY = history_service_pb2.EntityKey(entity_kind=EntityKind.ITEM, entity_id="test-reply")
 NATIVE = event_pb2.Native(direction=event_pb2.DIRECTION_FROM_HARNESS, line='{"test": "native frame"}')
@@ -33,19 +30,12 @@ def entry(cursor: int, *, natives: tuple[int, ...] = (), **observation: object) 
 
 
 @pytest.fixture
-def history(engine: AsyncEngine) -> Store:
-    return Store(engine)
-
-
-@pytest.fixture
 def reader(engine: AsyncEngine, history: Store) -> EvidenceReader:
     return EvidenceReader(engine, history)
 
 
 async def fold(engine: AsyncEngine, history: Store, entries: list[event_log_pb2.EventEntry]) -> UUID:
-    session_id = uuid4()
-    await history.bind_writer(session_id, WRITER)
-    await history.append(session_id, entries)
+    session_id = await retained_session(history, entries)
     await FoldRunner(engine=engine, history=history, concurrency=1, page_size=1000).cycle()
     return session_id
 
@@ -98,10 +88,7 @@ async def test_a_frame_settled_before_the_fold_forgets_its_link_is_unavailable(
     settling = Store(engine, settle_deltas=True)
     # 1-2 start, 3-6 two chunk pairs, 7-8 completion; the fold links chunk 4 to its frame 3.
     span = claude_text(["Hel", "lo"]).entries
-    session_id = uuid4()
-    await settling.bind_writer(session_id, WRITER)
-    await settling.append(session_id, span[:6])
-    await FoldRunner(engine=engine, history=settling, concurrency=1, page_size=1000).cycle()
+    session_id = await fold(engine, settling, span[:6])
     await settling.append(session_id, span[6:])
 
     frames = await reader.native_frames(

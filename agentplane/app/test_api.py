@@ -23,12 +23,12 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
 from agentplane.app.live import LiveIndex
-from agentplane.app.model_catalog import ModelCatalog, ModelOption
+from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
+from agentplane.app.testing.model_test_data import TEST_MODELS, TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
@@ -59,19 +59,6 @@ from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
-
-
-TEST_MODELS = ModelCatalog(
-    models=[
-        ModelOption(
-            model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
-        ),
-        ModelOption(
-            model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
-        ),
-    ],
-    harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
-)
 
 
 CODEX_ONLY = ModelCatalog(
@@ -133,7 +120,7 @@ TEST_PRESETS = PresetCatalog(
 
 
 @pytest.fixture
-def app(
+def bare_app(
     model_catalog: ModelCatalog,
     inventory: SandboxServiceClient,
     bridge: RunnerBridge,
@@ -144,8 +131,6 @@ def app(
     decisions: DecisionsClient,
     live_index: LiveIndex,
     action_policy: ActionPolicyInventory,
-    custom_objects: FakeCustomObjectsApi,
-    core_v1: FakeCoreV1Api,
     reviewer: TokenReviewer,
     electric_proxy: ElectricProxy,
     notifications_http: httpx.AsyncClient,
@@ -153,6 +138,30 @@ def app(
     event_logs: SeededEventLogStore,
     content: ContentStore,
 ) -> FastAPI:
+    """The app over the shared fixtures, with no Kubernetes object seeded."""
+    return create_app(
+        inventory,
+        bridge,
+        store,
+        model_catalog,
+        egress,
+        decisions,
+        live_index,
+        action_policy,
+        reviewer=reviewer,
+        presets=TEST_PRESETS,
+        electric=electric_proxy,
+        event_logs=event_logs,
+        content=content,
+        database_updates=database_updates,
+        operator_sessions=operator_sessions,
+        notifications_http=notifications_http,
+        notifications_token_file=notifications_token_file,
+    )
+
+
+@pytest.fixture
+def app(bare_app: FastAPI, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> FastAPI:
     custom_objects.objects[("sandboxes", "live")] = sandbox("live")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
     custom_objects.objects[("sandboxes", "fresh")] = sandbox("fresh")
@@ -177,33 +186,17 @@ def app(
     custom_objects.objects[("actionpolicysets", "github-writes")] = action_policy_set(
         "github-writes", auto_approve_if=[{"type": "exact_actions", "actions": {"github": ["push_files"]}}]
     )
-    return create_app(
-        inventory,
-        bridge,
-        store,
-        model_catalog,
-        egress,
-        decisions,
-        live_index,
-        action_policy,
-        reviewer=reviewer,
-        presets=TEST_PRESETS,
-        electric=electric_proxy,
-        event_logs=event_logs,
-        content=content,
-        database_updates=database_updates,
-        operator_sessions=operator_sessions,
-        notifications_http=notifications_http,
-        notifications_token_file=notifications_token_file,
-    )
+    return bare_app
+
+
+def _agent_client(app: FastAPI) -> httpx.AsyncClient:
+    """The app over ASGI on the test's own loop, where its gRPC channels and database pools were opened."""
+    return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH)
 
 
 @pytest.fixture
 async def client(app: FastAPI) -> AsyncIterator[httpx.AsyncClient]:
-    """The app over ASGI on the test's own loop, where its gRPC channels and database pools were opened."""
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
-    ) as test_client:
+    async with _agent_client(app) as test_client:
         yield test_client
 
 
@@ -685,9 +678,7 @@ async def test_a_runner_that_has_not_connected_is_a_503(
                 notifications_http=notifications_http,
                 notifications_token_file=notifications_token_file,
             )
-            async with httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
-            ) as client:
+            async with _agent_client(app) as client:
                 response = await client.get("/sandboxes/live/sessions")
     assert response.status_code == 503
     assert "UNAVAILABLE" in response.json()["detail"]
@@ -780,12 +771,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
             notifications_http=notifications_http,
             notifications_token_file=notifications_token_file,
         )
-        async with (
-            httpx.AsyncClient(
-                transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
-            ) as http,
-            asyncio.timeout(10),
-        ):
+        async with _agent_client(app) as http, asyncio.timeout(10):
             response = await http.post(
                 f"/threads/{thread_id}/commands",
                 json={"commandId": "test-unanswered-command", "submitInput": {"text": "never admitted"}},
@@ -958,45 +944,11 @@ async def test_models_lists_what_each_harness_may_run(client: httpx.AsyncClient)
 
 
 async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
-    inventory: SandboxServiceClient,
-    bridge: RunnerBridge,
-    store: ThreadStore,
-    event_logs: SeededEventLogStore,
-    database_updates: WakeupListener,
-    operator_sessions: OperatorSessionStore,
-    egress: EgressAccess,
-    decisions: DecisionsClient,
-    live_index: LiveIndex,
-    action_policy: ActionPolicyInventory,
-    reviewer: TokenReviewer,
-    content: ContentStore,
-    electric_proxy: ElectricProxy,
-    notifications_http: httpx.AsyncClient,
-    notifications_token_file: Path,
+    bare_app: FastAPI, event_logs: SeededEventLogStore
 ) -> None:
     thread_id = str(await event_logs.seed("live", "s-1"))
     await event_logs.seed("live", "s-2")
-    app = create_app(
-        inventory,
-        bridge,
-        store,
-        TEST_MODELS,
-        egress,
-        decisions,
-        live_index,
-        action_policy,
-        reviewer=reviewer,
-        event_logs=event_logs,
-        content=content,
-        database_updates=database_updates,
-        operator_sessions=operator_sessions,
-        electric=electric_proxy,
-        notifications_http=notifications_http,
-        notifications_token_file=notifications_token_file,
-    )
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
-    ) as http:
+    async with _agent_client(bare_app) as http:
         found = (await http.get(f"/threads/{thread_id}")).json()
         assert (found["id"], found["name"]) == (thread_id, None)
         assert (await http.get("/threads", params={"sandbox": "other"})).json()["threads"] == []
@@ -1012,44 +964,10 @@ async def test_a_thread_is_found_by_its_session_and_renamed_in_place(
 
 
 async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listing(
-    inventory: SandboxServiceClient,
-    bridge: RunnerBridge,
-    store: ThreadStore,
-    event_logs: SeededEventLogStore,
-    database_updates: WakeupListener,
-    operator_sessions: OperatorSessionStore,
-    egress: EgressAccess,
-    decisions: DecisionsClient,
-    live_index: LiveIndex,
-    action_policy: ActionPolicyInventory,
-    reviewer: TokenReviewer,
-    content: ContentStore,
-    electric_proxy: ElectricProxy,
-    notifications_http: httpx.AsyncClient,
-    notifications_token_file: Path,
+    bare_app: FastAPI, event_logs: SeededEventLogStore
 ) -> None:
     thread_id = str(await event_logs.seed("live", "s-1"))
-    app = create_app(
-        inventory,
-        bridge,
-        store,
-        TEST_MODELS,
-        egress,
-        decisions,
-        live_index,
-        action_policy,
-        reviewer=reviewer,
-        event_logs=event_logs,
-        content=content,
-        database_updates=database_updates,
-        operator_sessions=operator_sessions,
-        electric=electric_proxy,
-        notifications_http=notifications_http,
-        notifications_token_file=notifications_token_file,
-    )
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
-    ) as http:
+    async with _agent_client(bare_app) as http:
         assert (await http.post(f"/threads/{thread_id}/archive")).status_code == 204
         assert (await http.get("/threads", params={"sandbox": "live"})).json()["threads"] == []
         [archived] = (await http.get("/threads", params={"sandbox": "live", "include_archived": "true"})).json()[
@@ -1067,24 +985,13 @@ async def test_a_thread_archives_and_unarchives_and_hides_from_the_default_listi
 
 
 async def test_a_running_thread_cannot_be_archived(
-    inventory: SandboxServiceClient,
+    bare_app: FastAPI,
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: SeededEventLogStore,
-    database_updates: WakeupListener,
-    operator_sessions: OperatorSessionStore,
-    egress: EgressAccess,
-    decisions: DecisionsClient,
-    live_index: LiveIndex,
-    action_policy: ActionPolicyInventory,
-    reviewer: TokenReviewer,
-    content: ContentStore,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     monkeypatch: pytest.MonkeyPatch,
-    electric_proxy: ElectricProxy,
-    notifications_http: httpx.AsyncClient,
-    notifications_token_file: Path,
 ) -> None:
     custom_objects.objects[("sandboxes", "live")], core_v1.pods["live"] = seed_runner(custom_objects, core_v1, "live")
     spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
@@ -1101,27 +1008,7 @@ async def test_a_running_thread_cannot_be_archived(
         ]
 
     monkeypatch.setattr(bridge, "list_sessions", running_sessions)
-    app = create_app(
-        inventory,
-        bridge,
-        store,
-        TEST_MODELS,
-        egress,
-        decisions,
-        live_index,
-        action_policy,
-        reviewer=reviewer,
-        event_logs=event_logs,
-        content=content,
-        database_updates=database_updates,
-        operator_sessions=operator_sessions,
-        electric=electric_proxy,
-        notifications_http=notifications_http,
-        notifications_token_file=notifications_token_file,
-    )
-    async with httpx.AsyncClient(
-        transport=httpx.ASGITransport(app=app), base_url="http://test", headers=AGENT_AUTH
-    ) as http:
+    async with _agent_client(bare_app) as http:
         response = await http.post(f"/threads/{thread_id}/archive")
 
     assert response.status_code == 409

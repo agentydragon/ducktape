@@ -180,14 +180,13 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
         await wait_available(executor._group)
         async with service:
             request_id = await _allowed_execution(service, idempotency_key="one-call")
-            await wait_for_state(store, request_id, CALLER, want=ActionState.SUCCEEDED)
+            view = await wait_for_state(store, request_id, CALLER, want=ActionState.SUCCEEDED)
             assert calls == [{"text": "hi"}]
-            view = await store.get(request_id, CALLER)
             assert view.execution is not None
             assert CallToolResult.model_validate(view.execution.result).structured_content == {"echoed": "hi"}
 
             # A duplicate Decision on the same already-decided request must not dispatch a second time.
-            try:
+            with pytest.raises(ActionConflictError):
                 await service.decide(
                     request_id,
                     DecisionInput(
@@ -195,9 +194,6 @@ async def test_one_allowed_execution_calls_the_backend_tool_exactly_once(engine:
                     ),
                     OPERATOR,
                 )
-                raise AssertionError("expected ActionConflictError on a stale/duplicate decision")
-            except ActionConflictError:
-                pass
             assert calls == [{"text": "hi"}]
 
 
@@ -316,8 +312,7 @@ async def test_ambiguous_transport_loss_becomes_execution_unknown_without_retry(
                 # Sever the transport mid-call; the client's underlying subprocess dies with it.
                 await executor.close()
 
-                await wait_for_state(store, view.id, CALLER, want=ActionState.EXECUTION_UNKNOWN)
-                final = await store.get(view.id, CALLER)
+                final = await wait_for_state(store, view.id, CALLER, want=ActionState.EXECUTION_UNKNOWN)
                 assert final.execution is not None
                 assert final.execution.error is not None
                 assert final.execution.error["kind"] == "execution_outcome_unknown"

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 import grpc
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.proto import runner_control_pb2_grpc
+from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionRecords
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
@@ -22,6 +22,14 @@ RUNNER_AUDIENCE = "test-runner-control"
 RUNNER_TOKEN = "test-runner-token"
 REPLICA = ConnectionHolder(pod_name="test-replica", pod_ip="192.0.2.1", port=18080)
 OTHER_REPLICA = ConnectionHolder(pod_name="test-other-replica", pod_ip="192.0.2.2", port=18080)
+HELLO = runner_control_pb2.RunnerFrame(hello=runner_control_pb2.Hello(runner_boot_id="test-boot"))
+
+
+def attached(session_id: str, harness_state: runner_pb2.HarnessState) -> runner_pb2.Attached:
+    """A runner's answer to an open or resume of a Session without setup."""
+    return runner_pb2.Attached(
+        session_id=session_id, harness_state=harness_state, setup_state=runner_pb2.SETUP_STATE_NOT_REQUIRED
+    )
 
 
 @asynccontextmanager

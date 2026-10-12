@@ -18,7 +18,6 @@ from collections.abc import AsyncIterator, Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 import aiosqlite
 import pytest
@@ -28,11 +27,12 @@ from pydantic import BaseModel
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.config import RunnerConfig
-from agentplane.runner.harness import Harness
 from agentplane.runner.journal import Journal
 from agentplane.runner.observation import Observation
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord, SessionStore, StateOwner
+from agentplane.runner.testing.adapters import UnexpectedAdapter
+from agentplane.runner.testing.sessions import codex_record, open_session
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -58,33 +58,12 @@ class Answer(BaseModel):
     answer: int
 
 
-class DerivingAdapter(HarnessAdapter):
+class DerivingAdapter(UnexpectedAdapter):
     def __init__(self, session: Session) -> None:
         self.session = session
 
     def command(self) -> list[str]:
         return [sys.executable, "-c", HARNESS]
-
-    def environment(self) -> Mapping[str, str]:
-        return {}
-
-    async def handshake(self) -> str:
-        return "test-native-session"
-
-    async def reconcile(self, turn_id: str, *, resumed: bool) -> event_pb2.ConversationReconciled:
-        return event_pb2.ConversationReconciled(turn_id=turn_id)
-
-    async def submit(self, command_id: str, text: str) -> None:
-        raise AssertionError(f"unexpected input {(command_id, text)!r}")
-
-    async def interrupt(self, turn_id: str) -> None:
-        raise AssertionError(f"unexpected interrupt {turn_id!r}")
-
-    async def change_model(self, command_id: str, model: str) -> None:
-        raise AssertionError(f"unexpected model command {(command_id, model)!r}")
-
-    async def change_reasoning_effort(self, command_id: str, effort: str) -> None:
-        raise AssertionError(f"unexpected effort command {(command_id, effort)!r}")
 
     async def on_frame(self, frame: dict[str, Any], source_sequence: int) -> None:
         await self.session.emit(
@@ -130,38 +109,17 @@ def make_adapter() -> Callable[[Session], HarnessAdapter]:
 
 @pytest.fixture
 async def session(tmp_path: Path, make_adapter: Callable[[Session], HarnessAdapter]) -> AsyncIterator[Session]:
-    state_dir = tmp_path / "state"
-    store = SessionStore(state_dir / "sessions")
-    owner = StateOwner(state_dir)
-    record = SessionRecord(
-        harness=Harness.CODEX,
-        cwd=str(tmp_path / "workspace"),
-        model="test-model",
-        reasoning_effort="low",
-        instructions="",
-        event_source_id=uuid4(),
-    )
-    store.write("test-session", record)
-    try:
-        async with Journal.open(
-            store.directory("test-session") / "journal.sqlite", str(record.event_source_id)
-        ) as journal:
-            session = Session(
-                "test-session",
-                record=record,
-                journal=journal,
-                store=store,
-                config=RunnerConfig(state_dir=state_dir),
-                make_adapter=make_adapter,
-                state_owner_descriptor=owner.descriptor,
-            )
-            await session.ensure_running()
-            try:
-                yield session
-            finally:
-                await session.stop()
-    finally:
-        owner.close()
+    async with open_session(
+        "test-session",
+        codex_record(tmp_path / "workspace"),
+        config=RunnerConfig(state_dir=tmp_path / "state"),
+        make_adapter=make_adapter,
+    ) as session:
+        await session.ensure_running()
+        try:
+            yield session
+        finally:
+            await session.stop()
 
 
 def _lines(*frames: Mapping[str, object]) -> str:

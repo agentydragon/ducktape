@@ -29,13 +29,12 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.main import AppServer, SpaFiles, serve_then_close
-from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.settings import Settings
 from agentplane.app.shutdown import drain_of
 from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
+from agentplane.app.testing.model_test_data import TEST_MODELS, TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.history_watch import SessionOpenings
 from agentplane.app.threads.runner_directory import RunnerDirectory
@@ -44,7 +43,6 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
@@ -157,17 +155,6 @@ def test_endpoint_settings_reject_query_components(field: str, monkeypatch: pyte
 
 
 SANDBOX = "shutdown-test-sandbox"
-MODELS = ModelCatalog(
-    models=[
-        ModelOption(
-            model="test-claude-model", display_name="Test Claude Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
-        ),
-        ModelOption(
-            model="test-codex-model", display_name="Test Codex Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
-        ),
-    ],
-    harnesses={Harness.CLAUDE: ["test-claude-model"], Harness.CODEX: ["test-codex-model"]},
-)
 
 
 @pytest.fixture
@@ -242,7 +229,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
         inventory,
         RunnerBridge(runners=runners, event_logs=event_logs, content=content),
         store,
-        MODELS,
+        TEST_MODELS,
         egress,
         decisions,
         live_index,

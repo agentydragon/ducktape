@@ -25,13 +25,15 @@ from agentplane.action_service.catalog import (
     McpExecutorBinding,
 )
 from agentplane.action_service.database_migrate import RUNNER
-from agentplane.action_service.db import make_engine
+from agentplane.action_service.db import make_engine, make_sessionmaker
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.models import ExecutionRequest, ExecutionResult, ExecutionState
 from agentplane.action_service.service import ExecutionLease, Executor
+from agentplane.action_service.store import ActionStore
 from agentplane.action_service.testing.credentials import OperatorIdp
 from agentplane.action_service.testing.lifecycle import wait_available
+from agentplane.action_service.testing.stores import action_store
 from mcp_infra.testing.remote_server import as_remote_server
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_sync
@@ -53,6 +55,11 @@ action_database_template, db_url = migrated_database_fixtures(
 async def engine(db_url: str) -> AsyncIterator[AsyncEngine]:
     async with managed_async_engine(make_engine(db_url)) as engine:
         yield engine
+
+
+@pytest.fixture
+def store(engine: AsyncEngine) -> ActionStore:
+    return action_store(make_sessionmaker(engine))
 
 
 @pytest.fixture(scope="session")

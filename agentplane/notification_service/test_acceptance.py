@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -32,7 +33,7 @@ from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.db import Inbox
 from agentplane.notification_service.service import Service
-from agentplane.notification_service.settings import NoticeDebounceSettings, QuotaSettings
+from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.store import Store
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
@@ -61,7 +62,7 @@ logger = logging.getLogger(__name__)
 @pytest.mark.parametrize("failed_before_rpc", [False, True])
 async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     store: Store,
-    engine: AsyncEngine,
+    restart: Callable[[Service], Service],
     action_engine: AsyncEngine,
     echo_catalog: ActionCatalog,
     echo_executor: RecordingExecutor,
@@ -340,17 +341,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 assert "acknowledgement" not in notices[0]
                 await model.reply(notice_request, Text("Notifications received"))
                 # A fresh service object has no in-memory delivery state to lean on.
-                recovered = Service(
-                    Store(engine, quotas=QuotaSettings()),
-                    source,
-                    sandboxes,
-                    github=None,
-                    gateway=remote,
-                    history=history,
-                    notice_debounce=service.notice_debounce,
-                    stale_confirmation_s=service.stale_confirmation_s,
-                    operator_reader_account=None,
-                )
+                recovered = restart(service)
                 inbox_id = UUID(hint["inbox_id"])
                 page = None
                 while page is None or not page["notice"]["confirmed"]:

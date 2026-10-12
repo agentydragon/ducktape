@@ -22,7 +22,7 @@ import grpc
 import pytest
 import pytest_bazel
 from aiohttp import web
-from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api
+from kubernetes_asyncio.client import ApiClient
 from mitmproxy import connection, http
 from more_itertools import one
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
@@ -242,6 +242,12 @@ class ProxyUnderTest:
             )
         )
 
+    def sidecar(self, token: str) -> SidecarRelay:
+        """A loopback sidecar relaying to this proxy with `token` as its hop bearer."""
+        token_file = self.tmp_path / f"sidecar-token-{token}"
+        token_file.write_text(token)
+        return SidecarRelay(proxy_host="127.0.0.1", proxy_port=self.proxy_port, token_file=token_file, listen_port=0)
+
     async def get(self, path: str, *, token: str | None = TOKEN_A, headers: dict[str, str] | None = None) -> Response:
         async with (
             aiohttp.ClientSession() as session,
@@ -292,27 +298,15 @@ async def proxy(
     tmp_path: Path,
     exempt_networks: Collection[Network],
     decision_log: DecisionLog,
+    workload_resolver: WorkloadPrincipalResolver,
+    verifier: WorkloadIdentityVerifier,
+    projected: ProjectedTokenVerifier,
 ) -> AsyncIterator[ProxyUnderTest]:
     interception_ca = make_ca("agentplane-egress-test-interception")
     write_interception_ca(tmp_path / "confdir", *write_ca(interception_ca, tmp_path, "interception"))
     upstream_ca = make_ca("agentplane-egress-test-upstream")
     upstream_ca_cert, _ = write_ca(upstream_ca, tmp_path, "upstream")
     index = Index(freshness=Freshness(stale_after_seconds=180))
-    workload_resolver = WorkloadPrincipalResolver(
-        authentication=AuthenticationV1Api(api_client),
-        audience=AUDIENCE,
-        allowed_service_account_namespaces=(SANDBOX_NAMESPACE,),
-    )
-    verifier = WorkloadIdentityVerifier(workload_resolver)
-    projected_verifier = ProjectedTokenVerifier(
-        resolvers={
-            PROJECTED_AUDIENCE: WorkloadPrincipalResolver(
-                authentication=AuthenticationV1Api(api_client),
-                audience=PROJECTED_AUDIENCE,
-                allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
-            )
-        }
-    )
     informer_task = asyncio.create_task(informer(index, api_client).run())
     try:
         await index.wait_for(lambda: index.synced)
@@ -324,11 +318,7 @@ async def proxy(
             recording_upstream(*issue_leaf(upstream_ca, UPSTREAM_HOST, tmp_path)) as upstream,
             EgressProxyServer(
                 addon := EgressAddon(
-                    index=index,
-                    verifier=verifier,
-                    decision_log=decision_log,
-                    resolver=resolver,
-                    projected=projected_verifier,
+                    index=index, verifier=verifier, decision_log=decision_log, resolver=resolver, projected=projected
                 ),
                 confdir=tmp_path / "confdir",
                 # The parameter the deployment uses, so every case here runs the shipped path: the
@@ -414,6 +404,21 @@ async def test_connection_end_clears_authenticated_context(proxy: ProxyUnderTest
     assert refused_for(await gated_flow(proxy, client, None), DenyReason.TOKEN_MISSING)
 
 
+async def bind_to_a(proxy: ProxyUnderTest, policy_name: str, credential_name: str) -> None:
+    """Bind A to `policy_name` beside its GitHub policy, and wait until the index holds the policy,
+    its credential and the binding."""
+    proxy.fake.put(
+        BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY, policy_name])
+    )
+    await proxy.index.wait_for(
+        lambda: (
+            credential_name in proxy.index.credentials
+            and policy_name in proxy.index.policies
+            and policy_name in proxy.index.bindings[BINDING].spec.policies
+        )
+    )
+
+
 async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest, *, bind_b: bool = False) -> None:
     fake.put(
         CREDENTIALS_PLURAL,
@@ -436,9 +441,7 @@ async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest
             ],
         ),
     )
-    fake.put(
-        BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY, WORKLOAD_POLICY])
-    )
+    await bind_to_a(proxy, WORKLOAD_POLICY, WORKLOAD_CREDENTIAL)
     if bind_b:
         # A faithful second Pod identity reaching the in-process listener from the same loopback
         # address. Its distinct Pod UID and token still go through TokenReview and live ownership.
@@ -447,14 +450,7 @@ async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest
             BINDINGS_PLURAL,
             binding(f"{SANDBOX_B}-{WORKLOAD_POLICY}", subjects=[SUBJECT_B.model_dump()], policies=[WORKLOAD_POLICY]),
         )
-    await proxy.index.wait_for(
-        lambda: (
-            WORKLOAD_CREDENTIAL in proxy.index.credentials
-            and WORKLOAD_POLICY in proxy.index.policies
-            and WORKLOAD_POLICY in proxy.index.bindings[BINDING].spec.policies
-            and (not bind_b or f"{SANDBOX_B}-{WORKLOAD_POLICY}" in proxy.index.bindings)
-        )
-    )
+        await proxy.index.wait_for(lambda: f"{SANDBOX_B}-{WORKLOAD_POLICY}" in proxy.index.bindings)
 
 
 async def test_allowed_request_has_its_placeholder_substituted(proxy: ProxyUnderTest) -> None:
@@ -472,12 +468,8 @@ async def test_authenticated_workload_source_uses_each_https_tunnels_own_token(
     await install_workload_credential(fake, proxy, bind_b=True)
 
     for token, suffix in ((TOKEN_A, "a"), (TOKEN_B, "b")):
-        token_file = proxy.tmp_path / f"workload-sidecar-token-{suffix}"
-        token_file.write_text(token)
         async with (
-            SidecarRelay(
-                proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
-            ) as sidecar,
+            proxy.sidecar(token) as sidecar,
             aiohttp.ClientSession() as session,
             session.get(
                 proxy.url(f"/workload/{suffix}"),
@@ -511,13 +503,9 @@ async def test_authenticated_workload_source_uses_validated_context_for_plain_ht
     fake: FakeApiServer, proxy: ProxyUnderTest
 ) -> None:
     await install_workload_credential(fake, proxy)
-    token_file = proxy.tmp_path / "plain-http-sidecar-token"
-    token_file.write_text(TOKEN_A)
 
     async with (
-        SidecarRelay(
-            proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
-        ) as sidecar,
+        proxy.sidecar(TOKEN_A) as sidecar,
         aiohttp.ClientSession() as session,
         session.get(
             proxy.url("/workload/http", tls=False),
@@ -655,16 +643,7 @@ async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
             ],
         ),
     )
-    fake.put(
-        BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY, policy_name])
-    )
-    await proxy.index.wait_for(
-        lambda: (
-            credential_name in proxy.index.credentials
-            and policy_name in proxy.index.policies
-            and policy_name in proxy.index.bindings[BINDING].spec.policies
-        )
-    )
+    await bind_to_a(proxy, policy_name, credential_name)
 
     async with (
         aiohttp.ClientSession() as session,
@@ -680,14 +659,10 @@ async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
         assert (http_response.status, await http_response.text()) == (200, "upstream ok")
     assert one(proxy.upstream.requests)[2]["x-buildbuddy-api-key"] == "buildbuddy-secret"
 
-    token_file = proxy.tmp_path / "sidecar-token"
-    token_file.write_text(TOKEN_A)
     cert_path, key_path = issue_leaf(proxy.upstream_ca, UPSTREAM_HOST, proxy.tmp_path)
     async with (
         recording_grpc_upstream(read_keypair(cert_path, key_path)) as (port, requests),
-        SidecarRelay(
-            proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
-        ) as sidecar,
+        proxy.sidecar(TOKEN_A) as sidecar,
     ):
         monkeypatch.setenv("https_proxy", f"http://127.0.0.1:{sidecar.listen_port}")
         monkeypatch.setenv("no_proxy", "")
@@ -766,25 +741,9 @@ async def test_plaintext_grpc_stream_metadata_placeholder_is_substituted(
             ],
         ),
     )
-    fake.put(
-        BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY, policy_name])
-    )
-    await proxy.index.wait_for(
-        lambda: (
-            credential_name in proxy.index.credentials
-            and policy_name in proxy.index.policies
-            and policy_name in proxy.index.bindings[BINDING].spec.policies
-        )
-    )
+    await bind_to_a(proxy, policy_name, credential_name)
 
-    token_file = proxy.tmp_path / "sidecar-token"
-    token_file.write_text(TOKEN_A)
-    async with (
-        recording_grpc_upstream(None) as (port, requests),
-        SidecarRelay(
-            proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
-        ) as sidecar,
-    ):
+    async with recording_grpc_upstream(None) as (port, requests), proxy.sidecar(TOKEN_A) as sidecar:
         monkeypatch.setenv("grpc_proxy", f"http://127.0.0.1:{sidecar.listen_port}")
         monkeypatch.setenv("no_proxy", "")
         async with grpc.aio.insecure_channel(f"{UPSTREAM_HOST}:{port}") as channel:
@@ -822,21 +781,18 @@ async def test_unresolved_placeholder_is_never_forwarded(proxy: ProxyUnderTest) 
     assert proxy.upstream.requests == []
 
 
-async def test_bad_token_refused_at_connect(proxy: ProxyUnderTest) -> None:
+@pytest.mark.parametrize(
+    ("token", "reason"), [("not-a-token", DenyReason.TOKEN_REJECTED), (None, DenyReason.TOKEN_MISSING)]
+)
+async def test_bad_or_missing_token_refused_at_connect(
+    proxy: ProxyUnderTest, token: str | None, reason: DenyReason
+) -> None:
     with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
-        await proxy.get("/repos/o/r", token="not-a-token")
+        await proxy.get("/repos/o/r", token=token)
     assert refused.value.status == 403
     assert refused.value.headers is not None
-    assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.TOKEN_REJECTED}"
+    assert refused.value.headers[DENIED_HEADER] == f"denied; reason={reason}"
     assert proxy.upstream.requests == []
-
-
-async def test_missing_token_refused_at_connect(proxy: ProxyUnderTest) -> None:
-    with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
-        await proxy.get("/repos/o/r", token=None)
-    assert refused.value.status == 403
-    assert refused.value.headers is not None
-    assert refused.value.headers[DENIED_HEADER] == f"denied; reason={DenyReason.TOKEN_MISSING}"
 
 
 async def test_unbound_subject_refused(fake: FakeApiServer, proxy: ProxyUnderTest) -> None:
@@ -930,11 +886,7 @@ async def test_a_workload_reads_the_rules_that_apply_to_it(proxy: ProxyUnderTest
 async def test_a_workload_reads_rules_through_its_loopback_sidecar(proxy: ProxyUnderTest) -> None:
     """Ordinary HTTP via loopback and central, then independent destination TokenReview."""
     before = proxy.fake.token_reviews
-    token_file = proxy.tmp_path / "rules-sidecar-token"
-    token_file.write_text(TOKEN_A)
-    async with SidecarRelay(
-        proxy_host="127.0.0.1", proxy_port=proxy.proxy_port, token_file=token_file, listen_port=0
-    ) as sidecar:
+    async with proxy.sidecar(TOKEN_A) as sidecar:
         response = await proxy.get_rules(rules_api.PATH, token=None, proxy_port=sidecar.listen_port)
 
     assert response.status == 200, response.body
@@ -1099,6 +1051,31 @@ async def test_one_tls_connection_carries_every_admitted_request(
     assert len({row.connection_id for row in await decision_log.store.recent(SUBJECT_A)}) == 1
 
 
+def replica_settings(tmp_path: Path, name: str, *, api_port: int, ca: tuple[Path, Path], database_url: str) -> Settings:
+    """A replica process watching the fake API server on `api_port`, on ports of its own."""
+    cert, key = ca
+    return Settings(
+        _cli_parse_args=False,
+        rules_namespace=NAMESPACE,
+        allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
+        credentials_namespace=CREDENTIALS_NAMESPACE,
+        kubeconfig=kubeconfig(tmp_path / f"kube-{name}.yaml", api_port),
+        ca_cert=cert,
+        ca_key=key,
+        confdir=tmp_path / name,
+        listen_host="127.0.0.1",
+        listen_port=pick_free_port(),
+        admin_host="127.0.0.1",
+        admin_port=pick_free_port(),
+        agent_api_host="127.0.0.1",
+        agent_api_port=pick_free_port(),
+        token_audience=AUDIENCE,
+        resync_seconds=1,
+        database_url=database_url,
+        exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
+    )
+
+
 async def test_health_reports_ready_only_once_the_tunnel_accepts(tmp_path: Path, history_db_url: str) -> None:
     """Readiness gates every Service this Pod backs, and the tunnel is the one that carries traffic.
 
@@ -1108,30 +1085,10 @@ async def test_health_reports_ready_only_once_the_tunnel_accepts(tmp_path: Path,
     window showed up as an intermittent refused connection in the two-replica test below rather
     than as itself.
     """
-    ca = make_ca("test-readiness-ca")
-    cert, key = write_ca(ca, tmp_path, "readiness")
+    ca = write_ca(make_ca("test-readiness-ca"), tmp_path, "readiness")
     async with fake_apiserver() as api:
         seed(api)
-        settings = Settings(
-            _cli_parse_args=False,
-            rules_namespace=NAMESPACE,
-            allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
-            credentials_namespace=CREDENTIALS_NAMESPACE,
-            kubeconfig=kubeconfig(tmp_path / "kube-readiness.yaml", api.port),
-            ca_cert=cert,
-            ca_key=key,
-            confdir=tmp_path / "readiness",
-            listen_host="127.0.0.1",
-            listen_port=pick_free_port(),
-            admin_host="127.0.0.1",
-            admin_port=pick_free_port(),
-            agent_api_host="127.0.0.1",
-            agent_api_port=pick_free_port(),
-            token_audience=AUDIENCE,
-            resync_seconds=1,
-            database_url=history_db_url,
-            exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
-        )
+        settings = replica_settings(tmp_path, "readiness", api_port=api.port, ca=ca, database_url=history_db_url)
         async with replica(settings) as running:
             _, writer = await asyncio.open_connection("127.0.0.1", running.proxy_port)
             writer.close()
@@ -1151,26 +1108,7 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
         seed(first_api)
         seed(second_api)
         settings = [
-            Settings(
-                _cli_parse_args=False,
-                rules_namespace=NAMESPACE,
-                allowed_service_account_namespaces=frozenset({SANDBOX_NAMESPACE}),
-                credentials_namespace=CREDENTIALS_NAMESPACE,
-                kubeconfig=kubeconfig(tmp_path / f"kube-{i}.yaml", fake.port),
-                ca_cert=cert,
-                ca_key=key,
-                confdir=tmp_path / f"replica-{i}",
-                listen_host="127.0.0.1",
-                listen_port=pick_free_port(),
-                admin_host="127.0.0.1",
-                admin_port=pick_free_port(),
-                agent_api_host="127.0.0.1",
-                agent_api_port=pick_free_port(),
-                token_audience=AUDIENCE,
-                resync_seconds=1,
-                database_url=history_db_url,
-                exempt_networks=[ip_network("127.0.0.0/8"), ip_network("::1/128")],
-            )
+            replica_settings(tmp_path, f"replica-{i}", api_port=fake.port, ca=(cert, key), database_url=history_db_url)
             for i, fake in enumerate([first_api, second_api])
         ]
         async with replica(settings[0]) as first, replica(settings[1]) as second, aiohttp.ClientSession() as client:
@@ -1265,16 +1203,7 @@ async def install_projected_credential(fake: FakeApiServer, proxy: ProxyUnderTes
             ],
         ),
     )
-    fake.put(
-        BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY, PROJECTED_POLICY])
-    )
-    await proxy.index.wait_for(
-        lambda: (
-            PROJECTED_CREDENTIAL in proxy.index.credentials
-            and PROJECTED_POLICY in proxy.index.policies
-            and PROJECTED_POLICY in proxy.index.bindings[BINDING].spec.policies
-        )
-    )
+    await bind_to_a(proxy, PROJECTED_POLICY, PROJECTED_CREDENTIAL)
 
 
 async def _projected_get(proxy: ProxyUnderTest, path: str, offered: str | None) -> Response:
@@ -1307,23 +1236,15 @@ async def test_projected_token_is_substituted_and_never_forwarded(fake: FakeApiS
     assert "proxy-authorization" not in headers
 
 
-async def test_another_pods_projected_token_is_refused(fake: FakeApiServer, proxy: ProxyUnderTest) -> None:
+@pytest.mark.parametrize("offered", [PROJECTED_TOKEN_B, None], ids=["another-pods-token", "none-offered"])
+async def test_a_projected_placeholder_without_the_callers_own_token_is_refused(
+    fake: FakeApiServer, proxy: ProxyUnderTest, offered: str | None
+) -> None:
     """The hop authenticates as Pod A, so a token belonging to Pod B is not A's to spend -- and the
     proxy is the only route to that destination, which is what makes the check load-bearing."""
     await install_projected_credential(fake, proxy)
-    response = await _projected_get(proxy, "/projected/api", PROJECTED_TOKEN_B)
-    assert response.status == 403
-    assert response.headers[DENIED_HEADER] == f"denied; reason={DenyReason.CREDENTIAL_UNAVAILABLE}"
-    assert proxy.upstream.requests == []
-
-
-async def test_a_placeholder_with_no_projected_token_offered_is_refused(
-    fake: FakeApiServer, proxy: ProxyUnderTest
-) -> None:
-    await install_projected_credential(fake, proxy)
-    response = await _projected_get(proxy, "/projected/api", None)
-    assert response.status == 403
-    assert response.headers[DENIED_HEADER] == f"denied; reason={DenyReason.CREDENTIAL_UNAVAILABLE}"
+    response = await _projected_get(proxy, "/projected/api", offered)
+    assert denial(response, DenyReason.CREDENTIAL_UNAVAILABLE)
     assert proxy.upstream.requests == []
 
 

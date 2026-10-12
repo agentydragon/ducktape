@@ -4,8 +4,9 @@ import pytest
 import pytest_bazel
 from playwright.async_api import expect
 
+from agentplane.app.frontend.testing.visual_assertions import _open_settings
+from agentplane.app.frontend.testing.visual_fixtures import MOBILE_ONLY
 from agentplane.app.frontend.visual_app import IDLE_THREAD, AgentplaneFixture
-from util.testing.viewports import MOBILE
 from util.testing.visual_capture import VisualPage
 
 pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
@@ -15,7 +16,7 @@ pytestmark = pytest.mark.asyncio(loop_scope="session")
 async def test_settings_push_registration_follows_other_browser(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/")
     page = view.page
-    await page.get_by_role("button", name="Settings").click()
+    await _open_settings(page)
     await page.get_by_role("tab", name="Notifications").click()
     await expect(page.get_by_text("Second browser")).to_have_count(0)
     await app.publish_push_browser()
@@ -114,7 +115,7 @@ async def test_notification_service_reconnect(view: VisualPage, app: AgentplaneF
     await view.capture(name="notification_status_reconnected")
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_thread_notifications_mobile_menu(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
     page = view.page
@@ -127,7 +128,7 @@ async def test_thread_notifications_mobile_menu(view: VisualPage, app: Agentplan
     await view.capture(name="thread_notifications_mobile_drawer")
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_sandbox_notifications_mobile_menu(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes/ready-sandbox")
     page = view.page

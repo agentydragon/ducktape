@@ -23,20 +23,19 @@ from agentplane.action_service.client import OperatorActionServiceClient
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.app.api import create_app
+from agentplane.app.conftest import operator_token
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
-from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, request_session
 from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
+from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
 
 APP_URL = "http://test-app.invalid"
@@ -78,10 +77,6 @@ class StubActions(FederatedOperatorActions):
         return self.client
 
 
-async def token() -> str:
-    return "test-token"
-
-
 class OpenStream(httpx.AsyncByteStream):
     """An Action stream: one frame, then nothing until its reader goes."""
 
@@ -119,14 +114,7 @@ async def app(
         inventory,
         bridge,
         store,
-        ModelCatalog(
-            models=[
-                ModelOption(
-                    model="test-model", display_name="Test Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
-                )
-            ],
-            harnesses={harness: ["test-model"] for harness in Harness},
-        ),
+        TEST_MODELS,
         egress,
         decisions,
         live_index,
@@ -175,7 +163,7 @@ async def app(
     async with httpx.AsyncClient(
         base_url="https://test-actions.invalid", transport=httpx.MockTransport(answer)
     ) as http:
-        app.state.operator_actions = StubActions(OperatorActionServiceClient(http, token))
+        app.state.operator_actions = StubActions(OperatorActionServiceClient(http, operator_token))
         yield app
         # Nothing a failed test left parked outlives it.
         gate.open()

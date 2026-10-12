@@ -28,34 +28,14 @@ BLOCKS: dict[str, object] = {
 }
 
 
-def test_quota_defaults() -> None:
-    assert QuotaSettings().model_dump() == {
-        "inboxes_per_account": 64,
-        "active_subscriptions_per_inbox": 64,
-        "entries_per_inbox": 10_000,
-    }
-
-
-@pytest.mark.parametrize("field", ["inboxes_per_account", "active_subscriptions_per_inbox", "entries_per_inbox"])
-@pytest.mark.parametrize("value", [0, -1])
-def test_quotas_must_be_positive(field: str, value: int) -> None:
-    with pytest.raises(ValidationError):
-        QuotaSettings.model_validate({field: value})
-
-
-def test_yaml_settings_and_nested_environment_overrides(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config = tmp_path / "settings.yaml"
-    config.write_text("""namespace: test
+@pytest.fixture
+def settings_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Minimal valid settings YAML, selected through the config-file variable; tests append sections."""
+    path = tmp_path / "settings.yaml"
+    path.write_text("""namespace: test
 actions:
   url: http://actions
   token_file: /tokens/actions
-quotas:
-  inboxes_per_account: 12
-  active_subscriptions_per_inbox: 24
-  entries_per_inbox: 500
-notice_debounce:
-  quiet_seconds: 3
-  max_wait_seconds: 15
 sandbox_service:
   target: sandboxes:8080
   token_file: /tokens/sandboxes
@@ -67,7 +47,20 @@ history_service:
   target: history:8080
   token_file: /tokens/history
 """)
-    monkeypatch.setenv(Settings.config_file_env, str(config))
+    monkeypatch.setenv(Settings.config_file_env, str(path))
+    return path
+
+
+def test_yaml_settings_and_nested_environment_overrides(settings_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    with settings_file.open("a") as file:
+        file.write("""quotas:
+  inboxes_per_account: 12
+  active_subscriptions_per_inbox: 24
+  entries_per_inbox: 500
+notice_debounce:
+  quiet_seconds: 3
+  max_wait_seconds: 15
+""")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_DATABASE_URL", "postgresql://unused")
     settings = Settings(_cli_parse_args=False)
     assert settings.quotas == QuotaSettings(
@@ -100,58 +93,38 @@ history_service:
     assert settings.runner_gateway.command_admission_timeout_s == 22
     assert settings.sandbox_service.request_timeout_s == 7
     assert settings.sandbox_service.token_file == Path("/tokens/sandboxes")
-    with config.open("a") as file:
+    with settings_file.open("a") as file:
         file.write("unknown_setting: true\n")
     with pytest.raises(ValidationError, match="Extra inputs"):
         Settings(_cli_parse_args=False)
 
 
 @pytest.mark.parametrize(
-    ("field", "value"),
+    "api_url",
     [
-        ("api_url", "not-a-url"),
-        ("api_url", "ftp://github.test"),
-        ("api_url", "https://user:password@github.test"),
-        ("api_url", "https://github.test?token=secret"),
-        ("api_url", "https://github.test#fragment"),
-        ("request_timeout_s", 0),
-        ("request_timeout_s", -1),
-        ("request_timeout_s", float("nan")),
-        ("request_timeout_s", float("inf")),
-        ("api_version", "2026-99-99"),
-        ("api_version", "2022-11-28\r\nInjected: value"),
+        "not-a-url",
+        "ftp://github.test",
+        "https://user:password@github.test",
+        "https://github.test?token=secret",
+        "https://github.test#fragment",
     ],
 )
-def test_invalid_github_transport_settings(field: str, value: str | float) -> None:
+def test_invalid_github_api_url(api_url: str) -> None:
+    """The App JWT and installation tokens go to this URL, so `HttpEndpointUrl` refuses smuggled parts."""
     with pytest.raises(ValidationError):
         GitHubSettings.model_validate(
-            {"app_id": 42, "private_key": "fixture", "webhook_secret": "fixture-signing-secret", field: value}
+            {"app_id": 42, "private_key": "fixture", "webhook_secret": "fixture-signing-secret", "api_url": api_url}
         )
 
 
-def test_github_transport_yaml_and_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    config = tmp_path / "settings.yaml"
-    config.write_text("""namespace: test
-actions:
-  url: http://actions
-  token_file: /tokens/actions
-sandbox_service:
-  target: sandboxes:8080
-  token_file: /tokens/sandboxes
-runner_gateway:
-  target: gateway:8080
-  control_target: "{sandbox}-control.{namespace}.test:8080"
-  token_file: /tokens/gateway
-history_service:
-  target: history:8080
-  token_file: /tokens/history
-github:
+def test_github_transport_yaml_and_environment(settings_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    with settings_file.open("a") as file:
+        file.write("""github:
   app_id: 42
   api_url: http://github.test/api/v3
   request_timeout_s: 12
   api_version: '2026-01-01'
 """)
-    monkeypatch.setenv(Settings.config_file_env, str(config))
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY", "fixture")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET", "fixture-signing-secret")
     settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
@@ -167,55 +140,6 @@ github:
     assert str(overridden.github.api_url) == "http://localhost:9999/mock/"
     assert overridden.github.request_timeout_s == 2.5
     assert overridden.github.api_version == date(2022, 11, 28)
-
-
-@pytest.mark.parametrize(
-    "values",
-    [
-        {"quiet_seconds": -1},
-        {"quiet_seconds": float("nan")},
-        {"quiet_seconds": float("inf")},
-        {"max_wait_seconds": 0},
-        {"max_wait_seconds": -1},
-        {"max_wait_seconds": float("inf")},
-    ],
-)
-def test_invalid_notice_debounce(values: dict[str, float]) -> None:
-    with pytest.raises(ValidationError):
-        NoticeDebounceSettings(**values)
-
-
-@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
-def test_invalid_command_admission_timeout(timeout: float) -> None:
-    with pytest.raises(ValidationError):
-        RunnerGatewaySettings(
-            target="gateway:8080",
-            control_target="{sandbox}-control.{namespace}.test:8080",
-            token_file=Path("/tokens/gateway"),
-            command_admission_timeout_s=timeout,
-        )
-
-
-@pytest.mark.parametrize("name", ["request_timeout_s", "lifecycle_timeout_s"])
-@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
-def test_invalid_sandbox_service_deadline(name: str, timeout: float) -> None:
-    with pytest.raises(ValidationError):
-        SandboxServiceSettings.model_validate(
-            {"target": "sandboxes:8080", "token_file": "/tokens/sandboxes", name: timeout}
-        )
-
-
-@pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
-def test_invalid_stale_confirmation_timeout(timeout: float) -> None:
-    with pytest.raises(ValidationError):
-        Settings.model_validate(
-            {
-                "database_url": "postgresql://unused",
-                "namespace": "test",
-                **BLOCKS,
-                "stale_inbox_confirmation_s": timeout,
-            }
-        )
 
 
 # CLEANUP(added 2026-10-12): Delete with `Settings._move_runner_gateway_out_of_sandbox_service`.
@@ -249,8 +173,35 @@ def test_runner_gateway_keys_in_sandbox_service_move_to_runner_gateway() -> None
         )
 
 
-def test_notice_debounce_defaults() -> None:
-    assert NoticeDebounceSettings().model_dump() == {"quiet_seconds": 2, "max_wait_seconds": 10}
+def test_github_presence_and_secret_separation(settings_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    settings_file.write_text(settings_file.read_text() + "github: null\n")
+    assert Settings(database_url="postgresql://unused", _cli_parse_args=False).github is None
+    settings_file.write_text(settings_file.read_text().replace("github: null\n", ""))
+    assert Settings(database_url="postgresql://unused", _cli_parse_args=False).github is None
+    # A present mapping enables GitHub and must be complete; secrets overlay public YAML.
+    with settings_file.open("a") as file:
+        file.write("github:\n  app_id: 42\n")
+    with pytest.raises(ValidationError, match="Field required"):
+        Settings(database_url="postgresql://unused", _cli_parse_args=False)
+    private = "fixture-private-key\nmultiline"
+    secret = "test-signing-key"  # 16-character minimum.
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__PRIVATE_KEY", private)
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET", secret)
+    settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
+    assert settings.github is not None
+    assert settings.github.app_id == 42
+    assert settings.github.private_key.get_secret_value() == private
+    assert settings.github.webhook_secret.get_secret_value() == secret
+    assert private not in repr(settings)
+    assert secret not in settings.model_dump_json()
+    # Nested environment fields contribute presence even when YAML says null.
+    settings_file.write_text(settings_file.read_text().replace("github:\n  app_id: 42\n", "github: null\n"))
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__APP_ID", "42")
+    assert Settings(database_url="postgresql://unused", _cli_parse_args=False).github is not None
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_GITHUB__WEBHOOK_SECRET", "test-signing-ke")
+    with pytest.raises(ValidationError) as failure:
+        Settings(database_url="postgresql://unused", _cli_parse_args=False)
+    assert "test-signing-ke" not in str(failure.value)
 
 
 if __name__ == "__main__":

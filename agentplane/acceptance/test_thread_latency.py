@@ -32,7 +32,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -45,8 +45,8 @@ from more_itertools import one
 from pydantic import BaseModel, Field
 
 from agentplane.acceptance.agent import Agent
+from agentplane.acceptance.conftest import Sandboxes
 from agentplane.app.electric import SUBSET_ROW_LIMIT, SubsetRequest, ThreadScopeResponse
-from agentplane.app.sandbox_models import SandboxView
 from agentplane.app.testing.client import REQUEST_SECONDS, Client
 from agentplane.history_service.fold.views import EntityKind, PayloadField, ThreadItemState, ThreadPayloadReference
 from agentplane.native.claude import wire as claude_wire  # Both harnesses name their frame module `wire`.
@@ -58,7 +58,6 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
-Sandboxes = Callable[..., Awaitable[SandboxView]]
 # An Electric row as the proxy relays it: every value its column's text form, or null.
 Row = dict[str, Any]
 

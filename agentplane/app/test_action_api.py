@@ -60,11 +60,10 @@ from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, SandboxSnapshot
-from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
 from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
+from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
@@ -74,7 +73,6 @@ from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -352,14 +350,7 @@ async def review(
             inventory,
             bridge,
             store,
-            ModelCatalog(
-                models=[
-                    ModelOption(
-                        model="test-model", display_name="Test Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
-                    )
-                ],
-                harnesses={harness: ["test-model"] for harness in Harness},
-            ),
+            TEST_MODELS,
             egress,
             decisions,
             live_index,
@@ -388,14 +379,7 @@ async def review(
             inventory,
             bridge,
             ThreadStore(replica_engine, replica_summaries, gateway=gateway),
-            ModelCatalog(
-                models=[
-                    ModelOption(
-                        model="test-model", display_name="Test Model", reasoning_efforts=list(TEST_REASONING_EFFORTS)
-                    )
-                ],
-                harnesses={harness: ["test-model"] for harness in Harness},
-            ),
+            TEST_MODELS,
             egress,
             decisions,
             live_index,

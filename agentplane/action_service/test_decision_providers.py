@@ -7,7 +7,6 @@ import asyncio
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from uuid import UUID
 
 import pytest
 import pytest_bazel
@@ -22,7 +21,6 @@ from agentplane.action_service.github_policy.visibility import RepositoryVisibil
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.models import (
     ActionRequestInput,
-    ActionRequestView,
     ActionState,
     BindingEvidence,
     CallerPrincipal,
@@ -42,6 +40,7 @@ from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.providers import DecisionContext
 from agentplane.action_service.service import ActionService, InvalidActionArgumentsError
 from agentplane.action_service.store import ActionConflictError
+from agentplane.action_service.testing.lifecycle import wait_for_state
 from agentplane.action_service.testing.stores import action_store
 from agentplane.changes import ChangeSignal
 from agentplane.kubernetes_watch import Freshness
@@ -119,15 +118,6 @@ def body(idempotency_key: str, n: int = 1) -> ActionRequestInput:
     return ActionRequestInput(
         idempotency_key=idempotency_key, title=f"test title for {idempotency_key}", action=ECHO, arguments={"n": n}
     )
-
-
-async def _succeeded(service: ActionService, request_id: UUID) -> ActionRequestView:
-    async with asyncio.timeout(10):
-        view = await service.get(request_id, CALLER)
-        while view.state is not ActionState.SUCCEEDED:
-            await asyncio.sleep(0.01)
-            view = await service.get(request_id, CALLER)
-    return view
 
 
 def test_provider_outcome_bounds_the_reason_description() -> None:
@@ -455,7 +445,7 @@ async def test_bound_subject_is_auto_approved_with_evidence_and_an_execution(
             type=PolicyKind.ARGUMENT_SCHEMA,
         )
         assert allowed.execution is not None
-        view = await _succeeded(service, allowed.id)
+        view = await wait_for_state(service, allowed.id, CALLER, want=ActionState.SUCCEEDED)
         assert view.execution is not None
         assert CallToolResult.model_validate(view.execution.result).structured_content == {"n": 3}
         # The same evidence is the operator's; a repeat of the key is refused and the lookup keeps the Decision.
@@ -587,7 +577,7 @@ async def test_binding_change_after_admission_leaves_the_decision_alone(
         assert allowed.state is ActionState.ALLOWED
         index.bindings.clear()
         assert (await service.submit(body("after-removal"), CALLER)).state is ActionState.DECISION_PENDING
-        view = await _succeeded(service, allowed.id)
+        view = await wait_for_state(service, allowed.id, CALLER, want=ActionState.SUCCEEDED)
         assert view.decision == allowed.decision
 
 

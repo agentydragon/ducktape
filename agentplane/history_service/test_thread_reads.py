@@ -10,14 +10,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.history_service.fold.views import EntityKind, ThreadEntityView, ThreadItemEntityView
 from agentplane.history_service.fold_runner import FOLD_EPOCH, FoldRunner
 from agentplane.history_service.storage.store import HistoryNotFoundError, Store
-from agentplane.history_service.testing.sessions import WRITER
+from agentplane.history_service.testing.sessions import retained_session
 from agentplane.history_service.thread_reads import ThreadReader, ThreadScopeResetError
 from agentplane.proto import event_log_pb2, event_pb2, history_service_pb2
 
 # gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep //agentplane/history_service/storage:conftest
-
-pytest_plugins = ("agentplane.history_service.storage.conftest",)
 
 VIEW: TypeAdapter[ThreadEntityView] = TypeAdapter(ThreadEntityView)
 PAGE_SIZE = 8
@@ -34,21 +31,14 @@ def entry(cursor: int, **observation: object) -> event_log_pb2.EventEntry:
 
 
 @pytest.fixture
-def history(engine: AsyncEngine) -> Store:
-    return Store(engine)
-
-
-@pytest.fixture
 def reader(engine: AsyncEngine) -> ThreadReader:
     return ThreadReader(engine)
 
 
 @pytest.fixture
 async def folded(engine: AsyncEngine, history: Store) -> UUID:
-    session_id = uuid4()
-    await history.bind_writer(session_id, WRITER)
-    await history.append(
-        session_id,
+    session_id = await retained_session(
+        history,
         [
             entry(1, turn_started=event_pb2.TurnStarted(turn_id="test-turn")),
             entry(2, item_started=event_pb2.ItemStarted(item_id="test-reply", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)),

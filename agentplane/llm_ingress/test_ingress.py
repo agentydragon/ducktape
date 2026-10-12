@@ -118,7 +118,7 @@ def configuration(fake: FakeApiServer) -> k8s_client.Configuration:
 @asynccontextmanager
 async def ingress_clients(
     kubernetes: FakeApiServer, backend: FakeLiteLLM, *, models: tuple[ModelConfig, ...] = ()
-) -> AsyncIterator[tuple[httpx.AsyncClient, ApiClient]]:
+) -> AsyncIterator[httpx.AsyncClient]:
     async with (
         ApiClient(configuration=configuration(kubernetes)) as api,
         httpx.AsyncClient(base_url=f"http://127.0.0.1:{backend.port}", timeout=5) as backend_http,
@@ -137,7 +137,19 @@ async def ingress_clients(
             )
         )
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://ingress.test") as client:
-            yield client, api
+            yield client
+
+
+@pytest.fixture
+async def kubernetes() -> AsyncIterator[FakeApiServer]:
+    async with fake_apiserver() as fake:
+        yield fake
+
+
+@pytest.fixture
+async def backend() -> AsyncIterator[FakeLiteLLM]:
+    async with fake_litellm() as fake:
+        yield fake
 
 
 def bearer(token: str) -> dict[str, str]:
@@ -149,29 +161,28 @@ def verified_metadata(request: BackendRequest) -> dict[str, str]:
 
 
 async def test_two_workloads_share_one_backend_key_and_keep_distinct_verified_metadata(
-    caplog: pytest.LogCaptureFixture,
+    kubernetes: FakeApiServer, backend: FakeLiteLLM, caplog: pytest.LogCaptureFixture
 ) -> None:
     caplog.set_level(logging.INFO)
     body = b'{"model":"chatgpt/oai-responses/gpt-5.6-luna","stream":true,"metadata":{"sandbox_name":"forged"}}'
-    async with fake_apiserver() as kubernetes, fake_litellm() as backend:
-        add_sandbox(kubernetes, "sandbox-a", TOKEN_A, pod_uid="pod-a-uid")
-        add_sandbox(kubernetes, "sandbox-b", TOKEN_B, pod_uid="pod-b-uid")
-        async with ingress_clients(kubernetes, backend) as (client, _):
-            first = await client.post(
-                "/v1/responses?trace=kept",
-                content=body,
-                headers={
-                    **bearer(TOKEN_A),
-                    "content-type": "application/json",
-                    "x-litellm-spend-logs-metadata": '{"agentplane.sandbox_name":"forged"}',
-                    "x-litellm-customer-id": "forged",
-                    "x-sandbox-name": "forged",
-                    "x-pod-uid": "forged",
-                    "x-agent-id": "forged",
-                    "x-thread-id": "forged",
-                },
-            )
-            second = await client.post("/v1/responses?trace=kept", content=body, headers=bearer(TOKEN_B))
+    add_sandbox(kubernetes, "sandbox-a", TOKEN_A, pod_uid="pod-a-uid")
+    add_sandbox(kubernetes, "sandbox-b", TOKEN_B, pod_uid="pod-b-uid")
+    async with ingress_clients(kubernetes, backend) as client:
+        first = await client.post(
+            "/v1/responses?trace=kept",
+            content=body,
+            headers={
+                **bearer(TOKEN_A),
+                "content-type": "application/json",
+                "x-litellm-spend-logs-metadata": '{"agentplane.sandbox_name":"forged"}',
+                "x-litellm-customer-id": "forged",
+                "x-sandbox-name": "forged",
+                "x-pod-uid": "forged",
+                "x-agent-id": "forged",
+                "x-thread-id": "forged",
+            },
+        )
+        second = await client.post("/v1/responses?trace=kept", content=body, headers=bearer(TOKEN_B))
 
     assert first.status_code == second.status_code == 200, (first.text, second.text)
     assert first.content == second.content == TOOL_STREAM
@@ -201,12 +212,13 @@ async def test_two_workloads_share_one_backend_key_and_keep_distinct_verified_me
     assert LITELLM_KEY not in transcript
 
 
-async def test_anthropic_status_error_body_and_request_shape_pass_unchanged() -> None:
+async def test_anthropic_status_error_body_and_request_shape_pass_unchanged(
+    kubernetes: FakeApiServer, backend: FakeLiteLLM
+) -> None:
     body = b'{"model":"anthropic-api/ant-messages/claude-haiku-4-5-20251001","max_tokens":32,"messages":[]}'
-    async with fake_apiserver() as kubernetes, fake_litellm() as backend:
-        add_sandbox(kubernetes, "sandbox-a", TOKEN_A, pod_uid="pod-a-uid")
-        async with ingress_clients(kubernetes, backend) as (client, _):
-            response = await client.post("/v1/messages", content=body, headers=bearer(TOKEN_A))
+    add_sandbox(kubernetes, "sandbox-a", TOKEN_A, pod_uid="pod-a-uid")
+    async with ingress_clients(kubernetes, backend) as client:
+        response = await client.post("/v1/messages", content=body, headers=bearer(TOKEN_A))
 
     assert response.status_code == 529
     assert response.content == ANTHROPIC_ERROR
@@ -217,23 +229,22 @@ async def test_anthropic_status_error_body_and_request_shape_pass_unchanged() ->
 
 
 async def test_missing_malformed_unknown_and_wrong_audience_bearers_fail_before_backend(
-    caplog: pytest.LogCaptureFixture,
+    kubernetes: FakeApiServer, backend: FakeLiteLLM, caplog: pytest.LogCaptureFixture
 ) -> None:
     """Everything the TokenReview itself settles. A Pod that is gone or replaced is settled there
     too -- the API server validates the object the token is bound to -- and is not re-checked here."""
     caplog.set_level(logging.INFO)
-    async with fake_apiserver() as kubernetes, fake_litellm() as backend:
-        add_sandbox(kubernetes, "live", TOKEN_A, pod_uid="live-pod-uid")
-        kubernetes.tokens[WRONG_AUDIENCE_TOKEN] = TokenVerdict(
-            username=SUBJECT, pod_name="live", pod_uid="live-pod-uid", audiences=("somewhere-else",)
-        )
-        async with ingress_clients(kubernetes, backend) as (client, _):
-            attempts = [
-                await client.post("/v1/messages", content=b"{}"),
-                await client.post("/v1/messages", content=b"{}", headers={"Authorization": "not-a-bearer"}),
-                await client.post("/v1/messages", content=b"{}", headers=bearer("unknown-token")),
-                await client.post("/v1/messages", content=b"{}", headers=bearer(WRONG_AUDIENCE_TOKEN)),
-            ]
+    add_sandbox(kubernetes, "live", TOKEN_A, pod_uid="live-pod-uid")
+    kubernetes.tokens[WRONG_AUDIENCE_TOKEN] = TokenVerdict(
+        username=SUBJECT, pod_name="live", pod_uid="live-pod-uid", audiences=("somewhere-else",)
+    )
+    async with ingress_clients(kubernetes, backend) as client:
+        attempts = [
+            await client.post("/v1/messages", content=b"{}"),
+            await client.post("/v1/messages", content=b"{}", headers={"Authorization": "not-a-bearer"}),
+            await client.post("/v1/messages", content=b"{}", headers=bearer("unknown-token")),
+            await client.post("/v1/messages", content=b"{}", headers=bearer(WRONG_AUDIENCE_TOKEN)),
+        ]
 
     assert not backend.requests
     assert {(response.status_code, response.json()["detail"]) for response in attempts} == {
@@ -244,60 +255,41 @@ async def test_missing_malformed_unknown_and_wrong_audience_bearers_fail_before_
         assert credential not in transcript
 
 
-async def test_a_workload_no_sandbox_owns_is_served_as_its_service_account() -> None:
+async def test_a_workload_no_sandbox_owns_is_served_as_its_service_account(
+    kubernetes: FakeApiServer, backend: FakeLiteLLM
+) -> None:
     """The deliberate widening: spend is attributed to the account, and nothing follows an owner."""
-    async with fake_apiserver() as kubernetes, fake_litellm() as backend:
-        add_sandbox(kubernetes, "unowned", UNOWNED_TOKEN, pod_uid="unowned-pod-uid")
-        kubernetes.pods["unowned"]["metadata"]["ownerReferences"] = []
-        async with ingress_clients(kubernetes, backend) as (client, _):
-            served = await client.post(
-                "/v1/responses",
-                content=b'{"model":"chatgpt/oai-responses/gpt-5.6-luna","stream":true}',
-                headers={**bearer(UNOWNED_TOKEN), "content-type": "application/json"},
-            )
+    add_sandbox(kubernetes, "unowned", UNOWNED_TOKEN, pod_uid="unowned-pod-uid")
+    kubernetes.pods["unowned"]["metadata"]["ownerReferences"] = []
+    async with ingress_clients(kubernetes, backend) as client:
+        served = await client.post(
+            "/v1/responses",
+            content=b'{"model":"chatgpt/oai-responses/gpt-5.6-luna","stream":true}',
+            headers={**bearer(UNOWNED_TOKEN), "content-type": "application/json"},
+        )
 
     assert served.status_code == 200, served.text
     assert verified_metadata(backend.requests[0])["agentplane.pod_name"] == "unowned"
 
 
-async def test_model_config_lookup_serves_configured_metadata_without_forwarding() -> None:
+async def test_model_config_lookup_answers_from_configuration_for_authenticated_workloads(
+    kubernetes: FakeApiServer, backend: FakeLiteLLM
+) -> None:
     model = "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k"
-    async with fake_apiserver() as kubernetes, fake_litellm() as backend:
-        add_sandbox(kubernetes, "sandbox-a", TOKEN_A, pod_uid="pod-a-uid")
-        async with ingress_clients(
-            kubernetes, backend, models=(ModelConfig(model=model, total_context_budget_tokens=256 * 1024),)
-        ) as (client, _):
-            found = await client.get("/agentplane/model-config", params={"model": model}, headers=bearer(TOKEN_A))
+    add_sandbox(kubernetes, "sandbox-a", TOKEN_A, pod_uid="pod-a-uid")
+    async with ingress_clients(
+        kubernetes, backend, models=(ModelConfig(model=model, total_context_budget_tokens=256 * 1024),)
+    ) as client:
+        found = await client.get("/agentplane/model-config", params={"model": model}, headers=bearer(TOKEN_A))
+        missing = await client.get("/agentplane/model-config", params={"model": "unlisted"}, headers=bearer(TOKEN_A))
+        unauthenticated = await client.get("/agentplane/model-config", params={"model": model})
 
     assert found.status_code == 200
     assert found.json() == {"model": model, "total_context_budget_tokens": 256 * 1024}
-    assert not backend.requests, "metadata is answered from generated ingress configuration, not LiteLLM"
-
-
-async def test_model_config_lookup_returns_null_for_unconfigured_model() -> None:
-    async with fake_apiserver() as kubernetes, fake_litellm() as backend:
-        add_sandbox(kubernetes, "sandbox-a", TOKEN_A, pod_uid="pod-a-uid")
-        async with ingress_clients(kubernetes, backend) as (client, _):
-            missing = await client.get(
-                "/agentplane/model-config", params={"model": "unlisted"}, headers=bearer(TOKEN_A)
-            )
-
     assert missing.status_code == 200
     assert missing.json() is None
-    assert not backend.requests
-
-
-async def test_model_config_lookup_requires_workload_authentication() -> None:
-    model = "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k"
-    async with fake_apiserver() as kubernetes, fake_litellm() as backend:
-        add_sandbox(kubernetes, "sandbox-a", TOKEN_A, pod_uid="pod-a-uid")
-        async with ingress_clients(
-            kubernetes, backend, models=(ModelConfig(model=model, total_context_budget_tokens=256 * 1024),)
-        ) as (client, _):
-            unauthenticated = await client.get("/agentplane/model-config", params={"model": model})
-
     assert unauthenticated.status_code == 401
-    assert not backend.requests
+    assert not backend.requests, "metadata is answered from generated ingress configuration, not LiteLLM"
 
 
 if __name__ == "__main__":

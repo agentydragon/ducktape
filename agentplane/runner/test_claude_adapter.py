@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
@@ -103,12 +102,6 @@ class JournaledSession(RecordedSession):
         self.journal = journal
         self.native_directory = native_directory
         self.record.native_session_id = NATIVE_SESSION
-
-
-@pytest.fixture
-async def journal(tmp_path: Path) -> AsyncIterator[Journal]:
-    async with Journal.open(tmp_path / "journal.sqlite", "test-source") as opened:
-        yield opened
 
 
 def _launch() -> ClaudeLaunch:

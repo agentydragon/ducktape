@@ -37,7 +37,6 @@ async def opened(store: Store, session_id: UUID) -> None:
     await store.bind_writer(session_id, WRITER)
 
 
-@pytest.mark.asyncio
 async def test_replay_survives_new_store_and_deleted_sandbox(engine: AsyncEngine) -> None:
     session_id = uuid4()
     store = Store(engine)
@@ -56,7 +55,6 @@ async def test_replay_survives_new_store_and_deleted_sandbox(engine: AsyncEngine
         await store.read_page(session_id, after_cursor=4)
 
 
-@pytest.mark.asyncio
 async def test_bad_batch_rolls_back_and_conflicting_duplicate_rejected(engine: AsyncEngine) -> None:
     store = Store(engine)
     session_id = uuid4()
@@ -73,7 +71,6 @@ async def test_bad_batch_rolls_back_and_conflicting_duplicate_rejected(engine: A
         await store.append(uuid4(), [entry(1)])
 
 
-@pytest.mark.asyncio
 async def test_two_replica_writers_serialize_on_history_row(engine: AsyncEngine) -> None:
     session_id = uuid4()
     left, right = Store(engine), Store(engine)
@@ -135,7 +132,6 @@ async def test_history_notifies_after_commit_and_not_after_rollback(engine: Asyn
             await assert_quiet(changed)
 
 
-@pytest.mark.asyncio
 async def test_observation_pages_seek_retained_prefix_without_returning_payloads(engine: AsyncEngine) -> None:
     store = Store(engine)
     session_id = uuid4()
@@ -164,7 +160,6 @@ async def test_observation_pages_seek_retained_prefix_without_returning_payloads
         await store.read_observations(uuid4())
 
 
-@pytest.mark.asyncio
 async def test_feed_snapshot_requires_covered_bound_history_and_cannot_regress(engine: AsyncEngine) -> None:
     store = Store(engine)
     session_id = uuid4()
@@ -208,7 +203,6 @@ async def test_feed_snapshot_requires_covered_bound_history_and_cannot_regress(e
         await store.record_feed_state(session_id, feed)
 
 
-@pytest.mark.asyncio
 async def test_seal_ends_committed_history_and_is_sticky(engine: AsyncEngine) -> None:
     store = Store(engine)
     session_id = uuid4()
@@ -238,7 +232,6 @@ async def test_seal_ends_committed_history_and_is_sticky(engine: AsyncEngine) ->
         )
 
 
-@pytest.mark.asyncio
 async def test_a_pushed_session_stores_its_snapshot_under_the_public_id(engine: AsyncEngine) -> None:
     store = Store(engine)
     session_id = uuid4()
@@ -258,7 +251,6 @@ def settled(page: history_service_pb2.ReadSessionEventsResponse) -> list[tuple[i
     return [(cursor_range.first, cursor_range.last) for item in page.settlements for cursor_range in item.ranges]
 
 
-@pytest.mark.asyncio
 async def test_settling_store_drops_matched_chunks_once_their_item_completes(engine: AsyncEngine) -> None:
     store = Store(engine, settle_deltas=True)
     session_id = uuid4()
@@ -289,7 +281,6 @@ async def test_settling_store_drops_matched_chunks_once_their_item_completes(eng
     assert (await store.read_observations(session_id, limit=3)).settled == [(3, 6)]
 
 
-@pytest.mark.asyncio
 async def test_an_item_without_native_frames_completes_unsettled(engine: AsyncEngine) -> None:
     store = Store(engine, settle_deltas=True)
     session_id = uuid4()
@@ -310,7 +301,6 @@ async def test_an_item_without_native_frames_completes_unsettled(engine: AsyncEn
     assert (len(page.entries), settled(page)) == (3, [])
 
 
-@pytest.mark.asyncio
 async def test_default_store_keeps_every_entry(engine: AsyncEngine) -> None:
     store = Store(engine)
     session_id = uuid4()

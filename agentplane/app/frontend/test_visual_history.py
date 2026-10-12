@@ -14,10 +14,13 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _in_viewport,
     _open_debug_history,
     _open_run,
+    _open_standalone_reasoning,
     _open_tool_run,
     _rollout_run,
     _rollout_start,
+    _tool_steps,
 )
+from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
 from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, MOBILE_TOUCH, Viewport
@@ -39,13 +42,18 @@ async def test_completed_rollout_overview(completed_rollout: VisualPage) -> None
     await completed_rollout.capture()
 
 
-async def test_reported_rollout_overview(view: VisualPage, app: AgentplaneFixture) -> None:
+@pytest_asyncio.fixture(loop_scope="session")
+async def reported_rollout(view: VisualPage, app: AgentplaneFixture) -> VisualPage:
     await app.reported_rollout()
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
     await view.check(context="fixture ready")
-    await _rollout_start(view)
-    await view.capture()
+    return view
+
+
+async def test_reported_rollout_overview(reported_rollout: VisualPage) -> None:
+    await _rollout_start(reported_rollout)
+    await reported_rollout.capture()
 
 
 @pytest.mark.parametrize(
@@ -60,13 +68,9 @@ async def test_completed_rollout_run(completed_rollout: VisualPage, position: st
 
 
 @pytest.mark.parametrize("position", ["start", "end"], ids=["start", "end"])
-async def test_reported_rollout_run(view: VisualPage, app: AgentplaneFixture, position: str) -> None:
-    await app.reported_rollout()
-    await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector("[aria-label='Thread history'][data-layout-settled='true']", state="attached")
-    await view.check(context="fixture ready")
-    await _rollout_run(view, position)
-    await view.capture()
+async def test_reported_rollout_run(reported_rollout: VisualPage, position: str) -> None:
+    await _rollout_run(reported_rollout, position)
+    await reported_rollout.capture()
 
 
 @pytest.mark.parametrize(
@@ -127,9 +131,7 @@ async def recovery_tools(view: VisualPage, app: AgentplaneFixture) -> VisualPage
     await _open_run(view.page)
     await _open_discarded_recovery(view.page)
     await _expand_tool_steps(view.page)
-    tools = view.page.locator(".agentplane-step-details").filter(
-        has_not=view.page.locator(".agentplane-step-title:text-is('Reasoning')")
-    )
+    tools = _tool_steps(view.page)
     # The discarded call uses DiscardedCard, not a normal StepLine.
     await expect(tools).to_have_count(3)
     await expect(view.page.get_by_text("Succeeded, then discarded from context", exact=True)).to_be_visible()
@@ -142,7 +144,7 @@ async def recovery_tools(view: VisualPage, app: AgentplaneFixture) -> VisualPage
     return view
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_recovery_messages_open(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.recovery("messages")
     await app.mount_thread(IDLE_THREAD)
@@ -162,9 +164,7 @@ async def test_recovery_quiet_open(view: VisualPage, app: AgentplaneFixture) -> 
     await view.check(context="fixture ready")
     page = view.page
     await _open_tool_run(page)
-    tools = page.locator(".agentplane-step-details").filter(
-        has_not=page.locator(".agentplane-step-title:text-is('Reasoning')")
-    )
+    tools = _tool_steps(page)
     await expect(tools).to_have_count(2)
     await expect(tools.locator(".agentplane-disclosure-summary[aria-expanded='false']")).to_have_count(0)
     await expect(page.locator(".agentplane-step-details .agentplane-code-block").first).to_be_visible()
@@ -180,7 +180,7 @@ async def test_debug_history_latest_session_error_raw(view: VisualPage, app: Age
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [MOBILE], ids=["mobile"])
+@MOBILE_ONLY
 async def test_debug_history_latest_session_error_raw_phone(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.failed_turn(after_content=False)
     await app.mount_thread(IDLE_THREAD)
@@ -190,7 +190,7 @@ async def test_debug_history_latest_session_error_raw_phone(view: VisualPage, ap
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_debug_history_latest_session_interleaved_raw(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.interleaved_events()
     await app.mount_thread(IDLE_THREAD)
@@ -200,7 +200,7 @@ async def test_debug_history_latest_session_interleaved_raw(view: VisualPage, ap
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_debug_history_latest_session_raw(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
@@ -338,7 +338,7 @@ async def test_thread_setup_output(view: VisualPage, app: AgentplaneFixture) -> 
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_recovery_tool_lower_states(recovery_tools: VisualPage) -> None:
     view = recovery_tools
     page = view.page
@@ -347,7 +347,7 @@ async def test_recovery_tool_lower_states(recovery_tools: VisualPage) -> None:
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_revised_recovery_tool_output(recovery_tools: VisualPage) -> None:
     view = recovery_tools
     page = view.page
@@ -357,7 +357,7 @@ async def test_revised_recovery_tool_output(recovery_tools: VisualPage) -> None:
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_reasoning_inside_tool_run(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.standard_history(long_preview=True)
     await app.mount_thread(IDLE_THREAD)
@@ -372,15 +372,13 @@ async def test_reasoning_inside_tool_run(view: VisualPage, app: AgentplaneFixtur
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_reasoning_heading_sticks_at_history_bottom(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.standalone_reasoning(long_body=True)
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    reasoning = page.locator('[data-thread-anchor="20"] .agentplane-step-details')
-    await reasoning.locator(".agentplane-disclosure-summary").first.click()
-    await expect(reasoning.locator(".agentplane-disclosure-panel .agentplane-markdown")).to_be_visible()
+    reasoning = await _open_standalone_reasoning(page)
     history = page.locator("[aria-label='Thread history']")
     await expect(history).to_have_attribute("data-layout-settled", "true")
     await history.evaluate("element => { element.scrollTop = element.scrollHeight; }")
@@ -396,16 +394,12 @@ async def test_standalone_reasoning_opens_session_standalone_reasoning_open(
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    reasoning = page.locator('[data-thread-anchor="20"] .agentplane-step-details')
-    summary = reasoning.locator(".agentplane-disclosure-summary")
-    await summary.click()
-    await expect(summary).to_have_attribute("aria-expanded", "true")
-    await expect(reasoning.locator(".agentplane-disclosure-panel .agentplane-markdown")).to_be_visible()
+    reasoning = await _open_standalone_reasoning(page)
     await expect(reasoning.locator('a[href="https://example.test/projection"]')).to_have_text("projection path")
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_standalone_reasoning_opens_session_reasoning_code_fence_open(
     view: VisualPage, app: AgentplaneFixture
 ) -> None:
@@ -413,20 +407,14 @@ async def test_standalone_reasoning_opens_session_reasoning_code_fence_open(
     await app.mount_thread(IDLE_THREAD)
     await view.check(context="fixture ready")
     page = view.page
-    reasoning = page.locator('[data-thread-anchor="20"] .agentplane-step-details')
-    summary = reasoning.locator(".agentplane-disclosure-summary")
-    await summary.click()
-    await expect(summary).to_have_attribute("aria-expanded", "true")
-    await expect(reasoning.locator(".agentplane-disclosure-panel .agentplane-markdown")).to_be_visible()
+    reasoning = await _open_standalone_reasoning(page)
     await expect(reasoning.locator(".agentplane-code-block .cm-content")).to_be_attached()
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_shell_call_run_previews(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.shell_calls()
-    await app.mount_thread(IDLE_THREAD)
-    await view.check(context="fixture ready")
+@DESKTOP_AND_MOBILE
+async def test_shell_call_run_previews(shell_calls: VisualPage) -> None:
+    view = shell_calls
     page = view.page
     await _open_run(page)
     await expect(page.locator(".agentplane-step-details .agentplane-step-preview").first).to_be_visible()
@@ -476,7 +464,7 @@ async def test_evidence_button_reveals_on_tap(view: VisualPage, app: AgentplaneF
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
+@DESKTOP_AND_MOBILE
 async def test_open_tool_calls_and_output_session_tool_payloads(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
     await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
@@ -489,12 +477,9 @@ async def test_open_tool_calls_and_output_session_tool_payloads(view: VisualPage
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_open_tool_calls_and_output_session_shell_calls_open(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.shell_calls()
-    await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
-    await view.check(context="fixture ready")
+@DESKTOP_AND_MOBILE
+async def test_open_tool_calls_and_output_session_shell_calls_open(shell_calls: VisualPage) -> None:
+    view = shell_calls
     page = view.page
     await _open_tool_run(page)
     await expect(
@@ -519,13 +504,8 @@ async def test_open_tool_calls_and_output_session_shell_calls_open(view: VisualP
         "test bank-shell-mobile",
     ],
 )
-async def test_shell_call_command_and_output(
-    view: VisualPage, app: AgentplaneFixture, call_text: str, tool: str
-) -> None:
-    await app.shell_calls()
-    await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
-    await view.check(context="fixture ready")
+async def test_shell_call_command_and_output(shell_calls: VisualPage, call_text: str, tool: str) -> None:
+    view = shell_calls
     page = view.page
     await _open_tool_run(page)
     call = page.locator(".agentplane-step-details").filter(has_text=call_text)
@@ -535,12 +515,9 @@ async def test_shell_call_command_and_output(
     await view.capture(target=view.page.locator("#app"))
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_collapsed_steps_in_open_run_are_compact(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.shell_calls()
-    await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
-    await view.check(context="fixture ready")
+@DESKTOP_AND_MOBILE
+async def test_collapsed_steps_in_open_run_are_compact(shell_calls: VisualPage) -> None:
+    view = shell_calls
     page = view.page
     await _open_run(page)
     await expect(page.locator(".agentplane-step-details [aria-busy='true']")).to_have_count(0)
@@ -561,12 +538,9 @@ async def test_collapsed_steps_in_open_run_are_compact(view: VisualPage, app: Ag
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_expanded_command_uses_heading_to_collapse(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.shell_calls()
-    await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
-    await view.check(context="fixture ready")
+@DESKTOP_AND_MOBILE
+async def test_expanded_command_uses_heading_to_collapse(shell_calls: VisualPage) -> None:
+    view = shell_calls
     page = view.page
     await _open_tool_run(page)
     command = (
@@ -587,12 +561,9 @@ async def test_expanded_command_uses_heading_to_collapse(view: VisualPage, app: 
     await view.capture()
 
 
-@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "mobile"])
-async def test_expanded_shell_output_sticks_while_scrolling(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.shell_calls()
-    await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector(".agentplane-disclosure-summary", state="attached")
-    await view.check(context="fixture ready")
+@DESKTOP_AND_MOBILE
+async def test_expanded_shell_output_sticks_while_scrolling(shell_calls: VisualPage) -> None:
+    view = shell_calls
     page = view.page
     await _open_tool_run(page)
     output = page.locator(".agentplane-output-disclosure .agentplane-disclosure-summary[aria-expanded='true']")
