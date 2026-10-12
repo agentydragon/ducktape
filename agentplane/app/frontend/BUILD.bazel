@@ -469,6 +469,21 @@ ts_library(
 )
 
 ts_library(
+    name = "sandbox_name",
+    srcs = ["sandbox_name.ts"],
+    tsconfig = TSCONFIG,
+)
+
+agentplane_vitest_test(
+    name = "sandbox_name_test",
+    srcs = ["sandbox_name.test.ts"],
+    deps = [
+        ":sandbox_name",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "sandboxes",
     srcs = [
         "sandboxes.tsx",
@@ -482,6 +497,7 @@ ts_library(
         ":client",
         ":lifecycle",
         ":live",
+        ":sandbox_name",
         ":sandbox_status",
         ":status_mark",
         ":stream_status",

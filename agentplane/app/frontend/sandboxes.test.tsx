@@ -283,3 +283,24 @@ it("distinguishes an initializing CR from a user-suspended sandbox", () => {
   expect(sandboxSummary(suspended)).toEqual({ label: "Suspended", kind: "suspended" });
   expect(deletable(suspended)).toBe(true);
 });
+
+it("creates under the preset-derived placeholder when the name is left empty", async () => {
+  const { container } = await render();
+  expect(input(container, "Name").placeholder).toBe("test-preset-1");
+  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  if (!button) throw new Error("Missing New sandbox button");
+  await act(async () => button.click());
+  expect(post).toHaveBeenCalledWith(
+    "/sandboxes",
+    expect.objectContaining({ body: expect.objectContaining({ name: "test-preset-1" }) })
+  );
+});
+
+it("flags an invalid typed name and refuses to create", async () => {
+  const { container } = await render();
+  await type(input(container, "Name"), "Bad_Name");
+  expect(input(container, "Name").getAttribute("aria-invalid")).toBe("true");
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  expect(button?.hasAttribute("disabled")).toBe(true);
+});
