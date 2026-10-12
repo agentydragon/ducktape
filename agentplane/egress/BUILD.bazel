@@ -627,6 +627,10 @@ py_library(
 py_library(
     name = "platform_routes",
     srcs = ["platform_routes.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
     deps = [
         ":token_file",
         "@pypi//grpcio",

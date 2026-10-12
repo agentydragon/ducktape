@@ -4,7 +4,8 @@ Reconciles `Sandbox` into a state PVC that outlives every incarnation, its own S
 `PolicyBinding`, and, while running, one Pod from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel). It is the Go controller the
 [Sandbox Service](../sandbox_service/README.md) is moving into, and does not yet do what that
-service does around a Sandbox: runner endpoints and launch binding. `spec.sessionDefaults` and
+service does around a Sandbox: launch binding. Its runner template reaches platform services over
+the egress sidecar's platform routes. `spec.sessionDefaults` and
 `spec.bootstrap` are the Runner Gateway's to read; the controller only carries them. Until
 `CreateSandbox` writes our kind, nothing creates these Sandboxes; the Sandbox Service, Runner
 Gateway and app already read them. Deletion waits for the

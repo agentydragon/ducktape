@@ -35,8 +35,9 @@ from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
+from agentplane.egress import sidecar
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import egress, llm_ingress, sandbox_pod
+from cluster.cdk8s.agentplane import egress, llm_ingress, platform_routes, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
@@ -80,6 +81,8 @@ class RunnerSandbox(Construct):
             ingress=isolate_ingress(),
             egress=[cilium.dns_egress(), egress.proxy(namespace).egress()],
         )
+        if env.own_sandboxes:
+            platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
         RunnerTemplate(self, "runner-template", env, name="runner", image=_IMAGE)
 
 
@@ -259,9 +262,13 @@ class RunnerTemplate(Construct):
         )
         if self.env.own_sandboxes:
             # Our own SandboxTemplate (agentplane/sandbox_controller), the same Pod and state volume
-            # read off agent-sandbox's.
+            # read off agent-sandbox's. Its runner reaches the Runner Gateway and the ingress over the
+            # sidecar's platform routes, where agent-sandbox's gets endpoints from the Sandbox Service.
             spec = template.to_json()["spec"]
             (claim,) = spec["volumeClaimTemplates"]
+            containers = {container["name"]: container for container in spec["podTemplate"]["spec"]["containers"]}
+            containers[sidecar.CONTAINER_NAME]["env"].append(platform_routes.sidecar_env(self.env.namespace))
+            containers["runner"]["args"].extend(platform_routes.runner_args(self.env.namespace))
             ApiObject(
                 self, "own-sandboxtemplate", api_version=f"{GROUP}/v1alpha1", kind="SandboxTemplate", metadata=metadata
             ).add_json_patch(
