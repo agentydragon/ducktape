@@ -1,7 +1,7 @@
 # Notification presentation and input metadata
 
 Status: open. Builds on durable command admission, whose contract is in the
-[Sandbox Service API](../runner_gateway/API.md#sessions-and-commands). The
+[Runner Gateway API](../runner_gateway/API.md#sessions-and-commands). The
 [task DAG](task_dag.md#notification_presentation--compact-notification-rendering) tracks the
 dependencies.
 

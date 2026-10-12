@@ -1,6 +1,6 @@
 # ADR: settle streamed deltas out of stored history
 
-- **Status:** Accepted (operator, 2026-10-10 PDT) and implemented; on in testing and staging
+- **Status:** Accepted (operator, 2026-10-10 PDT) and implemented; on in testing and staging, and stored history settled
 - **Scope:** the History Service's raw log (`session_event`); the runner journal is unchanged
 - **Mechanism:** [History Service § Delta settlement](../history_service/README.md#delta-settlement)
 
@@ -51,6 +51,13 @@ settlement covers is accepted as already stored.
 
 ## Consequences
 
-- Stored history before settlement was turned on still holds its deltas; settling it needs a separate,
-  operator-approved compaction, since it deletes stored history.
+- History stored before settlement was settled after the fact by the `agentplane-history-compact`
+  Job, with the operator's approval since it deletes stored history (2026-10-11, testing and
+  staging; staging settled 45,785 items, 2.61 GB of payload). Deleting rows only frees space inside
+  Postgres: returning it to the volume took a `VACUUM FULL` of `session_event`, `thread_evidence`
+  and `thread_native_link` in a window (the CNPG image ships no `pg_repack`), which took staging's
+  `session_event` from 4.6 GB to 835 MB.
+- A `pg_dump` taken as the Job's rollback copy was OOM-killed on the staging primary, then limited
+  to 512 MiB of memory. Backups before such a run come from the barman-cloud WAL archive and an
+  on-demand CNPG `Backup` (`cluster/cdk8s/agentplane/db_backups.py`).
 - A per-Session override and a matching runner-journal flag were considered and not built.

@@ -205,7 +205,7 @@ Conditional on the authority decision. Durable central admission/redelivery is d
 
 ### `RUNNER_OUTBOUND_CUTOVER` — migrate to thin, outbound-connected adapters
 
-Only if the thin-adapter/central-authority design is selected, after its per-harness catch-up and safe image transition. A transport-only dial-out rollout is separately sequenced in the main DAG and does not require this capstone.
+Only if the thin-adapter/central-authority design is selected, after its per-harness catch-up and safe image transition. Runner dial-out shipped as a transport change without it.
 
 ### `COMMAND_QUEUE_DECISION` — where submission becomes durable
 

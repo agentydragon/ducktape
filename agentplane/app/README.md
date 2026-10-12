@@ -19,8 +19,9 @@ app endpoint. The [Sandbox Service](../sandbox_service/README.md) owns sandbox l
 [Runner Gateway](../runner_gateway/README.md) owns runner Sessions and commands; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold;
 the app is a client of all three.
-Notifications depends on that backend and Actions, not this app. The app's thread projections are
-its own state, and like any state the app holds they are candidates to move into a dedicated
+Notifications depends on that backend and Actions, not this app. The app's own state is browser
+sessions, each Thread's link to its Session (`event_log`), and what an operator sets on a Thread
+(name, archived); like any state the app holds, these are candidates to move into a dedicated
 service ([principles](../docs/principles.md#composable-services-not-a-platform-you-sign-up-for-whole)).
 
 The current bridge's session-scoped runner attachment is implementation state, not

@@ -519,27 +519,15 @@ expires idle Sandboxes (`TODO(sandbox-lifetime)` in `action_service/sandbox/inve
 one goes through [teardown](../sandbox_service/API.md#teardown), which waits until history is
 archived through the seal (the ingress acknowledgement).
 
-## 7. History Service extraction and delta settlement
+## 7. History Service ownership
 
-Target and the reasoning behind this order: [History Service plan](history_service.md).
-Decided by the operator on 2026-10-10 PDT: the History Service takes over the existing
-`sandbox_service` database; the fold's projection is rebuilt from the raw log, not copied; Electric
-replicates the history database; `session_event` keeps its name.
-
-Each implementation node is one deployment, in this order: a server capability with no callers, then
-the caller switch, then deleting the old path in a later release after bounded checks on both
-environments. Testing goes first, staging after its checks pass. Retained data is deleted only by a
-node that says so. There is no dual write of the raw log: there is one copy of its tables, and each
-node switches which service reads or writes it.
+Target: [History Service plan](history_service.md).
 
 ```mermaid
 flowchart TD
     HISTORY_SERVICE_OWNERSHIP[Capstone: History Service owns log and fold]
-    SESSION_EVENT_COMPACTION[Candidate: settle stored history]
-    HISTORY_REPACK[Blocked: return freed space to the volume]
-    APP_ALEMBIC_SQUASH[Baseline final app schema]
+    HISTORY_COMPACTION_RETIRE[Candidate: retire the finished compaction Job]
     THREAD_READ_POLICY[Scoped archive reads]
-    SESSION_EVENT_COMPACTION --> HISTORY_REPACK
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
 ```
 
@@ -548,17 +536,13 @@ flowchart TD
 The History Service is the only owner of the raw log and fold; the app is a facade over it. Each
 service's README states what unrelated agents can still do while it is down or rolling.
 
-### `SESSION_EVENT_COMPACTION` — settle stored history
+### `HISTORY_COMPACTION_RETIRE` — retire the finished compaction Job
 
-**Candidate; Delta settlement rollout lane.** The operator approved the plan on 2026-10-11, with a
-rollback dump. The `agentplane-history-compact` Job dry-runs on testing and staging; the operator
-approves `--apply` on those numbers. Apply runs after a `pg_dump` of the raw log tables to a PVC
-kept seven days, since the clusters keep no CNPG backups.
-
-### `HISTORY_REPACK` — return freed space
-
-**Blocked on compaction.** `VACUUM FULL` in a window (the CNPG image ships no `pg_repack`) on the
-log and projection tables; deleted rows otherwise stay as reusable space inside Postgres.
+**Candidate.** Stored history is settled on both environments and staging is repacked, so the
+`agentplane-history-compact` Job staging still holds (`history_compaction=CompactionRun.APPLY` in
+`cluster/cdk8s/agentplane/staging.py`) has nothing left to do. Drop it from staging, and either
+delete the Job, `CompactionRun`, `compaction_main.py` and its image, or keep the entry point for
+history stored while `ingress.settle_deltas` was off and say so in the History Service README.
 
 ## 8. Sessions that outlive their Sandbox
 
@@ -567,9 +551,9 @@ its Sandbox is one incarnation that can be deleted, with a new one provisioned l
 Session on a runner. Today a Session lives exactly as long as its Sandbox's runner volume
 (suspension removes the Pod and keeps the volume). The event log alone is not a native resume image;
 the operator's direction (2026-10-10 PDT) is a state volume holding the harness files and runner
-state that survives the Sandbox and is attached to the next one. Section 7 is written so it does not
-preclude this: the History Service keys by Session, a Session records each Sandbox incarnation, and
-a teardown seal closes an incarnation, not the Session.
+state that survives the Sandbox and is attached to the next one. The History Service does not
+preclude this: it keys by Session, so it can record each Sandbox as an incarnation, and
+a teardown seal can close an incarnation, not the Session.
 
 A related direction (operator, 2026-10-11 PDT; later, with more planning, not scheduled): Sessions
 living in a long-running, often-suspended Sandbox whose runner image upgrades between incarnations.
@@ -714,9 +698,10 @@ admission; the Sandbox Service has no database. Rename it and its role and Secre
 in place, as `HISTORY_DATABASE_RENAME` does, and point the Runner Gateway, its migration init
 container and `commands_database_url` at the new names. Env
 `AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL` and `database.py`'s comment on
-`sandbox_commands` follow. Independently of the rename, once Flux pins a real
-`agentplane-runner-gateway-migrate` tag in both image-pins files, the init container switches to
-that image and `agentplane-sandbox-commands-migrate` goes (the `image_automation.py` CLEANUP).
+`sandbox_commands` follow. Independently of the rename, Flux now pins a real
+`agentplane-runner-gateway-migrate` tag in both image-pins files, so the init container can switch
+to that image and `agentplane-sandbox-commands-migrate` can go (the CLEANUP in
+`cluster/cdk8s/forgejo_registry/image_automation.py`).
 
 ### `ACTION_SANDBOX_DESIGN` — Action Service Sandboxes through the Sandbox Service
 
@@ -793,8 +778,7 @@ out, but to two endpoints its Sandbox names: an **ingress** it pushes its journa
 a **control endpoint** (the Runner Gateway) whose stream it holds for commands, receipts and lifecycle
 requests. The History Service is the ingress when history is kept. The contract is
 [runner control stream § Event ingress](../docs/runner_control.md#event-ingress); it replaces following the
-runner through the Sandbox Service. Section 7's store, fold and database
-nodes and section 9 are unaffected.
+runner through the Sandbox Service.
 
 ```mermaid
 flowchart TD
