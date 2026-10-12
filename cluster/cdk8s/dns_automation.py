@@ -13,6 +13,7 @@ from cluster.cdk8s import external_creds, terraform
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.route53 import HOSTED_ZONES
 
 OUTPUT_DIR = f"{GENERATED_ROOT}/dns-automation"
 TF_MODULE = "dns-records"
@@ -52,7 +53,7 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
         chart,
         "terraform",
         module=module,
-        variables=DnsRecordsVars(route53_zone_id="Z02901943N8ZFQFOD9P5I"),
+        variables=DnsRecordsVars(route53_zone_id=HOSTED_ZONES["allegedly.works"]),
         interval="2h",
         env_from=[terraform.secret_env_from(_CREDENTIALS_SECRET)],
     )

@@ -273,6 +273,12 @@ py_library(
 )
 
 py_library(
+    name = "route53",
+    srcs = ["route53.py"],
+    visibility = ["//cluster/cdk8s:__subpackages__"],
+)
+
+py_library(
     name = "node_scheduling",
     srcs = ["node_scheduling.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -861,6 +867,7 @@ py_library(
         ":external_creds",
         ":flux",
         ":manifest_roots",
+        ":route53",
         ":terraform",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -883,6 +890,7 @@ py_library(
         ":manifest_roots",
         ":namespaces",
         ":node_scheduling",
+        ":route53",
         "//cluster/cdk8s/providers/external_dns:dnsendpoint",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",

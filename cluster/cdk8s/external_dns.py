@@ -13,6 +13,7 @@ from cluster.cdk8s.helm import RETRY_FAILED_INSTALL, helm_release, https_helm_re
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
+from cluster.cdk8s.route53 import HOSTED_ZONES
 from cluster.scripts import nebula_mesh
 
 NAME = "external-dns"
@@ -57,10 +58,10 @@ def chart(app: App) -> Chart:
             "registry": "txt",
             "txtOwnerId": "ducktape-allegedly-works",
             "txtPrefix": "external-dns-%{record_type}.",
-            "domainFilters": ["allegedly.works"],
+            "domainFilters": list(HOSTED_ZONES),
             "managedRecordTypes": ["A", "AAAA", "CNAME", "MX", "TXT"],
             "extraArgs": [
-                "--zone-id-filter=Z02901943N8ZFQFOD9P5I",
+                *(f"--zone-id-filter={zone_id}" for zone_id in HOSTED_ZONES.values()),
                 "--gateway-name=cluster-gateway",
                 "--gateway-namespace=gateway-system",
                 "--txt-wildcard-replacement=wildcard",

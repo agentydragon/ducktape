@@ -1,14 +1,15 @@
 # DNS
 
-DNS for `allegedly.works` is served by AWS Route 53. ExternalDNS manages public
+DNS for `allegedly.works`, `agentydragon.com` and `adgn.link` is served by AWS Route 53
+(zone IDs in <../cdk8s/route53.py>). ExternalDNS manages public
 application and static records; cert-manager manages ACME challenge TXT records.
-Terraform still owns domain registration and Route 53 nameserver delegation,
+Terraform still owns `allegedly.works`'s registration and Route 53 nameserver delegation,
 with a two-hour drift-check interval.
 
 ExternalDNS runs in the `external-dns` namespace. It reads accepted HTTPRoutes attached to
 `gateway-system/cluster-gateway` and the `external-dns/static-records`
-`DNSEndpoint`. It is limited to the
-`allegedly.works` hosted zone, uses the TXT registry owner
+`DNSEndpoint`. It is limited to those
+hosted zones, uses the TXT registry owner
 `ducktape-allegedly-works`, and runs with `upsert-only` policy. The static endpoint's IP
 targets come from the `nebula-mesh.json` roster. The
 TXT registry replaces `*` with `wildcard` in its ownership marker name.
@@ -18,7 +19,7 @@ With `upsert-only`, deleting an HTTPRoute does not remove its DNS record;
 record deletion needs a separately reviewed policy change or cleanup.
 
 ExternalDNS uses the dedicated IAM user `cluster-external-dns` with record
-permissions limited to this hosted zone. Its key is stored in a separate SOPS
+permissions limited to these hosted zones. Its key is stored in a separate SOPS
 Secret and is not shared with Terraform's registrar-capable credential. The
 original record and marker addresses were removed from Terraform state with
 `removed` blocks and `destroy = false`; the registered domain stays in Terraform.
@@ -71,8 +72,9 @@ Credentials are in SOPS-encrypted secrets (see table above). IAM policy:
 Dedicated user for ExternalDNS. Its inline policy is documented in
 <iam-policy-external-dns.json>. The user and policy are provisioned in AWS IAM;
 the access key is stored in the ExternalDNS SOPS Secret above. The policy permits
-record changes only in hosted zone `Z02901943N8ZFQFOD9P5I` and has no Route 53
-Domains permissions.
+record changes only in those hosted zones and has no Route 53 Domains permissions.
+Adding a zone to `route53.py` needs it added to this policy and <iam-policy-route53.json>
+in AWS too.
 
 ## Verification
 

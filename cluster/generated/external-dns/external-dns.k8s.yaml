@@ -69,6 +69,8 @@ spec:
   values:
     domainFilters:
       - allegedly.works
+      - agentydragon.com
+      - adgn.link
     env:
       - name: AWS_ACCESS_KEY_ID
         valueFrom:
@@ -87,6 +89,8 @@ spec:
             name: aws-route53-credentials
     extraArgs:
       - --zone-id-filter=Z02901943N8ZFQFOD9P5I
+      - --zone-id-filter=ZPL94Z1ZHF81X
+      - --zone-id-filter=Z084833315EMAW4JJW9NM
       - --gateway-name=cluster-gateway
       - --gateway-namespace=gateway-system
       - --txt-wildcard-replacement=wildcard

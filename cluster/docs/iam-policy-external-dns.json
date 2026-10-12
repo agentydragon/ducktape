@@ -2,10 +2,14 @@
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "ManageAllegedlyWorksRecords",
+      "Sid": "ManageZoneRecords",
       "Effect": "Allow",
       "Action": ["route53:ChangeResourceRecordSets", "route53:GetHostedZone", "route53:ListResourceRecordSets"],
-      "Resource": "arn:aws:route53:::hostedzone/Z02901943N8ZFQFOD9P5I"
+      "Resource": [
+        "arn:aws:route53:::hostedzone/Z02901943N8ZFQFOD9P5I",
+        "arn:aws:route53:::hostedzone/ZPL94Z1ZHF81X",
+        "arn:aws:route53:::hostedzone/Z084833315EMAW4JJW9NM"
+      ]
     },
     {
       "Sid": "CheckRoute53Changes",

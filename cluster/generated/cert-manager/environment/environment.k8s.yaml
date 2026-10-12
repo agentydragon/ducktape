@@ -55,6 +55,32 @@ spec:
         selector:
           dnsZones:
             - allegedly.works
+      - dns01:
+          route53:
+            accessKeyIDSecretRef:
+              key: AWS_ACCESS_KEY_ID
+              name: aws-route53-credentials
+            hostedZoneID: ZPL94Z1ZHF81X
+            region: us-east-1
+            secretAccessKeySecretRef:
+              key: AWS_SECRET_ACCESS_KEY
+              name: aws-route53-credentials
+        selector:
+          dnsZones:
+            - agentydragon.com
+      - dns01:
+          route53:
+            accessKeyIDSecretRef:
+              key: AWS_ACCESS_KEY_ID
+              name: aws-route53-credentials
+            hostedZoneID: Z084833315EMAW4JJW9NM
+            region: us-east-1
+            secretAccessKeySecretRef:
+              key: AWS_SECRET_ACCESS_KEY
+              name: aws-route53-credentials
+        selector:
+          dnsZones:
+            - adgn.link
 ---
 apiVersion: cert-manager.io/v1
 kind: ClusterIssuer
@@ -80,6 +106,32 @@ spec:
         selector:
           dnsZones:
             - allegedly.works
+      - dns01:
+          route53:
+            accessKeyIDSecretRef:
+              key: AWS_ACCESS_KEY_ID
+              name: aws-route53-credentials
+            hostedZoneID: ZPL94Z1ZHF81X
+            region: us-east-1
+            secretAccessKeySecretRef:
+              key: AWS_SECRET_ACCESS_KEY
+              name: aws-route53-credentials
+        selector:
+          dnsZones:
+            - agentydragon.com
+      - dns01:
+          route53:
+            accessKeyIDSecretRef:
+              key: AWS_ACCESS_KEY_ID
+              name: aws-route53-credentials
+            hostedZoneID: Z084833315EMAW4JJW9NM
+            region: us-east-1
+            secretAccessKeySecretRef:
+              key: AWS_SECRET_ACCESS_KEY
+              name: aws-route53-credentials
+        selector:
+          dnsZones:
+            - adgn.link
 ---
 apiVersion: v1
 kind: Secret

@@ -19,6 +19,7 @@ from cert_manager_clusterissuer_crds.io.cert_manager import (
 )
 
 from cluster.cdk8s.providers.cert_manager.cluster_issuer import ClusterIssuer
+from cluster.cdk8s.route53 import HOSTED_ZONES
 
 NAME = "letsencrypt-root-cas"
 ISSUERS_NAME = "letsencrypt-issuers"
@@ -134,7 +135,7 @@ def issuers_chart(app: App) -> Chart:
                         dns01=ClusterIssuerSpecAcmeSolversDns01(
                             route53=ClusterIssuerSpecAcmeSolversDns01Route53(
                                 region="us-east-1",
-                                hosted_zone_id="Z02901943N8ZFQFOD9P5I",
+                                hosted_zone_id=zone_id,
                                 access_key_id_secret_ref=ClusterIssuerSpecAcmeSolversDns01Route53AccessKeyIdSecretRef(
                                     name="aws-route53-credentials", key="AWS_ACCESS_KEY_ID"
                                 ),
@@ -143,8 +144,9 @@ def issuers_chart(app: App) -> Chart:
                                 ),
                             )
                         ),
-                        selector=ClusterIssuerSpecAcmeSolversSelector(dns_zones=["allegedly.works"]),
+                        selector=ClusterIssuerSpecAcmeSolversSelector(dns_zones=[zone]),
                     )
+                    for zone, zone_id in HOSTED_ZONES.items()
                 ],
             ),
         )

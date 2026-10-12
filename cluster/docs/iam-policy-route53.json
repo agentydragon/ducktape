@@ -11,7 +11,12 @@
         "route53:ListTagsForResource",
         "route53:GetChange"
       ],
-      "Resource": ["arn:aws:route53:::hostedzone/Z02901943N8ZFQFOD9P5I", "arn:aws:route53:::change/*"]
+      "Resource": [
+        "arn:aws:route53:::hostedzone/Z02901943N8ZFQFOD9P5I",
+        "arn:aws:route53:::hostedzone/ZPL94Z1ZHF81X",
+        "arn:aws:route53:::hostedzone/Z084833315EMAW4JJW9NM",
+        "arn:aws:route53:::change/*"
+      ]
     },
     {
       "Sid": "ListZones",
