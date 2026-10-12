@@ -6,6 +6,7 @@ import asyncio
 import ctypes
 import errno
 import os
+import shutil
 import signal
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import suppress
@@ -122,9 +123,9 @@ async def test_runner_death_interrupts_bootstrap_without_rerunning_it(
     assert (state / "runs").read_text() == "run\n"
 
 
-def _runner_environment(tmp_path: Path) -> dict[str, str]:
+def _runner_environment(home: Path) -> dict[str, str]:
     return {
-        **launches.environment(tmp_path / "home"),
+        **launches.environment(home),
         # The runner binary is a Bazel py_binary inside this test's runfiles tree and finds its
         # own runfiles through these.
         **{key: os.environ[key] for key in ("RUNFILES_DIR", "RUNFILES_MANIFEST_FILE") if key in os.environ},
@@ -146,7 +147,9 @@ async def start_runner(
     """Start a runner process on the test's state directory; it returns once the runner is connected."""
     started: list[RunnerProcess] = []
 
-    async def start(*, test_debug_checkpoint: tuple[str, str] | None = None) -> RunnerProcess:
+    async def start(
+        *, test_debug_checkpoint: tuple[str, str] | None = None, home: Path = tmp_path / "home"
+    ) -> RunnerProcess:
         connections = gateway.control.connections
         process = await asyncio.create_subprocess_exec(
             *launches.runner_command(
@@ -156,7 +159,7 @@ async def start_runner(
                 gateway=gateway.endpoint,
                 test_debug_checkpoint=test_debug_checkpoint,
             ),
-            env=_runner_environment(tmp_path),
+            env=_runner_environment(home),
             start_new_session=True,
         )
         runner = RunnerProcess(process)
@@ -180,7 +183,7 @@ def contend(
         connections = gateway.control.connections
         contender = await asyncio.create_subprocess_exec(
             *launches.runner_command(harness, endpoint.origin, state_dir=state_dir, gateway=gateway.endpoint),
-            env=_runner_environment(tmp_path),
+            env=_runner_environment(tmp_path / "home"),
             stderr=asyncio.subprocess.PIPE,
             start_new_session=True,
         )
@@ -588,16 +591,21 @@ async def test_crash_after_terminal_effect_persists_replays_that_effect(
     )
 
 
-async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
-    start_runner: Callable[[], Awaitable[RunnerProcess]],
+async def test_sigterm_stops_the_harness_cleanly_and_a_new_incarnation_resumes(
+    start_runner: Callable[..., Awaitable[RunnerProcess]],
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
     driver: RunnerDriver,
+    tmp_path: Path,
+    workspace: Path,
 ) -> None:
-    first_runner = await start_runner()
+    """A replaced Pod keeps only its state volume: the next runner starts with a new home and an
+    empty workspace, and the native harness resumes from what the state directory holds."""
+    first_runner = await start_runner(home=tmp_path / "first-home")
     first = await driver.attach("sigterm-1", spec=spec)
     await submit_input(first, "input-1", "Reply with exactly: SEED_OK")
-    await model.reply(await model.request(), Text("SEED_OK"))
+    seed = await model.request()
+    await model.reply(seed, Text("SEED_OK"))
     await first.until(events.turn_completed)
     (running,) = await driver.list_sessions()
     assert running.session_id == "sigterm-1"
@@ -607,8 +615,10 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
     assert running.last_cursor >= first.cursor
     # The runner exits only after the stop ladder has reaped every harness.
     await first_runner.stop()
+    shutil.rmtree(tmp_path / "first-home")
+    shutil.rmtree(workspace)
 
-    await start_runner()
+    await start_runner(home=tmp_path / "second-home")
     (stopped,) = await driver.list_sessions()
     assert stopped.harness_state == runner_pb2.HARNESS_STATE_STOPPED
     assert stopped.last_cursor > first.cursor
@@ -621,6 +631,9 @@ async def test_sigterm_stops_the_harness_cleanly_and_the_next_runner_resumes(
     await submit_input(second, "input-2", "Reply with exactly: RESUMED_OK")
     request = await model.request()
     assert request.user_texts == ["Reply with exactly: SEED_OK", "Reply with exactly: RESUMED_OK"]
+    assert request.assistant_texts == ["SEED_OK"]
+    # An unchanged system prompt keeps the provider's prompt cache usable across the incarnation.
+    assert request.system_text == seed.system_text
     await model.reply(request, Text("RESUMED_OK"))
     done = await second.until(events.turn_completed)
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED

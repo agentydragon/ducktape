@@ -598,8 +598,6 @@ flowchart TD
     DURABLE_SESSION_LIFECYCLE[Decision: Session lifetime and revival]
     SESSION_STATE_VOLUME_DESIGN[Decision: what the state PVC holds]
     AGENTPLANE_SANDBOX_RESOURCE[In progress: our own Sandbox resource]
-    CLAUDE_PORTABLE_STATE[Blocked: Claude resumes on a new incarnation]
-    CODEX_PORTABLE_STATE[Blocked: Codex resumes on a new incarnation]
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
@@ -608,16 +606,12 @@ flowchart TD
     DURABLE_SESSION_LIFECYCLE --> SESSION_STATE_VOLUME_DESIGN
     DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
     SESSION_STATE_VOLUME_DESIGN --> AGENTPLANE_SANDBOX_RESOURCE
-    SESSION_STATE_VOLUME_DESIGN --> CLAUDE_PORTABLE_STATE
-    SESSION_STATE_VOLUME_DESIGN --> CODEX_PORTABLE_STATE
     AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
     AGENTPLANE_SANDBOX_RESOURCE --> AGENT_SANDBOX_RETIRE[Blocked: Agentplane stops using agent-sandbox]
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
     SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes stop]
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
-    CLAUDE_PORTABLE_STATE -. per harness .-> SESSION_REVIVE
-    CODEX_PORTABLE_STATE -. per harness .-> SESSION_REVIVE
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
 ```
@@ -722,16 +716,6 @@ Service's agent-sandbox inventory, views and watch, the gateway's `SealSandbox` 
 `volumeClaimTemplates` state volume and the Sandbox Service's agent-sandbox RBAC. The controller
 install stays for `cluster/cdk8s/agent_workspaces.py`.
 
-### `CLAUDE_PORTABLE_STATE` — Claude evidence
-
-**Blocked on the volume design.** Start a new incarnation (a new Pod, possibly a newer image)
-on a kept state PVC and resume, checking continuation and prompt-cache cost. The frozen
-`RUNNER_IMAGE_UPGRADE_PROOF` is the same experiment. Independent of Codex.
-
-### `CODEX_PORTABLE_STATE` — Codex evidence
-
-**Blocked on the volume design.** The same for Codex; neither harness waits for the other.
-
 ### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes stop
 
 **Unscheduled; needs design; operator, 2026-10-11 PDT.** An idle runner Sandbox stops its
@@ -753,10 +737,10 @@ that it resumed after a seal.
 
 ### `SESSION_REVIVE` — start a stopped Sandbox again
 
-**Blocked on incarnations and per-harness evidence.** The controller schedules a new Pod or VM
+**Blocked on incarnations.** The controller schedules a new Pod or VM
 for a stopped Sandbox, set running by an explicit call or by the gateway's resume hook, from its
 template as it is now, possibly on a new image, and resume each harness as
-a new incarnation of the same Session and history. Ships per harness as its evidence lands. Test
+a new incarnation of the same Session and history. Test
 revival after a long stop, a refused incompatible state PVC, and concurrent revive requests.
 
 ### `THREAD_SUCCESSOR_DELIVERY` — commands unsettled across incarnations
