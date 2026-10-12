@@ -28,14 +28,7 @@ from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
 from cluster.cdk8s import agent_access_profiles, cilium, external_creds, ha_mcp, node_scheduling
-from cluster.cdk8s.agentplane import (
-    actions,
-    command_sandbox,
-    notifications,
-    policy_controller,
-    sandbox_controller,
-    staging_config,
-)
+from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, policy_controller, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import (
@@ -434,7 +427,6 @@ def chart(app: App) -> Chart:
         ENV,
         sets={name: [catalog[grant] for grant in grants] for name, grants in agent_access_profiles.POLICY_SETS.items()},
     )
-    sandbox_controller.SandboxController(chart, "sandbox-controller", ENV)
     reader = ServiceAccount(
         chart,
         "external-creds-reader",

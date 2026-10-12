@@ -21,7 +21,7 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
 
 ## Running
 
-Staging runs it from `cluster/cdk8s/agentplane/sandbox_controller.py`, which also holds its RBAC.
+`agentplane-testing` runs it from `cluster/cdk8s/agentplane/sandbox_controller.py`, which also holds its RBAC.
 Locally:
 
 ```bash

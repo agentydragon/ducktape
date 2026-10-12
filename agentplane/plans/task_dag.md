@@ -725,7 +725,9 @@ live in [the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
 the rest of the Sandbox Service API, the app's live view and the Runner Gateway's destination
 lookup read and write our `Sandbox` instead of agent-sandbox's, replacing the imperative-only
 `CreateSandbox`. Existing staging Sandboxes stay on agent-sandbox until `AGENT_SANDBOX_RETIRE`
-recreates them.
+recreates them. The Sandbox Controller runs on `agentplane-testing` only until then: the cutover
+lands on testing first, and staging gets the controller and the cutover only once testing holds
+(operator, 2026-10-12 PDT: testing down beats staging down).
 
 ### `AGENT_SANDBOX_RETIRE` — Agentplane stops using agent-sandbox
 

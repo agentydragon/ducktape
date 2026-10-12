@@ -22,7 +22,7 @@ an MCP approval gateway for any MCP-capable LLM product.
 - [Policy Controller](policy_controller/README.md): expires `PolicyBinding`s and keeps the
   RoleBindings they grant. Staging only; nothing writes a `PolicyBinding` yet.
 - [Sandbox Controller](sandbox_controller/README.md): reconciles our own `Sandbox` into its state
-  PVC and Pods. Staging only; nothing creates our `Sandbox` yet.
+  PVC and Pods. Runs on `agentplane-testing` only; nothing creates our `Sandbox` yet.
 - [LLM ingress](llm_ingress/README.md): authenticated hop in front of LiteLLM.
 - [Notification service](notification_service/README.md): subscriptions and session inboxes.
 - [Indexing](indexing/README.md): Git semantic search.
@@ -88,7 +88,7 @@ flowchart TB
     github -->|webhooks over an HTTPS route| notif
     actions -->|execute: Sandbox CRs, exec| k8s
     policy -->|PolicyBindings, RoleBindings| k8s
-    sandboxctl -->|our Sandboxes: Pods, state PVCs| k8s
+    sandboxctl -.->|testing only: our Sandboxes, Pods, state PVCs| k8s
     k8s -->|creates| cmd_sandbox
     cmd_sandbox -->|all outbound traffic| proxy
     actions -->|MCP servers, GitHub, web push| outside
