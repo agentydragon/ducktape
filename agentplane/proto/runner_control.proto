@@ -33,6 +33,9 @@ service Runner {
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   // Restart a stopped harness on the Session's retained spec. A running harness is left as it is.
   rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
+  // Sandbox teardown: durably refuse new and resumed Sessions, stop every harness and setup script,
+  // and seal every journal at its final cursor. Idempotent: a repeat returns the same cursors with
+  // each Session's current `flushed`, so teardown repeats it until every Session is flushed.
   rpc Seal(agentplane.proto.runner.SealRequest) returns (agentplane.proto.runner.SealResponse);
   // Admit a command, or return its admission if it is already journaled with the same payload, even
   // after its harness stopped or its journal was sealed; redelivery is therefore safe. The same
