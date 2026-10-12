@@ -1,12 +1,11 @@
 """Check an explicit, authorized Sandbox incarnation and its current controller-owned runner Pod."""
 
 from dataclasses import dataclass
-from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxBinding, SandboxDestination, TeardownPhase
-from agentplane.sandbox_service.errors import SandboxNotFoundError, SandboxTearingDownError
+from agentplane.sandbox_service.errors import SandboxTearingDownError
 from agentplane.sandbox_service.reader import SandboxReader
 from util.agent_sandbox import SANDBOX_API, OperatingMode
 
@@ -25,13 +24,6 @@ class DestinationResolver:
         create, resume or command a Session, which a Sandbox being torn down refuses. Listing its
         Sessions stays possible until it is deleted."""
         return await self._ready(await self.sandboxes.incarnation(destination), writes=writes)
-
-    async def resolve_incarnation(self, name: str, uid: UUID, *, writes: bool) -> SandboxBinding | None:
-        """`resolve` for a Sandbox incarnation the Runner Gateway's own registry names."""
-        view = await self.sandboxes.get(name)
-        if view.uid != str(uid):
-            raise SandboxNotFoundError(name)
-        return await self._ready(view, writes=writes)
 
     async def _ready(self, view: Sandbox, *, writes: bool) -> SandboxBinding | None:
         if writes and view.teardown != TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED:

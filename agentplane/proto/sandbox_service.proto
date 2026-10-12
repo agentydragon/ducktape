@@ -78,10 +78,10 @@ message CreateSessionResponse {
 // Commands name the public Session; the Runner Gateway checks that it runs in the Sandbox whose
 // control Service the call reached.
 message SubmitCommandRequest {
-  string session_id = 4;
+  SessionDestination destination = 5;
   agentplane.proto.command.Command command = 2;
-  reserved 1, 3;
-  reserved "destination", "follow";
+  reserved 1, 3, 4;
+  reserved "follow", "session_id";
 }
 
 message SessionDefaults {

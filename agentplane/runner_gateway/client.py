@@ -113,7 +113,10 @@ class RunnerGatewayClient:
         receipt = await self.control.held_unary(
             destination,
             lambda stub: stub.SubmitCommand,
-            sandbox_service_pb2.SubmitCommandRequest(session_id=session_id, command=command),
+            sandbox_service_pb2.SubmitCommandRequest(
+                destination=sandbox_service_pb2.SessionDestination(sandbox=destination, session_id=session_id),
+                command=command,
+            ),
             timeout_s=self.command_admission_timeout_s,
         )
         if not receipt.event.HasField("command_admitted") or receipt.event.command_admitted.command != command:

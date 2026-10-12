@@ -33,8 +33,9 @@ The gateway keeps no Session history; runners push their Events to the
 - `ResumeSession`: uses exactly the runner-retained spec, without applying today's
   defaults/instructions or rerunning setup. Missing sessions and failed/interrupted setup are
   refused.
-- `SubmitCommand`: names the public Session ID alone; the gateway routes it to the Sandbox
-  incarnation the Session was opened in, and refuses one that is gone or being torn down. It forwards
+- `SubmitCommand`: names the Session's Sandbox incarnation and public Session ID, like
+  `ResumeSession`; the gateway refuses a Session not opened in that incarnation, and an incarnation
+  that is gone or being torn down. It forwards
   an unchanged common-protocol `Command` only to a running harness and returns the original
   `EventEntry` containing its exact matching `CommandAdmitted`. Like the lifecycle calls, it reaches
   the replica holding the runner's connection through the Sandbox's control Service, and any other

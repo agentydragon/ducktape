@@ -301,7 +301,7 @@ sequenceDiagram
     participant HS as History Service
     participant H as Codex harness
     F->>A: POST /threads/T/commands<br/>M = Command {command_id:M, change_model:{model:new-model}}
-    A->>G: SubmitCommand {session_id:T, command:M}
+    A->>G: SubmitCommand {sandbox:S, session_id:T, command:M}
     G->>R: M over the control stream
     R->>R: Persist M
     R-->>G: E(41, command_admitted{command:M})
@@ -312,7 +312,7 @@ sequenceDiagram
     A-->>F: SSE id:41, data:E41
     Note over F,H: Picker still shows applied old model. M is pending
     F->>A: POST /threads/T/commands<br/>I = Command {command_id:I, submit_input:{text:Continue the task}}
-    A->>G: SubmitCommand {session_id:T, command:I}
+    A->>G: SubmitCommand {sandbox:S, session_id:T, command:I}
     G->>R: I
     R->>R: Persist I
     R-->>G: E(42, command_admitted{command:I})
@@ -364,7 +364,7 @@ sequenceDiagram
     S-->>A: Sandbox {uid:U, ...}
     A->>G: CreateSession {destination:U, session_id:T, spec:resolved fields, bootstrap}
     G-->>A: Attached {session_id:T, ...}
-    A->>G: SubmitCommand {session_id:T, command:C}
+    A->>G: SubmitCommand {sandbox:S, session_id:T, command:C}
     G-->>A: E(n, command_admitted{command:C})
     A->>A: Derive delivery satisfied
     G->>HS: Runner pushes E1..Em, including<br/>E(m, harness_user_message_confirmed{origin_command_ids:[C], ...})

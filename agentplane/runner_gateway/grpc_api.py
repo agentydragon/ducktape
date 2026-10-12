@@ -243,15 +243,14 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         self, request: sandbox_service_pb2.SubmitCommandRequest, context: grpc.aio.ServicerContext
     ) -> event_log_pb2.EventEntry:
         async with self.request(context, timeout_s=self.resources.runner_admission_ack_timeout_s):
-            public_id = parse_session_id(request.session_id)
             if not 1 <= len(request.command.command_id) <= 128 or request.command.WhichOneof("operation") is None:
                 raise ValueError("a command needs a 1 to 128 character ID and an operation")
-            placement = await self.resources.sessions.placement(public_id)
-            # Refuses a Sandbox incarnation that is gone or being torn down.
-            await self.resources.destinations.resolve_incarnation(
-                placement.sandbox_name, placement.sandbox_uid, writes=True
+            destination = request.destination
+            # Refuses a Sandbox being torn down.
+            await self.held(destination.sandbox, writes=True)
+            return await self.resources.control.deliver(
+                UUID(destination.sandbox.sandbox_uid), await self.runner_session_id(destination), request.command
             )
-            return await self.resources.control.deliver(placement.sandbox_uid, str(public_id), request.command)
 
     @override
     async def BatchGetSessionSandboxes(

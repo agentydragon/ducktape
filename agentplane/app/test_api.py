@@ -713,7 +713,7 @@ async def unanswered_command_service(token_file: Path) -> AsyncIterator[tuple[Ru
             try:
                 await asyncio.Event().wait()
             finally:
-                cancelled.put_nowait(request.session_id)
+                cancelled.put_nowait(request.destination.session_id)
             raise AssertionError("the command is never answered")
 
     cancelled: asyncio.Queue[str] = asyncio.Queue()

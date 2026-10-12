@@ -1,7 +1,6 @@
 """The Runner Gateway's Session registry: which Sandbox incarnation each Session runs in, in the
 service's own database."""
 
-from dataclasses import dataclass
 from uuid import UUID
 
 from sqlalchemy import ColumnElement, select
@@ -21,12 +20,6 @@ class SessionNotFoundError(LookupError):
 
 class SessionConflictError(ValueError):
     """The Session ID is registered in another Sandbox incarnation."""
-
-
-@dataclass(frozen=True)
-class SessionPlacement:
-    sandbox_name: str
-    sandbox_uid: UUID
 
 
 class SessionRegistry:
@@ -84,15 +77,6 @@ class SessionRegistry:
                 )
                 for row in rows
             ]
-
-    async def placement(self, session_id: UUID) -> SessionPlacement:
-        """The Sandbox incarnation the Session runs in. Imported Sessions with no recorded
-        incarnation have none, and raise `SessionNotFoundError` like an unknown ID."""
-        async with self._sessions() as session:
-            row = await session.get(Session, session_id)
-        if row is None or row.sandbox_uid is None:
-            raise SessionNotFoundError(session_id)
-        return SessionPlacement(sandbox_name=row.sandbox_name, sandbox_uid=row.sandbox_uid)
 
     async def require(self, session_id: UUID, *, sandbox_namespace: str, sandbox_name: str, sandbox_uid: UUID) -> None:
         """Raise `SessionNotFoundError` unless the Session was registered in this Sandbox incarnation."""
