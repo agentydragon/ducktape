@@ -30,7 +30,7 @@ from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
-from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
@@ -666,7 +666,7 @@ async def test_a_runner_that_has_not_connected_is_a_503(
             app = create_app(
                 inventory,
                 RunnerBridge(
-                    runners=SandboxSessions(live_index, endpoint.gateway(channel)),
+                    runners=RunnerDirectory(live_index, endpoint.gateway(channel)),
                     event_logs=event_logs,
                     content=content,
                 ),
@@ -764,7 +764,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     async with unanswered_command_service(tmp_path / "wedged-token") as (service, cancelled):
         app = create_app(
             inventory,
-            RunnerBridge(runners=SandboxSessions(live_index, service), event_logs=event_logs, content=content),
+            RunnerBridge(runners=RunnerDirectory(live_index, service), event_logs=event_logs, content=content),
             store,
             TEST_MODELS,
             egress,

@@ -40,7 +40,7 @@ from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.history_watch import HistoryWatch, SessionOpenings
-from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
@@ -240,7 +240,7 @@ async def _serve(
                 ),
             )
             store = ThreadStore(engine, summaries, gateway=gateway)
-            bridge = RunnerBridge(runners=SandboxSessions(index, gateway), event_logs=event_logs, content=content)
+            bridge = RunnerBridge(runners=RunnerDirectory(index, gateway), event_logs=event_logs, content=content)
             history_watch = HistoryWatch(
                 watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
             )

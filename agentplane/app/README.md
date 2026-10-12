@@ -58,7 +58,7 @@ bbr test //agentplane/app/...
   (`ThreadStore`) composes the app database and the History Service; runners push their events to
   the History Service.
 - `threads/bridge.py`: browser-facing composition of session operations with archive synchronization.
-  `threads/sessions.py` selects explicit destinations from the app's live index and caches Sandbox
+  `threads/runner_directory.py` selects explicit destinations from the app's live index and caches Sandbox
   Service clients. Neither opens direct runner connections or owns lifecycle implementation.
 - `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits for the frontend's
   generated client.

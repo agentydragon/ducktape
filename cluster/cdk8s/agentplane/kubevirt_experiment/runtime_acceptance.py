@@ -361,10 +361,9 @@ async def _ensure_data_volume(
         raise ValueError(f"DataVolume {name!r} does not match this VM's requested blank disk")
 
 
-def _config_data(args: argparse.Namespace, *, uid: str, config: dict[str, Any]) -> dict[str, str]:
+def _config_data(args: argparse.Namespace, *, config: dict[str, Any]) -> dict[str, str]:
     guest_config = {
         "version": 1,
-        "environment_id": uid,
         "control": {"target": args.control_target, "bearer": args.control_bearer},
         "ingress": {"target": args.ingress_target, "bearer": args.ingress_bearer},
         "llm_base_url": config["llm_base_url"],
@@ -550,8 +549,7 @@ async def create(args: argparse.Namespace) -> None:
                 deadline,
             )
         await _within(
-            _ensure_config_map(core, args.namespace, name, uid=uid, data=_config_data(args, uid=uid, config=values)),
-            deadline,
+            _ensure_config_map(core, args.namespace, name, uid=uid, data=_config_data(args, config=values)), deadline
         )
         await _check_data_volumes(
             custom,
@@ -662,8 +660,6 @@ async def _retire_format_permission(core: k8s_client.CoreV1Api, namespace: str, 
         guest_config = json.loads(data[_FORMAT_CONFIG_KEY])
     except KeyError, ValueError:
         raise RuntimeError("guest config is missing or invalid") from None
-    if guest_config.get("environment_id") != vm_uid:
-        raise RuntimeError("guest config VM UID does not match --uid")
     formats = guest_config.get("format_blank_disks")
     if formats == []:
         return

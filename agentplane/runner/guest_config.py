@@ -42,19 +42,11 @@ class GuestConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     version: Literal[1]
-    environment_id: str = Field(min_length=1)
     control: Endpoint
     ingress: Endpoint
     llm_base_url: str = Field(min_length=1)
     proxy_url: str = Field(min_length=1)
     format_blank_disks: list[Literal["state", "workspace"]] = Field(default_factory=list)
-
-    @field_validator("environment_id")
-    @classmethod
-    def valid_environment_id(cls, value: str) -> str:
-        if any(character.isspace() for character in value):
-            raise ValueError("environment_id must not contain whitespace")
-        return value
 
     @field_validator("format_blank_disks")
     @classmethod

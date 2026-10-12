@@ -38,7 +38,7 @@ from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.history_watch import SessionOpenings
-from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
@@ -211,7 +211,7 @@ async def _other_connections(database: AsyncEngine) -> int:
 @pytest.mark.usefixtures("sigterm_is_survivable")
 async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_openings_and_database(
     inventory: SandboxServiceClient,
-    runners: SandboxSessions,
+    runners: RunnerDirectory,
     store: ThreadStore,
     database_updates: WakeupListener,
     engine: AsyncEngine,

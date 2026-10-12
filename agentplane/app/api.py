@@ -76,7 +76,7 @@ from agentplane.app.threads.events.debug import (
     ThreadScopeChangedError,
 )
 from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
-from agentplane.app.threads.sessions import SandboxNotReachableError
+from agentplane.app.threads.runner_directory import SandboxNotReachableError
 from agentplane.app.threads.store import MAX_PAGE, InvalidPageTokenError, ThreadPage, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore

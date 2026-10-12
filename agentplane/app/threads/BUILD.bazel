@@ -99,8 +99,8 @@ py_library(
 )
 
 py_library(
-    name = "sessions",
-    srcs = ["sessions.py"],
+    name = "runner_directory",
+    srcs = ["runner_directory.py"],
     deps = [
         "//agentplane/app:live",
         "//agentplane/app:sandbox_models",
@@ -118,7 +118,7 @@ py_library(
     name = "bridge",
     srcs = ["bridge.py"],
     deps = [
-        ":sessions",
+        ":runner_directory",
         ":summaries",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:content",

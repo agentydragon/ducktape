@@ -42,7 +42,7 @@ from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.history_watch import SessionOpenings
-from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
@@ -83,7 +83,7 @@ async def failed_bridge_state(
     runner: Runner,
     event_logs: SeededEventLogStore,
     history_client: HistoryServiceClient,
-    local_runners: SandboxSessions,
+    local_runners: RunnerDirectory,
 ) -> AsyncIterator[None]:
     """Preserve each service's cursor and admission state when an app-level bridge case fails.
 
@@ -201,18 +201,18 @@ async def local_runners(
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
     runner: Runner,
-) -> AsyncIterator[SandboxSessions]:
+) -> AsyncIterator[RunnerDirectory]:
     """`SANDBOX` running, its Pod's runner connected over the control stream."""
     raw, live_index.pods[SANDBOX] = seed_runner(custom_objects, core_v1, SANDBOX)
     live_index.sandboxes[SANDBOX] = raw
     async with dialing(runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)):
         await asyncio.to_thread(sandbox_endpoint.wait_connected, UUID(raw["metadata"]["uid"]))
-        yield SandboxSessions(live_index, gateway)
+        yield RunnerDirectory(live_index, gateway)
 
 
 @pytest.fixture
 async def app_url(
-    local_runners: SandboxSessions,
+    local_runners: RunnerDirectory,
     inventory: SandboxServiceClient,
     store: ThreadStore,
     database_updates: WakeupListener,
@@ -963,7 +963,7 @@ async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
 
 
 async def test_thread_command_reports_id_conflict_after_runner_admitted_before_app_copied_it(
-    app_url: str, local_runners: SandboxSessions, spec: runner_pb2.SessionSpec, failed_bridge_state: None
+    app_url: str, local_runners: RunnerDirectory, spec: runner_pb2.SessionSpec, failed_bridge_state: None
 ) -> None:
     """An app prefix lag must still preserve the runner's id-conflict verdict as a 409."""
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
@@ -1110,7 +1110,7 @@ class Replicas:
 @pytest.fixture
 async def replicas(
     sandbox_endpoint: Endpoint,
-    local_runners: SandboxSessions,
+    local_runners: RunnerDirectory,
     live_index: LiveIndex,
     runner: Runner,
     database_updates: WakeupListener,
@@ -1139,7 +1139,7 @@ async def replicas(
             history_client.new_client() as survivor_openings_client,
         ):
             survivor = RunnerBridge(
-                runners=SandboxSessions(live_index, sandbox_endpoint.gateway(survivor_channel)),
+                runners=RunnerDirectory(live_index, sandbox_endpoint.gateway(survivor_channel)),
                 event_logs=survivor_event_logs,
                 content=ContentStore(replica_engine, history_reader=history_client),
             )
@@ -1309,7 +1309,7 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
 
 async def test_stored_thread_stream_does_not_require_reachable_runner(
     replicas: Replicas,
-    local_runners: SandboxSessions,
+    local_runners: RunnerDirectory,
     live_index: LiveIndex,
     event_logs: SeededEventLogStore,
     database_updates: WakeupListener,
@@ -1346,7 +1346,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
 
 
 async def test_open_and_resume_reply_before_archive_catches_up(
-    local_runners: SandboxSessions,
+    local_runners: RunnerDirectory,
     event_logs: SeededEventLogStore,
     content: ContentStore,
     model: ScriptedModel,

@@ -35,7 +35,7 @@ from agentplane.app.shutdown import Drain, drain_of
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.history_watch import HistoryWatch, SessionOpenings
-from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
@@ -165,7 +165,7 @@ async def async_main(settings: Settings) -> None:
         )
         store = ThreadStore(engine, summaries, gateway=gateway)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
-        runners = SandboxSessions(live, gateway)
+        runners = RunnerDirectory(live, gateway)
         session_openings = SessionOpenings(session_openings_client, event_logs, retry_interval_s=1)
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content)
 

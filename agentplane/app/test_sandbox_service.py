@@ -13,7 +13,7 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.app.live import LiveIndex
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
-from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.grpc_calls import ServiceError
 from agentplane.history_service.testing.backend import ingest
@@ -67,7 +67,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
         ),
         ingest(service_history_db_url, runner),
     ):
-        directory = SandboxSessions(live_index, remote)
+        directory = RunnerDirectory(live_index, remote)
         bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content)
         with pytest.raises(MalformedMessageError):
             await bridge.create_session(SANDBOX, uuid4(), {"reasoning_effort": "low", "reasoningEffort": "high"})
@@ -112,7 +112,7 @@ async def test_stopped_service_never_falls_back_to_reachable_runner(
     async with authenticated_service(
         cluster, runner, tmp_path / "service-token", database_url=service_history_db_url
     ) as (_, remote):
-        directory = SandboxSessions(live_index, remote)
+        directory = RunnerDirectory(live_index, remote)
         assert await directory.client(SANDBOX).list_sessions() == []
     # Each call to the Sandbox's runner dials its control Service anew, here with the gateway gone.
     with pytest.raises(ServiceError):

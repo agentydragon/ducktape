@@ -58,7 +58,7 @@ from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events import event_log
-from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
@@ -352,7 +352,7 @@ def app(
     database_updates = create_database_updates(engine.url)
     return create_app(
         inventory,
-        RunnerBridge(runners=SandboxSessions(live_index, gateway), event_logs=event_logs, content=content),
+        RunnerBridge(runners=RunnerDirectory(live_index, gateway), event_logs=event_logs, content=content),
         ThreadStore(engine, summaries, gateway=gateway),
         MODELS,
         egress,

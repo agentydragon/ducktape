@@ -11,7 +11,6 @@ from agentplane.runner.guest_config import GuestConfig, make_runner_config
 def _config(**updates: object) -> GuestConfig:
     values: dict[str, object] = {
         "version": 1,
-        "environment_id": "vm-uid-123",
         "control": {"target": "test-gateway.test:7100", "bearer": "test-control-placeholder"},
         "ingress": {"target": "test-history.test:8081", "bearer": "test-ingress-placeholder"},
         "llm_base_url": "http://agentplane-llm-ingress.agentplane.svc.cluster.local:8080",

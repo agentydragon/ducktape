@@ -10,7 +10,7 @@ from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
-from agentplane.app.threads.sessions import SandboxSessions
+from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.summaries import FeedError
 from agentplane.app.threads.view.content import ContentStore
 
@@ -46,7 +46,7 @@ class NewSession(BaseModel):
 
 
 class RunnerBridge:
-    def __init__(self, *, runners: SandboxSessions, event_logs: EventLogStore, content: ContentStore) -> None:
+    def __init__(self, *, runners: RunnerDirectory, event_logs: EventLogStore, content: ContentStore) -> None:
         self._runners = runners
         self._event_logs = event_logs
         self._content = content

@@ -21,7 +21,7 @@ class SandboxNotReachableError(Exception):
         self.name = name
 
 
-class SandboxSessions:
+class RunnerDirectory:
     def __init__(self, index: LiveIndex, gateway: RunnerGatewayClient) -> None:
         self._index = index
         self.gateway = gateway
