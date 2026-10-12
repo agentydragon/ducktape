@@ -20,6 +20,13 @@
       JS/TS deps from the import graph and so would remove the class rather than lint it. Deliberately
       not hand-rolled — a bespoke import scanner would be a third parser of the same TypeScript.
 
+## AWS
+
+- [ ] Consider keeping a persistent AWS admin credential in user-level SOPS (readable by
+      agentydragon's machine keys, like `ducktape.sopsEnv`). Hand-provisioned IAM changes, such as
+      the Route 53 policies in <cluster/docs/dns_automation.md>, currently need an interactive
+      `aws login`; the cluster's own Route 53 keys are deliberately not user-decryptable.
+
 ## System Configuration
 
 - [ ] Add to small laptop installation: nmap, other hacking tools
