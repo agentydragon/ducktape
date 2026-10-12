@@ -42,6 +42,7 @@ Retain the data-preserving rollback procedure. No Action Service or other databa
 
 ```mermaid
 flowchart LR
+    NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history]
     SESSION_INPUT_METADATA[Typed input annotations and provenance]
     SESSION_INPUT_METADATA_READ[Blocked: metadata reads and message correlation]
     NOTIFICATION_NOTICE_METADATA[Blocked: attach notice metadata to submissions]
@@ -330,16 +331,25 @@ an unranked candidate lane, not authorization for local Bazel in current contain
 builds on; changing connection direction does not move command durability or remove the runner
 journal.
 
+Direction for stateful VMs (operator, 2026-10-12 PDT; not scheduled): our own Sandbox resource
+(`AGENTPLANE_SANDBOX_RESOURCE`, `kind: pod | vm`) replaces agent-sandbox's, and both kinds keep their
+state on one filesystem PVC per Sandbox that Agentplane owns (section 8). Pods mount it as a volume,
+KubeVirt guests through virtiofs, so a Session can move between kinds.
+
 ```mermaid
 flowchart LR
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Candidate: production provider and API]
+    VM_VIRTIOFS[Unscheduled: test KubeVirt virtiofs on v1.8.2]
+    AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource]
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     RUNNER_INBOUND_RETIRE[Candidate: retire inbound runner access]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
+    AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
+    VM_VIRTIOFS -. state volume in the guest .-> VM_IMAGE
     VM_CONTROL_NETWORKING --> VM_LIFECYCLE
     VM_IMAGE --> VM_PROCESS_ISOLATION
     VM_PROVIDER --> VM_PROCESS_ISOLATION
@@ -380,7 +390,15 @@ real credentials baked into the image. Reuse the proven prototype, not another p
 
 **Candidate.** Integrate typed environment kinds, templates/destinations, inventory, reconciliation,
 RBAC and UI. Container behavior remains intact. Review the changed service contracts and schema
-rollout as part of this work.
+rollout as part of this work. For stateful VMs the kind lives on our own Sandbox resource, which
+reconciles to a bare Pod or a `VirtualMachine` (suspend is deleting the Pod or `runStrategy: Halted`).
+
+### `VM_VIRTIOFS` — the state volume inside a guest
+
+**Unscheduled; the first step toward stateful VMs.** Enable KubeVirt's virtiofs feature gate (only
+`HostDevices` is on, `cluster/cdk8s/kubevirt/app.py`) and check on v1.8.2 that a guest mounts a
+filesystem PVC as a directory, and that a pod and a guest see the same files on it. The guest loses
+its XFS `prjquota` on `/state`, so the PVC size is the only bound.
 
 ### `VM_EGRESS` — integrate production admission and proxy path
 
@@ -421,6 +439,18 @@ hosted builds do not authorize local Bazel in agent containers.
 These candidates need no multiagent or VM decision. Any implementation that turns out to require
 app/Sandbox Service database changes requires its own migration safety review.
 
+```mermaid
+flowchart LR
+    CLAUDE_CODE_WEB_BRIDGE[Unscheduled: Claude Code web sessions in Agentplane]
+```
+
+### `CLAUDE_CODE_WEB_BRIDGE` — Claude Code web sessions in Agentplane
+
+**Unscheduled; operator, 2026-10-12 PDT: low priority, not to build now.** Show Claude Code web
+conversations in Agentplane, and possibly drive them, by shimming the web interface's control
+protocol. Builds on the viewer and syncer under `devinfra/` and the reverse-engineering in
+`agentydragon/gaffer-private`.
+
 ## 6. Existing access and lifecycle follow-ups
 
 These are bounded existing work, not dependencies on the broader multiagent model. Confirm current
@@ -435,6 +465,8 @@ flowchart LR
     KUBERNETES_RBAC_POLICY_BINDINGS --> MANAGED_SA_RBAC
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous progress API]
     SANDBOX_IDLE_EXPIRY[Candidate: delete idle Sandboxes]
+    SANDBOX_RBAC[Candidate: bounded deployed grant checks]
+    NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
 ```
 
 ### `PC_EGRESS_CREDENTIALS` — label public-coder's Action Service caller
@@ -593,7 +625,10 @@ Sandbox, `SESSION_STATE_VOLUME_DESIGN`).
 `THREAD_PORTABLE_STATE`. A persistent volume holds the native harness files and the runner's state,
 separate from the workspace, is kept when the Sandbox is deleted, and is attached to the next
 incarnation, whose runner continues the same journal. Decided: one volume per Sandbox, so the
-Sessions that shared a Sandbox revive together in its successor. Decide: whether the runner's state
+Sessions that shared a Sandbox revive together in its successor; and (operator, 2026-10-12 PDT) it
+is a filesystem PVC the Sandbox Service creates and owns, with no owner reference, mounted as a
+volume in pods and through virtiofs in VMs (`VM_VIRTIOFS`), never from agent-sandbox's
+`volumeClaimTemplates`, which make the Sandbox its controller owner. Decide: whether the runner's state
 goes on it or only the harness files;
 whether the workspace survives too (operator neutral; default: it does, kept with the state volume,
 because a revived conversation refers to files the agent made and its cwd must exist); storage class, since `local-path` pins a volume to one node and
@@ -698,7 +733,7 @@ once the Sandbox Service's lifetime handling covers them (`SANDBOX_IDLE_EXPIRY`)
 
 Dead code, finished gates, compatibility shims and stale names found by the 2026-10-10 PDT audit of
 devel. A gate counts as legacy once its rollout is finished on both testing and staging or nothing
-reads it; the mid-rollout delta settlement gate stays with its own nodes above. Lane named per
+reads it; the delta settlement flag stays with `SETTLE_DELTAS_ALWAYS_ON`. Lane named per
 node; leftovers of in-flight work belong to the lane already changing that code. Upstream-gated
 tombstones with a verifiable condition in code (`keepingOffset` in
 `thread_store.tsx`, the jsdom pragma in `markdown.test.tsx`) need no node.
@@ -748,10 +783,10 @@ runner through the Sandbox Service.
 ```mermaid
 flowchart TD
     GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages move to the gateway]
-    AGENTPLANE_SANDBOX_RESOURCE[Decision: our own Sandbox resource]
+    AGENTPLANE_SANDBOX_RESOURCE[Unscheduled: our own Sandbox resource]
     POD_INCARNATION[Decision: a Pod is the incarnation]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
-    COMMAND_RECORDS_RETIRE[Unscheduled: drop command submission records]
+    COMMAND_RECORDS_RETIRE[In flight: drop command submission records]
     RESUME_BY_SESSION_ID[Unscheduled: resume a Session by its ID alone]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
@@ -759,10 +794,10 @@ flowchart TD
 
 ### `GATEWAY_CLIENT_SPLIT` — Session messages move to the gateway
 
-**Unscheduled.** `RunnerGateway` still uses the Session and command messages in the Sandbox
-Service's proto package. Move those messages into the gateway's proto. `FrozenLaunch` leaves the
-public Sandbox Service proto for a gateway-private message, `sandbox_service/wire.py` splits between
-the gateway and `RunnerGatewayClient`, the client's `Runner` handle is renamed, its
+**Unscheduled.** The Runner Gateway still uses the Session and command messages in the Sandbox
+Service's proto package. Move those messages into the gateway's proto. `sandbox_service/wire.py`,
+which only the gateway and `RunnerGatewayClient` import, moves with them, the client's `Runner`
+handle is renamed, its
 `command_admission_timeout_s` stops being nullable, and the Notification Service's
 `SandboxServiceSettings` splits too.
 
@@ -775,13 +810,16 @@ Session ID needs the gateway to forward to the holder itself.
 
 ### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
 
-**Decision; later.** An Agentplane custom resource whose spec is the recipe (template, grants,
-egress, session defaults, bootstrap command, runner endpoints) and the desired runner (image,
-running or stopped), with incarnations in its status. Recommendation: back it with an upstream
-Sandbox first and keep owning Pod and PVCs directly as the fallback; clients key off our resource
-either way. Replaces the annotations on the upstream Sandbox and the imperative-only
-`CreateSandbox`. If the Sandbox Service becomes a real controller or operator for it, rename
-the service to say so (operator, 2026-10-11 PDT).
+**Unscheduled; operator, 2026-10-12 PDT: built together with stateful VMs.** An Agentplane custom
+resource (in `agentplane/crds/`) whose spec is the recipe (template, grants, egress, session
+defaults, bootstrap command, runner endpoints), the kind (`pod | vm`), its state PVC and the desired
+runner (image, running or stopped), with incarnations in its status. It replaces agent-sandbox's
+`Sandbox`: the Sandbox Service reconciles it into a bare Pod or a `VirtualMachine` and owns the
+state PVC itself (section 4). Since dial-out, all agent-sandbox gives us is a Pod from a template,
+suspension and PVC creation, but its `Sandbox` is also the Sandbox Service's only durable record
+(binding, grants, provisioning state and finalizers are annotations on it), so ours takes that
+over. Replaces the imperative-only `CreateSandbox` too. If the Sandbox Service becomes a real
+controller or operator for it, rename the service to say so (operator, 2026-10-11 PDT).
 
 ### `POD_INCARNATION` — a Pod is the incarnation
 
@@ -814,9 +852,8 @@ ReadWriteOnce, so the Job starts only once every container of the old Pod is gon
 
 ### `COMMAND_RECORDS_RETIRE` — drop command submission records
 
-**Unscheduled; operator, 2026-10-10 PDT: keep them for now; 2026-10-11 PDT: keeping each
-`admission` entry is fine for now, since commands are few next to model output; consider trimming it
-later.** The runner journal already holds
+**In flight; operator approved 2026-10-12 PDT; the Gateway command queue lane is building it.** The
+runner journal already holds
 every admission, idempotent on `command_id`. Retiring the Runner Gateway's submission records would make it
 stateless, with `GetCommand`, `ListCommands` and the command status UI reading receipts from
 history instead.
@@ -833,10 +870,10 @@ flowchart TD
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         RUNNER_ERRORS_REHOME[Unscheduled: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
-        THREAD_RESUME_COLUMN_DROP[Waits on rollout: drop thread.resumed_after_cursor]
+        THREAD_RESUME_COLUMN_DROP[Candidate: drop thread.resumed_after_cursor]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
-        GRPC_CHANNEL_OPTIONS_CONSTANT[Waits on rollout: drop the unread channel-options settings]
+        GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: drop the unread channel-options settings]
         COMMAND_REJECTED_STATE[Decision: a rejected command state nothing writes]
         SERVICE_SETTING_NAMES[Candidate: settings name the service they configure]
         OPERATOR_ROUTE_PREFIX[Candidate: one operator route prefix]
@@ -856,10 +893,10 @@ grpc_services.md, and give the app's `bridge.py` its own error type.
 
 ### `THREAD_RESUME_COLUMN_DROP` — drop `thread.resumed_after_cursor`
 
-**Waits on rollout.** The app no longer reads or writes the column, but its model still declares it
-(a `CLEANUP` tombstone) so the migration drift check passes; app replicas older than that still write
-it. Once staging and production run that app image, a drop migration removes the column and the
-tombstone, as its own PR the operator merges.
+**Candidate; drops a column, so the operator merges it.** The app no longer reads or writes the
+column, but its model still declares it (a `CLEANUP` tombstone) so the migration drift check passes.
+Testing and staging both pin an app image without the writes; a drop migration removes the column
+and the tombstone.
 
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 
@@ -883,8 +920,8 @@ imports `db.py`'s rows: `ActionStore` first moves out of `db.py`, then takes a `
 
 ### `GRPC_CHANNEL_OPTIONS_CONSTANT` — one gRPC channel options constant
 
-**Waits on the clients' own channel options rolling to both environments.** The Sandbox Service
-and History Service clients now set the 32 MiB receive limit themselves, and nothing reads the app's
+**Candidate.** The Sandbox Service and History Service clients set the 32 MiB receive limit
+themselves (rolled to testing and staging), and nothing reads the app's
 and Notification Service's channel-options settings. Remove those fields and the values
 `app_settings.py` and `notifications.py` set from `grpc_channel_config.py`, in one PR.
 
