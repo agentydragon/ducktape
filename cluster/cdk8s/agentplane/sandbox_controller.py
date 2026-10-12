@@ -75,6 +75,8 @@ class SandboxController(Construct):
                 RolePolicyRule(
                     resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch", "create"]
                 ),
+                # The rule types of the PolicySets a Sandbox names decide which readers its start waits on.
+                RolePolicyRule(resources=[custom_resource(_GROUP, "policysets")], verbs=["get", "list", "watch"]),
                 # Binding a Sandbox's account to the PolicySets its spec names, in this namespace.
                 RolePolicyRule(
                     resources=[custom_resource(_GROUP, "policybindings")],

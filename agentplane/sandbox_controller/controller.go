@@ -31,7 +31,8 @@ const (
 	// Deletes the state PVC once the Sandbox's Pod is gone.
 	StateVolumeFinalizer = "agentplane.allegedly.works/state-volume"
 
-	templateIndex = "spec.template"
+	templateIndex  = "spec.template"
+	policySetIndex = "spec.policySets"
 )
 
 // Reconciler converges one Sandbox at a time: its state PVC, its Pod, and its Running condition.
@@ -277,19 +278,11 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, pod *co
 	return r.Status().Update(ctx, sandbox)
 }
 
-// SetupWithManager wires the watches: each Sandbox, the objects it owns, its state PVC, and the
-// templates it names.
-func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
-	if err := mgr.GetFieldIndexer().IndexField(context.Background(), &Sandbox{}, templateIndex, func(obj client.Object) []string {
-		return []string{obj.(*Sandbox).Spec.Template}
-	}); err != nil {
-		return err
-	}
-	// A template appearing or changing retries the Sandboxes that name it; one already running is
-	// unaffected until its next start.
-	byTemplate := handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
+// namingSandboxes maps an object to the Sandboxes in its namespace whose index field names it.
+func (r *Reconciler) namingSandboxes(index string) handler.EventHandler {
+	return handler.EnqueueRequestsFromMapFunc(func(ctx context.Context, obj client.Object) []reconcile.Request {
 		var sandboxes SandboxList
-		if err := r.List(ctx, &sandboxes, client.InNamespace(obj.GetNamespace()), client.MatchingFields{templateIndex: obj.GetName()}); err != nil {
+		if err := r.List(ctx, &sandboxes, client.InNamespace(obj.GetNamespace()), client.MatchingFields{index: obj.GetName()}); err != nil {
 			return nil
 		}
 		var out []reconcile.Request
@@ -298,6 +291,22 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		return out
 	})
+}
+
+// SetupWithManager wires the watches: each Sandbox, the objects it owns, its state PVC, and the
+// templates and PolicySets it names.
+func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
+	indexer := mgr.GetFieldIndexer()
+	if err := indexer.IndexField(context.Background(), &Sandbox{}, templateIndex, func(obj client.Object) []string {
+		return []string{obj.(*Sandbox).Spec.Template}
+	}); err != nil {
+		return err
+	}
+	if err := indexer.IndexField(context.Background(), &Sandbox{}, policySetIndex, func(obj client.Object) []string {
+		return obj.(*Sandbox).Spec.PolicySets
+	}); err != nil {
+		return err
+	}
 	bySandboxLabel := handler.EnqueueRequestsFromMapFunc(func(_ context.Context, obj client.Object) []reconcile.Request {
 		name, ok := obj.GetLabels()[SandboxLabel]
 		if !ok {
@@ -311,6 +320,9 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&policycontroller.PolicyBinding{}).
 		Watches(&corev1.PersistentVolumeClaim{}, bySandboxLabel).
-		Watches(&SandboxTemplate{}, byTemplate).
+		// A template appearing or changing retries the Sandboxes that name it; one already running is
+		// unaffected until its next start. A PolicySet's rules decide which readers a start waits on.
+		Watches(&SandboxTemplate{}, r.namingSandboxes(templateIndex)).
+		Watches(&policycontroller.PolicySet{}, r.namingSandboxes(policySetIndex)).
 		Complete(r)
 }

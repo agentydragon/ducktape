@@ -29,8 +29,11 @@ and the state PVC. A Sandbox is its state, running or not; an **incarnation** is
   that account to exactly those sets, with no expiry. Clearing the list deletes it. Other bindings
   for the same account, such as runtime grants, are left alone.
 - Both are owned by the Sandbox, so deleting the Sandbox revokes them.
-- A Pod starts only once `KubernetesReady`, `EgressReady` and `ActionsReady` on that binding are
-  True for its current generation. A running Pod keeps running when they change.
+- A Pod starts only once the binding's condition from each reader of a rule type in those sets is
+  True for its current generation: `KubernetesReady` for Kubernetes rules, `EgressReady` for
+  egress rules, `ActionsReady` for Action rules. A Sandbox whose sets have no rule of a type never
+  waits on that type's reader. A running Pod keeps running when they change.
+- A named PolicySet that does not exist starts nothing.
 - A ServiceAccount or `PolicyBinding` of the Sandbox's name that it does not own starts nothing.
 
 ## Status
@@ -38,5 +41,5 @@ and the state PVC. A Sandbox is its state, running or not; an **incarnation** is
 `status.incarnation` names the current Pod and its UID. The `Running` condition is True while the
 Pod runs. Otherwise it is False, with reason `Stopped`, `Starting`, `Stopping`, `PodEnded`,
 `TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `ServiceAccountConflict`,
-`PolicyBindingConflict`, `PolicyBindingNotReady` or `PodConflict` (a Pod of the Sandbox's name that
+`PolicyBindingConflict`, `PolicyBindingNotReady`, `PolicySetNotFound` or `PodConflict` (a Pod of the Sandbox's name that
 it does not control).

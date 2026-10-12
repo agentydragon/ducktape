@@ -50,6 +50,15 @@ func report(t *testing.T, c client.Client, lag int64, readers ...string) {
 	}
 }
 
+// testSet is a PolicySet with one rule of each type.
+func testSet(name string, ruleTypes ...string) *policycontroller.PolicySet {
+	set := &policycontroller.PolicySet{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: name}}
+	for _, ruleType := range ruleTypes {
+		set.Spec.Rules = append(set.Spec.Rules, policycontroller.Rule{Type: ruleType})
+	}
+	return set
+}
+
 func TestPodRunsAsTheSandboxsOwnServiceAccount(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
@@ -68,8 +77,9 @@ func TestPodRunsAsTheSandboxsOwnServiceAccount(t *testing.T) {
 	}
 }
 
-func TestPodWaitsForEveryBindingReader(t *testing.T) {
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+func TestPodWaitsForTheReadersOfItsRuleTypes(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"),
+		testSet("test-set-a", "kubernetes_role_binding"), testSet("test-set-b", "egress", "kubernetes_cluster_role_binding"))
 	setPolicySets(t, c, "test-set-a", "test-set-b")
 	reconcileOnce(t, r)
 
@@ -91,8 +101,8 @@ func TestPodWaitsForEveryBindingReader(t *testing.T) {
 		readers []string
 	}{
 		{"no reader", 0, nil},
-		{"one reader missing", 0, BindingReaders[:2]},
-		{"a stale generation", -1, BindingReaders},
+		{"one reader missing", 0, []string{policycontroller.KubernetesReady}},
+		{"a stale generation", -1, []string{policycontroller.KubernetesReady, "EgressReady"}},
 	} {
 		if step.readers != nil {
 			report(t, c, step.lag, step.readers...)
@@ -106,18 +116,33 @@ func TestPodWaitsForEveryBindingReader(t *testing.T) {
 		}
 	}
 
-	report(t, c, 0, BindingReaders...)
+	// No rule is the Action Service's, so its condition is never awaited.
+	report(t, c, 0, policycontroller.KubernetesReady, "EgressReady")
 	reconcileOnce(t, r)
 	if getPod(t, c) == nil {
-		t.Fatal("no Pod once every reader reported")
+		t.Fatal("no Pod once the readers of its rule types reported")
+	}
+}
+
+func TestMissingPolicySetBlocksThePod(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	setPolicySets(t, c, "test-set-missing")
+	reconcileOnce(t, r)
+	report(t, c, 0, policycontroller.KubernetesReady, "EgressReady", "ActionsReady")
+	reconcileOnce(t, r)
+	if getPod(t, c) != nil {
+		t.Fatal("a Pod started without knowing the rules of a PolicySet it names")
+	}
+	if reason := runningReason(t, c); reason != "PolicySetNotFound" {
+		t.Errorf("Running reason = %s, want PolicySetNotFound", reason)
 	}
 }
 
 func TestChangedPolicySetsUpdateTheBindingAndKeepTheRunningPod(t *testing.T) {
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"), testSet("test-set-a", "egress"), testSet("test-set-b", "egress"))
 	setPolicySets(t, c, "test-set-a")
 	reconcileOnce(t, r)
-	report(t, c, 0, BindingReaders...)
+	report(t, c, 0, "EgressReady")
 	reconcileOnce(t, r)
 	if getPod(t, c) == nil {
 		t.Fatal("no Pod")

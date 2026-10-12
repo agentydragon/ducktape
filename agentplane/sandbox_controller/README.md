@@ -17,7 +17,7 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
 - [`controller.go`](controller.go): one reconcile per `Sandbox`. Its Pod (`Owns`), its state PVC
   (by the Sandbox label) and the templates it names (by a field index) map back to it.
 - [`identity.go`](identity.go): the Sandbox's ServiceAccount and `PolicyBinding`, and the gate a
-  Pod start waits on. The `PolicyBinding` types are the Policy Controller's.
+  Pod start waits on. The `PolicySet` and `PolicyBinding` types are the Policy Controller's.
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace and, of the kinds
   it creates, to objects carrying the Sandbox label.
 
@@ -42,8 +42,8 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   container can still write to it.
 - **Only Pod creation waits on the `PolicyBinding`.** Stopping, deleting and an already running Pod
   never do, so a reader that is down cannot keep a Sandbox from stopping.
-- **Gotcha:** a namespace whose `PolicyBinding`s no Policy Controller watches never gets
-  `KubernetesReady`, so its Sandboxes that name PolicySets never start.
+- **Gotcha:** a namespace where a reader does not run, such as one without a Policy Controller,
+  never starts Sandboxes whose PolicySets have a rule of that reader's type.
 - **Gotcha:** while agent-sandbox's `Sandbox` is installed, `kubectl get sandboxes` may resolve to
   either kind; name ours as `sandboxes.agentplane.allegedly.works`.
 - Tests drive `Reconcile` against controller-runtime's fake client, so which events enqueue which

@@ -3,6 +3,7 @@ package sandboxcontroller
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
@@ -16,10 +17,14 @@ import (
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 )
 
-// BindingReaders are the PolicyBinding conditions that must all be True for the binding's current
-// generation before a Pod starts: the Policy Controller's, the egress proxy's and the Action
-// Service's. Each reader sets its condition on every binding, with or without rules of its type.
-var BindingReaders = []string{policycontroller.KubernetesReady, "EgressReady", "ActionsReady"}
+// BindingReaders are the PolicyBinding conditions a Pod start may wait on, by the PolicySet rule
+// types each reader enforces: the Policy Controller's, the egress proxy's and the Action Service's.
+var BindingReaders = map[string]string{
+	"kubernetes_role_binding":         policycontroller.KubernetesReady,
+	"kubernetes_cluster_role_binding": policycontroller.KubernetesReady,
+	"egress":                          "EgressReady",
+	"action_auto_approve":             "ActionsReady",
+}
 
 // ensureIdentity keeps the Sandbox's own ServiceAccount and, while it names PolicySets, its one
 // PolicyBinding. Both are controlled by the Sandbox, so deleting the Sandbox revokes them. It
@@ -70,8 +75,12 @@ func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *Sandbox) (*unre
 		// The update bumped the generation, so every reader's condition describes the old sets.
 		return &unready{"PolicyBindingNotReady", fmt.Sprintf("PolicyBinding %s is updated; its readers have not reported", binding.Name)}, nil
 	}
+	readers, blocked, err := r.readers(ctx, sandbox)
+	if readers == nil {
+		return blocked, err
+	}
 	var waiting []string
-	for _, reader := range BindingReaders {
+	for _, reader := range slices.Sorted(maps.Keys(readers)) {
 		condition := meta.FindStatusCondition(binding.Status.Conditions, reader)
 		if condition == nil || condition.Status != metav1.ConditionTrue || condition.ObservedGeneration != binding.Generation {
 			waiting = append(waiting, reader)
@@ -81,6 +90,29 @@ func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *Sandbox) (*unre
 		return &unready{"PolicyBindingNotReady", fmt.Sprintf("PolicyBinding %s waits on %s", binding.Name, strings.Join(waiting, ", "))}, nil
 	}
 	return nil, nil
+}
+
+// readers are the conditions of the readers that enforce a rule in the Sandbox's PolicySets, so a
+// Sandbox never waits on a component, such as the optional Action Service, its rules do not use.
+func (r *Reconciler) readers(ctx context.Context, sandbox *Sandbox) (map[string]bool, *unready, error) {
+	readers := map[string]bool{}
+	for _, name := range sandbox.Spec.PolicySets {
+		var set policycontroller.PolicySet
+		if err := r.Get(ctx, client.ObjectKey{Namespace: sandbox.Namespace, Name: name}, &set); err != nil {
+			if apierrors.IsNotFound(err) {
+				return nil, &unready{"PolicySetNotFound", fmt.Sprintf("PolicySet %s not found", name)}, nil
+			}
+			return nil, nil, err
+		}
+		for _, rule := range set.Spec.Rules {
+			reader, ok := BindingReaders[rule.Type]
+			if !ok {
+				return nil, nil, fmt.Errorf("PolicySet %s: rule type %q has no known reader", name, rule.Type)
+			}
+			readers[reader] = true
+		}
+	}
+	return readers, nil, nil
 }
 
 // owned is the metadata of an object named after the Sandbox and labeled with it.
