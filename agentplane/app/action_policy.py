@@ -22,6 +22,8 @@ from agentplane.action_service.policy_view import (
 )
 from agentplane.action_service.providers import BindingKind
 from agentplane.app.action_federation import UpstreamFailure
+from agentplane.crd_group import GROUP, VERSION
+from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL, ActionPolicyReader
 from agentplane.sandbox_service.egress_views import FLUX_KUSTOMIZATION_LABEL
 from agentplane.subjects import ServiceAccountRef
@@ -86,6 +88,13 @@ class ActionPolicyUnavailable(BaseModel):
 
 class ActionPolicyInventory(ActionPolicyReader):
     """Read-only policy inventory and operator-federated policy views."""
+
+    async def policy_set_names(self) -> list[str]:
+        """The namespace's PolicySets, of any rule type, in name order."""
+        listed = await self._custom_objects.list_namespaced_custom_object(
+            GROUP, VERSION, self._namespace, POLICY_SETS_PLURAL
+        )
+        return sorted(item["metadata"]["name"] for item in listed["items"])
 
     async def for_subject(self, client: OperatorActionServiceClient, subject: ServiceAccountRef) -> ActionPolicyView:
         """The subject's policy as the Action Service resolves it now."""

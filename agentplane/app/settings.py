@@ -40,6 +40,11 @@ class AppSettingsConfig(YamlFileSettings):
     kubernetes_grants: dict[str, KubernetesGrant] = Field(
         default_factory=dict, description="Enabled Kubernetes binding templates; launch requests select names only."
     )
+    own_sandboxes: bool = Field(
+        default=False,
+        description="The Sandbox Service creates Agentplane's own Sandbox kind: the launch form and presets "
+        "name policy sets in place of egress policies, Action policy sets and Kubernetes grants.",
+    )
     egress_admin_url: HttpEndpointUrl = Field(description="The egress proxy's admin port, serving /decisions.")
     action_federation: ActionFederationSettings
 

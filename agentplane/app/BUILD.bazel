@@ -341,6 +341,7 @@ py_test(
         ":sandbox_models",
         "//:conftest",
         "//agentplane/runner:harness",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
@@ -885,6 +886,8 @@ py_library(
     srcs = ["action_policy.py"],
     deps = [
         ":action_federation",
+        "//agentplane:crd_group",
+        "//agentplane:policy_sets",
         "//agentplane:subjects",
         "//agentplane/action_service:client",
         "//agentplane/action_service:policy_view",

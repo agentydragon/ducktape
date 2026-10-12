@@ -231,6 +231,25 @@ async def list_templates(inventory: Inventory) -> list[str]:
     return await inventory.list_templates()
 
 
+class SandboxForm(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    policy_sets: list[str] | None = Field(
+        default=None,
+        description="The PolicySets a new Sandbox may name, where it is Agentplane's own kind, which takes "
+        "these in place of egress policies, Action policy sets and Kubernetes grants. Absent where it is "
+        "agent-sandbox's.",
+    )
+
+
+@router.get("/form")
+async def sandbox_form(services: Services) -> SandboxForm:
+    """Which grant fields the create form offers."""
+    if not services.presets.own_sandboxes:
+        return SandboxForm()
+    return SandboxForm(policy_sets=await services.action_policy.policy_set_names())
+
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_sandbox(spec: NewSandbox, services: Services, caller: Caller) -> SandboxView:
     """Create exactly the fields the caller selected; browser presets have already filled them."""

@@ -49,7 +49,8 @@ async function render(
   codexModels: { model: string; display_name: string; reasoning_efforts: string[] }[] = [
     { model: "test-codex-a", display_name: "Test Codex A", reasoning_efforts: TEST_REASONING_EFFORTS },
     { model: "test-codex-b", display_name: "Test Codex B", reasoning_efforts: TEST_REASONING_EFFORTS },
-  ]
+  ],
+  ownPolicySets: string[] | null = null
 ) {
   const onOpen = vi.fn();
   const preset: SandboxPresetView = {
@@ -57,8 +58,9 @@ async function render(
     title: "Test preset",
     template: "test-template",
     egress_policies: [],
-    action_policy_sets: ["test-reads"],
-    kubernetes_grants: ["workspace-read"],
+    ...(ownPolicySets === null
+      ? { action_policy_sets: ["test-reads"], kubernetes_grants: ["workspace-read"], policy_sets: [] }
+      : { action_policy_sets: [], kubernetes_grants: [], policy_sets: ["test-basic"] }),
     session_defaults: { harness: "HARNESS_CODEX", model: "test-codex-b" },
     bootstrap: "mkdir -p /state/workspaces",
   };
@@ -80,20 +82,22 @@ async function render(
           )
         : path === "/presets"
           ? [preset]
-          : path === "/sandboxes/templates"
-            ? ["test-template", "other-template"]
-            : path === "/action-policy/sets"
-              ? policySets
-              : path === "/kubernetes-grants"
-                ? [
-                    {
-                      name: "workspace-read",
-                      kind: "RoleBinding",
-                      namespace: "agentplane-test",
-                      role_ref: { kind: "Role", name: "workspace-reader" },
-                    },
-                  ]
-                : [];
+          : path === "/sandboxes/form"
+            ? { policy_sets: ownPolicySets }
+            : path === "/sandboxes/templates"
+              ? ["test-template", "other-template"]
+              : path === "/action-policy/sets"
+                ? policySets
+                : path === "/kubernetes-grants"
+                  ? [
+                      {
+                        name: "workspace-read",
+                        kind: "RoleBinding",
+                        namespace: "agentplane-test",
+                        role_ref: { kind: "Role", name: "workspace-reader" },
+                      },
+                    ]
+                  : [];
     return { data, response: new Response() } as Awaited<ReturnType<typeof api.GET>>;
   });
   const container = document.createElement("div");
@@ -184,6 +188,29 @@ it("pre-fills the preset's policy sets and Kubernetes grants, hides picked sets,
     })
   );
   expect(onOpen).toHaveBeenCalledExactlyOnceWith(CREATED.name);
+});
+
+it("offers policy sets alone where sandboxes are Agentplane's own kind, and sends the picks", async () => {
+  const { container } = await render(undefined, ["test-basic", "test-packages"]);
+  expect(container.textContent).not.toContain("Action policy sets");
+  expect(container.textContent).toContain("test-basic");
+  await choose(container, "Policy sets", "test-packages");
+  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  await type(input(container, "Name"), "own-kind");
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  if (!button) throw new Error("Missing New sandbox button");
+  await act(async () => button.click());
+  expect(post).toHaveBeenCalledWith(
+    "/sandboxes",
+    expect.objectContaining({
+      body: expect.objectContaining({
+        policy_sets: ["test-basic", "test-packages"],
+        egress_policies: [],
+        action_policy_sets: [],
+        kubernetes_grants: [],
+      }),
+    })
+  );
 });
 
 it("allows an operator to remove the preset grant and sends an explicit empty grant list", async () => {

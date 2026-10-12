@@ -139,17 +139,20 @@ async def sandbox(client: Client) -> AsyncIterator[Sandboxes]:
         name: str,
         *,
         template: str | None = None,
-        egress_policies: list[str] | None = None,
+        policies: list[str] | None = None,
         session_defaults: SessionDefaults | None = None,
         bootstrap: str = "",
     ) -> SandboxView:
         if template is None:
             [template] = await client.templates()
+        # Agentplane's own Sandbox kind takes PolicySets, named like the egress policies they carry.
+        own_kind = (await client.sandbox_form()).policy_sets is not None
         view = await client.create_sandbox(
             NewSandbox(
                 name=name,
                 template=template,
-                egress_policies=egress_policies or [],
+                egress_policies=[] if own_kind else (policies or []),
+                policy_sets=(policies or []) if own_kind else [],
                 session_defaults=session_defaults,
                 bootstrap=bootstrap,
             )
