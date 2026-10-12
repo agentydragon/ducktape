@@ -57,7 +57,7 @@ def chart(app: App) -> Chart:
                     # EnableVirtioFsStorageVolumes (alpha in v1.8.2) lets a guest mount a PVC as a
                     # directory over virtiofs, which Agentplane VM Sandboxes need for their state volume.
                     # Gotcha: virtiofsd runs as uid/gid 107 with no capabilities, so everything a guest
-                    # writes lands as 107:107, guest `chown` fails, and non-root guest users can't write.
+                    # writes lands as 107:107, `chown` fails, and only guest root and 107:107 can write.
                     feature_gates=["HostDevices", "EnableVirtioFsStorageVolumes"]
                 ),
                 image_pull_policy=_IF_NOT_PRESENT,
