@@ -8,11 +8,12 @@ import "agentplane/proto/event_log.proto";
 import "agentplane/proto/command.proto";
 import "agentplane/proto/runner.proto";
 import "agentplane/proto/sandbox_service.proto";
+import "google/protobuf/field_mask.proto";
 
 service RunnerGateway {
   rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
   // Opens the Session the client named. A retry with the same ID and inputs returns it again.
-  rpc CreateSession(agentplane.proto.sandbox_service.CreateSessionRequest) returns (agentplane.proto.sandbox_service.CreateSessionResponse);
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
   rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
   // Served only by the replica holding the runner connection of the Sandbox the Session runs in.
   // Returns the runner's CommandAdmitted entry, not command completion; a retry with the same
@@ -76,3 +77,24 @@ message SubmitCommandResponse {
 
 message SealSandboxRequest { agentplane.proto.sandbox_service.SandboxDestination destination = 1; }
 message SealSandboxResponse { repeated agentplane.proto.runner.SessionSeal sessions = 1; }
+
+message CreateSessionRequest {
+  agentplane.proto.sandbox_service.SandboxDestination sandbox = 1;
+  agentplane.proto.runner.SessionSpec spec = 3;
+  // Which spec fields replace the Sandbox defaults (proto field names). Proto3 scalar
+  // fields cannot distinguish absent from explicitly empty; e.g. instructions=""
+  // with "instructions" in this mask clears inherited instructions. An empty mask
+  // inherits all defaults, regardless of spec's scalar default values.
+  google.protobuf.FieldMask override_mask = 4;
+  optional string setup_script = 5;
+  // Required: a fresh UUID the client minted, the public Session ID and the runner's Session ID.
+  // A retry with the same inputs returns the Session again; the runner refuses other inputs, and
+  // the Runner Gateway refuses another Sandbox.
+  string session_id = 6;
+}
+
+message CreateSessionResponse {
+  // Public Session ID (UUID): the request's session_id. Not the harness session ID.
+  string session_id = 1;
+  agentplane.proto.runner.Attached attached = 2;
+}

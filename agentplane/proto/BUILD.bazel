@@ -141,6 +141,7 @@ proto_library(
         ":event_log_proto",
         ":runner_proto",
         ":sandbox_service_proto",
+        "@protobuf//:field_mask_proto",
     ],
 )
 
@@ -161,7 +162,6 @@ proto_library(
     deps = [
         ":runner_proto",
         "@protobuf//:empty_proto",
-        "@protobuf//:field_mask_proto",
         "@protobuf//:struct_proto",
         "@protobuf//:timestamp_proto",
     ],

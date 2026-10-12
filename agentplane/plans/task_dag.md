@@ -863,20 +863,17 @@ runner through the Sandbox Service.
 
 ```mermaid
 flowchart TD
-    GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages move to the gateway]
+    GATEWAY_CLIENT_SPLIT[Unscheduled: the gateway client stands alone]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 8]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
 ```
 
-### `GATEWAY_CLIENT_SPLIT` — Session messages move to the gateway
+### `GATEWAY_CLIENT_SPLIT` — the gateway client stands alone
 
-**Unscheduled.** The Runner Gateway still uses the Session and command messages in the Sandbox
-Service's proto package. Move those messages into the gateway's proto. `sandbox_service/wire.py`,
-which only the gateway and `RunnerGatewayClient` import, moves with them, the client's `Runner`
-handle is renamed, its
+**Unscheduled.** `RunnerGatewayClient`'s `Runner` handle is renamed, its
 `command_admission_timeout_s` stops being nullable, and the Notification Service's
-`SandboxServiceSettings` splits too.
+`SandboxServiceSettings` splits in two.
 
 ### `SEAL_FINALIZER` — seal as a finalizer on every delete
 

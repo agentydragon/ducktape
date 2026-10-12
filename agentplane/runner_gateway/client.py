@@ -18,7 +18,7 @@ from agentplane.proto import (
     sandbox_service_pb2,
 )
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination
-from agentplane.sandbox_service import wire
+from agentplane.runner_gateway import wire
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -143,7 +143,7 @@ class Runner:
 
     async def create(
         self, *, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
-    ) -> sandbox_service_pb2.CreateSessionResponse:
+    ) -> runner_gateway_pb2.CreateSessionResponse:
         """Open the Session the caller minted `session_id` for; a retry passes the same ID and inputs."""
         return await self.control.held_unary(
             self.destination,

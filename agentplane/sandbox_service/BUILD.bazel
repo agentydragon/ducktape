@@ -340,20 +340,6 @@ py_test(
 )
 
 py_library(
-    name = "wire",
-    srcs = ["wire.py"],
-    visibility = [
-        "//agentplane/runner_gateway:__subpackages__",
-        "//agentplane/sandbox_service:__subpackages__",
-    ],
-    deps = [
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:sandbox_service_pb2",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
     name = "client",
     srcs = ["client.py"],
     visibility = ["//agentplane:__subpackages__"],
@@ -579,19 +565,6 @@ py_test(
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
-py_test(
-    name = "test_wire",
-    srcs = ["test_wire.py"],
-    deps = [
-        ":conftest",
-        ":wire",
-        "//:conftest",
-        "//agentplane/sandbox_service/testing:kubernetes",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

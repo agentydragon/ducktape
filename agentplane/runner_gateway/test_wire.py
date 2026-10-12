@@ -5,7 +5,7 @@ from uuid import uuid4
 import pytest
 import pytest_bazel
 
-from agentplane.sandbox_service import wire
+from agentplane.runner_gateway import wire
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION
 
 

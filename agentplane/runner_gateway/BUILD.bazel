@@ -28,6 +28,7 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     deps = [
+        ":wire",
         "//agentplane:grpc_calls",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
@@ -35,7 +36,6 @@ py_library(
         "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",
-        "//agentplane/sandbox_service:wire",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -228,6 +228,7 @@ py_library(
         ":sealing",
         ":session_lifecycle",
         ":session_registry",
+        ":wire",
         "//agentplane:subjects",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_gateway_pb2",
@@ -236,7 +237,6 @@ py_library(
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/runner:errors",
         "//agentplane/sandbox_service:errors",
-        "//agentplane/sandbox_service:wire",
         "//agentplane/workload_auth:grpc_caller",
         "//agentplane/workload_auth:principal",
         "@pypi//grpcio",
@@ -353,6 +353,7 @@ py_test(
         ":lifecycle_control",
         ":runner_control",
         ":session_registry",
+        ":wire",
         "//:conftest",
         "//agentplane:grpc_calls",
         "//agentplane:subjects",
@@ -369,7 +370,6 @@ py_test(
         "//agentplane/runner_gateway/testing:sessions",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//agentplane/sandbox_service:kubernetes_views",
-        "//agentplane/sandbox_service:wire",
         "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
@@ -463,6 +463,30 @@ py_test(
         "//:conftest",
         "//agentplane/sandbox_service/testing:kubernetes",
         "@pypi//kubernetes_asyncio",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "wire",
+    srcs = ["wire.py"],
+    deps = [
+        "//agentplane/proto:runner_gateway_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_wire",
+    srcs = ["test_wire.py"],
+    deps = [
+        ":conftest",
+        ":wire",
+        "//:conftest",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
 )

@@ -23,7 +23,7 @@ from agentplane.proto import (
 )
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination
 from agentplane.runner.errors import RunnerError
-from agentplane.runner_gateway import session_lifecycle
+from agentplane.runner_gateway import session_lifecycle, wire
 from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.runner_gateway.lifecycle_control import (
     CommandRefusedError,
@@ -33,7 +33,6 @@ from agentplane.runner_gateway.lifecycle_control import (
 )
 from agentplane.runner_gateway.sealing import SEAL_S, Sealing
 from agentplane.runner_gateway.session_registry import SessionConflictError, SessionNotFoundError, SessionRegistry
-from agentplane.sandbox_service import wire
 from agentplane.sandbox_service.errors import InventoryError, SandboxNotFoundError
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.grpc_caller import authenticate
@@ -177,8 +176,8 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     @override
     async def CreateSession(
-        self, request: sandbox_service_pb2.CreateSessionRequest, context: grpc.aio.ServicerContext
-    ) -> sandbox_service_pb2.CreateSessionResponse:
+        self, request: runner_gateway_pb2.CreateSessionRequest, context: grpc.aio.ServicerContext
+    ) -> runner_gateway_pb2.CreateSessionResponse:
         async with errors(context), asyncio.timeout(self.resources.lifecycle_timeout_s):
             await self.resources.authenticate(context)
             if len(request.setup_script) > 65_536:
@@ -219,7 +218,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 setup_script=setup_script,
             )
             attachment.session_id = str(session_id)
-            return sandbox_service_pb2.CreateSessionResponse(session_id=str(session_id), attached=attachment)
+            return runner_gateway_pb2.CreateSessionResponse(session_id=str(session_id), attached=attachment)
 
     @override
     async def ResumeSession(

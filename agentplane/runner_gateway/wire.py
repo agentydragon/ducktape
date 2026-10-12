@@ -1,15 +1,15 @@
-"""Typed service protobuf boundary; persisted Kubernetes formats are handled separately."""
+"""The Runner Gateway's CreateSession wire format: launch overrides and their field mask."""
 
 from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 
-from agentplane.proto import runner_pb2, sandbox_service_pb2
+from agentplane.proto import runner_gateway_pb2, runner_pb2, sandbox_service_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
 
-def launch_overrides(request: sandbox_service_pb2.CreateSessionRequest) -> dict[str, object]:
+def launch_overrides(request: runner_gateway_pb2.CreateSessionRequest) -> dict[str, object]:
     paths = list(request.override_mask.paths)
     fields = runner_pb2.SessionSpec.DESCRIPTOR.fields_by_name
     if len(set(paths)) != len(paths) or any(path not in fields for path in paths):
@@ -27,7 +27,7 @@ def create_proto(
     session_id: UUID,
     overrides: dict[str, object],
     setup_script: str | None,
-) -> sandbox_service_pb2.CreateSessionRequest:
+) -> runner_gateway_pb2.CreateSessionRequest:
     fields = runner_pb2.SessionSpec.DESCRIPTOR.fields
     if any(
         field.name != field.json_name and field.name in overrides and field.json_name in overrides for field in fields
@@ -35,7 +35,7 @@ def create_proto(
         raise ValueError("a SessionSpec field cannot use both proto and JSON spellings")
     spec = ParseDict(overrides, runner_pb2.SessionSpec())
     paths = [field.name for field in fields if field.name in overrides or field.json_name in overrides]
-    request = sandbox_service_pb2.CreateSessionRequest(
+    request = runner_gateway_pb2.CreateSessionRequest(
         sandbox=sandbox, session_id=str(session_id), spec=spec, setup_script=setup_script
     )
     request.override_mask.paths.extend(paths)
