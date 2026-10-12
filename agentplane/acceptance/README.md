@@ -224,7 +224,7 @@ execution/caching or mint substitute credentials to work around that boundary.
 The controlled-host instructions above are operator-only, not an agent-pod fallback.
 See [repository instructions](../../AGENTS.md).
 
-Afterwards, check that nothing leaked: `kubectl -n agentplane-testing get sandboxes.agents.x-k8s.io`
+Afterwards, check that nothing leaked: `kubectl -n agentplane-testing get sandboxes.agentplane.allegedly.works`
 should show no `accept-*`.
 
 ## What it costs
