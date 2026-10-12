@@ -797,7 +797,7 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 ```mermaid
 flowchart TD
     HISTORY_DATABASE_RENAME[Candidate: rename the sandbox_service database and role]
-    SANDBOX_DATABASE_RENAME[Candidate: name the sandbox_commands database for the Runner Gateway]
+    SANDBOX_DATABASE_RENAME[Unscheduled: name the sandbox_commands database for the Runner Gateway]
     ACTION_SANDBOX_PODS[Candidate: Action Service boxes as plain Pods]
     ACTION_BOX_NAMESPACE[Decision: where Action boxes run]
     ACTION_BOX_SA_MOVE[Blocked: caller accounts move to the Action box namespace]
@@ -822,7 +822,7 @@ The migrate env `AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL` (pinned in
 
 ### `SANDBOX_DATABASE_RENAME` — name the Runner Gateway's database for it
 
-**Candidate.** `sandbox_commands` holds the Runner Gateway's Session registry and command
+**Unscheduled; operator, 2026-10-11 PDT: keep the name for now, not urgent.** `sandbox_commands` holds the Runner Gateway's Session registry and command
 admission; the Sandbox Service has no database. Rename it and its role and Secret for the gateway
 in place, as `HISTORY_DATABASE_RENAME` does, and point the Runner Gateway, its migration init
 container and `commands_database_url` at the new names. Env
