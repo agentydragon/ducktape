@@ -7,13 +7,7 @@ import { StaleNotice, useOptionalStreamStatus } from "../stream_status";
 import { followStream, type StreamConnection } from "../live_stream";
 import { ActionCall } from "./call";
 import { parseCallToolResult } from "./call_tool_result";
-import {
-  actionGroupService,
-  actionService,
-  type ActionGroupService,
-  type ActionRequestView,
-  type ActionService,
-} from "./client";
+import { actionHistory, listActionGroups, type ActionRequestView } from "./client";
 import { renderActionCall, renderDetailsResult } from "./rendering/index";
 import { stateLabel } from "./requests";
 
@@ -113,31 +107,23 @@ export function ActionHistoryCard({ request, mcp }: { request: ActionRequestView
 
 /** Each configured Action group's executor kind, by group key: `null` until the groups arrive, and
  * for good when they cannot be read, which `error` then says. */
-function useExecutorKinds(groupService: ActionGroupService): {
+function useExecutorKinds(): {
   kinds: ReadonlyMap<string, string> | null;
   error: string | null;
 } {
   const [kinds, setKinds] = useState<ReadonlyMap<string, string> | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
-    void groupService.list().then(
+    void listActionGroups().then(
       (groups) => setKinds(new Map(groups.map((group) => [group.key, group.executor_kind]))),
       (failure: unknown) => setError(displayableError(failure))
     );
-  }, [groupService]);
+  }, []);
   return { kinds, error };
 }
 
 /** Decided and terminal ActionRequests: durable receipts, not something an operator still acts on. */
-export function ActionHistory({
-  service = actionService,
-  groupService = actionGroupService,
-  embedded = false,
-}: {
-  service?: ActionService;
-  groupService?: ActionGroupService;
-  embedded?: boolean;
-}): JSX.Element {
+export function ActionHistory({ embedded = false }: { embedded?: boolean }): JSX.Element {
   const [requests, setRequests] = useState<ActionRequestView[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -152,8 +138,7 @@ export function ActionHistory({
     async function refresh(): Promise<void> {
       const current = ++generation;
       try {
-        // Test services keep their existing list() contract; production never loads the full history.
-        const page = service.history ? await service.history() : { items: await service.list(), next_cursor: null };
+        const page = await actionHistory();
         if (!active || current !== generation) return;
         setRequests((previous) => {
           if (!loadedMore.current) return page.items;
@@ -168,26 +153,23 @@ export function ActionHistory({
         if (active && current === generation) setLoading(false);
       }
     }
-    const stop =
-      service === actionService
-        ? followStream("/actions/stream?state=decision_pending", {
-            // The small pending snapshot also marks a successful resync after a renewed
-            // upstream token or browser reconnect; changed hints alone are not replayable.
-            events: { snapshot: () => void refresh() },
-            onConnection: setConnection,
-          })
-        : undefined;
+    const stop = followStream("/actions/stream?state=decision_pending", {
+      // The small pending snapshot also marks a successful resync after a renewed
+      // upstream token or browser reconnect; changed hints alone are not replayable.
+      events: { snapshot: () => void refresh() },
+      onConnection: setConnection,
+    });
     void refresh();
     return () => {
       active = false;
-      stop?.();
+      stop();
     };
-  }, [service]);
+  }, []);
   async function loadMore(): Promise<void> {
-    if (!cursor || !service.history || loadingMore) return;
+    if (!cursor || loadingMore) return;
     setLoadingMore(true);
     try {
-      const page = await service.history(cursor);
+      const page = await actionHistory(cursor);
       loadedMore.current = true;
       setRequests((previous) => [
         ...previous,
@@ -200,7 +182,7 @@ export function ActionHistory({
       setLoadingMore(false);
     }
   }
-  const executors = useExecutorKinds(groupService);
+  const executors = useExecutorKinds();
   const decided = requests.filter((request) => request.state !== "decision_pending");
 
   return (

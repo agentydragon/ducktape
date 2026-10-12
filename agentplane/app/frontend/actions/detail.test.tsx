@@ -5,10 +5,10 @@ import { MemoryRouter, Route, Routes, useLocation, useParams } from "react-route
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { ActionRequestDetail } from "./detail";
-import { actionGroupService, actionService } from "./client";
+import type { ActionRequestView } from "./client";
 import { ActionsSidebarSection } from "./sidebar";
 import { ActionRequestsProvider } from "./requests";
-import { mount, request, unmountLast } from "./testing";
+import { answerApi, mount, request, unmountLast, type Sent } from "./testing";
 
 const ROW = {
   ...request("decision_pending", 21),
@@ -32,6 +32,18 @@ async function send(rows: (typeof ROW)[]): Promise<void> {
     stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(rows) }));
   });
 }
+
+/** Answers the detail page's reads: `stored` for the request itself, `decided` for a decision. */
+function serve({ stored, decided }: { stored?: ActionRequestView; decided?: ActionRequestView | Response }): Sent[] {
+  return answerApi(({ method, path }) => {
+    if (path === "/action-groups") return [];
+    if (method === "GET" && path === `/actions/${ROW.id}`) return stored;
+    if (method === "POST" && path === `/actions/${ROW.id}/decision`) return decided;
+  });
+}
+
+const fetched = (sent: Sent[]): boolean =>
+  sent.some(({ method, path }) => method === "GET" && path === `/actions/${ROW.id}`);
 
 function DetailRoute(): JSX.Element {
   const { requestId } = useParams();
@@ -67,7 +79,7 @@ beforeEach(() => {
 });
 
 it("opens cached stream details without a reload and Back returns to the original in-app route", async () => {
-  const get = vi.spyOn(actionService, "get");
+  const sent = serve({});
   const container = await mount(<App initialPath="/threads/example-thread" />);
   await send([ROW]);
 
@@ -79,7 +91,7 @@ it("opens cached stream details without a reload and Back returns to the origina
   await act(async () => detailsLink.click());
 
   expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe(`/actions/${ROW.id}`);
-  expect(get).not.toHaveBeenCalled();
+  expect(fetched(sent)).toBe(false);
   expect(container.textContent).toContain("Exact arguments (unredacted)");
   expect(container.textContent).toContain("exact-command");
 
@@ -96,7 +108,7 @@ it("renders an Action's human-facing label on the full details page", async () =
     action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
     arguments: { namespace: "tofu-controller" },
   };
-  vi.spyOn(actionService, "get").mockResolvedValue(row);
+  serve({ stored: row });
   const container = await mount(<App initialPath={`/actions/${row.id}`} />);
 
   await vi.waitFor(() => expect(container.textContent).toContain("List pods in namespace tofu-controller"));
@@ -109,14 +121,9 @@ it.each([
 ])(
   "returns to the originating page after a successful $verdict decision",
   async ({ verdict, resultState, buttonName }) => {
-    vi.spyOn(actionGroupService, "list").mockResolvedValue([]);
-    const decide = vi.spyOn(actionService, "decide").mockImplementation(async (row) => ({
-      ...row,
-      ...request(resultState, 21),
-      action: ROW.action,
-      arguments: ROW.arguments,
-      title: ROW.title,
-    }));
+    const sent = serve({
+      decided: { ...ROW, ...request(resultState, 21), action: ROW.action, arguments: ROW.arguments, title: ROW.title },
+    });
     const container = await mount(<App initialPath="/threads/example-thread" />);
     await send([ROW]);
 
@@ -130,7 +137,12 @@ it.each([
     const decisionButton = container.querySelector<HTMLButtonElement>(`button[aria-label="${buttonName}"]`);
     if (!decisionButton) throw new Error(`missing ${buttonName} button`);
     await act(async () => decisionButton.click());
-    expect(decide).toHaveBeenCalledWith(ROW, verdict);
+    expect(sent).toContainEqual(
+      expect.objectContaining({
+        method: "POST",
+        body: expect.objectContaining({ verdict, expected_version: ROW.version }),
+      })
+    );
     await vi.waitFor(() =>
       expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe("/threads/example-thread")
     );
@@ -139,7 +151,7 @@ it.each([
 );
 
 it("stays on action details when a decision fails", async () => {
-  vi.spyOn(actionService, "decide").mockRejectedValue(new Error("decision was rejected"));
+  serve({ decided: Response.json({ detail: "decision was rejected" }, { status: 409 }) });
   const container = await mount(<App initialPath="/threads/example-thread" />);
   await send([ROW]);
 
@@ -162,13 +174,9 @@ it("stays on action details when a decision fails", async () => {
 });
 
 it("keeps a direct action link on its terminal receipt after a successful decision", async () => {
-  vi.spyOn(actionGroupService, "list").mockResolvedValue([]);
-  vi.spyOn(actionService, "get").mockResolvedValue(ROW);
-  vi.spyOn(actionService, "decide").mockResolvedValue({
-    ...request("allowed", 21),
-    action: ROW.action,
-    arguments: ROW.arguments,
-    title: ROW.title,
+  serve({
+    stored: ROW,
+    decided: { ...request("allowed", 21), action: ROW.action, arguments: ROW.arguments, title: ROW.title },
   });
   const container = await mount(<App initialPath={`/actions/${ROW.id}`} />);
   const approve = await vi.waitFor(() => {
@@ -185,11 +193,11 @@ it("keeps a direct action link on its terminal receipt after a successful decisi
 });
 
 it("loads uncached deep links and falls back to the Actions page on Back", async () => {
-  const get = vi.spyOn(actionService, "get").mockResolvedValue(ROW);
+  const sent = serve({ stored: ROW });
   const container = await mount(<App initialPath={`/actions/${ROW.id}`} />);
   await send([]);
-  expect(get).toHaveBeenCalledWith(ROW.id);
-  expect(container.textContent).toContain("Exact arguments (unredacted)");
+  await vi.waitFor(() => expect(fetched(sent)).toBe(true));
+  await vi.waitFor(() => expect(container.textContent).toContain("Exact arguments (unredacted)"));
 
   const back = [...container.querySelectorAll("button")].find((candidate) => candidate.textContent?.trim() === "Back");
   if (!back) throw new Error("missing action detail Back button");
@@ -199,7 +207,6 @@ it("loads uncached deep links and falls back to the Actions page on Back", async
 });
 
 it("refreshes the durable receipt when SSE removes an action that was pending", async () => {
-  vi.spyOn(actionGroupService, "list").mockResolvedValue([]);
   const allowed = {
     ...request("allowed", 21),
     id: ROW.id,
@@ -207,7 +214,7 @@ it("refreshes the durable receipt when SSE removes an action that was pending", 
     action: ROW.action,
     arguments: ROW.arguments,
   };
-  const get = vi.spyOn(actionService, "get").mockResolvedValue(allowed);
+  const sent = serve({ stored: allowed });
   const container = await mount(<App initialPath="/threads/example-thread" />);
   await send([ROW]);
 
@@ -217,11 +224,11 @@ it("refreshes the durable receipt when SSE removes an action that was pending", 
   const detailsLink = container.querySelector<HTMLAnchorElement>(`a[aria-label="View details for ${ROW.title}"]`);
   if (!detailsLink) throw new Error("missing action details link");
   await act(async () => detailsLink.click());
-  expect(get).not.toHaveBeenCalled();
+  expect(fetched(sent)).toBe(false);
 
   await send([]);
-  expect(get).toHaveBeenCalledWith(ROW.id);
-  expect(container.querySelector('button[aria-label="Approve"]')).toBeNull();
+  await vi.waitFor(() => expect(fetched(sent)).toBe(true));
+  await vi.waitFor(() => expect(container.querySelector('button[aria-label="Approve"]')).toBeNull());
   expect(container.querySelector('button[aria-label="Deny"]')).toBeNull();
 });
 

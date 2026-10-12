@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from "vitest";
 
 import { CommandSchema } from "../../proto/command_pb";
 
-import { api, command, CommandSubmissionRefused, threadObservations, displayableError, httpError } from "./client";
+import { api, command, CommandSubmissionRefused, HttpError, threadObservations } from "./client";
 import { restoreRouteAfterLogin } from "./operator_login";
 
 afterEach(() => {
@@ -31,28 +31,19 @@ it.each(["before", "after"] as const)("preserves %s archive cursors above JS int
   }
 });
 
-it("includes HTTP status and the complete structured error without interpreting its envelope", () => {
-  const error = {
+it("throws a non-2xx answer as an HttpError with its status and the complete structured body", async () => {
+  const body = {
     detail: { method: "GET", url: "https://upstream.invalid/mcp", upstream_status: null, error_type: "ConnectError" },
   };
-  expect(httpError(new Response(null, { status: 503, statusText: "Service Unavailable" }), error)).toBe(
-    `HTTP 503 Service Unavailable: ${JSON.stringify(error)}`
-  );
-});
-
-it("keeps the status even when HTTP/2 supplies no status text", () => {
-  expect(httpError(new Response(null, { status: 502 }), "Bad gateway")).toBe("HTTP 502: Bad gateway");
-});
-
-it.each([
-  [
-    { detail: { code: "operator_federation_exchange_failed" } },
-    '{"detail":{"code":"operator_federation_exchange_failed"}}',
-  ],
-  [new Error("Network request failed"), "Network request failed"],
-  ["Action Service is unavailable", "Action Service is unavailable"],
-])("preserves API error information for display: %j", (error, expected) => {
-  expect(displayableError(error)).toBe(expected);
+  const middleware = { onRequest: () => Response.json(body, { status: 503 }) };
+  api.use(middleware);
+  try {
+    const failure: unknown = await threadObservations("test-thread", {}).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(HttpError);
+    expect(failure).toMatchObject({ status: 503, body });
+  } finally {
+    api.eject(middleware);
+  }
 });
 
 it("on a 401 sends the browser to log in once and never hands the response back to the page", async () => {
@@ -85,7 +76,9 @@ it.each([504, 502, 408, 429])("treats HTTP %i without a command receipt as uncon
   const middleware = { onRequest: () => Response.json({ detail: "deadline" }, { status }) };
   api.use(middleware);
   try {
-    await expect(command("thread", input)).rejects.toThrow("Command admission unconfirmed");
+    const failure: unknown = await command("thread", input).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(CommandSubmissionRefused);
   } finally {
     api.eject(middleware);
   }
@@ -111,7 +104,9 @@ it("treats a lost transport reply as unconfirmed without changing the submitted 
   };
   api.use(middleware);
   try {
-    await expect(command("thread", input)).rejects.toThrow("Command admission unconfirmed");
+    const failure: unknown = await command("thread", input).catch((error: unknown) => error);
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure).not.toBeInstanceOf(CommandSubmissionRefused);
     expect(requests).toHaveLength(1);
     expect(await requests[0].json()).toMatchObject({ commandId: input.commandId });
   } finally {

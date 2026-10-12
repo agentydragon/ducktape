@@ -1,9 +1,9 @@
 import { Alert, Badge, Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
-import { type JSX, type ReactNode, useCallback, useEffect, useState } from "react";
+import { type JSX, type ReactNode, useEffect, useState } from "react";
 import { followStream, type StreamConnection } from "../live_stream";
 
-import { displayableError, mcpLinkageService, type McpLinkageService, type McpLinkageView } from "../client";
-import { type ActionGroupService, actionGroupService, type ActionGroupView } from "../actions/client";
+import { disconnectMcpLinkage, displayableError, startMcpLinkage, type McpLinkageView } from "../client";
+import type { ActionGroupView } from "../actions/client";
 
 type McpHealth = ActionGroupView["health"];
 
@@ -106,19 +106,12 @@ function HealthDetail({ health }: { health: McpHealth }): JSX.Element | null {
   );
 }
 
-export function McpServers({
-  service = mcpLinkageService,
-  groupService = actionGroupService,
-}: {
-  service?: McpLinkageService;
-  groupService?: ActionGroupService;
-}): JSX.Element {
+export function McpServers(): JSX.Element {
   const [linkages, setLinkages] = useState<McpLinkageView[]>([]);
   const [groups, setGroups] = useState<ActionGroupView[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<{ serverId: string; operation: "link" | "disconnect" } | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [warnings, setWarnings] = useState<string[]>([]);
   const [linkageConnection, setLinkageConnection] = useState<StreamConnection>({
     phase: "connecting",
     since: Date.now(),
@@ -128,32 +121,7 @@ export function McpServers({
     since: Date.now(),
   });
 
-  const load = useCallback(async (): Promise<void> => {
-    setLoading(true);
-    setError(null);
-    setWarnings([]);
-    const [linkageResult, groupResult] = await Promise.allSettled([service.list(), groupService.list()]);
-    const nextWarnings: string[] = [];
-    if (linkageResult.status === "fulfilled") setLinkages(linkageResult.value);
-    else {
-      setLinkages([]);
-      nextWarnings.push(`OAuth-linked servers: ${displayableError(linkageResult.reason)}`);
-    }
-    if (groupResult.status === "fulfilled") setGroups(groupResult.value);
-    else {
-      setGroups([]);
-      nextWarnings.push(`Live connection health: ${displayableError(groupResult.reason)}`);
-    }
-    setWarnings(nextWarnings);
-    setLoading(false);
-  }, [service, groupService]);
-
   useEffect(() => {
-    if (typeof EventSource === "undefined") {
-      // The non-browser unit test environment has no EventSource.
-      void load();
-      return;
-    }
     const received = new Set<string>();
     function subscribe<T>(url: string, accept: (rows: T) => void, onConnection: (state: StreamConnection) => void) {
       return followStream(url, {
@@ -173,13 +141,13 @@ export function McpServers({
       stopLinkages();
       stopHealth();
     };
-  }, [load]);
+  }, []);
 
   async function link(linkage: McpLinkageView): Promise<void> {
     setBusy({ serverId: linkage.server_id, operation: "link" });
     setError(null);
     try {
-      const flow = await service.start(linkage.server_id, linkage.scopes);
+      const flow = await startMcpLinkage(linkage.server_id, linkage.scopes);
       window.location.assign(flow.authorization_url);
     } catch (failure) {
       setError(displayableError(failure));
@@ -191,7 +159,7 @@ export function McpServers({
     setBusy({ serverId: linkage.server_id, operation: "disconnect" });
     setError(null);
     try {
-      const updated = await service.disconnect(linkage.server_id);
+      const updated = await disconnectMcpLinkage(linkage.server_id);
       setLinkages((current) => current.map((item) => (item.server_id === updated.server_id ? updated : item)));
     } catch (failure) {
       setError(displayableError(failure));
@@ -215,15 +183,6 @@ export function McpServers({
         <Text role="status">MCP health stream disconnected; showing last known state. Reconnecting…</Text>
       )}
       {error && <Alert color="red">{error}</Alert>}
-      {warnings.length > 0 && (
-        <Alert color="orange">
-          {warnings.map((warning) => (
-            <Text key={warning} size="sm">
-              {warning}
-            </Text>
-          ))}
-        </Alert>
-      )}
       {loading && <Text role="status">Loading MCP servers…</Text>}
       {rows.map((row) => (
         <Paper key={rowKey(row)} data-mcp-server={rowKey(row)} withBorder p="md">
@@ -303,7 +262,7 @@ export function McpServers({
           )}
         </Paper>
       ))}
-      {!loading && warnings.length === 0 && rows.length === 0 && <Text c="dimmed">No MCP servers are configured.</Text>}
+      {!loading && rows.length === 0 && <Text c="dimmed">No MCP servers are configured.</Text>}
     </Stack>
   );
 }

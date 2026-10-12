@@ -4,18 +4,28 @@ import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
 import { STALE_AFTER_MS } from "../stream_status";
-import { actionService, type ActionRequestView, type ActionService } from "./client";
 import { ActionRequests, stateLabel } from "./requests";
-import { button, render, request, SSH_EXEC_ARGUMENTS, sshExec, unmountLast } from "./testing";
+import {
+  TestEventSource,
+  answerApi,
+  button,
+  mount,
+  renderLive,
+  request,
+  send,
+  SSH_EXEC_ARGUMENTS,
+  sshExec,
+  unmountLast,
+} from "./testing";
 
 describe("ActionRequests", () => {
-  it("shows structured list errors without an empty-state claim", async () => {
+  it("shows a refused decision's structured error", async () => {
     const failure = { detail: { code: "operator_federation_exchange_failed" } };
-    const container = await render({ list: vi.fn().mockRejectedValue(failure), decide: vi.fn() }, ActionRequests);
-    expect(container.textContent).toContain(JSON.stringify(failure));
+    answerApi(() => Response.json(failure, { status: 502 }));
+    const container = await renderLive(<ActionRequests />, [request("decision_pending", 1)]);
+    await act(async () => button(container, "Approve").click());
+    await vi.waitFor(() => expect(container.textContent).toContain(JSON.stringify(failure)));
     expect(container.textContent).not.toContain("[object Object]");
-    expect(container.textContent).not.toContain("No requests are waiting");
-    expect(container.textContent).not.toContain("Loading actions");
   });
 
   it("shows the immutable authenticated submitter for a pending receipt", async () => {
@@ -33,7 +43,7 @@ describe("ActionRequests", () => {
       caller: { namespace: "agentplane-test", name: "test-caller" },
       external_grant: grant,
     };
-    const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
+    const container = await renderLive(<ActionRequests />, [row]);
 
     expect(container.textContent).toContain("requested by agentplane-test/test-caller");
     expect(container.textContent).toContain("Authenticated external caller at submission");
@@ -57,7 +67,7 @@ describe("ActionRequests", () => {
         ...request("decision_pending", 1),
         external_grant,
       };
-      const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
+      const container = await renderLive(<ActionRequests />, [row]);
       expect(container.textContent).toContain(`requested by ${row.caller!.namespace}/${row.caller!.name}`);
       expect(container.textContent).not.toContain("Authenticated external caller");
       // The request-id disclosure exists regardless of external_grant, but carries only the id --
@@ -72,8 +82,7 @@ describe("ActionRequests", () => {
   );
 
   it("renders every pending request with its unredacted arguments", async () => {
-    const service: ActionService = { list: vi.fn(async () => [request("decision_pending", 1)]), decide: vi.fn() };
-    const container = await render(service, ActionRequests);
+    const container = await renderLive(<ActionRequests />, [request("decision_pending", 1)]);
     expect(container.textContent).not.toContain(stateLabel("decision_pending"));
     expect(button(container, "Approve").getAttribute("aria-label")).toBe("Approve");
     expect(button(container, "Deny").getAttribute("aria-label")).toBe("Deny");
@@ -85,10 +94,7 @@ describe("ActionRequests", () => {
   });
 
   it("draws a registered Action's arguments with its widget, and the card's Raw switch turns them to JSON", async () => {
-    const container = await render(
-      { list: async () => [sshExec("decision_pending")], decide: vi.fn() },
-      ActionRequests
-    );
+    const container = await renderLive(<ActionRequests />, [sshExec("decision_pending")]);
     expect(container.textContent).toContain("test-user@test-host.example");
     expect(container.textContent).not.toContain('"command"');
     const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
@@ -104,7 +110,7 @@ describe("ActionRequests", () => {
       action: { group: "kubernetes_admin", name: "pods_list_in_namespace" },
       arguments: { namespace: "tofu-controller" },
     };
-    const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
+    const container = await renderLive(<ActionRequests />, [row]);
 
     expect(container.textContent).toContain("List pods in namespace tofu-controller");
     expect(container.textContent).not.toContain("kubernetes_admin / pods_list_in_namespace");
@@ -117,10 +123,7 @@ describe("ActionRequests", () => {
       id: request("decision_pending", 2).id,
       arguments: { ...SSH_EXEC_ARGUMENTS, test_extra: "test-value" },
     };
-    const container = await render(
-      { list: async () => [request("decision_pending", 1), unfit], decide: vi.fn() },
-      ActionRequests
-    );
+    const container = await renderLive(<ActionRequests />, [request("decision_pending", 1), unfit]);
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
     expect(container.textContent).toContain('"test_extra": "test-value"');
   });
@@ -131,7 +134,7 @@ describe("ActionRequests", () => {
       title: "delete the <b>crashlooping</b> test pod",
       description: "Restarted 14 times in *5* minutes; the rest of the test deployment is healthy.",
     };
-    const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
+    const container = await renderLive(<ActionRequests />, [row]);
     expect(container.textContent).toContain(row.title);
     expect(container.textContent).toContain(row.description);
     expect(container.innerHTML).not.toContain("<b>");
@@ -140,7 +143,7 @@ describe("ActionRequests", () => {
 
   it("renders a request whose caller supplied no description", async () => {
     const row = { ...request("decision_pending", 1), description: null };
-    const container = await render({ list: async () => [row], decide: vi.fn() }, ActionRequests);
+    const container = await renderLive(<ActionRequests />, [row]);
     expect(container.textContent).toContain(row.title);
     expect(container.textContent).not.toContain("null");
   });
@@ -149,87 +152,49 @@ describe("ActionRequests", () => {
     ["Approve", "allow", "allowed"],
     ["Deny", "deny", "denied"],
   ] as const)("sends a human %s decision and replaces the pending receipt", async (label, verdict, state) => {
-    let rows = [request("decision_pending", 1)];
-    const decide = vi.fn(async (pending: ActionRequestView) => {
-      rows = [{ ...pending, state, version: 2 }];
-      return rows[0];
-    });
-    const service: ActionService = { list: vi.fn(async () => rows), decide };
-    const container = await render(service, ActionRequests);
+    const pending = request("decision_pending", 1);
+    const sent = answerApi(() => ({ ...pending, state, version: 2 }));
+    const container = await renderLive(<ActionRequests />, [pending]);
 
     await act(async () => button(container, label).click());
 
-    expect(decide).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ state: "decision_pending" }), verdict);
-    expect(container.textContent).not.toContain("Pending (1)");
+    expect(sent).toMatchObject([
+      { method: "POST", path: `/actions/${pending.id}/decision`, body: { verdict, expected_version: 1 } },
+    ]);
+    expect(container.textContent).toContain("Pending (0)");
   });
 
-  it("renders server-pushed pending state without list polling and closes the stream", async () => {
-    const stream: { current?: EventTarget } = {};
-    const close = vi.fn();
-    class Stream extends EventTarget {
-      onerror = null;
-      close = close;
-      constructor(url: string) {
-        super();
-        expect(url).toBe("/actions/stream?state=decision_pending");
-        stream.current = this;
-      }
-    }
-    vi.stubGlobal("EventSource", Stream);
-    const list = vi.spyOn(actionService, "list").mockResolvedValue([]);
-    try {
-      const container = await render(actionService, ActionRequests);
-      expect(container.textContent).toContain("Loading actions");
-      expect(container.textContent).not.toContain("No requests are waiting");
-      expect(container.textContent).not.toContain("Pending (0)");
-      await act(async () => {
-        stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: "not JSON" }));
-      });
-      expect(container.textContent).toContain("The live Action update was invalid");
-      await act(async () => {
-        stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: "[]" }));
-      });
-      expect(container.textContent).toContain("No requests are waiting");
-      expect(container.textContent).not.toContain("Loading actions");
-      await act(async () => {
-        stream.current?.dispatchEvent(
-          new MessageEvent("snapshot", { data: JSON.stringify([request("decision_pending", 1)]) })
-        );
-      });
-      expect(container.textContent).toContain("Pending (1)");
-      await act(async () => {
-        stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify([request("denied", 1)]) }));
-      });
-      expect(container.textContent).toContain("Pending (0)");
-      expect(list).not.toHaveBeenCalled();
-      await unmountLast();
-      expect(close).toHaveBeenCalledOnce();
-    } finally {
-      list.mockRestore();
-      vi.unstubAllGlobals();
-    }
+  it("renders server-pushed pending state without requests of its own and closes the stream", async () => {
+    const sent = answerApi(() => undefined);
+    vi.stubGlobal("EventSource", TestEventSource);
+    const container = await mount(<ActionRequests />);
+    expect(container.textContent).toContain("Loading actions");
+    expect(container.textContent).not.toContain("No requests are waiting");
+    expect(container.textContent).not.toContain("Pending (0)");
+    await send("not JSON");
+    expect(container.textContent).toContain("The live Action update was invalid");
+    await send([]);
+    expect(container.textContent).toContain("No requests are waiting");
+    expect(container.textContent).not.toContain("Loading actions");
+    await send([request("decision_pending", 1)]);
+    expect(container.textContent).toContain("Pending (1)");
+    await send([request("denied", 1)]);
+    expect(container.textContent).toContain("Pending (0)");
+    expect(sent).toEqual([]);
+    const stream = TestEventSource.current;
+    expect(stream?.url).toBe("/actions/stream?state=decision_pending");
+    await unmountLast();
+    expect(stream?.close).toHaveBeenCalledOnce();
   });
 
   it("keeps a dropped stream's requests without comment until it has been down a minute", async () => {
     vi.useFakeTimers();
-    const stream: { current?: EventTarget } = {};
-    class Stream extends EventTarget {
-      // A drop is the network's, which the browser retries: the source stays CONNECTING.
-      readyState = 0;
-      close = vi.fn();
-      constructor() {
-        super();
-        stream.current = this;
-      }
-    }
-    vi.stubGlobal("EventSource", Stream);
     try {
-      const container = await render(actionService, ActionRequests);
+      const container = await renderLive(<ActionRequests />, [request("decision_pending", 1)]);
       await act(async () => {
-        stream.current?.dispatchEvent(
-          new MessageEvent("snapshot", { data: JSON.stringify([request("decision_pending", 1)]) })
-        );
-        stream.current?.dispatchEvent(new Event("error"));
+        // A drop is the network's, which the browser retries: the source stays CONNECTING.
+        TestEventSource.current!.readyState = 0;
+        TestEventSource.current?.dispatchEvent(new Event("error"));
       });
       expect(container.querySelector('[role="alert"]')).toBeNull();
       expect(container.textContent).toContain("Pending (1)");
@@ -239,7 +204,6 @@ describe("ActionRequests", () => {
       expect(container.textContent).toContain("Pending (1)");
     } finally {
       vi.useRealTimers();
-      vi.unstubAllGlobals();
     }
   });
 });

@@ -14,7 +14,7 @@ import {
 import { type JSX, useEffect, useState } from "react";
 
 import { displayableError, serviceAccountKey } from "./client";
-import { consentService, type ConsentDecision, type ConsentPreview, type ConsentService } from "./consent_client";
+import { decideConsent, previewConsent, type ConsentDecision, type ConsentPreview } from "./consent_client";
 
 function continueAuthorization(url: string): void {
   window.location.assign(url);
@@ -23,11 +23,9 @@ function continueAuthorization(url: string): void {
 /** Only the authenticated BFF can supply the continuation; client metadata is display-only. */
 export function ConnectionConsent({
   handle,
-  service = consentService,
   navigate = continueAuthorization,
 }: {
   handle: string;
-  service?: ConsentService;
   navigate?: (url: string) => void;
 }): JSX.Element {
   const [preview, setPreview] = useState<ConsentPreview | null>(null);
@@ -43,7 +41,7 @@ export function ConnectionConsent({
 
   useEffect(() => {
     let active = true;
-    void service.preview(handle).then(
+    void previewConsent(handle).then(
       (value) => {
         if (!active) return;
         setPreview(value);
@@ -70,14 +68,14 @@ export function ConnectionConsent({
     return () => {
       active = false;
     };
-  }, [handle, service]);
+  }, [handle]);
 
   async function decide(decision: ConsentDecision): Promise<void> {
     setAttempt(decision);
     setSubmitting(true);
     setError(null);
     try {
-      const result = await service.decide(handle, decision);
+      const result = await decideConsent(handle, decision);
       setCompleted(result.verdict);
       if (result.verdict === "allow" && result.redirect_url !== null) navigate(result.redirect_url);
     } catch (failure) {

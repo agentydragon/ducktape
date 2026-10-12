@@ -1,14 +1,12 @@
 import { MantineProvider } from "@mantine/core";
-import { type JSX, type ReactNode, act } from "react";
+import { type ReactNode, act } from "react";
 import { createRoot } from "react-dom/client";
-import { afterEach } from "vitest";
+import { afterEach, type Mock, vi } from "vitest";
 
-import type { ActionRequestView, ActionService, ActionState } from "./client";
+import { api } from "../client";
+import type { ActionRequestView, ActionState } from "./client";
 
-/** Shared fixture/mount plumbing for the pending (`actions.test.tsx`) and history
- * (`actions_history.test.tsx`) suites, which exercise the same `ActionRequestView` shape and the
- * same live-stream/list mounting behavior against two different views. */
-export type View = (props: { service?: ActionService }) => JSX.Element;
+/** Shared fixtures, stand-ins for the network, and mounting for the Action views' suites. */
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -107,8 +105,72 @@ export async function mount(node: ReactNode): Promise<HTMLDivElement> {
   return container;
 }
 
-export async function render(service: ActionService, View: View): Promise<HTMLDivElement> {
-  return mount(<View service={service} />);
+/** The browser's `EventSource` as a test drives it; `TestEventSource.current` is the latest opened. */
+export class TestEventSource extends EventTarget {
+  static readonly CLOSED = 2;
+  static current: TestEventSource | undefined;
+  static readonly opened: Map<string, TestEventSource> = new Map();
+  readyState = 1;
+  close: Mock<() => void> = vi.fn();
+
+  constructor(readonly url: string) {
+    super();
+    TestEventSource.current = this;
+    TestEventSource.opened.set(url, this);
+  }
+}
+
+/** Pushes one snapshot down the latest stream, or the one opened on `url`; a string goes as the
+ * frame's raw data. */
+export async function send(value: unknown, url?: string): Promise<void> {
+  const source = url === undefined ? TestEventSource.current : TestEventSource.opened.get(url);
+  await act(async () => {
+    source?.dispatchEvent(
+      new MessageEvent("snapshot", { data: typeof value === "string" ? value : JSON.stringify(value) })
+    );
+  });
+}
+
+export interface Sent {
+  method: string;
+  path: string;
+  query: URLSearchParams;
+  body: unknown;
+}
+
+const ejects: (() => void)[] = [];
+
+/** Answers the app's API in place of the network until the test ends, recording what was sent. An
+ * answer is a JSON body or a ready `Response`; `undefined` fails the request as unexpected. */
+export function answerApi(answer: (sent: Sent) => unknown): Sent[] {
+  const sent: Sent[] = [];
+  const middleware = {
+    async onRequest({ request }: { request: Request }) {
+      const url = new URL(request.url, "https://app.invalid");
+      const text = await request.text();
+      const entry = {
+        method: request.method,
+        path: url.pathname,
+        query: url.searchParams,
+        body: text ? (JSON.parse(text) as unknown) : undefined,
+      };
+      sent.push(entry);
+      const answered = await answer(entry);
+      if (answered === undefined) throw new Error(`unexpected ${entry.method} ${entry.path}`);
+      return answered instanceof Response ? answered : Response.json(answered);
+    },
+  };
+  api.use(middleware);
+  ejects.push(() => api.eject(middleware));
+  return sent;
+}
+
+/** Mounts `node` with the Action stream stubbed, then pushes `pending` down it. */
+export async function renderLive(node: ReactNode, pending: readonly ActionRequestView[] = []): Promise<HTMLDivElement> {
+  vi.stubGlobal("EventSource", TestEventSource);
+  const container = await mount(node);
+  await send(pending);
+  return container;
 }
 
 export function button(container: HTMLElement, label: string): HTMLButtonElement {
@@ -133,4 +195,8 @@ afterEach(async () => {
     await act(async () => item.root.unmount());
     item.container.remove();
   }
+  for (const eject of ejects.splice(0)) eject();
+  TestEventSource.current = undefined;
+  TestEventSource.opened.clear();
+  vi.unstubAllGlobals();
 });

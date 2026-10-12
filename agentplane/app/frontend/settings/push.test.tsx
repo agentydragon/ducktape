@@ -2,8 +2,14 @@
 import { MantineProvider } from "@mantine/core";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
+
+import { TestEventSource } from "../actions/testing";
 import { PushSettings } from "./push";
+
+beforeEach(() => {
+  vi.stubGlobal("EventSource", TestEventSource);
+});
 
 it("updates registered browsers from the stream without a refresh button", async () => {
   (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

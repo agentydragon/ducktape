@@ -16,11 +16,7 @@ import { EventEntrySchema, type EventEntry } from "../../proto/event_log_pb";
 
 export const api: ReturnType<typeof createClient<paths>> = createClient<paths>({ baseUrl: "" });
 
-// A 401 means the session expired or never existed; the app owns its login, so the browser goes
-// there rather than the page rendering an error it cannot act on. Inert where something in front
-// of the app does the authenticating, since then no request of ours is ever answered 401. While
-// the login navigation is in flight the document is being replaced, so the request never settles:
-// the page keeps its loading state instead of flashing the 401 it cannot act on.
+// 401 → app login; the never-settling promise keeps the page loading while the browser navigates away.
 function unlessLoggedOut(response: Response): Response | Promise<never> {
   if (response.status === 401 && redirectToLogin()) return new Promise<never>(() => {});
   return response;
@@ -31,6 +27,25 @@ api.use({ onResponse: ({ response }) => unlessLoggedOut(response) });
 /** `fetch` under `api`'s 401 policy, for the app's own routes that do not go through `api`. */
 export async function fetchWithLogin(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   return unlessLoggedOut(await fetch(input, init));
+}
+
+/** A non-2xx answer from the API: its status, and its body as openapi-fetch decoded it. */
+export class HttpError extends Error {
+  readonly status: number;
+
+  constructor(
+    response: Response,
+    readonly body: unknown
+  ) {
+    super(`HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}: ${displayableError(body)}`);
+    this.status = response.status;
+  }
+}
+
+/** The data of an `api` answer, or its error thrown as an `HttpError`. */
+export function ok<T>(answer: { data?: T; error?: unknown; response: Response }): T {
+  if (answer.error !== undefined) throw new HttpError(answer.response, answer.error);
+  return answer.data as T;
 }
 
 export type SandboxView = components["schemas"]["SandboxView"];
@@ -84,13 +99,13 @@ export async function threadObservationEntry(
   cursor: string,
   signal?: AbortSignal
 ): Promise<ArchivedObservationEntry> {
-  const { data, error } = await api.GET("/threads/{thread_id}/observations/{cursor}", {
-    // openapi-fetch serializes path values without converting them to JS numbers.
-    params: { path: { thread_id: threadId, cursor: cursor as unknown as number } },
-    signal,
-  });
-  if (error) throw new Error(displayableError(error));
-  return data;
+  return ok(
+    await api.GET("/threads/{thread_id}/observations/{cursor}", {
+      // openapi-fetch serializes path values without converting them to JS numbers.
+      params: { path: { thread_id: threadId, cursor: cursor as unknown as number } },
+      signal,
+    })
+  );
 }
 
 export async function threadObservations(
@@ -98,15 +113,15 @@ export async function threadObservations(
   cursor: { before?: string; after?: string },
   signal?: AbortSignal
 ): Promise<ObservationPage> {
-  const { data, error } = await api.GET("/threads/{thread_id}/observations", {
-    params: {
-      path: { thread_id: threadId },
-      query: { before_cursor: cursor.before, after_cursor: cursor.after, limit: 30 },
-    },
-    signal,
-  });
-  if (error) throw new Error(displayableError(error));
-  return data;
+  return ok(
+    await api.GET("/threads/{thread_id}/observations", {
+      params: {
+        path: { thread_id: threadId },
+        query: { before_cursor: cursor.before, after_cursor: cursor.after, limit: 30 },
+      },
+      signal,
+    })
+  );
 }
 
 export async function threadEvidence(
@@ -115,21 +130,21 @@ export async function threadEvidence(
   afterCursor = "0",
   signal?: AbortSignal
 ): Promise<EvidencePage> {
-  const { data, error } = await api.GET("/threads/{thread_id}/evidence", {
-    params: {
-      path: { thread_id: threadId },
-      query: {
-        projection_epoch: scope.projectionEpoch,
-        entity_kind: scope.entityKind,
-        entity_id: scope.entityId,
-        after_cursor: afterCursor,
-        limit: 30,
+  return ok(
+    await api.GET("/threads/{thread_id}/evidence", {
+      params: {
+        path: { thread_id: threadId },
+        query: {
+          projection_epoch: scope.projectionEpoch,
+          entity_kind: scope.entityKind,
+          entity_id: scope.entityId,
+          after_cursor: afterCursor,
+          limit: 30,
+        },
       },
-    },
-    signal,
-  });
-  if (error) throw new Error(displayableError(error));
-  return data;
+      signal,
+    })
+  );
 }
 
 export async function threadNativeFrames(
@@ -139,21 +154,21 @@ export async function threadNativeFrames(
   afterSequence = "0",
   signal?: AbortSignal
 ): Promise<NativeFramePage> {
-  const { data, error } = await api.GET("/threads/{thread_id}/evidence/{observation_cursor}/frames", {
-    params: {
-      path: { thread_id: threadId, observation_cursor: observationCursor },
-      query: {
-        projection_epoch: scope.projectionEpoch,
-        entity_kind: scope.entityKind,
-        entity_id: scope.entityId,
-        after_sequence: afterSequence,
-        limit: 30,
+  return ok(
+    await api.GET("/threads/{thread_id}/evidence/{observation_cursor}/frames", {
+      params: {
+        path: { thread_id: threadId, observation_cursor: observationCursor },
+        query: {
+          projection_epoch: scope.projectionEpoch,
+          entity_kind: scope.entityKind,
+          entity_id: scope.entityId,
+          after_sequence: afterSequence,
+          limit: 30,
+        },
       },
-    },
-    signal,
-  });
-  if (error) throw new Error(displayableError(error));
-  return data;
+      signal,
+    })
+  );
 }
 
 /** `namespace/name`, as kubectl spells a ServiceAccount; the key a picker selects by. */
@@ -166,113 +181,52 @@ export function isEligibleCaller(caller: CallerServiceAccount, accounts: CallerS
 }
 export type McpLinkageView = components["schemas"]["McpLinkageView"];
 export type McpLinkageStartView = components["schemas"]["McpLinkageStartView"];
-export class ConnectionRequestError extends Error {
-  constructor(
-    public readonly status: number,
-    message: string
-  ) {
-    super(message);
-  }
-}
 
 export type CallerGrantView = components["schemas"]["CallerGrantView"];
 export type CallerGrantReader = (account: CallerServiceAccount, signal: AbortSignal) => Promise<CallerGrantView>;
 
-export const readCallerGrants: CallerGrantReader = async (account, signal) => {
-  const { data, error } = await api.GET("/caller-grants/{namespace}/{name}", {
-    params: { path: account },
-    signal,
-  });
-  if (error) throw new Error(displayableError(error));
-  return data;
-};
+export const readCallerGrants: CallerGrantReader = async (account, signal) =>
+  ok(await api.GET("/caller-grants/{namespace}/{name}", { params: { path: account }, signal }));
 
-export interface ConnectionService {
-  list(): Promise<Connection[]>;
-  callerServiceAccounts(): Promise<CallerServiceAccount[]>;
-  rename(connection: Connection, displayName: string): Promise<Connection>;
-  rebind(connection: Connection, caller: CallerServiceAccount): Promise<Connection>;
-  unbind(connection: Connection): Promise<Connection>;
+export async function listConnections(): Promise<Connection[]> {
+  return ok(await api.GET("/connections"));
 }
 
-export const connectionService: ConnectionService = {
-  async list() {
-    const { data, error, response } = await api.GET("/connections");
-    const status = response.status;
-    if (error) throw new ConnectionRequestError(status, displayableError(error));
-    return data;
-  },
-  async callerServiceAccounts() {
-    const { data, error, response } = await api.GET("/connection-service-accounts");
-    const status = response.status;
-    if (error) throw new ConnectionRequestError(status, displayableError(error));
-    return data;
-  },
-  async rename(connection, displayName) {
-    const { data, error, response } = await api.PATCH("/connections/{connection_id}", {
-      params: { path: { connection_id: connection.id } },
-      body: { display_name: displayName, expected_version: connection.version },
-    });
-    if (error) throw new ConnectionRequestError(response.status, displayableError(error));
-    return data;
-  },
-  async rebind(connection, caller) {
-    const { data, error, response } = await api.POST("/connections/{connection_id}/rebind", {
+export async function connectionServiceAccounts(): Promise<CallerServiceAccount[]> {
+  return ok(await api.GET("/connection-service-accounts"));
+}
+
+export async function rebindConnection(connection: Connection, caller: CallerServiceAccount): Promise<Connection> {
+  return ok(
+    await api.POST("/connections/{connection_id}/rebind", {
       params: { path: { connection_id: connection.id } },
       body: { expected_version: connection.version, service_account: caller },
-    });
-    if (error) throw new ConnectionRequestError(response.status, displayableError(error));
-    return data;
-  },
-  async unbind(connection) {
-    const { data, error, response } = await api.POST("/connections/{connection_id}/unbind", {
-      params: { path: { connection_id: connection.id } },
-      body: { expected_version: connection.version },
-    });
-    if (error) throw new ConnectionRequestError(response.status, displayableError(error));
-    return data;
-  },
-};
-
-export interface McpLinkageService {
-  list(): Promise<McpLinkageView[]>;
-  status(serverId: string): Promise<McpLinkageView>;
-  start(serverId: string, scopes: string[]): Promise<McpLinkageStartView>;
-  disconnect(serverId: string): Promise<McpLinkageView>;
+    })
+  );
 }
 
-export const mcpLinkageService: McpLinkageService = {
-  async list() {
-    const { data, error, response } = await api.GET("/mcp-servers");
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
-  async status(serverId) {
-    const { data, error, response } = await api.GET("/mcp-servers/{server_id}/linkage", {
-      params: { path: { server_id: serverId } },
-    });
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
-  async start(serverId, scopes) {
-    const { data, error, response } = await api.POST("/mcp-servers/{server_id}/linkage/start", {
+export async function unbindConnection(connection: Connection): Promise<Connection> {
+  return ok(
+    await api.POST("/connections/{connection_id}/unbind", {
+      params: { path: { connection_id: connection.id } },
+      body: { expected_version: connection.version },
+    })
+  );
+}
+
+export async function startMcpLinkage(serverId: string, scopes: string[]): Promise<McpLinkageStartView> {
+  return ok(
+    await api.POST("/mcp-servers/{server_id}/linkage/start", {
       params: { path: { server_id: serverId } },
       body: { scopes },
-    });
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
-  async disconnect(serverId) {
-    const { data, error, response } = await api.POST("/mcp-servers/{server_id}/linkage/disconnect", {
-      params: { path: { server_id: serverId } },
-    });
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
-};
+    })
+  );
+}
 
-export function httpError(response: Response, error: unknown): string {
-  return `HTTP ${response.status}${response.statusText ? ` ${response.statusText}` : ""}: ${displayableError(error)}`;
+export async function disconnectMcpLinkage(serverId: string): Promise<McpLinkageView> {
+  return ok(
+    await api.POST("/mcp-servers/{server_id}/linkage/disconnect", { params: { path: { server_id: serverId } } })
+  );
 }
 
 export function displayableError(error: unknown): string {
@@ -289,15 +243,12 @@ export function displayableError(error: unknown): string {
 export class RunnerUnavailableError extends Error {}
 
 export async function listSessions(sandbox: string): Promise<SessionSummary[]> {
-  const { data, error, response } = await api.GET("/sandboxes/{name}/sessions", {
-    params: { path: { name: sandbox } },
-  });
+  const answer = await api.GET("/sandboxes/{name}/sessions", { params: { path: { name: sandbox } } });
   // These routes report a missing Pod address as 409 and an unavailable runner as 503.
-  if (error && (response.status === 409 || response.status === 503)) {
-    throw new RunnerUnavailableError(displayableError(error));
+  if (answer.error && (answer.response.status === 409 || answer.response.status === 503)) {
+    throw new RunnerUnavailableError(displayableError(answer.error));
   }
-  if (error) throw new Error(displayableError(error));
-  return data.map((row) => fromJson(SessionSummarySchema, row as JsonValue));
+  return ok(answer).map((row) => fromJson(SessionSummarySchema, row as JsonValue));
 }
 
 /**
@@ -310,26 +261,22 @@ export async function openSession(
   spec: SessionSpec,
   setupScript?: string
 ): Promise<Attached> {
-  const { data, error } = await api.POST("/sandboxes/{name}/sessions", {
-    params: { path: { name: sandbox } },
-    body: { session_id: sessionId, spec: toJson(SessionSpecSchema, spec) as JsonObject, setup_script: setupScript },
-  });
-  if (error) throw new Error(displayableError(error));
+  const data = ok(
+    await api.POST("/sandboxes/{name}/sessions", {
+      params: { path: { name: sandbox } },
+      body: { session_id: sessionId, spec: toJson(SessionSpecSchema, spec) as JsonObject, setup_script: setupScript },
+    })
+  );
   return fromJson(AttachedSchema, data as JsonValue);
 }
 
 export async function resumeThread(threadId: string): Promise<Attached> {
-  const { data, error } = await api.POST("/threads/{thread_id}/resume", {
-    params: { path: { thread_id: threadId } },
-  });
-  if (error) throw new Error(displayableError(error));
+  const data = ok(await api.POST("/threads/{thread_id}/resume", { params: { path: { thread_id: threadId } } }));
   return fromJson(AttachedSchema, data as JsonValue);
 }
 
 export async function models(): Promise<ModelCatalog> {
-  const { data, error } = await api.GET("/models");
-  if (error) throw new Error(displayableError(error));
-  return data as ModelCatalog;
+  return ok(await api.GET("/models"));
 }
 
 /** An explicit 4xx command rejection: unlike a lost reply, this is not an admission receipt. */
@@ -386,27 +333,24 @@ export async function getThread(threadId: string): Promise<ThreadView> {
 
 /** null until the History Service holds an event of the Thread's Session. */
 export async function findThread(threadId: string): Promise<ThreadView | null> {
-  const { data, error, response } = await api.GET("/threads/{thread_id}", {
-    params: { path: { thread_id: threadId } },
-  });
-  if (response.status === 404) return null;
-  if (error) throw new Error(displayableError(error));
-  return data;
+  const answer = await api.GET("/threads/{thread_id}", { params: { path: { thread_id: threadId } } });
+  return answer.response.status === 404 ? null : ok(answer);
 }
 
 /** Set the thread's name; null (or a blank, which the API normalises) leaves it unnamed. */
 export async function renameThread(threadId: string, name: string | null): Promise<ThreadView> {
-  const { data, error } = await api.PATCH("/threads/{thread_id}", {
-    params: { path: { thread_id: threadId } },
-    body: { name },
-  });
-  if (error) throw new Error(displayableError(error));
-  return data;
+  return ok(
+    await api.PATCH("/threads/{thread_id}", {
+      params: { path: { thread_id: threadId } },
+      body: { name },
+    })
+  );
 }
 
 export async function archiveThread(threadId: string, archived: boolean): Promise<void> {
-  const { error } = await api.POST(`/threads/{thread_id}/${archived ? "archive" : "unarchive"}`, {
-    params: { path: { thread_id: threadId } },
-  });
-  if (error) throw new Error(displayableError(error));
+  ok(
+    await api.POST(`/threads/{thread_id}/${archived ? "archive" : "unarchive"}`, {
+      params: { path: { thread_id: threadId } },
+    })
+  );
 }

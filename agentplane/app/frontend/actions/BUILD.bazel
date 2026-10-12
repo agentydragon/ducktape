@@ -250,6 +250,7 @@ ts_library(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend:client",
     ],
 )
 

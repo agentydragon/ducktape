@@ -3,26 +3,43 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import {
-  actionService,
-  type ActionGroupService,
-  type ActionGroupView,
-  type ActionRequestView,
-  type ActionService,
-  type ActionState,
-} from "./client";
+import type { ActionGroupView, ActionRequestView, ActionState } from "./client";
 import { ActionHistory } from "./history";
 import { stateLabel } from "./requests";
-import { button, DECISION_NOTE, render, request, sshExec, unmountLast, type View } from "./testing";
+import {
+  TestEventSource,
+  answerApi,
+  button,
+  DECISION_NOTE,
+  renderLive,
+  request,
+  send,
+  sshExec,
+  unmountLast,
+} from "./testing";
 
-/** The view reading its Action groups from `list` rather than the real `/action-groups`. */
-function historyOver(list: ActionGroupService["list"]): View {
-  const groupService: ActionGroupService = { list };
-  const HistoryOverList: View = (props) => <ActionHistory {...props} groupService={groupService} />;
-  return HistoryOverList;
+/** The history view over one page of `rows`, reading `groups` (a failure, when a `Response`) as the
+ * Action groups; resolves once the page has loaded. */
+async function renderHistory(
+  rows: ActionRequestView[] | Response,
+  groups: ActionGroupView[] | Response = []
+): Promise<HTMLDivElement> {
+  // The page waits for the groups, so they have arrived by the time it shows.
+  let resolve = (): void => {};
+  const groupsAnswered = new Promise<void>((done) => (resolve = done));
+  answerApi(async ({ path }) => {
+    if (path === "/action-groups") {
+      resolve();
+      return groups instanceof Response ? groups.clone() : groups;
+    }
+    if (path !== "/actions/history") return undefined;
+    await groupsAnswered;
+    return rows instanceof Response ? rows.clone() : { items: rows, next_cursor: null };
+  });
+  const container = await renderLive(<ActionHistory />);
+  await vi.waitFor(() => expect(container.textContent).not.toContain("Loading actions"));
+  return container;
 }
-
-const withoutGroups = historyOver(async () => []);
 
 function group(key: string, executorKind: string): ActionGroupView {
   return {
@@ -80,7 +97,7 @@ const IMAGE_RESULT = {
 describe("ActionHistory", () => {
   it("shows structured list errors without an empty-state claim", async () => {
     const failure = { detail: { code: "operator_federation_exchange_failed" } };
-    const container = await render({ list: vi.fn().mockRejectedValue(failure), decide: vi.fn() }, withoutGroups);
+    const container = await renderHistory(Response.json(failure, { status: 502 }));
     expect(container.textContent).toContain(JSON.stringify(failure));
     expect(container.textContent).not.toContain("[object Object]");
     expect(container.textContent).not.toContain("No decided requests");
@@ -98,9 +115,7 @@ describe("ActionHistory", () => {
       "cancelled",
       "execution_unknown",
     ];
-    const service: ActionService = { list: vi.fn(async () => states.map(request)), decide: vi.fn() };
-
-    const container = await render(service, withoutGroups);
+    const container = await renderHistory(states.map(request));
 
     for (const state of states) expect(container.textContent).toContain(stateLabel(state));
     expect(container.textContent).toContain("requested by agentplane-test/test-agent");
@@ -117,10 +132,7 @@ describe("ActionHistory", () => {
   });
 
   it("places the execution state beneath its result", async () => {
-    const container = await render(
-      { list: async () => [succeeded("test_sandbox", { ok: true })], decide: vi.fn() },
-      withoutGroups
-    );
+    const container = await renderHistory([succeeded("test_sandbox", { ok: true })]);
     const outcome = container.querySelector<HTMLElement>('[data-testid="action-execution-outcome"]');
     const state = outcome?.querySelector('[data-testid="action-execution-state"]');
 
@@ -130,7 +142,7 @@ describe("ActionHistory", () => {
   });
 
   it("shows the exact arguments open, as the pending card does", async () => {
-    const container = await render({ list: async () => [request("succeeded", 1)], decide: vi.fn() }, withoutGroups);
+    const container = await renderHistory([request("succeeded", 1)]);
     expect(container.textContent).toContain("Exact arguments (unredacted)");
     const block = [...container.querySelectorAll(".agentplane-code-block")].find((node) =>
       node.textContent?.includes("test-exact-token")
@@ -160,62 +172,47 @@ describe("ActionHistory", () => {
         },
       },
     };
-    const container = await render({ list: async () => [row], decide: vi.fn() }, withoutGroups);
+    const container = await renderHistory([row]);
     expect(container.textContent).toContain("Auto-approved via policy");
     expect(container.textContent).toContain("fixture-auto-allow");
   });
 
   it("loads a bounded history page, follows invalidations, and pages on demand", async () => {
-    const stream: { current?: EventTarget } = {};
-    const close = vi.fn();
-    class Stream extends EventTarget {
-      readyState = 1;
-      close = close;
-      constructor(url: string) {
-        super();
-        expect(url).toBe("/actions/stream?state=decision_pending");
-        stream.current = this;
-      }
-    }
-    vi.stubGlobal("EventSource", Stream);
-    const list = vi.spyOn(actionService, "list").mockResolvedValue([]);
-    const history = vi
-      .spyOn(actionService, "history")
-      .mockResolvedValueOnce({ items: [request("denied", 1)], next_cursor: "page2" })
-      .mockResolvedValueOnce({ items: [request("denied", 1)], next_cursor: "page2" })
-      .mockResolvedValueOnce({ items: [request("succeeded", 2)], next_cursor: null });
-    try {
-      const container = await render(actionService, withoutGroups);
-      expect(container.textContent).toContain("Denied");
-      await act(async () => stream.current?.dispatchEvent(new MessageEvent("snapshot", { data: "[]" })));
-      await act(async () => button(container, "Load more").click());
-      expect(container.textContent).toContain("succeeded");
-      expect(history).toHaveBeenCalledWith("page2");
-      expect(list).not.toHaveBeenCalled();
-      await unmountLast();
-      expect(close).toHaveBeenCalledOnce();
-    } finally {
-      history.mockRestore();
-      list.mockRestore();
-      vi.unstubAllGlobals();
-    }
+    const sent = answerApi(({ path, query }) => {
+      if (path === "/action-groups") return [];
+      if (path !== "/actions/history") return undefined;
+      return query.get("cursor") === "page2"
+        ? { items: [request("succeeded", 2)], next_cursor: null }
+        : { items: [request("denied", 1)], next_cursor: "page2" };
+    });
+    const container = await renderLive(<ActionHistory />);
+    await vi.waitFor(() => expect(container.textContent).toContain("Denied"));
+    await send([]);
+    await vi.waitFor(() => expect(button(container, "Load more")).toBeDefined());
+    await act(async () => button(container, "Load more").click());
+    await vi.waitFor(() => expect(container.textContent).toContain("succeeded"));
+    // The first page on mount and again on each of the stream's two snapshots, then the next page on demand.
+    expect(sent.filter(({ path }) => path === "/actions/history").map(({ query }) => query.get("cursor"))).toEqual([
+      null,
+      null,
+      null,
+      "page2",
+    ]);
+    const stream = TestEventSource.current;
+    expect(stream?.url).toBe("/actions/stream?state=decision_pending");
+    await unmountLast();
+    expect(stream?.close).toHaveBeenCalledOnce();
   });
 
   it("draws an MCP group's result the way the tool answered it", async () => {
-    const container = await render(
-      { list: async () => [succeeded("test_mcp", IMAGE_RESULT)], decide: vi.fn() },
-      historyOver(async () => [group("test_mcp", "mcp")])
-    );
+    const container = await renderHistory([succeeded("test_mcp", IMAGE_RESULT)], [group("test_mcp", "mcp")]);
     expect(container.querySelector("img")?.getAttribute("src")).toBe(`data:image/png;base64,${IMAGE_DATA}`);
     expect(container.textContent).toContain("test caption");
     expect(container.textContent).not.toContain('"content"');
   });
 
   it("switches an MCP result between the tool's answer and its stored JSON", async () => {
-    const container = await render(
-      { list: async () => [succeeded("test_mcp", IMAGE_RESULT)], decide: vi.fn() },
-      historyOver(async () => [group("test_mcp", "mcp")])
-    );
+    const container = await renderHistory([succeeded("test_mcp", IMAGE_RESULT)], [group("test_mcp", "mcp")]);
     const raw = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
     expect(raw).not.toBeNull();
     await act(async () => raw!.click());
@@ -224,10 +221,7 @@ describe("ActionHistory", () => {
   });
 
   it("turns an ssh exec call's request and response to their JSON together, and back", async () => {
-    const container = await render(
-      { list: async () => [sshExec("succeeded")], decide: vi.fn() },
-      historyOver(async () => [group("ssh", "mcp")])
-    );
+    const container = await renderHistory([sshExec("succeeded")], [group("ssh", "mcp")]);
     // The request widget shows the command alone in its block, the response widget the exit code.
     const drawn = (): { request: boolean; response: boolean } => ({
       request: [...container.querySelectorAll(".agentplane-code-block")].some(
@@ -251,10 +245,7 @@ describe("ActionHistory", () => {
   });
 
   it("shows a Gmail draft's arguments and result together, with both available in Raw", async () => {
-    const container = await render(
-      { list: async () => [gmailDraft()], decide: vi.fn() },
-      historyOver(async () => [group("gmail", "mcp")])
-    );
+    const container = await renderHistory([gmailDraft()], [group("gmail", "mcp")]);
     expect(container.textContent).toContain("Call");
     expect(container.textContent).toContain("Release notes saved");
     expect(container.textContent).toContain("reader@example.com");
@@ -275,9 +266,9 @@ describe("ActionHistory", () => {
   });
 
   it("keeps a sandbox group's result as its stored JSON, without a Raw switch, even one shaped like a CallToolResult", async () => {
-    const container = await render(
-      { list: async () => [succeeded("test_sandbox", IMAGE_RESULT)], decide: vi.fn() },
-      historyOver(async () => [group("test_sandbox", "sandbox")])
+    const container = await renderHistory(
+      [succeeded("test_sandbox", IMAGE_RESULT)],
+      [group("test_sandbox", "sandbox")]
     );
     expect(container.querySelector('input[type="checkbox"]')).toBeNull();
     expect(container.querySelector("img")).toBeNull();
@@ -285,9 +276,9 @@ describe("ActionHistory", () => {
   });
 
   it("shows results as their stored JSON, saying why, when the Action groups cannot be read", async () => {
-    const container = await render(
-      { list: async () => [succeeded("test_mcp", IMAGE_RESULT)], decide: vi.fn() },
-      historyOver(vi.fn().mockRejectedValue(new Error("test group listing outage")))
+    const container = await renderHistory(
+      [succeeded("test_mcp", IMAGE_RESULT)],
+      Response.json({ detail: "test group listing outage" }, { status: 503 })
     );
     expect(container.querySelector("img")).toBeNull();
     expect(container.textContent).toContain('"mimeType": "image/png"');

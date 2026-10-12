@@ -7,7 +7,7 @@ import { displayableError } from "../client";
 import { followStream, type StreamConnection } from "../live_stream";
 import { StaleNotice, useOptionalStreamStatus, type StreamStatus } from "../stream_status";
 import { ActionCall } from "./call";
-import { actionService, type ActionRequestView, type ActionService, type ActionState, type Verdict } from "./client";
+import { decideAction, getAction, type ActionRequestView, type ActionState, type Verdict } from "./client";
 
 export function stateLabel(state: ActionState): string {
   return state.replaceAll("_", " ");
@@ -56,13 +56,9 @@ export function ActionDecisionButtons({
   );
 }
 
-/** Shared fetch/decide plumbing for the pending and history views: one live snapshot (the real
- * service pushes over `/actions/stream`) or one polled `list()` (any other service, e.g. tests),
- * which has no `stream`. */
-export function useActionRequests(
-  service: ActionService,
-  enabled = true
-): {
+/** Shared fetch/decide plumbing for the pending and history views, over the live snapshots
+ * `/actions/stream` pushes. */
+export function useActionRequests(enabled = true): {
   requests: ActionRequestView[];
   error: string | null;
   loading: boolean;
@@ -157,19 +153,6 @@ export function useActionRequests(
     [rememberRequests]
   );
 
-  const refresh = useCallback(async (): Promise<void> => {
-    setLoading(true);
-    setError(null);
-    try {
-      storePendingSnapshot(await service.list());
-      setError(null);
-    } catch (failure) {
-      setError(displayableError(failure));
-    } finally {
-      setLoading(false);
-    }
-  }, [service, storePendingSnapshot]);
-
   const loadDetail = useCallback(
     (requestId: string, forceRefresh = false): Promise<ActionRequestView> => {
       const cached = knownRequestsRef.current.get(requestId);
@@ -178,13 +161,6 @@ export function useActionRequests(
       }
       const inFlight = detailLoadsRef.current.get(requestId);
       if (inFlight !== undefined) return inFlight;
-      const get = service.get;
-      if (get === undefined) {
-        const failure = new Error("Action detail loading is unavailable.");
-        setDetailErrors((current) => new Map(current).set(requestId, displayableError(failure)));
-        return Promise.reject(failure);
-      }
-
       setDetailLoadingIds((current) => new Set(current).add(requestId));
       setDetailErrors((current) => {
         if (!current.has(requestId)) return current;
@@ -193,7 +169,7 @@ export function useActionRequests(
         return next;
       });
       const request = Promise.resolve()
-        .then(() => get.call(service, requestId))
+        .then(() => getAction(requestId))
         .then((loaded) => {
           rememberRequests([loaded]);
           return loaded;
@@ -214,15 +190,11 @@ export function useActionRequests(
       detailLoadsRef.current.set(requestId, request);
       return request;
     },
-    [rememberRequests, service]
+    [rememberRequests]
   );
 
   useEffect(() => {
     if (!enabled) return;
-    if (service !== actionService) {
-      void refresh();
-      return;
-    }
     return followStream("/actions/stream?state=decision_pending", {
       events: {
         snapshot: (message) => {
@@ -238,19 +210,18 @@ export function useActionRequests(
       },
       onConnection: setConnection,
     });
-  }, [enabled, refresh, service, storePendingSnapshot]);
+  }, [enabled, storePendingSnapshot]);
 
   async function decideRequest(request: ActionRequestView, verdict: Verdict): Promise<void> {
     setDeciding(request.id);
     try {
-      const updated = await service.decide(request, verdict);
+      const updated = await decideAction(request, verdict);
       const current = requestsRef.current;
       const next = current.map((item) => (item.id === updated.id && updated.version >= item.version ? updated : item));
       requestsRef.current = next;
       setRequests(next);
       rememberRequests([updated]);
       setError(null);
-      if (service !== actionService) await refresh();
     } catch (failure) {
       setError(displayableError(failure));
     } finally {
@@ -278,7 +249,7 @@ export const ActionRequestsContext: ReturnType<typeof createContext<ReturnType<t
 
 /** Own one live Action store for the whole app shell, including route transitions. */
 export function ActionRequestsProvider({ children }: { children: ReactNode }): JSX.Element {
-  const actions = useActionRequests(actionService);
+  const actions = useActionRequests();
   return <ActionRequestsContext.Provider value={actions}>{children}</ActionRequestsContext.Provider>;
 }
 
@@ -311,17 +282,10 @@ export function PendingActionCard({
 
 /** The primary, actionable view: ActionRequests still awaiting an operator decision. Decided and
  * terminal requests follow these in the unified Actions view. */
-export function ActionRequests({
-  service = actionService,
-  embedded = false,
-}: {
-  service?: ActionService;
-  embedded?: boolean;
-}): JSX.Element {
+export function ActionRequests({ embedded = false }: { embedded?: boolean }): JSX.Element {
   const shared = useContext(ActionRequestsContext);
-  const local = useActionRequests(service, !(shared !== null && service === actionService));
-  const { requests, error, loading, stream, deciding, decide } =
-    shared !== null && service === actionService ? shared : local;
+  const local = useActionRequests(shared === null);
+  const { requests, error, loading, stream, deciding, decide } = shared ?? local;
   const pending = requests.filter((request) => request.state === "decision_pending");
 
   return (

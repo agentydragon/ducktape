@@ -5,7 +5,7 @@ import { useLocation, useNavigate } from "react-router";
 
 import { ActionRequestsContext, PendingActionCard } from "./requests";
 import { ActionHistoryCard } from "./history";
-import { actionGroupService } from "./client";
+import { listActionGroups } from "./client";
 
 type InAppReturnTo = string | { pathname: string; search?: string; hash?: string };
 
@@ -86,7 +86,7 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
       return;
     }
     let active = true;
-    void actionGroupService.list().then(
+    void listActionGroups().then(
       (groups) => {
         if (active) setExecutorKind(groups.find((group) => group.key === detailActionGroup)?.executor_kind ?? null);
       },

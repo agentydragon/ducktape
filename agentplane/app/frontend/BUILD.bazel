@@ -174,12 +174,10 @@ agentplane_vitest_test(
         ":connections_fixture",
         ":consent",
         ":consent_client",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/actions:testing",
     ],
 )
 
@@ -333,13 +331,11 @@ agentplane_vitest_test(
     deps = [
         ":client",
         ":mcp_servers",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/vitest",
         "//agentplane/app/frontend/actions:action_client",
+        "//agentplane/app/frontend/actions:testing",
     ],
 )
 
@@ -372,13 +368,11 @@ agentplane_vitest_test(
         ":client",
         ":connections",
         ":connections_fixture",
-        "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
-        "//:node_modules/@types/react-dom",
         "//:node_modules/react",
-        "//:node_modules/react-dom",
         "//:node_modules/react-router",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/actions:testing",
     ],
 )
 
@@ -871,6 +865,7 @@ ts_library(
     srcs = ["settings/push.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":client",
         ":live_stream",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -1102,6 +1097,7 @@ agentplane_vitest_test(
         "//:node_modules/react",
         "//:node_modules/react-dom",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend/actions:testing",
     ],
 )
 

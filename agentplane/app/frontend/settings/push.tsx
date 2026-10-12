@@ -1,5 +1,6 @@
 import { Button, Code, Group, Paper, Stack, Text } from "@mantine/core";
 import { type JSX, useCallback, useEffect, useState } from "react";
+import { displayableError } from "../client";
 import { followStream, type StreamConnection } from "../live_stream";
 
 type Device = { endpoint: string; user_agent: string | null; created_at: string };
@@ -43,14 +44,13 @@ export function PushSettings(): JSX.Element {
       }
       setError(null);
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(displayableError(failure));
     } finally {
       setLoading(false);
     }
   }, []);
   useEffect(() => void refresh(), [refresh]);
   useEffect(() => {
-    if (typeof EventSource === "undefined") return; // Non-browser unit test environment.
     return followStream("/push/subscriptions/stream", {
       events: { snapshot: (message) => setDevices(JSON.parse(message.data) as Device[]) },
       onConnection: setConnection,
@@ -90,7 +90,7 @@ export function PushSettings(): JSX.Element {
       });
       await refresh();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(displayableError(failure));
     } finally {
       setBusy(false);
     }
@@ -107,7 +107,7 @@ export function PushSettings(): JSX.Element {
       }
       await refresh();
     } catch (failure) {
-      setError(failure instanceof Error ? failure.message : String(failure));
+      setError(displayableError(failure));
     } finally {
       setBusy(false);
     }

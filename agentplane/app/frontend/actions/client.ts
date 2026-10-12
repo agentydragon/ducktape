@@ -1,5 +1,5 @@
 import type { components } from "../api/schema";
-import { api, httpError } from "../client";
+import { api, ok } from "../client";
 import type { ActionRequestView } from "./types";
 
 export type { ActionRequestView } from "./types";
@@ -16,52 +16,23 @@ export type Verdict = components["schemas"]["Verdict"];
 
 export type ActionGroupView = components["schemas"]["ActionGroupView"];
 
-export interface ActionGroupService {
-  list(): Promise<ActionGroupView[]>;
+export async function listActionGroups(): Promise<ActionGroupView[]> {
+  return ok(await api.GET("/action-groups"));
 }
 
-export const actionGroupService: ActionGroupService = {
-  async list() {
-    const { data, error, response } = await api.GET("/action-groups");
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
-};
-
-export interface ActionService {
-  list(): Promise<ActionRequestView[]>;
-  get?(requestId: string): Promise<ActionRequestView>;
-  history?(cursor?: string): Promise<ActionHistoryPage>;
-  decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView>;
+export async function getAction(requestId: string): Promise<ActionRequestView> {
+  return ok(await api.GET("/actions/{request_id}", { params: { path: { request_id: requestId } } }));
 }
 
-export const actionService: ActionService = {
-  async list(): Promise<ActionRequestView[]> {
-    const { data, error, response } = await api.GET("/actions");
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
+export async function actionHistory(cursor?: string): Promise<ActionHistoryPage> {
+  return ok(await api.GET("/actions/history", { params: { query: { cursor, limit: 50 } } }));
+}
 
-  async get(requestId: string): Promise<ActionRequestView> {
-    const { data, error, response } = await api.GET("/actions/{request_id}", {
-      params: { path: { request_id: requestId } },
-    });
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
-
-  async history(cursor?: string): Promise<ActionHistoryPage> {
-    const { data, error, response } = await api.GET("/actions/history", { params: { query: { cursor, limit: 50 } } });
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
-
-  async decide(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView> {
-    const { data, error, response } = await api.POST("/actions/{request_id}/decision", {
+export async function decideAction(request: ActionRequestView, verdict: Verdict): Promise<ActionRequestView> {
+  return ok(
+    await api.POST("/actions/{request_id}/decision", {
       params: { path: { request_id: request.id } },
       body: { verdict, expected_version: request.version, idempotency_key: crypto.randomUUID(), decision_note: null },
-    });
-    if (error) throw new Error(httpError(response, error));
-    return data;
-  },
-};
+    })
+  );
+}
