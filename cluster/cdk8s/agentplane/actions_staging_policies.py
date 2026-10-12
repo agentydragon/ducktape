@@ -9,14 +9,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from urllib.parse import urlsplit
 
-from agentplane_actionpolicybinding_crds.works.allegedly.agentplane import (
-    ActionPolicyBinding,
-    ActionPolicyBindingSpec,
-    ActionPolicyBindingSpecSubject,
-)
 from agentplane_actionpolicyset_crds.works.allegedly.agentplane import ActionPolicySetSpecAutoApproveIf
 from agentplane_egresspolicy_crds.works.allegedly.agentplane import EgressPolicySpecRules, EgressPolicySpecRulesMethods
 from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBindingSpecSubject
+from agentplane_policyset_crds.works.allegedly.agentplane import (
+    PolicySetSpecRules,
+    PolicySetSpecRulesPolicy,
+    PolicySetSpecRulesPolicyType,
+)
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 from constructs import Construct
@@ -25,7 +25,7 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from agentplane.action_service.policies.resources import CALLER_LABEL, BindingSpec, PolicySetSpec
+from agentplane.action_service.policies.resources import CALLER_LABEL, PolicySetSpec, parse_action_rule
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
 from cluster.cdk8s import agent_access_profiles as access, external_creds
 from cluster.cdk8s.agentplane import app as app_component, dex, egress, testing
@@ -49,6 +49,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     HOME_ASSISTANT_READONLY_POLICY,
     PLAID_PGWEB_POLICY,
 )
+from cluster.cdk8s.providers.agentplane import policy_set
 from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
@@ -93,6 +94,18 @@ FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET = "finance-agent-gaffer-branch-creation
 FINANCE_AGENT_GAFFER_PR_CREATION_SET = "finance-agent-gaffer-pr-creation"
 
 
+def _action_rule(entry: ActionPolicySetSpecAutoApproveIf) -> PolicySetSpecRules:
+    return policy_set.Rule.action_auto_approve(
+        policy=PolicySetSpecRulesPolicy(
+            type=PolicySetSpecRulesPolicyType[entry.type.name],
+            actions=entry.actions,
+            schema=entry.schema,
+            owner=entry.owner,
+            repository=entry.repository,
+        )
+    )
+
+
 def _policy_set(
     scope: Construct,
     id: str,
@@ -101,11 +114,17 @@ def _policy_set(
     auto_approve_if: Sequence[ActionPolicySetSpecAutoApproveIf],
 ) -> None:
     # The Action Service parses `spec` more strictly than the CRD schema (an unknown policy
-    # kind or key, an invalid JSON Schema); an object it refuses reports Ready=False on the
-    # cluster and contributes nothing, so it fails here instead.
+    # kind or key, an invalid JSON Schema); an object it refuses grants nothing on the cluster,
+    # so it fails here instead.
+    # CLEANUP(added 2026-10-12): Drop the ActionPolicySet, and build `action_auto_approve` rules
+    #   directly, once the Sandbox Service binds Sandboxes through PolicyBindings and no
+    #   ActionPolicyBinding exists.
     PolicySetSpec.model_validate(
         ActionPolicySet(scope, id, metadata=metadata, auto_approve_if=auto_approve_if).to_json()["spec"]
     )
+    twin = policy_set.PolicySet(scope, f"{id}-set", metadata=metadata, rules=[_action_rule(e) for e in auto_approve_if])
+    for rule in twin.to_json()["spec"]["rules"]:
+        parse_action_rule(rule)
 
 
 def _binding(
@@ -113,14 +132,10 @@ def _binding(
     id: str,
     *,
     metadata: ApiObjectMetadata,
-    subject: ActionPolicyBindingSpecSubject,
+    subject: PolicyBindingSpecSubject,
     policy_sets: Sequence[str],
 ) -> None:
-    BindingSpec.model_validate(
-        ActionPolicyBinding(
-            scope, id, metadata=metadata, spec=ActionPolicyBindingSpec(subject=subject, policy_sets=list(policy_sets))
-        ).to_json()["spec"]
-    )
+    PolicyBinding(scope, id, metadata=metadata, subject=subject, policy_sets=policy_sets)
 
 
 def _sandbox_egress_binding(scope: Construct, account: ServiceAccount, *, policies: Sequence[str]) -> None:
@@ -336,7 +351,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # The principal a Connection enrolled from the Claude.ai MCP connector acts as, picked by
     # the operator at OAuth consent, and the identity its sandboxes run as. The label is what
     # makes it an Action caller, and removing the label or the object is how it is disabled.
-    # What it may do without an operator is an ActionPolicyBinding naming it; its Kubernetes
+    # What it may do without an operator is a PolicyBinding naming it; its Kubernetes
     # access is listed in cluster/docs/agent_rbac.md § 6.
     claude_ai = ServiceAccount(
         scope,
@@ -881,7 +896,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # puts every one of these Actions back on the human path.
     _binding(
         scope,
-        "actionpolicybinding-claude-ai-reads",
+        "policybinding-claude-ai-reads",
         metadata=ApiObjectMetadata(
             name="claude-ai-reads",
             namespace=_NAMESPACE,
@@ -889,7 +904,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
             },
         ),
-        subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
+        subject=PolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
         policy_sets=[
             GITHUB_READS_SET,
             GITHUB_IDENTITY_READS_SET,
@@ -907,7 +922,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # haku-agent ServiceAccount's in-cluster Haku-preset sandboxes.
     _binding(
         scope,
-        "actionpolicybinding-haku-agent-reads",
+        "policybinding-haku-agent-reads",
         metadata=ApiObjectMetadata(
             name="haku-agent-reads",
             namespace=_NAMESPACE,
@@ -915,7 +930,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for the haku-agent ServiceAccount."
             },
         ),
-        subject=ActionPolicyBindingSpecSubject(namespace=_NAMESPACE, name="haku-agent"),
+        subject=PolicyBindingSpecSubject(namespace=_NAMESPACE, name="haku-agent"),
         policy_sets=[
             GITHUB_READS_SET,
             GITHUB_IDENTITY_READS_SET,
@@ -933,7 +948,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # authorization here with the shared policy sets, addressed by the full SA identity.
     _binding(
         scope,
-        "actionpolicybinding-public-coder-openclaw-actions",
+        "policybinding-public-coder-openclaw-actions",
         metadata=ApiObjectMetadata(
             name="public-coder-openclaw-actions",
             namespace=_NAMESPACE,
@@ -941,7 +956,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "Auto-approves the reviewed public-coder repository reads for the OpenClaw ServiceAccount."
             },
         ),
-        subject=ActionPolicyBindingSpecSubject(namespace=NAMESPACE, name=SERVICE_ACCOUNT),
+        subject=PolicyBindingSpecSubject(namespace=NAMESPACE, name=SERVICE_ACCOUNT),
         policy_sets=[
             PUBLIC_GITHUB_READS_SET,
             PUBLIC_DUCKTAPE_READS_SET,

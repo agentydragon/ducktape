@@ -14,17 +14,17 @@ asynchronously outside the artifact.
 
 ## Action policies
 
-This environment's Git-managed `ActionPolicySet`s and the bindings for labeled caller
+This environment's Git-managed Action policy sets and the `PolicyBinding`s for labeled caller
 ServiceAccounts such as `claude-ai`, `haku-agent`, and the cross-namespace
 `public-coder-agent/openclaw` are defined in
 `cluster/cdk8s/agentplane/actions_staging_policies.py` and generated into
 `agentplane-staging.k8s.yaml`; a new set, or a binding for a ServiceAccount, is a PR to
-that Python module (regenerate with `bb run //cluster/cdk8s:generate_manifests`). Bindings
-for Sandbox subjects are written by the integration app when it creates the Sandbox and
-are never checked in. The generator parses every set and binding with the Action
-Service's own models, so a spec the service would refuse fails generation (and CI's
-`//cluster/cdk8s:test_generate_manifests`) instead of reporting `Ready=False` on the
-cluster.
+that Python module (regenerate with `bb run //cluster/cdk8s:generate_manifests`). Each set is
+rendered twice, as an `ActionPolicySet` for the per-Sandbox `ActionPolicyBinding`s the
+integration app writes at launch, and as a `PolicySet` of `action_auto_approve` rules for the
+static `PolicyBinding`s. The generator parses every set with the Action Service's own models, so a
+spec the service would refuse fails generation (and CI's `//cluster/cdk8s:test_generate_manifests`)
+instead of granting nothing on the cluster.
 
 ## Browser notifications
 

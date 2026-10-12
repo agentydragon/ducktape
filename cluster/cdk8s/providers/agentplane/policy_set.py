@@ -14,6 +14,7 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRules,
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
+    PolicySetSpecRulesPolicy,
     PolicySetSpecRulesRole,
     PolicySetSpecRulesRoleKind,
     PolicySetSpecRulesType,
@@ -64,6 +65,11 @@ class Rule:
             cluster_internal=cluster_internal,
             credential_ref=credential_ref,
         )
+
+    @staticmethod
+    def action_auto_approve(*, policy: PolicySetSpecRulesPolicy) -> PolicySetSpecRules:
+        """Has the Action Service auto-approve a request `policy` matches."""
+        return PolicySetSpecRules(type=PolicySetSpecRulesType.ACTION_UNDERSCORE_AUTO_UNDERSCORE_APPROVE, policy=policy)
 
 
 class PolicySet(_PolicySet):

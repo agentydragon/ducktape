@@ -469,14 +469,11 @@ observations. New database work follows the task-specific review and rollout req
 flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
-    ACTION_POLICY_MIGRATE[Candidate: Action policies move to PolicySet]
-    ACTION_POLICY_MIGRATE --> OLD_POLICY_KINDS_DROP[Blocked: drop the old policy kinds]
     KUBERNETES_POLICY_SETS[Candidate: the grant catalog as named PolicySets]
-    ACTION_POLICY_MIGRATE --> SANDBOX_CONTROLLER_PROVISIONING[The controller provisions a Sandbox, section 8]
-    KUBERNETES_POLICY_SETS --> SANDBOX_CONTROLLER_PROVISIONING
+    KUBERNETES_POLICY_SETS --> SANDBOX_CONTROLLER_PROVISIONING[The controller provisions a Sandbox, section 8]
     SANDBOX_CREATE_CUTOVER[Sandboxes are created as ours, section 8] --> POLICY_RUNTIME_GRANTS[Blocked: time-limited grants of any rule type]
     SANDBOX_CREATE_CUTOVER --> SANDBOX_RBAC
-    AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox, section 8] --> OLD_POLICY_KINDS_DROP
+    AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox, section 8] --> OLD_POLICY_KINDS_DROP[Blocked: drop the old policy kinds]
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_RBAC[Blocked: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
@@ -514,18 +511,13 @@ for sets of any rule type, and UI chips showing each binding's set, expiry and r
 One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry, so no reader
 handles expiry itself.
 
-### `ACTION_POLICY_MIGRATE` — Action policies move to PolicySet
-
-**Candidate.** The Action Service already reads `PolicySet`/`PolicyBinding` beside the old kinds.
-cdk8s regenerates the static `ActionPolicySet`/`ActionPolicyBinding` objects as the generic kinds;
-Sandboxes of our kind get their `PolicyBinding` from the controller (`SANDBOX_CONTROLLER_PROVISIONING`).
-
 ### `OLD_POLICY_KINDS_DROP` — drop the old policy kinds
 
-**Blocked on the Action policy migration and on retiring agent-sandbox, whose Sandboxes keep the old kinds until then; the operator merges it.** Delete the
+**Blocked on retiring agent-sandbox, whose Sandboxes keep the old kinds until then; the operator merges it.** Delete the
 `ActionPolicySet`/`ActionPolicyBinding` and `EgressPolicy`/`EgressBinding` CRDs, their readers in
 the Action Service and egress proxy (with the proxy's admin `/bindings` observations), the
-`EgressPolicy` that cdk8s's `add_egress_policy` renders beside each egress `PolicySet`, the Sandbox Service's per-type binding writers and
+`EgressPolicy` that cdk8s's `add_egress_policy` renders beside each egress `PolicySet` (and the `ActionPolicySet`
+`actions_staging_policies._policy_set` renders beside each Action one), the Sandbox Service's per-type binding writers and
 annotations (`egress.py`, `action_policy.py`, `kubernetes_bindings.py` and their views), and the
 presets' separate `egress_policies`, `action_policy_sets` and `kubernetes_grants` fields
 (`app/presets.py`, after the manifests stop setting them), the KubernetesBindings reconciler, the
@@ -670,7 +662,6 @@ calls the gateway to seal. Action Service boxes keep a catalog of their own (#10
 ```mermaid
 flowchart TD
     SANDBOX_CONTROLLER_PROVISIONING[In flight: the controller provisions a Sandbox]
-    ACTION_POLICY_MIGRATE[Action policies on PolicySet, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
     KUBERNETES_POLICY_SETS[Grant catalog as PolicySets, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
     SANDBOX_CONTROLLER_TEARDOWN[In flight: deleting a Sandbox seals it first]
     SANDBOX_IMAGE_REPLACE[Candidate: replace the runner image between incarnations]
@@ -683,7 +674,7 @@ flowchart TD
 ### `SANDBOX_CONTROLLER_PROVISIONING` — the controller provisions a Sandbox
 
 **In flight; the ServiceAccount and `PolicyBinding` half is #10162, on testing. Staging waits on the
-Action policy migration and the Kubernetes catalog as `PolicySet`s.** The spec gains the rest of the recipe: `policySets` (names of sets of any rule type), session defaults,
+Kubernetes catalog as `PolicySet`s.** The spec gains the rest of the recipe: `policySets` (names of sets of any rule type), session defaults,
 bootstrap command and runner endpoints, the parts the Sandbox Service now keeps
 as annotations on agent-sandbox's `Sandbox` (`provisioning.py`, `kubernetes_bindings.py`,
 `egress.py`, `action_policy.py`, `runner_endpoints.py`). The controller creates the Sandbox's own

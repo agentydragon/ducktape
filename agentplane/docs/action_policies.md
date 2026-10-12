@@ -88,8 +88,8 @@ would need its own state, so that `decision_pending` keeps meaning a human is be
 
 ## Example
 
-Staging's Git-owned half is the `github-reads` `ActionPolicySet`, the `claude-ai`
-`ServiceAccount`, and the `claude-ai-github-reads` `ActionPolicyBinding`, defined in
+Staging's Git-owned half is the `github-reads` set, the `claude-ai` `ServiceAccount`, and the
+`claude-ai-reads` `PolicyBinding`, defined in
 `cluster/cdk8s/agentplane/actions_staging_policies.py` and generated into
 `cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml`. The runtime half,
 for a Sandbox `coder-7f3a` launched from a preset naming `github-reads`:

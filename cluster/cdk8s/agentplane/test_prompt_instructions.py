@@ -58,7 +58,7 @@ def test_haku_preset_binds_what_its_account_binding_names(
     managed runner Pod runs as its own per-Sandbox ServiceAccount and never sees that binding."""
     docs = agentplane_manifests[staging.ENV.namespace]
     binding = one(
-        doc for doc in docs if doc["kind"] == "ActionPolicyBinding" and doc["metadata"]["name"] == "haku-agent-reads"
+        doc for doc in docs if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] == "haku-agent-reads"
     )
     bound = set(binding["spec"]["policySets"])
     app_config = one(

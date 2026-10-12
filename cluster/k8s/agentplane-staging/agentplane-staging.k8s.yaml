@@ -8581,6 +8581,51 @@ spec:
           - ui_get
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of GitHub MCP's default catalog; every other GitHub Action stays on the human path.
+  name: github-reads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: exact_actions
+        actions:
+          github:
+            - find_duplicate
+            - get_commit
+            - get_file_blame
+            - get_file_contents
+            - get_label
+            - get_latest_release
+            - get_me
+            - get_release_by_tag
+            - get_tag
+            - get_team_members
+            - get_teams
+            - issue_dependency_read
+            - issue_read
+            - list_branches
+            - list_commits
+            - list_issue_fields
+            - list_issue_types
+            - list_issues
+            - list_pull_requests
+            - list_releases
+            - list_repository_collaborators
+            - list_tags
+            - pull_request_read
+            - search_code
+            - search_commits
+            - search_issues
+            - search_pull_requests
+            - search_repositories
+            - search_users
+            - ui_get
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
 metadata:
   annotations:
@@ -8593,6 +8638,22 @@ spec:
       actions:
         github:
           - get_me
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: The caller's own GitHub identity read, with no repository or mutation surface.
+  name: github-identity-reads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: exact_actions
+        actions:
+          github:
+            - get_me
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
@@ -8636,6 +8697,49 @@ spec:
       repository: ducktape
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: Reviewed GitHub reads scoped to agentydragon-agent/ducktape, the coder Agent's fork.
+  name: public-ducktape-fork-reads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: github_repository
+        actions:
+          github:
+            - actions_get
+            - actions_list
+            - find_duplicate
+            - get_commit
+            - get_file_blame
+            - get_file_contents
+            - get_job_logs
+            - get_label
+            - get_latest_release
+            - get_release_by_tag
+            - get_tag
+            - issue_dependency_read
+            - issue_read
+            - list_branches
+            - list_commits
+            - list_issue_fields
+            - list_issue_types
+            - list_issues
+            - list_pull_requests
+            - list_releases
+            - list_repository_collaborators
+            - list_tags
+            - pull_request_read
+            - search_code
+            - search_issues
+            - search_pull_requests
+        owner: agentydragon-agent
+        repository: ducktape
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
 metadata:
   annotations:
@@ -8675,6 +8779,49 @@ spec:
           - search_pull_requests
       owner: agentydragon
       repository: ducktape
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: Reviewed GitHub reads scoped to agentydragon/ducktape.
+  name: public-ducktape-reads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: github_repository
+        actions:
+          github:
+            - actions_get
+            - actions_list
+            - find_duplicate
+            - get_commit
+            - get_file_blame
+            - get_file_contents
+            - get_job_logs
+            - get_label
+            - get_latest_release
+            - get_release_by_tag
+            - get_tag
+            - issue_dependency_read
+            - issue_read
+            - list_branches
+            - list_commits
+            - list_issue_fields
+            - list_issue_types
+            - list_issues
+            - list_pull_requests
+            - list_releases
+            - list_repository_collaborators
+            - list_tags
+            - pull_request_read
+            - search_code
+            - search_issues
+            - search_pull_requests
+        owner: agentydragon
+        repository: ducktape
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
@@ -8718,6 +8865,49 @@ spec:
       repository: gaffer-private
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: Reviewed GitHub reads scoped to the private agentydragon/gaffer-private.
+  name: public-gaffer-private-reads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: github_repository
+        actions:
+          github:
+            - actions_get
+            - actions_list
+            - find_duplicate
+            - get_commit
+            - get_file_blame
+            - get_file_contents
+            - get_job_logs
+            - get_label
+            - get_latest_release
+            - get_release_by_tag
+            - get_tag
+            - issue_dependency_read
+            - issue_read
+            - list_branches
+            - list_commits
+            - list_issue_fields
+            - list_issue_types
+            - list_issues
+            - list_pull_requests
+            - list_releases
+            - list_repository_collaborators
+            - list_tags
+            - pull_request_read
+            - search_code
+            - search_issues
+            - search_pull_requests
+        owner: agentydragon
+        repository: gaffer-private
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
 metadata:
   annotations:
@@ -8757,6 +8947,47 @@ spec:
           - search_pull_requests
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public.
+  name: public-github-reads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: github_public_repository
+        actions:
+          github:
+            - actions_get
+            - actions_list
+            - find_duplicate
+            - get_commit
+            - get_file_blame
+            - get_file_contents
+            - get_job_logs
+            - get_label
+            - get_latest_release
+            - get_release_by_tag
+            - get_tag
+            - issue_dependency_read
+            - issue_read
+            - list_branches
+            - list_commits
+            - list_issue_fields
+            - list_issue_types
+            - list_issues
+            - list_pull_requests
+            - list_releases
+            - list_repository_collaborators
+            - list_tags
+            - pull_request_read
+            - search_code
+            - search_issues
+            - search_pull_requests
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
 metadata:
   annotations:
@@ -8786,6 +9017,39 @@ spec:
           - repo
           - run_id
         type: object
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: Auto-approves only GitHub MCP rerun_failed_jobs calls for agentydragon/ducktape; dispatch, whole-run rerun, cancellation and log deletion remain on the human path.
+  name: ducktape-pr-failed-jobs
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: argument_schema
+        actions:
+          github:
+            - actions_run_trigger
+        schema:
+          properties:
+            method:
+              const: rerun_failed_jobs
+            owner:
+              const: agentydragon
+            repo:
+              const: ducktape
+            run_id:
+              minimum: 1
+              type: integer
+          required:
+            - method
+            - owner
+            - repo
+            - run_id
+          type: object
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
@@ -8818,6 +9082,40 @@ spec:
           - repo
           - branch
         type: object
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: Auto-approves only GitHub MCP create_branch calls for agentydragon/gaffer-private; existing branches cannot be overwritten, and other writes remain human-approved.
+  name: finance-agent-gaffer-branch-creation
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: argument_schema
+        actions:
+          github:
+            - create_branch
+        schema:
+          additionalProperties: false
+          properties:
+            branch:
+              minLength: 1
+              type: string
+            from_branch:
+              minLength: 1
+              type: string
+            owner:
+              const: agentydragon
+            repo:
+              const: gaffer-private
+          required:
+            - owner
+            - repo
+            - branch
+          type: object
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
@@ -8861,6 +9159,51 @@ spec:
           - head
           - base
         type: object
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: Auto-approves only GitHub MCP create_pull_request calls targeting agentydragon/gaffer-private; the PR is not merged and other writes remain human-approved.
+  name: finance-agent-gaffer-pr-creation
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: argument_schema
+        actions:
+          github:
+            - create_pull_request
+        schema:
+          additionalProperties: false
+          properties:
+            base:
+              minLength: 1
+              type: string
+            body:
+              type: string
+            draft:
+              type: boolean
+            head:
+              minLength: 1
+              type: string
+            maintainer_can_modify:
+              const: false
+            owner:
+              const: agentydragon
+            repo:
+              const: gaffer-private
+            title:
+              minLength: 1
+              type: string
+          required:
+            - owner
+            - repo
+            - title
+            - head
+            - base
+          type: object
 ---
 apiVersion: external-secrets.io/v1
 kind: ExternalSecret
@@ -9129,6 +9472,27 @@ spec:
           - list
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: "Auto-approves every sandbox Action: a caller's own boxes, which act only as that caller, and reads of the templates they are made from."
+  name: sandbox-self
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: exact_actions
+        actions:
+          sandbox:
+            - create
+            - dispose
+            - exec
+            - get
+            - get_template
+            - list
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
 metadata:
   annotations:
@@ -9172,6 +9536,51 @@ spec:
           - ha_search
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of Home Assistant MCP's default catalog; every other Home Assistant Action stays on the human path.
+  name: home-assistant-reads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: exact_actions
+        actions:
+          home_assistant:
+            - ha_config_get_automation
+            - ha_config_get_calendar_events
+            - ha_config_get_category
+            - ha_config_get_dashboard
+            - ha_config_get_label
+            - ha_config_get_scene
+            - ha_config_get_script
+            - ha_config_list_dashboard_resources
+            - ha_config_list_groups
+            - ha_config_list_helpers
+            - ha_get_app
+            - ha_get_automation_traces
+            - ha_get_blueprint
+            - ha_get_device
+            - ha_get_entity
+            - ha_get_entity_exposure
+            - ha_get_hacs_info
+            - ha_get_history
+            - ha_get_integration
+            - ha_get_logs
+            - ha_get_operation_status
+            - ha_get_overview
+            - ha_get_skill_guide
+            - ha_get_state
+            - ha_get_system_health
+            - ha_get_todo
+            - ha_get_zone
+            - ha_list_floors_areas
+            - ha_list_services
+            - ha_search
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
 metadata:
   annotations:
@@ -9194,6 +9603,30 @@ spec:
           - threads_list
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Gmail MCP backend's catalog; every write stays on the human path.
+  name: gmail-reads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: exact_actions
+        actions:
+          gmail:
+            - drafts_get
+            - drafts_list
+            - filters_get
+            - filters_list
+            - labels_get
+            - labels_list
+            - messages_get
+            - threads_get
+            - threads_list
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
 metadata:
   annotations:
@@ -9208,6 +9641,24 @@ spec:
           - get_event
           - list_event_instances
           - list_events
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Google Calendar MCP backend's catalog; create_event stays on the human path.
+  name: google-calendar-reads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: exact_actions
+        actions:
+          google_calendar:
+            - get_event
+            - list_event_instances
+            - list_events
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
@@ -9228,6 +9679,28 @@ spec:
           - list_workspaces
           - read_node
           - search_nodes
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Tana MCP backend's catalog, plus get_or_create_calendar_node; every other write and open_node stay on the human path.
+  name: tana-reads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: exact_actions
+        actions:
+          tana:
+            - get_children
+            - get_or_create_calendar_node
+            - get_tag_schema
+            - list_tags
+            - list_workspaces
+            - read_node
+            - search_nodes
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
@@ -9262,6 +9735,40 @@ spec:
           - stock_get
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  annotations:
+    description: The reviewed read-only subset of the Grocy SF MCP backend's catalog; every write, open_product_stock included, stays on the human path.
+  name: grocy-sf-reads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: exact_actions
+        actions:
+          grocy_sf:
+            - entities_get
+            - entities_list
+            - file_get
+            - get_below_minimum_stock
+            - get_current_user
+            - get_db_changed_time
+            - get_expired_stock
+            - get_expiring_stock
+            - get_product_stock
+            - get_system_info
+            - list_volatile_stock
+            - locations_list
+            - product_groups_list
+            - products_list
+            - quantity_units_list
+            - shopping_list_get
+            - shopping_lists_list
+            - stock_entries_list
+            - stock_get
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
 metadata:
   annotations:
@@ -9276,7 +9783,23 @@ spec:
           - list_targets
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicyBinding
+kind: PolicySet
+metadata:
+  annotations:
+    description: Auto-approves the SSH MCP backend's list_targets, which only names configured targets and key availability; every other SSH Action stays on the human path.
+  name: ssh-reads
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: action_auto_approve
+      policy:
+        type: exact_actions
+        actions:
+          ssh:
+            - list_targets
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicyBinding
 metadata:
   annotations:
     description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
@@ -9298,7 +9821,7 @@ spec:
     - ssh-reads
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicyBinding
+kind: PolicyBinding
 metadata:
   annotations:
     description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for the haku-agent ServiceAccount.
@@ -9320,7 +9843,7 @@ spec:
     - ssh-reads
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicyBinding
+kind: PolicyBinding
 metadata:
   annotations:
     description: Auto-approves the reviewed public-coder repository reads for the OpenClaw ServiceAccount.
