@@ -2459,6 +2459,7 @@ kind: Kustomization
 metadata:
   annotations:
     description: Restic/VolSync backup of Public Coder's worker-local OpenClaw state to its dedicated private SeaweedFS S3 bucket.
+    ducktape.org/parked: "true"
   name: public-coder-agent-backup
   namespace: ducktape-flux
 spec:
@@ -2481,6 +2482,7 @@ spec:
     kind: ExternalArtifact
     name: public-coder-agent-backup
     namespace: ducktape-flux
+  suspend: true
   timeout: 5m
   wait: true
 ---
@@ -4111,6 +4113,7 @@ kind: Kustomization
 metadata:
   annotations:
     description: "Paused Public Coder devbox: VM halted and image restart controller removed; the separately declared Bazel cache PVC and SSH identity are retained."
+    ducktape.org/parked: "true"
   name: public-coder-agent-devbox
   namespace: ducktape-flux
 spec:
@@ -4132,6 +4135,7 @@ spec:
     kind: ExternalArtifact
     name: public-coder-agent-devbox
     namespace: ducktape-flux
+  suspend: true
   timeout: 30m
   wait: false
 ---

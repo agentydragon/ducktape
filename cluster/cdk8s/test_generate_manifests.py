@@ -292,7 +292,6 @@ def test_public_coder_pause_retains_storage_without_running_agents(
     }
     for name in ("public-coder-agent-app", "public-coder-agent-devbox"):
         assert owners[name]["deletionPolicy"] == "Orphan"
-        assert not owners[name].get("suspend", False)
     assert owners["public-coder-agent-devbox"]["wait"] is False
 
 

@@ -214,6 +214,9 @@ def public_coder_agent_devbox(
         chart,
         name,
         directory,
+        annotations={"ducktape.org/parked": "true"},
+        # Parked: OpenClaw is off; PVCs and data stay (cluster/k8s/agents/public-coder-agent/README.md).
+        suspend=True,
         # A deliberately halted VM is not Ready. Do not block Flux on guest readiness.
         wait=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

@@ -83,6 +83,9 @@ def public_coder_agent_backup(
         chart,
         NAME,
         directory,
+        annotations={"ducktape.org/parked": "true"},
+        # Parked: OpenClaw is off; PVCs and data stay (cluster/k8s/agents/public-coder-agent/README.md).
+        suspend=True,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(seaweedfs_operator, external_secrets_operator, volsync),
         description=(

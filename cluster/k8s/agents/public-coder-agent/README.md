@@ -11,12 +11,15 @@ The UI and dedicated devbox SSH endpoints are unavailable while paused.
 Keep the namespace and the existing Flux owners: state, diagnostics, SSH recordings,
 and devbox cache PVCs remain declared with unchanged names/specs. The VolSync backup's
 ReplicationSource is paused (`spec.paused`); its Restic repository and controller-owned
-cache PVC are kept. Do not suspend or delete
-the Flux owners to pause the application; suspension alone leaves running pods up.
+cache PVC are kept. The `public-coder-agent-devbox` and `-backup` Flux owners are suspended
+and annotated `ducktape.org/parked`; their live objects stay as they are (VM halted, claims
+retained). `public-coder-agent-app` stays active: it owns the Namespace, whose labels the
+agent diagnostics RBAC reads, and its workloads are already at zero replicas. Do not delete
+any of them: the claims have reclaim policy Delete.
 Halting the devbox discards its ephemeral root disk, as a normal VM restart does;
 the separate cache PVC is retained.
 
-To resume, restore the three replica counts, unpause the backup, restore the devbox run strategy, restore its
+To resume, unsuspend the devbox and backup Flux owners, restore the three replica counts, unpause the backup, restore the devbox run strategy, restore its
 image-restart opt-in/controller if desired, and restore Flux guest-readiness checks.
 Verify model budgets and credentials before resuming; do not recreate PVCs or change
 the embedding identity. The remainder of this document describes the retained setup.
