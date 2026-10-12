@@ -7,6 +7,7 @@ from typing import cast
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
+import grpc
 import pytest
 import pytest_bazel
 from sqlalchemy import func, select
@@ -17,7 +18,7 @@ from agentplane.app.testing.thread_test_support import event_entry
 from agentplane.app.threads.events.event_log import EventLogStore, SessionAdmissionError
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.summaries import Summaries
-from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
 from agentplane.proto import event_pb2, history_service_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -143,7 +144,6 @@ async def test_service_read_rejects_invalid_pages(engine: AsyncEngine, case: str
 
 async def test_concurrent_replicas_create_one_service_thread(engine: AsyncEngine) -> None:
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_observations.return_value = history_service_pb2.ReadSessionObservationsResponse(last_cursor=0)
     stores = [EventLogStore(engine, summaries=Summaries(engine, reader), history_reader=reader) for _ in range(2)]
     public_id = uuid4()
     first, second = await asyncio.gather(*(store.open(str(public_id)) for store in stores))
@@ -219,20 +219,19 @@ async def test_service_observation_page_rejects_missing_entries(engine: AsyncEng
         await remote.observations(UUID("00000000-0000-0000-0000-000000000001"), limit=2)
 
 
-async def test_failed_service_registration_does_not_create_app_thread(engine: AsyncEngine) -> None:
+async def test_a_session_the_history_service_has_not_recorded_opens_with_empty_history(engine: AsyncEngine) -> None:
+    # The runner pushes a new Session to the History Service after OpenSession has answered.
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_observations.side_effect = ConnectionError("service unavailable")
-    store = EventLogStore(
-        engine,
-        summaries=Summaries(engine, cast(HistoryServiceClient, reader)),
-        history_reader=cast(HistoryServiceClient, reader),
-    )
-    with pytest.raises(ConnectionError):
-        await store.open(str(uuid4()))
-    async with async_sessionmaker(engine)() as session:
-        assert await session.scalar(select(func.count()).select_from(EventLog)) == 0
-    with pytest.raises(SessionAdmissionError, match="canonical"):
-        await store.open("legacy-id")
+    reader.read_session_events.side_effect = HistoryServiceError(grpc.StatusCode.NOT_FOUND)
+    reader.read_session_observations.side_effect = HistoryServiceError(grpc.StatusCode.NOT_FOUND)
+    store = EventLogStore(engine, summaries=Summaries(engine, reader), history_reader=reader)
+    thread_id = await store.open(str(uuid4()))
+    assert await store.exists(thread_id)
+    assert await store.events(thread_id, limit=10) == []
+    assert await store.read_watermark(thread_id) == 0
+    reader.read_session_events.side_effect = HistoryServiceError(grpc.StatusCode.UNAVAILABLE)
+    with pytest.raises(HistoryServiceError):
+        await store.events(thread_id, limit=10)
 
 
 async def test_public_session_open_preserves_retained_identity(engine: AsyncEngine) -> None:
@@ -273,28 +272,6 @@ async def test_a_thread_exists_by_its_public_identity(engine: AsyncEngine) -> No
     )
     assert await current.exists(public_id)
     assert not await current.exists(uuid4())
-
-
-async def test_existing_identity_winning_registration_race_is_preserved(engine: AsyncEngine) -> None:
-    public_id = uuid4()
-    reader = AsyncMock(spec=HistoryServiceClient)
-
-    async def register(session_id: str, *, limit: int) -> history_service_pb2.ReadSessionObservationsResponse:
-        assert session_id == str(public_id)
-        assert limit == 1
-        await seed_retained_session(engine, public_id=public_id)
-        return history_service_pb2.ReadSessionObservationsResponse(last_cursor=0)
-
-    reader.read_session_observations.side_effect = register
-    current = EventLogStore(
-        engine,
-        summaries=Summaries(engine, cast(HistoryServiceClient, reader)),
-        history_reader=cast(HistoryServiceClient, reader),
-    )
-    assert await current.open(str(public_id)) == public_id
-    async with async_sessionmaker(engine)() as session:
-        row = await session.get(EventLog, public_id)
-        assert row is not None
 
 
 if __name__ == "__main__":

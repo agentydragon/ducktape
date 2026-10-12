@@ -5,6 +5,7 @@ from __future__ import annotations
 from itertools import pairwise
 from uuid import UUID
 
+import grpc
 from google.protobuf.json_format import MessageToDict
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
@@ -13,7 +14,7 @@ from agentplane.app.database_updates import Channel
 from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
 from agentplane.app.threads.models import EventLog
 from agentplane.app.threads.summaries import FeedSnapshot, Summaries
-from agentplane.history_service.client import HistoryServiceClient
+from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
 from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_log_pb2
 from agentplane.sandbox_service.settled_cursors import next_stored, settled_ranges
@@ -53,11 +54,10 @@ class EventLogStore:
             raise SessionAdmissionError("a new Thread requires a canonical public Session ID") from error
         if str(thread_id) != session_id:
             raise SessionAdmissionError("a new Thread requires a canonical public Session ID")
+        # The runner's word suffices: it pushes a new Session to the History Service in the
+        # background, so the History Service may not know it yet.
         if await self.exists(thread_id):
             return thread_id
-        # Confirm durable service registration before admitting a Thread.
-        # Do not hold an app DB transaction over this RPC or copy its event payload.
-        await self._history_reader.read_session_observations(session_id, limit=1)
         async with self._sessions.begin() as session:
             # Another replica may win this insert race; its row is the same mapping.
             if await session.scalar(
@@ -82,7 +82,12 @@ class EventLogStore:
         """Return the archive's committed cursor, not the fold's."""
         # The fold advances independently and is no service resume position.
         # Metadata avoids downloading an arbitrary native payload.
-        page = await self._history_reader.read_session_observations(str(thread_id), limit=1)
+        try:
+            page = await self._history_reader.read_session_observations(str(thread_id), limit=1)
+        except HistoryServiceError as error:
+            if error.code != grpc.StatusCode.NOT_FOUND:
+                raise
+            return 0  # The runner has not pushed this Session yet.
         return page.last_cursor
 
     async def events(self, thread_id: UUID, *, after_cursor: int = 0, limit: int) -> list[event_log_pb2.EventEntry]:
@@ -96,7 +101,14 @@ class EventLogStore:
                 requested = min(requested, through - cursor)
                 if requested == 0:
                     break
-            page = await self._history_reader.read_session_events(str(thread_id), after_cursor=cursor, limit=requested)
+            try:
+                page = await self._history_reader.read_session_events(
+                    str(thread_id), after_cursor=cursor, limit=requested
+                )
+            except HistoryServiceError as error:
+                if error.code != grpc.StatusCode.NOT_FOUND or through is not None:
+                    raise
+                return []  # The runner has not pushed this Session yet.
             if through is None:
                 through = page.last_cursor
             if page.last_cursor < through or cursor > page.last_cursor:
