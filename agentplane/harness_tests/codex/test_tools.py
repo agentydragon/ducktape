@@ -8,7 +8,7 @@ import shlex
 import pytest
 import pytest_bazel
 
-from agentplane.harness_tests.codex import frames, responses_sse as sse
+from agentplane.harness_tests.codex import frames, responses_sse
 from agentplane.harness_tests.codex.harness import MODEL, CodexHarness
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.native.codex import wire
@@ -25,11 +25,11 @@ async def test_parallel_shell_commands_report_output_and_exit_codes(
         turn = await run.start_turn("Use the shell probe and report its outcomes.")
 
         async with await openai_responses.await_next_request() as exchange:
-            stream = sse.response_stream(
+            stream = responses_sse.response_stream(
                 [
-                    sse.Reasoning("run both", "enc_test_1"),
-                    sse.FunctionCall("call_test_1", "exec_command", {"cmd": "printf 'PROBE_STDOUT\\n'"}),
-                    sse.FunctionCall("call_test_2", "exec_command", {"cmd": PROBE_FAILURE}),
+                    responses_sse.Reasoning("run both", "enc_test_1"),
+                    responses_sse.FunctionCall("call_test_1", "exec_command", {"cmd": "printf 'PROBE_STDOUT\\n'"}),
+                    responses_sse.FunctionCall("call_test_2", "exec_command", {"cmd": PROBE_FAILURE}),
                 ],
                 model=MODEL,
             )
@@ -56,7 +56,7 @@ async def test_parallel_shell_commands_report_output_and_exit_codes(
             assert "probe stdout before failure" in second.output
             assert "probe stderr before failure" in second.output
             assert "exited with code 23" in second.output
-            stream = sse.response_stream([sse.Message("SHELL_PROBE_DONE")], model=MODEL)
+            stream = responses_sse.response_stream([responses_sse.Message("SHELL_PROBE_DONE")], model=MODEL)
             await exchange.send(*stream.events)
 
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
@@ -85,8 +85,8 @@ async def test_file_edit_round_trip_changes_the_workspace(
         )
 
         async with await openai_responses.await_next_request() as exchange:
-            stream = sse.response_stream(
-                [sse.FunctionCall("call_test_1", "exec_command", {"cmd": "cat editable.txt"})], model=MODEL
+            stream = responses_sse.response_stream(
+                [responses_sse.FunctionCall("call_test_1", "exec_command", {"cmd": "cat editable.txt"})], model=MODEL
             )
             await exchange.send(*stream.events)
 
@@ -94,8 +94,12 @@ async def test_file_edit_round_trip_changes_the_workspace(
             (read_output,) = exchange.request.function_call_outputs
             assert read_output.call_id == "call_test_1"
             assert "before" in read_output.output
-            stream = sse.response_stream(
-                [sse.FunctionCall("call_test_2", "exec_command", {"cmd": "printf 'after\\n' > editable.txt"})],
+            stream = responses_sse.response_stream(
+                [
+                    responses_sse.FunctionCall(
+                        "call_test_2", "exec_command", {"cmd": "printf 'after\\n' > editable.txt"}
+                    )
+                ],
                 model=MODEL,
             )
             await exchange.send(*stream.events)
@@ -105,8 +109,8 @@ async def test_file_edit_round_trip_changes_the_workspace(
             assert write_output.call_id == "call_test_2"
             assert "exited with code 0" in write_output.output
             assert editable.read_text() == "after\n"
-            stream = sse.response_stream(
-                [sse.FunctionCall("call_test_3", "exec_command", {"cmd": "cat editable.txt"})], model=MODEL
+            stream = responses_sse.response_stream(
+                [responses_sse.FunctionCall("call_test_3", "exec_command", {"cmd": "cat editable.txt"})], model=MODEL
             )
             await exchange.send(*stream.events)
 
@@ -115,7 +119,7 @@ async def test_file_edit_round_trip_changes_the_workspace(
             assert reread_output.call_id == "call_test_3"
             assert "after" in reread_output.output
             assert "before" not in reread_output.output
-            stream = sse.response_stream([sse.Message("FILE_EDIT_DONE")], model=MODEL)
+            stream = responses_sse.response_stream([responses_sse.Message("FILE_EDIT_DONE")], model=MODEL)
             await exchange.send(*stream.events)
 
         assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
@@ -140,9 +144,9 @@ async def test_subagent_spawn_and_wait_report_the_child_identity(
         turn = await run.start_turn("Delegate a shell probe to a child and wait for its result.")
         async with await openai_responses.await_next_request() as exchange:
             assert "multi_agent_v1" in exchange.request.tool_names
-            stream = sse.response_stream(
+            stream = responses_sse.response_stream(
                 [
-                    sse.FunctionCall(
+                    responses_sse.FunctionCall(
                         "call_spawn_child",
                         "spawn_agent",
                         {"message": "Run the child shell probe and reply CHILD_DONE.", "fork_context": False},
@@ -168,9 +172,9 @@ async def test_subagent_spawn_and_wait_report_the_child_identity(
                     if result.call_id == "call_spawn_child":
                         spawned_id = json.loads(result.output)["agent_id"]
                         assert spawned_id != turn.thread_id
-                        stream = sse.response_stream(
+                        stream = responses_sse.response_stream(
                             [
-                                sse.FunctionCall(
+                                responses_sse.FunctionCall(
                                     "call_wait_child",
                                     "wait_agent",
                                     {"targets": [spawned_id]},
@@ -184,7 +188,7 @@ async def test_subagent_spawn_and_wait_report_the_child_identity(
                         waited = json.loads(result.output)
                         assert waited["timed_out"] is False
                         assert waited["status"] == {spawned_id: {"completed": "CHILD_DONE"}}
-                        stream = sse.response_stream([sse.Message("PARENT_DONE")], model=MODEL)
+                        stream = responses_sse.response_stream([responses_sse.Message("PARENT_DONE")], model=MODEL)
                 else:
                     child_thread_ids.add(request.client_metadata.thread_id)
                     if not request.function_call_outputs:
@@ -193,8 +197,12 @@ async def test_subagent_spawn_and_wait_report_the_child_identity(
                         assert "Run the child shell probe" in "\n".join(
                             message.text for message in request.messages("user")
                         )
-                        stream = sse.response_stream(
-                            [sse.FunctionCall("call_child_shell", "exec_command", {"cmd": "printf CHILD_TOOL_OUTPUT"})],
+                        stream = responses_sse.response_stream(
+                            [
+                                responses_sse.FunctionCall(
+                                    "call_child_shell", "exec_command", {"cmd": "printf CHILD_TOOL_OUTPUT"}
+                                )
+                            ],
                             model=MODEL,
                         )
                     else:
@@ -203,7 +211,7 @@ async def test_subagent_spawn_and_wait_report_the_child_identity(
                         assert result.call_id not in handled
                         handled.add(result.call_id)
                         assert "CHILD_TOOL_OUTPUT" in result.output
-                        stream = sse.response_stream([sse.Message("CHILD_DONE")], model=MODEL)
+                        stream = responses_sse.response_stream([responses_sse.Message("CHILD_DONE")], model=MODEL)
                 await exchange.send(*stream.events)
 
         assert handled == {"call_spawn_child", "call_wait_child", "child_start", "call_child_shell"}
@@ -237,9 +245,9 @@ async def test_subagent_spawn_and_wait_report_the_child_identity(
             async with await openai_responses.await_next_request() as exchange:
                 assert any("CHILD_DONE" in output.output for output in exchange.request.function_call_outputs)
                 await exchange.send(
-                    *sse.response_stream(
+                    *responses_sse.response_stream(
                         [
-                            sse.FunctionCall(
+                            responses_sse.FunctionCall(
                                 "call_wait_after_resume",
                                 "wait_agent",
                                 {"targets": [spawned_id], "timeout_ms": 1000},
@@ -253,7 +261,9 @@ async def test_subagent_spawn_and_wait_report_the_child_identity(
                 result = exchange.request.function_call_outputs[-1]
                 assert result.call_id == "call_wait_after_resume"
                 assert json.loads(result.output)["status"] == {spawned_id: "not_found"}, result
-                await exchange.send(*sse.response_stream([sse.Message("RESUME_PROBE_DONE")], model=MODEL).events)
+                await exchange.send(
+                    *responses_sse.response_stream([responses_sse.Message("RESUME_PROBE_DONE")], model=MODEL).events
+                )
             assert (await recovery.completed()).params.turn.status is wire.TurnStatus.COMPLETED
         recovered_waits = [
             frame["params"]["item"]

@@ -30,7 +30,7 @@ class ThreadView(BaseModel):
     created_at: datetime
     name: str | None = Field(description="The user-given name; None while the thread is unnamed.")
     archived: bool
-    last_cursor: int = Field(description="The highest stored follow cursor; 0 while nothing is stored.")
+    last_cursor: int = Field(description="The highest stored Event cursor; 0 while nothing is stored.")
     last_event_at: datetime | None = None
     last_model_activity_at: datetime | None = Field(
         default=None,

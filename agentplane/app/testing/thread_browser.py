@@ -3,7 +3,7 @@
 
 A conftest fixture outranks a plugin's, so each test module defines `service_history_db_url` itself,
 as `electric`'s database, for the package conftest's history fixtures to follow; `gateway_registry` as
-`placements`, where the package conftest's `event_logs` registers Sessions; and `inventory` as
+`placements`, where the package conftest's `event_logs` registers Sessions; and `gateway` as
 `gateway_client`, for its `store` to ask where they run.
 """
 
@@ -20,7 +20,7 @@ import pytest
 from playwright.async_api import Locator, Page, TimeoutError as PlaywrightTimeoutError, async_playwright
 
 from agentplane.app.testing import history_probe, thread_view_marks
-from agentplane.app.testing.history import SANDBOX_NAMESPACE, SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.http2_proxy import BrowserCertificate, Ingress, browser_certificate, http2_proxy
 from agentplane.app.testing.replication_process import AppProcess, app_process
 from agentplane.app.testing.replication_source import (
@@ -33,6 +33,7 @@ from agentplane.app.testing.replication_source import (
 )
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.grpc_calls import dial
 from agentplane.grpc_serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.electric_service import (
@@ -43,7 +44,7 @@ from agentplane.history_service.testing.electric_service import (
 )
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2, event_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from util.bazel.runfiles import get_required_path
 from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
 from util.testing.postgres import DatabaseNames
@@ -121,7 +122,7 @@ class ThreadBrowser:
     page: Page
     source: ReplicationSource
     store: ThreadStore
-    event_logs: EventLogStore
+    event_logs: SeededEventLogStore
     content: ContentStore
     history: History
     opened: Opened
@@ -164,20 +165,22 @@ async def gateway_port(placements: Placements) -> AsyncIterator[int]:
 
 
 @pytest.fixture
-async def gateway_client(gateway_port: int, tmp_path: Path) -> AsyncIterator[SandboxServiceClient]:
+async def gateway_client(gateway_port: int, tmp_path: Path) -> AsyncIterator[RunnerGatewayClient]:
     token_file = tmp_path / "gateway-token"
     await asyncio.to_thread(token_file.write_text, "test-browser-gateway-peer")
-    async with SandboxServiceClient(
-        f"127.0.0.1:{gateway_port}",
-        gateway_target=f"127.0.0.1:{gateway_port}",
-        namespace=SANDBOX_NAMESPACE,
-        token_file=token_file,
-        gateway_token_file=token_file,
-        command_admission_timeout_s=10,
-        request_timeout_s=10,
-        lifecycle_timeout_s=10,
-    ) as client:
-        yield client
+    async with dial(f"127.0.0.1:{gateway_port}") as channel:
+        yield RunnerGatewayClient(
+            channel,
+            token_file=token_file,
+            command_admission_timeout_s=10,
+            request_timeout_s=10,
+            control=SandboxControlClient(
+                control_target=f"127.0.0.1:{gateway_port}",
+                token_file=token_file,
+                request_timeout_s=10,
+                lifecycle_timeout_s=10,
+            ),
+        )
 
 
 @pytest.fixture
@@ -211,7 +214,7 @@ async def thread_browser(
     page: Page,
     db_url: str,
     store: ThreadStore,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
     thread_source: ReplicationSource,
     history: History,
@@ -227,11 +230,11 @@ async def thread_browser(
     server = grpc.aio.server()
     add_replication_source(source, server)
     async with (
-        serving(server, "127.0.0.1:0", grace_s=0) as runner_port,
+        serving(server, "127.0.0.1:0", grace_s=0) as service_port,
         source.ingesting(history),
         app_process(
             db_url,
-            runner_port,
+            service_port,
             history_client,
             frontend_directory=directory,
             replay_after=replay_after,

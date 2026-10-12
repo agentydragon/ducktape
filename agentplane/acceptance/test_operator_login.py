@@ -14,6 +14,7 @@ from pydantic import JsonValue, SecretStr
 from agentplane.acceptance.operator_login import (
     KUBE_PROXY,
     SECRET_PATH,
+    IdentityProvider,
     LoginBlockedError,
     OperatorCredentials,
     app_origin,
@@ -323,7 +324,7 @@ async def test_dex_login_uses_simple_local_form_and_preserves_app_oidc_flow() ->
         raise AssertionError(f"unexpected request: {request.url}")
 
     async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
-        await login_operator(http, credentials, provider="dex")
+        await login_operator(http, credentials, provider=IdentityProvider.DEX)
     assert steps == [
         "GET /auth/login",
         "GET /dex/auth",
@@ -499,7 +500,7 @@ async def test_login_failure_reports_boundary_without_response_details(at_app: b
 
     async with httpx.AsyncClient(base_url=APP, transport=httpx.MockTransport(respond)) as http:
         with pytest.raises(LoginBlockedError) as caught:
-            await login_operator(http, CREDENTIALS, provider="dex")
+            await login_operator(http, CREDENTIALS, provider=IdentityProvider.DEX)
     stage = "app login" if at_app else "dex authorization"
     assert str(caught.value) == f"BLOCKED: {stage} returned HTTP {status}"
 

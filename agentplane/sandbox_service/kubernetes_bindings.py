@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from collections.abc import Set
 
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import RbacAuthorizationV1Api
@@ -11,8 +12,8 @@ from kubernetes_asyncio.client import RbacAuthorizationV1Api
 from agentplane.crd_group import GROUP
 from agentplane.proto.sandbox_service_pb2 import ResolvedGrant, Sandbox
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
+from agentplane.sandbox_service.errors import SandboxNotFoundError
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.models import SandboxNotFoundError
 from util.agent_sandbox import SANDBOX_API
 
 logger = logging.getLogger(__name__)
@@ -94,12 +95,12 @@ class KubernetesBindings:
         inventory: SandboxInventory,
         rbac: RbacAuthorizationV1Api,
         *,
-        cleanup_namespaces: set[str] | None = None,
+        cleanup_namespaces: Set[str] = frozenset(),
         cleanup_cluster_bindings: bool = False,
     ) -> None:
         self._inventory = inventory
         self._rbac = rbac
-        self._cleanup_namespaces = cleanup_namespaces or set()
+        self._cleanup_namespaces = cleanup_namespaces
         self._cleanup_cluster_bindings = cleanup_cluster_bindings
 
     async def ensure(self, sandbox: Sandbox) -> None:

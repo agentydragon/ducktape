@@ -11,6 +11,9 @@ import asyncio
 import base64
 import datetime
 import logging
+from enum import StrEnum
+from types import TracebackType
+from typing import Self
 from urllib.parse import urlsplit
 from uuid import UUID
 
@@ -27,11 +30,17 @@ from sqlalchemy.sql.elements import ColumnElement
 from agentplane.action_service.db import ActionRequestRow, PushDeliveryRow, PushSubscriptionRow
 from agentplane.action_service.models import ActionState, OperatorPrincipal
 from agentplane.action_service.push_settings import WebPushSettings
-from agentplane.action_service.updates import PUSH_CHANNEL, ActionUpdates
+from agentplane.action_service.updates import PUSH_CHANNEL, ActionUpdateBroker
 
 logger = logging.getLogger(__name__)
 PUSH_TTL_SECONDS = 600
 _DEAD_SUBSCRIPTION_STATUSES = {404, 410}
+
+
+class DeliveryOutcome(StrEnum):
+    SENT = "sent"
+    DEAD = "dead"
+    RETRY = "retry"
 
 
 class PushShow(BaseModel):
@@ -154,10 +163,13 @@ class ActionPushNotifier:
         self._http = httpx.AsyncClient(timeout=10, follow_redirects=False)
         self._task: asyncio.Task[None] | None = None
 
-    def start(self) -> None:
+    async def __aenter__(self) -> Self:
         self._task = asyncio.create_task(self.run(), name="action-web-push")
+        return self
 
-    async def close(self) -> None:
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
         if self._task is not None:
             self._task.cancel()
             await asyncio.gather(self._task, return_exceptions=True)
@@ -165,7 +177,7 @@ class ActionPushNotifier:
 
     async def run(self) -> None:
         while True:
-            updates = ActionUpdates(self._database_url)
+            updates = ActionUpdateBroker(self._database_url)
             try:
                 async with updates.listener.connection():
                     with updates.subscribe_all() as subscription:
@@ -181,7 +193,7 @@ class ActionPushNotifier:
                             except TimeoutError:
                                 pass  # Background delivery retry/recovery only; the UI never polls.
             except Exception:
-                logger.warning("push reconciliation unavailable; retrying without logging payloads")
+                logger.warning("push reconciliation unavailable; retrying", exc_info=True)
             await asyncio.sleep(5)
 
     async def reconcile(self) -> bool:
@@ -225,11 +237,11 @@ class ActionPushNotifier:
                 else:
                     message = PushRetract(action_id=str(request.id), outcome=request.state.replace("_", " "))
                 result = await self._send_one(subscription, message)
-                if result == "dead":
+                if result is DeliveryOutcome.DEAD:
                     delivered = True
                     await session.delete(subscription)
                     await session.execute(select(func.pg_notify(PUSH_CHANNEL, "")))
-                elif result == "sent":
+                elif result is DeliveryOutcome.SENT:
                     delivered = True
                     await session.execute(
                         insert(delivery)
@@ -241,7 +253,7 @@ class ActionPushNotifier:
 
         return delivered
 
-    async def _send_one(self, row: PushSubscriptionRow, message: PushShow | PushRetract) -> str:
+    async def _send_one(self, row: PushSubscriptionRow, message: PushShow | PushRetract) -> DeliveryOutcome:
         try:
             self._identity.validate_endpoint(row.endpoint)
             encoded = WebPusher({"endpoint": row.endpoint, "keys": {"p256dh": row.p256dh, "auth": row.auth}}).encode(
@@ -261,10 +273,11 @@ class ActionPushNotifier:
                     },
                 )
             if response.status_code in _DEAD_SUBSCRIPTION_STATUSES:
-                return "dead"
+                return DeliveryOutcome.DEAD
             if response.is_success:
-                return "sent"
+                return DeliveryOutcome.SENT
         except Exception:
-            pass
-        logger.warning("web push delivery failed; sensitive details withheld")
-        return "retry"
+            logger.warning("web push delivery failed", exc_info=True)
+            return DeliveryOutcome.RETRY
+        logger.warning("web push delivery refused with HTTP %d", response.status_code)
+        return DeliveryOutcome.RETRY

@@ -42,6 +42,7 @@ class GitHubNotInstalledError(GitHubAccessError):
 
 class GitHubRetryError(Exception):
     def __init__(self, status_code: int, retry_seconds: int) -> None:
+        self.status_code = status_code
         self.retry_seconds = retry_seconds
         super().__init__(f"GitHub rate limited (HTTP {status_code}); retry in {retry_seconds}s")
 

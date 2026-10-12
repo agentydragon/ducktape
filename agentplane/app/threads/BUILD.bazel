@@ -21,12 +21,12 @@ py_library(
 )
 
 py_library(
-    name = "ingestion",
-    srcs = ["ingestion.py"],
+    name = "session_discovery",
+    srcs = ["session_discovery.py"],
     deps = [
         ":sessions",
         "//agentplane/app/threads/events:event_log",
-        "//agentplane/sandbox_service:models",
+        "//agentplane/sandbox_service:errors",
         "@pypi//grpcio",
         "@pypi//sqlalchemy",
     ],
@@ -71,7 +71,7 @@ py_library(
         "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",
-        "//agentplane/sandbox_service:client",
+        "//agentplane/runner_gateway:client",
         "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -124,8 +124,8 @@ py_library(
         "//agentplane/app/threads/events:event_log",
         "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:sandbox_service_pb2",
-        "//agentplane/sandbox_service:client",
-        "//agentplane/sandbox_service:models",
+        "//agentplane/runner_gateway:client",
+        "//agentplane/sandbox_service:errors",
         "@pypi//protobuf",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
@@ -135,7 +135,7 @@ py_library(
     name = "bridge",
     srcs = ["bridge.py"],
     deps = [
-        ":ingestion",
+        ":session_discovery",
         ":sessions",
         ":summaries",
         "//agentplane/app/threads/events:event_log",

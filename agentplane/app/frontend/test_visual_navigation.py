@@ -6,15 +6,15 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Page, expect
 
+from agentplane.app.frontend.testing.visual_assertions import _assert_phone_composer_layout
 from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture
-from agentplane.app.frontend.visual_assertions import _assert_phone_composer_layout
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
 from util.testing.visual_capture import VisualPage
 
 # gazelle:include_dep //util/testing:visual_fixtures
-# gazelle:include_dep //agentplane/app/frontend:visual_fixtures
-pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.visual_fixtures")
+# gazelle:include_dep //agentplane/app/frontend/testing:visual_fixtures
+pytest_plugins = ("util.testing.visual_fixtures", "agentplane.app.frontend.testing.visual_fixtures")
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
 

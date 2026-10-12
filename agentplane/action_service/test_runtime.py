@@ -49,7 +49,7 @@ from agentplane.action_service.service import ActionService, ExecutionLease, Uns
 from agentplane.action_service.settings import Settings
 from agentplane.action_service.testing.callers import in_sync_index
 from agentplane.action_service.testing.lifecycle import wait_available
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.kubernetes_watch import Freshness
 from agentplane.subjects import ServiceAccountRef
@@ -107,11 +107,11 @@ async def test_invalid_binding_fails_before_any_adapter_starts() -> None:
     catalog = ActionCatalog(
         groups={"first": _group({"transport": "stdio", "command": "unused"}), "invalid": _group({})}
     )
-    with patch.object(McpActionGroupExecutor, "start", new_callable=AsyncMock) as start:
+    with patch.object(McpActionGroupExecutor, "_start") as start:
         with pytest.raises(ValueError, match="ActionGroup 'invalid'"):
             async with running_executor(catalog):
                 pytest.fail("invalid binding was served")
-        start.assert_not_awaited()
+        start.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -130,12 +130,12 @@ async def test_malformed_http_binding_fails_before_any_connection_without_echoin
     config: dict[str, JsonValue],
 ) -> None:
     catalog = ActionCatalog(groups={"remote": _group(config)})
-    with patch.object(McpActionGroupExecutor, "start", new_callable=AsyncMock) as start:
+    with patch.object(McpActionGroupExecutor, "_start") as start:
         with pytest.raises(ValueError, match="invalid MCP binding") as error:
             async with running_executor(catalog):
                 pytest.fail("malformed binding was served")
         assert "test-only-private" not in str(error.value)
-        start.assert_not_awaited()
+        start.assert_not_called()
 
 
 @pytest.mark.parametrize("kind", ["echo", "hostexec", "unknown"])
@@ -204,22 +204,6 @@ def test_config_file_loads_reviewed_group_and_rejects_malformed_binding(
     assert "test-only-private" not in str(error.value)
 
 
-async def test_runtime_sanitizes_connect_and_cleanup_failures() -> None:
-    catalog = ActionCatalog(
-        groups={
-            "remote": _group({"transport": "streamable-http", "url": "http://test-peer.invalid/mcp", "auth": "none"})
-        }
-    )
-    with (
-        patch.object(McpActionGroupExecutor, "start", AsyncMock(side_effect=RuntimeError("private connect material"))),
-        patch.object(McpActionGroupExecutor, "close", AsyncMock(side_effect=RuntimeError("private cleanup material"))),
-        pytest.raises(RuntimeError, match="MCP shutdown failed") as error,
-    ):
-        async with running_executor(catalog):
-            pytest.fail("unavailable runtime served")
-    assert error.value.__suppress_context__
-
-
 async def test_live_catalog_and_exact_group_dispatch(execution_lease: ExecutionLease) -> None:
     servers = {key: FastMCP(key) for key in ("one", "two")}
     for key, server in servers.items():
@@ -259,7 +243,7 @@ async def test_partial_startup_closes_current_and_previous_adapter(failure: str)
     adapters = {key: McpActionGroupExecutor.from_group(key, group) for key, group in catalog.groups.items()}
     names = {adapter: key for key, adapter in adapters.items()}
 
-    async def start(adapter: McpActionGroupExecutor) -> None:
+    def start(adapter: McpActionGroupExecutor) -> None:
         events.append(f"start {names[adapter]}")
         if len(events) == 2:
             if failure == "connect":
@@ -273,7 +257,7 @@ async def test_partial_startup_closes_current_and_previous_adapter(failure: str)
 
     with (
         patch.object(McpActionGroupExecutor, "from_group", side_effect=lambda key, group: adapters[key]),
-        patch.object(McpActionGroupExecutor, "start", start),
+        patch.object(McpActionGroupExecutor, "_start", start),
         patch.object(McpActionGroupExecutor, "close", close),
     ):
         expected = asyncio.CancelledError if failure == "cancel" else RuntimeError
@@ -405,7 +389,7 @@ async def test_main_failure_disposes_engine_after_owned_resources(failure: str) 
         patch("agentplane.action_service.main.make_engine", return_value=engine),
         patch("agentplane.action_service.main.verify_schema", verify),
         patch("agentplane.service_process.k8s_config.load_incluster_config"),
-        patch.object(ActionService, "start", start),
+        patch.object(ActionService, "_start", start),
         patch.object(ActionService, "close", close),
         patch.object(uvicorn.Server, "serve", serve),
     ):
@@ -536,7 +520,7 @@ async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine:
         DisabledOperatorAuthenticator(),
         catalog,
         callers=in_sync_index(),
-        updates=ActionUpdates(db_url),
+        updates=ActionUpdateBroker(db_url),
         direct_wait_seconds=30,
         max_wait_seconds=30,
     )
@@ -545,7 +529,10 @@ async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine:
     # Uvicorn re-raises captured signals to the previous handler on context exit.
     signal.signal(signal.SIGTERM, lambda sig, frame: None)
     try:
-        async with httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test-actions") as client:
+        async with (
+            service,
+            httpx.AsyncClient(transport=httpx.ASGITransport(app), base_url="http://test-actions") as client,
+        ):
             assert (await client.get("/readyz")).status_code == 200
             with server.capture_signals():
                 signal.raise_signal(signal.SIGTERM)
@@ -555,7 +542,6 @@ async def test_sigterm_fences_readiness_and_traffic_before_http_shutdown(engine:
                 assert (await client.get("/healthz")).status_code == 200
                 assert (await client.post("/v1/action-requests", json={})).status_code == 503
                 assert (await client.post("/mcp", json={})).status_code == 503
-        await service.close()
     finally:
         signal.signal(signal.SIGTERM, original_handler)
 

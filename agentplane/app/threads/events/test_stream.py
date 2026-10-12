@@ -12,7 +12,7 @@ import pytest_bazel
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.summaries import FeedEnd, FeedSnapshot
-from agentplane.changes import Changes
+from agentplane.changes import ChangeSignal
 from agentplane.proto import event_log_pb2, runner_pb2
 
 # gazelle:include_dep @pypi//protobuf
@@ -25,7 +25,7 @@ async def test_terminal_stream_waits_without_spinning_for_service_suffix() -> No
     logs.last_cursor.return_value = 1
     logs.events.side_effect = [[], [event_log_pb2.EventEntry(cursor=1)], []]
     with patch("agentplane.app.threads.events.stream.KEEPALIVE_S", 0.01):
-        async with aclosing(follow(cast(EventLogStore, logs), Changes(), uuid4(), after_cursor=0)) as frames:
+        async with aclosing(follow(cast(EventLogStore, logs), ChangeSignal(), uuid4(), after_cursor=0)) as frames:
             async with asyncio.timeout(1):
                 assert b"event: attached" in await anext(frames)
                 assert await anext(frames) == b": keepalive\n\n"
@@ -47,7 +47,7 @@ async def test_stream_does_not_end_on_a_terminal_snapshot_behind_streamed_entrie
     logs.last_cursor.side_effect = [1, 2]
     logs.events.side_effect = [[event_log_pb2.EventEntry(cursor=1), event_log_pb2.EventEntry(cursor=2)], [], []]
     with patch("agentplane.app.threads.events.stream.KEEPALIVE_S", 0.01):
-        async with aclosing(follow(cast(EventLogStore, logs), Changes(), uuid4(), after_cursor=0)) as frames:
+        async with aclosing(follow(cast(EventLogStore, logs), ChangeSignal(), uuid4(), after_cursor=0)) as frames:
             async with asyncio.timeout(1):
                 assert b"event: attached" in await anext(frames)
                 assert b"id: 1" in await anext(frames)

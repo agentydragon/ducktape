@@ -163,7 +163,7 @@ through the same `.../events` reads.
 `waits.ActionWaiter` provides bounded, notification-driven receipt reads for transports that offer
 waiting. `WaitOptions` defaults to immediate reads and caps waits at 30 seconds, with `decision`
 and `terminal` predicates. Each ORM insertion of a canonical Action event emits a UUID-only
-PostgreSQL `NOTIFY` in the same transaction. Each `updates.ActionUpdates` owns one dedicated
+PostgreSQL `NOTIFY` in the same transaction. Each `updates.ActionUpdateBroker` owns one dedicated
 listener connection and coalesces wakeups per waiting request: the API holds one per service
 instance, and `push.ActionPushNotifier` opens a second when `web_push` is configured. It
 subscribes before rechecking durable state and releases registrations on every exit path. A lost

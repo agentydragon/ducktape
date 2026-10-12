@@ -169,17 +169,22 @@ database_template, history_db_url = migrated_database_fixtures(
 
 
 @pytest.fixture
-async def decision_log(history_db_url: str, decision_queue_size: int) -> AsyncIterator[DecisionLog]:
-    log = DecisionLog(
-        DecisionStore(make_engine(history_db_url), retention=timedelta(days=7)), queue_size=decision_queue_size
-    )
-    log.start()
-    try:
+async def decision_log(
+    history_db_url: str, decision_queue_size: int, decision_flush_seconds: float
+) -> AsyncIterator[DecisionLog]:
+    async with DecisionLog(
+        DecisionStore(make_engine(history_db_url), retention=timedelta(days=7)),
+        queue_size=decision_queue_size,
+        flush_seconds=decision_flush_seconds,
+    ) as log:
         yield log
-    finally:
-        await log.close()
 
 
 @pytest.fixture
 def decision_queue_size() -> int:
     return 2000
+
+
+@pytest.fixture
+def decision_flush_seconds() -> float:
+    return 5

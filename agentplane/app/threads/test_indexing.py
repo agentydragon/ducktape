@@ -12,7 +12,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy import event, func, select
 
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.thread_test_support import event_entry
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -38,7 +38,7 @@ from util.testing.undeclared_outputs import undeclared_outputs_dir
 )
 async def test_command_lookup_and_touched_projection_preload_stay_indexed_with_large_history(
     store: ThreadStore,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
     history: History,
     history_size: int,

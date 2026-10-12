@@ -302,7 +302,7 @@ async def test_service_preserves_human_approval_and_canonical_external_provenanc
 
     provider = RecordingProvider()
     service = ActionService(store, echo_catalog, {"agentplane": echo_executor}, providers=[provider])
-    try:
+    async with service:
         receipt = await service.submit(envelope, grant.principal(), external_grant=grant.provenance())
         assert receipt.state is ActionState.ALLOWED
         assert receipt.external_grant == grant.provenance()
@@ -314,8 +314,6 @@ async def test_service_preserves_human_approval_and_canonical_external_provenanc
             while view.state is not ActionState.SUCCEEDED:
                 await asyncio.sleep(0.01)
                 view = await service.get(receipt.id, grant.principal())
-    finally:
-        await service.close()
     (executed,) = echo_executor.requests
     assert executed.external_grant == grant.provenance()
     assert executed.caller == grant.principal().account
@@ -360,7 +358,7 @@ async def test_bound_service_account_is_auto_approved_by_its_binding_only(
         providers=[PolicySetDecisionProvider(visibility=github_visibility())],
         policies=index,
     )
-    try:
+    async with service:
         allowed = await service.submit(envelope, grant.principal(), external_grant=grant.provenance())
         assert allowed.state is ActionState.ALLOWED
         assert allowed.decision is not None
@@ -371,8 +369,6 @@ async def test_bound_service_account_is_auto_approved_by_its_binding_only(
         unbound = await service.submit(envelope, other.principal(), external_grant=other.provenance())
         assert unbound.state is ActionState.DECISION_PENDING
         assert unbound.decision is None
-    finally:
-        await service.close()
 
 
 if __name__ == "__main__":

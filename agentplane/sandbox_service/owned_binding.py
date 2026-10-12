@@ -4,7 +4,7 @@ from typing import Any
 
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.sandbox_service.models import InventoryError
+from agentplane.sandbox_service.errors import InventoryError
 from util.kubernetes import CustomObjectsClient
 
 

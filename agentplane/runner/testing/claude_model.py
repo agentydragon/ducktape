@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import itertools
 
-from agentplane.harness_tests.claude import anthropic_sse as sse
+from agentplane.harness_tests.claude import anthropic_sse
 from agentplane.harness_tests.claude.harness import MODEL
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.harness_tests.claude.requests import MessagesRequest
@@ -34,7 +34,7 @@ class ClaudeModel(ScriptedModel[MessagesRequest]):
         else:
             # Claude falls back to a non-streaming retry after losing an SSE response.
             async with request._exchange as exchange:
-                await exchange.respond(sse.message_body([_block(item) for item in items], model=self.model))
+                await exchange.respond(anthropic_sse.message_body([_block(item) for item in items], model=self.model))
 
     async def next_exchange(self) -> ModelExchange[MessagesRequest]:
         return await self.endpoint.await_next_request()
@@ -62,17 +62,21 @@ class ClaudeModel(ScriptedModel[MessagesRequest]):
         )
 
     def stream(self, items: list[Item]) -> tuple[SseEvent, ...]:
-        return sse.message_stream([_block(item) for item in items], model=self.model).events
+        return anthropic_sse.message_stream([_block(item) for item in items], model=self.model).events
 
     def opened_stream(self) -> tuple[SseEvent, ...]:
-        return sse.message_stream([sse.Text("never finished")], model=self.model).through("content_block_start").events
+        return (
+            anthropic_sse.message_stream([anthropic_sse.Text("never finished")], model=self.model)
+            .through("content_block_start")
+            .events
+        )
 
 
-def _block(item: Item) -> sse.Block:
+def _block(item: Item) -> anthropic_sse.Block:
     match item:
         case Text(text):
-            return sse.Text(text)
+            return anthropic_sse.Text(text)
         case Reasoning(text):
-            return sse.Thinking(text, next(_signatures))
+            return anthropic_sse.Thinking(text, next(_signatures))
         case ShellCall(call_id, command):
-            return sse.ToolUse(call_id, "Bash", {"command": command})
+            return anthropic_sse.ToolUse(call_id, "Bash", {"command": command})

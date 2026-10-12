@@ -250,7 +250,7 @@ async def _wait_ready(
         else:
             last_status = {"vm": _resource_view(vm, kind="VirtualMachine"), "vmi": None, "pod": None}
         await asyncio.sleep(min(5, _remaining(deadline)))
-    raise TimeoutError(f"VM {name!r} did not become ready within {timeout_s}s; last_status={last_status!r}")
+    raise TimeoutError(f"VM {name!r} did not become ready within {timeout_s}s; {last_status=}")
 
 
 def _pod_view(pod: k8s_client.V1Pod, api_client: k8s_client.ApiClient) -> dict[str, Any]:
@@ -359,9 +359,14 @@ def _validate_create_args(args: argparse.Namespace) -> dict[str, Any]:
         raise ValueError("--node-selector keys must be unique")
     if args.cpu_cores < 1:
         raise ValueError("--cpu-cores must be positive")
-    for option in ("memory", "state_disk", "workspace_disk", "storage_class"):
-        if not getattr(args, option):
-            raise ValueError(f"--{option.replace('_', '-')} must not be empty")
+    for option, value in (
+        ("--memory", args.memory),
+        ("--state-disk", args.state_disk),
+        ("--workspace-disk", args.workspace_disk),
+        ("--storage-class", args.storage_class),
+    ):
+        if not value:
+            raise ValueError(f"{option} must not be empty")
     return {
         "llm_base_url": _origin(args.llm_base_url, "--llm-base-url"),
         "proxy_url": _origin(args.proxy_url, "--proxy-url"),

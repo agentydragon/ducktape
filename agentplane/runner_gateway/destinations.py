@@ -6,7 +6,7 @@ from uuid import UUID
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxBinding, SandboxDestination, TeardownPhase
-from agentplane.sandbox_service.models import SandboxNotFoundError, SandboxTearingDownError
+from agentplane.sandbox_service.errors import SandboxNotFoundError, SandboxTearingDownError
 from agentplane.sandbox_service.reader import SandboxReader
 from util.agent_sandbox import SANDBOX_API, OperatingMode
 

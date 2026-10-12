@@ -82,7 +82,7 @@ async def gateway(
     add_service(resources, server)
     if settings.port == settings.runner_control_port:
         raise ValueError("gRPC and runner control stream ports must differ")
-    # A separate listener, so the network fence can admit runners to the control listener and nothing else.
+    # A separate listener, so the network fence can admit the egress proxy to it and nothing else.
     control_server = grpc.aio.server()
     runner_control_pb2_grpc.add_RunnerControlServicer_to_server(
         RunnerControlService(
@@ -119,19 +119,17 @@ async def gateway(
 
 
 async def serve(settings: Settings) -> None:
-    commands_engine = database_engine(settings.commands_database_url)
-    try:
-        async with (
-            k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
-            AsyncExitStack() as stack,
-        ):
-            server = grpc.aio.server()
-            add_health(server)
-            await stack.enter_async_context(gateway(settings, api, server, commands_engine))
-            await stack.enter_async_context(serving(server, f"{settings.host}:{settings.port}", grace_s=5))
-            await until_terminated()
-    finally:
-        await commands_engine.dispose()
+    async with (
+        k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
+        AsyncExitStack() as stack,
+    ):
+        commands_engine = database_engine(settings.commands_database_url)
+        stack.push_async_callback(commands_engine.dispose)
+        server = grpc.aio.server()
+        add_health(server)
+        await stack.enter_async_context(gateway(settings, api, server, commands_engine))
+        await stack.enter_async_context(serving(server, f"{settings.host}:{settings.port}", grace_s=5))
+        await until_terminated()
 
 
 def main() -> None:

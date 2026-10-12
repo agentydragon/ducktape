@@ -19,10 +19,10 @@ py_library(
     srcs = ["fold.py"],
     deps = [
         ":views",
+        "//agentplane/history_service:settled_cursors",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/sandbox_service:settled_cursors",
         "@pypi//protobuf",  # keep: mypy follows generated protobuf interfaces
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
@@ -85,9 +85,9 @@ py_library(
         ":projection_lease",
         ":recording",
         "//agentplane/history_service:channels",
+        "//agentplane/history_service:settled_cursors",
         "//agentplane/history_service/storage:store",
         "//agentplane/postgres:wakeups",
-        "//agentplane/sandbox_service:settled_cursors",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],
@@ -102,9 +102,9 @@ py_library(
         ":payloads",
         ":rows",
         ":views",
+        "//agentplane/history_service:settled_cursors",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:history_service_pb2",
-        "//agentplane/sandbox_service:settled_cursors",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
     ],

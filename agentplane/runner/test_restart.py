@@ -64,7 +64,8 @@ def _pidfd_open(pid: int) -> int:
     fd = int(libc.syscall(_SYS_PIDFD_OPEN, pid, 0))
     if fd < 0:
         code = ctypes.get_errno()
-        raise (ProcessLookupError if code == errno.ESRCH else OSError)(code, os.strerror(code))
+        # EINVAL: the pid survives only as a process group or session id, its leader already gone.
+        raise (ProcessLookupError if code in {errno.ESRCH, errno.EINVAL} else OSError)(code, os.strerror(code))
     return fd
 
 
@@ -239,6 +240,7 @@ async def test_state_fence_survives_native_leader_exit_until_its_child_group_is_
         cwd=tmp_path,
         environment={},
         state_owner_descriptor=owner.descriptor,
+        process_isolation=None,
     )
     tool_pid: int | None = None
     owner_descriptor_closed = False
@@ -299,6 +301,7 @@ async def test_native_leader_exit_stops_background_tool(tmp_path: Path) -> None:
         cwd=tmp_path,
         environment={},
         state_owner_descriptor=owner.descriptor,
+        process_isolation=None,
     )
     try:
         await process.start()

@@ -4,7 +4,7 @@ from enum import StrEnum
 
 from sqlalchemy.engine import URL
 
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.postgres.wakeups import WakeupListener
 
 
 class Channel(StrEnum):
@@ -14,5 +14,5 @@ class Channel(StrEnum):
     SUMMARIES = "agentplane_history_summary_changes"
 
 
-def create_wakeups(database_url: URL) -> Wakeups:
-    return Wakeups(database_url, channels=Channel, application_name="agentplane-history-changes")
+def create_wakeups(database_url: URL) -> WakeupListener:
+    return WakeupListener(database_url, channels=Channel, application_name="agentplane-history-changes")

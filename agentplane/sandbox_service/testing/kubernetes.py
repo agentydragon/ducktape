@@ -10,12 +10,14 @@ from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
 
+from agentplane.grpc_calls import dial
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination, ServiceAccount
 from agentplane.runner.service import Runner
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.testing.control_listener import control_plane, dialing, wait_connected
-from agentplane.runner_gateway.testing.grpc_service import service_client
+from agentplane.runner_gateway.testing.grpc_service import gateway_client, service
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.binding_storage import write_binding
@@ -26,6 +28,7 @@ from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
 from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.testing.fake_inventory import RUNNER_ENDPOINTS
+from agentplane.sandbox_service.testing.grpc_service import sandbox_client
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict, fake_apiserver, pod_for
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -130,8 +133,9 @@ async def authenticated_service(
     token: str = "test-app-service-token",
     audience: str = "test-app-sandbox-service",
     platform_instructions: str = "Backend guidance for app-launched sessions.",
-) -> AsyncIterator[SandboxServiceClient]:
-    """The service over `cluster`, with `runner` as `SANDBOX`'s runner, connected over the control stream."""
+) -> AsyncIterator[tuple[SandboxServiceClient, RunnerGatewayClient]]:
+    """The Sandbox Service and gateway over `cluster`, with `runner` as `SANDBOX`'s runner, connected over the
+    control stream."""
     manager = manager or ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-app")
     await asyncio.to_thread(token_file.write_text, token)
     cluster.fake.tokens[token] = TokenVerdict(
@@ -153,9 +157,18 @@ async def authenticated_service(
         )
         async with (
             runner_connected(cluster, resources, runner),
-            service_client(resources, token_file, cluster.provisioning) as client,
+            service(resources, cluster.provisioning) as target,
+            dial(target) as channel,
         ):
-            yield client
+            yield (
+                sandbox_client(channel, token_file, namespace=cluster.inventory.namespace),
+                gateway_client(
+                    channel,
+                    token_file,
+                    command_admission_timeout_s=resources.runner_admission_ack_timeout_s + 10,
+                    control_target=target,
+                ),
+            )
 
 
 @asynccontextmanager

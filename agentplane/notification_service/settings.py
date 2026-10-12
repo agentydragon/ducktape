@@ -59,11 +59,10 @@ class SandboxServiceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     target: str = Field(description="Sandbox Service gRPC host:port, for Sandbox lookups.")
     gateway_target: str = Field(description="Runner Gateway gRPC host:port for session access and runner commands.")
-    control_target: str | None = Field(
-        default=None,
+    control_target: str = Field(
         description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
         "`{sandbox}-control.{namespace}.svc:8080`. Lifecycle calls go there, to the replica holding the "
-        "runner connection. Unset sends them to the Runner Gateway target.",
+        "runner connection."
     )
     request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
     lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
@@ -71,14 +70,15 @@ class SandboxServiceSettings(BaseModel):
         default=20,
         gt=0,
         allow_inf_nan=False,
-        description="Seconds to wait for the runner admission receipt via Sandbox Service; keep above its "
+        description="Seconds to wait for the runner admission receipt via the Runner Gateway; keep above its "
         "runner_admission_ack_timeout_s budget.",
     )
     # CLEANUP(added 2026-10-11): unread; the clients set their own channel options. Remove this field and
     #   its value in cluster/cdk8s/agentplane/notifications.py once agentplane-staging and agentplane-testing run an image that no longer reads it.
     grpc_channel_options: dict[str, int | str] = Field(
         default_factory=dict,
-        description="gRPC channel options for the Notification Service's connection to Sandbox Service.",
+        description="gRPC channel options for the Notification Service's connections to the Sandbox Service "
+        "and the Runner Gateway.",
     )
     token_file: Path = Field(
         description="Path to the rotating projected ServiceAccount token used to authenticate to Sandbox Service."

@@ -100,21 +100,18 @@ async def test_a_harness_the_supervisor_cannot_start_names_the_spawn_failure(
 
 
 async def test_summaries_report_the_published_log_not_a_batch_in_progress(tmp_path: Path) -> None:
-    runner = Runner(RunnerConfig(state_dir=tmp_path, harness_environment={}))
-    runner.store.write(
-        "test-session",
-        SessionRecord.from_spec(runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, model="test-model")),
-    )
-    session = await runner._load("test-session")
-    try:
+    async with Runner(RunnerConfig(state_dir=tmp_path, harness_environment={})) as runner:
+        runner.store.write(
+            "test-session",
+            SessionRecord.from_spec(runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, model="test-model")),
+        )
+        session = await runner._load("test-session")
         async with session.journal.batch():
             await session.emit(event_pb2.TurnStarted(turn_id="test-turn"), sources=[])
             (summary,) = runner.summaries()
             assert (summary.last_cursor, summary.active_turn_id) == (0, "")
         (summary,) = runner.summaries()
         assert (summary.last_cursor, summary.active_turn_id) == (1, "test-turn")
-    finally:
-        await runner.stop()
 
 
 async def test_vm_workspace_root_rejects_outside_paths_and_symlink_escapes(tmp_path: Path) -> None:
@@ -123,15 +120,12 @@ async def test_vm_workspace_root_rejects_outside_paths_and_symlink_escapes(tmp_p
     workspace.mkdir()
     outside.mkdir()
     (workspace / "escape").symlink_to(outside, target_is_directory=True)
-    runner = Runner(RunnerConfig(state_dir=tmp_path / "state", workspace_root=workspace))
-    try:
+    async with Runner(RunnerConfig(state_dir=tmp_path / "state", workspace_root=workspace)) as runner:
         runner._validate_workspace(str(workspace / "new-session"))
         with pytest.raises(ValueError, match="must be a child"):
             runner._validate_workspace(str(outside / "session"))
         with pytest.raises(ValueError, match="must be a child"):
             runner._validate_workspace(str(workspace / "escape" / "session"))
-    finally:
-        await runner.stop()
 
 
 if __name__ == "__main__":

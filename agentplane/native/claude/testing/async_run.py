@@ -6,9 +6,9 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from agentplane.native.async_process import AsyncNativeProcess, FrameCursor, FrameResponder
 from agentplane.native.claude import blocks, facade, wire
 from agentplane.native.claude.scenarios import HOOK_EVENTS
+from agentplane.native.testing.async_process import AsyncNativeProcess, FrameCursor, FrameResponder
 
 
 class ClaudeEvents:

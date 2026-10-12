@@ -12,7 +12,7 @@ from agentplane.action_service.policies.resources import (
 )
 from agentplane.action_service.policy_view import ActionPolicySetView, set_view
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.sandbox_service.models import InventoryError
+from agentplane.sandbox_service.errors import InventoryError
 from util.kubernetes import CustomObjectsClient
 
 ACTION_POLICY_API = (GROUP, VERSION)

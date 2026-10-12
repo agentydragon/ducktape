@@ -192,9 +192,8 @@ class App(Construct):
             args=cli_args(
                 Settings,
                 namespace=namespace,
-                # The same namespace for now: the split the flag exists for is a
-                # separate change, which moves the Sandboxes, their template, and the
-                # runner ServiceAccount out of here.
+                # TODO: a separate Sandbox namespace, holding the Sandboxes, their
+                # template and the runner ServiceAccount.
                 sandbox_namespace=namespace,
                 sandbox_service_target=f"{sandbox_service.service(namespace).fqdn}:{sandbox_service.service(namespace).pod_port}",
                 runner_gateway_target=runner_gateway.target(namespace),

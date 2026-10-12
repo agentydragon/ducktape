@@ -18,8 +18,8 @@ def agentplane_visual_test(name, src, title, shard_count = 1):
         shard_count = shard_count,
         test_deps = [
             ":visual_app",
-            ":visual_fixtures",
-            ":visual_assertions",
+            "//agentplane/app/frontend/testing:visual_fixtures",
+            "//agentplane/app/frontend/testing:visual_assertions",
             "//util/testing:page_capture",
             "//util/testing:viewports",
             "//util/testing:visual_capture",

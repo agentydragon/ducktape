@@ -166,12 +166,9 @@ async def mcp_executor(echo_catalog: ActionCatalog) -> AsyncIterator[McpActionGr
         return {"n": n}
 
     executor = McpActionGroupExecutor("agentplane", echo_catalog.groups["agentplane"], server)
-    await executor.start()
-    try:
+    async with executor:
         await wait_available(echo_catalog.groups["agentplane"])
         yield executor
-    finally:
-        await executor.close()
 
 
 @pytest.fixture

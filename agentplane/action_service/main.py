@@ -29,7 +29,7 @@ from agentplane.action_service.runtime import running_executor
 from agentplane.action_service.sandbox.inventory import SandboxClients
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.settings import Settings
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.service_process import background, configure_logging, kubernetes_configuration
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -64,10 +64,11 @@ async def async_main(settings: Settings) -> None:
         configuration = await kubernetes_configuration(None)
         catalog = ActionCatalog(groups=settings.action_groups)
         visibility = RepositoryVisibilityService(
-            httpx.AsyncClient(base_url=settings.github_visibility.api_base_url, timeout=REQUEST_TIMEOUT_SECONDS),
+            await stack.enter_async_context(
+                httpx.AsyncClient(base_url=settings.github_visibility.api_base_url, timeout=REQUEST_TIMEOUT_SECONDS)
+            ),
             ttl_seconds=settings.github_visibility.cache_ttl_seconds,
         )
-        stack.push_async_callback(visibility.aclose)
         api = await stack.enter_async_context(ApiClient(configuration=configuration))
         policy_index = PolicyIndex(
             freshness=Freshness(stale_after_seconds=settings.policy_resync_seconds * STALE_AFTER_CYCLES)
@@ -87,12 +88,14 @@ async def async_main(settings: Settings) -> None:
         )
         connections = ConnectionAuthority(make_sessionmaker(engine), policy_index)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
-        mcp_linkage = McpLinkageAuthority(
-            make_sessionmaker(engine), settings.mcp_servers, client_metadata=settings.mcp_client_metadata, engine=engine
+        mcp_linkage = await stack.enter_async_context(
+            McpLinkageAuthority(
+                make_sessionmaker(engine),
+                settings.mcp_servers,
+                client_metadata=settings.mcp_client_metadata,
+                engine=engine,
+            )
         )
-        await mcp_linkage.cleanup_removed_servers()
-        await mcp_linkage.start_refresh_loop()
-        stack.push_async_callback(mcp_linkage.close)
         # Built unconditionally: a configured sandbox group must fail at startup rather than at the
         # first dispatch, and an API client this process already holds costs nothing when unused.
         sandboxes = SandboxClients(
@@ -100,36 +103,35 @@ async def async_main(settings: Settings) -> None:
             core_v1=CoreV1Api(api),
             exec_runner=KubernetesWebSocketExecRunner(configuration),
         )
-        updates = ActionUpdates(settings.database_url)
+        updates = ActionUpdateBroker(settings.database_url)
         executors = await stack.enter_async_context(
             running_executor(catalog, mcp_linkage, sandboxes, on_health_change=updates.wake_mcp_health)
         )
-        push_notifier: ActionPushNotifier | None = None
         if settings.web_push is not None:
-            push_notifier = ActionPushNotifier(
-                PushIdentity(settings.web_push),
-                PushSubscriptionStore(make_sessionmaker(engine)),
-                base_url=settings.web_push.public_base_url,
-                database_url=settings.database_url,
+            await stack.enter_async_context(
+                ActionPushNotifier(
+                    PushIdentity(settings.web_push),
+                    PushSubscriptionStore(make_sessionmaker(engine)),
+                    base_url=settings.web_push.public_base_url,
+                    database_url=settings.database_url,
+                )
             )
-            stack.push_async_callback(push_notifier.close)
-            push_notifier.start()
 
         def drain_backends() -> None:
             for executor in executors.values():
                 executor.begin_drain()
 
-        service = ActionService(
-            ActionStore(make_sessionmaker(engine), external_grants=connections),
-            catalog,
-            executors,
-            providers=[PolicySetDecisionProvider(visibility=visibility)],
-            policies=policy_index,
-            on_drain=drain_backends,
-        )
         # Stop dispatch/lease tasks before closing the adapters, including failed service startup.
-        stack.push_async_callback(service.close)
-        await service.start()
+        service = await stack.enter_async_context(
+            ActionService(
+                ActionStore(make_sessionmaker(engine), external_grants=connections),
+                catalog,
+                executors,
+                providers=[PolicySetDecisionProvider(visibility=visibility)],
+                policies=policy_index,
+                on_drain=drain_backends,
+            )
+        )
         operator_authenticator: OperatorAuthenticator
         if settings.operator_oidc is not None:
             operator_authenticator = OidcOperatorAuthenticator(settings.operator_oidc)

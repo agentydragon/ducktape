@@ -15,7 +15,7 @@ from agentplane.proto import sandbox_service_pb2, sandbox_service_pb2_grpc
 from agentplane.proto.sandbox_service_pb2 import Sandbox
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.egress_views import BindingNotFoundError, UnknownPolicyError
-from agentplane.sandbox_service.models import InventoryError, SandboxConflictError, SandboxNotFoundError
+from agentplane.sandbox_service.errors import InventoryError, SandboxConflictError, SandboxNotFoundError
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.grpc_caller import authenticate
@@ -59,9 +59,7 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
     except ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError:
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection")
     except TimeoutError:
-        await context.abort(
-            grpc.StatusCode.DEADLINE_EXCEEDED, "service deadline expired; mutation outcome may be uncertain"
-        )
+        await context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "service deadline expired")
     except InventoryError:
         await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "sandbox state refused the request")
     except ConnectionError, k8s_client.ApiException:

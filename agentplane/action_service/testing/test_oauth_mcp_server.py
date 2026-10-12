@@ -56,7 +56,7 @@ async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_l
             server_id="example", server_url=f"{base_url}{PATH}", client_id=CLIENT_ID, redirect_uri=REDIRECT_URI
         )
         async with httpx2.AsyncClient(follow_redirects=False) as http:
-            authority = McpLinkageAuthority(make_sessionmaker(engine), {"example": server}, http=http)
+            authority = McpLinkageAuthority(make_sessionmaker(engine), {"example": server}, http=http, engine=engine)
             operator = OperatorPrincipal(issuer="test-oauth-fixture", subject="operator")
 
             start = await authority.start("example", McpLinkageStart(), operator)
@@ -81,8 +81,7 @@ async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_l
                 ),
             )
             executor = McpActionGroupExecutor.from_group_with_linkage("example", group, authority)
-            try:
-                await executor.start()
+            async with executor:
                 await wait_available(group)
                 result = await executor.execute(
                     ExecutionRequest(
@@ -94,8 +93,6 @@ async def test_full_linkage_cycle_and_tool_call(engine: AsyncEngine, execution_l
                     execution_lease,
                 )
                 assert CallToolResult.model_validate(result.result).structured_content == {"result": "Echo: hi"}
-            finally:
-                await executor.close()
 
 
 if __name__ == "__main__":

@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 
-from agentplane.harness_tests.claude import anthropic_sse as sse
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeHarness
+from agentplane.harness_tests.claude import anthropic_sse
+from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.native.claude import wire
 from util.bazel.runfiles import get_required_path
@@ -27,7 +27,7 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
     home.mkdir()
     config = home / ".claude"
     config.mkdir()
-    harness = ClaudeHarness(
+    harness = ClaudeLauncher(
         workspace=tmp_path,
         logs=logs,
         config=config,
@@ -43,9 +43,9 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
                     assert "Agent" in exchange.request.tool_names
                     assert "TaskOutput" not in exchange.request.tool_names
                     await exchange.send(
-                        *sse.message_stream(
+                        *anthropic_sse.message_stream(
                             [
-                                sse.ToolUse(
+                                anthropic_sse.ToolUse(
                                     "toolu_stdio_child",
                                     "Agent",
                                     {
@@ -64,7 +64,9 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
                     assert launch.tool_use_id == "toolu_stdio_child"
                     assert launch.is_error is False
                     assert "Reply STDIO_CHILD_DONE." in "\n".join(child.request.texts("user"))
-                    await parent.send(*sse.message_stream([sse.Text("STDIO_PARENT_WAITING")], model=MODEL).events)
+                    await parent.send(
+                        *anthropic_sse.message_stream([anthropic_sse.Text("STDIO_PARENT_WAITING")], model=MODEL).events
+                    )
                     await parent.close()
                     initial = await prompt.result()
                     assert initial.result == "STDIO_PARENT_WAITING"
@@ -73,11 +75,15 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
                         assert await run.crash() < 0
                         await child.wait_client_closed()
                     else:
-                        await child.send(*sse.message_stream([sse.Text("STDIO_CHILD_DONE")], model=MODEL).events)
+                        await child.send(
+                            *anthropic_sse.message_stream([anthropic_sse.Text("STDIO_CHILD_DONE")], model=MODEL).events
+                        )
                 if not active:
                     async with await model.await_next_request() as exchange:
                         assert "STDIO_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
-                        await exchange.send(*sse.message_stream([sse.Text("STDIO_PARENT_DONE")], model=MODEL).events)
+                        await exchange.send(
+                            *anthropic_sse.message_stream([anthropic_sse.Text("STDIO_PARENT_DONE")], model=MODEL).events
+                        )
                     assert (await completed.result()).result == "STDIO_PARENT_DONE"
                     if crash:
                         assert await run.crash() < 0
@@ -133,9 +139,9 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
                         assert "STDIO_CHILD_DONE" in "\n".join(exchange.request.texts("user"))
                     assert "TaskOutput" not in exchange.request.tool_names
                     await exchange.send(
-                        *sse.message_stream(
+                        *anthropic_sse.message_stream(
                             [
-                                sse.ToolUse(
+                                anthropic_sse.ToolUse(
                                     "toolu_stdio_read", "TaskOutput", {"task_id": started["task_id"], "block": False}
                                 )
                             ],
@@ -146,7 +152,9 @@ async def test_child_resume(tmp_path: Path, scenario: str) -> None:
                     (read,) = exchange.request.tool_results
                     assert read.is_error is True
                     assert "No such tool available: TaskOutput" in read.text
-                    await exchange.send(*sse.message_stream([sse.Text("STDIO_RESUMED")], model=MODEL).events)
+                    await exchange.send(
+                        *anthropic_sse.message_stream([anthropic_sse.Text("STDIO_RESUMED")], model=MODEL).events
+                    )
                 assert (await recovery.result()).result == "STDIO_RESUMED"
                 notifications = [
                     frame

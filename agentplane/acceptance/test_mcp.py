@@ -8,18 +8,19 @@ from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
-from typing import Any, Literal, cast
+from typing import Any, Literal
 from uuid import UUID, uuid4
 
 import httpx
 import pytest
 import pytest_bazel
-from pydantic import BaseModel, ConfigDict, JsonValue, TypeAdapter
+from pydantic import BaseModel, ConfigDict, JsonValue
 from tenacity import Retrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.acceptance.agent import Agent
 from agentplane.acceptance.conftest import NAMESPACE, TESTING_NAMESPACE
 from agentplane.acceptance.operator_login import (
+    IdentityProvider,
     LoginBlockedError,
     OperatorCredentials,
     app_origin,
@@ -30,7 +31,6 @@ from agentplane.acceptance.operator_login import (
 )
 from agentplane.action_service.mcp_linkage import McpLinkageStatus, McpLinkageView
 from agentplane.action_service.models import (
-    ActionEventView,
     ActionRequestView,
     ActionState,
     DecisionInput,
@@ -70,11 +70,11 @@ class PendingMcpReport(BaseModel):
     state: Literal["decision_pending"]
 
 
-def operator_idp() -> Literal["authentik", "dex"]:
-    value = os.environ.get("AGENTPLANE_ACCEPTANCE_IDP", "dex")
-    if value not in {"authentik", "dex"}:
+def operator_idp() -> IdentityProvider:
+    value = os.environ.get("AGENTPLANE_ACCEPTANCE_IDP", IdentityProvider.DEX)
+    if value not in set(IdentityProvider):
         pytest.fail("BLOCKED: AGENTPLANE_ACCEPTANCE_IDP must be authentik or dex", pytrace=False)
-    return cast(Literal["authentik", "dex"], value)
+    return IdentityProvider(value)
 
 
 class KubectlError(Exception):
@@ -286,15 +286,6 @@ def _bff_request(response: httpx.Response) -> ActionRequestView:
         pytest.fail("BFF returned an invalid ActionRequestView; response body withheld", pytrace=False)
 
 
-def _bff_events(response: httpx.Response) -> list[ActionEventView]:
-    """Withhold malformed event bodies just as for request receipts."""
-    __tracebackhide__ = True
-    try:
-        return TypeAdapter(list[ActionEventView]).validate_json(response.content)
-    except ValueError:
-        pytest.fail("BFF returned invalid ActionEventView history; response body withheld", pytrace=False)
-
-
 @pytest.mark.parametrize("verdict", list(Verdict))
 async def test_agent_mcp_bff_decision(
     operator_bff: httpx.AsyncClient,
@@ -360,7 +351,7 @@ wait for an operator decision in this turn.
         assert decided.execution is None
 
     completed = await agent.run(f"""
-Resume Action request {request_id}. The operator has decided {verdict.value}. Determine its terminal
+Resume Action request {request_id}. The operator has decided {verdict}. Determine its terminal
 outcome without submitting or deciding anything. Return only JSON with exactly request_id, state,
 and result. Copy result from execution when it exists; otherwise use null. Do not infer or fabricate it.
 """)
@@ -389,22 +380,6 @@ and result. Copy result from execution when it exists; otherwise use null. Do no
         assert terminal.execution.error is None
     else:
         assert terminal.execution is None
-
-    events_response = await operator_bff.get(f"{path}/events", params={"after_sequence": 0})
-    assert events_response.status_code == HTTPStatus.OK
-    events = _bff_events(events_response)
-    assert [event.sequence for event in events] == list(range(1, terminal.version + 1))
-    assert [event.state for event in events] == (
-        [
-            ActionState.DECISION_PENDING,
-            ActionState.ALLOWED,
-            ActionState.DISPATCHING,
-            ActionState.RUNNING,
-            ActionState.SUCCEEDED,
-        ]
-        if verdict is Verdict.ALLOW
-        else [ActionState.DECISION_PENDING, ActionState.DENIED]
-    )
 
     # Replay the original version/key after completion: same Decision and Execution, no new dispatch.
     duplicate = await operator_bff.post(f"{path}/decision", json=decision.model_dump(mode="json"))

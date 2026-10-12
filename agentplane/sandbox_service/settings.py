@@ -36,7 +36,10 @@ class Settings(YamlFileSettings):
         description="The Runner Gateway endpoint every new Sandbox's runner dials for its control stream."
     )
     runner_ingress: RunnerEndpoint = Field(description="The ingress every new Sandbox's runner pushes its Events to.")
-    gateway_target: str = Field(min_length=1, description="The Runner Gateway's Service, as `host:port`.")
+    # CLEANUP(added 2026-10-12): Nothing reads this; teardown reaches the gateway only through
+    #   `control_target`. Stop rendering it in cluster/cdk8s/agentplane/sandbox_service.py once a release
+    #   with this optional field has rolled out to staging, then remove the field after that rollout.
+    gateway_target: str | None = Field(default=None, description="Unread; see the CLEANUP above.")
     control_target: str = Field(
         min_length=1,
         description="A Sandbox's control Service, which reaches the gateway replica holding its runner connection, "

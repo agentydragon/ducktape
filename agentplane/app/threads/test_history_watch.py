@@ -4,12 +4,12 @@ from pathlib import Path
 import pytest_bazel
 
 from agentplane.app.threads.history_watch import HistoryWatch
-from agentplane.changes import Changes
+from agentplane.changes import ChangeSignal
 from agentplane.history_service.testing.backend import announce_fold_commit, history_service
 
 
 async def test_fold_commits_and_renewals_wake_thread_readers(service_history_db_url: str, tmp_path: Path) -> None:
-    changes = Changes()
+    changes = ChangeSignal()
     woken = asyncio.Event()
     async with history_service(service_history_db_url, tmp_path / "history-token", watch_lease_s=3) as history:
         watch = asyncio.create_task(HistoryWatch(history, changes.notify, retry_interval_s=0.05).run())

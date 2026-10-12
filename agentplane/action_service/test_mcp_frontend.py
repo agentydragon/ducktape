@@ -60,7 +60,7 @@ from agentplane.action_service.service import ActionService, Executor
 from agentplane.action_service.testing.callers import in_sync_index
 from agentplane.action_service.testing.credentials import WORKLOAD_CREDENTIAL_PLACEHOLDER
 from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
-from agentplane.action_service.updates import ActionSubscription, ActionUpdates
+from agentplane.action_service.updates import ActionSubscription, ActionUpdateBroker
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     POD_NAME_CLAIM,
@@ -162,7 +162,7 @@ class Frontend:
     app: FastAPI
     store: ActionStore
     service: ActionService
-    updates: ActionUpdates
+    updates: ActionUpdateBroker
     tokens: dict[str, WorkloadPrincipal]
 
     def client(self, token: str = "test-token-a", *, egress: bool = False) -> Client[StreamableHttpTransport]:
@@ -244,8 +244,17 @@ async def _serve(
     authentication.create_token_review = AsyncMock(side_effect=review)
     store = ActionStore(make_sessionmaker(engine))
     policies = _policy_index()
-    service = ActionService(store, catalog, executors, policies=policies)
-    updates = ActionUpdates(db_url)
+    # Tests move requests through the store by hand (decide, claim); only the startup pass of the
+    # dispatch and lease-sweep loops may run, so nothing dispatches or expires behind their back.
+    service = ActionService(
+        store,
+        catalog,
+        executors,
+        policies=policies,
+        dispatch_poll_interval=timedelta(hours=1),
+        lease_sweep_interval=timedelta(hours=1),
+    )
+    updates = ActionUpdateBroker(db_url)
     app = create_app(
         service,
         WorkloadPrincipalResolver(
@@ -258,11 +267,8 @@ async def _serve(
         direct_wait_seconds=30,
         max_wait_seconds=30,
     )
-    try:
-        async with lifespan_in_own_task(app):
-            yield Frontend(app, store, service, updates, tokens)
-    finally:
-        await service.close()
+    async with service, lifespan_in_own_task(app):
+        yield Frontend(app, store, service, updates, tokens)
 
 
 @pytest.fixture

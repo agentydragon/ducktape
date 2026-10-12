@@ -222,14 +222,16 @@ async def test_service_observation_page_rejects_missing_entries(engine: AsyncEng
 async def test_a_session_the_history_service_has_not_recorded_opens_with_empty_history(engine: AsyncEngine) -> None:
     # The runner pushes a new Session to the History Service after OpenSession has answered.
     reader = AsyncMock(spec=HistoryServiceClient)
-    reader.read_session_events.side_effect = HistoryServiceError(grpc.StatusCode.NOT_FOUND)
-    reader.read_session_observations.side_effect = HistoryServiceError(grpc.StatusCode.NOT_FOUND)
+    reader.read_session_events.side_effect = HistoryServiceError(grpc.StatusCode.NOT_FOUND, "test-unrecorded-session")
+    reader.read_session_observations.side_effect = HistoryServiceError(
+        grpc.StatusCode.NOT_FOUND, "test-unrecorded-session"
+    )
     store = EventLogStore(engine, summaries=Summaries(engine, reader), history_reader=reader)
     thread_id = await store.open(str(uuid4()))
     assert await store.exists(thread_id)
     assert await store.events(thread_id, limit=10) == []
     assert await store.read_watermark(thread_id) == 0
-    reader.read_session_events.side_effect = HistoryServiceError(grpc.StatusCode.UNAVAILABLE)
+    reader.read_session_events.side_effect = HistoryServiceError(grpc.StatusCode.UNAVAILABLE, "test-history-down")
     with pytest.raises(HistoryServiceError):
         await store.events(thread_id, limit=10)
 

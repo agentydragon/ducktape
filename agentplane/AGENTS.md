@@ -20,6 +20,12 @@ See [the dependency rule](docs/service_boundaries.md).
 - Acceptance for an extracted backend path must exercise it with the integration app unavailable.
   Do not add another command queue, event authority, or credential issuer as an incidental refactor.
 
+# Settings
+
+Service settings reject unknown keys, and the cdk8s manifests set them. Add a setting in code
+before a manifest sets it; remove one in two steps, the manifests first and the field after the
+rollout.
+
 # gRPC services
 
 Servicers, clients, auth, errors and server wiring follow [one pattern](docs/grpc_services.md).

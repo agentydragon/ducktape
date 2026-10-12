@@ -23,6 +23,12 @@ from tenacity import retry, retry_if_exception, stop_after_attempt
 from agentplane.action_service.policies.resources import CALLER_LABEL
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Sandbox, SandboxBinding, TeardownPhase
 from agentplane.sandbox_service.binding_storage import read_binding
+from agentplane.sandbox_service.errors import (
+    SandboxConflictError,
+    SandboxNotFoundError,
+    SandboxRunningError,
+    SandboxTearingDownError,
+)
 from agentplane.sandbox_service.kubernetes_views import (
     CREATE_INTENT,
     INITIALIZING,
@@ -35,12 +41,6 @@ from agentplane.sandbox_service.kubernetes_views import (
     SandboxResource,
     sandbox_view,
     sandbox_views,
-)
-from agentplane.sandbox_service.models import (
-    SandboxConflictError,
-    SandboxNotFoundError,
-    SandboxRunningError,
-    SandboxTearingDownError,
 )
 from agentplane.sandbox_service.reader import SandboxReader
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints

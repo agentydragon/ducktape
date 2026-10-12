@@ -19,7 +19,8 @@ import logging
 from abc import ABC, abstractmethod
 from collections.abc import Callable, Coroutine, Mapping, Sequence
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from types import TracebackType
+from typing import Any, Self
 from uuid import UUID, uuid4
 
 import jsonschema
@@ -253,7 +254,7 @@ class ActionService:
         self._sweep_task: asyncio.Task[None] | None = None
         self._dispatch_task: asyncio.Task[None] | None = None
 
-    async def start(self) -> None:
+    async def _start(self) -> None:
         """Resume only dispatches that provably never started; liveness sweeps handle the rest.
 
         A restart never assumes in-flight work died with the old process: the sweep loop
@@ -278,6 +279,22 @@ class ActionService:
             if self._on_drain is not None:
                 self._on_drain()
             self._close_task = asyncio.create_task(self._close(), name="action-service-drain")
+
+    async def __aenter__(self) -> Self:
+        if self._heartbeat_task is not None or self.draining:
+            raise RuntimeError("action service already started or stopped")
+        try:
+            await self._start()
+        except BaseException:
+            # Stops the dispatch/lease tasks a partial start left running.
+            await self.close()
+            raise
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        await self.close()
 
     async def close(self) -> None:
         self.begin_drain()
@@ -560,9 +577,10 @@ class ActionService:
                 },
             )
         except Exception as error:
+            logger.warning("executor failed for Action request %s", claim.request_id, exc_info=True)
             result = ExecutionResult(
                 state=ExecutionState.FAILED,
-                error={"kind": type(error).__name__, "message": "executor failed; see credential-safe adapter metrics"},
+                error={"kind": type(error).__name__, "message": "executor failed; see the Action Service log"},
             )
         completion = asyncio.create_task(
             self._store.finish_execution(claim.request_id, claim.executor_id, claim.lease_token, result),
@@ -586,5 +604,7 @@ class ActionService:
                     if not await lease.heartbeat():
                         return
             except Exception:
-                logger.warning("completion lease renewal failed; authenticated outcome delivery still pending")
+                logger.warning(
+                    "completion lease renewal failed; authenticated outcome delivery still pending", exc_info=True
+                )
                 return

@@ -41,11 +41,11 @@ from sqlalchemy import ColumnElement, delete, inspect, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.app.electric import ElectricProxy, router
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.changes import Changes
+from agentplane.changes import ChangeSignal
 from agentplane.history_service.fold.models import ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.fold.views import ThreadPayloadReference
 from agentplane.history_service.testing.backend import history_service
@@ -159,80 +159,76 @@ class _FollowedBody:
 @asynccontextmanager
 async def _followed_body(engine: AsyncEngine, token_file: Path) -> AsyncIterator[_FollowedBody]:
     """`engine` is the app's database; the body lives in the history database Electric replicates."""
-    async with electric_service() as service, history_service(service.database_url, token_file) as history_client:
-        history = History(service.database_url)
+    async with (
+        electric_service() as service,
+        history_service(service.database_url, token_file) as history_client,
+        History(service.database_url) as history,
+    ):
         forwarded: list[httpx.Request] = []
 
         async def forward(request: httpx.Request) -> None:
             forwarded.append(request)
 
-        try:
-            placements = Placements()
-            event_logs = EventLogStore(
-                engine,
-                history=history,
-                gateway=placements,
-                history_reader=history_client,
-                summaries=Summaries(engine, history_client),
+        placements = Placements()
+        event_logs = SeededEventLogStore(
+            engine,
+            history=history,
+            gateway=placements,
+            history_reader=history_client,
+            summaries=Summaries(engine, history_client),
+        )
+        source = ReplicationSource(placements)
+        thread = await event_logs.seed(SANDBOX, SESSION)
+        await history.set_attached(thread, source.attached)
+        started = (
+            event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=1)),
+            event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")),
+            event_pb2.Event(item_started=event_pb2.ItemStarted(item_id=_ITEM, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)),
+        )
+        for index, text in enumerate(_STREAMED):
+            delta = event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=_ITEM, text=text))
+            events = (*started, delta) if index == 0 else (delta,)
+            await history.record(thread, [source.append(event) for event in events])
+        async with history.sessions() as session:
+            text_ref = await session.scalar(
+                select(ThreadEntity.text_ref).where(ThreadEntity.thread_id == thread, ThreadEntity.entity_id == _ITEM)
             )
-            source = ReplicationSource(placements)
-            thread = await event_logs.seed(SANDBOX, SESSION)
-            await history.set_attached(thread, source.attached)
-            started = (
-                event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=1)),
-                event_pb2.Event(turn_started=event_pb2.TurnStarted(turn_id="turn", model="test-model")),
-                event_pb2.Event(
-                    item_started=event_pb2.ItemStarted(item_id=_ITEM, kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
-                ),
-            )
-            for index, text in enumerate(_STREAMED):
-                delta = event_pb2.Event(text_delta=event_pb2.TextDelta(item_id=_ITEM, text=text))
-                events = (*started, delta) if index == 0 else (delta,)
-                await history.record(thread, [source.append(event) for event in events])
-            async with history.sessions() as session:
-                text_ref = await session.scalar(
-                    select(ThreadEntity.text_ref).where(
-                        ThreadEntity.thread_id == thread, ThreadEntity.entity_id == _ITEM
-                    )
+        reference = ThreadPayloadReference.model_validate(text_ref)
+        assert reference.chunk_count == str(len(_STREAMED))
+        content = ContentStore(engine, history_reader=history_client)
+        scope = await content.current_scope(thread)
+        assert scope is not None
+        async with (
+            asyncio.timeout(120),
+            httpx.AsyncClient(base_url=service.url, timeout=35, event_hooks={"request": [forward]}) as electric,
+        ):
+            app = FastAPI()
+            app.state.electric = ElectricProxy(electric, content, event_logs=event_logs, thread_changes=ChangeSignal())
+            app.include_router(router)
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as browser:
+                proxy = _Shape(
+                    browser, f"/threads/{thread}/sync/chunks/text", {"projection_epoch": scope.projection_epoch}
                 )
-            reference = ThreadPayloadReference.model_validate(text_ref)
-            assert reference.chunk_count == str(len(_STREAMED))
-            content = ContentStore(engine, history_reader=history_client)
-            scope = await content.current_scope(thread)
-            assert scope is not None
-            async with (
-                asyncio.timeout(120),
-                httpx.AsyncClient(base_url=service.url, timeout=35, event_hooks={"request": [forward]}) as electric,
-            ):
-                app = FastAPI()
-                app.state.electric = ElectricProxy(electric, content, event_logs=event_logs, thread_changes=Changes())
-                app.include_router(router)
-                async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://app") as browser:
-                    proxy = _Shape(
-                        browser, f"/threads/{thread}/sync/chunks/text", {"projection_epoch": scope.projection_epoch}
-                    )
-                    holder = await _open(proxy)
-                    [opened] = forwarded
-                    held = await holder.load(reference)
-                    assert [row["text"] for row in held] == [json.dumps(text) for text in _STREAMED]
-                    bystander = await _open(proxy)
-                    keyed_shape = _Shape(
-                        electric,
-                        "/v1/shape",
-                        {key: value for key, value in opened.url.params.items() if key not in {"offset", "replica"}},
-                    )
-                    yield _FollowedBody(
-                        engine=history.engine,
-                        thread=thread,
-                        reference=reference,
-                        proxy=proxy,
-                        holder=holder,
-                        held=held,
-                        bystander=bystander,
-                        keyed=await _open(keyed_shape),
-                    )
-        finally:
-            await history.close()
+                holder = await _open(proxy)
+                [opened] = forwarded
+                held = await holder.load(reference)
+                assert [row["text"] for row in held] == [json.dumps(text) for text in _STREAMED]
+                bystander = await _open(proxy)
+                keyed_shape = _Shape(
+                    electric,
+                    "/v1/shape",
+                    {key: value for key, value in opened.url.params.items() if key not in {"offset", "replica"}},
+                )
+                yield _FollowedBody(
+                    engine=history.engine,
+                    thread=thread,
+                    reference=reference,
+                    proxy=proxy,
+                    holder=holder,
+                    held=held,
+                    bystander=bystander,
+                    keyed=await _open(keyed_shape),
+                )
 
 
 def _operations(batches: list[list[Message]]) -> list[list[tuple[str, int]]]:

@@ -6,8 +6,8 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 
-from agentplane.native.async_process import AsyncNativeProcess, FrameCursor, FrameResponder
 from agentplane.native.codex import facade, scenarios, wire
+from agentplane.native.testing.async_process import AsyncNativeProcess, FrameCursor, FrameResponder
 
 
 class CodexEvents:

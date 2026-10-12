@@ -33,20 +33,14 @@ from agentplane.action_service.database_migrate import RUNNER as ACTIONS_RUNNER
 from agentplane.action_service.db import ActionStore, make_engine, make_sessionmaker
 from agentplane.action_service.enrollments import ConfirmedReconnectConnection, EnrollmentAuthority, EnrollmentInput
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
-from agentplane.action_service.models import (
-    ActionEventView,
-    ActionRequestInput,
-    ActionState,
-    CallerPrincipal,
-    OperatorPrincipal,
-)
+from agentplane.action_service.models import ActionRequestInput, ActionState, CallerPrincipal, OperatorPrincipal
 from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import PERSONAL, admitted_callers
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.app.action_federation import FederatedOperatorActions
 from agentplane.app.action_federation_settings import DirectFederationSettings, ExchangeFederationSettings
 from agentplane.app.action_policy import (
@@ -67,7 +61,7 @@ from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
-from agentplane.app.testing.history import SeededEventLogStore as EventLogStore
+from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
@@ -76,8 +70,9 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
-from agentplane.postgres.wakeups import Wakeups
+from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner.harness import Harness
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, egress_binding, sandbox
@@ -155,9 +150,10 @@ def db_url(action_api_template: PostgresDatabaseTemplate, database_clones: Datab
 async def review(
     db_url: str,
     inventory: SandboxServiceClient,
+    gateway: RunnerGatewayClient,
     bridge: RunnerBridge,
     store: ThreadStore,
-    database_updates: Wakeups,
+    database_updates: WakeupListener,
     operator_sessions: OperatorSessionStore,
     egress: EgressAccess,
     decisions: DecisionsClient,
@@ -166,7 +162,7 @@ async def review(
     reviewer: TokenReviewer,
     operator_connection: str,
     direct_federation: bool,
-    event_logs: EventLogStore,
+    event_logs: SeededEventLogStore,
     content: ContentStore,
     history: History,
     history_client: HistoryServiceClient,
@@ -189,9 +185,7 @@ async def review(
     async with AsyncExitStack() as stack:
         engine = make_engine(db_url)
         stack.push_async_callback(engine.dispose)
-        executor = McpActionGroupExecutor("test_review", group, server)
-        stack.push_async_callback(executor.close)
-        await executor.start()
+        executor = await stack.enter_async_context(McpActionGroupExecutor("test_review", group, server))
         private_key, public_key = generate_rsa_keypair()
         idp_sock = bind_free_port()
         idp_origin, app_url = f"http://127.0.0.1:{idp_sock.getsockname()[1]}", "http://test-app.invalid"
@@ -203,11 +197,9 @@ async def review(
             jwks_uri=f"{idp_url}jwks/",
         )
         policies = admitted_callers(PERSONAL)
-        service = ActionService(
-            ActionStore(make_sessionmaker(engine)), catalog, {"test_review": executor}, policies=policies
+        service = await stack.enter_async_context(
+            ActionService(ActionStore(make_sessionmaker(engine)), catalog, {"test_review": executor}, policies=policies)
         )
-        stack.push_async_callback(service.close)
-        await service.start()
         connections = ConnectionAuthority(make_sessionmaker(engine), policies)
         enrollments = EnrollmentAuthority(make_sessionmaker(engine), connections)
         downstream = service_api.create_app(
@@ -218,7 +210,7 @@ async def review(
             callers=policies,
             connections=connections,
             enrollments=enrollments,
-            updates=ActionUpdates(db_url),
+            updates=ActionUpdateBroker(db_url),
             direct_wait_seconds=30.0,
             max_wait_seconds=30.0,
         )
@@ -385,7 +377,7 @@ async def review(
         replica = create_app(
             inventory,
             bridge,
-            ThreadStore(replica_engine, replica_summaries, gateway=inventory),
+            ThreadStore(replica_engine, replica_summaries, gateway=gateway),
             ModelCatalog(
                 models=[
                     ModelOption(
@@ -403,7 +395,7 @@ async def review(
             operator_actions=None
             if operator_connection == "disabled"
             else FederatedOperatorActions(federation, oidc, downstream_http),
-            event_logs=EventLogStore(
+            event_logs=SeededEventLogStore(
                 replica_engine,
                 history=history,
                 gateway=history.engine,
@@ -655,9 +647,6 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(
         "idempotency_key": "test-allow",
         "decision_note": "Reviewed scope — allowed for this request.",
     }
-    events_path = f"/actions/{pending.id}/events"
-    assert (await browser.get(events_path)).status_code == 401
-    assert (await browser.get(events_path, headers=AGENT_AUTH)).status_code == 403
     assert (await browser.get("/actions")).status_code == 401
     assert (await browser.get("/actions", headers=AGENT_AUTH)).status_code == 403
     assert (await browser.post(path, headers=AGENT_AUTH, json=decision)).status_code == 403
@@ -696,25 +685,6 @@ async def test_operator_decision_reaches_canonical_service_and_mcp_once(
     assert final["decision"]["decision_note"] == decision["decision_note"]
     assert (await browser.get("/actions")).json()[0]["decision"] == final["decision"]
     assert review.calls == ["hi"]
-    canonical_events = await service.events(pending.id, CALLER)
-    response = await browser.get(events_path)
-    assert response.status_code == 200
-    assert [ActionEventView.model_validate(event) for event in response.json()] == canonical_events
-    assert [event.sequence for event in canonical_events] == list(range(1, len(canonical_events) + 1))
-    for cursor in (0, 2, canonical_events[-1].sequence, canonical_events[-1].sequence + 1):
-        response = await browser.get(events_path, params={"after_sequence": cursor})
-        assert response.status_code == 200
-        assert [ActionEventView.model_validate(event) for event in response.json()] == await service.events(
-            pending.id, CALLER, after_sequence=cursor
-        )
-    assert (await browser.get(events_path, params={"after_sequence": -1})).status_code == 422
-    assert [event.state for event in canonical_events] == [
-        ActionState.DECISION_PENDING,
-        ActionState.ALLOWED,
-        ActionState.DISPATCHING,
-        ActionState.RUNNING,
-        ActionState.SUCCEEDED,
-    ]
     assert (await browser.post(path, json=decision)).json()["execution"]["id"] == final["execution"]["id"]
     assert review.calls == ["hi"]
     if direct_federation:
@@ -751,13 +721,12 @@ async def test_unconfigured_or_rejected_service_auth_fails_closed(
         CALLER,
     )
     await review.browser.get("/auth/login")
-    for read_path in ("/actions", f"/actions/{pending.id}/events"):
-        response = await review.browser.get(read_path)
-        assert response.status_code == expected
-        assert "test-private-provider-detail" not in response.text
-        assert "access_token" not in response.text
-        assert SUBJECT_A not in response.text
-        assert review.issuer not in response.text
+    response = await review.browser.get("/actions")
+    assert response.status_code == expected
+    assert "test-private-provider-detail" not in response.text
+    assert "access_token" not in response.text
+    assert SUBJECT_A not in response.text
+    assert review.issuer not in response.text
     assert (
         await review.browser.post(
             f"/actions/{pending.id}/decision",

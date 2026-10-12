@@ -67,9 +67,7 @@ an echo from a Sandbox nothing binds, so it waits for the operator, and returns 
 its UUID; Python inspects and decides through the app's `/actions/{id}` BFF; the
 same Agent polls in turn 2 and returns strict JSON. Python independently checks
 durable request/Decision/Execution snapshots, exact arguments/result, operator
-identity, duplicate-decision idempotency and stale-version rejection. Python also
-reads the full event history through the BFF's `GET /actions/{id}/events` and asserts
-the contiguous sequence and state progression. No canonical operator API fallback is used.
+identity, duplicate-decision idempotency and stale-version rejection. No canonical operator API fallback is used.
 
 `test_operator_links_oauth_mcp_server` exercises the operator-managed MCP OAuth linkage flow
 end to end against a real, deployed, OAuth-protected MCP server -- the `example` server, a

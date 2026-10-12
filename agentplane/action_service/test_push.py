@@ -25,13 +25,14 @@ from agentplane.action_service.models import (
 )
 from agentplane.action_service.push import (
     ActionPushNotifier,
+    DeliveryOutcome,
     PushIdentity,
     PushRetract,
     PushShow,
     PushSubscriptionStore,
 )
 from agentplane.action_service.push_settings import WebPushSettings
-from agentplane.action_service.updates import ActionUpdates
+from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.subjects import ServiceAccountRef
 
 OPERATOR = OperatorPrincipal(issuer="test", subject="operator")
@@ -52,15 +53,18 @@ class RecordingNotifier(ActionPushNotifier):
         self.recorded = recorded
         self.fail = fail
 
-    async def _send_one(self, row: PushSubscriptionRow, message: PushShow | PushRetract) -> str:
+    async def run(self) -> None:
+        """No NOTIFY-driven loop: each test drives reconcile() by hand and owns every send."""
+
+    async def _send_one(self, row: PushSubscriptionRow, message: PushShow | PushRetract) -> DeliveryOutcome:
         if self.fail:
-            return "retry"
+            return DeliveryOutcome.RETRY
         self.recorded.append((row.endpoint, message.kind))
-        return "sent"
+        return DeliveryOutcome.SENT
 
 
 async def test_push_settings_wake_on_remote_registration_and_removal(engine: AsyncEngine, db_url: str) -> None:
-    updates = ActionUpdates(db_url)
+    updates = ActionUpdateBroker(db_url)
     store = PushSubscriptionStore(make_sessionmaker(engine))
     endpoint = f"https://push.example/{uuid4()}"
     async with updates.listener.listen():
@@ -97,7 +101,7 @@ async def test_replica_delivery_and_recovery(engine: AsyncEngine, db_url: str) -
     recorded: list[tuple[str, str]] = []
     first = RecordingNotifier(engine, db_url, recorded, fail=True)
     second = RecordingNotifier(engine, db_url, recorded)
-    try:
+    async with second, first:
         assert not await first.reconcile()
         assert not recorded
         first.fail = False
@@ -118,9 +122,6 @@ async def test_replica_delivery_and_recovery(engine: AsyncEngine, db_url: str) -
             ("https://push.example/b", "show"),
         ]
         assert not await first.reconcile()
-    finally:
-        await first.close()
-        await second.close()
 
 
 async def test_auto_approved_request_is_never_pushed(engine: AsyncEngine, db_url: str) -> None:
@@ -143,11 +144,9 @@ async def test_auto_approved_request_is_never_pushed(engine: AsyncEngine, db_url
     )
     recorded: list[tuple[str, str]] = []
     notifier = RecordingNotifier(engine, db_url, recorded)
-    try:
+    async with notifier:
         assert not await notifier.reconcile()
         assert not recorded
-    finally:
-        await notifier.close()
 
 
 async def test_registration_owner_cannot_be_overwritten(engine: AsyncEngine) -> None:

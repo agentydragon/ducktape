@@ -16,6 +16,7 @@ from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncEngine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
+from agentplane.grpc_calls import ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SessionDefaults
 from agentplane.runner.client import RunnerClient
@@ -23,11 +24,11 @@ from agentplane.runner.errors import RunnerError, StreamClosedError
 from agentplane.runner.testing import events
 from agentplane.runner.testing.fixtures import RunnerHandle
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from agentplane.runner_gateway.client import Runner, RunnerGatewayClient
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.testing.grpc_service import service_client
 from agentplane.runner_gateway.testing.resources import build_resources
-from agentplane.sandbox_service.client import Runner, SandboxServiceClient, ServiceError
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION, OWNER, SANDBOX_UID, Cluster, runner_connected
 from agentplane.testing.fake_apiserver import TokenVerdict
@@ -65,7 +66,7 @@ async def connected(cluster: Cluster, resources: Resources, runner: RunnerHandle
 
 
 @pytest.fixture
-async def remote(resources: Resources, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
+async def remote(resources: Resources, token_file: Path) -> AsyncIterator[RunnerGatewayClient]:
     async with service_client(resources, token_file) as client:
         yield client
 
@@ -75,7 +76,7 @@ async def inspect(runner: Runner, session_id: str) -> runner_pb2.SessionSummary:
 
 
 async def complete_turn(
-    remote: SandboxServiceClient, journal: RunnerClient, model: ScriptedModel, session_id: str, command_id: str
+    remote: RunnerGatewayClient, journal: RunnerClient, model: ScriptedModel, session_id: str, command_id: str
 ) -> list[event_log_pb2.EventEntry]:
     command = command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text="Reply: GRPC_OK"))
     receipt = await remote.command(session_id, command)
@@ -203,7 +204,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     assert setup_marker.read_text() == "S"
 
 
-async def test_observe_command_and_resume_do_not_create_unknown_session(remote: SandboxServiceClient) -> None:
+async def test_observe_command_and_resume_do_not_create_unknown_session(remote: RunnerGatewayClient) -> None:
     runner = remote.runner(DESTINATION)
     unknown = str(uuid4())
     with pytest.raises(ServiceError) as commanded:
@@ -218,7 +219,7 @@ async def test_observe_command_and_resume_do_not_create_unknown_session(remote: 
     assert not await runner.list_sessions()
 
 
-async def test_failed_setup_cannot_be_resumed(remote: SandboxServiceClient, spec: runner_pb2.SessionSpec) -> None:
+async def test_failed_setup_cannot_be_resumed(remote: RunnerGatewayClient, spec: runner_pb2.SessionSpec) -> None:
     runner = remote.runner(DESTINATION)
     created = await runner.create(session_id=uuid4(), spec=MessageToDict(spec), setup_script="exit 42")
     async for attempt in AsyncRetrying(
@@ -233,7 +234,7 @@ async def test_failed_setup_cannot_be_resumed(remote: SandboxServiceClient, spec
 
 
 async def test_invalid_launch_and_failed_bootstrap_never_create(
-    remote: SandboxServiceClient, cluster: Cluster, spec: runner_pb2.SessionSpec
+    remote: RunnerGatewayClient, cluster: Cluster, spec: runner_pb2.SessionSpec
 ) -> None:
     runner = remote.runner(DESTINATION)
     invalid_specs: list[dict[str, object]] = [{}, {"harness": "HARNESS_CODEX", "model": "m"}]

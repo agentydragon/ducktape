@@ -1,6 +1,7 @@
 """Run the real authenticated service boundary over in-memory Kubernetes for consumer tests.
 
-The server has its own event loop so synchronous HTTP TestClients cannot starve gRPC.
+The server has its own event loop, so a test can block on it (`reconcile`, `wait_connected`) without
+starving gRPC.
 Only the endpoint and public client escape this fixture, never provisioning implementations.
 """
 
@@ -11,12 +12,14 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
+import grpc
 from anyio.from_thread import start_blocking_portal
 from kubernetes_asyncio import client as k8s_client
 
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.testing.control_listener import control_plane, wait_connected
-from agentplane.runner_gateway.testing.grpc_service import service
+from agentplane.runner_gateway.testing.grpc_service import gateway_client, service
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandbox_service.action_policy import ActionPolicyBindings
 from agentplane.sandbox_service.client import SandboxServiceClient
@@ -34,7 +37,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     sandbox,
 )
 from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
-from agentplane.sandbox_service.testing.grpc_service import connect
+from agentplane.sandbox_service.testing.grpc_service import sandbox_client
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import fake_apiserver
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
@@ -85,8 +88,13 @@ class Endpoint:
     control_target: str
     wait_connected: Callable[[UUID], None]
 
-    def client(self) -> SandboxServiceClient:
-        return connect(self.target, self.token_file, namespace=NAMESPACE, command_admission_timeout_s=20)
+    def sandboxes(self, channel: grpc.aio.Channel) -> SandboxServiceClient:
+        """The Sandbox Service's client over `channel`, which a test opens to `target`."""
+        return sandbox_client(channel, self.token_file, namespace=NAMESPACE)
+
+    def gateway(self, channel: grpc.aio.Channel) -> RunnerGatewayClient:
+        """The gateway's client over `channel`, which a test opens to `target`."""
+        return gateway_client(channel, self.token_file, command_admission_timeout_s=20, control_target=self.target)
 
 
 @contextmanager

@@ -136,31 +136,28 @@ async def test_allow_deny_no_opinion_matrix(
 ) -> None:
     store = ActionStore(make_sessionmaker(engine))
 
-    allow_only = ActionService(
+    async with ActionService(
         store, echo_catalog, {"agentplane": mcp_executor}, providers=[ScriptedProvider("p", ProviderVerdict.ALLOW)]
-    )
-    allowed = await allow_only.submit(body("matrix-allow"), CALLER)
-    assert allowed.state is ActionState.ALLOWED
-    assert allowed.decision is not None
-    assert allowed.decision.verdict is Verdict.ALLOW
-    await allow_only.close()
+    ) as allow_only:
+        allowed = await allow_only.submit(body("matrix-allow"), CALLER)
+        assert allowed.state is ActionState.ALLOWED
+        assert allowed.decision is not None
+        assert allowed.decision.verdict is Verdict.ALLOW
 
-    deny_only = ActionService(
+    async with ActionService(
         store, echo_catalog, {"agentplane": mcp_executor}, providers=[ScriptedProvider("p", ProviderVerdict.DENY)]
-    )
-    denied = await deny_only.submit(body("matrix-deny"), CALLER)
-    assert denied.state is ActionState.DENIED
-    assert denied.decision is not None
-    assert denied.decision.verdict is Verdict.DENY
-    await deny_only.close()
+    ) as deny_only:
+        denied = await deny_only.submit(body("matrix-deny"), CALLER)
+        assert denied.state is ActionState.DENIED
+        assert denied.decision is not None
+        assert denied.decision.verdict is Verdict.DENY
 
-    no_opinion_only = ActionService(
+    async with ActionService(
         store, echo_catalog, {"agentplane": mcp_executor}, providers=[ScriptedProvider("p", ProviderVerdict.NO_OPINION)]
-    )
-    pending = await no_opinion_only.submit(body("matrix-no-opinion"), CALLER)
-    assert pending.state is ActionState.DECISION_PENDING
-    assert pending.decision is None
-    await no_opinion_only.close()
+    ) as no_opinion_only:
+        pending = await no_opinion_only.submit(body("matrix-no-opinion"), CALLER)
+        assert pending.state is ActionState.DECISION_PENDING
+        assert pending.decision is None
 
 
 async def test_deny_dominates_even_when_the_allow_vote_finishes_first(
@@ -170,14 +167,12 @@ async def test_deny_dominates_even_when_the_allow_vote_finishes_first(
     fast_allow = ScriptedProvider("fast-allow", ProviderVerdict.ALLOW, delay=0.0)
     slow_deny = ScriptedProvider("slow-deny", ProviderVerdict.DENY, delay=0.05)
     service = ActionService(store, echo_catalog, {"agentplane": mcp_executor}, providers=[fast_allow, slow_deny])
-    try:
+    async with service:
         result = await service.submit(body("deny-dominance"), CALLER)
         assert result.state is ActionState.DENIED
         assert result.decision is not None
         assert result.decision.provider == "slow-deny"
         assert len(fast_allow.contexts) == len(slow_deny.contexts) == 1
-    finally:
-        await service.close()
 
 
 async def test_provider_timeout_is_not_allow_and_does_not_block_other_providers(
@@ -185,12 +180,11 @@ async def test_provider_timeout_is_not_allow_and_does_not_block_other_providers(
 ) -> None:
     store = ActionStore(make_sessionmaker(engine))
 
-    alone = ActionService(
+    async with ActionService(
         store, echo_catalog, {"agentplane": mcp_executor}, providers=[HangingProvider()], provider_timeout_seconds=0.02
-    )
-    pending = await alone.submit(body("timeout-alone"), CALLER)
-    assert pending.state is ActionState.DECISION_PENDING, "a timeout must never be treated as an allow"
-    await alone.close()
+    ) as alone:
+        pending = await alone.submit(body("timeout-alone"), CALLER)
+        assert pending.state is ActionState.DECISION_PENDING, "a timeout must never be treated as an allow"
 
     with_deny = ActionService(
         store,
@@ -199,11 +193,9 @@ async def test_provider_timeout_is_not_allow_and_does_not_block_other_providers(
         providers=[HangingProvider(), ScriptedProvider("deny", ProviderVerdict.DENY)],
         provider_timeout_seconds=0.02,
     )
-    try:
+    async with with_deny:
         denied = await with_deny.submit(body("timeout-with-deny"), CALLER)
         assert denied.state is ActionState.DENIED, "one provider timing out must not block another's deny"
-    finally:
-        await with_deny.close()
 
 
 async def test_provider_exception_is_not_allow_and_material_is_not_projected_or_logged(
@@ -214,14 +206,12 @@ async def test_provider_exception_is_not_allow_and_material_is_not_projected_or_
 ) -> None:
     store = ActionStore(make_sessionmaker(engine))
     service = ActionService(store, echo_catalog, {"agentplane": mcp_executor}, providers=[ExplodingProvider()])
-    try:
+    async with service:
         pending = await service.submit(body("provider-explodes"), CALLER)
         assert pending.state is ActionState.DECISION_PENDING
         rendered = "\n".join(record.getMessage() for record in caplog.records)
         assert "provider-secret-must-not-leak" not in rendered
         assert "provider-secret-must-not-leak" not in pending.model_dump_json()
-    finally:
-        await service.close()
 
 
 async def test_human_fallback_when_no_provider_has_an_opinion(
@@ -231,7 +221,7 @@ async def test_human_fallback_when_no_provider_has_an_opinion(
     service = ActionService(
         store, echo_catalog, {"agentplane": mcp_executor}, providers=[ScriptedProvider("p", ProviderVerdict.NO_OPINION)]
     )
-    try:
+    async with service:
         pending = await service.submit(body("human-fallback"), CALLER)
         assert pending.state is ActionState.DECISION_PENDING
 
@@ -242,8 +232,6 @@ async def test_human_fallback_when_no_provider_has_an_opinion(
         )
         assert decided.decision is not None
         assert decided.decision.provider == ActionService.HUMAN_PROVIDER
-    finally:
-        await service.close()
 
 
 async def test_stale_human_decision_after_auto_provider_already_decided(
@@ -253,7 +241,7 @@ async def test_stale_human_decision_after_auto_provider_already_decided(
     service = ActionService(
         store, echo_catalog, {"agentplane": mcp_executor}, providers=[ScriptedProvider("policy", ProviderVerdict.DENY)]
     )
-    try:
+    async with service:
         auto_decided = await service.submit(body("stale-human-after-auto"), CALLER)
         assert auto_decided.state is ActionState.DENIED
 
@@ -268,8 +256,6 @@ async def test_stale_human_decision_after_auto_provider_already_decided(
 
         unchanged = await store.get(auto_decided.id, OPERATOR)
         assert unchanged.state is ActionState.DENIED, "a stale human callback must never override the Decision"
-    finally:
-        await service.close()
 
 
 async def test_request_is_invisible_until_providers_finish(
@@ -279,7 +265,7 @@ async def test_request_is_invisible_until_providers_finish(
     store = ActionStore(make_sessionmaker(engine))
     provider = GatedProvider(ProviderVerdict.ALLOW)
     service = ActionService(store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider])
-    try:
+    async with service:
         async with asyncio.timeout(10), asyncio.TaskGroup() as tasks:
             submitted = tasks.create_task(service.submit(body("gated"), CALLER))
             await provider.entered.wait()
@@ -288,8 +274,6 @@ async def test_request_is_invisible_until_providers_finish(
         events = await store.events(submitted.result().id, OPERATOR)
         assert [event.state for event in events[:2]] == [ActionState.DECISION_PENDING, ActionState.ALLOWED]
         assert events[0].at == events[1].at, "pending and allowed commit together"
-    finally:
-        await service.close()
 
 
 async def test_decision_context_carries_only_the_authenticated_caller(
@@ -298,7 +282,7 @@ async def test_decision_context_carries_only_the_authenticated_caller(
     store = ActionStore(make_sessionmaker(engine))
     provider = ScriptedProvider("identity-check", ProviderVerdict.NO_OPINION)
     service = ActionService(store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider])
-    try:
+    async with service:
         forged = ActionRequestInput(
             idempotency_key="identity-context", title="test title for identity-context", action=ECHO, arguments={"n": 1}
         )
@@ -306,8 +290,6 @@ async def test_decision_context_carries_only_the_authenticated_caller(
         (context,) = provider.contexts
         assert context.caller == SUBJECT
         assert context.bindings == ()
-    finally:
-        await service.close()
 
 
 async def test_provider_reason_is_projected_separately_from_human_note(
@@ -320,7 +302,7 @@ async def test_provider_reason_is_projected_separately_from_human_note(
         {"agentplane": mcp_executor},
         providers=[ScriptedProvider("policy", ProviderVerdict.DENY, reason_code="untrusted_action")],
     )
-    try:
+    async with service:
         result = await service.submit(body("reason-projection"), CALLER)
         assert result.decision is not None
         assert result.decision.reason_code == "untrusted_action"
@@ -334,8 +316,6 @@ async def test_provider_reason_is_projected_separately_from_human_note(
         assert operator_view.decision.reason_code == "untrusted_action"
         assert operator_view.decision.provider == "policy"
         assert operator_view.decision == result.decision
-    finally:
-        await service.close()
 
 
 def _meta(name: str, *, generation: int = 1, version: str = "1") -> dict[str, Any]:
@@ -410,7 +390,7 @@ async def test_bound_subject_is_auto_approved_with_evidence_and_an_execution(
         },
     )
     service = _service(engine, echo_catalog, mcp_executor, index, github_visibility())
-    try:
+    async with service:
         allowed = await service.submit(body("bound", n=3), CALLER)
         assert allowed.state is ActionState.ALLOWED
         assert allowed.decision is not None
@@ -447,8 +427,6 @@ async def test_bound_subject_is_auto_approved_with_evidence_and_an_execution(
         pending = await service.submit(body("argument-miss", n=9), CALLER)
         assert pending.state is ActionState.DECISION_PENDING
         assert pending.decision is None
-    finally:
-        await service.close()
 
 
 @pytest.mark.parametrize(
@@ -541,7 +519,7 @@ async def test_nothing_grants_without_a_matching_valid_unexpired_binding(
     github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
     service = _service(engine, echo_catalog, mcp_executor, index(), github_visibility())
-    try:
+    async with service:
         pending = await service.submit(
             ActionRequestInput(
                 idempotency_key="unbound", title="test title for unbound", action=ECHO, arguments={"n": 1}
@@ -551,8 +529,6 @@ async def test_nothing_grants_without_a_matching_valid_unexpired_binding(
         assert pending.state is ActionState.DECISION_PENDING
         assert pending.decision is None
         assert pending.execution is None
-    finally:
-        await service.close()
 
 
 async def test_binding_change_after_admission_leaves_the_decision_alone(
@@ -566,15 +542,13 @@ async def test_binding_change_after_admission_leaves_the_decision_alone(
         bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["bounded-echo"]}},
     )
     service = _service(engine, echo_catalog, mcp_executor, index, github_visibility())
-    try:
+    async with service:
         allowed = await service.submit(body("before-removal"), CALLER)
         assert allowed.state is ActionState.ALLOWED
         index.bindings.clear()
         assert (await service.submit(body("after-removal"), CALLER)).state is ActionState.DECISION_PENDING
         view = await _succeeded(service, allowed.id)
         assert view.decision == allowed.decision
-    finally:
-        await service.close()
 
 
 async def test_invalid_arguments_are_rejected_before_persistence_and_provider_evaluation(
@@ -589,7 +563,7 @@ async def test_invalid_arguments_are_rejected_before_persistence_and_provider_ev
     store = ActionStore(make_sessionmaker(engine))
     provider = ScriptedProvider("policy", ProviderVerdict.NO_OPINION)
     service = ActionService(store, echo_catalog, {"agentplane": mcp_executor}, providers=[provider])
-    try:
+    async with service:
         with pytest.raises(InvalidActionArgumentsError, match="advertised Action schema"):
             await service.submit(
                 ActionRequestInput(
@@ -603,8 +577,6 @@ async def test_invalid_arguments_are_rejected_before_persistence_and_provider_ev
         accepted = await service.submit(body("schema-check"), CALLER)
         assert accepted.state is ActionState.DECISION_PENDING
         assert len(provider.contexts) == 1
-    finally:
-        await service.close()
 
 
 if __name__ == "__main__":

@@ -33,6 +33,17 @@ py_library(
 )
 
 py_library(
+    name = "grpc_calls",
+    srcs = ["grpc_calls.py"],
+    deps = [
+        ":grpc_options",
+        "//agentplane/runner:errors",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
     name = "kubernetes_watch",
     srcs = ["kubernetes_watch.py"],
 )

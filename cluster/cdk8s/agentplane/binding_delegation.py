@@ -16,8 +16,8 @@ from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
 from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant
+from cluster.cdk8s.agentplane import sandbox_service
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.agentplane.sandbox_service import NAME as SANDBOX_SERVICE_ACCOUNT_NAME
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -76,7 +76,7 @@ def chart(app: App, env: Environment, target_namespace: str) -> Chart:
         "role-binding",
         metadata=k8s.ObjectMeta(name=role_name, namespace=target_namespace),
         role_ref=k8s.RoleRef(api_group=_RBAC_GROUP, kind="Role", name=role_name),
-        subjects=[k8s.Subject(kind="ServiceAccount", name=SANDBOX_SERVICE_ACCOUNT_NAME, namespace=env.namespace)],
+        subjects=[k8s.Subject(kind="ServiceAccount", name=sandbox_service.NAME, namespace=env.namespace)],
     )
     return scope
 

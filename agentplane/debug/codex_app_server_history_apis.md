@@ -73,5 +73,4 @@ Codex history; it does not replace Agentplane's canonical Action/Event evidence.
 - [0.157.0 pagination handlers](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server/src/request_processors/thread_processor.rs#L846-L872)
   and [item-list handler](https://github.com/openai/codex/blob/rust-v0.157.0/codex-rs/app-server/src/request_processors/thread_processor.rs#L3230-L3293):
   bounds, store support, and response projection.
-  This note records the current protocol baseline for [`CODEX_RECOVERY_PROTOCOL`](../plans/task_freezer.md#codex_recovery_protocol--reconcile-through-documented-app-server-history-apis);
-  it does not implement the protocol migration.
+  This note records the current protocol baseline; it does not implement the protocol migration.

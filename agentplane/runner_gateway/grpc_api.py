@@ -20,7 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from agentplane.proto import (
     command_pb2,
     event_log_pb2,
-    runner_control_pb2 as control_pb2,
+    runner_control_pb2,
     runner_gateway_pb2,
     runner_gateway_pb2_grpc,
     runner_pb2,
@@ -44,7 +44,7 @@ from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, 
 from agentplane.runner_gateway.sealing import SEAL_S, Sealing
 from agentplane.runner_gateway.session_registry import SessionConflictError, SessionNotFoundError, SessionRegistry
 from agentplane.sandbox_service import wire
-from agentplane.sandbox_service.models import InventoryError, SandboxNotFoundError
+from agentplane.sandbox_service.errors import InventoryError, SandboxNotFoundError
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.grpc_caller import authenticate
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
@@ -104,20 +104,18 @@ async def errors(context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
         await context.abort(grpc.StatusCode.ALREADY_EXISTS, "session ID already belongs to another Sandbox")
     except CommandRefusedError as refused:
         code = {
-            control_pb2.CommandRefused.REASON_COMMAND_CONFLICT: grpc.StatusCode.ALREADY_EXISTS,
-            control_pb2.CommandRefused.REASON_INVALID_COMMAND: grpc.StatusCode.INVALID_ARGUMENT,
+            runner_control_pb2.CommandRefused.REASON_COMMAND_CONFLICT: grpc.StatusCode.ALREADY_EXISTS,
+            runner_control_pb2.CommandRefused.REASON_INVALID_COMMAND: grpc.StatusCode.INVALID_ARGUMENT,
         }.get(refused.refusal.reason, grpc.StatusCode.FAILED_PRECONDITION)
         await context.abort(code, f"runner refused the command: {refused}")
     except ControlRefusedError as refused:
-        if refused.refusal.reason == control_pb2.ControlRefused.REASON_INVALID_REQUEST:
+        if refused.refusal.reason == runner_control_pb2.ControlRefused.REASON_INVALID_REQUEST:
             await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "runner rejected invalid request")
         await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner rejected session or bootstrap state")
     except ValueError, ParseError:
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "invalid service request")
     except TimeoutError:
-        await context.abort(
-            grpc.StatusCode.DEADLINE_EXCEEDED, "service deadline expired; mutation outcome may be uncertain"
-        )
+        await context.abort(grpc.StatusCode.DEADLINE_EXCEEDED, "service deadline expired")
     except InventoryError, RunnerError:
         await context.abort(grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request")
     except DestinationUnavailableError, ConnectionError, k8s_client.ApiException, SQLAlchemyError:
@@ -189,7 +187,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
 
     async def list_runner_sessions(self, destination: SandboxDestination) -> list[runner_pb2.SessionSummary]:
         await self.held(destination, writes=False)
-        listing = control_pb2.ControlRequest(list_sessions=runner_pb2.ListSessionsRequest())
+        listing = runner_control_pb2.ControlRequest(list_sessions=runner_pb2.ListSessionsRequest())
         result = await self.resources.control.request(UUID(destination.sandbox_uid), listing)
         return list(result.list_sessions.sessions)
 
@@ -244,8 +242,6 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 sandbox_name=request.sandbox.sandbox,
                 sandbox_uid=sandbox_uid,
             )
-            if isinstance(cwd := overrides.get("cwd"), str):
-                overrides["cwd"] = cwd.replace("{session_id}", str(session_id))
             spec = session_lifecycle.launch_spec(
                 sandbox_service_pb2.SessionDestination(sandbox=request.sandbox, session_id=str(session_id)),
                 overrides,

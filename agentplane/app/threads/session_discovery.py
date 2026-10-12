@@ -6,13 +6,15 @@ A Session's history and its fold belong to the History Service; the app only ope
 import asyncio
 import contextlib
 import logging
+from types import TracebackType
+from typing import Self
 
 import grpc
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.app.threads.events.event_log import EventLogStore, SessionAdmissionError
 from agentplane.app.threads.sessions import SandboxNotReachableError, SandboxSessions
-from agentplane.sandbox_service.models import SandboxNotFoundError
+from agentplane.sandbox_service.errors import SandboxNotFoundError
 
 # gazelle:include_dep @pypi//grpcio
 
@@ -20,7 +22,7 @@ logger = logging.getLogger(__name__)
 RECONCILE_S: float = 2
 
 
-class Ingester:
+class SessionDiscovery:
     def __init__(self, *, runners: SandboxSessions, event_logs: EventLogStore) -> None:
         self._runners = runners
         self._event_logs = event_logs
@@ -28,10 +30,19 @@ class Ingester:
         self._reconcile_lock = asyncio.Lock()
         self._coordinator: asyncio.Task[None] | None = None
 
-    async def start(self) -> None:
-        """Start discovery, or wake it to reconcile now."""
-        if self._coordinator is None:
-            self._coordinator = asyncio.create_task(self._coordinate(), name="sandbox-ingestion")
+    async def __aenter__(self) -> Self:
+        if self._coordinator is not None:
+            raise RuntimeError("session discovery already running")
+        self._coordinator = asyncio.create_task(self._coordinate(), name="session-discovery")
+        return self
+
+    async def __aexit__(
+        self, exc_type: type[BaseException] | None, exc: BaseException | None, tb: TracebackType | None
+    ) -> None:
+        await self.close()
+
+    def wake(self) -> None:
+        """Reconcile now rather than at the next interval."""
         self._changed.set()
 
     async def _coordinate(self) -> None:
@@ -44,7 +55,7 @@ class Ingester:
             try:
                 await self.reconcile()
             except SQLAlchemyError, grpc.aio.AioRpcError, OSError:
-                logger.warning("sandbox ingestion reconciliation failed; will retry", exc_info=True)
+                logger.warning("session discovery failed; will retry", exc_info=True)
             with contextlib.suppress(TimeoutError):
                 await asyncio.wait_for(self._changed.wait(), timeout=RECONCILE_S)
 
@@ -76,8 +87,10 @@ class Ingester:
             logger.warning("sandbox %s Session discovery unavailable", sandbox, exc_info=True)
 
     async def close(self) -> None:
-        if self._coordinator is not None:
-            self._coordinator.cancel()
-            with contextlib.suppress(asyncio.CancelledError):
-                await self._coordinator
-            self._coordinator = None
+        """Stop discovery; idempotent, so a replica can stop before its context exits."""
+        coordinator, self._coordinator = self._coordinator, None
+        if coordinator is not None:
+            coordinator.cancel()
+            await asyncio.wait({coordinator})
+            if not coordinator.cancelled() and (error := coordinator.exception()) is not None:
+                raise error
