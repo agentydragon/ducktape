@@ -33,6 +33,9 @@ type StateVolume struct {
 type SandboxTemplateSpec struct {
 	Pod         corev1.PodTemplateSpec `json:"pod"`
 	StateVolume StateVolume            `json:"stateVolume"`
+	// PolicySets names the PolicySets every Sandbox of this template is bound to, besides its own:
+	// those its Pod cannot work without, such as the egress to the runner's endpoints.
+	PolicySets []string `json:"policySets,omitempty"`
 }
 
 // +kubebuilder:object:root=true

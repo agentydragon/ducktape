@@ -12,6 +12,7 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
+from agentplane.crd_group import GROUP
 from agentplane.egress.resources import placeholder_of
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from cluster.cdk8s.agentplane import history_service, notifications, runner_gateway, sandbox_service
@@ -203,6 +204,39 @@ def test_runner_endpoint_reaches_its_listener_with_the_pods_token(
         # The Sandbox Service refuses a template whose runner already names the endpoint.
         for container in pod["containers"]:
             assert not flags & set(container.get("args", [])), template["metadata"]["name"]
+
+
+def test_our_templates_bind_the_egress_their_runner_endpoints_need(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    """Our SandboxTemplate's runner is started with its endpoints, and every Sandbox of it is bound
+    to PolicySets that admit each endpoint's host and substitute its bearer."""
+    templates = [
+        (namespace, doc)
+        for namespace, docs in agentplane_manifests.items()
+        for doc in docs
+        if workload_kind(doc) == (GROUP, "SandboxTemplate")
+    ]
+    assert templates
+    for namespace, template in templates:
+        docs = agentplane_manifests[namespace]
+        rules = [
+            rule
+            for name in template["spec"]["policySets"]
+            for rule in _by_name(docs, "PolicySet", name)["spec"]["rules"]
+            if rule["type"] == "egress"
+        ]
+        runner = one(c for c in template["spec"]["pod"]["spec"]["containers"] if c["name"] == "runner")
+        args = runner["args"]
+        for target_flag, bearer_flag in (
+            ("--control-target", "--control-bearer"),
+            ("--ingress-target", "--ingress-bearer"),
+        ):
+            host = args[args.index(target_flag) + 1].rsplit(":", 1)[0]
+            bearer = args[args.index(bearer_flag) + 1]
+            assert any(
+                host in rule["hosts"] and bearer == placeholder_of(rule["credentialRef"]["name"]) for rule in rules
+            ), (namespace, template["metadata"]["name"], target_flag)
 
 
 if __name__ == "__main__":

@@ -472,9 +472,9 @@ flowchart LR
     ACTION_POLICY_MIGRATE[Candidate: Action policies move to PolicySet]
     ACTION_POLICY_MIGRATE --> OLD_POLICY_KINDS_DROP[Blocked: drop the old policy kinds]
     KUBERNETES_POLICY_SETS[Candidate: the grant catalog as named PolicySets]
-    ACTION_POLICY_MIGRATE --> SANDBOX_CONTROLLER_PROVISIONING[The controller provisions a Sandbox, section 8]
-    KUBERNETES_POLICY_SETS --> SANDBOX_CONTROLLER_PROVISIONING
-    SANDBOX_CREATE_CUTOVER[Sandboxes are created as ours, section 8] --> POLICY_RUNTIME_GRANTS[Blocked: time-limited grants of any rule type]
+    ACTION_POLICY_MIGRATE --> SANDBOX_CREATE_CUTOVER[Sandboxes are created as ours, section 8]
+    KUBERNETES_POLICY_SETS --> SANDBOX_CREATE_CUTOVER
+    SANDBOX_CREATE_CUTOVER --> POLICY_RUNTIME_GRANTS[Blocked: time-limited grants of any rule type]
     SANDBOX_CREATE_CUTOVER --> SANDBOX_RBAC
     AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox, section 8] --> OLD_POLICY_KINDS_DROP
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
@@ -518,7 +518,7 @@ handles expiry itself.
 
 **Candidate.** The Action Service already reads `PolicySet`/`PolicyBinding` beside the old kinds.
 cdk8s regenerates the static `ActionPolicySet`/`ActionPolicyBinding` objects as the generic kinds;
-Sandboxes of our kind get their `PolicyBinding` from the controller (`SANDBOX_CONTROLLER_PROVISIONING`).
+Sandboxes of our kind get their `PolicyBinding` from the Sandbox Controller.
 
 ### `OLD_POLICY_KINDS_DROP` — drop the old policy kinds
 
@@ -668,26 +668,12 @@ calls the gateway to seal. Action Service boxes keep a catalog of their own ([AD
 
 ```mermaid
 flowchart TD
-    SANDBOX_CONTROLLER_PROVISIONING[In flight: the controller provisions a Sandbox]
-    ACTION_POLICY_MIGRATE[Action policies on PolicySet, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
-    KUBERNETES_POLICY_SETS[Grant catalog as PolicySets, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
     SANDBOX_IMAGE_REPLACE[Candidate: replace the runner image between incarnations]
-    SANDBOX_CREATE_CUTOVER[Blocked: Sandboxes are created as ours]
-    SANDBOX_CONTROLLER_PROVISIONING --> SANDBOX_CREATE_CUTOVER
+    SANDBOX_CREATE_CUTOVER[Candidate: Sandboxes are created as ours]
+    ACTION_POLICY_MIGRATE[Action policies on PolicySet, section 6] -. staging .-> SANDBOX_CREATE_CUTOVER
+    KUBERNETES_POLICY_SETS[Grant catalog as PolicySets, section 6] -. staging .-> SANDBOX_CREATE_CUTOVER
     SANDBOX_CREATE_CUTOVER --> AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox]
 ```
-
-### `SANDBOX_CONTROLLER_PROVISIONING` — the controller provisions a Sandbox
-
-**In flight; the ServiceAccount and `PolicyBinding` half is #10162, on testing. Staging waits on the
-Action policy migration and the Kubernetes catalog as `PolicySet`s.** The spec gains the rest of the recipe: `policySets` (names of sets of any rule type), session defaults,
-bootstrap command and runner endpoints, the parts the Sandbox Service now keeps
-as annotations on agent-sandbox's `Sandbox` (`provisioning.py`, `kubernetes_bindings.py`,
-`egress.py`, `action_policy.py`, `runner_endpoints.py`). The controller creates the Sandbox's own
-ServiceAccount and its one `PolicyBinding` of those sets, both owned by the Sandbox; the binding
-never sets `expiresAt`. No Pod waits for the binding's readers. The Sandbox Service never writes
-`PolicyBinding`s. Runtime and time-limited grants are separate bindings (`POLICY_RUNTIME_GRANTS`).
-Left after #10162: session defaults, bootstrap command and runner endpoints.
 
 ### `SANDBOX_IMAGE_REPLACE` — replace the runner image between incarnations
 
@@ -700,7 +686,8 @@ live in [the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
 
 ### `SANDBOX_CREATE_CUTOVER` — Sandboxes are created as ours
 
-**Blocked on provisioning; decision card before the PR.** `CreateSandbox` and
+**Candidate; decision card before the PR; staging's half also waits on the Action policy migration
+and the Kubernetes catalog as `PolicySet`s.** `CreateSandbox` and
 the rest of the Sandbox Service API, the app's live view and the Runner Gateway's destination
 lookup read and write our `Sandbox` instead of agent-sandbox's, replacing the imperative-only
 `CreateSandbox`. That lookup refuses new Sessions and commands for a deleting Sandbox, as it does for
@@ -709,7 +696,11 @@ recreates them. The Sandbox Controller and our runner `SandboxTemplate`s exist o
 (`Environment.own_sandboxes`) until then: the cutover
 lands on testing first, and staging gets the controller and the cutover only once testing holds
 (operator, 2026-10-12 PDT: testing down beats staging down). The create form and Sandbox presets
-name policy sets of any rule type, one chip per set, in a new `policy_sets` preset field.
+name policy sets of any rule type, one chip per set, in a new `policy_sets` preset field, which
+`CreateSandbox` writes to `spec.policySets`; the Sandbox Service never writes `PolicyBinding`s. The
+spec gains session defaults and the bootstrap command, which the gateway's destination lookup reads
+instead of the Sandbox Service's annotations (`provisioning.py`); runner endpoints and their egress
+come from our `SandboxTemplate`s already.
 
 ### `AGENT_SANDBOX_RETIRE` — Agentplane stops using agent-sandbox
 

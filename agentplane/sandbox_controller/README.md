@@ -3,10 +3,10 @@
 Reconciles `Sandbox` into a state PVC that outlives every incarnation, its own ServiceAccount and
 `PolicyBinding`, and, while running, one Pod from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel). It is the Go controller the
-[Sandbox Service](../sandbox_service/README.md) is moving into, and does not yet do what that
-service does around a Sandbox: session defaults, bootstrap, runner endpoints and launch binding.
-Until it does, nothing creates these Sandboxes. Deletion waits for the
-[Runner Gateway](../runner_gateway/README.md)'s `SessionsSealed` condition.
+[Sandbox Service](../sandbox_service/README.md) is moving into. Nothing creates these Sandboxes
+yet; session defaults and the bootstrap command come with the cutover that does, since the Runner
+Gateway reads them. Deletion waits for the [Runner Gateway](../runner_gateway/README.md)'s
+`SessionsSealed` condition.
 
 A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) controller:
 
@@ -25,7 +25,9 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
 
 Environments with `own_sandboxes` (`agentplane-testing` only, for now) run it from
 `cluster/cdk8s/agentplane/sandbox_controller.py`, which also holds its RBAC, and get a runner
-`SandboxTemplate` of our kind beside each of agent-sandbox's (`runner_sandbox.py`).
+`SandboxTemplate` of our kind beside each of agent-sandbox's (`runner_sandbox.py`). Its runner is
+started with the Runner Gateway's and the ingress's endpoints, and its `policySets` name their
+egress and the default egress.
 Locally:
 
 ```bash

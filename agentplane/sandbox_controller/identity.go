@@ -14,8 +14,8 @@ import (
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 )
 
-// ensureIdentity keeps the Sandbox's own ServiceAccount and, while it names PolicySets, its one
-// PolicyBinding. Both are controlled by the Sandbox, so deleting the Sandbox revokes them. It
+// ensureIdentity keeps the Sandbox's own ServiceAccount and, while it or its template names
+// PolicySets, its one PolicyBinding of them all. Both are controlled by the Sandbox, so deleting the Sandbox revokes them. It
 // returns why no Pod may start yet; a running Pod is never stopped for it. A Pod does not wait for
 // the binding's readers: a grant that lands after the Pod starts only means early requests are
 // refused, the same as for a running Pod whose PolicySets change.
@@ -31,14 +31,21 @@ func (r *Reconciler) ensureIdentity(ctx context.Context, sandbox *Sandbox) (*unr
 	} else if !metav1.IsControlledBy(account, sandbox) {
 		return &unready{"ServiceAccountConflict", fmt.Sprintf("ServiceAccount %s exists and is not this Sandbox's", account.Name)}, nil
 	}
-	return r.ensureBinding(ctx, sandbox)
+	// Without its template the binding stays as it is; the missing template keeps any Pod from
+	// starting.
+	template, blocked, err := r.template(ctx, sandbox)
+	if template == nil {
+		return blocked, err
+	}
+	sets := slices.Concat(template.Spec.PolicySets, sandbox.Spec.PolicySets)
+	slices.Sort(sets)
+	return r.ensureBinding(ctx, sandbox, slices.Compact(sets))
 }
 
-func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *Sandbox) (*unready, error) {
-	sets := sandbox.Spec.PolicySets
+func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *Sandbox, sets []string) (*unready, error) {
 	spec := policycontroller.PolicyBindingSpec{
 		Subject:    policycontroller.ServiceAccountRef{Namespace: sandbox.Namespace, Name: sandbox.Name},
-		PolicySets: slices.Clone(sets),
+		PolicySets: sets,
 	}
 	binding := &policycontroller.PolicyBinding{ObjectMeta: owned(sandbox)}
 	if err := r.Get(ctx, client.ObjectKeyFromObject(binding), binding); err != nil {

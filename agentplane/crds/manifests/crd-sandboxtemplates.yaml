@@ -1,7 +1,8 @@
 # The recipe for one kind of Sandbox: the Pod each incarnation runs, and the claim for the state PVC
-# the Sandbox keeps across incarnations. The Sandbox Controller
-# (agentplane/sandbox_controller/SPEC.md) reads a template at every start, so an edit applies to
-# each Sandbox's next incarnation and never to a running one. The kubeconform schema under
+# the Sandbox keeps across incarnations, and the PolicySets every such Sandbox is bound to. The
+# Sandbox Controller (agentplane/sandbox_controller/SPEC.md) reads a template at every start, so an
+# edit to the Pod applies to each Sandbox's next incarnation and never to a running one; an edit to
+# the PolicySets applies to every Sandbox's binding at once. The kubeconform schema under
 # cluster/schemas/ is written by `bb run //agentplane/crds:generate_bin` from this file.
 apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
@@ -53,3 +54,13 @@ spec:
                       description: A PersistentVolumeClaimSpec for the state PVC.
                       type: object
                       x-kubernetes-preserve-unknown-fields: true
+                policySets:
+                  description: >-
+                    PolicySets every Sandbox of this template is bound to, besides those it names
+                    itself: what its Pod cannot work without, such as egress to the runner's
+                    endpoints.
+                  type: array
+                  items:
+                    type: string
+                    minLength: 1
+                  x-kubernetes-list-type: set

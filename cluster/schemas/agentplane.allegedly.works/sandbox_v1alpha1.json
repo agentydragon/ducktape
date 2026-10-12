@@ -27,7 +27,7 @@
           "default": false
         },
         "policySets": {
-          "description": "PolicySets in the Sandbox's namespace to bind its own ServiceAccount to, through one PolicyBinding the Sandbox owns. No Pod starts until every reader of that binding reports it applied.",
+          "description": "PolicySets in the Sandbox's namespace to bind its own ServiceAccount to, with its template's, through one PolicyBinding the Sandbox owns. No Pod waits for the binding's readers.",
           "type": "array",
           "items": {
             "type": "string",

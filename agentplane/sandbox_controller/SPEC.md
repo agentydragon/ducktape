@@ -26,8 +26,9 @@ and the state PVC. A Sandbox is its state, running or not; an **incarnation** is
 ## Identity
 
 - Every Sandbox gets a ServiceAccount of its name, which its Pods run as, replacing the template's.
-- While `spec.policySets` names PolicySets, the Sandbox has one `PolicyBinding` of its name binding
-  that account to exactly those sets, with no expiry. Clearing the list deletes it. Other bindings
+- While `spec.policySets` or its template's `spec.policySets` names PolicySets, the Sandbox has
+  one `PolicyBinding` of its name binding that account to exactly those sets, with no expiry, and
+  follows edits to either list at once. Clearing both deletes it. Other bindings
   for the same account, such as runtime grants, are left alone.
 - Both are owned by the Sandbox, so deleting the Sandbox revokes them.
 - A Pod does not wait for the binding's readers to apply it: a grant that lands after the Pod

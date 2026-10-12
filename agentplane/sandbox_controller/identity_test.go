@@ -73,6 +73,22 @@ func TestBindingIsCreatedWithThePodWithoutWaitingForItsReaders(t *testing.T) {
 	}
 }
 
+func TestBindingAlsoNamesTheTemplatesPolicySets(t *testing.T) {
+	template := testTemplate("test-image:v1")
+	template.Spec.PolicySets = []string{"test-endpoint-set", "test-set-a"}
+	r, c := newReconciler(t, true, template)
+	reconcileOnce(t, r)
+	if sets := getBinding(t, c).Spec.PolicySets; !slices.Equal(sets, []string{"test-endpoint-set", "test-set-a"}) {
+		t.Errorf("PolicyBinding sets = %v, want the template's", sets)
+	}
+
+	setPolicySets(t, c, "test-set-b", "test-set-a")
+	reconcileOnce(t, r)
+	if sets := getBinding(t, c).Spec.PolicySets; !slices.Equal(sets, []string{"test-endpoint-set", "test-set-a", "test-set-b"}) {
+		t.Errorf("PolicyBinding sets = %v, want the template's and the Sandbox's, each once", sets)
+	}
+}
+
 func TestChangedPolicySetsUpdateTheBindingAndKeepTheRunningPod(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	setPolicySets(t, c, "test-set-a")

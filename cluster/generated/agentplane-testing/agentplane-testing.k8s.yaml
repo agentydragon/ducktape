@@ -4232,6 +4232,14 @@ spec:
             - KUBECONFIG
             - --harness-inherit-env
             - TZDIR
+            - --control-target
+            - agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8082
+            - --control-bearer
+            - agentplane-credential-agentplane-runner-control
+            - --ingress-target
+            - agentplane-history-service.agentplane-testing.svc.cluster.local:8081
+            - --ingress-bearer
+            - agentplane-credential-agentplane-runner-ingress
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-testing.svc.cluster.local:8080
@@ -4385,6 +4393,11 @@ spec:
         requests:
           storage: 10Gi
       storageClassName: local-path-ovh-hdd
+  policySets:
+    - runner-control
+    - runner-ingress
+    - basic
+    - inference-experiments
 ---
 apiVersion: v1
 kind: ServiceAccount

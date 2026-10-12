@@ -35,8 +35,9 @@ from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
+from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import egress, llm_ingress, sandbox_pod
+from cluster.cdk8s.agentplane import egress, history_service, llm_ingress, runner_gateway, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
@@ -259,17 +260,24 @@ class RunnerTemplate(Construct):
         )
         if self.env.own_sandboxes:
             # Our own SandboxTemplate (agentplane/sandbox_controller), the same Pod and state volume
-            # read off agent-sandbox's.
+            # read off agent-sandbox's. Its runner is started with the endpoints the Sandbox Service
+            # adds to each agent-sandbox Sandbox, and every Sandbox of it is bound to their egress
+            # and the default egress, as the Sandbox Service grants each of its own.
             spec = template.to_json()["spec"]
             (claim,) = spec["volumeClaimTemplates"]
+            endpoints = RunnerEndpoints(
+                control=runner_gateway.runner_control_endpoint(self.env.namespace),
+                ingress=history_service.runner_ingress_endpoint(self.env.namespace),
+            )
             ApiObject(
                 self, "own-sandboxtemplate", api_version=f"{GROUP}/v1alpha1", kind="SandboxTemplate", metadata=metadata
             ).add_json_patch(
                 JsonPatch.add(
                     "/spec",
                     {
-                        "pod": spec["podTemplate"],
+                        "pod": endpoints.point(spec["podTemplate"]),
                         "stateVolume": {"name": claim["metadata"]["name"], "claim": claim["spec"]},
+                        "policySets": [*endpoints.egress_policies(), *egress.DEFAULT_POLICIES],
                     },
                 )
             )
