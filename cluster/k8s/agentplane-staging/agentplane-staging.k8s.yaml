@@ -5903,7 +5903,7 @@ data:
           description: kubectl-passthrough-mcp, run as the linked operator's Kubernetes identity.
           config:
             transport: streamable-http
-            url: https://kubectl-passthrough-mcp.allegedly.works/mcp
+            url: http://kubectl-passthrough-mcp.kubectl-passthrough-mcp.svc:8080/mcp
             server_id: kubernetes_admin
             auth: oauth
       grocy_sf:
@@ -6624,6 +6624,14 @@ spec:
               protocol: TCP
           serverNames:
             - api.github.com
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: kubectl-passthrough-mcp
+            k8s:io.kubernetes.pod.namespace: kubectl-passthrough-mcp
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
     - toEntities:
         - remote-node
         - host

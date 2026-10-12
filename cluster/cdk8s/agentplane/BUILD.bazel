@@ -610,6 +610,7 @@ py_library(
         "//cluster/cdk8s:external_creds",
         "//cluster/cdk8s:gateway",
         "//cluster/cdk8s:ha_mcp",
+        "//cluster/cdk8s:kubectl_passthrough_mcp",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:model_selections",
         "//cluster/cdk8s:node_scheduling",

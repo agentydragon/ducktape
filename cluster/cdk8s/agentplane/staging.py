@@ -27,7 +27,14 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
-from cluster.cdk8s import agent_access_profiles, cilium, external_creds, ha_mcp, node_scheduling
+from cluster.cdk8s import (
+    agent_access_profiles,
+    cilium,
+    external_creds,
+    ha_mcp,
+    kubectl_passthrough_mcp,
+    node_scheduling,
+)
 from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, policy_controller, staging_config
 from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
 from cluster.cdk8s.agentplane.chart import environment_chart
@@ -75,6 +82,9 @@ _ACTIONS_OIDC_APP = f"{_AUTHENTIK}/application/o/agentplane-staging-actions"
 _WEB_PUSH_ALLOWED_HOSTS = ("fcm.googleapis.com", "updates.push.services.mozilla.com")
 _GITHUB_MCP_URL = "https://api.githubcopilot.com/mcp/"
 _KUBERNETES_MCP_URL = "https://kubectl-passthrough-mcp.allegedly.works/mcp"
+# Calls go to its Service, as to every other in-cluster backend: through the public Gateway, about one
+# request in four answered 503 after 5s. Linking keeps the public URL, the resource its token is for.
+_KUBERNETES_MCP_SERVICE_URL = f"{kubectl_passthrough_mcp.SERVICE.url}/mcp"
 _GROCY_SF_MCP_URL = "https://grocy-mcp-sf.allegedly.works/mcp"
 _MCP_CLIENT_METADATA_URL = f"https://{_ACTIONS_HOSTNAME}/oauth/client-metadata.json"
 _HOME_ASSISTANT_MCP_URL = f"{ha_mcp.FACADE.url}/mcp"
@@ -162,7 +172,7 @@ _ACTION_GROUPS = {
             description="kubectl-passthrough-mcp, run as the linked operator's Kubernetes identity.",
             config={
                 "transport": "streamable-http",
-                "url": _KUBERNETES_MCP_URL,
+                "url": _KUBERNETES_MCP_SERVICE_URL,
                 "server_id": "kubernetes_admin",
                 "auth": "oauth",
             },
@@ -361,7 +371,8 @@ ENV = Environment(
             # unauthenticated GitHub REST call (agentplane/action_service/github_policy/visibility.py); no credential
             # rides this path.
             EgressRule.to_fqdns("api.github.com"),
-            # The Kubernetes MCP server uses the public Gateway/remote-node path.
+            kubectl_passthrough_mcp.SERVICE.egress(),
+            # Linking probes the Kubernetes MCP server's public URL for its OAuth metadata.
             cilium.egress_via_gateway("kubectl-passthrough-mcp.allegedly.works"),
             # Grocy SF's MCP server (OAuth discovery, DCR, and the linked /mcp calls) is the
             # same public Gateway path.
