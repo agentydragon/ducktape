@@ -68,16 +68,20 @@ outcome is recorded before the Notification Service stops reading history.
 
 ### `SESSION_INPUT_METADATA` — later typed annotations on input commands
 
-Extend the service envelope with typed
-metadata and restricted trusted producer provenance. Notification-specific authorization and producer
-integration belong here, not in the generic command-admission PR. Metadata never enters runner commands;
-notification attachments are invalid on controls. No untyped extension dictionary.
+**Unscheduled; the operator's lean (2026-10-12 PDT) replaces the plan's gateway-stored metadata.**
+Typed metadata and restricted trusted producer provenance on input commands, so a notice the
+Notification Service sends is not rendered as a user message. The lean: the Runner Gateway stamps
+verified provenance on the runner Command, and the runner echoes it into the Event that journals
+the input, so it reaches history with the input itself and survives the gateway keeping no command
+records (`COMMAND_RECORDS_RETIRE`). The harness never sees it. Notification-specific authorization
+belongs here, not in the generic command-admission path; attachments are invalid on controls. No
+untyped extension dictionary.
 
 ### `SESSION_INPUT_METADATA_READ` — authorized annotation reads
 
-**Blocked on typed input metadata.** Expose metadata by session/command identity and join existing
-`origin_command_ids` in projections. Include pending/failed inputs, replay and retained historical
-annotations without requiring a live notification inbox. Keep canonical runner Events unchanged.
+**Blocked on typed input metadata.** Carry the echoed metadata into the Thread fold, joined to
+the message by `origin_command_ids`, including pending and failed inputs and replay, without
+requiring a live notification inbox.
 
 ### `NOTIFICATION_NOTICE_METADATA` — producer integration
 
@@ -90,7 +94,7 @@ path without the app; use automated integration coverage rather than requiring a
 **Blocked on producer and metadata read integration.** Compact authenticated notification-only
 inputs, expand full text and render mixed human/notice messages normally with annotations. Missing
 metadata falls back to text. Include visual coverage and one bounded real-notice check; no inbox
-acknowledgement on render and no text-prefix provenance heuristic. Runners remain unaware.
+acknowledgement on render and no text-prefix provenance heuristic.
 
 ### Subscription authorization before broader sources
 

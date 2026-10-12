@@ -5,6 +5,11 @@ Status: open. Builds on durable command admission, whose contract is in the
 [task DAG](task_dag.md#notification_presentation--compact-notification-rendering) tracks the
 dependencies.
 
+Under revision: the operator now leans (2026-10-12 PDT) toward passing verified provenance to the
+runner on the Command and having the runner echo it into history, which replaces the Runner
+Gateway storing metadata described below; the gateway is losing its command records. The task DAG's
+`SESSION_INPUT_METADATA` holds the current shape.
+
 ## Goal and boundaries
 
 Give user inputs typed metadata that is not passed to the runner or harness. Initially, identify
