@@ -29,6 +29,8 @@ from cluster.cdk8s.external_secrets.kubernetes_store import secret_store
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.providers.volsync.replication_source import ReplicationSource
 
+_DEFAULT_MOVER_MEMORY_LIMIT = Size.gibibytes(1)
+
 
 class ResticBackup(Construct):
     """Encrypted, deduplicated Restic snapshots of PVC `source_pvc` on `schedule`, taken by
@@ -43,7 +45,8 @@ class ResticBackup(Construct):
     Our policy: keep 7 daily, 4 weekly and 6 monthly snapshots and prune weekly; the mover runs
     as uid and gid 1000 and reaches only DNS and SeaweedFS's S3 port. `mover_affinity=None`
     sets none: the Direct mover mounts the source PVC, so a node-local volume already places it.
-    `paused=True` stops new syncs and the running mover; the repository and cache stay.
+    The mover runs `forget` and `prune` after each backup, whose memory grows with the repository's
+    file count; raise `mover_memory_limit` for a large tree.
     """
 
     def __init__(
@@ -60,7 +63,7 @@ class ResticBackup(Construct):
         schedule: str,
         cache_storage_class_name: str,
         mover_affinity: ReplicationSourceSpecResticMoverAffinity | None = None,
-        paused: bool = False,
+        mover_memory_limit: Size = _DEFAULT_MOVER_MEMORY_LIMIT,
     ) -> None:
         super().__init__(scope, id)
         mover_labels = {"app.kubernetes.io/name": f"{namespace}-volsync"}
@@ -168,7 +171,6 @@ class ResticBackup(Construct):
             metadata=ApiObjectMetadata(name=name, namespace=namespace),
             source_pvc=source_pvc,
             trigger=ReplicationSourceSpecTrigger(schedule=schedule),
-            paused=paused,
             mover=ReplicationSourceSpecRestic(
                 repository=repository,
                 copy_method=ReplicationSourceSpecResticCopyMethod.DIRECT,
@@ -188,7 +190,7 @@ class ResticBackup(Construct):
                     limits={
                         "cpu": ReplicationSourceSpecResticMoverResourcesLimits.from_string(Cpu.units(1).amount),
                         "memory": ReplicationSourceSpecResticMoverResourcesLimits.from_string(
-                            Size.gibibytes(1).as_string()
+                            mover_memory_limit.as_string()
                         ),
                     },
                 ),

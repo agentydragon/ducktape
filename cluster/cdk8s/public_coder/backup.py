@@ -4,7 +4,7 @@ SOPS-encrypted Restic password beside the output stays hand-written.
 
 from __future__ import annotations
 
-from cdk8s import App, Chart
+from cdk8s import App, Chart, Size
 from volsync_replicationsource_crds.backube.volsync import (
     ReplicationSourceSpecResticMoverAffinity,
     ReplicationSourceSpecResticMoverAffinityNodeAffinity,
@@ -50,6 +50,8 @@ def chart(app: App) -> Chart:
         # 09:17 UTC is 02:17 PDT / 01:17 PST; run away from normal interactive use.
         schedule="17 09 * * *",
         cache_storage_class_name="local-path-ovh-hdd",
+        # ~10M files: under the old 1Gi limit the mover peaked near 950 MB while pruning (#10207).
+        mover_memory_limit=Size.gibibytes(3),
         mover_affinity=ReplicationSourceSpecResticMoverAffinity(
             node_affinity=ReplicationSourceSpecResticMoverAffinityNodeAffinity(
                 required_during_scheduling_ignored_during_execution=ReplicationSourceSpecResticMoverAffinityNodeAffinityRequiredDuringSchedulingIgnoredDuringExecution(
@@ -65,9 +67,6 @@ def chart(app: App) -> Chart:
                 )
             )
         ),
-        # Parked with the paused app: the state PVC holds 10M files on ovh-ns102453's HDD, and
-        # each run rescans all of them.
-        paused=True,
     )
     return chart
 
