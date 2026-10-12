@@ -28,7 +28,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import ExitStack
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 from uuid import UUID
 
 import httpx
@@ -52,6 +52,7 @@ from agentplane.changes import ChangeSignal
 from agentplane.kubernetes_watch import Freshness
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API
+from agentplane.sandbox_service.client import ServiceError
 from agentplane.sandbox_service.egress_views import (
     BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
@@ -103,6 +104,17 @@ class ThreadsSnapshot(SandboxesSnapshot):
     updates_connected: bool = Field(description="Whether this replica is listening for PostgreSQL Thread changes.")
 
 
+class ThreadsUnavailable(BaseModel):
+    """The Runner Gateway could not say which Sessions run in the sandbox, so its threads are not
+    known; carried in the frame so the rest of the page, its lifecycle controls included, still
+    shows."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    kind: Literal["unavailable"] = "unavailable"
+    code: str = Field(description="The gRPC status code the Runner Gateway answered with.")
+
+
 class SandboxSnapshot(BaseModel):
     """A frame of one sandbox's stream: the sandbox itself, what may leave it, what the Action
     Service auto-decides for it, and its threads."""
@@ -115,7 +127,7 @@ class SandboxSnapshot(BaseModel):
         description="The Action Service's answer for the sandbox, or why it could not be asked; None only with "
         "the sandbox, since a policy subject pins its UID and a gone sandbox has none."
     )
-    threads: list[ThreadView]
+    threads: list[ThreadView] | ThreadsUnavailable
     watch: WatchHealth
 
 
@@ -323,6 +335,15 @@ async def action_policy_frame(
         return ActionPolicyUnavailable(code="upstream_request_failed", upstream=upstream_failure_detail(error))
 
 
+async def threads_frame(
+    store: ThreadStore, sandbox: str, *, include_archived: bool
+) -> list[ThreadView] | ThreadsUnavailable:
+    try:
+        return await store.list_threads(sandbox=sandbox, include_archived=include_archived)
+    except ServiceError as error:
+        return ThreadsUnavailable(code=error.code.name)
+
+
 class ActionPolicyFrames:
     """One stream's action policy: asked of the service again when a policy object changed or the
     stream is following another subject, and otherwise repeated, so a Pod or thread event does not
@@ -488,7 +509,7 @@ async def live_sandbox(
             sandbox=sandbox,
             bindings=[] if sandbox is None else index.bindings_for(sandbox.service_account),
             action_policy=None if sandbox is None else await policy.for_subject(sandbox.service_account),
-            threads=await store.list_threads(sandbox=name, include_archived=include_archived),
+            threads=await threads_frame(store, name, include_archived=include_archived),
             watch=_health(index),
         )
 

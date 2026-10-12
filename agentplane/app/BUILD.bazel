@@ -668,6 +668,7 @@ py_library(
         "//agentplane/app/threads:thread_view",
         "//agentplane/postgres:wakeups",
         "//agentplane/sandbox_service:action_policy_views",
+        "//agentplane/sandbox_service:client",
         "//agentplane/sandbox_service:egress_views",
         "//agentplane/sandbox_service:kubernetes_views",
         "//util:agent_sandbox",

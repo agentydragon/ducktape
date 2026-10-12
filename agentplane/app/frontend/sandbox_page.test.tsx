@@ -54,7 +54,7 @@ const live = vi.hoisted(
             status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
           },
         },
-        threads: [] as ThreadView[],
+        threads: [] as SandboxSnapshot["threads"],
         bindings: [],
         action_policy: null,
         watch: { fresh: true, stale_after_seconds: 60, refreshed_seconds_ago: {} },
@@ -122,7 +122,8 @@ async function render(
     }
     const threadPath = /^\/threads\/([^/]+)$/.exec(path);
     if (threadPath && request.method === "GET") {
-      const found = live.snapshot.threads.find((thread) => thread.id === threadPath[1]);
+      const threads = Array.isArray(live.snapshot.threads) ? live.snapshot.threads : [];
+      const found = threads.find((thread) => thread.id === threadPath[1]);
       return Promise.resolve(found ? Response.json(found) : Response.json({ detail: "not found" }, { status: 404 }));
     }
     if (/^\/sandboxes\/(startup-test|other-test)\/sessions/.test(path)) return sessions(request);
@@ -505,4 +506,11 @@ it("defaults new sessions to an offered harness while retaining existing Claude 
   await act(async () => harness.click());
   await act(async () => newSession().click());
   expect((await postedBody(sessions)).spec.harness).toBe("HARNESS_CODEX");
+});
+
+it("keeps the lifecycle controls and says so when the gateway cannot list the sandbox's threads", async () => {
+  live.snapshot.threads = { kind: "unavailable", code: "UNAUTHENTICATED" };
+  await render(async () => Response.json([]));
+  expect(container.querySelector('[aria-label="Delete"]')).not.toBeNull();
+  expect(container.textContent).toContain("UNAUTHENTICATED");
 });

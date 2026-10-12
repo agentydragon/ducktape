@@ -301,7 +301,9 @@ export function SandboxPage({
 
   const live = useLive<SandboxSnapshot>(liveSandboxUrl(name, includeArchived), `Sandbox ${name}`);
   const sandbox: SandboxView | null = live.snapshot?.sandbox ?? null;
-  const threads = live.snapshot?.threads ?? [];
+  const threadListing = live.snapshot?.threads ?? [];
+  const threadsUnavailable = Array.isArray(threadListing) ? null : threadListing.code;
+  const threads = Array.isArray(threadListing) ? threadListing : [];
   // The store's copy of each session's thread, keyed by its id, which is the session's; it outlives
   // the runner's own list.
   const threadBySession: Record<string, ThreadView> = Object.fromEntries(threads.map((thread) => [thread.id, thread]));
@@ -592,6 +594,9 @@ export function SandboxPage({
               <Text role="status">Waiting for the sandbox runner to become available; retrying automatically…</Text>
             )}
             {typeof sessionList === "object" && <Text c="red">{sessionList.error}</Text>}
+            {threadsUnavailable && (
+              <Text c="red">The Runner Gateway could not list this sandbox&apos;s threads ({threadsUnavailable}).</Text>
+            )}
             <Group align="flex-end">
               <Select
                 label="Harness"
