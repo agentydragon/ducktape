@@ -2733,6 +2733,12 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
+      - sandboxtemplates
+    verbs:
+      - list
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
       - sandboxes
     verbs:
       - get
