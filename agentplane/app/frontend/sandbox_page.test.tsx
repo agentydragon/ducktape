@@ -185,9 +185,7 @@ it("resets the launch form when navigating directly between sandbox routes", asy
   await render(async () => Response.json([]), undefined, false, true);
   await choose("Harness", "Codex");
   expect(labeledInput("Model").value).toBe("Codex Model");
-  const instructions = [...container.querySelectorAll("label")].find(
-    (node) => node.textContent === "Standing instructions"
-  )?.control;
+  const instructions = container.querySelector('textarea[aria-label="Standing instructions"]');
   if (!(instructions instanceof HTMLTextAreaElement)) throw new Error("Missing instructions field");
   const setTextareaValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
   if (!setTextareaValue) throw new Error("Missing native textarea value setter");
@@ -203,9 +201,7 @@ it("resets the launch form when navigating directly between sandbox routes", asy
   expect(labeledInput("Harness").value).toBe("Claude");
   expect(labeledInput("Model").value).toBe("Test Model");
   expect(labeledInput("Reasoning effort").value).toBe("low");
-  const nextInstructions = [...container.querySelectorAll("label")].find(
-    (node) => node.textContent === "Standing instructions"
-  )?.control;
+  const nextInstructions = container.querySelector('textarea[aria-label="Standing instructions"]');
   expect(nextInstructions).toBeInstanceOf(HTMLTextAreaElement);
   expect((nextInstructions as HTMLTextAreaElement).value).toBe("");
 });

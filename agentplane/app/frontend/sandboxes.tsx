@@ -34,6 +34,7 @@ import {
   type SessionDefaults,
 } from "./client";
 import type { ActionPolicySetView } from "./actions/client";
+import { Disclosure } from "./disclosure";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
 import { podIp, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
@@ -395,14 +396,16 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           value={thread.setup_script ?? ""}
           onChange={(event) => setThread({ ...thread, setup_script: event.currentTarget.value })}
         />
-        <Textarea
-          label="Standing instructions"
-          description="Edits apply to future threads in this sandbox"
-          autosize
-          minRows={3}
-          value={thread.instructions ?? ""}
-          onChange={(event) => setThread({ ...thread, instructions: event.currentTarget.value })}
-        />
+        <Disclosure summary="Standing instructions" keepMounted>
+          <Textarea
+            aria-label="Standing instructions"
+            description="Edits apply to future threads in this sandbox"
+            autosize
+            minRows={3}
+            value={thread.instructions ?? ""}
+            onChange={(event) => setThread({ ...thread, instructions: event.currentTarget.value })}
+          />
+        </Disclosure>
       </Stack>
       <Table>
         <Table.Thead>

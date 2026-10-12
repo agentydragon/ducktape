@@ -38,6 +38,7 @@ import {
   type ThreadView,
 } from "./client";
 import { ActionPolicySection } from "./actions/policy";
+import { Disclosure } from "./disclosure";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
@@ -645,14 +646,16 @@ export function SandboxPage({
                 </Group>
               </Stack>
             )}
-            <Textarea
-              label="Standing instructions"
-              description={inheritsDefaults ? "Inherited from this sandbox; editable for this thread" : undefined}
-              autosize
-              minRows={2}
-              value={instructions}
-              onChange={(event) => setInstructions(event.currentTarget.value)}
-            />
+            <Disclosure summary="Standing instructions" keepMounted>
+              <Textarea
+                aria-label="Standing instructions"
+                description={inheritsDefaults ? "Inherited from this sandbox; editable for this thread" : undefined}
+                autosize
+                minRows={2}
+                value={instructions}
+                onChange={(event) => setInstructions(event.currentTarget.value)}
+              />
+            </Disclosure>
             <TextInput
               label="Working directory"
               description="{session_id} is replaced with this Thread's ID"
