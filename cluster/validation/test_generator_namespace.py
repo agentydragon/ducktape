@@ -18,6 +18,10 @@ The fix in every case is `namespace: <ns>` at the top of the kustomization.
 Kustomize then stamps it onto generated and hand-written resources alike, and
 `kubeconform` cannot catch the omission because the generated object does not
 exist as a file to lint.
+
+The cdk8s generator refuses to write such a kustomization
+(`cluster.cdk8s.flux.kustomize_kustomization`), so `GENERATED_ROOT` is skipped; this
+holds the hand-written ones, which live in the other manifest roots.
 """
 
 from pathlib import Path
@@ -26,7 +30,7 @@ import pytest
 import pytest_bazel
 import yaml
 
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT, manifest_files
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT, manifest_files
 from util.bazel.runfiles import get_required_path
 
 _K8S_ROOT_KUSTOMIZATION = "_main/cluster/k8s/kustomization.yaml"
@@ -56,6 +60,8 @@ def test_generators_declare_a_namespace(repo_root: Path) -> None:
     offenders: list[str] = []
     flux_target_namespaces = _flux_target_namespaces(repo_root)
     for kust in manifest_files(repo_root, "kustomization.yaml"):
+        if kust.is_relative_to(repo_root / GENERATED_ROOT):
+            continue
         doc = yaml.safe_load(kust.read_text())
         if not isinstance(doc, dict):
             continue

@@ -16,10 +16,12 @@ from source_watcher_crds.io.fluxcd.extensions.source import (
 from cluster.cdk8s.artifact_generators import artifact
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
+    ConfigMapArgs,
     RenderedDirectory,
     artifact_directory,
     flux_kustomization,
     kustomizations_chart,
+    kustomize_kustomization,
 )
 
 _HEALTH_CHECKS = [KustomizationSpecHealthChecks(kind="Deployment", name="test-app", namespace="test-ns")]
@@ -81,6 +83,27 @@ def test_artifact_directory_refuses_a_partial_or_moved_copy(copy: ArtifactGenera
     # Only the whole-directory guard names the offending `copy.from_`; the "copies nothing" error does not.
     with pytest.raises(ValueError, match=r"copy\.from_="):
         artifact_directory(ArtifactGeneratorSpecArtifacts(name="test-app", origin_revision="@repo", copy=[copy]))
+
+
+def test_generator_entry_without_a_namespace_raises() -> None:
+    with pytest.raises(ValueError, match="unplaced="):
+        kustomize_kustomization(resources=[], config_map_generator=[ConfigMapArgs(name="test-config", namespace=None)])
+
+
+@pytest.mark.parametrize(
+    ("namespace", "entry_namespace", "namespaced_by_overlay"),
+    [("test-ns", None, False), (None, "test-ns", False), (None, None, True)],
+    ids=["kustomization", "entry", "overlay"],
+)
+def test_generator_entry_placed_in_a_namespace_passes(
+    namespace: str | None, entry_namespace: str | None, namespaced_by_overlay: bool
+) -> None:
+    kustomize_kustomization(
+        resources=[],
+        namespace=namespace,
+        config_map_generator=[ConfigMapArgs(name="test-config", namespace=entry_namespace)],
+        namespaced_by_overlay=namespaced_by_overlay,
+    )
 
 
 if __name__ == "__main__":

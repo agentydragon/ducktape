@@ -209,6 +209,7 @@ def write_manifests(root: Path) -> None:
                     literals=[f"{_POLICY_FILE}={yaml_config(_POLICY.model_dump())}"],
                 )
             ],
+            namespaced_by_overlay=True,
         ),
     )
     for household in grocy.HOUSEHOLDS:

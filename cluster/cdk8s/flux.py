@@ -252,8 +252,9 @@ class ConfigMapArgs(BaseModel):
 
     name: str
     namespace: str | None = Field(
-        description="None only in a base whose overlays set the namespace, as on the objects that mount it: "
-        "kustomize rewrites a reference to the hashed name only within one namespace."
+        description="None only where the Kustomization's own `namespace` covers it, or in a base whose "
+        "overlays set the namespace, as on the objects that mount it: kustomize rewrites a reference to the "
+        "hashed name only within one namespace."
     )
     options: GeneratorOptions | None = None
     files: list[str] | None = Field(
@@ -313,6 +314,7 @@ def kustomize_kustomization(
     config_map_generator: Sequence[ConfigMapArgs] = (),
     configurations: Sequence[str] = (),
     patches: Sequence[PatchFile | Json6902Patch] = (),
+    namespaced_by_overlay: bool = False,
 ) -> dict[str, object]:
     """Return the plain `kustomize.config.k8s.io` `Kustomization` listing `resources`.
 
@@ -320,7 +322,16 @@ def kustomize_kustomization(
     a hand-written one carrying a Flux image-automation marker (see
     cluster/docs/cdk8s.md) -- that's specific to that use, not a property of this
     field; a generated Component directory would work the same way.
+
+    A generated ConfigMap has no namespace unless its entry or `namespace` gives it one, and
+    the API server rejects it ("namespace not specified"), which fails the whole Flux apply of
+    the directory while every hand-authored object in it looks correct. So an entry without
+    one raises, unless `namespaced_by_overlay` says this is a base only overlays that set the
+    namespace include.
     """
+    if not namespace and not namespaced_by_overlay:
+        if unplaced := [entry.name for entry in config_map_generator if not entry.namespace]:
+            raise ValueError(f"configMapGenerator entries {unplaced=} have no namespace, nor does the Kustomization")
     manifest = _KustomizeKustomization(
         namespace=namespace,
         resources=resources,

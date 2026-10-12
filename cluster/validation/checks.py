@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from cluster.cdk8s.cilium_rule_sections import enforces_nothing
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.validation.cluster import ParsedCluster
 from cluster.validation.k8s import (
@@ -193,21 +194,15 @@ def check_sops_decryption_blocks(cluster: ParsedCluster, repo_root: Path) -> lis
 
 
 def check_cilium_policy_rules_nonempty(cluster: ParsedCluster) -> list[str]:
-    """Every Cilium policy rule must have a non-empty rule section.
-
-    Mirrors Cilium's `Rule.Sanitize`: a rule whose `ingress`, `ingressDeny`, `egress`
-    and `egressDeny` are all empty is schema-valid but rejected at import
-    ("rule must have at least one of Ingress, IngressDeny, Egress, EgressDeny"),
-    leaving the policy `Valid=False` and silently unenforced — a fail-open shape that
-    widens exposure instead of breaking traffic (#4923). Default-deny is spelled as a
-    single empty rule element (`ingress: [{}]`), which allows nothing while putting
-    selected endpoints into default deny."""
+    """No Cilium policy rule `enforces_nothing`. The fleet rules refuse a generated one at
+    synth; this holds hand-written policies (`haku/x/dispatch/deploy`'s) and anything a kustomize
+    patch changes after synth."""
     errors = []
     for origin, resource in _rendered_or_source_resources(cluster):
         if not isinstance(resource, CiliumPolicyResource):
             continue
         for index, rule in enumerate(resource.rules):
-            if not (rule.ingress or rule.ingress_deny or rule.egress or rule.egress_deny):
+            if enforces_nothing(rule):
                 errors.append(
                     f"{origin}: {resource.kind} '{resource.name}' rule {index} has no non-empty "
                     f"ingress/ingressDeny/egress/egressDeny section — Cilium rejects it (Valid=False) "

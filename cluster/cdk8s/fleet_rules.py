@@ -15,6 +15,7 @@ import jsii
 from cdk8s import ApiObject
 from constructs import Construct, IValidation
 
+from cluster.cdk8s.cilium_rule_sections import enforces_nothing
 from cluster.cdk8s.pod_policy import POD_SPEC_PATHS, pod_spec
 
 _OUTSIDE_ENTITIES = frozenset({"world", "remote-node", "host"})
@@ -77,6 +78,19 @@ def pinned_https_egress(objects: list[dict[str, Any]], *, unpinned: frozenset[st
                 and not to_ports.get("serverNames")
             )
     return errors
+
+
+def cilium_rules_enforce_something(objects: list[dict[str, Any]]) -> list[str]:
+    """No Cilium policy rule `enforces_nothing`: Cilium rejects the policy and enforces none
+    of it."""
+    return [
+        f"{obj['kind']}/{obj['metadata']['name']} rule {index} has every ingress/egress section empty: "
+        "Cilium rejects the policy; default-deny is one empty element, `ingress: [{}]`"
+        for obj in objects
+        if obj["kind"] in (_NETWORKPOLICY_KIND, _CLUSTERWIDE_KIND)
+        for index, rule in enumerate([*([obj["spec"]] if "spec" in obj else []), *obj.get("specs", [])])
+        if enforces_nothing(rule)
+    ]
 
 
 def _outside_https_pins(obj: dict[str, Any]) -> tuple[bool, bool]:
@@ -277,6 +291,7 @@ class FleetRules:
             *pod_hardening(objects, unhardened=self._unhardened_pods),
             *pinned_https_egress(objects, unpinned=self._unpinned_https_egress),
             *https_egress_sni_conflicts(objects),
+            *cilium_rules_enforce_something(objects),
             *resolved_references(objects),
             *unused_waivers(objects, unhardened=self._unhardened_pods, unpinned=self._unpinned_https_egress),
         ]

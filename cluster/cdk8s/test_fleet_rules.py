@@ -12,6 +12,7 @@ from cdk8s import (
 
 from cluster.cdk8s.fleet_rules import (
     add_fleet_rules,
+    cilium_rules_enforce_something,
     https_egress_sni_conflicts,
     pinned_https_egress,
     pod_hardening,
@@ -117,6 +118,24 @@ def test_https_egress_outside_the_cluster_needs_server_names() -> None:
         "CiliumNetworkPolicy/actions: HTTPS egress to [{'matchName': 'api.example.test'}] without serverNames",
     ]
     assert pinned_https_egress(objects, unpinned=frozenset({"proxy", "actions"})) == []
+
+
+def test_cilium_rules_with_every_section_empty_are_named() -> None:
+    objects = [
+        _policy("empty-list", []),
+        # `ingress: [{}]` is the default-deny spelling, not an empty section.
+        {**_policy("default-deny", []), "spec": {"ingress": [{}]}},
+        {
+            "apiVersion": "cilium.io/v2",
+            "kind": "CiliumClusterwideNetworkPolicy",
+            "metadata": {"name": "multi"},
+            "specs": [{"egress": [{"toEntities": ["world"]}]}, {"ingressDeny": []}],
+        },
+    ]
+    assert [error.split(" has ")[0] for error in cilium_rules_enforce_something(objects)] == [
+        "CiliumNetworkPolicy/empty-list rule 0",
+        "CiliumClusterwideNetworkPolicy/multi rule 1",
+    ]
 
 
 def test_waivers_name_objects_that_still_break_their_rule() -> None:
