@@ -931,7 +931,7 @@ flowchart TD
         RUNNER_CORE_SPLIT[Candidate: runner control and ingress clients share their plumbing]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         SERVICE_SETTING_OLD_NAMES_DROP[Waits on rollout: drop the old setting names]
-        NOTIFICATION_GATEWAY_SETTINGS[Candidate: the notification service's Runner Gateway block]
+        NOTIFICATION_GATEWAY_SETTINGS[Waits on rollout: the notification config sets runner_gateway]
     end
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
 ```
@@ -975,13 +975,13 @@ new one, which an image that does not read it ignores. Then delete the three `CL
 `AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL` (`history_service.py`), and regenerate. No code reads the
 old names.
 
-### `NOTIFICATION_GATEWAY_SETTINGS` — the notification service's Runner Gateway block
+### `NOTIFICATION_GATEWAY_SETTINGS` — the notification config sets `runner_gateway`
 
-**Candidate.** The notification service's `sandbox_service` settings block also holds the Runner
-Gateway's `gateway_target`, `gateway_token_file`, `control_target` and
-`command_admission_timeout_s`; move them to a `runner_gateway` block. The settings file and the
-block both forbid extra keys, so no one file suits an image on either side: the code first accepts
-both shapes, then the file switches and the code drops the old one.
+**Waits on rollout** of an `agentplane-notifications` image that reads a `runner_gateway` block, on
+both agentplane-staging and agentplane-testing. Until then the config keeps the Runner Gateway's
+keys in `sandbox_service`, which `Settings` moves to `runner_gateway` as it loads. Then cdk8s
+(`cluster/cdk8s/agentplane/notifications.py`) renders a `runner_gateway` block, regenerate, and
+delete the `CLEANUP` move in `notification_service/settings.py` with its test.
 
 ## Scope and retirement of stale gates
 

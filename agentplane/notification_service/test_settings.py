@@ -11,9 +11,21 @@ from agentplane.notification_service.settings import (
     GitHubSettings,
     NoticeDebounceSettings,
     QuotaSettings,
+    RunnerGatewaySettings,
     SandboxServiceSettings,
     Settings,
 )
+
+BLOCKS: dict[str, object] = {
+    "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
+    "sandbox_service": {"target": "sandboxes:8080", "token_file": "/tokens/sandboxes"},
+    "runner_gateway": {
+        "target": "gateway:8080",
+        "control_target": "{sandbox}-control.{namespace}.test:8080",
+        "token_file": "/tokens/gateway",
+    },
+    "history_service": {"target": "history:8080", "token_file": "/tokens/history"},
+}
 
 
 def test_quota_defaults() -> None:
@@ -46,10 +58,11 @@ notice_debounce:
   max_wait_seconds: 15
 sandbox_service:
   target: sandboxes:8080
-  gateway_target: gateway:8080
-  control_target: "{sandbox}-control.{namespace}.test:8080"
   token_file: /tokens/sandboxes
-  gateway_token_file: /tokens/gateway
+runner_gateway:
+  target: gateway:8080
+  control_target: "{sandbox}-control.{namespace}.test:8080"
+  token_file: /tokens/gateway
 history_service:
   target: history:8080
   token_file: /tokens/history
@@ -65,7 +78,7 @@ history_service:
     assert settings.actions.token_file == Path("/tokens/actions")
     assert settings.sandbox_service.target == "sandboxes:8080"
     assert settings.sandbox_service.token_file == Path("/tokens/sandboxes")
-    assert settings.sandbox_service.command_admission_timeout_s == 20
+    assert settings.runner_gateway.command_admission_timeout_s == 20
     assert settings.sandbox_service.request_timeout_s == 5
     assert settings.stale_inbox_confirmation_s == 30
     assert settings.sandbox_service.lifecycle_timeout_s == 310
@@ -75,7 +88,7 @@ history_service:
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_ACTIONS__URL", "http://overridden-actions")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__TARGET", "overridden-sandboxes:8080")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_NOTICE_DEBOUNCE__QUIET_SECONDS", "0")
-    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__COMMAND_ADMISSION_TIMEOUT_S", "22")
+    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_RUNNER_GATEWAY__COMMAND_ADMISSION_TIMEOUT_S", "22")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__REQUEST_TIMEOUT_S", "7")
     settings = Settings(_cli_parse_args=False)
     assert settings.quotas == QuotaSettings(
@@ -84,7 +97,7 @@ history_service:
     assert settings.notice_debounce == NoticeDebounceSettings(quiet_seconds=0, max_wait_seconds=15)
     assert str(settings.actions.url) == "http://overridden-actions/"
     assert settings.sandbox_service.target == "overridden-sandboxes:8080"
-    assert settings.sandbox_service.command_admission_timeout_s == 22
+    assert settings.runner_gateway.command_admission_timeout_s == 22
     assert settings.sandbox_service.request_timeout_s == 7
     assert settings.sandbox_service.token_file == Path("/tokens/sandboxes")
     with config.open("a") as file:
@@ -124,10 +137,11 @@ actions:
   token_file: /tokens/actions
 sandbox_service:
   target: sandboxes:8080
-  gateway_target: gateway:8080
-  control_target: "{sandbox}-control.{namespace}.test:8080"
   token_file: /tokens/sandboxes
-  gateway_token_file: /tokens/gateway
+runner_gateway:
+  target: gateway:8080
+  control_target: "{sandbox}-control.{namespace}.test:8080"
+  token_file: /tokens/gateway
 history_service:
   target: history:8080
   token_file: /tokens/history
@@ -174,12 +188,10 @@ def test_invalid_notice_debounce(values: dict[str, float]) -> None:
 @pytest.mark.parametrize("timeout", [0, -1, float("nan"), float("inf")])
 def test_invalid_command_admission_timeout(timeout: float) -> None:
     with pytest.raises(ValidationError):
-        SandboxServiceSettings(
-            target="sandboxes:8080",
-            gateway_target="gateway:8080",
+        RunnerGatewaySettings(
+            target="gateway:8080",
             control_target="{sandbox}-control.{namespace}.test:8080",
-            token_file=Path("/tokens/sandboxes"),
-            gateway_token_file=Path("/tokens/gateway"),
+            token_file=Path("/tokens/gateway"),
             command_admission_timeout_s=timeout,
         )
 
@@ -189,14 +201,7 @@ def test_invalid_command_admission_timeout(timeout: float) -> None:
 def test_invalid_sandbox_service_deadline(name: str, timeout: float) -> None:
     with pytest.raises(ValidationError):
         SandboxServiceSettings.model_validate(
-            {
-                "target": "sandboxes:8080",
-                "gateway_target": "gateway:8080",
-                "control_target": "{sandbox}-control.{namespace}.test:8080",
-                "token_file": "/tokens/sandboxes",
-                "gateway_token_file": "/tokens/gateway",
-                name: timeout,
-            }
+            {"target": "sandboxes:8080", "token_file": "/tokens/sandboxes", name: timeout}
         )
 
 
@@ -207,17 +212,40 @@ def test_invalid_stale_confirmation_timeout(timeout: float) -> None:
             {
                 "database_url": "postgresql://unused",
                 "namespace": "test",
-                "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
-                "sandbox_service": {
-                    "target": "sandboxes:8080",
-                    "gateway_target": "gateway:8080",
-                    "control_target": "{sandbox}-control.{namespace}.test:8080",
-                    "token_file": "/tokens/sandboxes",
-                    "gateway_token_file": "/tokens/gateway",
-                },
-                "history_service": {"target": "history:8080", "token_file": "/tokens/history"},
+                **BLOCKS,
                 "stale_inbox_confirmation_s": timeout,
             }
+        )
+
+
+# CLEANUP(added 2026-10-12): Delete with `Settings._move_runner_gateway_out_of_sandbox_service`.
+def test_runner_gateway_keys_in_sandbox_service_move_to_runner_gateway() -> None:
+    legacy = {
+        "target": "sandboxes:8080",
+        "gateway_target": "gateway:8080",
+        "control_target": "{sandbox}-control.{namespace}.test:8080",
+        "token_file": "/tokens/sandboxes",
+        "gateway_token_file": "/tokens/gateway",
+        "request_timeout_s": 7,
+        "command_admission_timeout_s": 22,
+    }
+    blocks = {key: value for key, value in BLOCKS.items() if key != "runner_gateway"}
+    settings = Settings.model_validate(
+        {**blocks, "database_url": "postgresql://unused", "namespace": "test", "sandbox_service": legacy}
+    )
+    assert settings.sandbox_service == SandboxServiceSettings(
+        target="sandboxes:8080", token_file=Path("/tokens/sandboxes"), request_timeout_s=7
+    )
+    assert settings.runner_gateway == RunnerGatewaySettings(
+        target="gateway:8080",
+        control_target="{sandbox}-control.{namespace}.test:8080",
+        token_file=Path("/tokens/gateway"),
+        request_timeout_s=7,
+        command_admission_timeout_s=22,
+    )
+    with pytest.raises(ValidationError, match="not both"):
+        Settings.model_validate(
+            {**BLOCKS, "database_url": "postgresql://unused", "namespace": "test", "sandbox_service": legacy}
         )
 
 

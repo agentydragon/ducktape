@@ -2,15 +2,23 @@
 
 from datetime import date
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
 
 TOKEN_AUDIENCE = "agentplane-notifications"
+# The `sandbox_service` keys a config file may still carry for the Runner Gateway, by their
+# `runner_gateway` names.
+_RUNNER_GATEWAY_KEYS_IN_SANDBOX_SERVICE = {
+    "gateway_target": "target",
+    "control_target": "control_target",
+    "command_admission_timeout_s": "command_admission_timeout_s",
+    "gateway_token_file": "token_file",
+}
 
 
 class ActionsSettings(BaseModel):
@@ -58,7 +66,16 @@ class GitHubSettings(BaseModel):
 class SandboxServiceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     target: str = Field(description="Sandbox Service gRPC host:port, for Sandbox lookups.")
-    gateway_target: str = Field(description="Runner Gateway gRPC host:port for session access and runner commands.")
+    request_timeout_s: float = Field(default=5, gt=0, allow_inf_nan=False)
+    lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
+    token_file: Path = Field(
+        description="Path to the rotating projected ServiceAccount token used to authenticate to Sandbox Service."
+    )
+
+
+class RunnerGatewaySettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    target: str = Field(description="Runner Gateway gRPC host:port for session access and runner commands.")
     control_target: str = Field(
         description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
         "`{sandbox}-control.{namespace}.svc:8080`. Lifecycle calls go there, to the replica holding the "
@@ -74,9 +91,6 @@ class SandboxServiceSettings(BaseModel):
         "runner_admission_ack_timeout_s budget.",
     )
     token_file: Path = Field(
-        description="Path to the rotating projected ServiceAccount token used to authenticate to Sandbox Service."
-    )
-    gateway_token_file: Path = Field(
         description="Path to the rotating projected ServiceAccount token used to authenticate to the Runner Gateway."
     )
 
@@ -136,6 +150,7 @@ class Settings(YamlFileSettings):
     namespace: str = Field(description="Allowed caller ServiceAccount namespace and destination sandbox namespace.")
     actions: ActionsSettings
     sandbox_service: SandboxServiceSettings
+    runner_gateway: RunnerGatewaySettings
     history_service: HistoryServiceSettings
     token_audience: str = Field(
         default=TOKEN_AUDIENCE, description="Audience required when TokenReview authenticates callers of this API."
@@ -158,3 +173,22 @@ class Settings(YamlFileSettings):
     github: GitHubSettings | None = Field(
         default=None, description="GitHub source configuration. Disabled when absent from both YAML and environment."
     )
+
+    @model_validator(mode="before")
+    @classmethod
+    def _move_runner_gateway_out_of_sandbox_service(cls, data: Any) -> Any:
+        # CLEANUP(added 2026-10-12): Remove, with `_RUNNER_GATEWAY_KEYS_IN_SANDBOX_SERVICE`, once
+        #   every deployed notifications config sets `runner_gateway` instead.
+        if not isinstance(data, dict) or not isinstance(sandbox := data.get("sandbox_service"), dict):
+            return data
+        moved = {new: sandbox[old] for old, new in _RUNNER_GATEWAY_KEYS_IN_SANDBOX_SERVICE.items() if old in sandbox}
+        if not moved:
+            return data
+        if "runner_gateway" in data:
+            raise ValueError("set the Runner Gateway in runner_gateway or in sandbox_service, not both")
+        shared = {key: sandbox[key] for key in ("request_timeout_s", "lifecycle_timeout_s") if key in sandbox}
+        return {
+            **data,
+            "sandbox_service": {k: v for k, v in sandbox.items() if k not in _RUNNER_GATEWAY_KEYS_IN_SANDBOX_SERVICE},
+            "runner_gateway": shared | moved,
+        }
