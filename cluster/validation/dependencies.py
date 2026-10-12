@@ -31,9 +31,10 @@ def validate_operator_dependencies(
 
     for kust_name, resources in flux_resources.items():
         for resource in resources:
-            operator = crd_to_operator.get(resource.kind)
+            group = resource.api_version.rpartition("/")[0]
+            operator = crd_to_operator.get(f"{resource.kind}.{group}", crd_to_operator.get(resource.kind))
             if operator is None:
-                if resource.api_version.rpartition("/")[0] not in BUILT_IN_API_GROUPS | BOOTSTRAP_API_GROUPS:
+                if group not in BUILT_IN_API_GROUPS | BOOTSTRAP_API_GROUPS:
                     unprovided.add((kust_name, f"{resource.kind} ({resource.api_version})"))
                 continue
             key = (kust_name, operator)
