@@ -54,9 +54,7 @@ async def gateway(
         principals=WorkloadPrincipalResolver(
             authentication=k8s_client.AuthenticationV1Api(api),
             audience=settings.token_audience,
-            allowed_service_account_namespaces={
-                a.namespace for a in (*settings.caller_accounts, *settings.sealer_accounts)
-            },
+            allowed_service_account_namespaces={a.namespace for a in settings.caller_accounts},
         ),
         sessions=sessions,
         control=control,
@@ -64,7 +62,6 @@ async def gateway(
         admission_timeout_s=settings.admission_timeout_s,
         runner_admission_ack_timeout_s=settings.runner_admission_ack_timeout_s,
         caller_accounts=settings.caller_accounts,
-        sealer_accounts=settings.sealer_accounts,
         platform_instructions=settings.platform_instructions,
         lifecycle_timeout_s=settings.lifecycle_timeout_s,
     )
@@ -81,7 +78,6 @@ async def gateway(
                 allowed_service_account_namespaces={settings.sandbox_namespace},
             ),
             sandboxes=sandboxes,
-            custom_objects=custom_objects,
             core=core,
             records=ConnectionRecords(
                 api,

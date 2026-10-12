@@ -17,11 +17,11 @@ import pytest_bazel
 from fastapi import FastAPI
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.api import app_services, create_app, upstream_http_error
+from agentplane.app.api import create_app, upstream_http_error
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
-from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer, require_caller
+from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.operator_sessions import OperatorSessionStore
@@ -36,16 +36,16 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc_calls import dial
 from agentplane.grpc_serving import serving
+from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
+from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBindingGrant, RoleRef
-from agentplane.sandbox_service.testing.backend import Endpoint, backend, seed_runner
+from agentplane.sandbox_service.testing.backend import backend, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
-    RUNNER_ENDPOINTS,
     TEMPLATE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
@@ -55,7 +55,6 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     pod,
     sandbox,
 )
-from agentplane.sandbox_service.testing.fake_rbac import FakeRbac
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -101,8 +100,7 @@ TEST_PRESETS = PresetCatalog(
         "public-coder": SandboxPreset(
             title="Public coder",
             template="agentplane-test-runner",
-            egress_policies=["github"],
-            action_policy_sets=["github-reads"],
+            policy_sets=["basic"],
             thread_preset="public-coder-codex",
             bootstrap="mkdir -p /state/workspaces",
         )
@@ -168,9 +166,9 @@ def bare_app(
 
 @pytest.fixture
 def app(bare_app: FastAPI, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> FastAPI:
-    custom_objects.objects[("sandboxes", "live")] = sandbox("live")
+    custom_objects.objects[(SANDBOXES_PLURAL, "live")] = sandbox("live")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
-    custom_objects.objects[("sandboxes", "fresh")] = sandbox("fresh")
+    custom_objects.objects[(SANDBOXES_PLURAL, "fresh")] = sandbox("fresh")
     custom_objects.objects[("egresspolicies", "github")] = egress_policy(
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
     )
@@ -184,6 +182,8 @@ def app(bare_app: FastAPI, custom_objects: FakeCustomObjectsApi, core_v1: FakeCo
     custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
         "live-granted", subjects=[{"namespace": NAMESPACE, "name": "live"}], policies=["pypi"], from_git=False
     )
+    for name in ("packages", "basic"):
+        custom_objects.objects[(POLICY_SETS_PLURAL, name)] = {"metadata": {"name": name}, "spec": {"rules": []}}
     custom_objects.objects[("actionpolicysets", "github-reads")] = action_policy_set(
         "github-reads",
         auto_approve_if=[{"type": "exact_actions", "actions": {"github": ["search_code"]}}],
@@ -233,10 +233,9 @@ async def test_create_returns_the_new_row(client: httpx.AsyncClient, custom_obje
     assert response.status_code == 201
     row = response.json()
     assert row["name"] == "demo"
-    assert row["operating_mode"] == "Suspended"
-    assert row["initializing"] is True
+    assert row["operating_mode"] == "Running"
     assert row["pod"] is None
-    assert ("sandboxes", row["name"]) in custom_objects.objects
+    assert (SANDBOXES_PLURAL, row["name"]) in custom_objects.objects
     # Nothing was picked, so nothing may leave it.
     assert (await client.get(f"/sandboxes/{row['name']}/egress")).json() == []
 
@@ -245,30 +244,19 @@ async def test_templates_list_the_concrete_choices_for_the_create_form(client: h
     assert (await client.get("/sandboxes/templates")).json() == [TEMPLATE]
 
 
-async def test_the_form_offers_no_policy_sets_where_sandboxes_are_agent_sandbox_ones(client: httpx.AsyncClient) -> None:
-    assert (await client.get("/sandboxes/form")).json() == {"policy_sets": None}
-
-
-@pytest.mark.parametrize("presets", [PresetCatalog(own_sandboxes=True)])
-async def test_the_form_offers_the_namespace_policy_sets_where_sandboxes_are_our_own(
-    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
-) -> None:
-    for name in ("packages", "basic"):
-        custom_objects.objects[("policysets", name)] = {"metadata": {"name": name}, "spec": {"rules": []}}
-
+async def test_the_form_offers_the_namespace_policy_sets(client: httpx.AsyncClient) -> None:
     assert (await client.get("/sandboxes/form")).json() == {"policy_sets": ["basic", "packages"]}
 
 
 async def test_create_records_the_concrete_session_defaults_and_bootstrap(
-    client: httpx.AsyncClient, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi
+    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
     response = await client.post(
         "/sandboxes",
         json={
             "name": "coder",
             "template": TEMPLATE,
-            "egress_policies": ["github"],
-            "action_policy_sets": ["github-reads"],
+            "policy_sets": ["packages"],
             "session_defaults": {
                 "harness": "HARNESS_CODEX",
                 "model": "edited-model",
@@ -293,131 +281,7 @@ async def test_create_records_the_concrete_session_defaults_and_bootstrap(
         },
         "bootstrap": "mkdir -p /state/workspaces",
     }
-    sandbox_endpoint.reconcile()
-    (binding,) = (await client.get(f"/sandboxes/{row['name']}/egress")).json()
-    assert [policy["name"] for policy in binding["policies"]] == [*RUNNER_ENDPOINTS.egress_policies(), "github"]
-    annotation = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["annotations"]
-    assert "agentplane.allegedly.works/sandbox-binding" in annotation
-
-
-async def test_create_binds_the_sandbox_to_its_action_policy_sets(
-    client: httpx.AsyncClient, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi
-) -> None:
-    """One ActionPolicyBinding per launched Sandbox, owned by it and naming the ServiceAccount it
-    runs as: what its harness may do without the operator, as the Action Service reads it. Reading the policy back is the Action Service's answer through the operator
-    federation (`test_action_api.py`), so a token caller is refused it."""
-    row = (
-        await client.post(
-            "/sandboxes", json={"name": "coder", "template": TEMPLATE, "action_policy_sets": ["github-reads"]}
-        )
-    ).json()
-
-    sandbox_endpoint.reconcile()
-    sandbox_uid = custom_objects.objects[("sandboxes", row["name"])]["metadata"]["uid"]
-    (written,) = [obj for (kind, _), obj in custom_objects.objects.items() if kind == "actionpolicybindings"]
-    assert written["metadata"]["name"] == f"ap-init-{UUID(sandbox_uid).hex}"
-    assert written["metadata"]["labels"] == {"app.agentplane.allegedly.works/managed-by": "integration-app"}
-    assert written["metadata"]["ownerReferences"][0]["uid"] == sandbox_uid
-    assert written["spec"] == {"subject": {"namespace": NAMESPACE, "name": row["name"]}, "policySets": ["github-reads"]}
-
-    await client.post("/sandboxes", json={"name": "plain", "template": TEMPLATE})
-    sandbox_endpoint.reconcile()
-    assert len([kind for kind, _ in custom_objects.objects if kind == "actionpolicybindings"]) == 1
-
-
-async def test_kubernetes_grant_picker_requires_an_approved_name_and_operator(
-    app: FastAPI, client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
-) -> None:
-    app_services(app).kubernetes_grants = {
-        "config": RoleBindingGrant(
-            kind="RoleBinding", namespace=NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
-        )
-    }
-    choices = await client.get("/kubernetes-grants")
-    assert choices.status_code == 200
-    assert [(row["name"], row["namespace"], row["role_ref"]["name"]) for row in choices.json()] == [
-        ("config", NAMESPACE, "config-reader")
-    ]
-    before = set(core_v1.service_accounts)
-    for body, status_code in (
-        ({"kubernetes_grants": ["missing"]}, 422),
-        ({"kubernetes_grants": ["config"]}, 403),
-        ({"kubernetes_grants": ["config"], "role_ref": {"kind": "Role", "name": "admin"}}, 422),
-    ):
-        response = await client.post("/sandboxes", json={"name": "coder", "template": TEMPLATE, **body})
-        assert response.status_code == status_code, response.text
-    assert set(core_v1.service_accounts) == before
-    assert not any(kind == "rolebindings" for kind, _ in custom_objects.objects)
-
-
-async def test_operator_launch_provisions_the_selected_role_for_its_actual_sandbox_account(
-    app: FastAPI,
-    client: httpx.AsyncClient,
-    sandbox_endpoint: Endpoint,
-    sandbox_grants: dict[str, KubernetesGrant],
-    sandbox_rbac: FakeRbac,
-    custom_objects: FakeCustomObjectsApi,
-) -> None:
-    app_services(app).kubernetes_grants = {
-        "config": RoleBindingGrant(
-            kind="RoleBinding", namespace=NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
-        )
-    }
-    sandbox_grants.update(app_services(app).kubernetes_grants)
-    app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
-    try:
-        response = await client.post(
-            "/sandboxes", json={"name": "coder", "template": TEMPLATE, "kubernetes_grants": ["config"]}
-        )
-    finally:
-        app.dependency_overrides.pop(require_caller)
-    assert response.status_code == 201, response.text
-    row = response.json()
-    assert row["initializing"] is True
-    sandbox_endpoint.reconcile()
-    row = (await client.get(f"/sandboxes/{row['name']}")).json()
-    assert row["kubernetes_grants_ready"] is True
-    assert row["kubernetes_grants"][0]["grant"]["role_ref"] == {"kind": "Role", "name": "config-reader"}
-    (bound,) = sandbox_rbac.bindings.values()
-    assert bound.role_ref.name == "config-reader"
-    assert [(subject.namespace, subject.name) for subject in bound.subjects] == [(NAMESPACE, row["name"])]
-    stored = custom_objects.objects[("sandboxes", row["name"])]
-    assert stored["metadata"]["annotations"]["agentplane.allegedly.works/kubernetes-grants"]
-
-
-def _written_bindings(custom_objects: FakeCustomObjectsApi) -> list[tuple[str, list[str]]]:
-    """Each ActionPolicyBinding the app wrote, as (bound account, its sets): the launch's whole effect,
-    read where it landed, since the policy route answers only an operator session."""
-    return [
-        (obj["spec"]["subject"]["name"], obj["spec"]["policySets"])
-        for (kind, _), obj in custom_objects.objects.items()
-        if kind == "actionpolicybindings"
-    ]
-
-
-async def test_the_launch_pick_of_action_policy_sets_is_the_operators(
-    client: httpx.AsyncClient, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi
-) -> None:
-    """An explicit empty list binds nothing, while a concrete choice binds exactly that list."""
-    unbound = await client.post("/sandboxes", json={"name": "coder", "template": TEMPLATE, "action_policy_sets": []})
-    assert unbound.status_code == 201, unbound.text
-    sandbox_endpoint.reconcile()
-    assert _written_bindings(custom_objects) == []
-
-    picked = await client.post(
-        "/sandboxes",
-        json={"name": "plain", "template": TEMPLATE, "action_policy_sets": ["github-reads", "github-writes"]},
-    )
-    sandbox_endpoint.reconcile()
-    assert picked.status_code == 201, picked.text
-    assert _written_bindings(custom_objects) == [(picked.json()["name"], ["github-reads", "github-writes"])]
-
-    sandboxes_before = [name for kind, name in custom_objects.objects if kind == "sandboxes"]
-    refused = await client.post(
-        "/sandboxes", json={"name": "vanished", "template": TEMPLATE, "action_policy_sets": ["vanished"]}
-    )
-    assert refused.status_code == 422, refused.text
-    assert [name for kind, name in custom_objects.objects if kind == "sandboxes"] == sandboxes_before
+    assert custom_objects.objects[(SANDBOXES_PLURAL, row["name"])]["spec"]["policySets"] == ["packages"]
 
 
 async def test_policy_sets_list_the_namespace_for_the_create_form(client: httpx.AsyncClient) -> None:
@@ -425,46 +289,6 @@ async def test_policy_sets_list_the_namespace_for_the_create_form(client: httpx.
     assert set(sets) == {"github-reads", "github-writes"}
     assert sets["github-reads"]["ready"]["status"] == "True"
     assert (sets["github-writes"]["ready"], sets["github-writes"]["refused"]) == (None, None)
-
-
-async def test_create_with_picked_policies_grants_one_binding_the_sandbox_owns(
-    client: httpx.AsyncClient, sandbox_endpoint: Endpoint, custom_objects: FakeCustomObjectsApi
-) -> None:
-    response = await client.post("/sandboxes", json={"name": "demo", "template": TEMPLATE, "egress_policies": ["pypi"]})
-
-    assert response.status_code == 201, response.text
-    row = response.json()
-    sandbox_endpoint.reconcile()
-    # The new sandbox's egress is its runner's endpoints and its own pick: no binding names it in advance.
-    (binding,) = (await client.get(f"/sandboxes/{row['name']}/egress")).json()
-    assert [policy["name"] for policy in binding["policies"]] == [*RUNNER_ENDPOINTS.egress_policies(), "pypi"]
-    picked = custom_objects.objects[("egressbindings", binding["name"])]
-    assert (
-        picked["metadata"]["ownerReferences"][0]["uid"]
-        == custom_objects.objects[("sandboxes", row["name"])]["metadata"]["uid"]
-    )
-
-
-@pytest.mark.parametrize("default_egress_policies", [["github"]])
-async def test_a_default_policy_is_granted_whether_or_not_the_caller_picks_it(
-    client: httpx.AsyncClient, sandbox_endpoint: Endpoint
-) -> None:
-    """The model endpoint is what this is for in the deployment: without it a sandbox has no agent,
-    so it is not the caller's to leave out — nor, having picked it, to be granted twice. The
-    parameter overrides the `default_egress_policies` fixture the client is built from."""
-    unpicked = (await client.post("/sandboxes", json={"name": "plain", "template": TEMPLATE})).json()
-    sandbox_endpoint.reconcile()
-    (binding,) = (await client.get(f"/sandboxes/{unpicked['name']}/egress")).json()
-    assert [policy["name"] for policy in binding["policies"]] == [*RUNNER_ENDPOINTS.egress_policies(), "github"]
-
-    picked = (
-        await client.post(
-            "/sandboxes", json={"name": "asked", "template": TEMPLATE, "egress_policies": ["github", "pypi"]}
-        )
-    ).json()
-    sandbox_endpoint.reconcile()
-    (binding,) = (await client.get(f"/sandboxes/{picked['name']}/egress")).json()
-    assert [policy["name"] for policy in binding["policies"]] == [*RUNNER_ENDPOINTS.egress_policies(), "github", "pypi"]
 
 
 @pytest.mark.parametrize(
@@ -484,7 +308,7 @@ async def test_create_rejects_invalid_requests(
     response = await client.post("/sandboxes", json=body)
 
     assert response.status_code == 422
-    assert all(kind != "sandboxes" or name in {"live", "fresh"} for kind, name in custom_objects.objects)
+    assert all(kind != SANDBOXES_PLURAL or name in {"live", "fresh"} for kind, name in custom_objects.objects)
 
 
 async def test_suspend_resume_apply_in_order(client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi) -> None:
@@ -492,19 +316,20 @@ async def test_suspend_resume_apply_in_order(client: httpx.AsyncClient, custom_o
     assert (await client.get("/sandboxes/live")).json()["operating_mode"] == "Suspended"
     assert (await client.post("/sandboxes/live/resume")).status_code == 204
     assert (await client.get("/sandboxes/live")).json()["operating_mode"] == "Running"
-    assert custom_objects.objects[("sandboxes", "live")]["spec"]["operatingMode"] == "Running"
+    assert custom_objects.objects[(SANDBOXES_PLURAL, "live")]["spec"]["running"] is True
     assert (await client.post("/sandboxes/nope/suspend")).status_code == 404
 
 
 async def test_delete_starts_teardown_once_the_sandbox_is_suspended(
     client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
+    custom_objects.objects[(SANDBOXES_PLURAL, "live")]["metadata"]["finalizers"] = ["test-finalizer"]
     assert (await client.delete("/sandboxes/live")).status_code == 409
     assert not (await client.get("/sandboxes/live")).json()["deleting"]
 
     assert (await client.post("/sandboxes/live/suspend")).status_code == 204
     assert (await client.delete("/sandboxes/live")).status_code == 204
-    # The Sandbox Service deletes it once its runner has sealed every Session.
+    # The Sandbox Controller's finalizer holds it until its Sessions are sealed.
     assert (await client.get("/sandboxes/live")).json()["deleting"]
     assert (await client.delete("/sandboxes/live")).status_code == 204
     assert (await client.delete("/sandboxes/nope")).status_code == 404
@@ -828,7 +653,7 @@ async def test_granting_a_running_sandbox_adds_a_binding_and_leaves_the_others(
     assert (owner["kind"], owner["name"], owner["uid"]) == (
         "Sandbox",
         "live",
-        custom_objects.objects[("sandboxes", "live")]["metadata"]["uid"],
+        custom_objects.objects[(SANDBOXES_PLURAL, "live")]["metadata"]["uid"],
     )
     assert sorted(b["name"] for b in (await client.get("/sandboxes/live/egress")).json()) == sorted(
         ["live-granted", "live-seeded", binding["name"]]
@@ -849,11 +674,11 @@ async def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
     assert (await client.post("/sandboxes/nope/egress", json={"policies": ["github"]})).status_code == 404
     # The CRD's policies are minItems: 1, so an empty grant is refused here rather than at admission.
     assert (await client.post("/sandboxes/live/egress", json={"policies": []})).status_code == 422
-    # And at launch the names resolve before the Sandbox exists, so a typo leaves none behind.
+    # And at launch the policy sets resolve before the Sandbox exists, so a typo leaves none behind.
     assert (
-        await client.post("/sandboxes", json={"name": "demo", "template": TEMPLATE, "egress_policies": ["vanished"]})
+        await client.post("/sandboxes", json={"name": "demo", "template": TEMPLATE, "policy_sets": ["vanished"]})
     ).status_code == 422
-    assert all(kind != "sandboxes" or name in {"live", "fresh"} for kind, name in custom_objects.objects)
+    assert all(kind != SANDBOXES_PLURAL or name in {"live", "fresh"} for kind, name in custom_objects.objects)
 
 
 async def test_egress_decisions_come_from_the_proxy(client: httpx.AsyncClient, egress_admin: FakeEgressAdmin) -> None:
@@ -915,11 +740,7 @@ async def test_binding_revocation(client: httpx.AsyncClient) -> None:
 
 
 async def test_policies_lists_the_namespace_for_the_create_form(client: httpx.AsyncClient) -> None:
-    assert {policy["name"] for policy in (await client.get("/egress/policies")).json()} == {
-        "github",
-        "pypi",
-        *RUNNER_ENDPOINTS.egress_policies(),
-    }
+    assert {policy["name"] for policy in (await client.get("/egress/policies")).json()} == {"github", "pypi"}
 
 
 async def test_presets_publish_editable_sandbox_and_session_defaults(client: httpx.AsyncClient) -> None:
@@ -928,10 +749,7 @@ async def test_presets_publish_editable_sandbox_and_session_defaults(client: htt
             "name": "public-coder",
             "title": "Public coder",
             "template": "agentplane-test-runner",
-            "egress_policies": ["github"],
-            "action_policy_sets": ["github-reads"],
-            "kubernetes_grants": [],
-            "policy_sets": [],
+            "policy_sets": ["basic"],
             "session_defaults": {
                 "harness": "HARNESS_CODEX",
                 "model": "test-codex-model",
@@ -995,7 +813,9 @@ async def test_a_running_thread_cannot_be_archived(
     core_v1: FakeCoreV1Api,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    custom_objects.objects[("sandboxes", "live")], core_v1.pods["live"] = seed_runner(custom_objects, core_v1, "live")
+    custom_objects.objects[(SANDBOXES_PLURAL, "live")], core_v1.pods["live"] = seed_runner(
+        custom_objects, core_v1, "live"
+    )
     spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = await event_logs.seed("live", "s-1")
 

@@ -8,8 +8,7 @@ Production callers and service acceptance tests use this same gRPC interface; th
 HTTP service adapter.
 
 The Sandbox Service serves `SandboxService`: Sandbox inventory and lifecycle, templates and egress
-grants. One replica reconciles, and it alone holds the RBAC, ServiceAccount and egress grant
-permissions. Sessions and commands are the [Runner Gateway's API](../runner_gateway/API.md), its own
+grants. Sessions and commands are the [Runner Gateway's API](../runner_gateway/API.md), its own
 server and image, with its own client. Authentication and destinations below apply to both.
 
 ## Authentication and destinations
@@ -27,84 +26,56 @@ lookup or runner contact. An ordinary workload token, even for the destination's
 not grant access. There is no separate manager/delivery tier or inferred Thread identity in v1.
 Listed services can operate across owners, but must still supply the verified destination owner/UID.
 
-Resolution checks the stored Sandbox account, UID, operating mode, provisioning/grant facts, and current
-ready Pod's identity and controller ownership. Name reuse with a new UID is refused. The runner itself
+Resolution checks the Sandbox's account, UID, operating mode and teardown, and the current ready
+Pod's identity and controller ownership. Name reuse with a new UID is refused. The runner itself
 is reached only over the [runner control stream](../docs/runner_control.md) it dialed with a Pod-bound
 token.
 
 ## Inventory and explicit sandbox lifecycle
 
-The same service-caller allowlist gates every RPC. Provisioning is always enabled:
+The same service-caller allowlist gates every RPC:
 
-- `ListSandboxes`, `GetSandbox`: Kubernetes-backed inventory, including concrete stored launch
-  bindings, the Sandbox CR's raw status, and a same-name Pod's identity metadata and raw status as
-  separate objects. Operating mode, launch-grants-pending, and Kubernetes-grant facts remain
-  separate fields; the service does not synthesize one status from them.
-- `ListTemplates`: available SandboxTemplates. The app renders its configured grant catalog locally.
-- `CreateSandbox`: concrete template, egress policy selections, Action policy sets, Kubernetes grants
-  (or policy sets, below), optional session defaults, and bootstrap. The requested `name` is the Kubernetes Sandbox CR name.
-  Retry with the same name and exact choices while that CR exists; a different caller or request
-  conflicts. Create first records intent on a Suspended CR, then ensures its UID-owned ServiceAccount
-  and grants before resuming. A persisted initialization marker lets reconciliation recover without
-  the app. The RPC returns when the CR is persisted; ServiceAccount, grants, and Pod readiness
-  are asynchronous.
-  After deletion, a new CR under the same name cannot prove whether an earlier Create succeeded.
-  The service starts the template's `runner` container with the configured `runner_ingress` and
-  Runner Gateway (`runner_control`) as `--ingress-target`/`--ingress-bearer` and
-  `--control-target`/`--control-bearer`, and grants each endpoint's `egress_policy` with the launch
-  policies ([Event ingress](../docs/runner_control.md#event-ingress)); the request chooses neither.
-  A template whose runner already passes one of those flags is refused. No request may pick an
-  endpoint's egress policy, at creation or through `GrantEgress`.
-  Where the deployment sets `own_sandboxes` (testing), the CR is Agentplane's own `Sandbox` instead:
-  running from the start, bound to `policy_sets` plus the configured defaults, which must all name
-  `PolicySet`s in the namespace. Its template's runner reaches its services over the egress
-  sidecar's platform routes, and the Sandbox Controller makes its ServiceAccount and binding, so
-  the service grants nothing. A request naming egress policies, Action policy sets or Kubernetes
-  grants is refused there, as `policy_sets` is for agent-sandbox's. Either kind's name blocks the
-  other's.
-- `GrantEgress`: UID-pinned Sandbox destination and egress policy names; returns the created binding name.
-  `RevokeEgress`: binding name; retains the refusal to delete Git-owned bindings. Both require the
-  same service-caller authorization as other operations.
-- `SuspendSandbox`, `ResumeSandbox`, `DeleteSandbox`: explicit owner/name/UID-pinned mutations.
-  Resume refuses incomplete provisioning. `DeleteSandbox` requires suspension and starts
+- `ListSandboxes`, `GetSandbox`: Kubernetes-backed inventory, including the Sandbox's session
+  defaults and bootstrap, its raw status, and a same-name Pod's identity metadata and raw status as
+  separate objects. Operating mode and teardown remain separate fields; the service does not
+  synthesize one status from them.
+- `ListTemplates`: available SandboxTemplates.
+- `CreateSandbox`: concrete template, `policy_sets`, optional session defaults, and bootstrap. The
+  requested `name` is the Sandbox's. It runs from the start, bound to `policy_sets` plus the
+  configured `default_policy_sets`, which must all name `PolicySet`s in the namespace; a request
+  naming egress policies, Action policy sets or Kubernetes grants is refused, a PolicySet holding
+  every rule type. Retry with the same name and exact choices while that Sandbox exists; a different
+  caller or request conflicts. The RPC returns when the Sandbox is persisted; the Sandbox
+  Controller makes its ServiceAccount, `PolicyBinding`, state volume and Pod asynchronously. Its
+  template's runner reaches the Runner Gateway and the History Service ingress over the egress
+  sidecar's platform routes.
+- `GrantEgress`: UID-pinned Sandbox destination and egress policy names; returns the created
+  binding name, owned by the Sandbox. `RevokeEgress`: binding name; retains the refusal to delete
+  Git-owned bindings.
+- `SuspendSandbox`, `ResumeSandbox`, `DeleteSandbox`: explicit owner/name/UID-pinned mutations of
+  `spec.running`, or the deletion. `DeleteSandbox` requires suspension and starts
   [teardown](#teardown).
 
-Create retries by exact caller, name, and request while the CR exists; after deletion no
+Create retries by exact caller, name, and request while the Sandbox exists; after deletion no
 name-only receipt can prove whether a past Create succeeded. The client disables automatic gRPC
-retries.
-
-The Sandbox Service controller lists and watches its managed Sandbox CRs from a Kubernetes
-`resourceVersion`. It queues changed names, reads the current incarnation for each reconciliation,
-and rate-limits failures per name. A startup and periodic full sweep repairs missed events and
-orphaned external grants even while the watch is unavailable. Multiple replicas may reconcile the
-same name: mutations use UID/resourceVersion guards and are safe to replay. The upstream Sandbox
-controller owns `status` and Pod lifecycle; Agentplane's Create intent and progress live in its
-namespaced annotations, not competing Sandbox status conditions.
+retries. Mutations use UID/resourceVersion guards and are safe to replay.
 
 ## Teardown
 
-`DeleteSandbox` on a suspended Sandbox returns once teardown has started; `GetSandbox` reports its
-`teardown` phase, and repeating the call changes nothing. The controller then:
-
-1. Runs the Sandbox again (`TEARDOWN_PHASE_SEALING`). From now on it refuses new Sessions and
-   commands, and suspend and resume; its Sessions can still be listed and read.
-2. Asks the Runner Gateway to seal it (`RunnerGateway.SealSandbox`, through the Sandbox's control
-   Service; only the gateway's `sealer_accounts` may call it). The gateway calls the runner's
-   [`Seal`](../runner/SPEC.md#teardown-seal), which stops every harness and returns
-   each Session's final cursor.
-3. Deletes the Sandbox, and its volume, once the runner's ingress has acknowledged every seal
-   (`flushed`), sealing again every 10 s until then: history then has every Session through its
-   seal.
-
-While the runner is unreachable the Sandbox stays in `TEARDOWN_PHASE_SEALING`, retried with backoff,
-for the operator to decide: nothing deletes an unsealed Sandbox.
+`DeleteSandbox` on a suspended Sandbox deletes it and returns; `GetSandbox` reports its `teardown`
+phase, and repeating the call changes nothing. The Sandbox Controller holds the deletion until the
+runner has sealed every Session ([Sandbox Controller](../sandbox_controller/README.md)): it runs the
+Sandbox again (`TEARDOWN_PHASE_SEALING`), which from then on refuses new Sessions and commands, and
+suspend and resume, while its Sessions can still be listed and read. The Runner Gateway replica
+holding the runner's connection seals it and records `SessionsSealed`, after which the Sandbox and
+its volume go.
 
 ## Errors and uncertain outcomes
 
 - `UNAUTHENTICATED`: invalid workload bearer.
 - `PERMISSION_DENIED`: authenticated but unlisted service caller.
 - `NOT_FOUND`: missing/stale Sandbox incarnation.
-- `INVALID_ARGUMENT`: malformed request or invalid concrete grant selection.
+- `INVALID_ARGUMENT`: malformed request or unknown policy set.
 - `FAILED_PRECONDITION`: runner or Sandbox state refuses the operation.
 - `UNAVAILABLE`: destination/backend unavailable; no offline admission.
 - `DEADLINE_EXCEEDED`: operation or transport safety deadline expired.
@@ -115,20 +86,17 @@ response is lost. Command outcomes: [Runner Gateway API](../runner_gateway/API.m
 ## Server configuration
 
 `//agentplane/sandbox_service:server` uses `AGENTPLANE_SANDBOX_SERVICE_*` environment variables or
-kebab-case CLI flags. The Sandbox Service reaches a Sandbox's holder replica through
-`control_target`, with the token in `gateway_token_file`; the gateway accepts
-that account for `SealSandbox` through `sealer_accounts`.
-Required settings are `sandbox_namespace`, `caller_accounts` (nonempty), `token_audience`,
-`control_target` and `gateway_token_file`. TokenReview namespaces are derived from
-that allowlist. Kubernetes access is in-cluster unless `kubeconfig` is supplied.
+kebab-case CLI flags. Required settings are `sandbox_namespace`, `caller_accounts` (nonempty),
+`token_audience` and `default_policy_sets`. TokenReview namespaces are derived from that allowlist.
+Kubernetes access is in-cluster unless `kubeconfig` is supplied.
 
 `port` defaults to 8080 for gRPC, which also serves the unauthenticated `grpc.health.v1.Health`;
 it is liveness, not proof that Kubernetes or a particular destination is ready. Admission requests
 are bounded by `admission_timeout_s` (default 15); management uses `lifecycle_timeout_s` (default
 300).
 
-Deployment must grant the service the appropriate Kubernetes/TokenReview/provisioning permissions
-and project an audience-correct token for app-to-service calls, with one provisioning reconciler.
+Deployment must grant the service the appropriate Kubernetes/TokenReview/lifecycle permissions and
+project an audience-correct token for app-to-service calls.
 
 Each service has its own token audience, `agentplane-sandbox-service` and `agentplane-runner-gateway`,
 so a token for one is refused by the other. Every caller mounts a rotating projected token per service
@@ -138,8 +106,7 @@ can select an independent YAML settings file. It does not load app configuration
 ## Representation
 
 Generated protobuf messages are the service's request/response and client types, including inventory,
-launch defaults, destinations, and resolved grants. There is no parallel Pydantic service DTO layer.
+launch defaults and destinations. There is no parallel Pydantic service DTO layer.
 The integration app owns its browser-facing HTTP schemas and converts only at that boundary.
-Pydantic remains for deployment settings, catalog validation, and persisted Kubernetes input parsing;
-those are not a second service protocol. Existing annotation spellings and optional-field presence
-are retained for staging compatibility and rollback.
+Pydantic remains for deployment settings and persisted Kubernetes input parsing; those are not a
+second service protocol.

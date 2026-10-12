@@ -64,16 +64,8 @@ from agentplane.sandbox_service.egress_views import (
     BindingView,
     matching_bindings,
 )
-from agentplane.sandbox_service.kubernetes_views import (
-    MANAGED_LABEL,
-    incarnation_pod,
-    own_sandbox_view,
-    own_sandbox_views,
-    sandbox_view,
-    sandbox_views,
-)
+from agentplane.sandbox_service.kubernetes_views import incarnation_pod, sandbox_view, sandbox_views
 from agentplane.subjects import ServiceAccountRef
-from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
 from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
@@ -152,8 +144,6 @@ class LiveIndex:
     freshness: Freshness
     core_v1: CoreV1Api
     sandboxes: dict[str, object] = field(default_factory=dict)
-    # Agentplane's own Sandboxes, beside agent-sandbox's; a Pod's name holds one of the two.
-    own_sandboxes: dict[str, object] = field(default_factory=dict)
     pods: dict[str, k8s_client.V1Pod] = field(default_factory=dict, repr=False)
     bindings: dict[str, object] = field(default_factory=dict)
     policies: dict[str, object] = field(default_factory=dict)
@@ -171,24 +161,17 @@ class LiveIndex:
         api_client = self.core_v1.api_client  # type: ignore[attr-defined]
         return [
             http_sandbox_view(view)
-            for view in (
-                *sandbox_views(self.sandboxes.values(), self.pods.values(), api_client=api_client),
-                *own_sandbox_views(self.own_sandboxes.values(), self.pods.values(), api_client=api_client),
-            )
+            for view in sandbox_views(self.sandboxes.values(), self.pods.values(), api_client=api_client)
         ]
 
     def sandbox_view(self, name: str) -> SandboxView | None:
-        own, raw = self.own_sandboxes.get(name), self.sandboxes.get(name)
-        if own is None and raw is None:
+        raw = self.sandboxes.get(name)
+        if raw is None:
             return None
         # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
         api_client = self.core_v1.api_client  # type: ignore[attr-defined]
-        if own is not None:
-            parsed = Sandbox.model_validate(own)
-            return http_sandbox_view(
-                own_sandbox_view(parsed, incarnation_pod(parsed, self.pods), api_client=api_client)
-            )
-        return http_sandbox_view(sandbox_view(raw, self.pods.get(name), api_client=api_client))
+        parsed = Sandbox.model_validate(raw)
+        return http_sandbox_view(sandbox_view(parsed, incarnation_pod(parsed, self.pods), api_client=api_client))
 
     def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
         return matching_bindings(
@@ -248,21 +231,12 @@ def watch_for(
     return ListWatch(
         kinds=(
             WatchedKind(
-                name=SANDBOXES_PLURAL,
-                list=custom_objects.list_namespaced_custom_object,
-                args=(*SANDBOX_API, sandbox_namespace, SANDBOXES_PLURAL),
-                kwargs={"label_selector": f"{MANAGED_LABEL}=true"},
-                key=_name,
-                names=lambda: set(index.sandboxes),
-                apply=lambda name, obj: apply_to(index.sandboxes, name, obj),
-            ),
-            WatchedKind(
-                name=f"{sandbox_resource.SANDBOXES_PLURAL}.{GROUP}",
+                name=sandbox_resource.SANDBOXES_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
                 args=(GROUP, VERSION, sandbox_namespace, sandbox_resource.SANDBOXES_PLURAL),
                 key=_name,
-                names=lambda: set(index.own_sandboxes),
-                apply=lambda name, obj: apply_to(index.own_sandboxes, name, obj),
+                names=lambda: set(index.sandboxes),
+                apply=lambda name, obj: apply_to(index.sandboxes, name, obj),
             ),
             WatchedKind(
                 name=PODS_PLURAL,

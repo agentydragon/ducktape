@@ -2,17 +2,22 @@
 
 from __future__ import annotations
 
+from collections.abc import Set
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Self
 
-from pydantic import Field
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 from pydantic_settings import SettingsConfigDict
 
-from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
-from agentplane.sandbox_service.provisioning import OwnSandboxes
-from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.subjects import ServiceAccountRef
 from util.yaml_file_settings import YamlFileSettings
+
+
+# CLEANUP(added 2026-10-12): drop once the manifests set default_policy_sets (the cdk8s PR after this one).
+class OwnSandboxes(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    default_policy_sets: Set[str]
 
 
 class Settings(YamlFileSettings):
@@ -29,23 +34,29 @@ class Settings(YamlFileSettings):
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     kubeconfig: Path | None = None
-    default_egress_policies: list[str] = Field(default_factory=list)
-    own_sandboxes: OwnSandboxes | None = Field(
-        default=None, description="Create Agentplane's own Sandbox kind; absent, agent-sandbox's."
-    )
-    kubernetes_grants: dict[str, KubernetesGrant] = Field(default_factory=dict)
-    kubernetes_binding_cleanup_namespaces: set[str] = Field(default_factory=set)
-    kubernetes_cluster_binding_cleanup: bool = False
-    runner_control: RunnerEndpoint = Field(
-        description="The Runner Gateway endpoint every new Sandbox's runner dials for its control stream."
-    )
-    runner_ingress: RunnerEndpoint = Field(description="The ingress every new Sandbox's runner pushes its Events to.")
-    control_target: str = Field(
-        min_length=1,
-        description="A Sandbox's control Service, which reaches the gateway replica holding its runner connection, "
-        "as a template of `{sandbox}` and `{namespace}`.",
-    )
-    gateway_token_file: Path = Field(
-        description="This Pod's projected token for the gateway's audience; the gateway accepts it from the "
-        "Sandbox Service alone for `SealSandbox`."
-    )
+    # CLEANUP(added 2026-10-12): required, and own_sandboxes and the validator below gone, once the
+    #   manifests set default_policy_sets (the cdk8s PR after this one).
+    default_policy_sets: Set[str] | None = Field(default=None, description="PolicySets every new Sandbox is bound to.")
+    own_sandboxes: OwnSandboxes | None = None
+    # CLEANUP(added 2026-10-12): drop once the manifests stop setting these (the cdk8s PR after this one).
+    default_egress_policies: JsonValue | None = None
+    kubernetes_grants: JsonValue | None = None
+    kubernetes_binding_cleanup_namespaces: JsonValue | None = None
+    kubernetes_cluster_binding_cleanup: JsonValue | None = None
+    runner_control: JsonValue | None = None
+    runner_ingress: JsonValue | None = None
+    control_target: JsonValue | None = None
+    gateway_token_file: JsonValue | None = None
+
+    @model_validator(mode="after")
+    def _one_source_of_default_policy_sets(self) -> Self:
+        if (self.default_policy_sets is None) == (self.own_sandboxes is None):
+            raise ValueError("set exactly one of default_policy_sets and own_sandboxes.default_policy_sets")
+        return self
+
+    @property
+    def policy_sets_of_every_sandbox(self) -> Set[str]:
+        if self.default_policy_sets is not None:
+            return self.default_policy_sets
+        assert self.own_sandboxes is not None
+        return self.own_sandboxes.default_policy_sets

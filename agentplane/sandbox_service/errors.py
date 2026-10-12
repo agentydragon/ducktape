@@ -12,7 +12,7 @@ class SandboxNotFoundError(InventoryError):
 
 
 class SandboxConflictError(InventoryError):
-    """A name belongs to another Create or initialization is still in progress."""
+    """A name belongs to another Create."""
 
 
 class SandboxRunningError(InventoryError):

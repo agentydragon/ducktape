@@ -437,23 +437,15 @@ linked group becomes available is the Action Service's contract
 ## Launch presets
 
 `GET /presets` publishes configured Sandbox presets and their inherited editable Thread defaults.
-`POST /sandboxes` keeps its no-preset shape and additionally accepts an optional preset: omitted
-fields inherit, while explicit egress policy selections and thread fields replace preset values. The Sandbox
-annotation stores the preset name and only explicit thread edits, so later sessions resolve against
-the current configured default instead of freezing a copied form. `action_policy_sets` works like
-the egress policy selection: a preset pre-fills the pick, an explicit list replaces it (an empty one binds
-nothing), and a launch without a preset may pick sets of its own. The launch writes one
-`ActionPolicyBinding` naming the picked sets for the new Sandbox; a set name the namespace does not
-hold is refused with 422 before the Sandbox exists, as an unknown egress policy is. The create form
-offers the namespace's sets from `GET /action-policy/sets`, each with the Action Service's verdict
-on it, and records the picked preset in the URL (`/#/?preset=<name>`) so a launch form can be
-linked to.
+`POST /sandboxes` takes the concrete choices; the create form expands a preset into them and the
+operator edits what it pre-fills. `policy_sets` are the Sandbox's grants beside the deployment's
+defaults, and a set name the namespace does not hold is refused with 422 before the Sandbox exists.
+The form records the picked preset in the URL (`/#/?preset=<name>`) so a launch form can be linked
+to.
 
-Where the Sandbox Service creates Agentplane's own Sandbox kind (the app's `own_sandboxes` setting,
-which must agree with it), that kind takes `policy_sets` alone. `GET /sandboxes/form` then lists the
-namespace's `PolicySet`s and the form offers them in place of the egress, Action policy set and
-Kubernetes grant pickers; a preset fills only the fields its deployment's kind takes, which the app
-checks at startup.
+A Sandbox takes `policy_sets` alone: the Sandbox Service refuses egress policies, Action policy sets
+and Kubernetes grants on a create. `GET /sandboxes/form` lists the namespace's `PolicySet`s, which
+the form offers, and a preset that fills any of the other three fails the app's startup.
 
 Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
 content to the runner under a stable preset identity. The runner executes it idempotently on the

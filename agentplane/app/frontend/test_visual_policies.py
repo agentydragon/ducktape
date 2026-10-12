@@ -683,32 +683,12 @@ async def test_consent_reconnect_decision_phone(reconnect_review: VisualPage) ->
 
 
 @DESKTOP_AND_MOBILE
-async def test_action_policy_selector_hides_picked_option(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_app("/sandboxes?preset=public-coder")
-    await view.page.wait_for_selector(".mantine-Pill-root", state="attached")
-    await view.check(context="fixture ready")
-    page = view.page
-    await _open_select(page, label="Action policy sets", available="harness-reviews", picked="public-coder")
-    await view.capture(target=view.page.locator("#app"))
-
-
-@DESKTOP_AND_MOBILE
-async def test_egress_policy_selector_hides_picked_option(view: VisualPage, app: AgentplaneFixture) -> None:
+async def test_policy_set_selector_hides_picked_option(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes?preset=public-coder")
     await view.page.wait_for_selector('.mantine-Pill-root:has-text("github-public")', state="attached")
     await view.check(context="fixture ready")
     page = view.page
-    await _open_select(page, label="Egress policies", available="pypi", picked="github-public", press_arrow_down=True)
-    await view.capture(target=view.page.locator("#app"))
-
-
-@DESKTOP_AND_MOBILE
-async def test_grant_selector_hides_picked_option(view: VisualPage, app: AgentplaneFixture) -> None:
-    await app.mount_app("/sandboxes?preset=public-coder")
-    await view.page.wait_for_selector(".mantine-Pill-root", state="attached")
-    await view.check(context="fixture ready")
-    page = view.page
-    await _open_select(page, label="Kubernetes grants", available="config-read", picked="workspace-read")
+    await _open_select(page, label="Policy sets", available="pypi", picked="github-public", press_arrow_down=True)
     await view.capture(target=view.page.locator("#app"))
 
 

@@ -15,17 +15,10 @@ from uuid import uuid4
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
-from agentplane.crd_group import GROUP
 from agentplane.sandbox_service.egress_views import FLUX_KUSTOMIZATION_LABEL
-from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL
-from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint, RunnerEndpoints
 
 NAMESPACE = "agentplane-test"
 TEMPLATE = "agentplane-test-runner"
-RUNNER_ENDPOINTS = RunnerEndpoints(
-    control=RunnerEndpoint(target="test-gateway.test:8082", bearer="test-control-bearer", egress_policy="test-control"),
-    ingress=RunnerEndpoint(target="test-history.test:8083", bearer="test-history-bearer", egress_policy="test-history"),
-)
 _FAKE_API_CLIENTS: set[k8s_client.ApiClient] = set()
 
 
@@ -34,21 +27,6 @@ async def close_fake_api_clients() -> None:
     clients = tuple(_FAKE_API_CLIENTS)
     _FAKE_API_CLIENTS.clear()
     await asyncio.gather(*(client.close() for client in clients))
-
-
-# What the test template carries, and what every Sandbox the inventory creates must copy.
-POD_TEMPLATE: dict[str, Any] = {
-    "metadata": {"labels": {"app.kubernetes.io/name": "agentplane-test-runner"}},
-    "spec": {"containers": [{"name": "runner", "image": "registry.test/runner:test"}]},
-}
-VOLUME_CLAIM_TEMPLATES: list[dict[str, Any]] = [
-    {"metadata": {"name": "state"}, "spec": {"resources": {"requests": {"storage": "1Gi"}}}}
-]
-
-
-def _snake(camel: str) -> str:
-    """The API server takes camelCase; the Python client's models are snake_case."""
-    return "".join(f"_{char.lower()}" if char.isupper() else char for char in camel)
 
 
 def merge_patch(target: dict[str, Any], patch: dict[str, Any]) -> None:
@@ -62,39 +40,22 @@ def merge_patch(target: dict[str, Any], patch: dict[str, Any]) -> None:
             target[key] = value
 
 
-def _store(group: str, plural: str) -> str:
-    """Agentplane's own Sandboxes share agent-sandbox's plural, so they are kept apart by group."""
-    return f"{plural}.{group}" if (group, plural) == (GROUP, sandbox_resource.SANDBOXES_PLURAL) else plural
-
-
 class FakeCustomObjectsApi:
     def __init__(self) -> None:
         self.create_fails = False
         self.objects: dict[tuple[str, str], dict[str, Any]] = {
-            ("sandboxtemplates", TEMPLATE): {
+            (sandbox_resource.TEMPLATES_PLURAL, TEMPLATE): {
                 "metadata": {"name": TEMPLATE, "creationTimestamp": "2026-09-01T11:00:00Z"},
-                "spec": {
-                    "podTemplate": POD_TEMPLATE,
-                    "volumeClaimTemplatesPolicy": "Overrides",
-                    "volumeClaimTemplates": VOLUME_CLAIM_TEMPLATES,
-                },
+                "spec": {"pod": {"spec": {"containers": [{"name": "runner", "image": "registry.test/runner:test"}]}}},
             }
         }
         self.patches: list[tuple[str, str, dict[str, Any]]] = []
         self.deleted: list[tuple[str, str]] = []
 
-    def add_runner_endpoint_policies(self) -> None:
-        """The egress policies the deployment applies beside `RUNNER_ENDPOINTS`, which every Sandbox is granted."""
-        for endpoint in (RUNNER_ENDPOINTS.control, RUNNER_ENDPOINTS.ingress):
-            self.objects[("egresspolicies", endpoint.egress_policy)] = egress_policy(
-                endpoint.egress_policy, [{"hosts": [endpoint.target.partition(":")[0]]}]
-            )
-
     async def list_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, *, label_selector: str = ""
     ) -> dict[str, Any]:
-        del version
-        plural = _store(group, plural)
+        del group, version
         assert namespace == NAMESPACE
         wanted = dict(item.split("=", 1) for item in label_selector.split(",") if item)
         items = [
@@ -107,8 +68,7 @@ class FakeCustomObjectsApi:
     async def create_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, body: dict[str, Any]
     ) -> dict[str, Any]:
-        del version
-        plural = _store(group, plural)
+        del group, version
         assert namespace == NAMESPACE
         if self.create_fails:
             raise k8s_client.ApiException(status=500)
@@ -137,8 +97,7 @@ class FakeCustomObjectsApi:
     async def get_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, name: str
     ) -> dict[str, Any]:
-        del version
-        plural = _store(group, plural)
+        del group, version
         assert namespace == NAMESPACE
         try:
             return self.objects[(plural, name)]
@@ -148,8 +107,7 @@ class FakeCustomObjectsApi:
     async def patch_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, name: str, body: object, *, _content_type: str
     ) -> object:
-        del version
-        plural = _store(group, plural)
+        del group, version
         assert namespace == NAMESPACE
         assert _content_type == "application/merge-patch+json"
         assert isinstance(body, dict)
@@ -167,8 +125,7 @@ class FakeCustomObjectsApi:
     async def delete_namespaced_custom_object(
         self, group: str, version: str, namespace: str, plural: str, name: str, *, body: k8s_client.V1DeleteOptions
     ) -> object:
-        del version
-        plural = _store(group, plural)
+        del group, version
         assert namespace == NAMESPACE
         target = await self.get_namespaced_custom_object("", "", namespace, plural, name)
         metadata = target["metadata"]
@@ -191,7 +148,6 @@ class FakeCoreV1Api:
     def __init__(self) -> None:
         self._api_client: k8s_client.ApiClient | None = None
         self.pods: dict[str, k8s_client.V1Pod] = {}
-        self.service_accounts: dict[str, k8s_client.V1ServiceAccount] = {}
 
     @property
     def api_client(self) -> k8s_client.ApiClient:
@@ -201,38 +157,6 @@ class FakeCoreV1Api:
             self._api_client = k8s_client.ApiClient()
             _FAKE_API_CLIENTS.add(self._api_client)
         return self._api_client
-
-    async def create_namespaced_service_account(
-        self, namespace: str, body: k8s_client.V1ServiceAccount
-    ) -> k8s_client.V1ServiceAccount:
-        assert namespace == NAMESPACE
-        name = body.metadata.name
-        if name in self.service_accounts:
-            raise k8s_client.ApiException(status=409)
-        self.service_accounts[name] = body
-        return body
-
-    async def read_namespaced_service_account(self, name: str, namespace: str) -> k8s_client.V1ServiceAccount:
-        assert namespace == NAMESPACE
-        try:
-            return self.service_accounts[name]
-        except KeyError:
-            raise k8s_client.ApiException(status=404) from None
-
-    async def patch_namespaced_service_account(
-        self, name: str, namespace: str, body: dict[str, Any]
-    ) -> k8s_client.V1ServiceAccount:
-        assert namespace == NAMESPACE
-        account = self.service_accounts[name]
-        account.metadata.owner_references = [
-            k8s_client.V1OwnerReference(**{_snake(key): value for key, value in owner.items()})
-            for owner in body["metadata"]["ownerReferences"]
-        ]
-        return account
-
-    async def delete_namespaced_service_account(self, name: str, namespace: str) -> None:
-        assert namespace == NAMESPACE
-        self.service_accounts.pop(name, None)
 
     async def list_namespaced_pod(self, namespace: str) -> k8s_client.V1PodList:
         assert namespace == NAMESPACE
@@ -246,28 +170,25 @@ class FakeCoreV1Api:
             raise k8s_client.ApiException(status=404) from None
 
 
-def sandbox(
-    name: str,
-    *,
-    labels: dict[str, str] | None = None,
-    operating_mode: str = "Running",
-    service_account: str | None = None,
-    status: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """A Sandbox as `SandboxInventory.create` leaves it: running as a ServiceAccount of its own,
-    named after it unless the caller says otherwise."""
-    pod_template = {**POD_TEMPLATE, "spec": {**POD_TEMPLATE["spec"], "serviceAccountName": service_account or name}}
+def sandbox(name: str, *, running: bool = True, conditions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """A Sandbox as `SandboxInventory.create` leaves it, with the conditions its controller reported;
+    running, its incarnation is `pod(name, ...)`."""
     return {
+        "apiVersion": sandbox_resource.SANDBOX_API_VERSION,
+        "kind": sandbox_resource.SANDBOX_KIND,
         "metadata": {
             "name": name,
             "namespace": NAMESPACE,
             "uid": str(uuid4()),
+            "generation": 1,
             "resourceVersion": "1",
-            "labels": {MANAGED_LABEL: "true", **(labels or {})},
             "creationTimestamp": "2026-09-01T12:00:00Z",
         },
-        "spec": {"podTemplate": pod_template, "operatingMode": operating_mode},
-        **({"status": status} if status is not None else {}),
+        "spec": {"template": TEMPLATE, "running": running},
+        "status": {
+            **({"incarnation": {"name": name, "uid": pod_uid(name)}} if running else {}),
+            **({"conditions": conditions} if conditions is not None else {}),
+        },
     }
 
 
@@ -406,6 +327,10 @@ def action_policy_binding(
     }
 
 
+def pod_uid(name: str) -> str:
+    return f"test-pod-{name}"
+
+
 def pod(name: str, *, phase: str, ready: bool, ip: str | None, waiting_reason: str | None = None) -> k8s_client.V1Pod:
     """A runner Pod as the kubelet reports it: running and ready, or held up by `waiting_reason`."""
     state = (
@@ -419,7 +344,7 @@ def pod(name: str, *, phase: str, ready: bool, ip: str | None, waiting_reason: s
         metadata=k8s_client.V1ObjectMeta(
             name=name,
             namespace=NAMESPACE,
-            uid=f"test-pod-{name}",
+            uid=pod_uid(name),
             creation_timestamp=datetime(2026, 9, 1, 12, 0, 10, tzinfo=UTC),
         ),
         spec=k8s_client.V1PodSpec(containers=[k8s_client.V1Container(name="runner")], node_name="test-node"),

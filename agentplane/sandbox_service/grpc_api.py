@@ -101,8 +101,6 @@ class SandboxService(sandbox_service_pb2_grpc.SandboxServiceServicer):
     ) -> Empty:
         async with self.request(context):
             provisioning, view = await self.checked_sandbox(request)
-            if view.launch_grants_pending:
-                raise InventoryError("Sandbox provisioning is incomplete")
             await provisioning.inventory.resume(view.name, uid=view.uid)
             return Empty()
 
@@ -133,7 +131,6 @@ class SandboxService(sandbox_service_pb2_grpc.SandboxServiceServicer):
             )
             if not request.egress_policies:
                 raise ValueError("at least one egress policy is required")
-            provisioning.endpoints.require_unreserved(request.egress_policies)
             binding = await provisioning.egress.grant(view, list(request.egress_policies))
             return sandbox_service_pb2.GrantEgressResponse(binding_name=binding.name)
 

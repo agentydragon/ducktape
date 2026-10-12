@@ -6,10 +6,16 @@ from dataclasses import dataclass
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxBinding, SandboxDestination, TeardownPhase
-from agentplane.sandbox_resource import SANDBOX_API_VERSIONS, SANDBOX_LABEL, VMI_API_VERSION, VMI_KIND
+from agentplane.sandbox_resource import (
+    SANDBOX_API_VERSION,
+    SANDBOX_KIND,
+    SANDBOX_LABEL,
+    VMI_API_VERSION,
+    VMI_KIND,
+    OperatingMode,
+)
 from agentplane.sandbox_service.errors import SandboxTearingDownError
 from agentplane.sandbox_service.reader import SandboxReader
-from util.agent_sandbox import OperatingMode
 
 
 class DestinationUnavailableError(Exception):
@@ -30,14 +36,7 @@ class DestinationResolver:
     async def _ready(self, view: Sandbox, *, writes: bool) -> SandboxBinding | None:
         if writes and view.teardown != TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED:
             raise SandboxTearingDownError(view.name)
-        if (
-            view.deleting
-            or view.operating_mode != OperatingMode.RUNNING
-            or view.launch_grants_pending
-            or not view.kubernetes_grants_ready
-            or view.HasField("kubernetes_grant_error")
-            or not view.HasField("pod")
-        ):
+        if view.deleting or view.operating_mode != OperatingMode.RUNNING or not view.HasField("pod"):
             raise DestinationUnavailableError
         try:
             pod = await self.core.read_namespaced_pod(view.pod.name, self.sandboxes.namespace)
@@ -69,8 +68,8 @@ class DestinationResolver:
             if (metadata.labels or {}).get(SANDBOX_LABEL) != view.name:
                 raise DestinationUnavailableError
         elif (
-            owner.api_version not in SANDBOX_API_VERSIONS
-            or owner.kind != "Sandbox"
+            owner.api_version != SANDBOX_API_VERSION
+            or owner.kind != SANDBOX_KIND
             or owner.name != view.name
             or owner.uid != str(view.uid)
         ):

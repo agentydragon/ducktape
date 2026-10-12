@@ -66,6 +66,7 @@ from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
+from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
@@ -79,7 +80,6 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     sandbox,
 )
 from agentplane.subjects import ServiceAccountRef
-from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 from util.net import pick_free_port
 
 # gazelle:include_dep @pypi//protobuf
@@ -94,7 +94,7 @@ NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_index: LiveIndex) -> LiveIndex:
     """The same objects in the fake API server and in the index, so the two paths can be compared."""
     seed_runner(custom_objects, core_v1, "runner-1")
-    custom_objects.objects[(SANDBOXES_PLURAL, "shelved")] = sandbox("shelved", operating_mode="Suspended")
+    custom_objects.objects[(SANDBOXES_PLURAL, "shelved")] = sandbox("shelved", running=False)
     custom_objects.objects[("egresspolicies", "github")] = egress_policy(
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
     )
@@ -401,7 +401,7 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
             archived = await _next_threads(stream)
             assert (archived.threads[0].archived, archived.archived_count) == (True, 1)
 
-            seeded.sandboxes["runner-1"] = sandbox("runner-1", operating_mode="Suspended")
+            seeded.sandboxes["runner-1"] = sandbox("runner-1", running=False)
             seeded.changes.notify()
             suspended = await _next_threads(stream)
             assert next(view for view in suspended.sandboxes if view.name == "runner-1").operating_mode == (

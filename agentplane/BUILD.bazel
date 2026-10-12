@@ -125,7 +125,6 @@ py_library(
     deps = [
         ":crd_group",
         ":policy_sets",
-        "//util:agent_sandbox",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//pydantic",

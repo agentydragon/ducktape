@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from datetime import datetime
-from typing import Annotated, Literal
+from typing import Annotated
 from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict, ParseDict
@@ -12,52 +11,12 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from agentplane.proto import sandbox_service_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_resource import SANDBOX_API_VERSIONS
-from agentplane.sandbox_service.kubernetes_grants import (
-    ClusterRoleRef,
-    DnsName,
-    KubernetesGrant,
-    RoleBindingGrant,
-    RoleRef,
-)
+from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND, OperatingMode
 from agentplane.subjects import ServiceAccountRef
-from util.agent_sandbox import OperatingMode
 
 # gazelle:include_dep @pypi//protobuf
 
 SandboxName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=57)]
-
-
-class KubernetesGrantView(BaseModel):
-    """An enabled choice with its fixed target, for the operator's launch picker."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: DnsName
-    kind: Literal["RoleBinding", "ClusterRoleBinding"]
-    namespace: DnsName | None = None
-    role_ref: RoleRef | ClusterRoleRef
-
-
-class ResolvedGrant(BaseModel):
-    """Snapshot of the exact choice; catalog changes never retarget an existing Sandbox."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: DnsName
-    grant: KubernetesGrant
-
-
-def grant_views(catalog: Mapping[str, KubernetesGrant]) -> list[KubernetesGrantView]:
-    return [
-        KubernetesGrantView(
-            name=name,
-            kind=grant.kind,
-            namespace=grant.namespace if isinstance(grant, RoleBindingGrant) else None,
-            role_ref=grant.role_ref,
-        )
-        for name, grant in sorted(catalog.items())
-    ]
 
 
 class SessionDefaults(BaseModel):
@@ -92,19 +51,8 @@ class NewSandbox(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     name: SandboxName = Field(description="Kubernetes Sandbox CR name, unique in this namespace.")
-    template: str = Field(min_length=1, description="SandboxTemplate whose Pod and volume shape this Sandbox copies.")
-    egress_policies: list[str] = Field(default_factory=list, description="EgressPolicy names to grant.")
-    action_policy_sets: list[str] = Field(
-        default_factory=list,
-        description="ActionPolicySet names to bind; an explicit list, empty included, is bound as given.",
-    )
-    kubernetes_grants: list[str] = Field(
-        default_factory=list, description="Enabled Kubernetes grant names to bind to this Sandbox ServiceAccount."
-    )
-    policy_sets: list[str] = Field(
-        default_factory=list,
-        description="PolicySet names to bind, for Agentplane's own Sandbox kind, in place of the three grant lists.",
-    )
+    template: str = Field(min_length=1, description="SandboxTemplate each of its incarnations starts from.")
+    policy_sets: list[str] = Field(default_factory=list, description="PolicySet names to bind.")
     session_defaults: SessionDefaults | None = Field(
         default=None, description="Reusable session defaults for future sessions in this Sandbox."
     )
@@ -153,11 +101,6 @@ class SandboxView(BaseModel):
     binding: SandboxBinding | None = Field(
         default=None, description="The stored concrete session defaults and bootstrap selected for this Sandbox."
     )
-    kubernetes_grants: list[ResolvedGrant]
-    kubernetes_grants_ready: bool
-    kubernetes_grant_error: str | None
-    launch_grants_pending: bool
-    initializing: bool = False
     deleting: bool = Field(
         default=False, description="Deletion was asked for: it seals, waits for its ingress, or is being removed."
     )
@@ -166,7 +109,6 @@ class SandboxView(BaseModel):
 
 def sandbox_view(value: sandbox_service_pb2.Sandbox) -> SandboxView:
     data = MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
-    data.setdefault("kubernetes_grant_error", None)
     # Shown as deleting from DeleteSandbox on: during teardown it takes no new work either.
     del data["teardown"]
     data["deleting"] = value.deleting or value.teardown != sandbox_service_pb2.TEARDOWN_PHASE_UNSPECIFIED
@@ -177,10 +119,6 @@ def sandbox_has_ready_pod(view: SandboxView) -> bool:
     if (
         view.deleting
         or view.operating_mode != OperatingMode.RUNNING
-        or view.initializing
-        or view.launch_grants_pending
-        or not view.kubernetes_grants_ready
-        or view.kubernetes_grant_error is not None
         or view.pod is None
         or view.pod.name != view.name
         or view.pod.namespace != view.namespace
@@ -193,8 +131,8 @@ def sandbox_has_ready_pod(view: SandboxView) -> bool:
         return False
     owner = owners[0]
     if (
-        owner.api_version not in SANDBOX_API_VERSIONS
-        or owner.kind != "Sandbox"
+        owner.api_version != SANDBOX_API_VERSION
+        or owner.kind != SANDBOX_KIND
         or owner.name != view.name
         or owner.uid != str(view.uid)
     ):

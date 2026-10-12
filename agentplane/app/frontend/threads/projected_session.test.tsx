@@ -65,11 +65,6 @@ function inventorySandbox(operating_mode: "Running" | "Suspended" = "Running"): 
     operating_mode,
     status: null,
     service_account: { namespace: "agentplane-test", name: THREAD.sandbox },
-    kubernetes_grants: [],
-    kubernetes_grants_ready: true,
-    kubernetes_grant_error: null,
-    launch_grants_pending: false,
-    initializing: false,
     deleting: false,
     pod:
       operating_mode === "Suspended"
@@ -81,7 +76,13 @@ function inventorySandbox(operating_mode: "Running" | "Suspended" = "Running"): 
             deleting: false,
             node_name: "test-node",
             owner_references: [
-              { api_version: "agents.x-k8s.io/v1beta1", kind: "Sandbox", name: THREAD.sandbox, uid, controller: true },
+              {
+                api_version: "agentplane.allegedly.works/v1alpha1",
+                kind: "Sandbox",
+                name: THREAD.sandbox,
+                uid,
+                controller: true,
+              },
             ],
             status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
           },

@@ -8,10 +8,10 @@ from pathlib import Path
 from typing import cast
 from uuid import UUID
 
+from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
-from agentplane.crd_group import GROUP
 from agentplane.grpc_calls import dial
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination, ServiceAccount
 from agentplane.runner.runner import Runner
@@ -21,20 +21,14 @@ from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.testing.control_listener import control_plane, dialing, wait_connected
 from agentplane.runner_gateway.testing.grpc_service import gateway_client, service
 from agentplane.runner_gateway.testing.resources import build_resources
-from agentplane.sandbox_service.action_policy import ActionPolicyBindings
-from agentplane.sandbox_service.binding_storage import write_binding
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
-from agentplane.sandbox_service.kubernetes_views import MANAGED_LABEL, SANDBOX_BINDING_ANNOTATION
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.testing.fake_inventory import RUNNER_ENDPOINTS
 from agentplane.sandbox_service.testing.grpc_service import sandbox_client
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, TokenVerdict, fake_apiserver, pod_for
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
-from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
 from util.testing.sqlalchemy_engines import postgres_async_engine
 
@@ -42,10 +36,9 @@ from util.testing.sqlalchemy_engines import postgres_async_engine
 
 SANDBOX = "test-runner"
 SANDBOX_UID = "40e373bd-2742-43de-8d1c-1ef97c4d4801"
-ACCOUNT = "test-runner-account"
+# The Sandbox Controller runs a Sandbox's Pods as the ServiceAccount of its name.
+ACCOUNT = SANDBOX
 OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
-# The fake's store of Agentplane's own Sandboxes, apart from agent-sandbox's of the same plural.
-OWN_SANDBOXES = f"{sandbox_resource.SANDBOXES_PLURAL}.{GROUP}"
 _POD_UID = "test-pod-uid"
 _RUNNER_AUDIENCE = "test-app-runner-control"
 _RUNNER_TOKEN = "test-app-runner-token"
@@ -65,9 +58,11 @@ class Cluster:
         return self.provisioning.inventory
 
     def set_binding(self, binding: SandboxBinding) -> None:
-        self.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"].setdefault("annotations", {})[
-            SANDBOX_BINDING_ANNOTATION
-        ] = write_binding(binding)
+        spec = self.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]["spec"]
+        if binding.HasField("session_defaults"):
+            spec["sessionDefaults"] = MessageToDict(binding.session_defaults)
+        if binding.bootstrap:
+            spec["bootstrap"] = binding.bootstrap
 
     def build_principal_resolver(self, audience: str) -> WorkloadPrincipalResolver:
         """Callers authenticate to this audience with tokens the fake TokenReview trusts."""
@@ -82,21 +77,20 @@ class Cluster:
 async def kubernetes() -> AsyncIterator[Cluster]:
     # Everything the service reads or writes through this server is in the Sandbox namespace.
     async with fake_apiserver(
-        dict.fromkeys((SANDBOXES_PLURAL, OWN_SANDBOXES, "leases", "services", "endpointslices"), SANDBOX_NAMESPACE)
+        dict.fromkeys((sandbox_resource.SANDBOXES_PLURAL, "leases", "services", "endpointslices"), SANDBOX_NAMESPACE)
     ) as fake:
         fake.put(
-            SANDBOXES_PLURAL,
+            sandbox_resource.SANDBOXES_PLURAL,
             {
-                "apiVersion": SANDBOX_API.api_version,
-                "kind": "Sandbox",
+                "apiVersion": sandbox_resource.SANDBOX_API_VERSION,
+                "kind": sandbox_resource.SANDBOX_KIND,
                 "metadata": {
                     "name": SANDBOX,
                     "namespace": SANDBOX_NAMESPACE,
-                    "uid": str(SANDBOX_UID),
+                    "uid": SANDBOX_UID,
                     "creationTimestamp": "2026-09-01T11:00:00Z",
-                    "labels": {MANAGED_LABEL: "true"},
                 },
-                "spec": {"podTemplate": {"spec": {"serviceAccountName": ACCOUNT}}},
+                "spec": {"template": "test-template", "running": True},
             },
         )
         pod = pod_for(fake, SANDBOX, pod_uid=_POD_UID, ip="127.0.0.1")
@@ -118,11 +112,7 @@ async def kubernetes() -> AsyncIterator[Cluster]:
                 Provisioning(
                     inventory,
                     EgressInventory(namespace=SANDBOX_NAMESPACE, custom_objects=custom),
-                    ActionPolicyBindings(namespace=SANDBOX_NAMESPACE, custom_objects=custom),
-                    {},
-                    KubernetesBindings(inventory, k8s_client.RbacAuthorizationV1Api(api)),
-                    RUNNER_ENDPOINTS,
-                    own_sandboxes=None,
+                    default_policy_sets=frozenset(),
                 ),
             )
 

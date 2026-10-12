@@ -17,7 +17,6 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.grpc_calls import RefusedError, ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_pb2
-from agentplane.proto.sandbox_service_pb2 import TeardownPhase
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases
 from agentplane.runner_gateway.destinations import DestinationResolver
@@ -34,12 +33,10 @@ from agentplane.runner_gateway.testing.runner_control import (
     serve_replica_control,
 )
 from agentplane.runner_gateway.testing.sessions import register_on_fake_sandbox
-from agentplane.sandbox_service.teardown import GatewaySealing, SealNotFlushedError, Teardown
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
-from agentplane.sandbox_service.testing.kubernetes import DESTINATION, SANDBOX, SANDBOX_UID, Cluster
+from agentplane.sandbox_service.testing.kubernetes import DESTINATION, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
-from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -81,7 +78,6 @@ def replica(
                 platform_instructions="Test platform guidance.",
             ),
             control=control,
-            sealer_accounts=frozenset({CALLER}),
         )
         async with (
             serve_replica_control(
@@ -213,38 +209,6 @@ async def test_a_lost_connection_fails_its_call(holder: Replica, token_file: Pat
         with pytest.raises(ServiceError) as lost:
             await creating
         assert lost.value.code == grpc.StatusCode.UNAVAILABLE
-
-
-def sandbox_service_teardown(cluster: Cluster, gateway: RunnerGatewayClient) -> Teardown:
-    return Teardown(cluster.inventory, GatewaySealing(gateway.control))
-
-
-async def test_teardown_seals_over_the_holders_connection(
-    holder: Replica, other: Replica, cluster: Cluster, public_id: UUID, token_file: Path
-) -> None:
-    cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["spec"]["operatingMode"] = OperatingMode.SUSPENDED
-    view = await cluster.inventory.get(SANDBOX)
-    await cluster.inventory.begin_teardown(SANDBOX, uid=view.uid)
-    sealing = await cluster.inventory.get(SANDBOX)
-    async with (
-        runner_on(holder) as runner,
-        client(token_file, other.api, control_target=other.api) as unrouted,
-        client(token_file, other.api, control_target=holder.api) as routed,
-    ):
-        # Only the holder seals: a replica without the connection refuses, and the Sandbox Service's
-        # call through the control Service reaches the holder.
-        with pytest.raises(ServiceError) as refused:
-            await sandbox_service_teardown(cluster, unrouted).advance(sealing)
-        assert refused.value.code == grpc.StatusCode.UNAVAILABLE
-        advancing = asyncio.create_task(sandbox_service_teardown(cluster, routed).advance(sealing))
-        sealed = await runner.next(runner_pb2.SealRequest)
-        response = runner_pb2.SealResponse()
-        response.sessions.add(session_id=str(public_id), cursor=3)
-        sealed.outcome.set_result(response)
-        # The holder's answer reached the Sandbox Service, which waits for the ingress.
-        with pytest.raises(SealNotFlushedError):
-            await advancing
-    assert (await cluster.inventory.get(SANDBOX)).teardown == TeardownPhase.TEARDOWN_PHASE_SEALING
 
 
 COMMAND = command_pb2.Command(command_id="test-command", submit_input=command_pb2.SubmitInput(text="test input"))

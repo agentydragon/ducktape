@@ -51,11 +51,6 @@ function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxVie
     operating_mode: "Running",
     service_account: { namespace: "agentplane-test", name },
     status: null,
-    kubernetes_grants: [],
-    kubernetes_grants_ready: true,
-    kubernetes_grant_error: null,
-    launch_grants_pending: false,
-    initializing: false,
     deleting: false,
     pod: {
       name,
@@ -63,7 +58,9 @@ function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxVie
       uid: `${uid}-pod`,
       deleting: false,
       node_name: "test-node",
-      owner_references: [{ api_version: "agents.x-k8s.io/v1beta1", kind: "Sandbox", name, uid, controller: true }],
+      owner_references: [
+        { api_version: "agentplane.allegedly.works/v1alpha1", kind: "Sandbox", name, uid, controller: true },
+      ],
       status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
     },
     ...overrides,
@@ -359,8 +356,7 @@ it("opens retained Thread history even when its Sandbox is gone", async () => {
 it.each([
   ["a running Pod", {}, "ready"],
   ["a suspended Sandbox", { operating_mode: "Suspended", pod: null }, "suspended"],
-  ["a Sandbox whose grants are still applying", { kubernetes_grants_ready: false }, "pending"],
-  ["a Sandbox with a grant error", { kubernetes_grant_error: "test grant failure" }, "failed"],
+  ["a running Sandbox with no Pod yet", { pod: null }, "pending"],
   ["a Sandbox being deleted", { deleting: true }, "gone"],
 ] as const)("marks a group's Sandbox by its status: %s", async (_name, overrides, status) => {
   const box = sandbox("test-marked", overrides);

@@ -21,7 +21,7 @@ from more_itertools import one
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt
 
 from agentplane.crd_group import GROUP
-from util.agent_sandbox import SANDBOX_KIND
+from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
 logger = logging.getLogger(__name__)
@@ -53,8 +53,6 @@ class RecordOwner:
 
     name: str
     uid: UUID
-    # agent-sandbox's `Sandbox` or Agentplane's own; both are kind `Sandbox`.
-    api_version: str
 
     @property
     def lease_name(self) -> str:
@@ -67,7 +65,7 @@ class RecordOwner:
     def reference(self) -> k8s_client.V1OwnerReference:
         # For cascading deletion only; the Sandbox controller owns its Pod.
         return k8s_client.V1OwnerReference(
-            api_version=self.api_version,
+            api_version=SANDBOX_API_VERSION,
             kind=SANDBOX_KIND,
             name=self.name,
             uid=str(self.uid),

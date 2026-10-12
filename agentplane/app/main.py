@@ -184,12 +184,7 @@ async def async_main(settings: Settings) -> None:
             electric=ElectricProxy(
                 electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
             ),
-            presets=PresetCatalog(
-                sandboxes=settings.sandbox_presets,
-                threads=settings.thread_presets,
-                own_sandboxes=settings.own_sandboxes,
-            ),
-            kubernetes_grants=settings.kubernetes_grants,
+            presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
             event_logs=event_logs,
             content=content,
             database_updates=database_updates,

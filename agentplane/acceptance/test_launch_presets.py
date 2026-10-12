@@ -27,8 +27,7 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     configured = {preset.name: preset for preset in await client.presets()}
     preset = configured[PUBLIC_CODER]
     assert preset.session_defaults.harness is Harness.CODEX
-    # One of the two lists is filled, whichever the deployment's Sandbox kind takes.
-    policies = preset.policy_sets or preset.egress_policies
+    policies = preset.policy_sets
     assert GITHUB_AGENTYDRAGON_AGENT in policies
     assert preset.session_defaults.model
 
