@@ -480,11 +480,13 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":disclosure",
         ":lifecycle",
         ":live",
         ":sandbox_status",
         ":status_mark",
         ":stream_status",
+        ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -714,6 +716,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":disclosure",
         ":egress",
         ":json_view",
         ":lifecycle",
