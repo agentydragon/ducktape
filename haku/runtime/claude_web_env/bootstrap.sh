@@ -101,7 +101,10 @@ else
   echo "haku-state: cloning in the background (pid $$). ~/haku-state is populated via atomic swap only when this completes — it is NOT ready until the 'Task [bootstrap] exited' message arrives (or until ~/haku-state/items exists)."
   tmp_dir="$HOME/haku-state.cloning"
   rm -rf "$tmp_dir"
-  git clone https://git.allegedly.works/haku/haku-state.git "$tmp_dir"
+  # Blobless partial clone: full commit/tree history (pull --rebase, push, log
+  # keep working) but only HEAD's blobs up front; older blobs fetch on demand.
+  # A full clone took ~6 min over web-home egress.
+  git clone --filter=blob:none https://git.allegedly.works/haku/haku-state.git "$tmp_dir"
   mv "$tmp_dir" "$state_dir"
 fi
 git -C "$state_dir" config user.name haku
