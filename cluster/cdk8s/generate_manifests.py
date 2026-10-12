@@ -812,12 +812,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         # No `namespace=`: that transformer would also rewrite the RoleBinding's `claude-sandbox` subject.
         write_directory(
-            root,
-            ollama_app_artifact,
-            ollama_app.chart,
-            config_map_generator=ollama_app.write_config_maps(root),
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"Job/setup-gpt-oss-v8"},
+            root, ollama_app_artifact, ollama_app.chart, config_map_generator=ollama_app.write_config_maps(root)
         ),
         external_secrets_operator_kustomization,
         kyverno_kustomization,

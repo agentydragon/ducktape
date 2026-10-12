@@ -111,7 +111,7 @@ leading developer content into one). `patch_qwen38_template.py` pins the origina
 template's SHA256.
 
 The 10.9 MB first GGUF shard holds this metadata. On wyrm2, generate its derived copy
-**before** deploying the `setup-gpt-oss-v8` Job; the two large weight shards and all
+**before** deploying the `setup-gpt-oss` Job; the two large weight shards and all
 source files stay untouched:
 
 ```bash

@@ -408,7 +408,7 @@ checked whether each reruns exactly when its inputs change. Reloader never rerun
 - [ ] Check which rerun mechanism each actually has against what it needs:
   - a template change, with `kustomize.toolkit.fluxcd.io/force` recreating the Job:
     reruns on a hash-suffixed ConfigMap or image change, never on an unhashed Secret;
-  - a versioned name (`clickhouse-aiquota-schema-v11`, `setup-gpt-oss-v8`): reruns only
+  - a versioned name (`clickhouse-aiquota-schema-v11`, `setup-gpt-oss-v9`): reruns only
     when someone remembers to bump it;
   - `ttlSecondsAfterFinished` plus Flux recreating the missing Job (the atuin and matrix
     provisioners): reruns every TTL whether or not anything changed;

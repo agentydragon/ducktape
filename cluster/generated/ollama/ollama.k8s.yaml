@@ -330,11 +330,12 @@ subjects:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: setup-gpt-oss-v8
+  name: setup-gpt-oss-v9
   namespace: ollama
 spec:
   template:
     spec:
+      automountServiceAccountToken: false
       containers:
         - command:
             - /scripts/setup-gpt-oss-v2.sh
@@ -343,6 +344,12 @@ spec:
               value: http://127.0.0.1:11434
           image: curlimages/curl:8.22.0
           name: setup
+          resources:
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           volumeMounts:
             - mountPath: /scripts
               name: scripts
@@ -353,6 +360,12 @@ spec:
             - /scripts/link-ssd-models.sh
           image: ollama/ollama:0.34.4
           name: link-ssd-models
+          resources:
+            limits:
+              memory: 64Mi
+            requests:
+              cpu: 10m
+              memory: 16Mi
           volumeMounts:
             - mountPath: /models
               name: models
@@ -391,6 +404,9 @@ spec:
       nodeSelector:
         kubernetes.io/hostname: wyrm2
       restartPolicy: OnFailure
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
       volumes:
         - configMap:
             defaultMode: 493
