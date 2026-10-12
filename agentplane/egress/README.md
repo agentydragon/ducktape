@@ -35,6 +35,8 @@ bbr test //agentplane/egress/...
   entry point and its `Settings` (`--flags` and `AGENTPLANE_EGRESS_*`).
 - `sidecar.py`: the per-sandbox relay, image `agentplane-egress-sidecar`: reads the Pod's
   projected token per request, adds it as `Proxy-Authorization`, and forwards to the proxy.
+  `platform_routes.py`: the sidecar's direct routes to Agentplane services. Each route is a loopback
+  gRPC listener that forwards calls straight to its service with that service's token.
 - `testing/`: the fake API server and the throwaway CAs the tests run against.
 
 ## Running

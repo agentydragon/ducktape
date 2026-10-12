@@ -358,6 +358,8 @@ py_library(
         "//cluster/cdk8s/public_coder:__pkg__",
     ],
     deps = [
+        ":platform_routes",
+        ":token_file",
         "@pypi//aiohttp",
         "@pypi//more_itertools",
         "@pypi//pydantic",
@@ -614,5 +616,33 @@ py_library(
         "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "token_file",
+    srcs = ["token_file.py"],
+)
+
+py_library(
+    name = "platform_routes",
+    srcs = ["platform_routes.py"],
+    deps = [
+        ":token_file",
+        "@pypi//grpcio",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_platform_routes",
+    srcs = ["test_platform_routes.py"],
+    deps = [
+        ":conftest",
+        ":platform_routes",
+        "//:conftest",
+        "@pypi//grpcio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

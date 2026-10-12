@@ -246,3 +246,14 @@ GitOps gates and live rollout acceptance remain separate operational requirement
   placeholder arrives there unsubstituted, which is why the public-coder devbox, whose `bbr` is a
   `bb remote` client, still mounts the real key (<../../cluster/cdk8s/public_coder/devbox.py>). The
   boundary and the candidate rewrite are in <../docs/buildbuddy_remote_auth.md>.
+
+## Sidecar platform routes
+
+- The sidecar may also serve platform routes. A platform route is a loopback gRPC listener per
+  configured Agentplane service, which forwards each call to that service as `authorization:
+Bearer <token>`. The token is the Pod's projected token for that service's audience, re-read per
+  call. The workload's own `authorization` is dropped; other metadata, the deadline and the status
+  pass through.
+- The central proxy never sees these calls and no egress rule admits them. What may reach the
+  service is network policy, and each service authorizes the token itself. Without a token the
+  sidecar refuses `UNAVAILABLE` and calls nothing.

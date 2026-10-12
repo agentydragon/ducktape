@@ -688,7 +688,11 @@ as annotations on agent-sandbox's `Sandbox` (`provisioning.py`, `kubernetes_bind
 ServiceAccount and its one `PolicyBinding` of those sets, both owned by the Sandbox; the binding
 never sets `expiresAt`. No Pod waits for the binding's readers. The Sandbox Service never writes
 `PolicyBinding`s. Runtime and time-limited grants are separate bindings (`POLICY_RUNTIME_GRANTS`).
-Left: runner endpoints, held on how Sandboxes reach platform services (operator's pick).
+Left: runner endpoints, which go over the egress sidecar's platform routes (operator, 2026-10-12).
+One cdk8s list of platform services generates our runner template's sidecar routes, sidecar-only
+tokens and runner flags, plus a Cilium rule letting Sandbox-labelled Pods reach those services. This
+replaces the Sandbox Service's `runner_endpoints.py` and the runner-endpoint egress policies for our
+kind.
 
 ### `SANDBOX_IMAGE_REPLACE` — replace the runner image between incarnations
 

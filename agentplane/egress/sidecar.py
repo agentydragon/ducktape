@@ -9,6 +9,9 @@ piped both ways. A plain request is forwarded with the header and `Connection: c
 request per relayed connection — and its response streamed back. The token is read from the
 projected file on every request because kubelet rotates it in place; no token, or no central proxy,
 is a refusal from the sidecar, never a request without the header.
+
+Agentplane's own services are reached apart from this relay, over the platform routes
+(`platform_routes.py`).
 """
 
 from __future__ import annotations
@@ -28,6 +31,9 @@ from aiohttp import web
 from more_itertools import one
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from agentplane.egress.platform_routes import PlatformRoute, PlatformRoutes
+from agentplane.egress.token_file import read_token_file
 
 logger = logging.getLogger(__name__)
 
@@ -60,18 +66,6 @@ def _refusal(status: int, phrase: str, reason: RefusalReason) -> bytes:
         f"HTTP/1.1 {status} {phrase}\r\n{REFUSED_HEADER}: reason={reason}\r\n"
         "Content-Length: 0\r\nConnection: close\r\n\r\n"
     ).encode()
-
-
-def _read_token_file(path: Path) -> str | None:
-    """A projected token, or None when its file is missing, unreadable, or empty."""
-    try:
-        token = path.read_text().strip()
-    except OSError:
-        logger.exception("token file %s unreadable", path)
-        return None
-    if not token:
-        logger.error("token file %s is empty", path)
-    return token or None
 
 
 def _is_connect(head: bytes) -> bool:
@@ -177,7 +171,7 @@ class SidecarRelay:
 
     def _read_token(self) -> str | None:
         """The current hop token, or None when the projected file is missing, unreadable, or empty."""
-        return _read_token_file(self._token_file)
+        return read_token_file(self._token_file)
 
     def _read_projected(self) -> dict[str, str]:
         """The audience-scoped tokens to offer the central proxy, re-read like the hop token.
@@ -188,7 +182,7 @@ class SidecarRelay:
         return {
             audience: token
             for audience, path in self._audience_token_files.items()
-            if (token := _read_token_file(path)) is not None
+            if (token := read_token_file(path)) is not None
         }
 
     async def _accept(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
@@ -277,6 +271,11 @@ class Settings(BaseSettings):
         "central proxy to substitute where a rule names that audience. The hop token above is not one of "
         "these: it carries the proxy's own audience, which a destination validating its own refuses.",
     )
+    platform_routes: dict[str, PlatformRoute] = Field(
+        default_factory=dict,
+        description="Agentplane services this Pod calls directly, by name: each gets a loopback gRPC "
+        "listener that forwards with the service's token, bypassing the central proxy.",
+    )
     listen_host: str = Field(default="127.0.0.1", description="Bind address; loopback, the runner's own Pod.")
     listen_port: int = Field(default=3128, description="Port the runner container's HTTP(S)_PROXY names.")
     readiness_host: str = Field(default=READINESS_HOST, description="Bind address for the kubelet readiness endpoint.")
@@ -306,8 +305,10 @@ async def async_main(settings: Settings) -> None:
         listen_host=settings.listen_host,
         listen_port=settings.listen_port,
     )
+    # Readiness follows the relay, which starts after the routes.
     async with (
         serve_readiness(relay, host=settings.readiness_host, port=settings.readiness_port) as readiness_port,
+        PlatformRoutes(settings.platform_routes, listen_host=settings.listen_host),
         relay,
     ):
         logger.info(
