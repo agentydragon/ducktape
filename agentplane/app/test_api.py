@@ -367,7 +367,7 @@ async def test_operator_launch_provisions_the_selected_role_for_its_actual_sandb
     assert row["kubernetes_grants"][0]["grant"]["role_ref"] == {"kind": "Role", "name": "config-reader"}
     (bound,) = sandbox_rbac.bindings.values()
     assert bound.role_ref.name == "config-reader"
-    assert (bound.subject.namespace, bound.subject.name) == (NAMESPACE, row["name"])
+    assert [(subject.namespace, subject.name) for subject in bound.subjects] == [(NAMESPACE, row["name"])]
     stored = custom_objects.objects[("sandboxes", row["name"])]
     assert stored["metadata"]["annotations"]["agentplane.allegedly.works/kubernetes-grants"]
 
