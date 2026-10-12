@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Text, text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Text, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -42,6 +42,3 @@ class Thread(Base):
     # NULL while unnamed; never the empty string.
     name: Mapped[str | None] = mapped_column(Text)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
-    # CLEANUP(added 2026-10-12): Nothing reads or writes this any more. Remove it with a migration that
-    #   drops the column once no deployed app image writes it (images built before #10103).
-    resumed_after_cursor: Mapped[int | None] = mapped_column(BigInteger)

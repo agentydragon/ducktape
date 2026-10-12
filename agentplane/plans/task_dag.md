@@ -943,7 +943,6 @@ flowchart TD
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         RUNNER_ERRORS_REHOME[Unscheduled: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
-        THREAD_RESUME_COLUMN_DROP[Candidate: drop thread.resumed_after_cursor]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         GRPC_CHANNEL_OPTIONS_CONSTANT[Candidate: drop the unread channel-options settings]
@@ -964,13 +963,6 @@ the gateway, the status translation the Sandbox Service and Runner Gateway clien
 (`agentplane/grpc_calls.py`, which raises it for `FAILED_PRECONDITION`) and the app's
 Thread-identity conflicts raise it. Move the client-side error beside that translation, per
 grpc_services.md, and give the app's `bridge.py` its own error type.
-
-### `THREAD_RESUME_COLUMN_DROP` — drop `thread.resumed_after_cursor`
-
-**Candidate; drops a column, so the operator merges it.** The app no longer reads or writes the
-column, but its model still declares it (a `CLEANUP` tombstone) so the migration drift check passes.
-Testing and staging both pin an app image without the writes; a drop migration removes the column
-and the tombstone.
 
 ### `COMMAND_SUBMISSION_DROP` — drop the `command_submission` table
 
