@@ -474,10 +474,12 @@ flowchart LR
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     ACTION_POLICY_MIGRATE[Candidate: Action policies move to PolicySet]
     ACTION_POLICY_MIGRATE --> OLD_POLICY_KINDS_DROP[Blocked: drop the old policy kinds]
-    ACTION_POLICY_MIGRATE --> POLICY_SANDBOX_CUTOVER[Blocked: Sandboxes take policy sets]
-    POLICY_SANDBOX_CUTOVER --> POLICY_RUNTIME_GRANTS[Blocked: time-limited grants of any rule type]
-    POLICY_SANDBOX_CUTOVER --> SANDBOX_RBAC
-    POLICY_SANDBOX_CUTOVER --> OLD_POLICY_KINDS_DROP
+    KUBERNETES_POLICY_SETS[Candidate: the grant catalog as named PolicySets]
+    ACTION_POLICY_MIGRATE --> SANDBOX_CONTROLLER_PROVISIONING[The controller provisions a Sandbox, section 8]
+    KUBERNETES_POLICY_SETS --> SANDBOX_CONTROLLER_PROVISIONING
+    SANDBOX_CREATE_CUTOVER[Sandboxes are created as ours, section 8] --> POLICY_RUNTIME_GRANTS[Blocked: time-limited grants of any rule type]
+    SANDBOX_CREATE_CUTOVER --> SANDBOX_RBAC
+    AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox, section 8] --> OLD_POLICY_KINDS_DROP
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_RBAC[Blocked: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
@@ -502,19 +504,15 @@ into an outage matrix. Source: [public-coder wiring](../../cluster/cdk8s/public_
 Kubernetes scope and egress/Action grants. Record intended authority in generated configuration,
 not ad hoc grants. Test an allowed and denied operation; do not add privileges as part of this review.
 
-### `POLICY_SANDBOX_CUTOVER` — Sandboxes take policy sets
+### `KUBERNETES_POLICY_SETS` — the grant catalog as named PolicySets
 
-**Blocked on the Action policy migration; decision card before the PR.** Every
-cutover recreates staging Sandboxes rather than converting their bindings, so the Action, egress and
-Kubernetes cutovers share one recreate under one card. Sandbox Service takes set names at create and writes the
-Sandbox's one `PolicyBinding`, owner-referenced to it (the agent-sandbox `Sandbox` until
-`AGENT_SANDBOX_RETIRE` recreates Sandboxes on our resource, which then owns their bindings); the create form and Sandbox presets name sets of any rule type, one chip per set, in a new
-`policy_sets` preset field. Delete the KubernetesBindings reconciler, the grant annotation and its finalizer, and the
-[grant catalog](../sandbox_service/kubernetes_grants.py) with its per-namespace preset expansion.
+**Candidate.** Render the entries of the
+[grant catalog](../sandbox_service/kubernetes_grants.py) as named `PolicySet`s with `kubernetes`
+rules, including its per-namespace preset expansion, so a Sandbox can name them.
 
 ### `POLICY_RUNTIME_GRANTS` — time-limited grants
 
-**Blocked on the Sandbox cutover.** An operator-only grant/revoke RPC with optional `expiresAt`
+**Blocked on Sandboxes being created as ours.** An operator-only grant/revoke RPC with optional `expiresAt`
 for sets of any rule type, and UI chips showing each binding's set, expiry and ready conditions.
 One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry, so no reader
 handles expiry itself.
@@ -523,17 +521,18 @@ handles expiry itself.
 
 **Candidate.** The Action Service already reads `PolicySet`/`PolicyBinding` beside the old kinds.
 cdk8s regenerates the static `ActionPolicySet`/`ActionPolicyBinding` objects as the generic kinds;
-the Sandbox Service's writer moves with `POLICY_SANDBOX_CUTOVER`.
+Sandboxes of our kind get their `PolicyBinding` from the controller (`SANDBOX_CONTROLLER_PROVISIONING`).
 
 ### `OLD_POLICY_KINDS_DROP` — drop the old policy kinds
 
-**Blocked on the Action policy migration and the Sandbox cutover; the operator merges it.** Delete the
+**Blocked on the Action policy migration and on retiring agent-sandbox, whose Sandboxes keep the old kinds until then; the operator merges it.** Delete the
 `ActionPolicySet`/`ActionPolicyBinding` and `EgressPolicy`/`EgressBinding` CRDs, their readers in
 the Action Service and egress proxy (with the proxy's admin `/bindings` observations), the
 `EgressPolicy` that cdk8s's `add_egress_policy` renders beside each egress `PolicySet`, the Sandbox Service's per-type binding writers and
 annotations (`egress.py`, `action_policy.py`, `kubernetes_bindings.py` and their views), and the
 presets' separate `egress_policies`, `action_policy_sets` and `kubernetes_grants` fields
-(`app/presets.py`, after the manifests stop setting them).
+(`app/presets.py`, after the manifests stop setting them), the KubernetesBindings reconciler, the
+grant annotation and its finalizer, and the grant catalog.
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 
@@ -544,7 +543,7 @@ public-coder) stay Flux bindings. Test an allowed and a denied request. Static c
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
 
-**Blocked on the policy cutover; security-relevant.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
+**Blocked on Sandboxes being created as ours; security-relevant.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
 and verify intended versus unrelated scope, including Role edits and credential-use boundaries,
 without recording credentials. Use [agent RBAC](../../cluster/docs/agent_rbac.md) and existing tests;
 only unresolved deployed wiring needs a live check, not a repeat of every already-covered operation.
@@ -620,7 +619,6 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
     AGENTPLANE_SANDBOX_RESOURCE --> AGENT_SANDBOX_RETIRE[Blocked: Agentplane stops using agent-sandbox]
     ACTION_SANDBOX_PODS[Action Service boxes as plain Pods, section 9] --> AGENT_SANDBOX_RETIRE
-    POLICY_SANDBOX_CUTOVER[Sandboxes take policy sets, section 6] -. binding owner moves .-> AGENT_SANDBOX_RETIRE
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
     SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes stop]
@@ -671,7 +669,9 @@ calls the gateway to seal. Action Service boxes keep a catalog of their own (#10
 ```mermaid
 flowchart TD
     SANDBOX_RUNNER_TEMPLATES[Candidate: runner SandboxTemplates of our kind]
-    SANDBOX_CONTROLLER_PROVISIONING[Candidate: the controller provisions a Sandbox]
+    SANDBOX_CONTROLLER_PROVISIONING[Blocked: the controller provisions a Sandbox]
+    ACTION_POLICY_MIGRATE[Action policies on PolicySet, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
+    KUBERNETES_POLICY_SETS[Grant catalog as PolicySets, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
     SANDBOX_CONTROLLER_TEARDOWN[Candidate: deleting a Sandbox seals it first]
     SANDBOX_IMAGE_REPLACE[Candidate: replace the runner image between incarnations]
     SANDBOX_CREATE_CUTOVER[Blocked: Sandboxes are created as ours]
@@ -688,12 +688,16 @@ construct as agent-sandbox's, with the state volume as a claim instead of a `vol
 
 ### `SANDBOX_CONTROLLER_PROVISIONING` — the controller provisions a Sandbox
 
-**Candidate.** The spec gains the rest of the recipe: grants, egress policies, Action policy sets,
-session defaults, bootstrap command and runner endpoints, the parts the Sandbox Service now keeps
+**Blocked on the Action policy migration and the Kubernetes catalog as `PolicySet`s.** The spec
+gains the rest of the recipe: `policySets` (names of sets of any rule type), session defaults,
+bootstrap command and runner endpoints, the parts the Sandbox Service now keeps
 as annotations on agent-sandbox's `Sandbox` (`provisioning.py`, `kubernetes_bindings.py`,
 `egress.py`, `action_policy.py`, `runner_endpoints.py`). The controller creates the Sandbox's own
-ServiceAccount and binds it, owning its `PolicyBinding` (coordinate with `POLICY_SANDBOX_CUTOVER`),
-and starts no Pod before the bindings exist.
+ServiceAccount and its one `PolicyBinding` of those sets, both owned by the Sandbox; the binding
+never sets `expiresAt`. No Pod starts until the binding's `KubernetesReady`, `EgressReady` and
+Action conditions are all `True` for its current generation. The Sandbox Service never writes
+`PolicyBinding`s. Runtime and time-limited grants are separate bindings (`POLICY_RUNTIME_GRANTS`).
+Testing first, then staging.
 
 ### `SANDBOX_CONTROLLER_TEARDOWN` — deleting a Sandbox seals it first
 
@@ -720,14 +724,14 @@ lookup read and write our `Sandbox` instead of agent-sandbox's, replacing the im
 `CreateSandbox`. Existing staging Sandboxes stay on agent-sandbox until `AGENT_SANDBOX_RETIRE`
 recreates them. The Sandbox Controller runs on `agentplane-testing` only until then: the cutover
 lands on testing first, and staging gets the controller and the cutover only once testing holds
-(operator, 2026-10-12 PDT: testing down beats staging down).
+(operator, 2026-10-12 PDT: testing down beats staging down). The create form and Sandbox presets
+name policy sets of any rule type, one chip per set, in a new `policy_sets` preset field.
 
 ### `AGENT_SANDBOX_RETIRE` — Agentplane stops using agent-sandbox
 
 **Blocked on our resource and on Action Service boxes becoming plain Pods; decision card before the
-PR.** Staging Sandboxes are recreated on our resource, not converted, and their `PolicyBinding`s
-are re-owned by it. `POLICY_SANDBOX_CUTOVER` does not wait for this: they share one recreate only
-if both are ready together. Then delete Agentplane's runner `SandboxTemplate`s
+PR.** Staging Sandboxes are recreated on our resource, not converted; until then they keep the old
+policy kinds, and the recreated ones get the controller's `PolicyBinding`. Then delete Agentplane's runner `SandboxTemplate`s
 (`cluster/cdk8s/agentplane/runner_sandbox.py`), the Sandbox
 Service's agent-sandbox inventory, views and watch, the annotations it used as its record, the
 `volumeClaimTemplates` state volume and the agent-sandbox RBAC of both services. The controller
