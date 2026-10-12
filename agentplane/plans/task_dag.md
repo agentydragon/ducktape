@@ -526,7 +526,6 @@ Target: [History Service plan](history_service.md).
 ```mermaid
 flowchart TD
     HISTORY_SERVICE_OWNERSHIP[Capstone: History Service owns log and fold]
-    HISTORY_COMPACTION_RETIRE[Candidate: retire the finished compaction Job]
     THREAD_READ_POLICY[Scoped archive reads]
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
 ```
@@ -535,14 +534,6 @@ flowchart TD
 
 The History Service is the only owner of the raw log and fold; the app is a facade over it. Each
 service's README states what unrelated agents can still do while it is down or rolling.
-
-### `HISTORY_COMPACTION_RETIRE` — retire the finished compaction Job
-
-**Candidate.** Stored history is settled on both environments and staging is repacked, so the
-`agentplane-history-compact` Job staging still holds (`history_compaction=CompactionRun.APPLY` in
-`cluster/cdk8s/agentplane/staging.py`) has nothing left to do. Drop it from staging, and either
-delete the Job, `CompactionRun`, `compaction_main.py` and its image, or keep the entry point for
-history stored while `ingress.settle_deltas` was off and say so in the History Service README.
 
 ## 8. Sessions that outlive their Sandbox
 

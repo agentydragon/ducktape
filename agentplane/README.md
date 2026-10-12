@@ -53,7 +53,6 @@ flowchart TB
     authentik([Authentik])
     electric[Electric]
     hist_db[(history DB)]
-    compact[History compaction Job]
     outside((LiteLLM, internet, cluster services))
 
     browser -->|HTTPS, SSE| app
@@ -75,7 +74,6 @@ flowchart TB
     k8s -->|creates| sandbox
     gw -->|control Services, Leases| k8s
     hs -->|ingest, fold, read| hist_db
-    compact -->|settle deltas| hist_db
     notif -->|Sandbox lookups| ss
     notif -->|commands| gw
     notif -->|command receipts| hs

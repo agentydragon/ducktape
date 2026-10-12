@@ -266,11 +266,6 @@
       "test": "//agentplane/action_service/testing/...",
       "registry": "forgejo"
     },
-    "agentplane-history-compact": {
-      "target": "//agentplane/history_service:compaction_image",
-      "test": "//agentplane/history_service/...",
-      "registry": "forgejo"
-    },
     "agentplane-history-migrate": {
       "target": "//agentplane/history_service/storage:migration_image",
       "test": "//agentplane/history_service/storage/...",

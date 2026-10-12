@@ -17,7 +17,6 @@ from cluster.cdk8s.agentplane import (
     database,
     egress,
     electric,
-    history_compaction,
     history_service,
     llm_ingress,
     notifications,
@@ -87,8 +86,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
         # The app reads Threads; the Notification Service reads command receipts.
         callers=app_caller | notifications_caller,
     )
-    if env.history_compaction is not None:
-        history_compaction.HistoryCompaction(chart, "history-compaction", env, env.history_compaction)
     app_component.App(chart, "app", env)
     runner_sandbox.RunnerSandbox(chart, "runner-sandbox", env)
     actions.Actions(chart, "actions", env)

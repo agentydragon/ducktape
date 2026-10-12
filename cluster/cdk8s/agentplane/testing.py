@@ -150,7 +150,6 @@ ENV = Environment(
         action_federation=_ACTION_FEDERATION,
     ),
     settle_deltas=True,
-    history_compaction=None,
     db=DbProps(instances=1, wal_archive=False),
     llm_ingress=LlmIngressProps(litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(TESTING_APP_MODELS)),
     egress=EgressProps(

@@ -42,7 +42,6 @@ from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
     BearerMcpMount,
-    CompactionRun,
     DbProps,
     EgressProps,
     Environment,
@@ -296,7 +295,6 @@ ENV = Environment(
         namespace=STAGING_NAMESPACE, models=STAGING_APP_MODELS, action_federation=_ACTION_FEDERATION
     ),
     settle_deltas=True,
-    history_compaction=CompactionRun.APPLY,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
     kubernetes_cluster_binding_cleanup=True,

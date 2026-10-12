@@ -39,12 +39,6 @@ journal keeps every entry. On by default; setting `ingress.settle_deltas` to fal
 stored entry, for debugging. Why and what it drops:
 [delta settlement ADR](../docs/adr_delta_settlement.md).
 
-`agentplane-history-compact` (`compaction_main.py`) is a one-off Job that settles history stored
-before settlement with the same code, a batch per transaction under the Session lock that
-`Store.append` takes. It settles only completions the History Service fold has already folded,
-and drops that fold's evidence of the settled deltas in the same transaction. It reports by
-default and writes only with `--apply`; settled items are skipped, so it resumes anywhere.
-
 ## Thread fold
 
 Every replica folds every retained Session into the thread projection

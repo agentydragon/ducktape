@@ -51,8 +51,8 @@ settlement covers is accepted as already stored.
 
 ## Consequences
 
-- History stored before settlement was settled after the fact by the `agentplane-history-compact`
-  Job, with the operator's approval since it deletes stored history (2026-10-11, testing and
+- History stored before settlement was settled after the fact by a one-off Job, since deleted,
+  with the operator's approval since it deletes stored history (2026-10-11, testing and
   staging; staging settled 45,785 items, 2.61 GB of payload). Deleting rows only frees space inside
   Postgres: returning it to the volume took a `VACUUM FULL` of `session_event`, `thread_evidence`
   and `thread_native_link` in a window (the CNPG image ships no `pg_repack`), which took staging's

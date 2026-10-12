@@ -59,68 +59,6 @@ py_library(
 )
 
 py_library(
-    name = "compaction",
-    srcs = ["compaction.py"],
-    deps = [
-        ":fold_runner",
-        "//agentplane/history_service/fold:models",
-        "//agentplane/history_service/fold:recording",
-        "//agentplane/history_service/storage:db",
-        "//agentplane/history_service/storage:settlement",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/proto:event_log_pb2",
-        "@pypi//protobuf",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "compaction_main",
-    srcs = ["compaction_main.py"],
-    deps = [
-        ":compaction",
-        ":compaction_settings",
-        "@pypi//asyncpg",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
-    name = "compaction_settings",
-    srcs = ["compaction_settings.py"],
-    visibility = [
-        "//agentplane/history_service:__subpackages__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
-    deps = [
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
-    ],
-)
-
-py_test(
-    name = "test_compaction",
-    size = "medium",
-    srcs = ["test_compaction.py"],
-    requires_docker = True,
-    deps = [
-        ":compaction",
-        ":fold_runner",
-        "//:conftest",
-        "//agentplane/history_service/fold:models",
-        "//agentplane/history_service/storage:conftest",
-        "//agentplane/history_service/storage:db",
-        "//agentplane/history_service/storage:store",
-        "//agentplane/history_service/testing:delta_spans",
-        "//agentplane/history_service/testing:sessions",
-        "//agentplane/proto:event_log_pb2",
-        "@pypi//protobuf",
-        "@pypi//pytest_bazel",
-        "@pypi//sqlalchemy",
-    ],
-)
-
-py_library(
     name = "evidence",
     srcs = ["evidence.py"],
     deps = [
@@ -447,27 +385,3 @@ oci_image(
     visibility = ["//visibility:public"],
 )
 
-aspect_py_binary(
-    name = "compaction_image_bin",
-    main = "compaction_main.py",
-    deps = [":compaction_main"],
-)
-
-py_image_layer(
-    name = "compaction_layers",
-    binary = ":compaction_image_bin",
-    group = "1000",
-    owner = "1000",
-)
-
-# The one-off Job that settles history stored before settlement.
-oci_image(
-    name = "compaction_image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("compaction_image_bin"),
-    env = py_image_env(binary_name = "compaction_image_bin"),
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [":compaction_layers"],
-    user = "1000:1000",
-    visibility = ["//visibility:public"],
-)
