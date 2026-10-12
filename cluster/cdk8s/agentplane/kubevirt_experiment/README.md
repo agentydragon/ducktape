@@ -95,6 +95,6 @@ it still executes the UID, account, caller, and mount predicates. Live evidence 
 recorded in [the experiment log](../../../../agentplane/debug/kubevirt/evidence.md).
 
 This does not stop shared Kyverno to test `failurePolicy: Fail`, or exercise production
-credential substitution/CONNECT. The runner acceptance guide exercises gRPC, native-session
-recovery, setup probes, stop/start, and root-image replacement on a disposable guest. Nothing here
+credential substitution/CONNECT. The runner acceptance guide exercises boot, stop/start, and
+root-image replacement on a disposable guest. Nothing here
 promises live migration or node-loss recovery.

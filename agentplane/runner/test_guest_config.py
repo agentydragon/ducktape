@@ -5,6 +5,7 @@ import pytest_bazel
 from pydantic import ValidationError
 
 from agentplane.runner import guest_config
+from agentplane.runner.config import IngressEndpoint
 from agentplane.runner.guest_config import GuestConfig, make_runner_config
 
 
@@ -12,7 +13,8 @@ def _config(**updates: object) -> GuestConfig:
     values: dict[str, object] = {
         "version": 1,
         "environment_id": "vm-uid-123",
-        "listen": "0.0.0.0:7000",
+        "control": {"target": "test-gateway.test:7100", "bearer": "test-control-placeholder"},
+        "ingress": {"target": "test-history.test:8081", "bearer": "test-ingress-placeholder"},
         "llm_base_url": "http://agentplane-llm-ingress.agentplane.svc.cluster.local:8080",
         "proxy_url": "http://10.0.2.2:3128",
         "format_blank_disks": ["state", "workspace"],
@@ -40,13 +42,15 @@ def test_guest_config_builds_explicit_proxy_and_persistent_paths() -> None:
     assert runner.harness_environment["HTTPS_PROXY"] == runner.harness_environment["HTTP_PROXY"]
     assert runner.harness_environment["KUBECONFIG"] == "/run/agentplane/kubeconfig"
     assert runner.harness_environment["SSL_CERT_FILE"] == "/run/agentplane/ca-certificates.crt"
+    assert runner.ingress == IngressEndpoint(target="test-history.test:8081", bearer="test-ingress-placeholder")
 
 
 @pytest.mark.parametrize(
     "updates",
     [
         {"version": 2},
-        {"listen": "127.0.0.1:7000"},
+        {"control": {"target": "test-gateway.test:7100"}},
+        {"ingress": {"target": "", "bearer": "test-ingress-placeholder"}},
         {"llm_base_url": "https://user:password@model.test"},
         {"llm_base_url": "https://model.test/v1"},
         {"proxy_url": "http://proxy.test/path"},

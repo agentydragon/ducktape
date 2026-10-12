@@ -42,15 +42,9 @@ py_binary(
     deps = [
         ":vm",
         "//agentplane:crd_group",
-        "//agentplane/proto:command_pb2",
-        "//agentplane/proto:event_log_pb2",
-        "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/runner:client",
         "//util:kubernetes",
         "@pypi//cdk8s",
         "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
     ],
 )
 

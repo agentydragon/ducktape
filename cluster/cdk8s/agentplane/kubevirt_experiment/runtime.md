@@ -27,7 +27,8 @@ The config file names, validation, mount paths, and filesystem labels are define
 in the guest code linked above.
 
 The runner VM wiring is in [`runner_vm`](vm.py#L119); the [runtime acceptance helper](runtime_acceptance.md)
-drives it through direct KubeVirt APIs and runs the guest RPC, recovery, and setup probes.
+drives it through direct KubeVirt APIs. The guest runner dials out like a Pod runner and accepts no
+connections.
 
 The trust ConfigMap must be in the VM namespace and contain trust-manager's
 `ca-certificates.crt` and passwordless `ca-certificates.p12` outputs for the guest's
@@ -36,7 +37,7 @@ are boot snapshots: stop/start the VM after a bundle update, including CA rotati
 
 Use a disposable `agentplane-vm-prototype-*` namespace and fresh disks. Never attach
 an existing environment's state. Retire `format_blank_disks` in the config disk
-after the first successful runner RPC. Normal VM deletion retains the state disks;
+once the runner has connected. Normal VM deletion retains the state disks;
 experiment cleanup must explicitly remove its retained PVCs and separately created
 cluster-scoped admission/secret-store resources.
 
@@ -49,4 +50,4 @@ PKCS#12 boot path have not yet been rerun live or timed.
 
 The HTTP model fixture does not validate real gateway credential substitution or
 CONNECT/TLS. Verify those before enabling deployed VM environments. Image assembly,
-launcher readiness, and guest runner RPC readiness are distinct checks.
+launcher readiness, and the runner's control stream are distinct checks.

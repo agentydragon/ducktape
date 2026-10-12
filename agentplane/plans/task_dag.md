@@ -338,7 +338,7 @@ flowchart LR
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    KUBEVIRT_GUEST_CONTROL[KubeVirt guest dials out] --> RUNNER_INBOUND_RETIRE[Blocked: retire inbound runner access]
+    RUNNER_INBOUND_RETIRE[Candidate: retire inbound runner access]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
     VM_CONTROL_NETWORKING --> VM_LIFECYCLE
     VM_IMAGE --> VM_PROCESS_ISOLATION
@@ -353,12 +353,10 @@ flowchart LR
 
 ### `RUNNER_INBOUND_RETIRE` — remove the runner's inbound server
 
-**Blocked on `KUBEVIRT_GUEST_CONTROL`.** Hosted runners take every call over the control stream and
-admit no connections; the KubeVirt experiment's guest is the last caller of the runner's own gRPC
-server. Delete that server, its `--listen` flag, the `Runner` service RPCs the channel duplicates
+**Candidate.** Hosted runners and the KubeVirt guest take every call over the control stream and
+admit no connections; only tests still call the runner's own gRPC server. Delete that server, its `--listen` flag, the `Runner` service RPCs the channel duplicates
 and `protocol.v1.Follow` with `Open.follow`, and its client `runner/client.py`, test-only now, with
-the app's `OpenTimeoutError` handler. `--control-target` and `--ingress-target`, optional only because
-that guest runs without them, become required.
+the app's `OpenTimeoutError` handler. `--control-target` and `--ingress-target` become required.
 
 ### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
 
@@ -368,6 +366,9 @@ control-port exposure and endpoint discovery; retain the independently needed ou
 proxy path. State which guest ports, endpoint discovery and network policies the chosen path
 replaces. Image packaging and process-isolation work need not wait for this decision. Verify the
 selected path on the actual VM network, not just a host-loopback transport test.
+The experiment's guest already dials out, but `runtime_acceptance` no longer runs Sessions, setup probes
+or recovery on it: those phases called the runner over a port-forward. They return driven through a
+Runner Gateway.
 
 ### `VM_IMAGE` — packaged guest and state storage
 
@@ -833,7 +834,6 @@ flowchart TD
         RUNNER_ERRORS_REHOME[Unscheduled: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
         THREAD_RESUME_COLUMN_DROP[Waits on rollout: drop thread.resumed_after_cursor]
-        KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
         GRPC_CHANNEL_OPTIONS_CONSTANT[Waits on rollout: drop the unread channel-options settings]
@@ -842,7 +842,6 @@ flowchart TD
         OPERATOR_ROUTE_PREFIX[Candidate: one operator route prefix]
         NOTIFICATION_WRITE_ONLY_COLUMNS[Decision: audit columns nothing reads]
     end
-    KUBEVIRT_GUEST_CONTROL --> RUNNER_INBOUND_RETIRE
     RUNNER_INBOUND_RETIRE --> RUNNER_CORE_SPLIT
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
 ```
@@ -867,16 +866,6 @@ tombstone, as its own PR the operator merges.
 **Unscheduled; operator, 2026-10-11 PDT: keep the flag for debugging for now, may retire it later.**
 Settlement is on by default; `ingress.settle_deltas` turns it off. Retiring the flag makes
 settlement unconditional: delete the setting, `Environment.settle_deltas` and the `Store` flag.
-
-### `KUBEVIRT_GUEST_CONTROL` — KubeVirt guest dials out
-
-**Candidate.** `runner/guest_config.py`, live through the `agentplane-runner-vm` entry point and
-`cluster/cdk8s/agentplane/kubevirt_experiment`, pins an inbound `listen` with no control or ingress
-target, so `RUNNER_INBOUND_RETIRE` would strand it. Give `GuestConfig` both targets; retiring the
-experiment instead also orphans the VM-only `RunnerConfig` fields and `cgroups.py`.
-The experiment also sits outside `x/` and still models the inbound port: the VM's port 7000, its
-NetworkPolicy and `runtime_acceptance`'s port-forward and `listen`. Whichever way this goes, those
-go with it (or the directory moves under `x/`).
 
 ### `RUNNER_CORE_SPLIT` — runner core out of the inbound servicer
 

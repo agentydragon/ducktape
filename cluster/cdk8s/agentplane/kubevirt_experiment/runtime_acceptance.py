@@ -17,8 +17,6 @@ from cdk8s import App, Chart
 from kubernetes_asyncio import client as k8s_client, config as k8s_config
 
 from agentplane.crd_group import GROUP
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
-from agentplane.runner.client import RunnerClient
 from cluster.cdk8s.agentplane.kubevirt_experiment.policy import (
     MANAGED_LABEL,
     SERVICE_ACCOUNT_ANNOTATION,
@@ -34,46 +32,6 @@ _VMI_PLURAL = "virtualmachineinstances"
 _DISK_OWNER_ANNOTATION = f"{GROUP}/environment-uid"
 _FORMAT_CONFIG_KEY = "config.json"
 _IMAGE_PULL_SECRET = "forgejo-images-creds"
-_SESSION_ROOT = "/workspace/agentplane-vm-acceptance"
-_SETUP_MARKERS = {
-    "MEMORY_MAX_BYTES": re.compile(r"(?:max|[0-9]+)"),
-    "MEMORY_CURRENT_BYTES": re.compile(r"[0-9]+"),
-    "MEMORY_OOM_KILLS": re.compile(r"[0-9]+"),
-    "CPU_MAX": re.compile(r"(?:max|[0-9]+) [0-9]+"),
-    "PIDS_MAX": re.compile(r"(?:max|[0-9]+)"),
-    "NATIVE_HISTORY_QUOTA_BYTES": re.compile(r"[0-9]+"),
-    "NATIVE_HISTORY_USED_BYTES": re.compile(r"[0-9]+"),
-    "WORKSPACE_QUOTA_BYTES": re.compile(r"[0-9]+"),
-    "WORKSPACE_USED_BYTES": re.compile(r"[0-9]+"),
-    "QUOTA_RESULT": re.compile(r"EDQUOT|ENOSPC|OK"),
-    "WORKSPACE_SHA256": re.compile(r"[a-f0-9]{64}"),
-}
-_PROBE_SCRIPT = f"""\
-set -eu
-test "$(id -u)" = 1000
-test "$(id -g)" = 1000
-printf 'UID=%s\\n' "$(id -u)"
-printf 'GID=%s\\n' "$(id -g)"
-cgroup_path=$(awk -F: '$1 == "0" {{print $3}}' /proc/self/cgroup)
-test -n "$cgroup_path"
-printf 'CGROUP=%s\\n' "$cgroup_path"
-test -d /state/sessions
-if (umask 077; : > /state/sessions/.agentplane-vm-acceptance) 2>/dev/null; then
-  rm -f /state/sessions/.agentplane-vm-acceptance
-  printf 'STATE_SESSIONS=writeable\\n'
-  exit 41
-fi
-printf 'STATE_SESSIONS=denied\\n'
-memory_control="/sys/fs/cgroup$cgroup_path/memory.max"
-if test -w "$memory_control"; then
-  printf 'CGROUP_MEMORY_MAX=writeable\\n'
-  exit 42
-fi
-printf 'CGROUP_MEMORY_MAX=denied\\n'
-mkdir -p {_SESSION_ROOT}
-printf 'agentplane-vm-acceptance-v1\\n' > {_SESSION_ROOT}/probe.txt
-sha256sum {_SESSION_ROOT}/probe.txt | awk '{{print "WORKSPACE_SHA256=" $1}}'
-"""
 
 
 class _ConfigMapMergePatchClient(Protocol):
@@ -311,26 +269,11 @@ async def _resume_with_retry(
             await asyncio.sleep(min(2, _remaining(deadline)))
 
 
-def _port_forward(namespace: str, pod: k8s_client.V1Pod) -> str:
-    if pod.metadata is None:
-        raise RuntimeError("ready launcher Pod has no metadata")
-    return f"kubectl -n {namespace} port-forward pod/{pod.metadata.name} 17000:7000"
-
-
 def _node_selector(value: str) -> tuple[str, str]:
     key, separator, selected = value.partition("=")
     if not separator or not key or not selected:
         raise argparse.ArgumentTypeError("expected KEY=VALUE")
     return key, selected
-
-
-def _localhost_target(value: str) -> str:
-    host, separator, port = value.rpartition(":")
-    if not separator or host not in {"localhost", "127.0.0.1", "[::1]"}:
-        raise argparse.ArgumentTypeError("runner RPC must use a localhost kubectl port-forward")
-    if not port.isdecimal() or not 1 <= int(port) <= 65535:
-        raise argparse.ArgumentTypeError("runner RPC port must be between 1 and 65535")
-    return value
 
 
 def _origin(value: str, option: str) -> str:
@@ -422,7 +365,8 @@ def _config_data(args: argparse.Namespace, *, uid: str, config: dict[str, Any]) 
     guest_config = {
         "version": 1,
         "environment_id": uid,
-        "listen": "0.0.0.0:7000",
+        "control": {"target": args.control_target, "bearer": args.control_bearer},
+        "ingress": {"target": args.ingress_target, "bearer": args.ingress_bearer},
         "llm_base_url": config["llm_base_url"],
         "proxy_url": config["proxy_url"],
         "format_blank_disks": ["state", "workspace"],
@@ -632,7 +576,6 @@ async def create(args: argparse.Namespace) -> None:
                     "image": args.image,
                     "state_disk": args.state_disk,
                     "workspace_disk": args.workspace_disk,
-                    "port_forward": _port_forward(args.namespace, pod),
                 },
                 sort_keys=True,
             )
@@ -651,20 +594,7 @@ async def inspect(args: argparse.Namespace) -> None:
             "vm": _resource_view(vm, kind="VirtualMachine"),
             "vmi": _resource_view(vmi, kind="VirtualMachineInstance") if vmi is not None else None,
             "launcher_pod": _pod_view(pod, api_client) if pod is not None else None,
-            "port_forward": _port_forward(namespace, pod) if pod is not None else None,
         }
-        if args.target is not None:
-            async with RunnerClient(args.target) as runner:
-                summaries = await _within(runner.list_sessions(), deadline)
-            result["sessions"] = [
-                {
-                    "session_id": item.session_id,
-                    "harness": runner_pb2.Harness.Name(item.spec.harness),
-                    "harness_state": runner_pb2.HarnessState.Name(item.harness_state),
-                    "last_cursor": item.last_cursor,
-                }
-                for item in summaries
-            ]
         print(json.dumps(result, sort_keys=True))
 
 
@@ -715,35 +645,6 @@ async def replace_image(args: argparse.Namespace) -> None:
         )
 
 
-def _probe_output(events: list[runner_pb2.InitializationEvent]) -> dict[str, str]:
-    output = b"".join(
-        event.output.data
-        for event in events
-        if event.HasField("output") and event.output.stream == runner_pb2.INITIALIZATION_STREAM_STDOUT
-    ).decode("utf-8")
-    markers = dict(
-        re.findall(r"^(UID|GID|CGROUP|STATE_SESSIONS|CGROUP_MEMORY_MAX|WORKSPACE_SHA256)=(.*)$", output, re.MULTILINE)
-    )
-    expected = {"UID": "1000", "GID": "1000", "STATE_SESSIONS": "denied", "CGROUP_MEMORY_MAX": "denied"}
-    if any(markers.get(key) != value for key, value in expected.items()):
-        raise RuntimeError("initialization probe did not prove the expected guest identity and write boundaries")
-    if not re.fullmatch(r"/[A-Za-z0-9_./-]+", markers.get("CGROUP", "")):
-        raise RuntimeError("initialization probe did not report a valid cgroup path")
-    if not re.fullmatch(r"[a-f0-9]{64}", markers.get("WORKSPACE_SHA256", "")):
-        raise RuntimeError("initialization probe did not report the workspace checksum")
-    return markers
-
-
-def _safe_setup_markers(output: bytes) -> dict[str, str]:
-    markers: dict[str, str] = {}
-    for line in output.decode("utf-8", errors="replace").splitlines():
-        key, separator, value = line.partition("=")
-        validator = _SETUP_MARKERS.get(key)
-        if separator and validator is not None and validator.fullmatch(value):
-            markers[key] = value
-    return markers
-
-
 async def _retire_format_permission(core: k8s_client.CoreV1Api, namespace: str, name: str, vm_uid: str) -> None:
     config_name = _aux_name(name, "config")
     config_map = await core.read_namespaced_config_map(config_name, namespace)
@@ -781,264 +682,14 @@ async def _retire_format_permission(core: k8s_client.CoreV1Api, namespace: str, 
     )
 
 
-async def initialize(args: argparse.Namespace) -> None:
+async def retire_format(args: argparse.Namespace) -> None:
     deadline = asyncio.get_running_loop().time() + args.timeout
-    async with RunnerClient(args.target) as runner:
-        sessions = await _within(runner.list_sessions(), deadline)
-
-        async def collect() -> list[runner_pb2.InitializationEvent]:
-            return [event async for event in runner.initialize_events(_PROBE_SCRIPT)]
-
-        events = await _within(collect(), deadline)
-    results = [event.result for event in events if event.HasField("result")]
-    if not results or results[-1].exit_code != 0:
-        exit_code = results[-1].exit_code if results else "missing"
-        raise RuntimeError(f"guest initialization probe exited with {exit_code}")
-    markers = _probe_output(events)
     async with _apis(args.namespace, kubeconfig=args.kubeconfig) as (core, custom, _api_client):
         vm = await _within(_vm(custom, args.namespace, args.name), deadline)
         if _vm_identity(vm)[2] != args.uid:
             raise ValueError(f"VM {args.name!r} UID does not match --uid")
         await _within(_retire_format_permission(core, args.namespace, args.name, args.uid), deadline)
-    print(
-        json.dumps(
-            {
-                "action": "initialized",
-                "namespace": args.namespace,
-                "name": args.name,
-                "sessions_before_probe": len(sessions),
-                **markers,
-                "format_authorization_retired": True,
-            },
-            sort_keys=True,
-        )
-    )
-
-
-def _harness(value: str) -> runner_pb2.Harness:
-    return {"claude": runner_pb2.HARNESS_CLAUDE, "codex": runner_pb2.HARNESS_CODEX}[value]
-
-
-def _turn_text(entries: list[event_log_pb2.EventEntry]) -> str:
-    assistant_items = {
-        entry.event.item_started.item_id
-        for entry in entries
-        if entry.event.WhichOneof("observation") == "item_started"
-        and entry.event.item_started.kind == event_pb2.ITEM_KIND_ASSISTANT_TEXT
-    }
-    return "".join(
-        entry.event.item_completed.text
-        for entry in entries
-        if entry.event.WhichOneof("observation") == "item_completed"
-        and entry.event.item_completed.item_id in assistant_items
-        and entry.event.item_completed.HasField("text")
-    ).strip()
-
-
-async def _run_turn(
-    runner: RunnerClient,
-    *,
-    session_id: str,
-    spec: runner_pb2.SessionSpec,
-    prompt: str,
-    timeout_s: float,
-    setup_script: str | None = None,
-    after_cursor: int = 0,
-) -> tuple[event_log_pb2.EventEntry, list[event_log_pb2.EventEntry]]:
-    deadline = asyncio.get_running_loop().time() + timeout_s
-    attachment = await _within(
-        runner.attach(session_id, spec=spec, setup_script=setup_script, after_cursor=after_cursor), deadline
-    )
-    async with asyncio.timeout(_remaining(deadline)):
-        async with attachment:
-            await attachment.until(
-                lambda entry: entry.event.WhichOneof("observation") in {"harness_started", "harness_launch_failed"},
-                timeout_s=_remaining(deadline),
-            )
-            if any(entry.event.WhichOneof("observation") == "harness_launch_failed" for entry in attachment.seen):
-                raise RuntimeError("native harness failed to launch; inspect the guest runner journal")
-            await _within(
-                attachment.command(
-                    command_pb2.Command(
-                        command_id=f"acceptance-{uuid4().hex[:16]}", submit_input=command_pb2.SubmitInput(text=prompt)
-                    )
-                ),
-                deadline,
-            )
-            completed = await attachment.until(
-                lambda entry: entry.event.WhichOneof("observation") == "turn_completed", timeout_s=_remaining(deadline)
-            )
-            if completed.event.turn_completed.status != event_pb2.TURN_STATUS_COMPLETED:
-                raise RuntimeError("native harness turn did not complete successfully")
-            return completed, list(attachment.seen)
-
-
-async def session(args: argparse.Namespace) -> None:
-    session_id = args.session_id or f"vm-acceptance-{args.harness}-{uuid4().hex[:12]}"
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", session_id):
-        raise ValueError("--session-id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}")
-    marker = f"VM_RECOVERY_{uuid4().hex[:16]}"
-    workdir = f"{_SESSION_ROOT}/sessions/{session_id}"
-    setup_script = f"mkdir -p {workdir}"
-    async with RunnerClient(args.target, capture_history=True) as runner:
-        spec = runner_pb2.SessionSpec(
-            harness=_harness(args.harness), cwd=workdir, model=args.model, reasoning_effort=args.reasoning_effort
-        )
-        _, entries = await _run_turn(
-            runner,
-            session_id=session_id,
-            spec=spec,
-            prompt=f"Remember this opaque recovery marker for the next turn: {marker}. Reply with exactly: MARKER_SAVED",
-            timeout_s=args.timeout,
-            setup_script=setup_script,
-        )
-        if _turn_text(entries) != "MARKER_SAVED":
-            raise RuntimeError("native harness did not return the expected initial marker acknowledgement")
-    if not entries:
-        raise RuntimeError("runner attached without event evidence")
-    print(
-        json.dumps(
-            {
-                "action": "session_started",
-                "session_id": session_id,
-                "harness": args.harness,
-                "model": args.model,
-                "recovery_marker": marker,
-                "source_id": entries[-1].origin.source_id,
-                "after_cursor": entries[-1].cursor,
-            },
-            sort_keys=True,
-        )
-    )
-
-
-async def setup_probe(args: argparse.Namespace) -> None:
-    session_id = args.session_id or f"vm-probe-{uuid4().hex[:16]}"
-    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", session_id):
-        raise ValueError("--session-id must match [A-Za-z0-9][A-Za-z0-9._-]{0,127}")
-    print(json.dumps({"action": "setup_probe_started", "session_id": session_id}, sort_keys=True), flush=True)
-    script = args.setup_script_file.read_text()
-    if not script or len(script.encode()) > 65_536:
-        raise ValueError("setup script must contain 1..65536 UTF-8 bytes")
-    workdir = f"{_SESSION_ROOT}/setup/{session_id}"
-    deadline = asyncio.get_running_loop().time() + args.timeout
-    attachment = None
-    stream_drained = False
-    async with RunnerClient(args.target, capture_history=True) as runner:
-        try:
-            await _within(runner.list_sessions(), deadline)
-            attachment = await _within(
-                runner.attach(
-                    session_id,
-                    spec=runner_pb2.SessionSpec(
-                        harness=_harness(args.harness),
-                        cwd=workdir,
-                        model=args.model,
-                        reasoning_effort=args.reasoning_effort,
-                    ),
-                    setup_script=script,
-                ),
-                deadline,
-            )
-            async with asyncio.timeout(_remaining(deadline)):
-                finished = await attachment.until(
-                    lambda entry: entry.event.WhichOneof("observation") in {"setup_finished", "setup_interrupted"},
-                    timeout_s=_remaining(deadline),
-                )
-                terminal_kind = finished.event.WhichOneof("observation")
-                exit_code = finished.event.setup_finished.exit_code if terminal_kind == "setup_finished" else None
-                if terminal_kind == "setup_finished" and exit_code == 0:
-                    launch = await attachment.until(
-                        lambda entry: (
-                            entry.event.WhichOneof("observation") in {"harness_started", "harness_launch_failed"}
-                        ),
-                        timeout_s=_remaining(deadline),
-                    )
-                    if launch.event.WhichOneof("observation") == "harness_started":
-                        await _within(attachment.detach(), deadline)
-                    else:
-                        await _within(attachment.drain_until_end(), deadline)
-                        stream_drained = True
-                else:
-                    # Failed and interrupted setup streams close on their own. Drain through EOF before
-                    # exiting so Attachment cleanup cannot race a Detach write with the server close.
-                    await _within(attachment.drain_until_end(), deadline)
-                    stream_drained = True
-                if not stream_drained:
-                    await _within(attachment.drain_until_end(), deadline)
-                    stream_drained = True
-                entries = list(attachment.seen)
-            summaries = await _within(runner.list_sessions(), deadline)
-        finally:
-            if attachment is not None and not stream_drained:
-                attachment.cancel()
-    stdout = b"".join(
-        entry.event.setup_output.stdout
-        for entry in entries
-        if entry.event.WhichOneof("observation") == "setup_output"
-        and entry.event.setup_output.WhichOneof("stream") == "stdout"
-    )
-    stderr = b"".join(
-        entry.event.setup_output.stderr
-        for entry in entries
-        if entry.event.WhichOneof("observation") == "setup_output"
-        and entry.event.setup_output.WhichOneof("stream") == "stderr"
-    )
-    output = stdout + stderr
-    markers = _safe_setup_markers(output)
-    details = (
-        f"session_id={session_id}, terminal={terminal_kind}, exit_code={exit_code}, "
-        f"stdout_bytes={len(stdout)}, stderr_bytes={len(stderr)}, markers={markers}"
-    )
-    summary = next((item for item in summaries if item.session_id == session_id), None)
-    if summary is None:
-        raise RuntimeError(f"runner did not retain the setup probe session; {details}")
-    if args.expect_output is not None and args.expect_output.encode() not in output:
-        raise RuntimeError(f"setup probe did not emit the requested evidence marker; {details}")
-    for expectation in args.expect_marker:
-        key, separator, value = expectation.partition("=")
-        validator = _SETUP_MARKERS.get(key)
-        if not separator or validator is None or not validator.fullmatch(value):
-            raise ValueError("--expect-marker must use an allowed marker and valid value")
-        if markers.get(key) != value:
-            raise RuntimeError(f"setup probe did not emit expected marker {key}; {details}")
-    if args.expect_failure:
-        if terminal_kind == "setup_interrupted":
-            if summary.setup_state != runner_pb2.SETUP_STATE_INTERRUPTED:
-                raise RuntimeError(f"ListSessions did not report the interrupted setup probe; {details}")
-        elif exit_code == 0:
-            raise RuntimeError(f"setup probe was expected to fail but exited successfully; {details}")
-    elif terminal_kind != "setup_finished":
-        raise RuntimeError(f"setup probe was interrupted before it reported an exit status; {details}")
-    elif exit_code != args.expected_exit_code:
-        raise RuntimeError(f"setup probe exited with {exit_code}; expected {args.expected_exit_code}; {details}")
-    expected_setup_state = (
-        runner_pb2.SETUP_STATE_INTERRUPTED
-        if terminal_kind == "setup_interrupted"
-        else runner_pb2.SETUP_STATE_FAILED
-        if exit_code
-        else runner_pb2.SETUP_STATE_SUCCEEDED
-    )
-    if summary.setup_state != expected_setup_state:
-        raise RuntimeError(f"ListSessions did not report the setup probe's terminal state; {details}")
-    print(
-        json.dumps(
-            {
-                "action": "setup_probe_completed",
-                "session_id": session_id,
-                "harness": args.harness,
-                "exit_code": exit_code,
-                "terminal_kind": terminal_kind,
-                "stdout_bytes": len(stdout),
-                "stderr_bytes": len(stderr),
-                "expected_output_found": args.expect_output is None or args.expect_output.encode() in output,
-                "markers": markers,
-                "runner_responsive": True,
-                "journal_listed": True,
-            },
-            sort_keys=True,
-        )
-    )
+    print(json.dumps({"action": "format_authorization_retired", "namespace": args.namespace, "name": args.name}))
 
 
 async def stop_start(args: argparse.Namespace) -> None:
@@ -1067,7 +718,6 @@ async def stop_start(args: argparse.Namespace) -> None:
                     "vm": _resource_view(after, kind="VirtualMachine"),
                     "vmi": _resource_view(new_vmi, kind="VirtualMachineInstance"),
                     "launcher_pod": _pod_view(pod, api_client),
-                    "port_forward": _port_forward(namespace, pod),
                 },
                 sort_keys=True,
             )
@@ -1100,58 +750,10 @@ async def resume_vm(args: argparse.Namespace) -> None:
                     "vm": _resource_view(ready, kind="VirtualMachine"),
                     "vmi": _resource_view(vmi, kind="VirtualMachineInstance"),
                     "launcher_pod": _pod_view(pod, api_client),
-                    "port_forward": _port_forward(namespace, pod),
                 },
                 sort_keys=True,
             )
         )
-
-
-async def recover(args: argparse.Namespace) -> None:
-    deadline = asyncio.get_running_loop().time() + args.timeout
-    async with RunnerClient(args.target, capture_history=True) as runner:
-        summaries = await _within(runner.list_sessions(), deadline)
-        summary = next((item for item in summaries if item.session_id == args.session_id), None)
-        if summary is None:
-            raise RuntimeError(f"runner does not list session {args.session_id!r}")
-        if summary.last_cursor < args.after_cursor:
-            raise RuntimeError("recovered runner cursor moved behind the pre-stop cursor")
-        _, entries = await _run_turn(
-            runner,
-            session_id=args.session_id,
-            spec=summary.spec,
-            prompt="What opaque recovery marker did I ask you to remember? Reply with exactly that marker.",
-            timeout_s=_remaining(deadline),
-            after_cursor=args.after_cursor,
-        )
-    if not entries:
-        raise RuntimeError("runner returned no post-stop event evidence")
-    source_ids = {entry.origin.source_id for entry in entries}
-    if source_ids != {args.source_id}:
-        raise RuntimeError("recovered session event source changed")
-    cursors = [entry.cursor for entry in entries]
-    if cursors != list(range(args.after_cursor + 1, args.after_cursor + len(cursors) + 1)):
-        raise RuntimeError("recovered session event cursor is not contiguous")
-    starts = [
-        entry.event.harness_started for entry in entries if entry.event.WhichOneof("observation") == "harness_started"
-    ]
-    if not starts or not starts[-1].resumed:
-        raise RuntimeError("native harness did not report continuation after the VM restart")
-    if _turn_text(entries) != args.recovery_marker:
-        raise RuntimeError("native session did not continue with the remembered recovery marker")
-    print(
-        json.dumps(
-            {
-                "action": "recovery_verified",
-                "session_id": args.session_id,
-                "source_id": args.source_id,
-                "harness_resumed": True,
-                "marker_recalled": True,
-                "last_cursor": cursors[-1],
-            },
-            sort_keys=True,
-        )
-    )
 
 
 def _add_kubeconfig(parser: argparse.ArgumentParser) -> None:
@@ -1170,6 +772,10 @@ def build_parser() -> argparse.ArgumentParser:
     create_parser.add_argument("--image-pull-secret", default=_IMAGE_PULL_SECRET)
     create_parser.add_argument("--llm-base-url", required=True)
     create_parser.add_argument("--proxy-url", required=True)
+    create_parser.add_argument("--control-target", required=True, help="Runner Gateway runner-control host:port")
+    create_parser.add_argument("--control-bearer", required=True, help="placeholder the egress proxy substitutes")
+    create_parser.add_argument("--ingress-target", required=True, help="History Service runner ingress host:port")
+    create_parser.add_argument("--ingress-bearer", required=True, help="placeholder the egress proxy substitutes")
     create_parser.add_argument("--ca-bundle-config-map", required=True)
     create_parser.add_argument("--kubernetes-host", required=True)
     create_parser.add_argument("--cpu-cores", type=int, default=4)
@@ -1181,10 +787,9 @@ def build_parser() -> argparse.ArgumentParser:
     _add_kubeconfig(create_parser)
     create_parser.set_defaults(handler=create)
 
-    inspect_parser = commands.add_parser("inspect", help="show raw VM/VMI/Pod status and optionally ListSessions")
+    inspect_parser = commands.add_parser("inspect", help="show raw VM/VMI/Pod status")
     inspect_parser.add_argument("--namespace", required=True)
     inspect_parser.add_argument("--name", required=True)
-    inspect_parser.add_argument("--target", type=_localhost_target)
     inspect_parser.add_argument("--timeout", type=float, default=60)
     _add_kubeconfig(inspect_parser)
     inspect_parser.set_defaults(handler=inspect)
@@ -1200,44 +805,15 @@ def build_parser() -> argparse.ArgumentParser:
     _add_kubeconfig(replace_parser)
     replace_parser.set_defaults(handler=replace_image)
 
-    initialize_parser = commands.add_parser("initialize", help="ListSessions and run deterministic guest probes")
-    initialize_parser.add_argument("--namespace", required=True)
-    initialize_parser.add_argument("--name", required=True)
-    initialize_parser.add_argument("--uid", required=True, help="the VM UID printed by create")
-    initialize_parser.add_argument("--target", type=_localhost_target, required=True)
-    initialize_parser.add_argument("--timeout", type=float, default=180)
-    _add_kubeconfig(initialize_parser)
-    initialize_parser.set_defaults(handler=initialize)
-
-    session_parser = commands.add_parser("session", help="start a real native Claude or Codex turn")
-    session_parser.add_argument("--target", type=_localhost_target, required=True)
-    session_parser.add_argument("--harness", choices=("claude", "codex"), required=True)
-    session_parser.add_argument("--model", required=True)
-    session_parser.add_argument("--session-id")
-    session_parser.add_argument("--reasoning-effort", default="low")
-    session_parser.add_argument("--timeout", type=float, default=300)
-    session_parser.set_defaults(handler=session)
-
-    setup_parser = commands.add_parser("setup-probe", help="run a bounded per-session guest setup probe")
-    setup_parser.add_argument("--target", type=_localhost_target, required=True)
-    setup_parser.add_argument("--session-id")
-    setup_parser.add_argument("--harness", choices=("claude", "codex"), required=True)
-    setup_parser.add_argument("--model", required=True)
-    setup_parser.add_argument("--reasoning-effort", default="low")
-    setup_parser.add_argument("--setup-script-file", type=Path, required=True)
-    expected = setup_parser.add_mutually_exclusive_group()
-    expected.add_argument("--expected-exit-code", type=int, default=0)
-    expected.add_argument("--expect-failure", action="store_true")
-    setup_parser.add_argument("--expect-output")
-    setup_parser.add_argument(
-        "--expect-marker",
-        action="append",
-        default=[],
-        metavar="KEY=VALUE",
-        help="require and record a safe guest marker (memory/cpu/pids/quota/workspace)",
+    retire_parser = commands.add_parser(
+        "retire-format", help="drop the one-shot blank-disk format permission once the runner has dialed in"
     )
-    setup_parser.add_argument("--timeout", type=float, default=300)
-    setup_parser.set_defaults(handler=setup_probe)
+    retire_parser.add_argument("--namespace", required=True)
+    retire_parser.add_argument("--name", required=True)
+    retire_parser.add_argument("--uid", required=True, help="the VM UID printed by create")
+    retire_parser.add_argument("--timeout", type=float, default=60)
+    _add_kubeconfig(retire_parser)
+    retire_parser.set_defaults(handler=retire_format)
 
     restart_parser = commands.add_parser("stop-start", help="halt, wait for exact VMI deletion, and resume")
     restart_parser.add_argument("--namespace", required=True)
@@ -1254,14 +830,6 @@ def build_parser() -> argparse.ArgumentParser:
     _add_kubeconfig(resume_parser)
     resume_parser.set_defaults(handler=resume_vm)
 
-    recover_parser = commands.add_parser("recover", help="verify native continuation after stop/start")
-    recover_parser.add_argument("--target", type=_localhost_target, required=True)
-    recover_parser.add_argument("--session-id", required=True)
-    recover_parser.add_argument("--source-id", required=True)
-    recover_parser.add_argument("--after-cursor", type=int, required=True)
-    recover_parser.add_argument("--recovery-marker", required=True)
-    recover_parser.add_argument("--timeout", type=float, default=300)
-    recover_parser.set_defaults(handler=recover)
     return parser
 
 

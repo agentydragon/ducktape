@@ -1,4 +1,4 @@
-"""Validate the read-only KubeVirt guest seed and start the runner service."""
+"""Validate the read-only KubeVirt guest seed and start the runner, which dials out like a Pod runner."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from urllib.parse import urlsplit
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from agentplane.runner.cgroups import AgentCgroups
-from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig
+from agentplane.runner.config import ClaudeLaunch, CodexLaunch, IngressEndpoint, RunnerConfig
 from agentplane.runner.main import async_main
 
 CONFIG_PATH = Path("/run/agentplane/config.json")
@@ -27,6 +27,15 @@ CA_BUNDLE = Path("/run/agentplane/ca-certificates.crt")
 KUBECONFIG = Path("/run/agentplane/kubeconfig")
 
 
+class Endpoint(BaseModel):
+    """A service the runner dials through `proxy_url` (agentplane/docs/runner_control.md)."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    target: str = Field(min_length=1, description="host:port to dial.")
+    bearer: str = Field(min_length=1, description="Placeholder the egress proxy swaps for the guest's token.")
+
+
 class GuestConfig(BaseModel):
     """Public per-environment launch values delivered on the ConfigMap disk."""
 
@@ -34,7 +43,8 @@ class GuestConfig(BaseModel):
 
     version: Literal[1]
     environment_id: str = Field(min_length=1)
-    listen: Literal["0.0.0.0:7000"]
+    control: Endpoint
+    ingress: Endpoint
     llm_base_url: str = Field(min_length=1)
     proxy_url: str = Field(min_length=1)
     format_blank_disks: list[Literal["state", "workspace"]] = Field(default_factory=list)
@@ -153,6 +163,7 @@ def make_runner_config(config: GuestConfig) -> RunnerConfig:
         workspace_root=WORKSPACE_DIR,
         native_state_dir=NATIVE_STATE_DIR,
         initialization_cwd=WORKSPACE_DIR,
+        ingress=IngressEndpoint(target=config.ingress.target, bearer=config.ingress.bearer),
     )
 
 
@@ -161,7 +172,8 @@ def main() -> None:
     config = read_guest_config()
     runner_config = make_runner_config(config)
     configure_runner_network_environment(runner_config.harness_environment)
-    asyncio.run(async_main(runner_config, config.listen, None))
+    # Nothing outside the guest reaches the listener; the runner is driven over its control stream.
+    asyncio.run(async_main(runner_config, "127.0.0.1:0", (config.control.target, config.control.bearer)))
 
 
 def validate_main() -> None:

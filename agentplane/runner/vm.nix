@@ -96,7 +96,6 @@ in
   imports = [ ./../../nix/nixos/modules/vm-hardware.nix ];
 
   networking.hostName = "agentplane-runner-vm";
-  networking.firewall.allowedTCPPorts = [ 7000 ];
   services.openssh.enable = lib.mkForce false;
   services.qemuGuest.enable = true;
 
@@ -128,8 +127,9 @@ in
     shell = pkgs.bash;
   };
   users.mutableUsers = false;
-  # This guest has no interactive access path. KubeVirt and the runner gRPC listener are its only
-  # interfaces, so do not create an account password or an SSH key just to satisfy host defaults.
+  # This guest has no interactive access path and accepts no connections: KubeVirt and the runner's
+  # outbound control stream are its only interfaces, so do not create an account password or an SSH
+  # key just to satisfy host defaults.
   users.allowNoPasswordLogin = true;
 
   fileSystems."/state" = {

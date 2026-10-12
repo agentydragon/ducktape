@@ -15,7 +15,6 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecDomainDevicesDisks,
     VirtualMachineSpecTemplateSpecDomainDevicesDisksDisk,
     VirtualMachineSpecTemplateSpecDomainDevicesInterfaces,
-    VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts,
     VirtualMachineSpecTemplateSpecDomainFirmware,
     VirtualMachineSpecTemplateSpecDomainFirmwareBootloader,
     VirtualMachineSpecTemplateSpecDomainFirmwareBootloaderEfi,
@@ -205,15 +204,7 @@ def runner_vm(
                         autoattach_graphics_device=False,
                         disks=disks,
                         interfaces=[
-                            VirtualMachineSpecTemplateSpecDomainDevicesInterfaces(
-                                name="default",
-                                masquerade={},
-                                ports=[
-                                    VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(
-                                        name="runner", port=7000, protocol="TCP"
-                                    )
-                                ],
-                            )
+                            VirtualMachineSpecTemplateSpecDomainDevicesInterfaces(name="default", masquerade={})
                         ],
                     ),
                 ),

@@ -494,6 +494,7 @@ py_test(
     name = "test_guest_config",
     srcs = ["test_guest_config.py"],
     deps = [
+        ":config",
         ":conftest",
         ":guest_config",
         "//:conftest",

@@ -19,6 +19,11 @@ runner_image='git.allegedly.works/ducktape-ci/agentplane-runner-vm@sha256:<diges
 replacement_image='git.allegedly.works/ducktape-ci/agentplane-runner-vm@sha256:<replacement-digest>'
 trust_config_map=agentplane-vm-trust
 node=ovh-ns103711
+# The runner's endpoints, as the Sandbox Service gives a Pod runner (sandbox_service/runner_endpoints.py).
+control_target='<runner-gateway-control-host>:<port>'
+control_bearer='<control-placeholder>'
+ingress_target='<history-ingress-host>:<port>'
+ingress_bearer='<ingress-placeholder>'
 ```
 
 Render the admission policy and deterministic model fixture, then apply the generated file:
@@ -53,47 +58,25 @@ create_output=$(bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_ac
   --namespace "$ns" --name runner --image "$runner_image" \
   --storage-class local-path-ovh-hdd --llm-base-url http://model.invalid \
   --proxy-url http://10.0.2.1:3128 --ca-bundle-config-map "$trust_config_map" \
+  --control-target "$control_target" --control-bearer "$control_bearer" \
+  --ingress-target "$ingress_target" --ingress-bearer "$ingress_bearer" \
   --kubernetes-host kubernetes.default.svc --node-selector "kubernetes.io/hostname=$node")
 printf '%s\n' "$create_output"
 vm=$(jq -rs 'map(select(.action == "created"))[-1].vm.identity.name' <<<"$create_output")
 vm_uid=$(jq -rs 'map(select(.action == "created"))[-1].vm.identity.uid' <<<"$create_output")
 ```
 
-Run the printed port-forward in another terminal. `initialize` verifies the guest RPC and retires
-the one-shot disk-format permission after success.
+The guest runner accepts no connections. Like a Pod runner, it dials the Runner Gateway's control
+listener and pushes Session Events to the History Service ingress through `--proxy-url`, presenting
+the bearer placeholders. Once it has connected, retire the one-shot disk-format permission:
 
 ```bash
-target=localhost:17000
 bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- inspect \
   --namespace "$ns" --name "$vm"
-bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- initialize \
-  --namespace "$ns" --name "$vm" --uid "$vm_uid" --target "$target"
-session_output=$(bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- session \
-  --target "$target" --harness claude --model claude-3-7-sonnet-20250219)
-printf '%s\n' "$session_output"
-session_id=$(jq -r '.session_id' <<<"$session_output")
-source_id=$(jq -r '.source_id' <<<"$session_output")
-after_cursor=$(jq -r '.after_cursor' <<<"$session_output")
-recovery_marker=$(jq -r '.recovery_marker' <<<"$session_output")
+bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- retire-format \
+  --namespace "$ns" --name "$vm" --uid "$vm_uid"
 bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- stop-start \
   --namespace "$ns" --name "$vm"
-```
-
-After `stop-start`, forward the new launcher Pod, then verify continuation:
-
-```bash
-bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- recover \
-  --target "$target" --session-id "$session_id" --source-id "$source_id" \
-  --after-cursor "$after_cursor" --recovery-marker "$recovery_marker"
-```
-
-`setup-probe` reports validated markers and byte counts, not script output:
-
-```bash
-printf 'printf "SETUP_PROBE_OK\\n"\n' >/tmp/agentplane-vm-setup-probe.sh
-bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- setup-probe \
-  --target "$target" --harness codex --model gpt-5-codex \
-  --setup-script-file /tmp/agentplane-vm-setup-probe.sh --expect-output SETUP_PROBE_OK
 ```
 
 For interruption recovery, use `resume --namespace "$ns" --name "$vm" --uid "$vm_uid"` after
@@ -133,5 +116,7 @@ kubectl -n forgejo-images delete role,rolebinding "$ns-reader" --ignore-not-foun
 The direct driver and trust-store boot path have not yet been rerun live; recorded evidence uses an
 earlier driver and image. The model fixture returns deterministic text and uses TokenReview for the
 relay identity. It does not validate production credential substitution, destination authorization,
-TLS interception, or CONNECT. Recorded runtime findings and measured limits are in
+TLS interception, or CONNECT. The fixture relay forwards only to the model fixture, so it does not carry the
+runner's control stream or ingress push either: Sessions, setup probes and native recovery are not
+exercised on the guest. Recorded runtime findings and measured limits are in
 [`agentplane/debug/kubevirt/runtime-20261003.md`](../../../../agentplane/debug/kubevirt/runtime-20261003.md).
