@@ -63,9 +63,6 @@ class Session:
         self.state_owner_descriptor = state_owner_descriptor
         self.make_adapter = make_adapter
         self.directory = store.directory(session_id)
-        self.native_directory = (
-            config.native_state_dir / session_id if config.native_state_dir is not None else self.directory
-        )
         self.journal = journal
         # The writer's view, including the stdout reader's batch before it commits. What a client
         # may be told is the published log's, `journal.recovery_state`.
@@ -258,8 +255,6 @@ class Session:
                 return
             if self._sealing:
                 raise JournalSealedError("the session is sealed")
-            if self.config.native_state_dir is not None:
-                await asyncio.to_thread(self.native_directory.mkdir, parents=True, exist_ok=True)
             adapter = self.make_adapter(self)
             # The session's working directory is the spec's; a fresh one is created for the harness.
             cwd = Path(self.record.cwd)

@@ -16,13 +16,14 @@ from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig, Se
 from agentplane.runner.main import async_main
 
 CONFIG_PATH = Path("/run/agentplane/config.json")
-STATE_DEVICE = Path("/dev/disk/by-id/virtio-state")
 WORKSPACE_DEVICE = Path("/dev/disk/by-id/virtio-workspace")
-AGENT_UID = 1000
-AGENT_GID = 1000
+# KubeVirt's virtiofsd identity, the only non-root one that can write the state PVC (vm.nix).
+AGENT_UID = 107
+AGENT_GID = 107
+# The state PVC over virtiofs, laid out as in a runner Pod so a Session moves between kinds.
 RUNNER_STATE_DIR = Path("/state")
-NATIVE_STATE_DIR = RUNNER_STATE_DIR / "native"
-WORKSPACE_DIR = Path("/workspace")
+# The VM-local workspace disk, mounted where Pods keep Session working directories.
+WORKSPACE_DIR = RUNNER_STATE_DIR / "workspaces"
 CA_BUNDLE = Path("/run/agentplane/ca-certificates.crt")
 KUBECONFIG = Path("/run/agentplane/kubeconfig")
 
@@ -46,16 +47,6 @@ class GuestConfig(BaseModel):
     ingress: Endpoint
     llm_base_url: str = Field(min_length=1)
     proxy_url: str = Field(min_length=1)
-    format_blank_disks: list[Literal["state", "workspace"]] = Field(default_factory=list)
-
-    @field_validator("format_blank_disks")
-    @classmethod
-    def unique_format_authorizations(
-        cls, value: list[Literal["state", "workspace"]]
-    ) -> list[Literal["state", "workspace"]]:
-        if len(value) != len(set(value)):
-            raise ValueError("format_blank_disks must not contain duplicate disk names")
-        return value
 
     @field_validator("llm_base_url", "proxy_url")
     @classmethod
@@ -110,9 +101,9 @@ def make_runner_config(config: GuestConfig) -> RunnerConfig:
     llm_base_url = config.llm_base_url
     proxy_url = config.proxy_url
     harness_environment = {
-        "HOME": str(WORKSPACE_DIR / "home"),
-        "USER": "runner",
-        "LOGNAME": "runner",
+        "HOME": str(WORKSPACE_DIR / ".home"),
+        "USER": "agent",
+        "LOGNAME": "agent",
         "PATH": "/run/current-system/sw/bin",
         "TZDIR": "/usr/share/zoneinfo",
         "HTTP_PROXY": proxy_url,
@@ -150,10 +141,10 @@ def make_runner_config(config: GuestConfig) -> RunnerConfig:
             root=Path("/sys/fs/cgroup/system.slice/agentplane-runner.service/workloads"),
             agent_uid=AGENT_UID,
             agent_gid=AGENT_GID,
-            block_devices=(STATE_DEVICE, WORKSPACE_DEVICE),
+            # virtiofs has no block device to throttle.
+            block_devices=(WORKSPACE_DEVICE,),
         ),
         workspace_root=WORKSPACE_DIR,
-        native_state_dir=NATIVE_STATE_DIR,
         initialization_cwd=WORKSPACE_DIR,
     )
 
@@ -170,13 +161,6 @@ def main() -> None:
             ingress=ServiceEndpoint(target=config.ingress.target, bearer=config.ingress.bearer),
         )
     )
-
-
-def validate_main() -> None:
-    """Validate the seed before storage is considered for initialization."""
-    config = read_guest_config()
-    for disk in config.format_blank_disks:
-        print(disk)
 
 
 if __name__ == "__main__":

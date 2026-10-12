@@ -1,9 +1,13 @@
 # NixOS guest for the KubeVirt-backed Agentplane runner.
 #
-# The containerDisk supplies only this replaceable root filesystem. Native harness state and the
-# runner journal live on the retained /state disk; checkout contents and tool caches live on
-# /workspace. State uses XFS project quota; the separate workspace volume is ext4. Both are CDI
-# blank DataVolumes initialized only with explicit, one-shot config disk authorization.
+# The containerDisk supplies only this replaceable root filesystem. The Sandbox's state PVC reaches
+# the guest over virtiofs at /state, laid out exactly as in a runner Pod, so a Session moves between
+# kinds. The VM-local workspace disk is mounted over /state/workspaces, where Session working
+# directories live in both kinds; it survives stop/start of this VM and nothing else.
+#
+# KubeVirt's virtiofsd runs as uid/gid 107 with no capabilities: every file the guest writes on
+# /state lands as 107:107 and chown fails, so only guest root and a user whose uid and gid are both
+# 107 can write there. The runner runs as root; harness children run as that 107 user.
 {
   lib,
   pkgs,
@@ -14,82 +18,59 @@
 let
   configDevice = "/dev/disk/by-id/virtio-agentplane-config";
   trustDevice = "/dev/disk/by-id/virtio-agentplane-trust";
-  stateDevice = "/dev/disk/by-id/virtio-state";
   workspaceDevice = "/dev/disk/by-id/virtio-workspace";
+  workspaceDir = "/state/workspaces";
   runtimeDir = "/run/agentplane";
   sourceDir = "${runtimeDir}/config-source";
-  agentGroup = "agentplane";
-  serviceGroup = "agentplane-runner";
-  agentUser = "runner";
-  runnerUser = "agentplane-runner";
+  # virtiofsd's identity (above); agentplane/runner/guest_config.py runs harnesses as it.
+  agentUser = "agent";
+  agentId = 107;
 
-  storagePreparation = pkgs.writeShellScript "agentplane-prepare-disks" ''
+  workspacePreparation = pkgs.writeShellScript "agentplane-prepare-workspace" ''
     set -euo pipefail
-    authorized="$(${agentplaneRunner}/bin/agentplane-runner-validate-config)"
-
-    wait_for_device() {
-      local device="$1"
-      for _ in $(seq 1 60); do
-        if [ -b "$device" ]; then
-          return 0
-        fi
-        sleep 1
-      done
-      echo "KubeVirt persistent disk did not appear at $device" >&2
-      return 1
-    }
-
-    prepare_disk() {
-      local name="$1" device="$2" expected_type="$3" expected_label="$4" type label status signatures
-      wait_for_device "$device"
-      if type="$(blkid -p -s TYPE -o value "$device" 2>/dev/null)"; then
-        label="$(blkid -p -s LABEL -o value "$device" 2>/dev/null || true)"
-        signatures="$(wipefs --no-act --noheadings --output TYPE "$device")"
-        if [ "$type" != "$expected_type" ] || [ "$label" != "$expected_label" ] || [ "$signatures" != "$expected_type" ]; then
-          echo "Refusing unexpected filesystem on $name disk ($type, label $label)" >&2
-          return 1
-        fi
-        return 0
+    device="${workspaceDevice}"
+    for _ in $(seq 1 60); do
+      [ -b "$device" ] && break
+      sleep 1
+    done
+    if [ ! -b "$device" ]; then
+      echo "KubeVirt workspace disk did not appear at $device" >&2
+      exit 1
+    fi
+    if type="$(blkid -p -s TYPE -o value "$device" 2>/dev/null)"; then
+      label="$(blkid -p -s LABEL -o value "$device" 2>/dev/null || true)"
+      signatures="$(wipefs --no-act --noheadings --output TYPE "$device")"
+      if [ "$type" != ext4 ] || [ "$label" != APWORKSPACE ] || [ "$signatures" != ext4 ]; then
+        echo "Refusing unexpected filesystem on the workspace disk ($type, label $label)" >&2
+        exit 1
+      fi
+      exit 0
+    else
+      status=$?
+      if [ "$status" -ne 2 ]; then
+        echo "Could not inspect the workspace disk (blkid status $status)" >&2
+        exit 1
+      fi
+    fi
+    if [ -n "$(wipefs --no-act --noheadings "$device")" ]; then
+      echo "Refusing unrecognized disk signatures on the workspace disk" >&2
+      exit 1
+    fi
+    # No known signature is not proof that the disk is empty. A CDI blank DataVolume is
+    # zero-filled, so only a disk that reads as zeros end to end is formatted; one that lost its
+    # filesystem but still holds data is left for a person to look at.
+    if cmp --silent -n "$(blockdev --getsize64 "$device")" "$device" /dev/zero; then
+      :
+    else
+      status=$?
+      if [ "$status" -eq 1 ]; then
+        echo "Refusing to format a non-zero workspace disk without a recognized filesystem" >&2
       else
-        status=$?
-        if [ "$status" -ne 2 ]; then
-          echo "Could not inspect $name disk (blkid status $status)" >&2
-          return 1
-        fi
+        echo "Could not verify the blank workspace disk (cmp status $status)" >&2
       fi
-
-      signatures="$(wipefs --no-act --noheadings "$device")"
-      if [ -n "$signatures" ]; then
-        echo "Refusing unrecognized disk signatures on $name disk" >&2
-        return 1
-      fi
-      if ! printf '%s\n' "$authorized" | grep -Fxq "$name"; then
-        echo "Refusing to format blank-looking $name disk without one-shot authorization" >&2
-        return 1
-      fi
-      # No known signatures is not proof that a newly provisioned disk is empty. CDI blank
-      # DataVolumes are zero-filled, so scan the complete device before the one-shot authorization
-      # permits formatting it. Formatted retained volumes take the signature/label path above.
-      if cmp --silent -n "$(blockdev --getsize64 "$device")" "$device" /dev/zero; then
-        :
-      else
-        status=$?
-        if [ "$status" -eq 1 ]; then
-          echo "Refusing to format non-zero $name disk without a recognized filesystem" >&2
-        else
-          echo "Could not verify blank $name disk (cmp status $status)" >&2
-        fi
-        return 1
-      fi
-      if [ "$expected_type" = xfs ]; then
-        mkfs.xfs -f -L "$expected_label" "$device"
-      else
-        mkfs.ext4 -F -L "$expected_label" "$device"
-      fi
-    }
-
-    prepare_disk state "${stateDevice}" xfs APSTATE
-    prepare_disk workspace "${workspaceDevice}" ext4 APWORKSPACE
+      exit 1
+    fi
+    mkfs.ext4 -F -L APWORKSPACE "$device"
   '';
 in
 {
@@ -99,31 +80,18 @@ in
   services.openssh.enable = lib.mkForce false;
   services.qemuGuest.enable = true;
 
-  # Keep the replaceable guest root small. KubeVirt stores runner journals and agent work on the
-  # two separately sized persistent disks below.
+  # Keep the replaceable guest root small: the runner's journals live on the state PVC and agent
+  # work on the workspace disk.
   virtualisation.diskSize = 8 * 1024;
-  boot.kernelModules = [ "xfs" ];
+  boot.kernelModules = [ "virtiofs" ];
   boot.kernelParams = [ "console=ttyS0,115200n8" ];
 
-  users.groups.${agentGroup} = {
-    gid = 1000;
-  };
-  users.groups.${serviceGroup} = {
-    gid = 1001;
-  };
+  users.groups.${agentUser}.gid = agentId;
   users.users.${agentUser} = {
     isSystemUser = true;
-    uid = 1000;
-    group = agentGroup;
-    home = "/workspace/home";
-    shell = pkgs.bash;
-  };
-  users.users.${runnerUser} = {
-    isSystemUser = true;
-    uid = 1001;
-    group = serviceGroup;
-    extraGroups = [ agentGroup ];
-    home = "/workspace/home";
+    uid = agentId;
+    group = agentUser;
+    home = "${workspaceDir}/.home";
     shell = pkgs.bash;
   };
   users.mutableUsers = false;
@@ -132,19 +100,18 @@ in
   # key just to satisfy host defaults.
   users.allowNoPasswordLogin = true;
 
+  # The KubeVirt filesystem named `state` is the virtiofs tag.
   fileSystems."/state" = {
-    device = stateDevice;
-    fsType = "xfs";
+    device = "state";
+    fsType = "virtiofs";
+    noCheck = true;
     options = [
       "noatime"
       "nodev"
       "nosuid"
-      "prjquota"
     ];
-    autoFormat = false;
-    autoResize = false;
   };
-  fileSystems."/workspace" = {
+  fileSystems.${workspaceDir} = {
     device = workspaceDevice;
     fsType = "ext4";
     options = [
@@ -160,7 +127,6 @@ in
     description = "Read the Agentplane public configuration and trust disks";
     wantedBy = [ "local-fs.target" ];
     before = [
-      "agentplane-disk-prepare.service"
       "agentplane-runner.service"
       "local-fs.target"
     ];
@@ -212,83 +178,49 @@ in
     '';
   };
 
-  systemd.services.agentplane-disk-prepare = {
-    description = "Format only authorized blank Agentplane persistent disks";
-    requires = [ "agentplane-config.service" ];
-    after = [ "agentplane-config.service" ];
+  systemd.services.agentplane-workspace-prepare = {
+    description = "Format the Agentplane workspace disk when it is blank";
+    after = [ "systemd-udev-trigger.service" ];
     before = [
-      "state.mount"
-      "workspace.mount"
+      "state-workspaces.mount"
       "local-fs.target"
     ];
-    requiredBy = [
-      "state.mount"
-      "workspace.mount"
-    ];
+    requiredBy = [ "state-workspaces.mount" ];
     unitConfig.DefaultDependencies = false;
     path = [
       pkgs.coreutils
       pkgs.diffutils
       pkgs.e2fsprogs
-      pkgs.gnugrep
-      pkgs.xfsprogs
       pkgs.util-linux
     ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
     };
-    script = "${storagePreparation}";
+    script = "${workspacePreparation}";
   };
 
-  systemd.services.agentplane-storage = {
-    description = "Set Agentplane persistent storage boundaries";
-    requires = [
-      "state.mount"
-      "workspace.mount"
-    ];
-    after = [
-      "state.mount"
-      "workspace.mount"
-    ];
+  systemd.services.agentplane-workspace = {
+    description = "Give the harness user the Agentplane workspace";
+    requires = [ "state-workspaces.mount" ];
+    after = [ "state-workspaces.mount" ];
     before = [ "agentplane-runner.service" ];
     path = [
       pkgs.acl
-      pkgs.bash
       pkgs.coreutils
-      pkgs.shadow
-      pkgs.util-linux
-      pkgs.xfsprogs
     ];
     serviceConfig = {
       Type = "oneshot";
       RemainAfterExit = true;
     };
+    # The runner, as root, creates each Session's working directory; the default ACL hands every
+    # new entry to the harness user. /state itself needs nothing: virtiofs makes everything 107.
     script = ''
       set -euo pipefail
-      chown ${runnerUser}:${serviceGroup} /state
-      chmod 0710 /state
-      setfacl -m g:${agentGroup}:--x /state
-      chown ${runnerUser}:${agentGroup} /workspace
-      chmod 2770 /workspace
-      install -d -m2770 -o ${agentUser} -g ${agentGroup} /workspace/home
-      install -d -m2770 -o ${runnerUser} -g ${agentGroup} /state/native
-      setfacl -m g:${agentGroup}:rwx,d:g:${agentGroup}:rwx,d:m:rwx /state/native
-
-      # Check the actual service/agent identities and the permissions new history files inherit.
-      probe=/state/native/.permission-probe
-      install -d -m2770 -o ${runnerUser} -g ${agentGroup} "$probe"
-      setfacl -m g:${agentGroup}:rwx,d:g:${agentGroup}:rwx,d:m:rwx "$probe"
-      runuser -u ${runnerUser} -- sh -eu -c 'umask 0007; touch "$1"' _ "$probe/service-created"
-      runuser -u ${agentUser} -- sh -eu -c 'umask 0007; touch "$1"' _ "$probe/agent-created"
-      runuser -u ${agentUser} -- test -w "$probe/service-created"
-      runuser -u ${runnerUser} -- test -w "$probe/agent-created"
-      rm -rf "$probe"
-
-      # Native transcript/config writes share this tree. The separate project ID and hard limits
-      # leave the rest of /state available for the runner's SQLite journals and metadata.
-      xfs_quota -x -c 'project -s -p /state/native 801' /state
-      xfs_quota -x -c 'limit -p bhard=8g ihard=200000 801' /state
+      chown ${agentUser}:${agentUser} ${workspaceDir}
+      chmod 2770 ${workspaceDir}
+      setfacl -m d:u:${agentUser}:rwx,d:g:${agentUser}:rwx ${workspaceDir}
+      install -d -m0700 -o ${agentUser} -g ${agentUser} ${workspaceDir}/.home
     '';
   };
 
@@ -297,16 +229,16 @@ in
     wantedBy = [ "multi-user.target" ];
     requires = [
       "agentplane-config.service"
-      "agentplane-storage.service"
-      "state.mount"
-      "workspace.mount"
+      "agentplane-workspace.service"
     ];
     after = [
       "agentplane-config.service"
-      "agentplane-storage.service"
-      "state.mount"
-      "workspace.mount"
+      "agentplane-workspace.service"
       "network.target"
+    ];
+    unitConfig.RequiresMountsFor = [
+      "/state"
+      workspaceDir
     ];
     path = [
       agentplaneRunner
@@ -314,15 +246,12 @@ in
       pkgs.systemd
     ];
     environment = {
-      HOME = "/workspace/home";
       ANTHROPIC_AUTH_TOKEN = "agentplane-credential-agentplane-workload";
       OPENAI_API_KEY = "agentplane-credential-agentplane-workload";
     };
     serviceConfig = {
       Type = "simple";
       ExecStart = "${agentplaneRunner}/bin/agentplane-runner-vm";
-      User = runnerUser;
-      Group = serviceGroup;
       UMask = "0007";
       Restart = "on-failure";
       RestartSec = "2s";
@@ -336,12 +265,11 @@ in
       # Only signal the runner first so its shutdown drains native processes while their inherited
       # state-owner descriptor remains open. systemd escalates to the whole unit after 25 seconds.
       KillMode = "mixed";
+      # Root with only what it uses: entering harnesses as the agent user and stopping them, and
+      # reading and writing the agent-owned files on /state and the workspace.
       CapabilityBoundingSet = [
-        "CAP_KILL"
-        "CAP_SETGID"
-        "CAP_SETUID"
-      ];
-      AmbientCapabilities = [
+        "CAP_DAC_OVERRIDE"
+        "CAP_FOWNER"
         "CAP_KILL"
         "CAP_SETGID"
         "CAP_SETUID"
@@ -354,7 +282,7 @@ in
       ProtectSystem = "strict";
       ReadWritePaths = [
         "/state"
-        "/workspace"
+        workspaceDir
       ];
       TemporaryFileSystem = [ "/tmp:rw,size=1G,nr_inodes=100000,mode=1777" ];
     };
@@ -386,7 +314,6 @@ in
     util-linux
     which
     xz
-    xfsprogs
     pkgsUnstable.claude-code
     pkgsUnstable.codex
   ];

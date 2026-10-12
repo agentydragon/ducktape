@@ -64,10 +64,6 @@ class RunnerConfig:
     process_isolation: AgentCgroups | None = None
     # When set, new and retained session working directories must stay beneath this mount.
     workspace_root: Path | None = None
-    # VM guests separate native harness histories from the runner's journal tree so project quota
-    # can keep untrusted harness writes from consuming journal capacity. Containers keep the
-    # existing per-session layout by leaving this unset.
-    native_state_dir: Path | None = None
     # VM initialization/setup scripts work on the workspace disk, not the runner-owned state tree.
     initialization_cwd: Path | None = None
     # A hidden test-only process-integration seam. Deployments never set it. Once the runner

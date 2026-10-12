@@ -282,13 +282,12 @@ The [DAG VM lane](task_dag.md#4-vm-environment-phases) now sequences these separ
 
 - `VM_CONTROL_NETWORKING`: wire the guest runner's outbound channel on the VM network after the
   provider. Gate integrated VM lifecycle on this path.
-- `VM_IMAGE`: digest-pinned guest and bounded retained storage, tested with both harnesses.
 - `VM_PROVIDER`: typed provider/API, reconciliation, grants and UI. Review its service contracts
   and schema rollout; design and image work can proceed independently.
 - `VM_EGRESS`: integrate the already-selected launcher admission/proxy path with production policy.
 - `VM_PROCESS_ISOLATION`: enforce/test harness-process boundaries and aggregate resource budgets
-  after image/provider support. This is the concrete agent-kills-itself risk, not a cosmetic VM switch.
-- `VM_LIFECYCLE`: integrate image/provider/control networking/egress/isolation and perform bounded
+  after provider support. This is the concrete agent-kills-itself risk, not a cosmetic VM switch.
+- `VM_LIFECYCLE`: boot the packaged guest and integrate provider/control networking/egress/isolation and perform bounded
   deployed checks.
 - `SANDBOX_VM_ISOLATION`: capstone for the selectable environment and its documented guarantees.
 - `LOCAL_BAZEL`: separate downstream enablement, never authorized by installed tools alone.

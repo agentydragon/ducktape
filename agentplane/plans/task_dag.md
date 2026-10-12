@@ -334,7 +334,6 @@ KubeVirt guests through virtiofs, so a Session can move between kinds.
 ```mermaid
 flowchart LR
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
-    VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Candidate: production provider and API]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 7]
     VM_EGRESS[Candidate: production admission and egress integration]
@@ -343,9 +342,7 @@ flowchart LR
     VM_PROVIDER --> VM_CONTROL_NETWORKING
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     VM_CONTROL_NETWORKING --> VM_LIFECYCLE
-    VM_IMAGE --> VM_PROCESS_ISOLATION
     VM_PROVIDER --> VM_PROCESS_ISOLATION
-    VM_IMAGE --> VM_LIFECYCLE
     VM_PROVIDER --> VM_LIFECYCLE
     VM_EGRESS --> VM_LIFECYCLE
     VM_PROCESS_ISOLATION --> VM_LIFECYCLE
@@ -366,21 +363,6 @@ The experiment's guest already dials out, but `runtime_acceptance` no longer run
 or recovery on it: those phases called the runner over a port-forward. They return driven through a
 Runner Gateway.
 
-### `VM_IMAGE` — packaged guest and state storage
-
-**Candidate.** Publish a digest-pinned guest with runner/harness versions, blank-disk setup and
-retained state/workspace bounds. Check startup with both harnesses, without ad hoc downloads or
-real credentials baked into the image. Reuse the proven prototype, not another platform evaluation.
-The state PVC reaches the guest through virtiofs (`EnableVirtioFsStorageVolumes`, on in
-`cluster/cdk8s/kubevirt/app.py`; checked live 2026-10-12 with a Fedora 41 guest). KubeVirt v1.8.2
-runs virtiofsd as uid/gid 107 with all capabilities dropped and no setting to change that, so every
-file a guest writes lands on the PVC as `107:107`, `chown` to anything else fails, and only guest
-root and a guest user whose uid and gid are both 107 can write. Checked live: a `107:107` guest user
-creates, renames, `chmod`s and deletes files, and a pod running as `107:107` then edits all of it.
-The guest image therefore runs the runner as guest root and the harness as a `107:107` user (`VM_PROCESS_ISOLATION`). `agentplane-testing`'s
-4Gi container limit caps a guest at about 1.7Gi: raise testing's limits or use small VMs there
-(operator, 2026-10-12 PDT).
-
 ### `VM_PROVIDER` — production provider API and lifecycle intent
 
 **Candidate.** Integrate typed environment kinds, templates/destinations, inventory, reconciliation,
@@ -391,7 +373,10 @@ Re-type what is worth keeping from draft #8843 (`vm_view` status mapping and own
 `VmTemplate` catalog, halted create then start, DataVolume validation, halted image replacement)
 onto today's code, then close #8843 unmerged; it cannot be rebased. A Sandbox's kind comes only
 from its `SandboxTemplate`, so `CreateSandbox`, its proto and the app need no change (operator,
-2026-10-12 PDT).
+2026-10-12 PDT). The VM template renders the guest's inputs as `agentplane/runner/vm.nix` reads
+them: the state PVC as the virtiofs filesystem `state`, a blank VM-lifetime workspace disk with
+serial `workspace`, and the config and trust disks. `agentplane-testing`'s 4Gi container limit caps
+a guest at about 1.7Gi: raise testing's limits or use small VMs there (operator, 2026-10-12 PDT).
 
 ### `VM_EGRESS` — integrate production admission and proxy path
 
@@ -407,7 +392,7 @@ prototype matrix or require simultaneous cluster-wide disasters.
 
 ### `VM_PROCESS_ISOLATION` — protect control from harness processes
 
-**Blocked on image/provider.** Enforce aggregate memory/process/disk budgets and process-control
+**Blocked on the provider.** Enforce aggregate memory/process/disk budgets and process-control
 boundaries. Test representative tool/harness termination and bounded exhaustion to establish which
 runner/control state survives and what needs durable recovery. This directly addresses agents
 accidentally killing their own harness; guest or container packaging alone is not that guarantee.
@@ -424,7 +409,8 @@ until pods hit the problem. Disk exhaustion is not covered and waits on #4717.
 
 ### `VM_LIFECYCLE` — integrated lifecycle verification
 
-**Blocked on provider, image, selected control networking, egress and isolation.** Exercise both harnesses through real service
+**Blocked on provider, selected control networking, egress and isolation.** Boot the published
+guest (`agentplane-runner-vm-image.yml`) and exercise both harnesses through real service
 routes with retained-state stop/start and a representative replacement; confirm identity, replay and
 cleanup. Automated tests cover restart/concurrency branches. Additional live faults need a concrete
 unresolved platform risk, not a Cartesian product of every component crash and lifecycle operation.
@@ -636,14 +622,14 @@ connects. Resuming by Session ID works while the Sandbox exists, stopped or not.
 **Decision; direction set by the operator, 2026-10-10 and 2026-10-12 PDT.** One filesystem PVC per Sandbox holds the native harness files and the
 runner's state, separate from the workspace; each incarnation's runner continues the same journal
 on it. The Sandbox Service creates and owns it, with no owner reference, mounted as a volume in pods
-and through virtiofs in VMs (`VM_IMAGE`), never from agent-sandbox's `volumeClaimTemplates`,
+and through virtiofs in VMs (`agentplane/runner/vm.nix`), never from agent-sandbox's `volumeClaimTemplates`,
 which make the agent-sandbox `Sandbox` its controller owner. The runner's state and the harness files sit in
 separate `/state/runner` and `/state/harness` directories (`VM_PROCESS_ISOLATION`). For VMs, the operator's direction (2026-10-12 PDT) keeps the workspace
 VM-local rather than on a PVC, so it is dropped on a switch from VM to pod, and makes it a mounted
 PVC once the cluster has block storage that can move between kinds (OpenEBS or another
 provisioner); VM-local means a disk the VM keeps across stop and start, deleted only with the
 Sandbox, since a revived conversation refers to files the agent made (operator, 2026-10-12 PDT). Decide: storage class, since `local-path` pins a volume to one node and so pins every incarnation
-there; file ownership, since files a VM writes are `107:107` (`VM_IMAGE`), so pods run the runner and harness as `107:107` and a Session moves between kinds with no `chown` (checked live); its quota (TODO, deferred by the
+there; file ownership, since files a VM writes are `107:107` (`agentplane/runner/vm.nix`), so pods run the runner and harness as `107:107` and a Session moves between kinds with no `chown` (checked live); its quota (TODO, deferred by the
 operator 2026-10-12: `local-path` enforces no PVC size, and inside a guest `df` shows the node's
 whole disk; #4717 tracks a capacity-enforcing provisioner); and refusing an incompatible harness or
 runner version rather than attempting it.

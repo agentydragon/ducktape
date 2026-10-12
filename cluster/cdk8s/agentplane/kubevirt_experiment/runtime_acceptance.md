@@ -50,7 +50,7 @@ kubectl get configmap agentplane-testing-egress-ca -n agentplane-testing -o json
 ## Create and exercise
 
 Create emits JSON lines for VM creation and readiness. Save the created VM identity; its status is
-raw KubeVirt status. The VM starts only after blank-disk ownership/input checks so
+raw KubeVirt status. The VM starts only after volume ownership/input checks so
 WaitForFirstConsumer storage can bind through the VMI.
 
 ```bash
@@ -68,13 +68,11 @@ vm_uid=$(jq -rs 'map(select(.action == "created"))[-1].vm.identity.uid' <<<"$cre
 
 The guest runner accepts no connections. Like a Pod runner, it dials the Runner Gateway's control
 listener and pushes Session Events to the History Service ingress through `--proxy-url`, presenting
-the bearer placeholders. Once it has connected, retire the one-shot disk-format permission:
+the bearer placeholders.
 
 ```bash
 bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- inspect \
   --namespace "$ns" --name "$vm"
-bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- retire-format \
-  --namespace "$ns" --name "$vm" --uid "$vm_uid"
 bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- stop-start \
   --namespace "$ns" --name "$vm"
 ```
@@ -96,7 +94,7 @@ bb run //cluster/cdk8s/agentplane/kubevirt_experiment:runtime_acceptance -- resu
 
 ## Cleanup and limits
 
-VM deletion leaves state/workspace DataVolumes and PVCs. Delete them only after saving evidence and
+VM deletion leaves the state PVC and the workspace DataVolume and PVC. Delete them only after saving evidence and
 deciding their data is disposable, then delete the namespace and experiment's cluster-scoped
 policy, secret store, reviewer role/binding, and Forgejo reader role/binding.
 
@@ -104,7 +102,7 @@ policy, secret store, reviewer role/binding, and Forgejo reader role/binding.
 kubectl -n "$ns" patch vm "$vm" --type=merge -p '{"spec":{"runStrategy":"Halted"}}'
 kubectl -n "$ns" wait --for=delete "vmi/$vm" --timeout=10m
 kubectl -n "$ns" delete vm "$vm" --wait=true
-kubectl -n "$ns" delete datavolume "vm-$vm-state" "vm-$vm-workspace" --ignore-not-found --wait=true
+kubectl -n "$ns" delete datavolume "vm-$vm-workspace" --ignore-not-found --wait=true
 kubectl -n "$ns" delete pvc "vm-$vm-state" "vm-$vm-workspace" --ignore-not-found --wait=true
 kubectl delete namespace "$ns" --wait=true
 kubectl delete clusterpolicy "$ns-launcher-relay" --ignore-not-found

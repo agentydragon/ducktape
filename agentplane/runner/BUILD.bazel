@@ -398,7 +398,6 @@ py_wheel(
         "console_scripts": [
             "agentplane-runner = agentplane.runner.main:app",
             "agentplane-runner-vm = agentplane.runner.guest_config:main",
-            "agentplane-runner-validate-config = agentplane.runner.guest_config:validate_main",
         ],
     },
     platform = "linux_x86_64",

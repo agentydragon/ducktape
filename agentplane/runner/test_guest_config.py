@@ -15,7 +15,6 @@ def _config(**updates: object) -> GuestConfig:
         "ingress": {"target": "test-history.test:8081", "bearer": "test-ingress-placeholder"},
         "llm_base_url": "http://agentplane-llm-ingress.agentplane.svc.cluster.local:8080",
         "proxy_url": "http://10.0.2.2:3128",
-        "format_blank_disks": ["state", "workspace"],
     }
     return GuestConfig.model_validate(values | updates)
 
@@ -24,12 +23,10 @@ def test_guest_config_builds_explicit_proxy_and_persistent_paths() -> None:
     runner = make_runner_config(_config())
 
     assert runner.state_dir.as_posix() == "/state"
-    assert runner.native_state_dir is not None
-    assert runner.native_state_dir.as_posix() == "/state/native"
     assert runner.initialization_cwd is not None
-    assert runner.initialization_cwd.as_posix() == "/workspace"
+    assert runner.initialization_cwd.as_posix() == "/state/workspaces"
     assert runner.workspace_root is not None
-    assert runner.workspace_root.as_posix() == "/workspace"
+    assert runner.workspace_root.as_posix() == "/state/workspaces"
     assert runner.claude is not None
     assert runner.claude.base_url == "http://agentplane-llm-ingress.agentplane.svc.cluster.local:8080"
     assert runner.codex is not None
@@ -51,7 +48,6 @@ def test_guest_config_builds_explicit_proxy_and_persistent_paths() -> None:
         {"llm_base_url": "https://user:password@model.test"},
         {"llm_base_url": "https://model.test/v1"},
         {"proxy_url": "http://proxy.test/path"},
-        {"format_blank_disks": ["state", "state"]},
         {"unexpected": "value"},
     ],
 )

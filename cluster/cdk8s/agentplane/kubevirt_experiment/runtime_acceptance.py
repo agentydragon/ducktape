@@ -9,7 +9,7 @@ import re
 from collections.abc import AsyncIterator, Awaitable
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any, Protocol, cast
+from typing import Any, cast
 from urllib.parse import urlsplit
 from uuid import uuid4
 
@@ -30,14 +30,8 @@ _KUBEVIRT_API_VERSION = "kubevirt.io/v1"
 _VM_PLURAL = "virtualmachines"
 _VMI_PLURAL = "virtualmachineinstances"
 _DISK_OWNER_ANNOTATION = f"{GROUP}/environment-uid"
-_FORMAT_CONFIG_KEY = "config.json"
+_CONFIG_KEY = "config.json"
 _IMAGE_PULL_SECRET = "forgejo-images-creds"
-
-
-class _ConfigMapMergePatchClient(Protocol):
-    async def patch_namespaced_config_map(
-        self, name: str, namespace: str, body: dict[str, Any], *, _content_type: str
-    ) -> object: ...
 
 
 @asynccontextmanager
@@ -337,6 +331,36 @@ def _data_volume(name: str, *, uid: str, size: str, storage_class: str) -> dict[
     }
 
 
+async def _ensure_state_claim(
+    core: k8s_client.CoreV1Api, namespace: str, name: str, *, uid: str, size: str, storage_class: str
+) -> None:
+    """A filesystem PVC the guest mounts over virtiofs, as a Sandbox's state PVC is."""
+    body = k8s_client.V1PersistentVolumeClaim(
+        metadata=k8s_client.V1ObjectMeta(
+            name=name, labels={MANAGED_LABEL: "true"}, annotations={_DISK_OWNER_ANNOTATION: uid}
+        ),
+        spec=k8s_client.V1PersistentVolumeClaimSpec(
+            access_modes=["ReadWriteOnce"],
+            volume_mode="Filesystem",
+            storage_class_name=storage_class,
+            resources=k8s_client.V1VolumeResourceRequirements(requests={"storage": size}),
+        ),
+    )
+    try:
+        actual = await core.create_namespaced_persistent_volume_claim(namespace, body)
+    except k8s_client.ApiException as error:
+        if error.status != 409:
+            raise
+        actual = await core.read_namespaced_persistent_volume_claim(name, namespace)
+    if (
+        (actual.metadata.annotations or {}).get(_DISK_OWNER_ANNOTATION) != uid
+        or actual.spec.volume_mode != "Filesystem"
+        or actual.spec.storage_class_name != storage_class
+        or actual.spec.resources.requests.get("storage") != size
+    ):
+        raise ValueError(f"PVC {name!r} does not match this VM's requested state volume")
+
+
 async def _ensure_data_volume(
     custom: CustomObjectsClient, namespace: str, name: str, *, uid: str, size: str, storage_class: str
 ) -> None:
@@ -368,7 +392,6 @@ def _config_data(args: argparse.Namespace, *, config: dict[str, Any]) -> dict[st
         "ingress": {"target": args.ingress_target, "bearer": args.ingress_bearer},
         "llm_base_url": config["llm_base_url"],
         "proxy_url": config["proxy_url"],
-        "format_blank_disks": ["state", "workspace"],
     }
     kubeconfig = {
         "apiVersion": "v1",
@@ -387,7 +410,7 @@ def _config_data(args: argparse.Namespace, *, config: dict[str, Any]) -> dict[st
         "current-context": "experiment",
     }
     return {
-        _FORMAT_CONFIG_KEY: json.dumps(guest_config, separators=(",", ":")),
+        _CONFIG_KEY: json.dumps(guest_config, separators=(",", ":")),
         "kubeconfig": json.dumps(kubeconfig, separators=(",", ":")),
     }
 
@@ -541,13 +564,28 @@ async def create(args: argparse.Namespace) -> None:
             ),
             deadline,
         )
-        for disk, size in (("state", args.state_disk), ("workspace", args.workspace_disk)):
-            await _within(
-                _ensure_data_volume(
-                    custom, args.namespace, _aux_name(name, disk), uid=uid, size=size, storage_class=args.storage_class
-                ),
-                deadline,
-            )
+        await _within(
+            _ensure_state_claim(
+                core,
+                args.namespace,
+                _aux_name(name, "state"),
+                uid=uid,
+                size=args.state_disk,
+                storage_class=args.storage_class,
+            ),
+            deadline,
+        )
+        await _within(
+            _ensure_data_volume(
+                custom,
+                args.namespace,
+                _aux_name(name, "workspace"),
+                uid=uid,
+                size=args.workspace_disk,
+                storage_class=args.storage_class,
+            ),
+            deadline,
+        )
         await _within(
             _ensure_config_map(core, args.namespace, name, uid=uid, data=_config_data(args, config=values)), deadline
         )
@@ -556,7 +594,7 @@ async def create(args: argparse.Namespace) -> None:
             args.namespace,
             name,
             uid=uid,
-            sizes={"state": args.state_disk, "workspace": args.workspace_disk},
+            sizes={"workspace": args.workspace_disk},
             storage_class=args.storage_class,
             deadline=deadline,
         )
@@ -641,51 +679,6 @@ async def replace_image(args: argparse.Namespace) -> None:
                 sort_keys=True,
             )
         )
-
-
-async def _retire_format_permission(core: k8s_client.CoreV1Api, namespace: str, name: str, vm_uid: str) -> None:
-    config_name = _aux_name(name, "config")
-    config_map = await core.read_namespaced_config_map(config_name, namespace)
-    owners = config_map.metadata.owner_references if config_map.metadata is not None else []
-    if (
-        len(owners or []) != 1
-        or owners[0].api_version != _KUBEVIRT_API_VERSION
-        or owners[0].kind != "VirtualMachine"
-        or owners[0].name != name
-        or owners[0].uid != vm_uid
-    ):
-        raise RuntimeError(f"ConfigMap {config_name!r} is not owned by VM UID {vm_uid}")
-    data = dict(config_map.data or {})
-    try:
-        guest_config = json.loads(data[_FORMAT_CONFIG_KEY])
-    except KeyError, ValueError:
-        raise RuntimeError("guest config is missing or invalid") from None
-    formats = guest_config.get("format_blank_disks")
-    if formats == []:
-        return
-    if formats != ["state", "workspace"]:
-        raise RuntimeError("guest config has unexpected blank-disk format permission")
-    guest_config["format_blank_disks"] = []
-    data[_FORMAT_CONFIG_KEY] = json.dumps(guest_config, separators=(",", ":"))
-    await cast(_ConfigMapMergePatchClient, core).patch_namespaced_config_map(
-        config_name,
-        namespace,
-        {
-            "metadata": {"uid": config_map.metadata.uid, "resourceVersion": config_map.metadata.resource_version},
-            "data": data,
-        },
-        _content_type="application/merge-patch+json",
-    )
-
-
-async def retire_format(args: argparse.Namespace) -> None:
-    deadline = asyncio.get_running_loop().time() + args.timeout
-    async with _apis(args.namespace, kubeconfig=args.kubeconfig) as (core, custom, _api_client):
-        vm = await _within(_vm(custom, args.namespace, args.name), deadline)
-        if _vm_identity(vm)[2] != args.uid:
-            raise ValueError(f"VM {args.name!r} UID does not match --uid")
-        await _within(_retire_format_permission(core, args.namespace, args.name, args.uid), deadline)
-    print(json.dumps({"action": "format_authorization_retired", "namespace": args.namespace, "name": args.name}))
 
 
 async def stop_start(args: argparse.Namespace) -> None:
@@ -800,16 +793,6 @@ def build_parser() -> argparse.ArgumentParser:
     replace_parser.add_argument("--timeout", type=float, default=300)
     _add_kubeconfig(replace_parser)
     replace_parser.set_defaults(handler=replace_image)
-
-    retire_parser = commands.add_parser(
-        "retire-format", help="drop the one-shot blank-disk format permission once the runner has dialed in"
-    )
-    retire_parser.add_argument("--namespace", required=True)
-    retire_parser.add_argument("--name", required=True)
-    retire_parser.add_argument("--uid", required=True, help="the VM UID printed by create")
-    retire_parser.add_argument("--timeout", type=float, default=60)
-    _add_kubeconfig(retire_parser)
-    retire_parser.set_defaults(handler=retire_format)
 
     restart_parser = commands.add_parser("stop-start", help="halt, wait for exact VMI deletion, and resume")
     restart_parser.add_argument("--namespace", required=True)
