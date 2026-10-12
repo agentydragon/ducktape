@@ -671,11 +671,9 @@ flowchart TD
     SANDBOX_CONTROLLER_PROVISIONING[In flight: the controller provisions a Sandbox]
     ACTION_POLICY_MIGRATE[Action policies on PolicySet, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
     KUBERNETES_POLICY_SETS[Grant catalog as PolicySets, section 6] --> SANDBOX_CONTROLLER_PROVISIONING
-    SANDBOX_CONTROLLER_TEARDOWN[In flight: deleting a Sandbox seals it first]
     SANDBOX_IMAGE_REPLACE[Candidate: replace the runner image between incarnations]
     SANDBOX_CREATE_CUTOVER[Blocked: Sandboxes are created as ours]
     SANDBOX_CONTROLLER_PROVISIONING --> SANDBOX_CREATE_CUTOVER
-    SANDBOX_CONTROLLER_TEARDOWN --> SANDBOX_CREATE_CUTOVER
     SANDBOX_CREATE_CUTOVER --> AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox]
 ```
 
@@ -691,14 +689,6 @@ never sets `expiresAt`. No Pod waits for the binding's readers. The Sandbox Serv
 `PolicyBinding`s. Runtime and time-limited grants are separate bindings (`POLICY_RUNTIME_GRANTS`).
 Left after #10162: session defaults, bootstrap command and runner endpoints.
 
-### `SANDBOX_CONTROLLER_TEARDOWN` — deleting a Sandbox seals it first
-
-**In flight; the controller already waits on `SessionsSealed`.** Left: the Runner Gateway accepts the runners of our kind, refuses new Sessions and commands for a
-deleting one, and watches deleting Sandboxes of our kind; when the fenced runner connects it seals every Session and,
-once ingress has acknowledged them all, sets the Sandbox's `SessionsSealed` condition, which the
-controller waits on before deleting the Pod and PVC (operator, 2026-10-12 PDT). The Sandbox
-Service's `SealSandbox` call to the gateway goes with the Sandbox Service; there is no Go gRPC client.
-
 ### `SANDBOX_IMAGE_REPLACE` — replace the runner image between incarnations
 
 **Candidate; the operator's "pause, replace the image, resume" (2026-10-12 PDT).** For pods and VMs
@@ -710,10 +700,11 @@ live in [the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
 
 ### `SANDBOX_CREATE_CUTOVER` — Sandboxes are created as ours
 
-**Blocked on provisioning and teardown; decision card before the PR.** `CreateSandbox` and
+**Blocked on provisioning; decision card before the PR.** `CreateSandbox` and
 the rest of the Sandbox Service API, the app's live view and the Runner Gateway's destination
 lookup read and write our `Sandbox` instead of agent-sandbox's, replacing the imperative-only
-`CreateSandbox`. Existing staging Sandboxes stay on agent-sandbox until `AGENT_SANDBOX_RETIRE`
+`CreateSandbox`. That lookup refuses new Sessions and commands for a deleting Sandbox, as it does for
+one in agent-sandbox teardown, while the gateway seals it. Existing staging Sandboxes stay on agent-sandbox until `AGENT_SANDBOX_RETIRE`
 recreates them. The Sandbox Controller and our runner `SandboxTemplate`s exist on `agentplane-testing` only
 (`Environment.own_sandboxes`) until then: the cutover
 lands on testing first, and staging gets the controller and the cutover only once testing holds
@@ -726,7 +717,7 @@ name policy sets of any rule type, one chip per set, in a new `policy_sets` pres
 resource, not converted; until then they keep the old policy kinds, and the recreated ones get the controller's `PolicyBinding`. Then delete Agentplane's
 agent-sandbox runner `SandboxTemplate`s (`cluster/cdk8s/agentplane/runner_sandbox.py`, whose
 rendered spec ours now copy: build ours directly) and `Environment.own_sandboxes`, the Sandbox
-Service's agent-sandbox inventory, views and watch, the annotations it used as its record, the
+Service's agent-sandbox inventory, views and watch, the gateway's `SealSandbox` RPC, the annotations it used as its record, the
 `volumeClaimTemplates` state volume and the Sandbox Service's agent-sandbox RBAC. The controller
 install stays for `cluster/cdk8s/agent_workspaces.py`.
 

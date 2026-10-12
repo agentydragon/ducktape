@@ -89,6 +89,8 @@ spec:
                     description: >-
                       A metav1.Condition. `Running` is the controller's: True once the Pod runs,
                       otherwise False with a reason naming the state or what blocks it.
+                      `SessionsSealed` is the Runner Gateway's, on a deleting Sandbox: True once
+                      its runner sealed every Session and the ingress acknowledged each seal.
                     type: object
                     required: [type, status, lastTransitionTime, reason, message]
                     properties:

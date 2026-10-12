@@ -270,7 +270,9 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         async with errors(context), asyncio.timeout(SEAL_S + self.resources.admission_timeout_s):
             await authenticate(self.resources.principals, self.resources.sealer_accounts, context)
             view = await self.resources.destinations.sandboxes.incarnation(request.destination)
-            sealed = await self.resources.sealing.seal(view)
+            sealed = await self.resources.sealing.seal(
+                namespace=view.namespace, name=view.name, sandbox_uid=UUID(view.uid)
+            )
             return runner_gateway_pb2.SealSandboxResponse(sessions=sealed.sessions)
 
 

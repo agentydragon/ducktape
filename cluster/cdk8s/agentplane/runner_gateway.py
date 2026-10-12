@@ -21,6 +21,7 @@ from cdk8s_plus_34 import (
 )
 from constructs import Construct
 
+from agentplane.crd_group import GROUP
 from agentplane.egress.resources import placeholder_of
 from agentplane.runner_gateway.instructions import combine_instructions, render_platform_instructions
 from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE, Settings
@@ -219,6 +220,10 @@ class RunnerGateway(Construct):
                     resources=[custom_resource("agents.x-k8s.io", "sandboxes")], verbs=["get", "list", "watch"]
                 ),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
+                # Agentplane's own Sandboxes: resolving a runner's, and marking a deleting one's
+                # Sessions sealed.
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes/status")], verbs=["patch"]),
                 # Runner connection records, each owned by its Sandbox: the Lease every replica
                 # watches, and the control Service and EndpointSlice its holder points at itself.
                 RolePolicyRule(

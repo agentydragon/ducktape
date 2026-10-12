@@ -78,7 +78,7 @@ flowchart TB
     ss -->|Sandbox CRs, grants| k8s
     ss -->|SealSandbox| gw
     k8s -->|creates| sandbox
-    gw -->|control Services, Leases| k8s
+    gw -->|control Services, Leases; SessionsSealed on our deleting Sandboxes| k8s
     hs -->|ingest, fold, read| hist_db
     notif -->|Sandbox lookups| ss
     notif -->|commands| gw

@@ -15,6 +15,7 @@ from uuid import UUID
 import grpc
 from kubernetes_asyncio import client as k8s_client
 
+from agentplane import sandbox_resource
 from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc
 from agentplane.runner_gateway.connection_records import ConnectionRecords, ConnectionSupersededError, RecordOwner
 from agentplane.runner_gateway.lifecycle_control import ControlConnection, LifecycleControl
@@ -27,6 +28,7 @@ from agentplane.workload_auth.principal import (
     WorkloadPrincipalResolver,
 )
 from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND
+from util.kubernetes import CustomObjectsClient
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -39,11 +41,12 @@ class ControlPeer:
 
     sandbox_name: str
     sandbox_uid: UUID
+    sandbox_api_version: str
     pod_uid: str
 
     @property
     def record_owner(self) -> RecordOwner:
-        return RecordOwner(name=self.sandbox_name, uid=self.sandbox_uid)
+        return RecordOwner(name=self.sandbox_name, uid=self.sandbox_uid, api_version=self.sandbox_api_version)
 
 
 @dataclass(frozen=True)
@@ -66,9 +69,14 @@ class _StreamClosedError(Exception):
 
 
 async def resolve_peer(
-    principal: WorkloadPrincipal, *, sandboxes: SandboxReader, core: k8s_client.CoreV1Api
+    principal: WorkloadPrincipal,
+    *,
+    sandboxes: SandboxReader,
+    custom_objects: CustomObjectsClient,
+    core: k8s_client.CoreV1Api,
 ) -> ControlPeer:
-    """Follow the token's Pod to the Sandbox controlling it, the reverse of destination resolution."""
+    """Follow the token's Pod to the Sandbox controlling it, the reverse of destination resolution.
+    The Sandbox is agent-sandbox's or Agentplane's own."""
     if principal.namespace != sandboxes.namespace:
         raise PeerRefusedError("workload is outside the Sandbox namespace")
     try:
@@ -81,22 +89,31 @@ async def resolve_peer(
     if metadata is None or metadata.uid != principal.pod_uid or metadata.deletion_timestamp is not None:
         raise WorkloadPrincipalRejectedError("bearer Pod was replaced or is being deleted")
     controllers = [ref for ref in metadata.owner_references or [] if ref.controller]
-    if (
-        len(controllers) != 1
-        or controllers[0].api_version != SANDBOX_API.api_version
-        or controllers[0].kind != SANDBOX_KIND
-    ):
+    if len(controllers) != 1 or controllers[0].kind != SANDBOX_KIND:
         raise PeerRefusedError("Pod is not controlled by a Sandbox")
     owner = controllers[0]
-    try:
-        sandbox = await sandboxes.get(owner.name)
-    except SandboxNotFoundError as error:
-        raise PeerRefusedError("Pod's Sandbox is not in this inventory") from error
-    if sandbox.uid != owner.uid:
+    match owner.api_version:
+        case SANDBOX_API.api_version:
+            try:
+                view = await sandboxes.get(owner.name)
+            except SandboxNotFoundError as error:
+                raise PeerRefusedError("Pod's Sandbox is not in this inventory") from error
+            uid, account = view.uid, view.service_account.name
+        case sandbox_resource.SANDBOX_API_VERSION:
+            own = await sandbox_resource.read_sandbox(custom_objects, sandboxes.namespace, owner.name)
+            if own is None:
+                raise PeerRefusedError("Pod's Sandbox does not exist")
+            # The Sandbox Controller runs each Sandbox's Pods as the ServiceAccount of its name.
+            uid, account = str(own.metadata.uid), own.metadata.name
+        case _:
+            raise PeerRefusedError("Pod is not controlled by a Sandbox")
+    if uid != owner.uid:
         raise PeerRefusedError("Pod belongs to another incarnation of its Sandbox")
-    if sandbox.service_account.name != principal.service_account_name:
+    if account != principal.service_account_name:
         raise PeerRefusedError("Sandbox runs as a different ServiceAccount")
-    return ControlPeer(sandbox_name=sandbox.name, sandbox_uid=UUID(sandbox.uid), pod_uid=principal.pod_uid)
+    return ControlPeer(
+        sandbox_name=owner.name, sandbox_uid=UUID(uid), sandbox_api_version=owner.api_version, pod_uid=principal.pod_uid
+    )
 
 
 class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
@@ -105,6 +122,7 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         *,
         principals: WorkloadPrincipalResolver,
         sandboxes: SandboxReader,
+        custom_objects: CustomObjectsClient,
         core: k8s_client.CoreV1Api,
         records: ConnectionRecords,
         control: LifecycleControl,
@@ -112,6 +130,7 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
     ) -> None:
         self.principals = principals
         self.sandboxes = sandboxes
+        self.custom_objects = custom_objects
         self.core = core
         self.records = records
         self.control = control
@@ -119,7 +138,9 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
 
     async def authenticate(self, context: grpc.aio.ServicerContext) -> tuple[WorkloadPrincipal, ControlPeer]:
         principal = await resolve_caller(self.principals, context)
-        return principal, await resolve_peer(principal, sandboxes=self.sandboxes, core=self.core)
+        return principal, await resolve_peer(
+            principal, sandboxes=self.sandboxes, custom_objects=self.custom_objects, core=self.core
+        )
 
     # mypy-protobuf types the handler as returning an iterator; explicit writes keep every send
     # inside the liveness bound.
@@ -204,7 +225,12 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
                     except ConnectionSupersededError as error:
                         raise _StreamClosedError(grpc.StatusCode.ABORTED, "superseded by a newer connection") from error
                     # Revocation: the Pod or Sandbox behind this connection may have changed.
-                    if await resolve_peer(principal, sandboxes=self.sandboxes, core=self.core) != peer:
+                    if (
+                        await resolve_peer(
+                            principal, sandboxes=self.sandboxes, custom_objects=self.custom_objects, core=self.core
+                        )
+                        != peer
+                    ):
                         raise _StreamClosedError(grpc.StatusCode.PERMISSION_DENIED, "the Sandbox's routing changed")
                     last_touch = now
                 await send(runner_control_pb2.ServiceFrame(heartbeat=runner_control_pb2.Heartbeat()))

@@ -14,7 +14,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any
@@ -86,6 +86,7 @@ class FakeApiServer:
     _version: int = 0
     _events: list[_Event] = field(default_factory=list)
     _watchers: set[asyncio.Queue[_Event | None]] = field(default_factory=set)
+    _changed: asyncio.Event = field(default_factory=asyncio.Event)
 
     def __post_init__(self) -> None:
         for plural in self.namespace_of:
@@ -117,6 +118,15 @@ class FakeApiServer:
         self._events.append(event)
         for queue in self._watchers:
             queue.put_nowait(event)
+        self._changed.set()
+
+    async def wait_for(self, predicate: Callable[[], bool]) -> None:
+        """Until `predicate` holds over the stored objects, re-checked after every change."""
+        while True:
+            self._changed.clear()
+            if predicate():
+                return
+            await self._changed.wait()
 
     def close_watches(self) -> None:
         """End every watch stream open right now, as the server does at `timeoutSeconds`.
@@ -127,6 +137,13 @@ class FakeApiServer:
         """
         for queue in self._watchers:
             queue.put_nowait(None)
+
+    def _store(self, request: web.Request) -> str:
+        """The store a request reads: its plural, or `<plural>.<group>` where this server keeps one
+        for a plural that two groups share."""
+        plural = request.match_info["plural"]
+        qualified = f"{plural}.{request.match_info.get('group')}"
+        return qualified if qualified in self.namespace_of else plural
 
     async def token_review(self, request: web.Request) -> web.Response:
         self.token_reviews += 1
@@ -174,7 +191,7 @@ class FakeApiServer:
     async def list_or_watch(self, request: web.Request) -> web.StreamResponse:
         if not self.watch_available:
             return web.Response(status=503)
-        plural = request.match_info["plural"]
+        plural = self._store(request)
         assert request.match_info["namespace"] == self.namespace_of[plural]
         selector = request.query.get("labelSelector", "")
         # The client spells the flag `True`, which the real server parses like `true`.
@@ -240,7 +257,7 @@ class FakeApiServer:
         return response
 
     async def get_object(self, request: web.Request) -> web.Response:
-        plural, name = request.match_info["plural"], request.match_info["name"]
+        plural, name = self._store(request), request.match_info["name"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
         obj = self.objects[plural].get(name)
         if obj is None:
@@ -248,7 +265,7 @@ class FakeApiServer:
         return web.json_response(obj)
 
     async def create_object(self, request: web.Request) -> web.Response:
-        plural = request.match_info["plural"]
+        plural = self._store(request)
         assert request.match_info["namespace"] == self.namespace_of[plural]
         body = await request.json()
         if body["metadata"]["name"] in self.objects[plural]:
@@ -258,7 +275,7 @@ class FakeApiServer:
 
     async def replace_object(self, request: web.Request) -> web.Response:
         """PUT, with the `resourceVersion` precondition the real server applies when the body names one."""
-        plural, name = request.match_info["plural"], request.match_info["name"]
+        plural, name = self._store(request), request.match_info["name"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
         body = await request.json()
         current = self.objects[plural].get(name)
@@ -273,7 +290,7 @@ class FakeApiServer:
     async def patch_object(self, request: web.Request) -> web.Response:
         """A JSON merge patch, with the `resourceVersion` precondition the real server applies when
         the patch names one."""
-        plural, name = request.match_info["plural"], request.match_info["name"]
+        plural, name = self._store(request), request.match_info["name"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
         assert request.content_type == "application/merge-patch+json"
         patch = await request.json()
@@ -287,7 +304,7 @@ class FakeApiServer:
         return web.json_response(self.objects[plural][name])
 
     async def patch_status(self, request: web.Request) -> web.Response:
-        plural, name = request.match_info["plural"], request.match_info["name"]
+        plural, name = self._store(request), request.match_info["name"]
         assert request.match_info["namespace"] == self.namespace_of[plural]
         patch = await request.json()
         self.status_patches.append((name, patch["status"]))

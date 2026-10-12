@@ -881,6 +881,7 @@ py_library(
         ":migrate_container",
         ":notifications",
         ":service_workload",
+        "//agentplane:crd_group",
         "//agentplane:subjects",
         "//agentplane/egress:resources",
         "//agentplane/runner_gateway:instructions",

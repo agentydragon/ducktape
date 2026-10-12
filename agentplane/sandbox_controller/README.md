@@ -5,8 +5,8 @@ Reconciles `Sandbox` into a state PVC that outlives every incarnation, its own S
 [`agentplane/crds`](../crds/BUILD.bazel). It is the Go controller the
 [Sandbox Service](../sandbox_service/README.md) is moving into, and does not yet do what that
 service does around a Sandbox: session defaults, bootstrap, runner endpoints and launch binding.
-Until it does, nothing creates these Sandboxes. Deletion waits for the Runner Gateway's
-`SessionsSealed` condition, which the gateway does not set for this kind yet.
+Until it does, nothing creates these Sandboxes. Deletion waits for the
+[Runner Gateway](../runner_gateway/README.md)'s `SessionsSealed` condition.
 
 A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) controller:
 

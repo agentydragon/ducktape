@@ -12,7 +12,9 @@ py_library(
     deps = [
         ":fake_inventory",
         ":grpc_service",
+        "//agentplane:crd_group",
         "//agentplane:grpc_calls",
+        "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/runner",

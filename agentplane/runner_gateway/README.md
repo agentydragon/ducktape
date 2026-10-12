@@ -5,7 +5,8 @@ The Sandbox runners' side of Agentplane: Sessions, command admission and deliver
 serves the `RunnerGateway` gRPC service ([API](API.md), [`runner_gateway.proto`](../proto/runner_gateway.proto)) with
 replicas, apart from the Sandbox Service's
 single reconciler and its RBAC. It reads Sandboxes through the Sandbox Service's read-only
-`SandboxReader` (`agentplane.sandbox_service.reader`) and does not provision or delete them.
+`SandboxReader` (`agentplane.sandbox_service.reader`), and Agentplane's own Sandboxes directly, and
+does not provision or delete them.
 
 - `runner_control.py`, `lifecycle_control.py`, `connection_records.py`: the runner connection, and
   the commands and lifecycle requests the replica holding it sends on it.
@@ -14,4 +15,7 @@ single reconciler and its RBAC. It reads Sandboxes through the Sandbox Service's
 - `commands/`: the `sandbox_commands` database that holds the Session identities.
 - `destinations.py`: checking that a request's Sandbox incarnation has a ready runner Pod.
 - `sealing.py`: sealing a Sandbox's runner for teardown, on the Sandbox Service's request.
+- `deletion_seals.py`: the same seal for a deleting Sandbox of Agentplane's own kind
+  (`agentplane/sandbox_resource.py`), run by the replica holding its runner connection, which then
+  sets the Sandbox's `SessionsSealed` condition for the Sandbox Controller.
 - `grpc_api.py`, `settings.py`, `main.py`: the server.

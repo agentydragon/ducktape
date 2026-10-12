@@ -108,6 +108,18 @@ py_library(
     ],
 )
 
+py_library(
+    name = "sandbox_resource",
+    srcs = ["sandbox_resource.py"],
+    deps = [
+        ":crd_group",
+        ":policy_sets",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pydantic",
+    ],
+)
+
 py_test(
     name = "test_policy_sets",
     srcs = ["test_policy_sets.py"],

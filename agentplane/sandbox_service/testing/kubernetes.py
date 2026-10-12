@@ -10,6 +10,8 @@ from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
 
+from agentplane import sandbox_resource
+from agentplane.crd_group import GROUP
 from agentplane.grpc_calls import dial
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination, ServiceAccount
 from agentplane.runner.runner import Runner
@@ -42,6 +44,8 @@ SANDBOX = "test-runner"
 SANDBOX_UID = "40e373bd-2742-43de-8d1c-1ef97c4d4801"
 ACCOUNT = "test-runner-account"
 OWNER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name=ACCOUNT)
+# The fake's store of Agentplane's own Sandboxes, apart from agent-sandbox's of the same plural.
+OWN_SANDBOXES = f"{sandbox_resource.SANDBOXES_PLURAL}.{GROUP}"
 _POD_UID = "test-pod-uid"
 _RUNNER_AUDIENCE = "test-app-runner-control"
 _RUNNER_TOKEN = "test-app-runner-token"
@@ -78,7 +82,7 @@ class Cluster:
 async def kubernetes() -> AsyncIterator[Cluster]:
     # Everything the service reads or writes through this server is in the Sandbox namespace.
     async with fake_apiserver(
-        dict.fromkeys((SANDBOXES_PLURAL, "leases", "services", "endpointslices"), SANDBOX_NAMESPACE)
+        dict.fromkeys((SANDBOXES_PLURAL, OWN_SANDBOXES, "leases", "services", "endpointslices"), SANDBOX_NAMESPACE)
     ) as fake:
         fake.put(
             SANDBOXES_PLURAL,

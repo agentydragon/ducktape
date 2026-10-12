@@ -9,6 +9,7 @@ import grpc
 import pytest
 import pytest_bazel
 
+from agentplane import sandbox_resource
 from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc
 from agentplane.runner_gateway.connection_records import (
     CONNECTION_EPOCH_ANNOTATION,
@@ -23,16 +24,20 @@ from agentplane.runner_gateway.runner_control import ControlTiming
 from agentplane.runner_gateway.testing.runner_control import (
     HELLO,
     OTHER_REPLICA,
+    OWN_RUNNER_TOKEN,
+    OWN_SANDBOX,
+    OWN_SANDBOX_UID,
     REPLICA,
     RUNNER_TOKEN,
+    add_own_sandbox,
     serve_replica_control,
 )
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
-from util.agent_sandbox import SANDBOX_KIND, SANDBOXES_PLURAL
+from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND, SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
-OWNER = RecordOwner(name=SANDBOX, uid=UUID(SANDBOX_UID))
+OWNER = RecordOwner(name=SANDBOX, uid=UUID(SANDBOX_UID), api_version=SANDBOX_API.api_version)
 
 type Replica = Callable[[ConnectionHolder], AbstractAsyncContextManager[runner_control_pb2_grpc.RunnerControlAsyncStub]]
 
@@ -132,6 +137,20 @@ async def test_accepting_records_the_connection_on_the_sandbox(
     assert endpoints["metadata"]["annotations"][CONNECTION_EPOCH_ANNOTATION] == "1"
     assert endpoints["endpoints"][0]["addresses"] == [REPLICA.pod_ip]
     assert [port["name"] for port in endpoints["ports"]] == [port["name"] for port in service["spec"]["ports"]]
+
+
+async def test_a_runner_of_agentplanes_own_sandbox_connects(
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
+) -> None:
+    add_own_sandbox(cluster)
+    async with connect(listener, OWN_RUNNER_TOKEN) as call:
+        await call.write(HELLO)
+        assert (await read_frame(call)).welcome.connection_epoch == 1
+    # The records go with the Sandbox of Agentplane's own kind, not with agent-sandbox's of the name.
+    lease = cluster.fake.objects["leases"][f"{OWN_SANDBOX}-runner"]
+    assert [(ref["apiVersion"], ref["uid"]) for ref in lease["metadata"]["ownerReferences"]] == [
+        (sandbox_resource.SANDBOX_API_VERSION, OWN_SANDBOX_UID)
+    ]
 
 
 async def test_a_connection_through_another_replica_supersedes_this_one(replica: Replica, cluster: Cluster) -> None:

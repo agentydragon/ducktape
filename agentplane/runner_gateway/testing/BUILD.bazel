@@ -61,6 +61,7 @@ py_library(
     srcs = ["runner_control.py"],
     deps = [
         ":control_listener",
+        "//agentplane:sandbox_resource",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/proto:runner_pb2",
@@ -69,6 +70,7 @@ py_library(
         "//agentplane/runner_gateway:runner_control",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
+        "//util:kubernetes",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
@@ -92,6 +94,7 @@ py_library(
         "//agentplane/runner_gateway:runner_control",
         "//agentplane/sandbox_service:reader",
         "//agentplane/workload_auth:principal",
+        "//util:kubernetes",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
