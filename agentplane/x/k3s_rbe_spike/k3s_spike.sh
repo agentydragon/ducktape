@@ -83,7 +83,7 @@ spec:
   containers:
   - name: c
     image: BUSYBOX
-    command: [sh, -c, 'echo hello-from-pvc > /state/f && mkdir -p /www && cp /state/f /www/index.html && httpd -f -p 8080 -h /www']
+    command: [sh, -c, 'echo hello-from-pvc > /state/f && mkdir -p /state/www && cp /state/f /state/www/index.html && httpd -f -p 8080 -h /state/www']
     volumeMounts: [{name: state, mountPath: /state}]
     readinessProbe: {exec: {command: [cat, /state/f]}, periodSeconds: 2}
   volumes: [{name: state, persistentVolumeClaim: {claimName: state}}]
@@ -132,6 +132,7 @@ try_config() {
   if ! $k wait --for=condition=Ready pod/server --timeout=180s; then
     ts "RESULT $name: pod not Ready"
     $k describe pod server | tail -30
+    $k logs server --previous 2>&1 | tail -5
     $k get pods -A -o wide
     $k get events -A | tail -30
     tail -40 "$OUT/k3s-$name.log"
