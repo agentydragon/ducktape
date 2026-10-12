@@ -30,10 +30,24 @@ RELEASE = "openebs-lvm-localpv"
 OUTPUT_DIR = f"{GENERATED_ROOT}/openebs-lvm"
 _PROXMOX = {"topology.kubernetes.io/region": "proxmox"}
 _DRIVER = "local.csi.openebs.io"
-# Every StorageClass `_storage_classes` makes; keep in sync with it.
-STORAGE_CLASSES = frozenset(
-    {*(f"lvm-proxmox-{tier}{suffix}" for tier in ("ssd", "hdd") for suffix in ("", "-block")), "lvm-proxmox-hdd-shared"}
-)
+# Each StorageClass's parameters beyond `storage: lvm`, by name.
+_PARAMETERS = {
+    **{
+        name: parameters
+        for tier in ("ssd", "hdd")
+        for name, parameters in (
+            (f"lvm-proxmox-{tier}", {"volgroup": f"openebs-proxmox-{tier}", "fstype": "ext4", "thinProvision": "yes"}),
+            (f"lvm-proxmox-{tier}-block", {"volgroup": f"openebs-proxmox-{tier}", "thinProvision": "yes"}),
+        )
+    },
+    "lvm-proxmox-hdd-shared": {
+        "volgroup": "openebs-proxmox-hdd",
+        "fstype": "ext4",
+        "thinProvision": "yes",
+        "shared": "yes",
+    },
+}
+STORAGE_CLASSES = frozenset(_PARAMETERS)
 
 
 def _storage_class(scope: Construct, name: str, *, parameters: dict[str, str]) -> None:
@@ -50,17 +64,8 @@ def _storage_class(scope: Construct, name: str, *, parameters: dict[str, str]) -
 
 
 def _storage_classes(scope: Construct) -> None:
-    for tier in ("ssd", "hdd"):
-        volgroup = f"openebs-proxmox-{tier}"
-        _storage_class(
-            scope, f"lvm-proxmox-{tier}", parameters={"volgroup": volgroup, "fstype": "ext4", "thinProvision": "yes"}
-        )
-        _storage_class(scope, f"lvm-proxmox-{tier}-block", parameters={"volgroup": volgroup, "thinProvision": "yes"})
-    _storage_class(
-        scope,
-        "lvm-proxmox-hdd-shared",
-        parameters={"volgroup": "openebs-proxmox-hdd", "fstype": "ext4", "thinProvision": "yes", "shared": "yes"},
-    )
+    for name, parameters in _PARAMETERS.items():
+        _storage_class(scope, name, parameters=parameters)
 
 
 def chart(app: App) -> Chart:
