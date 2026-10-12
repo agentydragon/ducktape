@@ -337,14 +337,12 @@ flowchart LR
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Candidate: production provider and API]
-    VM_VIRTIOFS[In flight: test KubeVirt virtiofs on v1.8.2]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 8]
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
-    VM_VIRTIOFS -. state volume in the guest .-> VM_IMAGE
     VM_CONTROL_NETWORKING --> VM_LIFECYCLE
     VM_IMAGE --> VM_PROCESS_ISOLATION
     VM_PROVIDER --> VM_PROCESS_ISOLATION
@@ -374,6 +372,12 @@ Runner Gateway.
 **Candidate.** Publish a digest-pinned guest with runner/harness versions, blank-disk setup and
 retained state/workspace bounds. Check startup with both harnesses, without ad hoc downloads or
 real credentials baked into the image. Reuse the proven prototype, not another platform evaluation.
+The state PVC reaches the guest through virtiofs (`EnableVirtioFsStorageVolumes`, on in
+`cluster/cdk8s/kubevirt/app.py`; checked live 2026-10-12 with a Fedora 41 guest). KubeVirt v1.8.2
+runs virtiofsd as uid/gid 107 with all capabilities dropped and no setting to change that, so every
+file a guest writes lands on the PVC as `107:107`: guest root can create files but not `chown`
+them, and a non-root guest user cannot create files at all. The guest's runner and harness
+therefore run as guest root.
 
 ### `VM_PROVIDER` — production provider API and lifecycle intent
 
@@ -384,14 +388,6 @@ reconciles to a bare Pod or a `VirtualMachine` (suspend is deleting the Pod or `
 Re-type what is worth keeping from draft #8843 (`vm_view` status mapping and ownership checks, the
 `VmTemplate` catalog, halted create then start, DataVolume validation, halted image replacement)
 onto today's code, then close #8843 unmerged; it cannot be rebased.
-
-### `VM_VIRTIOFS` — the state volume inside a guest
-
-**In flight; the first step toward stateful VMs.** The PVC gate is `EnableVirtioFsStorageVolumes`,
-alpha in v1.8.2, and is on in `cluster/cdk8s/kubevirt/app.py`. Left: check live that a guest mounts a
-filesystem PVC as a directory through `spec.domain.devices.filesystems`, that a pod and a guest see
-the same files on it, and which file ownership and permissions the guest sees. The guest loses its
-XFS `prjquota` on `/state`, so the PVC size is the only bound.
 
 ### `VM_EGRESS` — integrate production admission and proxy path
 
@@ -647,12 +643,16 @@ connects. Resuming by Session ID works while the Sandbox exists, stopped or not.
 **Decision; direction set by the operator, 2026-10-10 and 2026-10-12 PDT.** One filesystem PVC per Sandbox holds the native harness files and the
 runner's state, separate from the workspace; each incarnation's runner continues the same journal
 on it. The Sandbox Service creates and owns it, with no owner reference, mounted as a volume in pods
-and through virtiofs in VMs (`VM_VIRTIOFS`), never from agent-sandbox's `volumeClaimTemplates`,
+and through virtiofs in VMs (`VM_IMAGE`), never from agent-sandbox's `volumeClaimTemplates`,
 which make the agent-sandbox `Sandbox` its controller owner. Decide: whether the runner's state
 goes on it or only the harness files; whether the workspace survives too (operator neutral;
 default: it does, because a revived conversation refers to files the agent made and its cwd must
 exist); storage class, since `local-path` pins a volume to one node and so pins every incarnation
-there; its quota; and refusing an incompatible harness or runner version rather than attempting it.
+there; file ownership, since files a VM writes are `107:107` (`VM_IMAGE`), so a pod incarnation
+that reuses the PVC must run as uid/gid 107 to modify them; its quota (TODO, deferred by the
+operator 2026-10-12: `local-path` enforces no PVC size, and inside a guest `df` shows the node's
+whole disk; #4717 tracks a capacity-enforcing provisioner); and refusing an incompatible harness or
+runner version rather than attempting it.
 
 ### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
 
