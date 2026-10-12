@@ -33,11 +33,12 @@ class ReplicationSource(_ReplicationSource):
         source_pvc: str,
         trigger: ReplicationSourceSpecTrigger,
         mover: ReplicationSourceSpecRsyncTls | ReplicationSourceSpecRestic,
+        paused: bool = False,
     ) -> None:
         if isinstance(mover, ReplicationSourceSpecRsyncTls):
-            spec = ReplicationSourceSpec(source_pvc=source_pvc, trigger=trigger, rsync_tls=mover)
+            spec = ReplicationSourceSpec(source_pvc=source_pvc, trigger=trigger, paused=paused or None, rsync_tls=mover)
         elif isinstance(mover, ReplicationSourceSpecRestic):
-            spec = ReplicationSourceSpec(source_pvc=source_pvc, trigger=trigger, restic=mover)
+            spec = ReplicationSourceSpec(source_pvc=source_pvc, trigger=trigger, paused=paused or None, restic=mover)
         else:
             raise ValueError(f"unsupported mover: {mover!r}")
         super().__init__(scope, id, metadata=metadata, spec=spec)

@@ -65,6 +65,9 @@ def chart(app: App) -> Chart:
                 )
             )
         ),
+        # Parked with the paused app: the state PVC holds 10M files on ovh-ns102453's HDD, and
+        # each run rescans all of them.
+        paused=True,
     )
     return chart
 
