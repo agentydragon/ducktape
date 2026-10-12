@@ -212,21 +212,11 @@ class History:
         await self.store.record_feed_state(session_id, history_service_pb2.SessionFeedState(attached=snapshot))
         await self.fold()
 
-    async def end_feed(self, session_id: UUID, *, error: str | None, error_cursor: int | None = None) -> None:
-        if error is not None:
-            # A folded failure state for UI tests, not a fake archive failure.
-            async with self.sessions.begin() as session:
-                await set_operational(session, session_id, status="failed", error=error, error_cursor=error_cursor)
-                await notify(session, Channel.SUMMARIES)
-            return
-        async with self.sessions() as session:
-            row = await session.get(SessionHistory, session_id)
-        if row is None or row.feed_state is None:
-            raise ValueError("seed an attachment before terminal state")
-        terminal = history_service_pb2.SessionFeedState.FromString(row.feed_state)
-        terminal.ended = True
-        await self.store.record_feed_state(session_id, terminal)
-        await self.fold()
+    async def fail_feed(self, session_id: UUID, *, error: str, error_cursor: int | None = None) -> None:
+        """A folded failure state for UI tests, not a fake archive failure."""
+        async with self.sessions.begin() as session:
+            await set_operational(session, session_id, status="failed", error=error, error_cursor=error_cursor)
+            await notify(session, Channel.SUMMARIES)
 
     async def __aenter__(self) -> Self:
         return self

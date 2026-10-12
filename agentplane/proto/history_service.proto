@@ -69,9 +69,8 @@ message SettledDeltas {
 
 message SessionFeedState {
   .agentplane.proto.runner.Attached attached = 1;
-  // True only after runner EOF at exactly attached.last_cursor. False means
-  // unconfirmed, not evidence of current connectivity or a running harness.
-  bool ended = 2;
+  reserved 2;
+  reserved "ended";
   // The incarnation's seal, once history committed every entry through it. Sticky.
   .agentplane.proto.runner.Sealed sealed = 3;
 }
@@ -113,6 +112,7 @@ enum FeedStatus {
   // No runner attachment observed yet.
   FEED_STATUS_UNSPECIFIED = 0;
   FEED_STATUS_ACTIVE = 1;
+  // The harness stopped after setup; a resumed harness makes the feed active again.
   FEED_STATUS_ENDED = 2;
   FEED_STATUS_FAILED = 3;
 }

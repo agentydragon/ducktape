@@ -179,11 +179,6 @@ async def test_feed_snapshot_requires_covered_bound_history_and_cannot_regress(e
         await store.record_feed_state(session_id, feed)
     await store.append(session_id, [entry(1)])
     await store.record_feed_state(session_id, feed)
-    feed.ended = True
-    await store.record_feed_state(session_id, feed)
-    feed.ended = False
-    await store.record_feed_state(session_id, feed)
-    assert (await Store(engine).read_page(session_id)).feed_state.ended
     conflicting = history_service_pb2.SessionFeedState()
     conflicting.CopyFrom(feed)
     conflicting.attached.spec.cwd = "/another-workspace"
@@ -195,14 +190,13 @@ async def test_feed_snapshot_requires_covered_bound_history_and_cannot_regress(e
     stopped = history_service_pb2.SessionFeedState()
     stopped.CopyFrom(feed)
     stopped.attached.harness_state = runner_pb2.HARNESS_STATE_STOPPED
-    stopped.ended = True
     await store.record_feed_state(session_id, stopped)
     assert (await Store(engine).read_page(session_id)).feed_state == feed
     await store.append(session_id, [entry(2, resumed=True)])
     feed.attached.last_cursor = 2
     await store.record_feed_state(session_id, feed)
     stale = history_service_pb2.SessionFeedState(
-        attached=runner_pb2.Attached(session_id=str(session_id), last_cursor=1), ended=True
+        attached=runner_pb2.Attached(session_id=str(session_id), last_cursor=1)
     )
     await store.record_feed_state(session_id, stale)
     page = await store.read_page(session_id, after_cursor=2)

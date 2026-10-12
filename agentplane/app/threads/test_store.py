@@ -32,6 +32,13 @@ async def seed_thread(
     return thread
 
 
+async def stop_harness(history: History, thread: UUID, *, cursor: int) -> None:
+    await history.record(thread, [event_entry(cursor, harness_exited=event_pb2.HarnessExited())])
+    await history.set_attached(
+        thread, runner_pb2.Attached(spec=SPEC, last_cursor=cursor, harness_state=runner_pb2.HARNESS_STATE_STOPPED)
+    )
+
+
 async def test_thread_views_and_operator_edits_need_no_raw_events(
     store: ThreadStore, event_logs: SeededEventLogStore, history: History
 ) -> None:
@@ -62,7 +69,7 @@ async def test_thread_turn_status_comes_from_the_fold_summary(
 ) -> None:
     last = {} if status is None else {"turn_completed": event_pb2.TurnCompleted(turn_id="turn", status=status)}
     thread = await seed_thread(event_logs, history, sandbox="one", session="test-session", cursor=7, **last)
-    await history.end_feed(thread, error=None)
+    await stop_harness(history, thread, cursor=8)
     view = await store.get_thread(thread)
     assert view is not None
     assert view.last_turn_status == (None if status is None else event_pb2.TurnStatus.Name(status))
@@ -70,21 +77,18 @@ async def test_thread_turn_status_comes_from_the_fold_summary(
     assert await store.list_threads() == [view]
 
 
-async def test_a_confirmed_resume_masks_the_ended_feed_until_a_later_incarnation_ends(
+async def test_a_feed_ends_where_its_harness_stops_and_a_resumed_harness_reopens_it(
     store: ThreadStore, event_logs: SeededEventLogStore, history: History
 ) -> None:
     thread = await seed_thread(event_logs, history, sandbox="one", session="test-resumed-session", cursor=3)
-    await history.end_feed(thread, error=None)
-    await event_logs.resume_pending(thread)
-    resumed = await store.get_thread(thread)
-    assert resumed is not None
-    assert resumed.feed_status == "active"
-    await history.record(thread, [event_entry(4, harness_started=event_pb2.HarnessStarted(resumed=True))])
-    await history.set_attached(thread, runner_pb2.Attached(spec=SPEC, last_cursor=4))
-    await history.end_feed(thread, error=None)
+    await stop_harness(history, thread, cursor=4)
     ended = await store.get_thread(thread)
     assert ended is not None
     assert ended.feed_status == "ended"
+    await history.record(thread, [event_entry(5, harness_started=event_pb2.HarnessStarted(resumed=True))])
+    resumed = await store.get_thread(thread)
+    assert resumed is not None
+    assert resumed.feed_status == "active"
 
 
 async def test_harness_model_and_cwd_come_from_the_attached_runner_spec(

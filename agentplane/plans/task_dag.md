@@ -833,7 +833,7 @@ flowchart TD
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         RUNNER_ERRORS_REHOME[Unscheduled: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
-        FEED_ENDED_RETIRE[Candidate: a feed ends where its harness stopped]
+        THREAD_RESUME_COLUMN_DROP[Waits on rollout: drop thread.resumed_after_cursor]
         KUBEVIRT_GUEST_CONTROL[Candidate: KubeVirt guest dials out]
         RUNNER_CORE_SPLIT[Blocked: runner core out of the inbound servicer]
         ACTION_PROTOCOLS_CONCRETE[Candidate: concrete external-grant authority]
@@ -856,11 +856,12 @@ the gateway, the status translation the Sandbox Service and Runner Gateway clien
 Thread-identity conflicts raise it. Move the client-side error beside that translation, per
 grpc_services.md, and give the app's `bridge.py` its own error type.
 
-### `FEED_ENDED_RETIRE` — a feed ends where its harness stopped
+### `THREAD_RESUME_COLUMN_DROP` — drop `thread.resumed_after_cursor`
 
-**Candidate.** `SessionFeedState.ended`, which only the retired follower set, goes with its merge in
-`Store.record_feed_state`, the fold's branch reading it, `FEED_STATUS_ENDED` and the app's
-`resume_pending` mask: the fold derives the end from a stopped harness.
+**Waits on rollout.** The app no longer reads or writes the column, but its model still declares it
+(a `CLEANUP` tombstone) so the migration drift check passes; app replicas older than that still write
+it. Once staging and production run that app image, a drop migration removes the column and the
+tombstone, as its own PR the operator merges.
 
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 

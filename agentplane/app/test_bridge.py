@@ -1146,7 +1146,7 @@ async def replicas(
         history=event_logs.history,
         gateway=event_logs.gateway,
         history_reader=history_client,
-        summaries=Summaries(replica_engine, history_client),
+        summaries=Summaries(history_client),
     )
     owner = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content)
     try:

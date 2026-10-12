@@ -34,7 +34,7 @@ async def test_materialized_revisions_replicate_with_restricted_role(
     ):
         placements = Placements()
         event_logs = SeededEventLogStore(
-            engine, history=history, gateway=placements, history_reader=reader, summaries=Summaries(engine, reader)
+            engine, history=history, gateway=placements, history_reader=reader, summaries=Summaries(reader)
         )
         source = ReplicationSource(placements)
         source.append(event_pb2.Event(harness_started=event_pb2.HarnessStarted(pid=123)))

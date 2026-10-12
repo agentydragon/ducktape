@@ -91,7 +91,6 @@ class RunnerBridge:
         thread_id = await self._event_logs.open(public_id)
         if thread_id != UUID(public_id):
             raise RunnerError("service Session ID conflicts with the retained Thread identity")
-        await self._event_logs.resume_pending(thread_id)
         attached = runner_pb2.Attached()
         attached.CopyFrom(created.attached)
         return attached
@@ -125,11 +124,9 @@ class RunnerBridge:
             expected_cwd is not None and summary.spec.cwd != expected_cwd
         ):
             raise RunnerError("runner's retained session spec does not match this Thread's harness and workspace")
-        attached = await self._runners.client(sandbox).resume(session_id)
         # The Thread mapping already exists. Do not make runner Resume depend on archive
         # catch-up; its feed exposes that later, and a stale view remains non-authoritative.
-        await self._event_logs.resume_pending(thread_id)
-        return attached
+        return await self._runners.client(sandbox).resume(session_id)
 
     async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """Return the runner's durable receipt; the app archive can catch up later.

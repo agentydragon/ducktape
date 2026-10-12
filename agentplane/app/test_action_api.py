@@ -373,7 +373,7 @@ async def review(
         # A distinct app/store/connection pool, sharing only PostgreSQL and cookie configuration.
         replica_engine = connect(db_url)
         stack.push_async_callback(replica_engine.dispose)
-        replica_summaries = Summaries(replica_engine, history_client)
+        replica_summaries = Summaries(history_client)
         replica = create_app(
             inventory,
             bridge,

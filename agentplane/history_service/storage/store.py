@@ -193,33 +193,30 @@ class Store:
                     snapshot.sealed.CopyFrom(prior.sealed)
                 if snapshot.attached.last_cursor < prior.attached.last_cursor:
                     snapshot.attached.CopyFrom(prior.attached)
-                    snapshot.ended = prior.ended
-                elif snapshot.attached.last_cursor == prior.attached.last_cursor:
-                    if snapshot.attached != prior.attached:
-                        same_except_harness = runner_pb2.Attached()
-                        same_except_harness.CopyFrom(prior.attached)
-                        same_except_harness.harness_state = snapshot.attached.harness_state
-                        if same_except_harness != snapshot.attached:
-                            raise HistoryConflictError("conflicting attachment snapshots at one cursor")
-                        if (
-                            not prior.HasField("sealed")
-                            and prior.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
-                            and snapshot.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
-                            and not snapshot.ended
-                        ):
-                            # Resume can be confirmed before HarnessStarted advances the journal.
-                            pass
-                        elif (
-                            prior.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
-                            and snapshot.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
-                        ):
-                            # Stops have journal entries. A stopped snapshot at the same cursor
-                            # after Resume belongs to the previous run.
-                            snapshot.CopyFrom(prior)
-                        else:
-                            raise HistoryConflictError("conflicting attachment snapshots at one cursor")
+                elif (
+                    snapshot.attached.last_cursor == prior.attached.last_cursor and snapshot.attached != prior.attached
+                ):
+                    same_except_harness = runner_pb2.Attached()
+                    same_except_harness.CopyFrom(prior.attached)
+                    same_except_harness.harness_state = snapshot.attached.harness_state
+                    if same_except_harness != snapshot.attached:
+                        raise HistoryConflictError("conflicting attachment snapshots at one cursor")
+                    if (
+                        not prior.HasField("sealed")
+                        and prior.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+                        and snapshot.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+                    ):
+                        # Resume can be confirmed before HarnessStarted advances the journal.
+                        pass
+                    elif (
+                        prior.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+                        and snapshot.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+                    ):
+                        # Stops have journal entries. A stopped snapshot at the same cursor
+                        # after Resume belongs to the previous run.
+                        snapshot.CopyFrom(prior)
                     else:
-                        snapshot.ended = snapshot.ended or prior.ended
+                        raise HistoryConflictError("conflicting attachment snapshots at one cursor")
             serialized = snapshot.SerializeToString(deterministic=True)
             if row.feed_state != serialized:
                 row.feed_state = serialized

@@ -31,10 +31,10 @@ async def project_lifecycle(
         # A page may carry a feed snapshot past the entries folded so far. Wait until the fold
         # covers it; never leap the view over unfolded Events.
         if cursor <= through_cursor and (attached is None or cursor >= attached.last_cursor):
-            same_cursor = attached is not None and cursor == attached.last_cursor
+            if attached is None or cursor != attached.last_cursor:
+                end = None
             attached = runner_pb2.Attached()
             attached.CopyFrom(feed.attached)
-            end = {} if feed.ended else end if same_cursor else None
     if attached is None:
         # Successful projection clears an earlier projection error even if imported
         # history has no runner lifecycle snapshot. This does not manufacture EOF.
@@ -43,17 +43,18 @@ async def project_lifecycle(
         if entry.cursor <= attached.last_cursor:
             continue
         project_attached(attached, entry)
-        # Any suffix invalidates EOF at the old prefix, including failed setup/restart.
+        # Any suffix invalidates a failure at the old prefix, including failed setup/restart.
         end = None
-    if (
-        end is None
-        and attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
-        and attached.setup_state != runner_pb2.SETUP_STATE_RUNNING
-        and attached.launch_outcome != runner_pb2.LAUNCH_OUTCOME_PENDING
-    ):
-        # A pushed journal has no attachment to reach EOF; its stopped harness is where a followed one ended.
-        # A harness waiting on setup or still launching has not started yet, so it has not ended either.
-        end = {}
+    if not end:
+        # A feed ends where its harness stopped, and a resumed harness reopens it. A harness
+        # waiting on setup or still launching has not started yet, so it has not ended either.
+        end = (
+            {}
+            if attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
+            and attached.setup_state != runner_pb2.SETUP_STATE_RUNNING
+            and attached.launch_outcome != runner_pb2.LAUNCH_OUTCOME_PENDING
+            else None
+        )
     summary.attached = MessageToDict(attached)
     summary.end = end
     operational_changed = await set_operational(

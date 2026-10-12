@@ -1,4 +1,4 @@
-"""A Thread's fold summary, from the History Service, with the app's own record of confirmed resumes."""
+"""A Thread's fold summary, from the History Service."""
 
 from __future__ import annotations
 
@@ -8,14 +8,8 @@ from datetime import UTC, datetime
 from uuid import UUID
 
 import grpc
-from sqlalchemy import select
-from sqlalchemy.dialects.postgresql import insert
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
-from agentplane.app.database_updates import Channel
-from agentplane.app.threads.models import Thread
 from agentplane.history_service.client import HistoryServiceClient, HistoryServiceError
-from agentplane.postgres.wakeups import notify
 from agentplane.proto import history_service_pb2, runner_pb2
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -57,8 +51,7 @@ NOTHING_FOLDED = FoldSummary(
 class Summaries:
     """A Session the History Service has not folded yet reads as nothing folded."""
 
-    def __init__(self, engine: AsyncEngine, history: HistoryServiceClient) -> None:
-        self._sessions = async_sessionmaker(engine, expire_on_commit=False)
+    def __init__(self, history: HistoryServiceClient) -> None:
         self._history = history
 
     async def get(self, thread_id: UUID) -> FoldSummary:
@@ -68,7 +61,7 @@ class Summaries:
             if error.code != grpc.StatusCode.NOT_FOUND:
                 raise
             return NOTHING_FOLDED
-        return _summary(summary, (await self._resumes({thread_id})).get(thread_id))
+        return _summary(summary)
 
     async def many(self, thread_ids: Collection[UUID]) -> dict[UUID, FoldSummary]:
         """At most one History Service read's worth of Threads."""
@@ -76,45 +69,16 @@ class Summaries:
             UUID(summary.session_id): summary
             for summary in await self._history.batch_get_session_summaries([str(thread_id) for thread_id in thread_ids])
         }
-        resumes = await self._resumes(thread_ids)
         return {
-            thread_id: _summary(listed[thread_id], resumes.get(thread_id)) if thread_id in listed else NOTHING_FOLDED
+            thread_id: _summary(listed[thread_id]) if thread_id in listed else NOTHING_FOLDED
             for thread_id in thread_ids
         }
 
     async def folded_through(self, thread_id: UUID) -> int:
         return (await self.get(thread_id)).folded_through
 
-    async def resume_pending(self, thread_id: UUID) -> None:
-        """A runner-confirmed restart supersedes a normal terminal feed, not a replay error.
 
-        The terminal feed is masked until the fold attaches past it, so an SSE reader does not
-        mistake the previous incarnation's end for the new one.
-        """
-        summary = await self.get(thread_id)
-        if summary.feed is None or not isinstance(summary.feed.end, FeedEnd):
-            return
-        async with self._sessions.begin() as session:
-            await session.execute(
-                insert(Thread)
-                .values(id=thread_id, resumed_after_cursor=summary.feed.attached.last_cursor)
-                .on_conflict_do_update(
-                    index_elements=[Thread.id], set_={"resumed_after_cursor": summary.feed.attached.last_cursor}
-                )
-            )
-            await notify(session, Channel.THREADS)
-
-    async def _resumes(self, thread_ids: Collection[UUID]) -> dict[UUID, int]:
-        async with self._sessions() as session:
-            rows = await session.execute(
-                select(Thread.id, Thread.resumed_after_cursor).where(
-                    Thread.id.in_(thread_ids), Thread.resumed_after_cursor.is_not(None)
-                )
-            )
-            return {row.id: row.resumed_after_cursor for row in rows}
-
-
-def _summary(summary: history_service_pb2.SessionSummary, resumed_after_cursor: int | None) -> FoldSummary:
+def _summary(summary: history_service_pb2.SessionSummary) -> FoldSummary:
     feed = None
     if summary.HasField("attached"):
         end: FeedEnd | FeedError | None
@@ -127,8 +91,6 @@ def _summary(summary: history_service_pb2.SessionSummary, resumed_after_cursor: 
                 end = FeedError(summary.feed_error)
             case status:
                 raise ValueError(f"attached Session summary without a feed status: {status=}")
-        if resumed_after_cursor is not None and summary.attached.last_cursor <= resumed_after_cursor:
-            end = None
         feed = FeedSnapshot(summary.attached, end)
     return FoldSummary(
         folded_through=summary.folded_through,

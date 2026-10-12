@@ -73,7 +73,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
         assert view_before is not None
         semantic_revision = (view_before.cursor, view_before.revision_cursor)
 
-    await history.end_feed(thread, error="expected runner cursor 2, received 3", error_cursor=3)
+    await history.fail_feed(thread, error="expected runner cursor 2, received 3", error_cursor=3)
     async with history.sessions() as session:
         checkpoint_after = await session.get(ThreadCheckpoint, thread)
         assert checkpoint_after is not None
@@ -100,7 +100,7 @@ async def test_feed_failure_is_a_synced_operational_state_without_advancing_the_
     assert (view_reset.cursor, view_reset.revision_cursor) == semantic_revision
     assert reset.model_dump() == {"status": "active", "last_verified_cursor": "1", "feed_error": None}
 
-    await history.end_feed(thread, error="projection invariant failed")
+    await history.fail_feed(thread, error="projection invariant failed")
     async with history.sessions() as session:
         unknown_failure = await session.get(
             ThreadEntity, (thread, checkpoint_after.projection_epoch, "view_state", "current")

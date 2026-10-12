@@ -318,7 +318,7 @@ def app(
     before a route body runs, and the document comes from the signatures -- so nothing here connects."""
     engine = connect("postgresql+asyncpg://live-test@127.0.0.1:1/live-test")
     history = HistoryServiceClient("127.0.0.1:1", token_file=tmp_path / "unused-history-token", request_timeout_s=1)
-    summaries = Summaries(engine, history)
+    summaries = Summaries(history)
     event_logs, content = (
         event_log.EventLogStore(engine, history_reader=history, summaries=summaries),
         ContentStore(engine, history_reader=history),

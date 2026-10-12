@@ -139,8 +139,8 @@ async def history_client(service_history_db_url: str, history_token_file: Path) 
 
 
 @pytest.fixture
-def summaries(engine: AsyncEngine, history_client: HistoryServiceClient) -> Summaries:
-    return Summaries(engine, history_client)
+def summaries(history_client: HistoryServiceClient) -> Summaries:
+    return Summaries(history_client)
 
 
 @pytest.fixture
@@ -212,7 +212,7 @@ async def replica(
     db_url: str, event_logs: SeededEventLogStore, history_client: HistoryServiceClient, gateway: RunnerGatewayClient
 ) -> AsyncIterator[Replica]:
     async with managed_async_engine(connect(db_url)) as engine:
-        summaries = Summaries(engine, history_client)
+        summaries = Summaries(history_client)
         yield Replica(
             ThreadStore(engine, summaries, gateway=gateway),
             SeededEventLogStore(

@@ -209,7 +209,7 @@ async def _serve(
         token_file = Path(directory) / "token"
         await asyncio.to_thread(token_file.write_text, "test-app-sandbox-peer")
         history = HistoryServiceClient(history_target, token_file=history_token_file, request_timeout_s=10)
-        summaries = Summaries(engine, history)
+        summaries = Summaries(history)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         content = ContentStore(engine, history_reader=history)
         async with (

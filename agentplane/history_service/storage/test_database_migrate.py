@@ -41,7 +41,7 @@ def test_follower_snapshots_take_the_public_session_id(db_url: str) -> None:
         harness_state=runner_pb2.HARNESS_STATE_STOPPED,
         active_turn_id="test-turn",
     )
-    feed = history_service_pb2.SessionFeedState(attached=attached, ended=True, sealed=runner_pb2.Sealed(cursor=3))
+    feed = history_service_pb2.SessionFeedState(attached=attached, sealed=runner_pb2.Sealed(cursor=3))
     engine = create_engine(RUNNER.sync_url(db_url))
     try:
         with engine.begin() as connection:

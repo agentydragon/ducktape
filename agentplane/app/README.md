@@ -50,8 +50,7 @@ bbr test //agentplane/app/...
 - `action_policy.py`: read-only binding views composed with Action Service's effective-policy answer.
   Launch grants and binding mutations belong to Sandbox Service, not this app or its preset catalog.
 - `threads/`: Threads over the History Service. The app's database holds each Thread's identity
-  (`EventLog`), the name and archive state an operator sets, and the cursor a confirmed resume masks
-  the feed's end before (`models.py`). Everything folded from a Session's events (summaries, entities,
+  (`EventLog`) and the name and archive state an operator sets (`models.py`). Everything folded from a Session's events (summaries, entities,
   payload chunks, evidence) is the History Service's, read over its gRPC API (`summaries.py`,
   `view/`) or replicated by Electric from its database. `history_watch.py` follows the History
   Service's watch: `HistoryWatch` turns its fold commits into `Channel.THREADS` wake-ups, and
@@ -124,9 +123,8 @@ History Service's ingress, and the History Service folds them under per-Session 
 A Session gets its Thread from the History Service's watch, which names each Session it records
 on the runner's first push; every stream resumes after the last one the replica opened, and a new
 process starts from the first. Opening a Thread does not restart its harness. Explicit Open starts or resumes it without waiting for its history;
-a confirmed resume masks the feed's earlier end, so a resumed browser does not read the previous
-harness's terminal state. On a
-Thread page, **Resume harness** opens that Thread's existing runner session using its retained
+its feed reads ended while the harness is stopped and active again once the resumed harness reports
+started. On a Thread page, **Resume harness** opens that Thread's existing runner session using its retained
 runner-owned spec; it cannot create a new Thread or substitute another harness.
 
 After interruption/resume, runner `ConversationReconciled` events give each affected item a

@@ -55,7 +55,7 @@ async def test_remote_history_reads_its_own_committed_prefix(engine: AsyncEngine
     reader = Reader()
     remote = EventLogStore(
         engine,
-        summaries=Summaries(engine, cast(HistoryServiceClient, reader)),
+        summaries=Summaries(cast(HistoryServiceClient, reader)),
         history_reader=cast(HistoryServiceClient, reader),
     )
     assert await remote.events(thread_id, limit=1) == []
@@ -89,7 +89,7 @@ async def test_service_read_does_not_chase_a_growing_watermark(engine: AsyncEngi
             )
 
     reader = cast(HistoryServiceClient, Reader())
-    remote = EventLogStore(engine, summaries=Summaries(engine, reader), history_reader=reader)
+    remote = EventLogStore(engine, summaries=Summaries(reader), history_reader=reader)
     assert [e.cursor for e in await remote.events(thread_id, limit=10)] == [1, 2]
     assert calls == [0, 1]
 
@@ -117,7 +117,7 @@ async def test_service_read_walks_over_settled_ranges(engine: AsyncEngine) -> No
             return history_service_pb2.ReadSessionObservationsResponse(last_cursor=7)
 
     reader = cast(HistoryServiceClient, Reader())
-    remote = EventLogStore(engine, summaries=Summaries(engine, reader), history_reader=reader)
+    remote = EventLogStore(engine, summaries=Summaries(reader), history_reader=reader)
     assert [entry.cursor for entry in await remote.events(thread_id, limit=10)] == [1, 2, 6, 7]
     assert await remote.observation_entry(thread_id, 4) is None
     observed = await remote.observation_entry(thread_id, 6)
@@ -137,14 +137,14 @@ async def test_service_read_rejects_invalid_pages(engine: AsyncEngine, case: str
             return history_service_pb2.ReadSessionEventsResponse(last_cursor=1 if case == "gap" else 0, entries=entries)
 
     reader = cast(HistoryServiceClient, Reader())
-    remote = EventLogStore(engine, summaries=Summaries(engine, reader), history_reader=reader)
+    remote = EventLogStore(engine, summaries=Summaries(reader), history_reader=reader)
     with pytest.raises(ConnectionError):
         await remote.events(thread_id, after_cursor=1 if case == "resume_ahead" else 0, limit=1)
 
 
 async def test_concurrent_replicas_create_one_service_thread(engine: AsyncEngine) -> None:
     reader = AsyncMock(spec=HistoryServiceClient)
-    stores = [EventLogStore(engine, summaries=Summaries(engine, reader), history_reader=reader) for _ in range(2)]
+    stores = [EventLogStore(engine, summaries=Summaries(reader), history_reader=reader) for _ in range(2)]
     public_id = uuid4()
     first, second = await asyncio.gather(*(store.open(str(public_id)) for store in stores))
     assert first == second == public_id
@@ -173,7 +173,7 @@ async def test_service_observation_pages_do_not_require_app_raw_rows(
     )
     remote = EventLogStore(
         engine,
-        summaries=Summaries(engine, cast(HistoryServiceClient, reader)),
+        summaries=Summaries(cast(HistoryServiceClient, reader)),
         history_reader=cast(HistoryServiceClient, reader),
     )
     page = await remote.observations(thread, before_cursor=before, after_cursor=after, limit=2)
@@ -200,7 +200,7 @@ async def test_service_observation_pages_treat_settled_ranges_as_covered(
         settled=SETTLED.ranges,
     )
     client = cast(HistoryServiceClient, reader)
-    remote = EventLogStore(engine, summaries=Summaries(engine, client), history_reader=client)
+    remote = EventLogStore(engine, summaries=Summaries(client), history_reader=client)
     page = await remote.observations(
         UUID("00000000-0000-0000-0000-000000000001"), before_cursor=before, after_cursor=after, limit=2
     )
@@ -212,7 +212,7 @@ async def test_service_observation_page_rejects_missing_entries(engine: AsyncEng
     reader.read_session_observations.return_value = history_service_pb2.ReadSessionObservationsResponse(last_cursor=5)
     remote = EventLogStore(
         engine,
-        summaries=Summaries(engine, cast(HistoryServiceClient, reader)),
+        summaries=Summaries(cast(HistoryServiceClient, reader)),
         history_reader=cast(HistoryServiceClient, reader),
     )
     with pytest.raises(ConnectionError, match="invalid service observation"):
@@ -226,7 +226,7 @@ async def test_a_session_the_history_service_has_not_recorded_opens_with_empty_h
     reader.read_session_observations.side_effect = HistoryServiceError(
         grpc.StatusCode.NOT_FOUND, "test-unrecorded-session"
     )
-    store = EventLogStore(engine, summaries=Summaries(engine, reader), history_reader=reader)
+    store = EventLogStore(engine, summaries=Summaries(reader), history_reader=reader)
     thread_id = await store.open(str(uuid4()))
     assert await store.exists(thread_id)
     assert await store.events(thread_id, limit=10) == []
@@ -241,7 +241,7 @@ async def test_public_session_open_preserves_retained_identity(engine: AsyncEngi
     reader = AsyncMock(spec=HistoryServiceClient)
     current = EventLogStore(
         engine,
-        summaries=Summaries(engine, cast(HistoryServiceClient, reader)),
+        summaries=Summaries(cast(HistoryServiceClient, reader)),
         history_reader=cast(HistoryServiceClient, reader),
     )
     assert await current.open(str(public_id)) == public_id
@@ -257,7 +257,7 @@ async def test_open_refuses_a_runner_session_id(engine: AsyncEngine) -> None:
     reader = AsyncMock(spec=HistoryServiceClient)
     current = EventLogStore(
         engine,
-        summaries=Summaries(engine, cast(HistoryServiceClient, reader)),
+        summaries=Summaries(cast(HistoryServiceClient, reader)),
         history_reader=cast(HistoryServiceClient, reader),
     )
     with pytest.raises(SessionAdmissionError, match="canonical"):
@@ -269,7 +269,7 @@ async def test_a_thread_exists_by_its_public_identity(engine: AsyncEngine) -> No
     reader = AsyncMock(spec=HistoryServiceClient)
     current = EventLogStore(
         engine,
-        summaries=Summaries(engine, cast(HistoryServiceClient, reader)),
+        summaries=Summaries(cast(HistoryServiceClient, reader)),
         history_reader=cast(HistoryServiceClient, reader),
     )
     assert await current.exists(public_id)

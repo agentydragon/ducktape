@@ -286,7 +286,6 @@ py_test(
         "//agentplane/history_service/storage:store",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
-        "//agentplane/proto:history_service_pb2",
         "//agentplane/proto:runner_ingress_pb2",
         "//agentplane/proto:runner_ingress_pb2_grpc",
         "//agentplane/proto:runner_pb2",

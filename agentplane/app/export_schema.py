@@ -66,7 +66,7 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
     # An engine connects lazily, so a URL nothing listens on is fine for a document.
     engine = connect("postgresql+asyncpg://schema@localhost/schema")
     database_updates = create_database_updates(engine.url)
-    summaries = Summaries(engine, history)
+    summaries = Summaries(history)
     event_logs, content = (
         EventLogStore(engine, summaries=summaries, history_reader=history),
         ContentStore(engine, history_reader=history),

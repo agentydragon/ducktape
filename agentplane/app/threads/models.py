@@ -31,8 +31,8 @@ class EventLog(Base):
 
 
 class Thread(Base):
-    """What an operator has set on an event log's thread, and the app's record of a confirmed resume.
-    No row means the defaults: unnamed, not archived and not resumed, so opening a Thread never has to create one."""
+    """What an operator has set on an event log's thread.
+    No row means the defaults: unnamed and not archived, so opening a Thread never has to create one."""
 
     __tablename__ = "thread"
 
@@ -42,5 +42,6 @@ class Thread(Base):
     # NULL while unnamed; never the empty string.
     name: Mapped[str | None] = mapped_column(Text)
     archived: Mapped[bool] = mapped_column(Boolean, default=False, server_default=text("false"))
-    # A runner-confirmed restart: a terminal feed at or before this cursor belongs to the previous incarnation.
+    # CLEANUP(added 2026-10-12): Nothing reads or writes this any more. Remove it with a migration that
+    #   drops the column once no deployed app image writes it (images built before #10103).
     resumed_after_cursor: Mapped[int | None] = mapped_column(BigInteger)

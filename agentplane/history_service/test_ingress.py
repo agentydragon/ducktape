@@ -15,14 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.grpc_serving import serving
 from agentplane.history_service.ingress import Resources, Timing, add_ingress
 from agentplane.history_service.storage.store import Store
-from agentplane.proto import (
-    event_log_pb2,
-    event_pb2,
-    history_service_pb2,
-    runner_ingress_pb2,
-    runner_ingress_pb2_grpc,
-    runner_pb2,
-)
+from agentplane.proto import event_log_pb2, event_pb2, runner_ingress_pb2, runner_ingress_pb2_grpc, runner_pb2
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 
 # gazelle:include_dep //agentplane/history_service/storage:conftest
@@ -197,10 +190,6 @@ async def test_resume_announce_at_stopped_cursor_accepts_the_next_journal_entry(
         call = await push(stub, [stopped, *entries(1)])
         await call.acknowledged(1)
         call.call.cancel()
-        # EOF was recorded before the runner resumed at the same cursor.
-        await Store(engine).record_feed_state(
-            session_id, history_service_pb2.SessionFeedState(attached=stopped.announce, ended=True)
-        )
         resumed = announce(session_id, last_cursor=1)
         resumed.announce.harness_state = runner_pb2.HARNESS_STATE_RUNNING
         call = await push(stub, [resumed, *entries(2)])
@@ -208,7 +197,6 @@ async def test_resume_announce_at_stopped_cursor_accepts_the_next_journal_entry(
         call.call.cancel()
     page = await Store(engine).read_page(session_id, after_cursor=1)
     assert page.feed_state.attached == resumed.announce
-    assert not page.feed_state.ended
     assert list(page.entries) == [entry(2)]
 
 

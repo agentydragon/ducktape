@@ -175,7 +175,7 @@ async def _followed_body(engine: AsyncEngine, token_file: Path) -> AsyncIterator
             history=history,
             gateway=placements,
             history_reader=history_client,
-            summaries=Summaries(engine, history_client),
+            summaries=Summaries(history_client),
         )
         source = ReplicationSource(placements)
         thread = await event_logs.seed(SANDBOX, SESSION)

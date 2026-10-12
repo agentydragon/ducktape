@@ -90,15 +90,11 @@ py_library(
     name = "summaries",
     srcs = ["summaries.py"],
     deps = [
-        ":models",
-        "//agentplane/app:database_updates",
         "//agentplane/history_service:client",
-        "//agentplane/postgres:wakeups",
         "//agentplane/proto:history_service_pb2",
         "//agentplane/proto:runner_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
-        "@pypi//sqlalchemy",
     ],
 )
 

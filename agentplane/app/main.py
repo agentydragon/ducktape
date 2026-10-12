@@ -158,7 +158,7 @@ async def async_main(settings: Settings) -> None:
         )
         engine = connect(settings.database_url)
         database_updates = create_database_updates(engine.url)
-        summaries = Summaries(engine, history)
+        summaries = Summaries(history)
         content = ContentStore(engine, history_reader=history)
         history_watch = HistoryWatch(
             history_watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=1

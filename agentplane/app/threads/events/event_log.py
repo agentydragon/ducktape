@@ -66,10 +66,6 @@ class EventLogStore:
                 await notify(session, Channel.THREADS)
         return thread_id
 
-    async def resume_pending(self, thread_id: UUID) -> None:
-        """A runner-confirmed restart supersedes a normal terminal feed, not a replay error."""
-        await self._summaries.resume_pending(thread_id)
-
     async def exists(self, thread_id: UUID) -> bool:
         async with self._sessions() as session:
             return await session.get(EventLog, thread_id) is not None
