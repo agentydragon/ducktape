@@ -290,7 +290,7 @@ export function SandboxPage({
   const [instructions, setInstructions] = useState("");
   const [cwdTemplate, setCwdTemplate] = useState("/state/workspaces/{session_id}");
   const [setupScript, setSetupScript] = useState("");
-  const [defaultsLabel, setDefaultsLabel] = useState<string | null>(null);
+  const [inheritsDefaults, setInheritsDefaults] = useState(false);
   // Launch-form offerings; existing threads retain their harness and model.
   const [harness, setHarness] = useState<Harness>("HARNESS_CLAUDE");
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
@@ -386,13 +386,13 @@ export function SandboxPage({
   const applyBindingDefaults = useEffectEvent(() => {
     const binding = sandbox?.binding;
     if (!binding) {
-      setDefaultsLabel(null);
+      setInheritsDefaults(false);
       setCwdTemplate("/state/workspaces/{session_id}");
       setSetupScript("");
       return;
     }
     const defaults = binding.session_defaults;
-    setDefaultsLabel(defaults ? "Sandbox defaults" : null);
+    setInheritsDefaults(Boolean(defaults));
     if (!defaults) {
       setCwdTemplate("/state/workspaces/{session_id}");
       setSetupScript("");
@@ -510,11 +510,6 @@ export function SandboxPage({
           {sandbox && (
             <Badge color={SANDBOX_STATUS_MARKS[sandboxSummary(sandbox).kind].color} style={{ flexShrink: 0 }}>
               {sandboxSummary(sandbox).label}
-            </Badge>
-          )}
-          {defaultsLabel && (
-            <Badge variant="light" style={{ flexShrink: 0 }}>
-              {defaultsLabel}
             </Badge>
           )}
         </Group>
@@ -652,7 +647,7 @@ export function SandboxPage({
             )}
             <Textarea
               label="Standing instructions"
-              description={defaultsLabel ? "Inherited from this sandbox; editable for this thread" : undefined}
+              description={inheritsDefaults ? "Inherited from this sandbox; editable for this thread" : undefined}
               autosize
               minRows={2}
               value={instructions}
