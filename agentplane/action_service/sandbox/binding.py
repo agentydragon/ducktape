@@ -8,50 +8,20 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_serializer
+from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.crd_group import GROUP
 
-# The sandbox Actions' own namespace, for the labels they stamp and the annotation they read.
+# The sandbox Actions' own namespace, for the labels they stamp on a box.
 PREFIX = f"sandbox-actions.{GROUP}"
-# Where an offered SandboxTemplate says what a box made from it holds, for the agent choosing one.
-DESCRIPTION_ANNOTATION = f"{PREFIX}/description"
 
 
-# CLEANUP(added 2026-10-12): delete with its inventory, DESCRIPTION_ANNOTATION and the Action
-#   Service's Sandbox RBAC once no deployed config names `kind: sandbox` (staging moves to `pod`).
-class SandboxExecutorBinding(BaseModel):
-    """Sandboxes stamped and exec'd by this service rather than reached over MCP.
+class PodExecutorBinding(BaseModel):
+    """Boxes started and exec'd by this service rather than reached over MCP.
 
     A code-owned executor exists because the caller's identity is the whole point of this Action:
     `ExecutionRequest.caller` is set by the authenticated admission path and read here directly,
     where an MCP backend would need that assertion forwarded to it over the wire.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    kind: Literal["sandbox"] = "sandbox"
-    description: str = Field(min_length=1, max_length=2000, description="Agent-visible executor description.")
-    namespace: str = Field(min_length=1, description="Namespace Sandboxes are stamped into and exec'd in.")
-    templates: set[str] = Field(
-        min_length=1,
-        description="The SandboxTemplates in the namespace a caller may create a box from, by name. Only "
-        "these: a caller free to name any would stamp whatever template the namespace holds.",
-    )
-    max_timeout_seconds: int = Field(default=1800, gt=0, le=3600)
-    max_output_bytes: int = Field(default=200_000, ge=0, le=1_000_000)
-
-    @field_serializer("templates")
-    def _sorted_templates(self, templates: set[str]) -> list[str]:
-        # A set's iteration order follows per-process string hashing, and the manifest generator
-        # writes this binding into a ConfigMap that has to come out the same on every run.
-        return sorted(templates)
-
-
-class PodExecutorBinding(BaseModel):
-    """Boxes this service starts as plain Pods running as the caller, from PodTemplates it offers.
-
-    Code-owned for the same reason as `SandboxExecutorBinding`.
     """
 
     model_config = ConfigDict(extra="forbid")

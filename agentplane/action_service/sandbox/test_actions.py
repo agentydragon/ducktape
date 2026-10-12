@@ -5,20 +5,20 @@ import pytest
 import pytest_bazel
 
 from agentplane.action_service.sandbox.actions import SandboxAction, actions
-from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import PodExecutorBinding
 
 # types-jsonschema stubs import referencing; the mypy aspect needs that typed package directly.
 # gazelle:include_dep @pypi//referencing
 
 NAMESPACE = "agentplane-test"
 TEMPLATE = "test-template"
-BINDING = SandboxExecutorBinding(description="test sandboxes", namespace=NAMESPACE, templates={TEMPLATE})
+BINDING = PodExecutorBinding(description="test sandboxes", namespace=NAMESPACE, templates={TEMPLATE: "the test box"})
 
 
 def test_the_offered_actions_name_the_offered_templates() -> None:
     """create's own description is where an agent learns which templates exist, and naming one that
     is not offered is the likeliest way to get create wrong."""
-    offered = actions(BINDING, {TEMPLATE: "the test box"})
+    offered = actions(BINDING)
     assert set(offered) == set(SandboxAction)
     assert '"test-template": "the test box"' in offered[SandboxAction.CREATE].description
     assert offered[SandboxAction.EXEC].input_schema["additionalProperties"] is False
@@ -32,14 +32,14 @@ def test_exec_admits_nothing_past_the_deployment_caps(
 ) -> None:
     """Submission checks arguments against the advertised schema, as the service does. Past a cap,
     exec would cut the run short, so the request is refused where the caller sees why."""
-    binding = SandboxExecutorBinding(
+    binding = PodExecutorBinding(
         description="test sandboxes",
         namespace=NAMESPACE,
-        templates={TEMPLATE},
+        templates={TEMPLATE: "the test box"},
         max_timeout_seconds=60,
         max_output_bytes=1000,
     )
-    schema = actions(binding, {TEMPLATE: "the test box"})[SandboxAction.EXEC].input_schema
+    schema = actions(binding)[SandboxAction.EXEC].input_schema
     arguments = {
         "name": "box",
         "script": "true",

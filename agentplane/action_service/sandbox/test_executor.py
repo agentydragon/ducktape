@@ -19,7 +19,7 @@ from pydantic import JsonValue
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.models import ExecutionRequest, ExecutionState
 from agentplane.action_service.sandbox.actions import SandboxAction
-from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.executor import SandboxExecutor
 from agentplane.action_service.sandbox.inventory import ForeignSandboxError, SandboxActionError
 from agentplane.action_service.sandbox.models import READY_CONDITION, SandboxCondition, SandboxInfo
@@ -34,10 +34,8 @@ OTHER = ServiceAccountRef(namespace=NAMESPACE, name="caller-two")
 ELSEWHERE = ServiceAccountRef(namespace="somewhere-else", name="caller-one")
 
 TEMPLATE = "test-template"
-BINDING = SandboxExecutorBinding(description="test sandboxes", namespace=NAMESPACE, templates={TEMPLATE})
-TEMPLATE_SPEC: dict[str, JsonValue] = {
-    "podTemplate": {"spec": {"containers": [{"name": "workspace", "image": "test-image:unset"}]}}
-}
+BINDING = PodExecutorBinding(description="test sandboxes", namespace=NAMESPACE, templates={TEMPLATE: "the test box"})
+TEMPLATE_POD: dict[str, JsonValue] = {"spec": {"containers": [{"name": "workspace", "image": "test-image:unset"}]}}
 
 
 def _ready() -> SandboxCondition:
@@ -70,7 +68,7 @@ class FakeInventory:
         return SandboxInfo(name=name, conditions=[_ready()], template=template)
 
     async def get_template(self, name: str) -> dict[str, JsonValue]:
-        return {"metadata": {"name": name}, "spec": TEMPLATE_SPEC}
+        return TEMPLATE_POD
 
     async def get(self, caller: ServiceAccountRef, name: str) -> SandboxInfo:
         self._record(caller)
@@ -243,11 +241,11 @@ async def test_an_unexpected_failure_is_not_swallowed(executor: SandboxExecutor,
         await executor.execute(_request(SandboxAction.DISPOSE, {"name": "box"}), LEASE)
 
 
-async def test_a_template_comes_back_as_the_object_itself(executor: SandboxExecutor) -> None:
+async def test_a_template_comes_back_as_the_pod_itself(executor: SandboxExecutor) -> None:
     """Not a summary wrapped around it: the agent reads the Kubernetes object it already knows."""
     result = await executor.execute(_request(SandboxAction.GET_TEMPLATE, {"template": TEMPLATE}), LEASE)
     assert result.state is ExecutionState.SUCCEEDED
-    assert result.result == {"metadata": {"name": TEMPLATE}, "spec": TEMPLATE_SPEC}
+    assert result.result == TEMPLATE_POD
 
 
 if __name__ == "__main__":

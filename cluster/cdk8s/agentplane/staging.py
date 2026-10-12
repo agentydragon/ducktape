@@ -25,7 +25,7 @@ from agentplane.action_service.catalog import ActionGroup, McpExecutorBinding
 from agentplane.action_service.mcp_settings import McpClientMetadataSettings, McpOAuthServer
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.sandbox.actions import SandboxAction
-from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
 from cluster.cdk8s import agent_access_profiles, cilium, external_creds, ha_mcp, node_scheduling
 from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, policy_controller, staging_config
@@ -184,14 +184,11 @@ _ACTION_GROUPS = {
             "sandbox reaches what its caller's egress bindings allow and is admitted back to this "
             "service as that same caller, so it confers no authority the caller did not hold."
         ),
-        executor=SandboxExecutorBinding(
-            kind="sandbox",
-            description="Stamped and exec'd by this service, as the caller, in its own namespace.",
+        executor=PodExecutorBinding(
+            kind="pod",
+            description="Created and exec'd by this service, as the caller, in its own namespace.",
             namespace=STAGING_NAMESPACE,
-            # Each describes itself in the annotation the sandbox Actions read. The integration app's
-            # runner template is offered for a caller that wants the harnesses or a state volume
-            # that survives its Pod.
-            templates={command_sandbox.NAME, command_sandbox.BUILD_NAME, "runner", "runner-ducktape"},
+            templates=command_sandbox.TEMPLATES,
         ),
         # claude.ai and Claude Code reach these as MCP tools of their own, where `sandbox-self`
         # auto-approves them for the Connection's claude-ai account.
@@ -395,11 +392,6 @@ def chart(app: App) -> Chart:
         image="git.allegedly.works/ducktape-ci/runner-ducktape",
         buildbuddy_secret=True,
         extra_harness_env=("BBR_BUILDBUDDY_API_KEY_FILE",),
-        description=(
-            "Public ducktape development: the runner and harnesses plus the repository's shared "
-            "bb/bbr, Bazelisk, pre-commit, formatters and Gazelle. Same container isolation and "
-            "permissions as the generic runner except for a mounted BuildBuddy key; use remote execution for builds."
-        ),
     )
     notification_service = notifications.service(STAGING_NAMESPACE)
     https_route(

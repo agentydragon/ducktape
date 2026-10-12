@@ -19,7 +19,7 @@ from pydantic import BaseModel, JsonValue, ValidationError
 
 from agentplane.action_service.models import ExecutionRequest, ExecutionResult, ExecutionState
 from agentplane.action_service.sandbox.actions import SandboxAction
-from agentplane.action_service.sandbox.binding import PodExecutorBinding, SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.inventory import ForeignSandboxError, SandboxActionError, SandboxInventory
 from agentplane.action_service.sandbox.models import (
     CreateArgs,
@@ -31,7 +31,6 @@ from agentplane.action_service.sandbox.models import (
     SandboxList,
     TemplateArgs,
 )
-from agentplane.action_service.sandbox.pod_inventory import PodInventory
 from agentplane.action_service.service import ExecutionLease, Executor, hold_lease
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import PodExecError
@@ -50,9 +49,7 @@ class SandboxExecutor(Executor):
     dispose of, so shutdown must not touch one.
     """
 
-    def __init__(
-        self, binding: SandboxExecutorBinding | PodExecutorBinding, inventory: SandboxInventory | PodInventory
-    ) -> None:
+    def __init__(self, binding: PodExecutorBinding, inventory: SandboxInventory) -> None:
         self._binding = binding
         self._inventory = inventory
 

@@ -14,7 +14,7 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, JsonValue
 
 from agentplane.action_service.catalog import ActionDefinition
-from agentplane.action_service.sandbox.binding import PodExecutorBinding, SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.models import (
     READY_CONDITION,
     CreateArgs,
@@ -45,7 +45,7 @@ def _schema(model: type[BaseModel]) -> dict[str, JsonValue]:
     return cast(dict[str, JsonValue], model.model_json_schema())
 
 
-def _exec_schema(binding: SandboxExecutorBinding | PodExecutorBinding) -> dict[str, JsonValue]:
+def _exec_schema(binding: PodExecutorBinding) -> dict[str, JsonValue]:
     """`ExecArgs` with this deployment's caps as its maxima, so submission refuses a request the
     executor would cut short, and says why, instead of the run ending early."""
     # TODO: find a way to carry the caps into the schema other than overwriting the maxima
@@ -56,21 +56,19 @@ def _exec_schema(binding: SandboxExecutorBinding | PodExecutorBinding) -> dict[s
     return cast(dict[str, JsonValue], schema)
 
 
-def actions(
-    binding: SandboxExecutorBinding | PodExecutorBinding, descriptions: dict[str, str]
-) -> dict[str, ActionDefinition]:
+def actions(binding: PodExecutorBinding) -> dict[str, ActionDefinition]:
     """What this group offers, declared from its own models rather than discovered over a wire.
 
-    The offered templates, with what each says of itself (`descriptions`), are rendered into
-    `create`'s description so an agent can choose one without another call: naming a template that
-    is not offered is the most likely way to get `create` wrong.
+    The offered templates, with what each says of itself, are rendered into `create`'s description
+    so an agent can choose one without another call: naming a template that is not offered is the
+    most likely way to get `create` wrong.
     """
-    offered = json.dumps(dict(sorted(descriptions.items())))
+    offered = json.dumps(dict(sorted(binding.templates.items())))
     return {
         SandboxAction.CREATE: ActionDefinition(
             description=(
                 "Create or reach a sandbox that runs as your own ServiceAccount. Returns as soon as "
-                "the object exists, before the box can run anything, so poll "
+                "its Pod exists, before the box can run anything, so poll "
                 f'{SandboxAction.GET} until its {READY_CONDITION!r} condition has status "True". '
                 f"Idempotent on the name, so polling with {SandboxAction.CREATE} would also work but "
                 f"tells you nothing more. Templates: {offered}. {SandboxAction.GET_TEMPLATE} shows one whole."
@@ -81,10 +79,9 @@ def actions(
         ),
         SandboxAction.GET_TEMPLATE: ActionDefinition(
             description=(
-                f"One template that {SandboxAction.CREATE} offers, whole, as the API server holds it: the "
-                "Pod each box made from it gets, with its images, resources, working directory, "
-                f"environment and volumes. {SandboxAction.CREATE} changes one thing in that Pod: the box "
-                "runs as your ServiceAccount, whatever `serviceAccountName` the template names."
+                f"One template that {SandboxAction.CREATE} offers, whole: the Pod each box made from it "
+                "gets, with its images, resources, working directory, environment and volumes. "
+                f"{SandboxAction.CREATE} adds the Pod's name and labels, and runs the box as your ServiceAccount."
             ),
             input_schema=_schema(TemplateArgs),
             title="Show sandbox template",
@@ -107,7 +104,7 @@ def actions(
         ),
         SandboxAction.GET: ActionDefinition(
             description=(
-                "Inspect one sandbox of yours without changing it: its conditions as Kubernetes reports them, "
+                "Inspect one sandbox of yours without changing it: its Pod's phase and conditions, "
                 f'verbatim. Poll it until {READY_CONDITION!r} has status "True"; until then that '
                 "condition's reason and message say what it is waiting on."
             ),

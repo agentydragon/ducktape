@@ -1,8 +1,5 @@
-"""Every SandboxTemplate the sandbox Actions offer is beside them and describes itself.
-
-The Action Service reads each offered template's description when it starts, and will not start
-without it, so a template renamed, dropped or left undescribed here would take it down.
-"""
+"""The runner SandboxTemplates: the shared environment, the egress sidecar's tokens and the runner
+endpoints each Sandbox reaches."""
 
 from __future__ import annotations
 
@@ -15,7 +12,6 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION, SandboxExecutorBinding
 from agentplane.egress.resources import placeholder_of
 from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from cluster.cdk8s.agentplane import history_service, notifications, runner_gateway, sandbox_service
@@ -24,35 +20,13 @@ from cluster.cdk8s.pod_policy import workload_kind
 
 
 def _templates(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The agent-sandbox SandboxTemplates, which the Action and Sandbox Services read; a namespace with
+    """The agent-sandbox SandboxTemplates, which the Sandbox Service reads; a namespace with
     its own Sandboxes also carries one of our kind per template, with the same pod."""
     return [doc for doc in docs if workload_kind(doc) == ("extensions.agents.x-k8s.io", "SandboxTemplate")]
 
 
 def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
     return one(doc for doc in docs if doc["kind"] == kind and doc["metadata"]["name"] == name)
-
-
-def test_every_offered_template_exists_and_describes_itself(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    checked = 0
-    for namespace in NAMESPACES:
-        docs = agentplane_manifests[namespace]
-        settings = one(
-            doc
-            for doc in docs
-            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-actions-settings"
-        )
-        templates = {doc["metadata"]["name"]: doc for doc in _templates(docs)}
-        for group in yaml.safe_load(settings["data"]["settings.yaml"])["action_groups"].values():
-            if group["executor"]["kind"] != "sandbox":
-                continue
-            for name in SandboxExecutorBinding.model_validate(group["executor"]).templates:
-                assert templates[name]["metadata"]["annotations"][DESCRIPTION_ANNOTATION], (namespace, name)
-                checked += 1
-    # Keeps this from passing vacuously should no namespace offer a template.
-    assert checked
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)

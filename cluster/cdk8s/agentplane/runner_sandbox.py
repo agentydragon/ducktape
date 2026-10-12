@@ -34,7 +34,6 @@ from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
 from cdk8s_plus_34 import ServiceAccount
 from constructs import Construct
 
-from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import egress, llm_ingress, sandbox_pod
@@ -81,17 +80,7 @@ class RunnerSandbox(Construct):
             ingress=isolate_ingress(),
             egress=[cilium.dns_egress(), egress.proxy(namespace).egress()],
         )
-        RunnerTemplate(
-            self,
-            "runner-template",
-            env,
-            name="runner",
-            image=_IMAGE,
-            description=(
-                "The shared runner image, built to host an agent harness: the sandbox tools (git, "
-                "curl, ripgrep, jq, openssl, kubectl, python3) plus the runner, Claude Code and Codex."
-            ),
-        )
+        RunnerTemplate(self, "runner-template", env, name="runner", image=_IMAGE)
 
 
 class RunnerTemplate(Construct):
@@ -105,7 +94,6 @@ class RunnerTemplate(Construct):
         *,
         name: str,
         image: str,
-        description: str,
         buildbuddy_secret: bool = False,
         extra_harness_env: Sequence[str] = (),
     ) -> None:
@@ -113,7 +101,7 @@ class RunnerTemplate(Construct):
         self.env = env
         self.buildbuddy_secret = buildbuddy_secret
         self.extra_harness_env = extra_harness_env
-        self._add_sandbox_template(name=name, image=image, description=description)
+        self._add_sandbox_template(name=name, image=image)
 
     def _runner_container(self, image: str) -> SandboxTemplateSpecPodTemplateSpecContainers:
         # Through the egress proxy, which matches the host on the exact string its policy names.
@@ -218,13 +206,8 @@ class RunnerTemplate(Construct):
             ],
         )
 
-    def _add_sandbox_template(self, *, name: str, image: str, description: str) -> None:
-        metadata = ApiObjectMetadata(
-            name=name,
-            namespace=self.env.namespace,
-            # What the sandbox Actions tell an agent choosing among the templates they offer.
-            annotations={DESCRIPTION_ANNOTATION: description},
-        )
+    def _add_sandbox_template(self, *, name: str, image: str) -> None:
+        metadata = ApiObjectMetadata(name=name, namespace=self.env.namespace)
         template = SandboxTemplate(
             self,
             "sandboxtemplate",

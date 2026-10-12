@@ -167,20 +167,13 @@ class Actions(Construct):
                 RolePolicyRule(resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch"])
             )
 
-        # A `sandbox` ActionGroup stamps Sandboxes, and a `pod` group plain Pods from its
-        # PodTemplates, owned by the caller's ServiceAccount; both run commands in the Pods. This is
-        # namespace-wide and cannot say "only the boxes this Action made": that boundary is
-        # the executor's own label check (agentplane/action_service/sandbox/inventory.py), which
-        # is why it is an application rule tested as one rather than something RBAC states.
+        # The sandbox ActionGroup creates its boxes as plain Pods from its PodTemplates, running as
+        # their callers and owned by the caller's ServiceAccount, and runs commands in them. This is namespace-wide and cannot
+        # say "only the boxes this Action made": that boundary is the executor's own label check
+        # (agentplane/action_service/sandbox/inventory.py), which is why it is an application rule
+        # tested as one rather than something RBAC states.
         rules_by_namespace.setdefault(namespace, []).extend(
             [
-                RolePolicyRule(
-                    resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]
-                ),
-                RolePolicyRule(
-                    resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
-                    verbs=["create", "get", "list", "watch", "delete"],
-                ),
                 RolePolicyRule(resources=[custom_resource("", "podtemplates")], verbs=["get"]),
                 RolePolicyRule(resources=[custom_resource("", "pods")], verbs=["create", "get", "list", "delete"]),
                 # `get` and not `create`: kubernetes_asyncio opens exec as an HTTP GET upgrade,

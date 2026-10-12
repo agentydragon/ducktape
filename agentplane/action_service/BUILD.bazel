@@ -216,7 +216,7 @@ py_library(
         "//agentplane:kubernetes_watch",
         "//agentplane:service_process",
         "//agentplane/action_service/github_policy:visibility",
-        "//agentplane/action_service/sandbox:clients",
+        "//agentplane/action_service/sandbox:inventory",
         "//agentplane/workload_auth:principal",
         "//mcp_infra/exec:kubernetes",
         "//util:kubernetes",
@@ -471,8 +471,8 @@ py_library(
         ":service",
         "//agentplane/action_service/sandbox:actions",
         "//agentplane/action_service/sandbox:binding",
-        "//agentplane/action_service/sandbox:clients",
         "//agentplane/action_service/sandbox:executor",
+        "//agentplane/action_service/sandbox:inventory",
         "@pypi//pydantic",
     ],
 )

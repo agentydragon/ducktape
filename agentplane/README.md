@@ -52,7 +52,7 @@ flowchart TB
         runner[Runner + native drivers]
         sidecar[Egress sidecar]
     end
-    cmd_sandbox[Command Sandbox Pods]
+    cmd_sandbox[Action box Pods]
     proxy[Egress proxy]
     llm[LLM ingress]
     k8s[Kubernetes API, agent-sandbox controller]
@@ -86,10 +86,10 @@ flowchart TB
     notif --> actions
     notif -->|REST| github
     github -->|webhooks over an HTTPS route| notif
-    actions -->|execute: Sandbox CRs, exec| k8s
+    actions -->|execute: box Pods as the caller, exec| k8s
     policy -->|PolicyBindings, RoleBindings| k8s
     sandboxctl -.->|testing only: our Sandboxes, Pods, state PVCs| k8s
-    k8s -->|creates| cmd_sandbox
+    k8s -->|runs| cmd_sandbox
     cmd_sandbox -->|all outbound traffic| proxy
     actions -->|MCP servers, GitHub, web push| outside
 

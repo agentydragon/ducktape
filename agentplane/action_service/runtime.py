@@ -17,9 +17,9 @@ from agentplane.action_service.catalog import ActionCatalog, McpExecutorBinding
 from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.mcp_linkage import McpLinkageAuthority
 from agentplane.action_service.sandbox.actions import actions
-from agentplane.action_service.sandbox.binding import PodExecutorBinding, SandboxExecutorBinding
-from agentplane.action_service.sandbox.clients import SandboxClients
+from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.executor import SandboxExecutor
+from agentplane.action_service.sandbox.inventory import SandboxClients
 from agentplane.action_service.service import Executor
 
 
@@ -36,32 +36,20 @@ async def running_executor(
     supervised: dict[str, McpActionGroupExecutor] = {}
     for key, group in catalog.groups.items():
         match group.executor:
-            case SandboxExecutorBinding() as binding:
+            case PodExecutorBinding() as binding:
                 if sandboxes is None:
                     raise ValueError(f"ActionGroup {key!r} is a sandbox group and no Kubernetes access was supplied")
-                # Declared, not discovered: a code-owned group's roster is its own models. Only what
-                # its offered templates say of themselves is read from the cluster, once, here.
+                # Declared, not discovered: a code-owned group's roster is its own models. Only its
+                # offered templates are read from the cluster, once, here, to refuse a bad one.
                 inventory = sandboxes.inventory(binding)
-                group.actions = actions(binding, await inventory.template_descriptions())
+                await inventory.check_templates()
+                group.actions = actions(binding)
                 # A discovered catalog can only show a missing name later; a declared roster shows a typo now.
                 if group.direct_tools is not None and (unoffered := group.direct_tools - group.actions.keys()):
                     raise ValueError(
                         f"ActionGroup {key!r} direct_tools names Actions it does not offer: {sorted(unoffered)}"
                     )
                 executors[key] = SandboxExecutor(binding, inventory)
-            case PodExecutorBinding() as binding:
-                if sandboxes is None:
-                    raise ValueError(f"ActionGroup {key!r} is a box group and no Kubernetes access was supplied")
-                # Declared, not discovered, likewise. Its offered templates are read once, here, to
-                # refuse one that is missing or whose box would escape the egress path.
-                pod_inventory = sandboxes.pod_inventory(binding)
-                await pod_inventory.check_templates()
-                group.actions = actions(binding, binding.templates)
-                if group.direct_tools is not None and (unoffered := group.direct_tools - group.actions.keys()):
-                    raise ValueError(
-                        f"ActionGroup {key!r} direct_tools names Actions it does not offer: {sorted(unoffered)}"
-                    )
-                executors[key] = SandboxExecutor(binding, pod_inventory)
             case McpExecutorBinding():
                 try:
                     supervised[key] = (

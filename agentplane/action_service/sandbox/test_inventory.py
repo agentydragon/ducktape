@@ -1,102 +1,133 @@
-"""How the inventory reads a Sandbox off the API server, and what it does with what it finds.
-
-These run against the Agent Sandbox CRD's real shape — the controller publishes readiness as a
-`Ready` condition and the backing Pod's name as an annotation, and neither is discoverable from
-the Pod itself. The first version of this module searched for the Pod by a label the controller
-does not write, so `pod_name` was always absent and `exec` could never run; nothing caught it
-because the executor's tests fake this class out entirely.
-"""
+"""How the inventory stamps a box's Pod, reads it back off the API server, and what it does with what
+it finds."""
 
 from __future__ import annotations
 
+import json
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any
+from datetime import UTC, datetime
 
 import pytest
 import pytest_bazel
-from kubernetes_asyncio.client import ApiException
+from kubernetes_asyncio.client import (
+    ApiClient,
+    ApiException,
+    V1Container,
+    V1ObjectMeta,
+    V1Pod,
+    V1PodCondition,
+    V1PodList,
+    V1PodSpec,
+    V1PodStatus,
+    V1PodTemplate,
+    V1PodTemplateSpec,
+    V1ProjectedVolumeSource,
+    V1ServiceAccount,
+    V1ServiceAccountTokenProjection,
+    V1Volume,
+    V1VolumeMount,
+    V1VolumeProjection,
+)
 
-from agentplane.action_service.sandbox.binding import DESCRIPTION_ANNOTATION, SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.inventory import (
     DEFAULT_CONTAINER_ANNOTATION,
+    ForeignSandboxError,
     SandboxActionError,
     SandboxInventory,
 )
 from agentplane.action_service.sandbox.models import READY_CONDITION
 from agentplane.subjects import ServiceAccountRef
 from mcp_infra.exec.kubernetes import CommandResult
-from util.agent_sandbox import POD_NAME_ANNOTATION, TEMPLATES_PLURAL
 from util.exec.models import Exited
 
 NAMESPACE = "agentplane-test"
 CALLER = ServiceAccountRef(namespace=NAMESPACE, name="caller-one")
+CALLER_UID = "test-caller-uid"
 # `_object_name` composes it this way; spelled out so a change to that scheme fails here loudly.
 OBJECT_NAME = "caller-one-box"
 
-BINDING = SandboxExecutorBinding(description="test sandboxes", namespace=NAMESPACE, templates={"test-template"})
+BINDING = PodExecutorBinding(
+    description="test sandboxes", namespace=NAMESPACE, templates={"test-template": "the test box"}
+)
 
 
-def _sandbox(
-    *,
-    ready: bool,
-    pod_annotation: str | None,
-    reason: str | None = None,
-    pod_template_annotations: dict[str, str] | None = None,
-) -> dict[str, Any]:
-    """One Sandbox as the API server returns it."""
-    condition = {
-        "type": READY_CONDITION,
-        "status": "True" if ready else "False",
-        "reason": "DependenciesReady" if ready else "PodNotReady",
-    }
-    if reason is not None:
-        condition["message"] = reason
-    return {
-        "metadata": {
-            "name": OBJECT_NAME,
-            "creationTimestamp": "2026-09-19T04:15:32Z",
-            "labels": {
+def _template() -> V1PodTemplate:
+    """The smallest template a box may come from: the egress sidecar, and no token in the Pod."""
+    return V1PodTemplate(
+        metadata=V1ObjectMeta(name="test-template", namespace=NAMESPACE),
+        template=V1PodTemplateSpec(
+            metadata=V1ObjectMeta(labels={"app.kubernetes.io/name": "test-box"}),
+            spec=V1PodSpec(
+                automount_service_account_token=False,
+                containers=[V1Container(name="workspace"), V1Container(name="egress-sidecar")],
+            ),
+        ),
+    )
+
+
+def _pod(
+    *, ready: bool, message: str | None = None, caller: str = CALLER.name, annotations: dict[str, str] | None = None
+) -> V1Pod:
+    """One box's Pod as the API server returns it."""
+    return V1Pod(
+        metadata=V1ObjectMeta(
+            name=OBJECT_NAME,
+            namespace=NAMESPACE,
+            creation_timestamp=datetime(2026, 9, 19, 4, 15, 32, tzinfo=UTC),
+            annotations=annotations,
+            labels={
                 "sandbox-actions.agentplane.allegedly.works/managed": "true",
-                "sandbox-actions.agentplane.allegedly.works/caller": CALLER.name,
+                "sandbox-actions.agentplane.allegedly.works/caller": caller,
                 "sandbox-actions.agentplane.allegedly.works/caller-namespace": CALLER.namespace,
                 "sandbox-actions.agentplane.allegedly.works/name": "box",
                 "sandbox-actions.agentplane.allegedly.works/template": "test-template",
             },
-            **({"annotations": {POD_NAME_ANNOTATION: pod_annotation}} if pod_annotation is not None else {}),
-        },
-        "spec": {
-            "podTemplate": {
-                "metadata": {"annotations": pod_template_annotations or {}},
-                "spec": {"containers": [{"name": "workspace"}, {"name": "egress-sidecar"}]},
-            }
-        },
-        "status": {"conditions": [condition]},
-    }
-
-
-@dataclass
-class FakeCustomObjects:
-    sandbox: dict[str, Any]
-    templates: dict[str, dict[str, Any]] = field(default_factory=dict)
-
-    async def get_namespaced_custom_object(
-        self, group: str, version: str, namespace: str, plural: str, name: str
-    ) -> dict[str, Any]:
-        return self.templates[name] if plural == TEMPLATES_PLURAL else self.sandbox
+        ),
+        spec=V1PodSpec(containers=[V1Container(name="workspace"), V1Container(name="egress-sidecar")]),
+        status=V1PodStatus(
+            phase="Running" if ready else "Pending",
+            conditions=[
+                V1PodCondition(
+                    type=READY_CONDITION,
+                    status="True" if ready else "False",
+                    reason=None if ready else "ContainersNotReady",
+                    message=message,
+                )
+            ],
+        ),
+    )
 
 
 @dataclass
 class FakeCoreV1:
-    """Holds the Pods that exist; anything else 404s the way the API server does."""
+    """Holds the Pods and the PodTemplate that exist; anything else 404s the way the API server does."""
 
-    pods: set[str] = field(default_factory=set)
-    read: list[str] = field(default_factory=list)
+    pods: dict[str, V1Pod] = field(default_factory=dict)
+    template: V1PodTemplate = field(default_factory=_template)
+    created: list[V1Pod] = field(default_factory=list)
+    refuse_create: ApiException | None = None
 
-    async def read_namespaced_pod(self, name: str, namespace: str) -> object:
-        self.read.append(name)
+    async def read_namespaced_pod(self, name: str, namespace: str) -> V1Pod:
         if name not in self.pods:
             raise ApiException(status=404, reason="Not Found")
-        return object()
+        return self.pods[name]
+
+    async def read_namespaced_pod_template(self, name: str, namespace: str) -> V1PodTemplate:
+        return self.template
+
+    async def read_namespaced_service_account(self, name: str, namespace: str) -> V1ServiceAccount:
+        return V1ServiceAccount(metadata=V1ObjectMeta(name=name, namespace=namespace, uid=CALLER_UID))
+
+    async def create_namespaced_pod(self, namespace: str, body: V1Pod) -> None:
+        if self.refuse_create is not None:
+            raise self.refuse_create
+        self.created.append(body)
+        self.pods[body.metadata.name] = _pod(ready=False)
+
+    async def list_namespaced_pod(self, namespace: str, *, label_selector: str) -> V1PodList:
+        return V1PodList(items=list(self.pods.values()))
 
 
 @dataclass
@@ -111,177 +142,169 @@ class FakeExecRunner:
 
 
 def _inventory(
-    sandbox: dict[str, Any],
-    core_v1: FakeCoreV1,
-    runner: FakeExecRunner,
-    templates: dict[str, dict[str, Any]] | None = None,
+    core_v1: FakeCoreV1, runner: FakeExecRunner | None = None, api: ApiClient | None = None
 ) -> SandboxInventory:
     return SandboxInventory(
         BINDING,
-        custom_objects=FakeCustomObjects(sandbox, templates or {}),  # type: ignore[arg-type]
+        # Only `get_template` serializes; the tests that reach it pass a real client.
+        api=api,  # type: ignore[arg-type]
         core_v1=core_v1,  # type: ignore[arg-type]
-        exec_runner=runner,  # `ExecRunner` is a Protocol, so this one needs no ignore.
+        exec_runner=runner or FakeExecRunner(),  # `ExecRunner` is a Protocol, so this one needs no ignore.
     )
 
 
-async def test_the_pod_name_comes_from_the_controllers_annotation() -> None:
-    """The Pod carries nothing tying it back to its Sandbox, so this annotation is the only link."""
-    core_v1 = FakeCoreV1(pods={"sandbox-pod-abc123"})
-    inventory = _inventory(_sandbox(ready=True, pod_annotation="sandbox-pod-abc123"), core_v1, FakeExecRunner())
-    info = await inventory.get(CALLER, "box")
-    assert info.pod_name == "sandbox-pod-abc123"
+async def test_a_box_runs_as_its_caller_and_goes_with_its_account() -> None:
+    """The template's Pod, as the caller and owned by the caller's ServiceAccount, so deleting a
+    Session Sandbox's account takes the boxes its agent made."""
+    core_v1 = FakeCoreV1()
+    await _inventory(core_v1).create(CALLER, "box", "test-template")
+    (pod,) = core_v1.created
+    assert pod.spec.service_account_name == CALLER.name
+    assert [container.name for container in pod.spec.containers] == ["workspace", "egress-sidecar"]
+    (owner,) = pod.metadata.owner_references
+    assert (owner.kind, owner.name, owner.uid) == ("ServiceAccount", CALLER.name, CALLER_UID)
+    # The template's own labels stay: its network policy selects the box by them.
+    assert pod.metadata.labels["app.kubernetes.io/name"] == "test-box"
 
 
-async def test_an_unannotated_sandbox_falls_back_to_its_own_name() -> None:
-    """The controller names the Pod after the Sandbox when it publishes no annotation."""
-    core_v1 = FakeCoreV1(pods={OBJECT_NAME})
-    inventory = _inventory(_sandbox(ready=True, pod_annotation=None), core_v1, FakeExecRunner())
-    assert (await inventory.get(CALLER, "box")).pod_name == OBJECT_NAME
+def _without_sidecar(spec: V1PodSpec) -> None:
+    spec.containers = [container for container in spec.containers if container.name != "egress-sidecar"]
 
 
-async def test_a_ready_sandbox_whose_pod_is_gone_reports_no_pod() -> None:
-    """A Sandbox that has been Ready still names a Pod an eviction has since taken away, so the
-    annotation is confirmed against the API server rather than trusted."""
-    core_v1 = FakeCoreV1(pods=set())
-    inventory = _inventory(_sandbox(ready=True, pod_annotation="sandbox-pod-abc123"), core_v1, FakeExecRunner())
-    info = await inventory.get(CALLER, "box")
-    assert info.pod_name is None
+def _with_token_automounted(spec: V1PodSpec) -> None:
+    spec.automount_service_account_token = True
 
 
-async def test_a_not_ready_sandbox_is_not_searched_for_a_pod() -> None:
-    """Readiness is the controller's answer; there is nothing to exec into before it says so."""
-    core_v1 = FakeCoreV1(pods={OBJECT_NAME})
-    inventory = _inventory(
-        _sandbox(ready=False, pod_annotation=None, reason="Pod exists with phase: Pending"), core_v1, FakeExecRunner()
-    )
-    info = await inventory.get(CALLER, "box")
-    assert info.pod_name is None
-    assert core_v1.read == []
+def _with_token_mounted_in(container: int) -> Callable[[V1PodSpec], None]:
+    def edit(spec: V1PodSpec) -> None:
+        spec.volumes = [
+            V1Volume(
+                name="test-token",
+                projected=V1ProjectedVolumeSource(
+                    sources=[V1VolumeProjection(service_account_token=V1ServiceAccountTokenProjection(path="token"))]
+                ),
+            )
+        ]
+        spec.containers[container].volume_mounts = [V1VolumeMount(name="test-token", mount_path="/var/run/test")]
 
-
-async def test_every_condition_reaches_the_caller_as_the_controller_wrote_it() -> None:
-    """A Sandbox publishes more than readiness, and summarising it here would drop the rest.
-
-    `Suspended` is the case that motivates this: a stopped box and a box still coming up are both
-    "not Ready", and only its own condition distinguishes them.
-    """
-    sandbox = _sandbox(ready=False, pod_annotation=None, reason="Pod exists with phase: Pending")
-    sandbox["status"]["conditions"].insert(
-        0,
-        {
-            "type": "Suspended",
-            "status": "True",
-            "reason": "SuspendedByOperator",
-            "message": "Sandbox is suspended",
-            "lastTransitionTime": "2026-09-19T09:49:30Z",
-        },
-    )
-    info = await _inventory(sandbox, FakeCoreV1(), FakeExecRunner()).get(CALLER, "box")
-    suspended, ready = info.conditions
-    assert (suspended.type, suspended.status, suspended.reason) == ("Suspended", "True", "SuspendedByOperator")
-    assert suspended.last_transition_time is not None
-    assert (ready.type, ready.status, ready.message) == (READY_CONDITION, "False", "Pod exists with phase: Pending")
-
-
-async def test_a_sandbox_with_no_status_yet_reports_no_conditions() -> None:
-    """The controller has not written one between the create call and the read that follows it."""
-    sandbox = _sandbox(ready=False, pod_annotation=None)
-    del sandbox["status"]
-    info = await _inventory(sandbox, FakeCoreV1(), FakeExecRunner()).get(CALLER, "box")
-    assert info.conditions == []
-    assert info.pod_name is None
-
-
-async def test_exec_runs_against_the_pod_the_controller_named() -> None:
-    runner = FakeExecRunner()
-    inventory = _inventory(
-        _sandbox(ready=True, pod_annotation="sandbox-pod-abc123"), FakeCoreV1(pods={"sandbox-pod-abc123"}), runner
-    )
-    await inventory.execute(CALLER, "box", script="true", cwd=None, timeout_seconds=5, max_output_bytes=100)
-    assert runner.ran_against == ["sandbox-pod-abc123"]
+    return edit
 
 
 @pytest.mark.parametrize(
-    ("pod_template_annotations", "container"),
-    [({}, "workspace"), ({DEFAULT_CONTAINER_ANNOTATION: "egress-sidecar"}, "egress-sidecar")],
+    ("edit", "refused"),
+    [
+        (_without_sidecar, True),
+        (_with_token_automounted, True),
+        (_with_token_mounted_in(0), True),
+        # The egress path itself mounts the Pod's tokens; this keeps the refusals from passing vacuously.
+        (_with_token_mounted_in(1), False),
+    ],
+)
+async def test_a_template_that_lets_the_workload_escape_the_egress_path_is_refused(
+    edit: Callable[[V1PodSpec], None], refused: bool
+) -> None:
+    core_v1 = FakeCoreV1()
+    edit(core_v1.template.template.spec)
+    if refused:
+        with pytest.raises(ValueError, match="box template 'test-template'"):
+            await _inventory(core_v1).check_templates()
+    else:
+        await _inventory(core_v1).check_templates()
+
+
+async def test_creating_an_existing_box_returns_it_without_stamping_another() -> None:
+    core_v1 = FakeCoreV1(pods={OBJECT_NAME: _pod(ready=True)})
+    info = await _inventory(core_v1).create(CALLER, "box", "test-template")
+    assert core_v1.created == []
+    assert info.phase == "Running"
+
+
+async def test_a_refused_create_says_what_the_api_server_said() -> None:
+    """A full namespace quota refuses the Pod outright, and the caller can act on that by disposing
+    boxes it has finished with."""
+    refusal = ApiException(status=403, reason="Forbidden")
+    refusal.body = json.dumps({"message": 'pods "caller-one-box" is forbidden: exceeded quota: test-quota'}).encode()
+    with pytest.raises(SandboxActionError, match="exceeded quota: test-quota"):
+        await _inventory(FakeCoreV1(refuse_create=refusal)).create(CALLER, "box", "test-template")
+
+
+async def test_another_callers_box_of_that_name_is_not_reached() -> None:
+    core_v1 = FakeCoreV1(pods={OBJECT_NAME: _pod(ready=True, caller="caller-two")})
+    with pytest.raises(ForeignSandboxError):
+        await _inventory(core_v1).get(CALLER, "box")
+
+
+async def test_every_condition_reaches_the_caller_as_kubernetes_wrote_it() -> None:
+    """A Pod reports more than readiness, and summarising it here would drop the rest: an
+    unschedulable box and one still pulling its image are both "not Ready"."""
+    pod = _pod(ready=False)
+    pod.status.conditions.insert(
+        0,
+        V1PodCondition(
+            type="PodScheduled",
+            status="False",
+            reason="Unschedulable",
+            message="0/3 nodes are available",
+            last_transition_time=datetime(2026, 9, 19, 9, 49, 30, tzinfo=UTC),
+        ),
+    )
+    info = await _inventory(FakeCoreV1(pods={OBJECT_NAME: pod})).get(CALLER, "box")
+    scheduled, ready = info.conditions
+    assert (scheduled.type, scheduled.status, scheduled.reason) == ("PodScheduled", "False", "Unschedulable")
+    assert scheduled.last_transition_time is not None
+    assert (ready.type, ready.status, ready.reason) == (READY_CONDITION, "False", "ContainersNotReady")
+
+
+async def test_a_box_with_no_status_yet_reports_no_conditions() -> None:
+    """Kubernetes has not written one between the create call and the read that follows it."""
+    pod = _pod(ready=False)
+    pod.status = V1PodStatus()
+    info = await _inventory(FakeCoreV1(pods={OBJECT_NAME: pod})).get(CALLER, "box")
+    assert (info.phase, info.conditions) == (None, [])
+
+
+@pytest.mark.parametrize(
+    ("annotations", "container"),
+    [(None, "workspace"), ({DEFAULT_CONTAINER_ANNOTATION: "egress-sidecar"}, "egress-sidecar")],
 )
 async def test_exec_runs_in_the_container_kubectl_exec_would_pick(
-    pod_template_annotations: dict[str, str], container: str
+    annotations: dict[str, str] | None, container: str
 ) -> None:
-    """The box's Pod template names its default container, else its first is the one."""
+    """The box's Pod names its default container, else its first is the one."""
     runner = FakeExecRunner()
-    sandbox = _sandbox(
-        ready=True, pod_annotation="sandbox-pod-abc123", pod_template_annotations=pod_template_annotations
-    )
-    inventory = _inventory(sandbox, FakeCoreV1(pods={"sandbox-pod-abc123"}), runner)
+    inventory = _inventory(FakeCoreV1(pods={OBJECT_NAME: _pod(ready=True, annotations=annotations)}), runner)
     await inventory.execute(CALLER, "box", script="true", cwd=None, timeout_seconds=5, max_output_bytes=100)
-    assert runner.ran_in == [container]
+    assert (runner.ran_against, runner.ran_in) == ([OBJECT_NAME], [container])
+
+
+async def test_exec_in_a_box_that_is_not_ready_says_why() -> None:
+    runner = FakeExecRunner()
+    inventory = _inventory(
+        FakeCoreV1(pods={OBJECT_NAME: _pod(ready=False, message="containers with unready status: [workspace]")}), runner
+    )
+    with pytest.raises(SandboxActionError, match=r"not ready \(containers with unready status"):
+        await inventory.execute(CALLER, "box", script="true", cwd=None, timeout_seconds=5, max_output_bytes=100)
+    assert runner.ran_against == []
+
+
+async def test_an_offered_template_is_shown_as_kubernetes_json() -> None:
+    async with ApiClient() as api:
+        shown = await _inventory(FakeCoreV1(), api=api).get_template("test-template")
+    assert shown == {
+        "metadata": {"labels": {"app.kubernetes.io/name": "test-box"}},
+        "spec": {
+            "automountServiceAccountToken": False,
+            "containers": [{"name": "workspace"}, {"name": "egress-sidecar"}],
+        },
+    }
 
 
 async def test_a_template_this_deployment_does_not_offer_is_refused() -> None:
-    inventory = _inventory(_sandbox(ready=True, pod_annotation=None), FakeCoreV1(), FakeExecRunner())
+    inventory = _inventory(FakeCoreV1())
     with pytest.raises(SandboxActionError, match="unknown template 'another-template'; this deployment offers"):
         await inventory.create(CALLER, "box", "another-template")
-
-
-async def test_an_offered_template_is_shown_whole_but_for_its_field_ownership_record() -> None:
-    spec = {"podTemplate": {"spec": {"containers": [{"name": "workspace", "image": "test-image:unset"}]}}}
-    served = {
-        "metadata": {"name": "test-template", "managedFields": [{"manager": "test-manager", "operation": "Apply"}]},
-        "spec": spec,
-    }
-    inventory = _inventory(
-        _sandbox(ready=True, pod_annotation=None), FakeCoreV1(), FakeExecRunner(), {"test-template": served}
-    )
-    assert await inventory.get_template("test-template") == {"metadata": {"name": "test-template"}, "spec": spec}
-
-
-async def test_a_template_in_the_namespace_that_is_not_offered_is_not_shown() -> None:
-    """What a caller can read stays what it can create, though the template exists and holds nothing
-    secret."""
-    inventory = _inventory(
-        _sandbox(ready=True, pod_annotation=None),
-        FakeCoreV1(),
-        FakeExecRunner(),
-        {"another-template": {"metadata": {}}},
-    )
     with pytest.raises(SandboxActionError, match="unknown template 'another-template'; this deployment offers"):
         await inventory.get_template("another-template")
-
-
-async def test_an_offered_template_describes_itself_in_its_annotation() -> None:
-    template = {"metadata": {"annotations": {DESCRIPTION_ANNOTATION: "the test box"}}}
-    inventory = _inventory(
-        _sandbox(ready=True, pod_annotation=None), FakeCoreV1(), FakeExecRunner(), {"test-template": template}
-    )
-    assert await inventory.template_descriptions() == {"test-template": "the test box"}
-
-
-async def test_an_offered_template_that_says_nothing_is_named_rather_than_offered_blank() -> None:
-    inventory = _inventory(
-        _sandbox(ready=True, pod_annotation=None), FakeCoreV1(), FakeExecRunner(), {"test-template": {"metadata": {}}}
-    )
-    with pytest.raises(ValueError, match=r"'test-template' has no .*/description' annotation"):
-        await inventory.template_descriptions()
-
-
-@pytest.mark.parametrize(
-    ("ready", "expected"),
-    [
-        (False, "is not ready"),
-        # The distinction the first version lost: it reported a ready box as unable to run with
-        # `reason=unknown`, which reads as a contradiction to the agent deciding whether to poll.
-        (True, "has no running Pod"),
-    ],
-)
-async def test_a_box_with_no_reachable_pod_says_which_of_the_two_it_is(ready: bool, expected: str) -> None:
-    inventory = _inventory(
-        _sandbox(ready=ready, pod_annotation="sandbox-pod-abc123", reason="Pod exists with phase: Pending"),
-        FakeCoreV1(pods=set()),
-        FakeExecRunner(),
-    )
-    with pytest.raises(SandboxActionError, match=expected):
-        await inventory.execute(CALLER, "box", script="true", cwd=None, timeout_seconds=5, max_output_bytes=100)
 
 
 if __name__ == "__main__":

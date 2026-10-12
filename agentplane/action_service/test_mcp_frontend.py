@@ -55,7 +55,7 @@ from agentplane.action_service.models import (
 from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.policy_view import CallerActionPolicyView
-from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.models import ExecResult
 from agentplane.action_service.service import ActionService, Executor
 from agentplane.action_service.store import ActionStore
@@ -260,8 +260,8 @@ async def frontend(engine: AsyncEngine, db_url: str, echo_executor: Executor) ->
 # One group per executor kind, since how a result reads to an MCP caller depends on which ran it.
 RESULT_GROUPS: dict[str, ExecutorBinding] = {
     "test-mcp": McpExecutorBinding(description="test-mcp-executor"),
-    "test-sandbox": SandboxExecutorBinding(
-        description="test-sandbox-executor", namespace=NAMESPACE, templates={"test-template"}
+    "test-sandbox": PodExecutorBinding(
+        description="test-sandbox-executor", namespace=NAMESPACE, templates={"test-template": "the test box"}
     ),
 }
 

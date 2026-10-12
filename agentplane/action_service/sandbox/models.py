@@ -10,7 +10,6 @@ from datetime import datetime
 from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
-from pydantic.alias_generators import to_camel
 
 from util.exec.models import ExecStream, ExitStatus
 
@@ -26,22 +25,21 @@ SandboxName = Annotated[
 ]
 
 
-# The condition the controller publishes for "this box can run something", and what `exec`
-# requires. Named here because the executor gates on it and the Action descriptions tell an agent
-# to poll it; those two must be the same predicate.
+# The Pod condition that says "this box can run something", and what `exec` requires. Named here
+# because the executor gates on it and the Action descriptions tell an agent to poll it; those two
+# must be the same predicate.
 READY_CONDITION = "Ready"
 
 
 class SandboxCondition(BaseModel):
-    """One status condition, as the Agent Sandbox controller wrote it, or a box's Pod condition.
+    """One condition of the box's Pod, as Kubernetes reports it.
 
-    Passed through rather than summarised: a reading taken here would be a second opinion that can
-    disagree with the authority and carries less than it did. `reason` is the machine-readable half
-    an agent can branch on (`DependenciesReady`, `ContainersNotReady`); `message` is the sentence a
-    human wants.
+    Passed through rather than summarised: a reading taken here would be a second opinion that
+    carries less than the original. `reason` is the machine-readable half an agent can branch on
+    (`ContainersNotReady`, `Unschedulable`); `message` is the sentence a human wants.
     """
 
-    model_config = ConfigDict(extra="ignore", populate_by_name=True, alias_generator=to_camel)
+    model_config = ConfigDict(extra="forbid")
 
     type: str
     status: str = Field(description='"True", "False" or "Unknown", as Kubernetes spells a condition.')
@@ -51,7 +49,7 @@ class SandboxCondition(BaseModel):
 
 
 class SandboxInfo(BaseModel):
-    """Non-secret state of one sandbox this surface created, as the API server reports it."""
+    """Non-secret state of one sandbox this surface created, as the API server reports its Pod."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -59,19 +57,15 @@ class SandboxInfo(BaseModel):
     template: str = Field(description="The template this box was created from.")
     phase: str | None = Field(
         default=None,
-        description='A box\'s Pod phase, absent until Kubernetes reports one. "Failed" is a box evicted from its '
+        description='The Pod\'s phase, absent until Kubernetes reports one. "Failed" is a box evicted from its '
         "node, which only `dispose` and a new `create` recover.",
     )
     conditions: list[SandboxCondition] = Field(
-        description=f"Its conditions as Kubernetes reports them, verbatim. {READY_CONDITION!r} with "
-        'status "True" is what `exec` requires; until then that condition says why, and a '
-        '"Suspended" condition means a box that is stopped rather than still coming up.'
+        description=f'The Pod\'s own conditions, verbatim. {READY_CONDITION!r} with status "True" is what '
+        "`exec` requires; until then that condition says why."
     )
     created_at: datetime | None = None
-    pod_name: str | None = Field(
-        default=None, description="Absent until the sandbox has a Pod, and again if that Pod goes away."
-    )
-    node_name: str | None = Field(default=None, description="Where the controller placed the Pod.")
+    node_name: str | None = Field(default=None, description="Where the scheduler placed the box.")
     pod_ips: list[str] = Field(default_factory=list)
 
 
@@ -106,15 +100,14 @@ class CreateArgs(BaseModel):
 
     name: SandboxName
     template: str = Field(
-        description="Which SandboxTemplate to create the box from. Only the templates this deployment offers "
-        "can be named."
+        description="Which template to create the box from. Only the templates this deployment offers can be named."
     )
 
 
 class TemplateArgs(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    template: str = Field(description="Which SandboxTemplate to show; only the ones `create` offers.")
+    template: str = Field(description="Which template to show; only the ones `create` offers.")
 
 
 class ExecArgs(BaseModel):

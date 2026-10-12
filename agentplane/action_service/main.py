@@ -26,7 +26,7 @@ from agentplane.action_service.policy_evaluation import PolicySetDecisionProvide
 from agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer
 from agentplane.action_service.push import ActionPushNotifier, PushIdentity, PushSubscriptionStore
 from agentplane.action_service.runtime import running_executor
-from agentplane.action_service.sandbox.clients import SandboxClients
+from agentplane.action_service.sandbox.inventory import SandboxClients
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.settings import Settings
 from agentplane.action_service.store import ActionStore
@@ -99,12 +99,7 @@ async def async_main(settings: Settings) -> None:
         )
         # Built unconditionally: a configured sandbox group must fail at startup rather than at the
         # first dispatch, and an API client this process already holds costs nothing when unused.
-        sandboxes = SandboxClients(
-            api=api,
-            custom_objects=cast(CustomObjectsClient, CustomObjectsApi(api)),
-            core_v1=CoreV1Api(api),
-            exec_runner=KubernetesWebSocketExecRunner(configuration),
-        )
+        sandboxes = SandboxClients(api=api, exec_runner=KubernetesWebSocketExecRunner(configuration))
         updates = ActionUpdateBroker(settings.database_url)
         executors = await stack.enter_async_context(
             running_executor(catalog, mcp_linkage, sandboxes, on_health_change=updates.wake_mcp_health)

@@ -614,7 +614,6 @@ flowchart TD
     SESSION_STATE_VOLUME_DESIGN --> CODEX_PORTABLE_STATE
     AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
     AGENTPLANE_SANDBOX_RESOURCE --> AGENT_SANDBOX_RETIRE[Blocked: Agentplane stops using agent-sandbox]
-    ACTION_SANDBOX_PODS[Action Service boxes as plain Pods, section 9] --> AGENT_SANDBOX_RETIRE
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
     SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes stop]
@@ -664,7 +663,7 @@ as ours: the nodes below. The Sandbox Service then folds into the controller, wh
 (operator, 2026-10-11 PDT), and stays separate from the Runner Gateway, so the provisioning
 permissions stay off the runner-facing service. The gateway may write a Sandbox's desired running
 state, which the controller validates; it gets no resume RPC on the Sandbox Service, which already
-calls the gateway to seal. Action Service boxes keep a catalog of their own (#10012).
+calls the gateway to seal. Action Service boxes keep a catalog of their own ([ADR](../docs/adr_action_sandboxes.md)).
 
 ```mermaid
 flowchart TD
@@ -722,13 +721,12 @@ name policy sets of any rule type, one chip per set, in a new `policy_sets` pres
 
 ### `AGENT_SANDBOX_RETIRE` — Agentplane stops using agent-sandbox
 
-**Blocked on our resource and on Action Service boxes becoming plain Pods; decision card before the
-PR.** Staging Sandboxes are recreated on our resource, not converted; until then they keep the old
-policy kinds, and the recreated ones get the controller's `PolicyBinding`. Then delete Agentplane's
+**Blocked on our resource; decision card before the PR.** Staging Sandboxes are recreated on our
+resource, not converted; until then they keep the old policy kinds, and the recreated ones get the controller's `PolicyBinding`. Then delete Agentplane's
 agent-sandbox runner `SandboxTemplate`s (`cluster/cdk8s/agentplane/runner_sandbox.py`, whose
 rendered spec ours now copy: build ours directly) and `Environment.own_sandboxes`, the Sandbox
 Service's agent-sandbox inventory, views and watch, the annotations it used as its record, the
-`volumeClaimTemplates` state volume and the agent-sandbox RBAC of both services. The controller
+`volumeClaimTemplates` state volume and the Sandbox Service's agent-sandbox RBAC. The controller
 install stays for `cluster/cdk8s/agent_workspaces.py`.
 
 ### `CLAUDE_PORTABLE_STATE` — Claude evidence
@@ -790,9 +788,8 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 flowchart TD
     HISTORY_DATABASE_RENAME[Candidate: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Unscheduled: name the sandbox_commands database for the Runner Gateway]
-    ACTION_SANDBOX_PODS[In progress: Action Service boxes as plain Pods]
-    ACTION_SANDBOX_PODS --> ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
-    ACTION_SANDBOX_PODS --> ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
+    ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
+    ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
 ```
 
@@ -812,25 +809,6 @@ admission; the Sandbox Service has no database. Rename it and its role and Secre
 in place, as `HISTORY_DATABASE_RENAME` does, and point the Runner Gateway, its migration init
 container and `commands_database_url` at the new names. `database.py`'s comment on
 `sandbox_commands` follows.
-
-### `ACTION_SANDBOX_PODS` — Action Service boxes as plain Pods
-
-**In progress: testing first (operator, 2026-10-12 PDT).** Executor kind `pod` runs beside
-`sandbox` and testing offers it; once boxes pass on testing, the follow-up PR moves staging's group
-to `pod` and deletes kind `sandbox`, its Sandbox RBAC and the template description annotation.
-Direction accepted with the operator 2026-10-12 PDT ([ADR](../docs/adr_action_sandboxes.md)).
-Action Service boxes and Session Sandboxes share only the Pod recipe (`sandbox_pod.py`): a box
-runs as the caller's own ServiceAccount, with no runner, state volume, owned bindings or seal, so
-the Sandbox Service does not provision it. The `sandbox__*` Actions stamp plain Pods from the
-Action Service's own template entries (rendered by cdk8s from `command_sandbox.py`) instead of
-agent-sandbox `Sandbox` objects; each service reads only its own catalog and refuses at startup a
-template without the egress sidecar or with the workload token mounted; staging stops offering
-the runner templates to the Action Service. Boxes stay in the Session Sandboxes' namespace, so an
-agent in a runner Sandbox can start one bound to its own per-Sandbox ServiceAccount, and the
-Action Service keeps `pods/exec` there. Each box is owner-referenced to its caller's
-ServiceAccount, so deleting a runner Sandbox deletes the boxes its agent started (operator,
-2026-10-12 PDT). Independent of the policy migrations: a box creates no
-bindings and runs under the caller's standing ones, whatever their kind.
 
 ### `ACTION_BOX_IDLE_REAPER` — delete Action boxes nobody uses
 

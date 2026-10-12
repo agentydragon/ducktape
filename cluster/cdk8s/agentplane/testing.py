@@ -136,7 +136,6 @@ _ACTION_GROUPS = {
             },
         ),
     ),
-    # Ahead of staging, which still runs its boxes as agent-sandbox Sandboxes.
     "sandbox": ActionGroup(
         title="Sandbox",
         description="Boxes that run as the calling ServiceAccount, and bounded commands in them.",

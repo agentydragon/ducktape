@@ -366,7 +366,7 @@ attempt from being replayed.
 passes a group-keyed mapping to the service, and shares the same catalog objects with discovery. An
 `McpExecutorBinding` becomes a supervised `McpActionGroupExecutor` over the stdio or
 streamable-HTTP config below, whose `tools/list` refreshes child Actions and whose execution
-rechecks the live schema. A `SandboxExecutorBinding` becomes a `SandboxExecutor`, code-owned rather
+rechecks the live schema. A `PodExecutorBinding` becomes a `SandboxExecutor`, code-owned rather
 than supervised: its roster is its own models, so it is offered from the moment configuration
 validates rather than after a handshake, and it needs Kubernetes access or startup fails
 ([sandbox Actions](sandbox/README.md)). Echo is only an explicitly injected test executor,

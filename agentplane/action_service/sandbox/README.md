@@ -1,19 +1,14 @@
 # Sandbox Actions: exec targets that run as the caller
 
-An Action group that stamps an Agentplane Sandbox and runs bounded commands in it. It exists for
-callers outside the cluster — Claude Code web and claude.ai, bound by OAuth to a ServiceAccount —
-which have no Pod and so no other way to reach an in-cluster box.
+An Action group that creates a box, a plain Pod running as its caller, and runs bounded commands in
+it. It exists for callers outside the cluster — Claude Code web and claude.ai, bound by OAuth to a
+ServiceAccount — which have no Pod and so no other way to reach an in-cluster box, and for agents in
+Session Sandboxes that want a box of their own.
 
-These Sandboxes are not the integration app's. The app stamps one to _host an agent_: a runner
-container, a harness, a Thread. This surface stamps one to _run commands in_, driven
-by an agent that lives elsewhere. Same CRD, different operation, different component.
-
-**A `pod` group** offers the same Actions on plain Pods instead (<pod_inventory.py>). It creates
-each box as a Pod from a core `PodTemplate`, running as the caller and owner-referenced to the
-caller's ServiceAccount, and passes the Pod's own conditions through. The config names each
-template with what it holds. The service refuses at startup, and again at each `create`, a template
-that is missing, lacks the `egress-sidecar` container, or lets another container mount a
-ServiceAccount token. Testing runs `pod`, staging `sandbox`; `sandbox` goes once staging moves.
+A box is not a Session Sandbox ([ADR](../../docs/adr_action_sandboxes.md)). The Sandbox Service
+provisions a Sandbox to _host an agent_: a runner, a state volume, an account of its own. This
+surface creates a box to _run commands in_, driven by an agent that lives elsewhere. They share the
+Pod recipe (`cluster/cdk8s/agentplane/sandbox_pod.py`) and nothing else.
 
 ## The contract
 
@@ -30,15 +25,15 @@ The guard the rule rests on: the ServiceAccount comes from `ExecutionRequest.cal
 authenticated admission path sets. It is never a tool argument. A surface accepting one would mean
 "stamp a Pod as any account you can name".
 
-The Action Service's own ServiceAccount holds Sandbox CRUD and `pods/exec` in the sandbox
-namespace, and exec runs in the Action Service process. `timeout_seconds` and `max_output_bytes`
+The Action Service's own ServiceAccount creates, reads and deletes Pods and holds `pods/exec` in the
+sandbox namespace, and exec runs in the Action Service process. `timeout_seconds` and `max_output_bytes`
 ceilings keep a long build from streaming unbounded output into that Pod, and the command's own
 ceiling is the only bound on how long it runs: the executor renews the execution lease underneath
 it, so a call lasting minutes is ordinary rather than an attempt the sweep reclaims.
 
 ## One ServiceAccount per caller, not per sandbox
 
-Every sandbox this surface stamps runs as the caller's account. The integration app does the
+Every sandbox this surface stamps runs as the caller's account. The Sandbox Service does the
 opposite — an account per Sandbox, owner-referenced to it — and the difference is deliberate, with
 intended consequences.
 
@@ -61,28 +56,25 @@ invariant; breaking it costs the whole account's authority rather than one box's
 
 ## Separation from the integration app
 
-**Its own label and selector.** Not `agentplane.allegedly.works/managed`, which the app lists,
-watches and gates operations on (<../../sandbox_service/inventory.py>, <../../app/live.py>). An exec target carrying
-it joins the app's fleet view and its ingestion coordinator, which then discovers a runner the box
-does not have.
+**Its own label and selector.** Not `agentplane.allegedly.works/managed`, which the Sandbox Service
+lists, watches and gates operations on (<../../sandbox_service/inventory.py>). A box carrying it
+would join the fleet view, which then looks for a runner the box does not have.
 
-**Its own template set**: a caller names a SandboxTemplate, but only one the group's reviewed
-configuration offers, at the same operator cadence as `action_groups`. A free-form choice would let
-a caller stamp any template in the namespace. Staging offers its own `agentplane-sandbox` template
-on the plain sandbox image (<../../../cluster/cdk8s/agentplane/command_sandbox.py>), a build-sized
-box, and the shared runner template (<../../../cluster/cdk8s/agentplane/runner_sandbox.py>), and a
-caller always names one. Each template describes itself: its
-`sandbox-actions.agentplane.allegedly.works/description` annotation is what `create` tells an agent,
-read once when the service starts, and a command runs in the container `kubectl exec` would
-pick, the Pod template's `kubectl.kubernetes.io/default-container` or else its first.
-`get_template` returns one offered template whole, read when asked and less only
-`metadata.managedFields`. **Every caller can read everything in an offered template**, so a template
+**Owned by its caller's account.** Each box carries an owner reference to the ServiceAccount it runs
+as. An agent in a Session Sandbox calls this surface as that Sandbox's own account, so the boxes it
+creates are garbage-collected with the Sandbox; a static account's boxes last until `dispose`.
+
+**Its own template set**: a caller names a template, but only one the group's reviewed
+configuration offers, at the same operator cadence as `action_groups`, with the description an agent
+chooses it by. Each names a core `PodTemplate` in the namespace that cdk8s renders from the shared
+recipe (<../../../cluster/cdk8s/agentplane/command_sandbox.py>): an object rather than a Pod spec in
+the configuration, so the image pins rewrite its containers. Staging offers a command box on the
+plain sandbox image and a build-sized box. The Action Service refuses to start on an offered template
+that is missing, lacks the egress sidecar or lets the workload mount a ServiceAccount token, and
+checks again at each `create`. A command runs in the container `kubectl exec` would pick, the Pod's
+`kubectl.kubernetes.io/default-container` or else its first. `get_template` returns one offered
+template's Pod whole. **Every caller can read everything in an offered template**, so a template
 references Secrets and never inlines one.
-
-**Its own inventory code**, reusing the CRD shapes rather than `SandboxInventory`, which hardcodes
-the per-sandbox account, the app's label and the app's ownership model. The CRD vocabulary both
-share — API coordinates, the `agents.x-k8s.io/pod-name` annotation, condition lookup — is
-<../../../util/agent_sandbox.py>.
 
 ## Kubernetes from inside the box
 
@@ -120,26 +112,19 @@ own API proxy answers `501` to the upgrade verbs, so that is where to expect tro
 ## Tool surface
 
 `create`, `exec` and `list`, with `get`, `get_template` and `dispose`. `create` returns once the
-object exists and the caller polls `get` for the controller's conditions.
+Pod exists and the caller polls `get` for the Pod's phase and conditions.
 
-**Conditions are passed through as the controller wrote them**, not summarised into a state. A
-reading taken here would be a second opinion that can disagree with the authority and carries less
-than it did: `ReconcilerError` with an exceeded-quota message, `DependenciesNotReady` with
-`Pod exists with phase: Pending`, and `Suspended` are three different answers to "why is this box
-not ready", and only the controller's own `reason` distinguishes them.
+**Conditions are passed through as Kubernetes wrote them**, not summarised into a state. A reading
+taken here would be a second opinion that carries less than the original: `PodScheduled` with
+`Unschedulable` and `Ready` with `ContainersNotReady` are different answers to "why is this box not
+ready", and only their own `reason` distinguishes them.
 
-**`create` does not wait for readiness.** A box can stay unready indefinitely -- refused by the
-namespace quota, or stopped on another `ReconcilerError` -- so a waiting `create` would spend its
-whole timeout to report a deadline, where `get` reports the controller's own reason for it.
+**`create` does not wait for readiness.** An image pull or a full node can hold a box unready for
+longer than a call should wait, where `get` reports why.
 
-**Gotcha: a box the quota refused does not start when the quota frees.** agent-sandbox (v0.5.5)
-returns the Pod-create error from its reconcile, so controller-runtime retries that Sandbox on its
-per-object error backoff, doubling to a 1000 s cap; nothing watches the `ResourceQuota`. A box that
-has been failing for a while therefore waits up to about 17 minutes after the quota frees. On
-staging, a refused box kept the same condition for as long as it was polled after the quota freed,
-while `dispose` + `create` of it reached `Ready` in about 45 s. So an exceeded-quota
-`ReconcilerError` is the caller's cue to `list` its sandboxes, `dispose` the ones it has finished
-with, then `dispose` + `create` the refused one.
+**A full namespace quota refuses `create` outright**, with the API server's own message: the caller's
+cue to `list` its sandboxes and `dispose` the ones it has finished with. A box evicted from its node
+stays `Failed`; nothing recreates it, so `dispose` + `create` is how a caller gets it back.
 
 `exec` takes one bounded Bash script per call: the deployment's ceiling on timeout and retained
 output is patched into the advertised schema, and a nonzero exit is a result rather than a

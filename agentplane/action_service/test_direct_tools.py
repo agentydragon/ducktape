@@ -43,7 +43,7 @@ from agentplane.action_service.models import ActionState, CallerPrincipal, Execu
 from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_evaluation import PROVIDER_NAME, PolicySetDecisionProvider
 from agentplane.action_service.policy_informer import PolicyIndex
-from agentplane.action_service.sandbox.binding import SandboxExecutorBinding
+from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.action_service.sandbox.models import ExecResult
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.store import ActionStore
@@ -88,8 +88,10 @@ def _catalog() -> ActionCatalog:
             "test-sandbox": ActionGroup(
                 title="Test sandbox",
                 description="test-sandbox-description",
-                executor=SandboxExecutorBinding(
-                    description="test-sandbox-executor", namespace=TEST_NAMESPACE, templates={"test-template"}
+                executor=PodExecutorBinding(
+                    description="test-sandbox-executor",
+                    namespace=TEST_NAMESPACE,
+                    templates={"test-template": "the test box"},
                 ),
                 actions={"exec": action("Run script")},
                 direct_tools=frozenset({"exec"}),
