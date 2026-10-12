@@ -165,14 +165,14 @@ def _server(scope: Construct, *, storage: s3.PrivateBucket) -> None:
                             ],
                             args=["-f", "/config/server.toml", "--mode", "monolithic"],
                             ports=[SERVICE.port.k8s_container_port()],
-                            # 2Mi idle in cluster/docs/operations/2026_02_22_memory_request_rightsizing.md;
-                            # the limit leaves room for concurrent chunked NAR uploads.
+                            # VPA target 1.22Gi (upper bound 1.25Gi) on 2026-10-12; the limit leaves room
+                            # for concurrent chunked NAR uploads.
                             resources=k8s.ResourceRequirements(
                                 requests={
                                     "cpu": k8s.Quantity.from_string("50m"),
-                                    "memory": k8s.Quantity.from_string("32Mi"),
+                                    "memory": k8s.Quantity.from_string("1280Mi"),
                                 },
-                                limits={"memory": k8s.Quantity.from_string("1Gi")},
+                                limits={"memory": k8s.Quantity.from_string("4Gi")},
                             ),
                             volume_mounts=[
                                 k8s.VolumeMount(name="config", mount_path="/config", read_only=True),

@@ -102,7 +102,8 @@ def _aw_server_container() -> k8s.Container:
         volume_mounts=[k8s.VolumeMount(name="data", mount_path="/data")],
         resources=k8s.ResourceRequirements(
             requests={"cpu": k8s.Quantity.from_string("50m"), "memory": k8s.Quantity.from_string("64Mi")},
-            limits={"cpu": k8s.Quantity.from_string("500m")},
+            # VPA target 121Mi (upper bound 127Mi) on 2026-10-12; grows with imported events.
+            limits={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("512Mi")},
         ),
         liveness_probe=_http_probe("/api/0/info", _SERVER_PORT, initial_delay_seconds=10, period_seconds=30),
         readiness_probe=_http_probe("/api/0/info", _SERVER_PORT, initial_delay_seconds=5, period_seconds=10),

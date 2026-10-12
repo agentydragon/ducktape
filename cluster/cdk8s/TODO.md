@@ -25,8 +25,7 @@ valid generated and hand-written consumers pass. No duplicate consumer/provider 
 
 Workloads and proxy policies that already broke a rule when the rules started covering every
 App carry `unhardened_pods` / `unpinned_https_egress` waivers at their write call, each under a
-`CLEANUP(added 2026-10-12)` comment. ActivityWatch's `aw-server` still needs a memory limit sized
-from VPA recommendations (its memory grows with imported events). Ollama's `setup-gpt-oss` Job and
+`CLEANUP(added 2026-10-12)` comment. Ollama's `setup-gpt-oss` Job and
 Grocy's verify Job have no Flux force annotation, so their immutable pod templates change only with
 a Job rename. For each unpinned proxy, either pin `serverNames` or keep the waiver with a comment
 saying why it is exempt by design, as Agentplane's egress proxy does.

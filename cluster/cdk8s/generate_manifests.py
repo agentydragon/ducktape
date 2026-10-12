@@ -1181,8 +1181,6 @@ def generate_manifests(root: Path) -> None:
             siblings=["activitywatch-write-token.sops.yaml", "activitywatch-read-token.sops.yaml"],
             components=["./image-pins"],
             config_map_generator=activitywatch_app.CONFIG_MAPS,
-            # CLEANUP(added 2026-10-12): drop each entry once it passes pod hardening.
-            unhardened_pods={"Deployment/activitywatch"},
         ),
         external_secrets_operator_kustomization,
     )
