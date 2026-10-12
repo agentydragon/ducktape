@@ -257,7 +257,23 @@ def chart(app: App) -> Chart:
                             "check the gateway's state in Loki: "
                             '{namespace="cpap-sync", container="guest-console-log"} |= "cpap-gateway-health".\n'
                         ),
-                    )
+                    ),
+                    # Home Assistant's presence separates "the CPAP is away" from "the gateway is
+                    # broken": three days without a sync while Rai was home most of that time.
+                    Rule.alert(
+                        "CpapSyncFailingWhileHome",
+                        f'(time() - kube_cronjob_status_last_successful_time{{namespace="{NAMESPACE}", cronjob="{NAME}"}}'
+                        " > 3 * 86400)"
+                        ' and on () (avg_over_time(max(hass_person_state{entity="person.rai"})[3d:15m]) > 0.5)',
+                        for_="1h",
+                        labels={"severity": "warning"},
+                        summary="cpap-sync has failed for 3 days while Rai was home",
+                        description=(
+                            "Rai was home for most of the last 3 days, so the CPAP card should have been in range, "
+                            "yet no sync succeeded. The gateway's WiFi is the likely fault; check "
+                            '{namespace="cpap-sync", container="guest-console-log"} |= "cpap-gateway-health".\n'
+                        ),
+                    ),
                 ],
             )
         ],
