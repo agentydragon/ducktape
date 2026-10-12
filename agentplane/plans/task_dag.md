@@ -342,7 +342,7 @@ flowchart LR
     VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Candidate: production provider and API]
     VM_VIRTIOFS[Unscheduled: test KubeVirt virtiofs on v1.8.2]
-    AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource]
+    AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 8]
     VM_EGRESS[Candidate: production admission and egress integration]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
@@ -441,16 +441,16 @@ app/Sandbox Service database changes requires its own migration safety review.
 
 ```mermaid
 flowchart LR
-    CLAUDE_CODE_WEB_BRIDGE[Unscheduled: Claude Code web sessions in Agentplane]
+    CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     SERVICE_LOG_FLAGS[Unscheduled: logging flags in the services]
 ```
 
 ### `CLAUDE_CODE_WEB_BRIDGE` — Claude Code web sessions in Agentplane
 
-**Unscheduled; operator, 2026-10-12 PDT: low priority, not to build now.** Show Claude Code web
-conversations in Agentplane, and possibly drive them, by shimming the web interface's control
-protocol. Builds on the viewer and syncer under `devinfra/` and the reverse-engineering in
-`agentydragon/gaffer-private`.
+**Unscheduled; operator, 2026-10-12 PDT: low priority, not to build now.** Make Agentplane's
+frontend a custom frontend for Claude Code web sessions: show their conversations and send them
+messages, by shimming the web interface's control protocol. Builds on the viewer and syncer under
+`devinfra/` and the reverse-engineering in `agentydragon/gaffer-private`.
 
 ### `SERVICE_LOG_FLAGS` — logging flags in the services
 
@@ -470,7 +470,7 @@ flowchart LR
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned Kubernetes grants]
     KUBERNETES_RBAC_POLICIES[Decision: reusable groups and update semantics] --> KUBERNETES_RBAC_POLICY_BINDINGS[Blocked: apply groups and one-SA changes]
     KUBERNETES_RBAC_POLICY_BINDINGS --> MANAGED_SA_RBAC
-    BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous progress API]
+    BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_IDLE_EXPIRY[Candidate: delete idle Sandboxes]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
@@ -551,9 +551,13 @@ and authorization semantics; this cleanup does not authorize broader grants.
 
 ### `BOOTSTRAP_PROGRESS_CONTRACT` — asynchronous start/status
 
-**Candidate.** Add authorized start/progress/result semantics without
-holding an Open RPC through a long script. Keep successful bootstrap as the Open precondition
-unless the operator reviews a change. Separate Sandbox initialization from per-session setup.
+**Candidate.** Per-session setup is already asynchronous: the Session opens at once and its setup
+output and outcome reach history as `SetupStarted`/`SetupOutput`/`SetupFinished` Events. The
+Sandbox bootstrap is not. The runner runs it once and keeps its output in a durable log, but the
+Runner Gateway's `open_session` (`runner_gateway/session_lifecycle.py`) sends `Initialize` and holds
+the first Open until the script exits, and nothing shows its output or progress. Start it when the
+Sandbox comes up and expose its progress and result, keeping successful bootstrap as the Open
+precondition unless the operator reviews a change.
 
 ### `SANDBOX_IDLE_EXPIRY` — delete Sandboxes nobody uses
 
@@ -578,41 +582,43 @@ flowchart TD
 The History Service is the only owner of the raw log and fold; the app is a facade over it. Each
 service's README states what unrelated agents can still do while it is down or rolling.
 
-## 8. Sessions that outlive their Sandbox
+## 8. Our own Sandbox resource: Sessions that outlive their Pod
 
-Not scheduled (operator, 2026-10-10 PDT: co-plan, not now). A Session and its history are durable;
-its Sandbox is one incarnation that can be deleted, with a new one provisioned later to revive the
-Session on a runner. Today a Session lives exactly as long as its Sandbox's runner volume
-(suspension removes the Pod and keeps the volume). The event log alone is not a native resume image;
-the operator's direction (2026-10-10 PDT) is a state volume holding the harness files and runner
-state that survives the Sandbox and is attached to the next one. The History Service does not
-preclude this: it keys by Session, so it can record each Sandbox as an incarnation, and
-a teardown seal can close an incarnation, not the Session.
+Not scheduled. A Session and its history are durable. The operator's direction (2026-10-12 PDT):
+the way a Session outlives its runner is our own Sandbox resource, which holds the state PVC and
+stays in place with no Pod or VM scheduled. A Sandbox is its state, running or not; an
+**incarnation** is one Pod or VM. Stopping, replacing the image and starting again keeps the
+Sandbox, so keeping the state means keeping the Sandbox, and deleting the Sandbox is the only thing
+that deletes it. The same resource carries the VM kind, so section 4's stateful VMs build on these
+nodes instead of a parallel track. Today a Session lives as long as its agent-sandbox `Sandbox`
+(suspension removes the Pod and keeps the volume, but the PVC is owned by the `Sandbox` and goes
+with it). The History Service keys by Session, so it can record each incarnation, and a seal closes
+an incarnation, not the Session.
 
-A related direction (operator, 2026-10-11 PDT; later, with more planning, not scheduled): Sessions
-living in a long-running, often-suspended Sandbox whose runner image upgrades between incarnations.
-Runner dial-out, the ingress and per-incarnation seals make it more reachable; `POD_INCARNATION` is
-one shape it could take.
+A related direction (operator, 2026-10-11 PDT; later, not scheduled): Sessions living in a
+long-running, often-suspended Sandbox whose runner image upgrades between incarnations.
 
 ```mermaid
 flowchart TD
-    DURABLE_SESSION_LIFECYCLE[Decision: Session lifetime beyond its Sandbox]
-    SESSION_STATE_VOLUME_DESIGN[Decision: a state volume that outlives the Sandbox]
-    CLAUDE_PORTABLE_STATE[Candidate: Claude resumes on a reattached volume]
-    CODEX_PORTABLE_STATE[Candidate: Codex resumes on a reattached volume]
-    SESSION_INCARNATIONS[Blocked: Sessions record Sandbox incarnations]
-    STATE_VOLUME_RETENTION[Blocked: keep the state volume at teardown]
-    SESSION_REVIVE[Blocked: revive a Session in a new Sandbox]
+    DURABLE_SESSION_LIFECYCLE[Decision: Session lifetime and revival]
+    SESSION_STATE_VOLUME_DESIGN[Decision: what the state PVC holds]
+    AGENTPLANE_SANDBOX_RESOURCE[Unscheduled: our own Sandbox resource]
+    CLAUDE_PORTABLE_STATE[Candidate: Claude resumes on a new incarnation]
+    CODEX_PORTABLE_STATE[Candidate: Codex resumes on a new incarnation]
+    SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
+    SESSION_REVIVE[Blocked: start a stopped Sandbox again]
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
-    HOSTED_THREAD_SURFACES[Blocked: show and revive Sessions without a Sandbox]
+    HOSTED_THREAD_SURFACES[Blocked: show and revive stopped Sessions]
     HISTORY_SERVICE_OWNERSHIP[History Service ownership]
+    VM_PROVIDER[VM provider, section 4]
     DURABLE_SESSION_LIFECYCLE --> SESSION_STATE_VOLUME_DESIGN
     DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
+    SESSION_STATE_VOLUME_DESIGN --> AGENTPLANE_SANDBOX_RESOURCE
     SESSION_STATE_VOLUME_DESIGN --> CLAUDE_PORTABLE_STATE
     SESSION_STATE_VOLUME_DESIGN --> CODEX_PORTABLE_STATE
-    SESSION_STATE_VOLUME_DESIGN --> STATE_VOLUME_RETENTION
+    AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
+    AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
-    STATE_VOLUME_RETENTION --> SESSION_REVIVE
     CLAUDE_PORTABLE_STATE -. per harness .-> SESSION_REVIVE
     CODEX_PORTABLE_STATE -. per harness .-> SESSION_REVIVE
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
@@ -620,72 +626,87 @@ flowchart TD
     HISTORY_SERVICE_OWNERSHIP --> HOSTED_THREAD_SURFACES
 ```
 
-### `DURABLE_SESSION_LIFECYCLE` — Session lifetime beyond its Sandbox
+### `DURABLE_SESSION_LIFECYCLE` — Session lifetime and revival
 
 **Decision.** Replaces the frozen `THREAD_OUTLIVES_SANDBOX`. Decide: what a revived Session gets
 back (native harness state only, or also its workspace files); which launch configuration a new
-incarnation uses (the Session's frozen one, or a current template, which also decides whether an
+incarnation uses (the Sandbox's recorded one, or a current template, which also decides whether an
 image upgrade happens on revival); who may revive and how (an explicit API call, never implicitly
-on a read or a notification). Sessions that shared a Sandbox revive together (one state volume per
-Sandbox, `SESSION_STATE_VOLUME_DESIGN`).
+on a read or a notification). Sessions that share a Sandbox revive together, since they share its
+state PVC.
 
-### `SESSION_STATE_VOLUME_DESIGN` — a state volume that outlives the Sandbox
+### `SESSION_STATE_VOLUME_DESIGN` — what the state PVC holds
 
-**Decision; direction set by the operator, 2026-10-10 PDT.** Replaces the frozen
-`THREAD_PORTABLE_STATE`. A persistent volume holds the native harness files and the runner's state,
-separate from the workspace, is kept when the Sandbox is deleted, and is attached to the next
-incarnation, whose runner continues the same journal. Decided: one volume per Sandbox, so the
-Sessions that shared a Sandbox revive together in its successor; and (operator, 2026-10-12 PDT) it
-is a filesystem PVC the Sandbox Service creates and owns, with no owner reference, mounted as a
-volume in pods and through virtiofs in VMs (`VM_VIRTIOFS`), never from agent-sandbox's
-`volumeClaimTemplates`, which make the Sandbox its controller owner. Decide: whether the runner's state
-goes on it or only the harness files;
-whether the workspace survives too (operator neutral; default: it does, kept with the state volume,
-because a revived conversation refers to files the agent made and its cwd must exist); storage class, since `local-path` pins a volume to one node and
-so pins revival there; who deletes a retained volume (an explicit Session deletion) and its quota;
-and refusing to attach to an incompatible harness or runner version rather than attempting it.
+**Decision; direction set by the operator, 2026-10-10 and 2026-10-12 PDT.** Replaces the frozen
+`THREAD_PORTABLE_STATE`. One filesystem PVC per Sandbox holds the native harness files and the
+runner's state, separate from the workspace; each incarnation's runner continues the same journal
+on it. The Sandbox Service creates and owns it, with no owner reference, mounted as a volume in pods
+and through virtiofs in VMs (`VM_VIRTIOFS`), never from agent-sandbox's `volumeClaimTemplates`,
+which make the agent-sandbox `Sandbox` its controller owner. Decide: whether the runner's state
+goes on it or only the harness files; whether the workspace survives too (operator neutral;
+default: it does, because a revived conversation refers to files the agent made and its cwd must
+exist); storage class, since `local-path` pins a volume to one node and so pins every incarnation
+there; its quota; and refusing an incompatible harness or runner version rather than attempting it.
+
+### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
+
+**Unscheduled; operator, 2026-10-12 PDT: the shared base of this section and stateful VMs.** An Agentplane custom
+resource (in `agentplane/crds/`) whose spec is the recipe (template, grants, egress, session
+defaults, bootstrap command, runner endpoints), the kind (`pod | vm`), its state PVC and the desired
+runner (image, running or stopped), with incarnations in its status. It replaces agent-sandbox's
+`Sandbox`: the Sandbox Service reconciles it into a bare Pod or a `VirtualMachine` and owns the
+state PVC itself. Since dial-out, all agent-sandbox gives us is a Pod from a template,
+suspension and PVC creation, but its `Sandbox` is also the Sandbox Service's only durable record
+(binding, grants, provisioning state and finalizers are annotations on it), so ours takes that
+over. Replaces the imperative-only `CreateSandbox` too. If the Sandbox Service becomes a real
+controller or operator for it, rename the service to say so (operator, 2026-10-11 PDT).
+
+It also carries the operator's eventual "pause, replace the image, resume" (2026-10-12 PDT), for
+pods and VMs alike. The controller accepts a new `spec.runner.image` only once the current
+incarnation is gone: the next Pod runs the new image, and a VM gets its containerDisk rewritten while
+`runStrategy: Halted`. Both keep the state PVC. The PVC records a state-schema version, and an image
+that does not declare that version is refused. The VM half is #8843's `ReplaceVmImage` and
+`VmTemplate.state_schema_version`, replaced live in
+[the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
+
+Deleting the Sandbox seals its last incarnation and deletes its PVC; stopping it never does. Test
+both, and that a Pod or VM going away on its own leaves the Sandbox and its PVC in place.
 
 ### `CLAUDE_PORTABLE_STATE` — Claude evidence
 
-**Candidate after the volume design.** Attach a retained volume to a new Sandbox (new Pod, possibly
-a newer image) and resume, checking continuation and prompt-cache cost. The frozen
-`RUNNER_IMAGE_UPGRADE_PROOF` is the same experiment on one Sandbox. Independent of Codex.
+**Candidate after the volume design.** Start a new incarnation (a new Pod, possibly a newer image)
+on a kept state PVC and resume, checking continuation and prompt-cache cost. The frozen
+`RUNNER_IMAGE_UPGRADE_PROOF` is the same experiment. Independent of Codex.
 
 ### `CODEX_PORTABLE_STATE` — Codex evidence
 
 **Candidate after the volume design.** The same for Codex; neither harness waits for the other.
 
-### `SESSION_INCARNATIONS` — a Session records its Sandboxes over time
+### `SESSION_INCARNATIONS` — a Session records its incarnations
 
-**Blocked on the lifecycle decision.** The Runner Gateway's Session
-registry holds a sequence of Sandbox incarnations, at most one live; the locator ↔ Sandbox binding
-becomes per incarnation. Each incarnation's runner announces its `sandbox_uid` on ingress, from which the
-History Service records it, and its seal ends that incarnation, not the Session. On the retained volume the runner journal and its
-cursors simply continue; the next incarnation journals that it resumed after a seal.
+**Blocked on the lifecycle decision and the resource.** The Sandbox resource's status lists its
+incarnations, at most one live; each incarnation's runner announces its Pod or VM UID on ingress,
+from which the History Service records it, and its seal ends that incarnation, not the Session. On
+the kept volume the runner journal and its cursors simply continue; the next incarnation journals
+that it resumed after a seal.
 
-### `STATE_VOLUME_RETENTION` — keep the state volume at teardown
+### `SESSION_REVIVE` — start a stopped Sandbox again
 
-**Blocked on the volume design.** Provision the state volume separately from
-the Sandbox's other storage; at teardown, after the seal commits, delete the Sandbox and keep the
-volume, bound to the deleted Sandbox's identity so that its successor receives it. Test that a Sandbox
-deletion never deletes a retained volume and that an explicit Session deletion does.
-
-### `SESSION_REVIVE` — revive a Session in a new Sandbox
-
-**Blocked on incarnations, retained volumes and per-harness evidence.** Provision a new Sandbox
-from the decided launch configuration with the retained volume attached, and resume the harness as a new
-incarnation of the same Session and history. Ships per harness as its evidence lands. Test revival
-after deletion, a refused incompatible volume, and concurrent revive requests.
+**Blocked on incarnations and per-harness evidence.** Schedule a new Pod or VM for a stopped
+Sandbox from the decided launch configuration, possibly on a new image, and resume each harness as
+a new incarnation of the same Session and history. Ships per harness as its evidence lands. Test
+revival after a long stop, a refused incompatible state PVC, and concurrent revive requests.
 
 ### `THREAD_SUCCESSOR_DELIVERY` — commands unsettled across incarnations
 
 **Blocked on revival.** A command whose admission was ambiguous when an incarnation ended is not
 replayed into the next one; it stays unknown and is shown as such. Moved from the freezer.
 
-### `HOSTED_THREAD_SURFACES` — show and revive Sessions without a Sandbox
+### `HOSTED_THREAD_SURFACES` — show and revive stopped Sessions
 
-**Blocked on revival and History Service ownership.** The app lists Sessions whose Sandbox is gone,
-reads their history from the History Service, and offers an explicit revive. Moved from the freezer.
+**Blocked on revival and History Service ownership.** The app lists Sessions whose Sandbox has no
+running incarnation, reads their history from the History Service, and offers an explicit revive.
+Moved from the freezer.
 
 ## 9. Ownership and naming cleanup
 
@@ -793,13 +814,11 @@ runner through the Sandbox Service.
 ```mermaid
 flowchart TD
     GATEWAY_CLIENT_SPLIT[Unscheduled: Session messages move to the gateway]
-    AGENTPLANE_SANDBOX_RESOURCE[Unscheduled: our own Sandbox resource]
-    POD_INCARNATION[Decision: a Pod is the incarnation]
+    AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 8]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     COMMAND_RECORDS_RETIRE[In flight: drop command submission records]
     RESUME_BY_SESSION_ID[Unscheduled: resume a Session by its ID alone]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
-    POD_INCARNATION -. if chosen, rewrites .-> SESSION_STATE_VOLUME_DESIGN[State volume design]
 ```
 
 ### `GATEWAY_CLIENT_SPLIT` — Session messages move to the gateway
@@ -817,34 +836,6 @@ handle is renamed, its
 `ResumeSession` still names the Sandbox, because only the replica holding its runner connection
 serves it and the client reaches that replica through the Sandbox's control Service. Resume by
 Session ID needs the gateway to forward to the holder itself.
-
-### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
-
-**Unscheduled; operator, 2026-10-12 PDT: built together with stateful VMs.** An Agentplane custom
-resource (in `agentplane/crds/`) whose spec is the recipe (template, grants, egress, session
-defaults, bootstrap command, runner endpoints), the kind (`pod | vm`), its state PVC and the desired
-runner (image, running or stopped), with incarnations in its status. It replaces agent-sandbox's
-`Sandbox`: the Sandbox Service reconciles it into a bare Pod or a `VirtualMachine` and owns the
-state PVC itself (section 4). Since dial-out, all agent-sandbox gives us is a Pod from a template,
-suspension and PVC creation, but its `Sandbox` is also the Sandbox Service's only durable record
-(binding, grants, provisioning state and finalizers are annotations on it), so ours takes that
-over. Replaces the imperative-only `CreateSandbox` too. If the Sandbox Service becomes a real
-controller or operator for it, rename the service to say so (operator, 2026-10-11 PDT).
-
-It also carries the operator's eventual "pause, replace the image, resume" (2026-10-12 PDT), for
-pods and VMs alike. The controller accepts a new `spec.runner.image` only once the current
-incarnation is gone: the next Pod runs the new image, and a VM gets its containerDisk rewritten while
-`runStrategy: Halted`. Both keep the state PVC. The PVC records a state-schema version, and an image
-that does not declare that version is refused. The VM half is #8843's `ReplaceVmImage` and
-`VmTemplate.state_schema_version`, replaced live in
-[the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
-
-### `POD_INCARNATION` — a Pod is the incarnation
-
-**Decision; later.** A Sandbox is its agent's volumes, with or without a running runner; an
-incarnation is a Pod. Changing the runner image is stop, replace the Pod, start, and needs no seal
-since the volume stays. If chosen, section 8's state volume and incarnation nodes are rewritten
-around it: keeping the volume means keeping the Sandbox.
 
 ### `SEAL_FINALIZER` — seal as a finalizer on every delete
 
