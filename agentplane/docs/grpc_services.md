@@ -62,7 +62,8 @@ follows it; code that differs converges on it.
   maps domain exceptions to status codes. It is built by `agentplane.grpc_servicer.status_mapping`
   from the service's own rows; the rejected-bearer, deadline and unavailable-backend rows are shared,
   each service naming only their messages. Messages are fixed strings: no exception text, Kubernetes
-  response, SQL or bearer data reaches a client. A server fault the mapping does not know propagates;
+  response, SQL or bearer data reaches a client. An `UNAVAILABLE` or `DEADLINE_EXCEEDED` abort logs the
+  exception behind it, since its message names no cause. A server fault the mapping does not know propagates;
   gRPC logs it and answers `UNKNOWN`. `context.abort` outside the mapping is for request validation
   the RPC itself performs.
 - **Client:** `agentplane.grpc_calls` translates `grpc.aio.AioRpcError` in one place into a

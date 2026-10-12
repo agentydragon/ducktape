@@ -6,7 +6,10 @@ Per-package conftest.py files can extend this with package-specific fixtures.
 
 from __future__ import annotations
 
+import faulthandler
+import io
 import os
+import sys
 
 import pytest
 
@@ -18,6 +21,14 @@ import pytest_asyncio
 
 def pytest_configure(config: pytest.Config) -> None:
     """Register all common test markers."""
+    # A test Bazel kills at its timeout leaves a log with nothing in it: stdout is block-buffered into a
+    # file, and the kill gives Python no chance to report. Line-buffer stdout so the log shows how far it
+    # got, and dump every thread's stack shortly before the deadline so it shows where it stalled.
+    assert isinstance(sys.stdout, io.TextIOWrapper), sys.stdout
+    sys.stdout.reconfigure(line_buffering=True)
+    if timeout := os.getenv("TEST_TIMEOUT"):
+        # A duplicate of the real stderr: fd capture points fd 2 at a temporary file while a test runs.
+        faulthandler.dump_traceback_later(int(timeout) * 0.9, file=os.fdopen(os.dup(2), "w"))
     # Enable pytest-asyncio auto mode for all tests
     config.option.asyncio_mode = "auto"
 
