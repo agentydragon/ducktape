@@ -59,6 +59,34 @@ async def test_actions_attention_strip_over_thread(view: VisualPage, app: Agentp
     await view.capture()
 
 
+@DESKTOP_AND_MOBILE
+@pytest.mark.parametrize("sidebar_open", [False, True], ids=["sidebar_closed", "sidebar_open"])
+@pytest.mark.parametrize(
+    "route",
+    ["/", f"/threads/{IDLE_THREAD}", "/sandboxes", "/sandboxes/ready-sandbox", "/actions"],
+    ids=["landing", "thread", "sandboxes", "sandbox", "actions"],
+)
+async def test_pending_actions_on_every_route(
+    view: VisualPage, app: AgentplaneFixture, route: str, sidebar_open: bool
+) -> None:
+    """Where pending Actions show on each top-level route: the sidebar queue while it is open, the
+    strip under the top bar while it is closed, and neither on the Actions page, which is the queue."""
+    await app.set_flag(Flag.PENDING_ACTIONS)
+    if route.startswith("/threads/"):
+        await app.mount_thread(IDLE_THREAD)
+    else:
+        await app.mount_app(route)
+    await view.check(context="fixture ready")
+    page = view.page
+    sidebar = page.get_by_role("navigation", name="Threads")
+    if await sidebar.is_visible() != sidebar_open:
+        await page.get_by_role("button", name="Toggle navigation").click()
+    await expect(sidebar).to_be_visible(visible=sidebar_open)
+    strip = page.locator(".agentplane-actions-attention")
+    await expect(strip).to_have_count(0 if sidebar_open or route == "/actions" else 1)
+    await view.capture(target=page.locator("#app"))
+
+
 async def test_actions_sidebar_resize(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.PENDING_ACTIONS)
     await app.mount_thread(IDLE_THREAD)
