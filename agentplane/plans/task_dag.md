@@ -477,6 +477,7 @@ flowchart LR
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_RBAC[Blocked: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
+    NETWORK_WORKLOAD_IDENTITY[Unscheduled: network-level workload identity]
 ```
 
 ### `PC_EGRESS_CREDENTIALS` — label public-coder's Action Service caller
@@ -543,6 +544,15 @@ only unresolved deployed wiring needs a live check, not a repeat of every alread
 cover invalid signatures. Close the remaining route-wiring uncertainty with an unsigned webhook
 request and a private-API request through the public hostname: both must be refused, without
 creating subscriptions or inbox entries. Record the result once; no exhaustive provider matrix.
+
+### `NETWORK_WORKLOAD_IDENTITY` — network-level workload identity
+
+**Unscheduled; operator, 2026-10-12 PDT: consider later.** Sandboxes and other workloads prove
+their identity to Agentplane services at the network layer, with Cilium mutual authentication
+(SPIFFE/SPIRE) or a service mesh, instead of a projected token plus an egress proxy hop; services
+authorize by SPIFFE ID or workload label. Costs: SPIRE or a mesh to install, Cilium mutual
+authentication still in beta, and a second authentication scheme in every service beside projected
+tokens.
 
 ### `BOOTSTRAP_PROGRESS_CONTRACT` — asynchronous start/status
 
