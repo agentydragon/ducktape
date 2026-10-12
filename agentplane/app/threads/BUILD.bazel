@@ -20,18 +20,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "session_discovery",
-    srcs = ["session_discovery.py"],
-    deps = [
-        ":sessions",
-        "//agentplane/app/threads/events:event_log",
-        "//agentplane/sandbox_service:errors",
-        "@pypi//grpcio",
-        "@pypi//sqlalchemy",
-    ],
-)
-
 py_test(
     name = "test_indexing",
     # Full archives up to 40,000 events and pure-fold-derived prefixes up to 20,000 item rows.
@@ -118,7 +106,6 @@ py_library(
     name = "sessions",
     srcs = ["sessions.py"],
     deps = [
-        "//agentplane:changes",
         "//agentplane/app:live",
         "//agentplane/app:sandbox_models",
         "//agentplane/app/threads/events:event_log",
@@ -135,7 +122,6 @@ py_library(
     name = "bridge",
     srcs = ["bridge.py"],
     deps = [
-        ":session_discovery",
         ":sessions",
         ":summaries",
         "//agentplane/app/threads/events:event_log",
@@ -156,7 +142,11 @@ py_library(
 py_library(
     name = "history_watch",
     srcs = ["history_watch.py"],
-    deps = ["//agentplane/history_service:client"],
+    deps = [
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/history_service:client",
+        "@pypi//sqlalchemy",
+    ],
 )
 
 py_test(
@@ -166,10 +156,18 @@ py_test(
     requires_docker = True,
     deps = [
         ":history_watch",
+        ":summaries",
         "//:conftest",
         "//agentplane:changes",
         "//agentplane/app:conftest",
+        "//agentplane/app/threads/events:event_log",
+        "//agentplane/history_service:client",
         "//agentplane/history_service/testing:backend",
+        "//agentplane/history_service/testing:history",
+        "//agentplane/history_service/testing:sessions",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
     ],
 )

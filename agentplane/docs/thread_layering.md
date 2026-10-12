@@ -109,8 +109,8 @@ the mapping, without duplicating the log's static Sandbox on each association.
 A Thread is a view/fold of one durable logical Session's Event log, with its own
 operator-set presentation; it is not a second execution source. Its id is the Runner
 Gateway's public Session UUID: `CreateSession` reserves it before runner contact, and the app
-materializes the Thread under it from the Open reply, an Open-key lookup, or `ListSessions`
-discovery, whichever comes first. A suspend/resume on retained storage reuses that Session ID,
+materializes the Thread under it from the Open reply, an Open-key lookup, or the History
+Service's announcement that it recorded the Session, whichever comes first. A suspend/resume on retained storage reuses that Session ID,
 native conversation, and Event sequence; a fresh harness process is an incarnation,
 not another Session. Runner restart tests verify the identical ID and contiguous
 Event prefix after crash and SIGTERM; the Sandbox suspend/resume acceptance exercises

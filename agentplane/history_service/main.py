@@ -60,6 +60,7 @@ async def serve(settings: Settings) -> None:
                 reader_accounts=settings.reader_accounts,
                 request_timeout_s=settings.request_timeout_s,
                 summary_changes=wakeups.changes[Channel.SUMMARIES],
+                session_openings=wakeups.changes[Channel.SESSIONS],
                 watch_lease_s=settings.watch_lease_s,
             )
             add_service(resources, server)

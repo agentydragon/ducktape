@@ -32,7 +32,6 @@ from agentplane.app.testing.replication_source import Placements
 from agentplane.app.testing.thread_test_support import SPEC, Replica, event_entry
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.history_watch import HistoryWatch
-from agentplane.app.threads.session_discovery import SessionDiscovery
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
@@ -264,20 +263,10 @@ def runners(live_index: LiveIndex, gateway: RunnerGatewayClient) -> SandboxSessi
 
 
 @pytest.fixture
-async def discovery(runners: SandboxSessions, event_logs: SeededEventLogStore) -> AsyncIterator[SessionDiscovery]:
-    async with SessionDiscovery(runners=runners, event_logs=event_logs) as discovery:
-        yield discovery
-
-
-@pytest.fixture
 def bridge(
-    runners: SandboxSessions,
-    event_logs: SeededEventLogStore,
-    content: ContentStore,
-    discovery: SessionDiscovery,
-    database_updates: WakeupListener,
+    runners: SandboxSessions, event_logs: SeededEventLogStore, content: ContentStore, database_updates: WakeupListener
 ) -> RunnerBridge:
-    return RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery)
+    return RunnerBridge(runners=runners, event_logs=event_logs, content=content)
 
 
 @pytest.fixture

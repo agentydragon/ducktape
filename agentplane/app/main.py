@@ -34,8 +34,7 @@ from agentplane.app.settings import Settings
 from agentplane.app.shutdown import Drain, drain_of
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.history_watch import HistoryWatch
-from agentplane.app.threads.session_discovery import SessionDiscovery
+from agentplane.app.threads.history_watch import HistoryWatch, SessionOpenings
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
@@ -118,6 +117,7 @@ async def async_main(settings: Settings) -> None:
             request_timeout_s=settings.history_service_request_timeout_s,
         ) as history,
         history.new_client() as history_watch_client,
+        history.new_client() as session_openings_client,
     ):
         inventory = SandboxServiceClient(
             sandbox_service_channel,
@@ -166,8 +166,8 @@ async def async_main(settings: Settings) -> None:
         store = ThreadStore(engine, summaries, gateway=gateway)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         runners = SandboxSessions(live, gateway)
-        discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
-        bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery)
+        session_openings = SessionOpenings(session_openings_client, event_logs, retry_interval_s=1)
+        bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content)
 
         app = create_app(
             inventory,
@@ -213,22 +213,22 @@ async def async_main(settings: Settings) -> None:
                     ),
                     drain_of(app),
                 ),
-                discovery=discovery,
+                session_openings=session_openings,
                 database_updates=database_updates,
                 engine=engine,
             )
 
 
 async def serve_then_close(
-    server: uvicorn.Server, *, discovery: SessionDiscovery, database_updates: WakeupListener, engine: AsyncEngine
+    server: uvicorn.Server, *, session_openings: SessionOpenings, database_updates: WakeupListener, engine: AsyncEngine
 ) -> None:
     """Serve until told to exit, then let go in the order the budgets assume: Uvicorn's graceful-shutdown
-    timeout bounds the requests and streams still open, and stopping discovery and closing the runner
-    connections and the database have the rest of the Pod's grace period to themselves."""
+    timeout bounds the requests and streams still open, and stopping Session openings and closing the
+    runner connections and the database have the rest of the Pod's grace period to themselves."""
     async with AsyncExitStack() as stack:
         stack.push_async_callback(engine.dispose)
         await stack.enter_async_context(database_updates.listener.listen())
-        await stack.enter_async_context(discovery)
+        await stack.enter_async_context(background(session_openings.run(), name="session-openings"))
         await server.serve()
 
 

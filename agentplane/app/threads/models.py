@@ -32,7 +32,7 @@ class EventLog(Base):
 
 class Thread(Base):
     """What an operator has set on an event log's thread, and the app's record of a confirmed resume.
-    No row means the defaults: unnamed, not archived and not resumed, so discovery never has to create one."""
+    No row means the defaults: unnamed, not archived and not resumed, so opening a Thread never has to create one."""
 
     __tablename__ = "thread"
 

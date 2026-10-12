@@ -37,11 +37,9 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.replication_source import SANDBOX
-from agentplane.app.threads import session_discovery
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
-from agentplane.app.threads.history_watch import HistoryWatch
-from agentplane.app.threads.session_discovery import SessionDiscovery
+from agentplane.app.threads.history_watch import HistoryWatch, SessionOpenings
 from agentplane.app.threads.sessions import SandboxSessions
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
@@ -196,7 +194,6 @@ async def _serve(
     replay_after: int | None,
     electric_url: str | None,
 ) -> None:
-    session_discovery.RECONCILE_S = 0.05
     engine = connect(database_url)
     database_updates = create_database_updates(engine.url)
     custom, core = cast(Any, FakeCustomObjectsApi()), cast(Any, FakeCoreV1Api())
@@ -220,6 +217,7 @@ async def _serve(
             dial(f"127.0.0.1:{service_port}") as channel,
             history,
             history.new_client() as watch_client,
+            history.new_client() as openings_client,
             httpx.AsyncClient(base_url="http://test-unused-decisions.invalid") as decisions_http,
             httpx.AsyncClient(
                 base_url=electric_url or "http://test-unused-electric.invalid", timeout=65
@@ -242,9 +240,7 @@ async def _serve(
                 ),
             )
             store = ThreadStore(engine, summaries, gateway=gateway)
-            runners = SandboxSessions(index, gateway)
-            discovery = SessionDiscovery(runners=runners, event_logs=event_logs)
-            bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, discovery=discovery)
+            bridge = RunnerBridge(runners=SandboxSessions(index, gateway), event_logs=event_logs, content=content)
             history_watch = HistoryWatch(
                 watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
             )
@@ -296,8 +292,12 @@ async def _serve(
             if frontend_directory is not None:
                 app.mount("/", StaticFiles(directory=frontend_directory, html=True), name="test-frontend")
             try:
-                async with database_updates.listener.listen(), discovery:
+                async with database_updates.listener.listen():
                     watching = asyncio.create_task(history_watch.run(), name="test-app-history-watch")
+                    opening = asyncio.create_task(
+                        SessionOpenings(openings_client, event_logs, retry_interval_s=0.05).run(),
+                        name="test-app-session-openings",
+                    )
                     try:
                         with socket.socket() as listener:
                             listener.bind(("127.0.0.1", 0))
@@ -307,7 +307,8 @@ async def _serve(
                             )
                     finally:
                         watching.cancel()
-                        await asyncio.gather(watching, return_exceptions=True)
+                        opening.cancel()
+                        await asyncio.gather(watching, opening, return_exceptions=True)
             finally:
                 await engine.dispose()
                 await core.close()

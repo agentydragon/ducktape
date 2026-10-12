@@ -6,7 +6,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from uuid import UUID
 
-from sqlalchemy import delete, select, text
+from sqlalchemy import delete, func, select, text
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
@@ -54,6 +54,15 @@ class Checkpoint:
     sealed: bool
 
 
+@dataclass(frozen=True)
+class OpenedSession:
+    session_id: UUID
+    position: int
+
+
+# Held from drawing a Session's opening position to commit, so positions become visible in order.
+_OPENING_LOCK = 0x534F504E
+
 # An item whose start lies further back than this is kept whole rather than read in one transaction.
 _SETTLEMENT_SPAN_LIMIT = 20_000
 
@@ -79,19 +88,23 @@ class Store:
         Of two concurrent first writers, the row lock lets one bind and refuses the other.
         """
         async with self._sessions.begin() as session:
-            created = await session.scalar(
-                insert(SessionHistory)
-                .values(
-                    id=session_id,
-                    writer_namespace=writer.namespace,
-                    writer_name=writer.name,
-                    writer_uid=writer.uid,
-                    source_id=None,
-                    last_cursor=0,
+            created = None
+            # Only a first push takes the opening lock, so a reconnecting runner never waits on another's.
+            if await session.get(SessionHistory, session_id) is None:
+                await session.execute(select(func.pg_advisory_xact_lock(_OPENING_LOCK)))
+                created = await session.scalar(
+                    insert(SessionHistory)
+                    .values(
+                        id=session_id,
+                        writer_namespace=writer.namespace,
+                        writer_name=writer.name,
+                        writer_uid=writer.uid,
+                        source_id=None,
+                        last_cursor=0,
+                    )
+                    .on_conflict_do_nothing()
+                    .returning(SessionHistory.id)
                 )
-                .on_conflict_do_nothing()
-                .returning(SessionHistory.id)
-            )
             row = await session.get(SessionHistory, session_id, with_for_update=True, populate_existing=True)
             assert row is not None
             if row.writer_uid is None:
@@ -100,7 +113,21 @@ class Store:
                 raise WriterMismatchError(session_id)
             if created is not None:
                 await notify(session, Channel.HISTORY)
+                await notify(session, Channel.SESSIONS)
             return _checkpoint(row)
+
+    async def opened_sessions(self, *, after_position: int, limit: int) -> list[OpenedSession]:
+        """Up to `limit` Sessions recorded after `after_position`, in recording order."""
+        if after_position < 0 or not 1 <= limit <= 1000:
+            raise ValueError("invalid opened Session page")
+        async with self._sessions() as session:
+            rows = await session.execute(
+                select(SessionHistory.id, SessionHistory.opened_position)
+                .where(SessionHistory.opened_position > after_position)
+                .order_by(SessionHistory.opened_position)
+                .limit(limit)
+            )
+            return [OpenedSession(session_id=session_id, position=position) for session_id, position in rows]
 
     async def append(self, session_id: UUID, entries: Sequence[event_log_pb2.EventEntry]) -> int:
         """Replay exact duplicates or extend the prefix; serialize concurrent writers by Session ID.

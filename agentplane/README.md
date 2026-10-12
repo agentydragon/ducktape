@@ -59,7 +59,7 @@ flowchart TB
     mcp_client -->|MCP over OAuth| actions
     app -->|gRPC: Sandboxes| ss
     app -->|gRPC: Sessions, commands| gw
-    app -->|gRPC: Session and Thread reads| hs
+    app -->|gRPC: Session and Thread reads, change and Session-opening watch| hs
     app -->|HTTP| notif
     app -->|HTTP: operator decisions| actions
     app -->|HTTP admin port: egress decisions| proxy

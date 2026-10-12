@@ -15,6 +15,7 @@ exports_files([
     "0012_drop_resumed_after_cursor.py",
     "0013_feed_snapshot_public_ids.py",
     "0014_drop_sandbox_locator.py",
+    "0015_session_opened_position.py",
 ])
 
 py_library(
@@ -122,6 +123,15 @@ py_library(
 py_library(
     name = "0014_drop_sandbox_locator",
     srcs = ["0014_drop_sandbox_locator.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0015_session_opened_position",
+    srcs = ["0015_session_opened_position.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

@@ -75,6 +75,7 @@ async def stub(engine: AsyncEngine, history: Store) -> AsyncIterator[history_ser
                     reader_accounts=frozenset({READER}),
                     request_timeout_s=10,
                     summary_changes=wakeups.changes[Channel.SUMMARIES],
+                    session_openings=wakeups.changes[Channel.SESSIONS],
                     watch_lease_s=WATCH_LEASE_S,
                 ),
                 server,
@@ -163,6 +164,58 @@ async def test_summary_watch_announces_each_fold_commit_until_planned_renewal(
     assert isinstance(renewal, history_service_pb2.WatchSessionSummariesResponse)
     assert renewal.HasField("reconnect_required")
     assert await call.read() is grpc.aio.EOF
+
+
+async def _next_opened(
+    call: grpc.aio.UnaryStreamCall[
+        history_service_pb2.WatchSessionSummariesRequest, history_service_pb2.WatchSessionSummariesResponse
+    ],
+) -> history_service_pb2.SessionOpened:
+    """The stream's next `session_opened`, past the `changed` notices before it."""
+    while True:
+        message = await call.read()
+        assert isinstance(message, history_service_pb2.WatchSessionSummariesResponse)
+        if message.HasField("session_opened"):
+            return message.session_opened
+        assert message.HasField("changed")
+
+
+async def test_watch_names_each_session_recorded_after_the_requested_position(
+    stub: history_service_pb2_grpc.HistoryServiceAsyncStub, history: Store
+) -> None:
+    earlier, later, live = uuid4(), uuid4(), uuid4()
+    await history.bind_writer(earlier, WRITER)
+    await history.bind_writer(later, WRITER)
+    call = stub.WatchSessionSummaries(
+        history_service_pb2.WatchSessionSummariesRequest(opened_after=0), metadata=bearer(READER_TOKEN)
+    )
+    # The backlog first, in recording order, then each Session as its first push binds it.
+    backlog = [await _next_opened(call), await _next_opened(call)]
+    assert [opened.session_id for opened in backlog] == [str(earlier), str(later)]
+    await history.bind_writer(live, WRITER)
+    assert (await _next_opened(call)).session_id == str(live)
+    call.cancel()
+
+    # A caller reconnecting after the last Session it handled is offered only those recorded since.
+    resumed = stub.WatchSessionSummaries(
+        history_service_pb2.WatchSessionSummariesRequest(opened_after=backlog[1].position),
+        metadata=bearer(READER_TOKEN),
+    )
+    assert (await _next_opened(resumed)).session_id == str(live)
+    resumed.cancel()
+
+
+async def test_summary_watch_names_no_session_unless_asked(
+    stub: history_service_pb2_grpc.HistoryServiceAsyncStub, history: Store
+) -> None:
+    await history.bind_writer(uuid4(), WRITER)
+    call = stub.WatchSessionSummaries(history_service_pb2.WatchSessionSummariesRequest(), metadata=bearer(READER_TOKEN))
+    await history.bind_writer(uuid4(), WRITER)
+    kinds: set[str | None] = set()
+    while (message := await call.read()) is not grpc.aio.EOF:
+        assert isinstance(message, history_service_pb2.WatchSessionSummariesResponse)
+        kinds.add(message.WhichOneof("observation"))
+    assert kinds == {"changed", "reconnect_required"}
 
 
 async def test_summary_watch_requires_a_reader(stub: history_service_pb2_grpc.HistoryServiceAsyncStub) -> None:
