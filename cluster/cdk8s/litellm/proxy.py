@@ -48,7 +48,6 @@ from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpe
 
 from cluster.cdk8s import node_scheduling, pod_policy
 from cluster.cdk8s.config_format import yaml_config
-from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     Kustomization,
@@ -411,7 +410,6 @@ def _chart(app: App) -> Chart:
     chart = Chart(app, spec.name, disable_resource_name_hashes=True)
     LiteLLMProxy(chart, "proxy", spec)
     LiteLLMServiceMonitor(chart, "monitoring", service(spec))
-    add_fleet_rules(chart)
     return chart
 
 

@@ -512,6 +512,7 @@ py_library(
     srcs = ["generation.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":egress",
         ":environment",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
@@ -537,7 +538,6 @@ py_library(
         ":sandbox_pod",
         ":sandbox_service",
         "//agentplane:subjects",
-        "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:namespaces",
         "@pypi//cdk8s",
         "@pypi//constructs",

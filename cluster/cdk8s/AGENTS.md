@@ -58,10 +58,10 @@ Model with constructs, deploy with one props object per environment.
   fixtures (`Testing.synth` in memory). It calls the shared `agentplane/chart.py`'s
   `environment_chart(app, env)` and adds its environment-only objects to the chart that
   returns — never `if env.namespace == ...` inside a construct, and never a hook the
-  shared function calls back into. Objects added after it returns are still checked:
-  `add_fleet_rules` registers a synth-time validation rather than reading the chart when
-  called. `haku/charts.py`'s per-directory `*_chart(app)` is the same shape. The entry
-  point holds no environment data.
+  shared function calls back into. Objects added after it returns are still checked: the
+  fleet rules run when the App synthesizes, not when a chart is built. `haku/charts.py`'s
+  per-directory `*_chart(app)` is the same shape. The entry point holds no environment
+  data.
 - **References, not names.** `Service(selector=deployment)`,
   `Volume.from_config_map(config_map)`, `Role.from_role_name(...)`; a network rule
   targets a workload through the constant the owning module exports
@@ -260,11 +260,11 @@ indirection, stop and ask before changing the design.
   PR that makes it. No list of files to keep: the data deps carry both whole trees.
 - **Invariants live beside the generator**: tests over the in-memory synth
   (`agentplane/conftest.py`'s `agentplane_manifests`), or
-  **fleet rules** (`fleet_rules.py`, run by every synth through
-  `chart.node.add_validation`). A rule for every object of a kind is a fleet rule; a
-  rule about one construct's shape is a test in its package; a relation that holds by
-  construction (the Service selector is the Deployment, the ConfigMap is rendered from
-  the Settings model) gets no test.
+  **fleet rules** (`fleet_rules.py`, attached to every App `generation.write_app`
+  writes, so they see all of its charts at once). A rule for every object of a kind is a
+  fleet rule; a rule about one construct's shape is a test in its package; a relation
+  that holds by construction (the Service selector is the Deployment, the ConfigMap is
+  rendered from the Settings model) gets no test.
 - **A value in one place gets no test.** A memory limit, a replica count, a hostname:
   editing it is the review. Never copy a generator's literal into an assertion.
 - **Code is not its deployment.** A test of code under `x/` or `haku/` never reads
@@ -287,7 +287,7 @@ A rule is a plain function `objects -> list[str]` over rendered dicts in
 `fleet_rules.py`, listed in `FleetRules.validate`, with a unit test on synthetic
 objects. Encode what the fleet holds; a rule that fails on `devel` is a policy change
 and lands in its own PR with the violations fixed. Exceptions are explicit parameters
-(`unpinned_https_egress`), never name matching inside the rule.
+(`write_app`'s `unpinned_https_egress`), never name matching inside the rule.
 
 ## Gotchas
 

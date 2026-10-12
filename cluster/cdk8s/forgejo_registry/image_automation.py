@@ -15,7 +15,6 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from constructs import Construct
 from flux_imagerepository_crds.io.fluxcd.toolkit.image import ImageRepositorySpecSecretRef
 
-from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.image_automation import newest_ci_tag_policy
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -139,7 +138,6 @@ def chart(app: App) -> Chart:
     (cluster/AGENTS.md § Colocating image repository and policy)."""
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     ForgejoImageAutomation(chart, "images")
-    add_fleet_rules(chart)
     return chart
 
 

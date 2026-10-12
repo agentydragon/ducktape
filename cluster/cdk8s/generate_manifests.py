@@ -118,6 +118,7 @@ from cluster.cdk8s.external_secrets import (
     flux_kustomizations as external_secrets_flux_kustomizations,
     operator as external_secrets_operator,
 )
+from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux_grafana_secrets import flux_grafana_secrets
 from cluster.cdk8s.flux_image_automation_ghcr import image_automation as flux_image_automation_ghcr
 from cluster.cdk8s.flux_webhook import chart as flux_webhook_chart
@@ -243,7 +244,7 @@ from cluster.cdk8s.seaweedfs import (
 )
 from cluster.cdk8s.seaweedfs_csi import driver as seaweedfs_csi_driver
 from cluster.cdk8s.snapshot_controller import flux_kustomizations as snapshot_controller_flux_kustomizations
-from cluster.cdk8s.ssh_mcp import config as ssh_mcp_config, generation as ssh_mcp_generation
+from cluster.cdk8s.ssh_mcp import backend as ssh_mcp_backend, config as ssh_mcp_config, generation as ssh_mcp_generation
 from cluster.cdk8s.sshpiper_crds import flux_kustomizations as sshpiper_crds_flux_kustomizations
 from cluster.cdk8s.study_casino import app as study_casino_app
 from cluster.cdk8s.tofu_controller import release as tofu_controller_release
@@ -1427,7 +1428,7 @@ def generate_manifests(root: Path) -> None:
         write_directory(
             root,
             ssh_mcp_artifact,
-            functools.partial(ssh_mcp_generation.chart, ssh_config=ssh_config, mesh=mesh),
+            functools.partial(ssh_mcp_backend.chart, config=ssh_config, mesh=mesh),
             siblings=ssh_mcp_generation.KEY_FILES,
             namespace=ssh_mcp_config.NAMESPACE,
             components=["./image-pins"],
@@ -1867,6 +1868,7 @@ def generate_manifests(root: Path) -> None:
         ],
         flux_system=[external_creds_artifact],
     )
+    add_fleet_rules(flux_app)
     flux_app.synth()
 
 

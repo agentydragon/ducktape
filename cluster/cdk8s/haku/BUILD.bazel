@@ -111,7 +111,6 @@ py_library(
         ":database",
         ":kube_api_proxy",
         ":migration",
-        "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",

@@ -26,7 +26,6 @@ from cluster.cdk8s.agentplane import (
     sandbox_service,
 )
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.namespaces import Vpa
 
 
@@ -102,11 +101,5 @@ def environment_chart(app: App, env: Environment) -> Chart:
         history=history_service.service(env.namespace),
         history_audience=history_service.TOKEN_AUDIENCE,
         callers=[egress.proxy(env.namespace).pods, app_component.service(env.namespace).pods],
-    )
-    add_fleet_rules(
-        chart,
-        # The interception proxy terminates TLS for the namespace; its allowlist is the
-        # EgressPolicy objects, not SNI on its own egress rule.
-        unpinned_https_egress=frozenset({egress.NAME}),
     )
     return chart

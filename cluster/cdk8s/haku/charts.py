@@ -16,7 +16,6 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 )
 
 from cluster.cdk8s import namespaces
-from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo import secret_copy
 from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_external_secret
@@ -71,7 +70,6 @@ def console_chart(app: App) -> Chart:
     Migration(chart, "migration")
     Console(chart, "console")
     KubeApiProxy(chart, "kube-api-proxy")
-    add_fleet_rules(chart)
     return chart
 
 

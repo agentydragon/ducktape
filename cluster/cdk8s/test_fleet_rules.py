@@ -152,14 +152,14 @@ def test_references_resolve_in_chart_and_reject_wrong_kind() -> None:
         },
         _reader("chart-provided", env_secret="es-target", volume_secret="ca-secret", config_map="ca-bundle"),
         _reader("cnpg", env_secret="postgres-app"),
-        # External and unmatched references are outside this chart's validation scope.
+        # External and unmatched references are outside this App's validation scope.
         _reader("external", env_secret="oidc", config_map="image-tag"),
         _reader("unmatched", env_secret="missing-secret", config_map="missing-map"),
         {"apiVersion": "v1", "kind": "ConfigMap", "metadata": {"name": "wrong-kind"}},
         _reader("wrong-kind", volume_secret="wrong-kind"),
     ]
     assert resolved_references(objects) == [
-        "Deployment/wrong-kind reads Secret 'wrong-kind', but the chart creates a ConfigMap with that name"
+        "Deployment/wrong-kind reads Secret 'wrong-kind', but the app creates a ConfigMap with that name"
     ]
 
 

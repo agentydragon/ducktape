@@ -18,7 +18,6 @@ from prometheus_operator_crds.com.coreos.monitoring import (
     ServiceMonitorSpecSelector,
 )
 
-from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import ServiceMonitor
 from cluster.cdk8s.service_ref import Port
 from cluster.scripts.nebula_mesh import Mesh
@@ -89,5 +88,4 @@ class TalosEtcdMetrics(Construct):
 def chart(app: App, mesh: Mesh) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     TalosEtcdMetrics(chart, "etcd", mesh)
-    add_fleet_rules(chart)
     return chart

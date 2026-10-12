@@ -27,7 +27,6 @@ from prometheus_operator_crds.com.coreos.monitoring import (
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
-from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     Kustomization,
@@ -258,7 +257,6 @@ def chart(app: App) -> Chart:
             )
         ],
     )
-    add_fleet_rules(chart)
     return chart
 
 

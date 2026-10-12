@@ -17,7 +17,6 @@ from cdk8s_plus_34 import ConfigMap, Job, PodSecurityContextProps, RestartPolicy
 
 from cluster.cdk8s import pod_policy
 from cluster.cdk8s.clickhouse import client
-from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     Kustomization,
@@ -83,7 +82,6 @@ def chart(app: App) -> Chart:
         ],
     )
     pod_policy.harden(job)
-    add_fleet_rules(chart)
     return chart
 
 

@@ -21,14 +21,9 @@ they have one owner; never grant access just because an ExternalSecret requests 
 Done: synthetic cases catch denied namespaces and absent referent identities, while
 valid generated and hand-written consumers pass. No duplicate consumer/provider roster.
 
-## Fleet validation coverage and references
+## Fleet rule references
 
-`fleet_rules.py` is attached explicitly by selected charts. Establish which workload
-charts it covers, which checks apply to the rest, and which exceptions reflect real
-policy. Expanding hardening coverage can change workload behavior and belongs in its
-own reviewed change.
-
-`resolved_references` is a same-chart kind-mismatch check, not missing-reference
+`resolved_references` is a same-App kind-mismatch check, not missing-reference
 validation; it currently ignores namespace. Narrow its name/claims or strengthen its
 implementation. Whole-tree resolution must distinguish:
 

@@ -16,7 +16,6 @@ from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
 from cluster.cdk8s import cilium, cnpg, namespaces, node_scheduling, pod_policy
-from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import chart as forgejo_images
 from cluster.cdk8s.gateway import https_route
@@ -314,7 +313,6 @@ def chart(app: App) -> Chart:
     _control_deployment(chart)
     _service_and_route(chart)
     _network_policies(chart)
-    add_fleet_rules(chart)
     return chart
 
 

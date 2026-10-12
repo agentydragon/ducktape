@@ -183,6 +183,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":flux",
+        ":fleet_rules",
         ":manifest_roots",
         ":namespaces",
         "//cluster/cdk8s/providers/flux:kustomization",
@@ -553,7 +554,6 @@ py_library(
     deps = [
         ":artifact_generators",
         ":cilium",
-        ":fleet_rules",
         ":flux",
         ":manifest_roots",
         ":namespaces",
@@ -702,7 +702,6 @@ py_library(
     deps = [
         ":artifact_generators",
         ":cilium",
-        ":fleet_rules",
         ":flux",
         ":manifest_roots",
         ":namespaces",
@@ -789,7 +788,6 @@ py_library(
     ],
     deps = [
         ":artifact_generators",
-        ":fleet_rules",
         ":flux",
         ":gateway",
         ":manifest_roots",
@@ -970,7 +968,6 @@ py_library(
     name = "etcd",
     srcs = ["etcd.py"],
     deps = [
-        ":fleet_rules",
         ":service_ref",
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
@@ -1081,7 +1078,6 @@ py_library(
     deps = [
         ":artifact_generators",
         ":cnpg",
-        ":fleet_rules",
         ":flux",
         ":gateway",
         ":manifest_roots",
@@ -1421,6 +1417,7 @@ py_library(
         ":etcd",
         ":external_creds",
         ":external_dns",
+        ":fleet_rules",
         ":flux",
         ":flux_monitoring",
         ":flux_sources",
@@ -1604,6 +1601,7 @@ py_library(
         "//cluster/cdk8s/seaweedfs:public_s3",
         "//cluster/cdk8s/seaweedfs_csi:driver",
         "//cluster/cdk8s/snapshot_controller:flux_kustomizations",
+        "//cluster/cdk8s/ssh_mcp:backend",
         "//cluster/cdk8s/ssh_mcp:config",
         "//cluster/cdk8s/ssh_mcp:generation",
         "//cluster/cdk8s/sshpiper_crds:flux_kustomizations",

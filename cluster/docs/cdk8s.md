@@ -108,8 +108,9 @@ that directory's object in the central Flux chart carries the `decryption:` bloc
 such file is listed; `flux_kustomization` derives it from the `RenderedDirectory`.
 `ExternalSecret` objects are generated outright; they carry only a pointer at a store key.
 
-Fleet rules run only on charts registering `add_fleet_rules`. Their
-`resolved_references` check rejects some same-chart Secret/ConfigMap kind mismatches,
+Fleet rules run on every App `generation.write_app` writes, over all its charts together;
+strategic-merge patch files are not checked. Their
+`resolved_references` check rejects some same-App Secret/ConfigMap kind mismatches,
 including names derived from controller-created targets; it permits unknown references
 and does not distinguish namespaces. It does not establish reference existence.
 Whole-tree validation work is tracked in <../cdk8s/TODO.md>.

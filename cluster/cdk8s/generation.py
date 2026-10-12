@@ -12,6 +12,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDecrypti
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
 
 from cluster.cdk8s import namespaces
+from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     SOPS_DECRYPTION,
     ConfigMapArgs,
@@ -87,13 +88,22 @@ def _app(chart_builders: Sequence[Callable[[App], Chart]]) -> App:
     return app
 
 
-def write_app(root: Path, directory: str, app: App, *, manifest_name: str | None = None) -> str:
-    """Write every chart of `app`, in chart order, into one generated file in `directory`.
+def write_app(
+    root: Path,
+    directory: str,
+    app: App,
+    *,
+    manifest_name: str | None = None,
+    unpinned_https_egress: frozenset[str] = frozenset(),
+) -> str:
+    """Write every chart of `app`, in chart order, into one generated file in `directory`,
+    after the fleet rules pass over all of them; `unpinned_https_egress` is the rules'.
 
     The file defaults to `manifest_file(directory)`. A flat Kustomize root with several
     independently synthesized chart apps may pass a distinct `manifest_name` for each.
     """
     name = manifest_name or manifest_file(directory)
+    add_fleet_rules(app, unpinned_https_egress=unpinned_https_egress)
     _write_app(root / directory / name, app)
     return name
 
@@ -145,6 +155,7 @@ def write_directory(
     resources = [write_charts(root, directory, *chart_builders)] if chart_builders else []
     patch_files: list[PatchFile] = []
     if patch_charts:
+        # Partial objects: the fleet rules check the resources they patch, not the patches.
         _write_app(out_dir / _PATCH_FILE, _app(patch_charts))
         patch_files.append(PatchFile(path=_PATCH_FILE))
     write_yaml(

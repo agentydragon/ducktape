@@ -1,7 +1,8 @@
-"""Rules every object this repo generates must hold, checked over a chart's rendered
-objects when it synthesizes (`App.synth`, `Chart.to_json`, `cdk8s.Testing.synth` all
-validate the construct tree first). A violation fails synth with the object named,
-instead of an admission denial or a CreateContainerConfigError on the cluster.
+"""Rules every object this repo generates must hold, checked over an App's rendered
+objects when it synthesizes (`App.synth`, `App.synth_yaml`, `Chart.to_json`,
+`cdk8s.Testing.synth` all validate the construct tree first). `generation.write_app` attaches
+them to every App it writes. A violation fails synth with the object named, instead of an
+admission denial or a CreateContainerConfigError on the cluster.
 """
 
 from __future__ import annotations
@@ -11,8 +12,8 @@ from itertools import combinations
 from typing import Any, cast
 
 import jsii
-from cdk8s import ApiObject, Chart
-from constructs import IValidation
+from cdk8s import ApiObject
+from constructs import Construct, IValidation
 
 from cluster.cdk8s.pod_policy import POD_SPEC_PATHS, pod_spec
 
@@ -198,10 +199,10 @@ def _references(pod: dict[str, Any]) -> Iterator[tuple[str, str]]:
 
 
 def resolved_references(objects: list[dict[str, Any]]) -> list[str]:
-    """Resolve Pod references against resources synthesized in this chart.
+    """Resolve Pod references against resources synthesized in the same App.
 
     Controllers can create resources named by an ExternalSecret, Certificate,
-    trust-manager Bundle, or CNPG Cluster. References not created in this chart may
+    trust-manager Bundle, or CNPG Cluster. References not created in the App may
     come from sibling files or other Kustomizations and are outside this rule's scope.
     A same-name resource of the other kind is still a local resolution error.
     """
@@ -227,19 +228,19 @@ def resolved_references(objects: list[dict[str, Any]]) -> list[str]:
         for kind, name in _references(pod):
             if name in created[kind] or name not in created[other_kind[kind]]:
                 continue
-            errors.append(f"{owner} reads {kind} {name!r}, but the chart creates a {other_kind[kind]} with that name")
+            errors.append(f"{owner} reads {kind} {name!r}, but the app creates a {other_kind[kind]} with that name")
     return errors
 
 
 @jsii.implements(IValidation)
 class FleetRules:
-    def __init__(self, chart: Chart, *, unpinned_https_egress: frozenset[str] = frozenset()) -> None:
-        self._chart = chart
+    def __init__(self, scope: Construct, *, unpinned_https_egress: frozenset[str] = frozenset()) -> None:
+        self._scope = scope
         self._unpinned_https_egress = unpinned_https_egress
 
     def validate(self) -> list[str]:
         objects = [
-            cast(ApiObject, node).to_json() for node in self._chart.node.find_all() if ApiObject.is_api_object(node)
+            cast(ApiObject, node).to_json() for node in self._scope.node.find_all() if ApiObject.is_api_object(node)
         ]
         return [
             *pod_hardening(objects),
@@ -249,5 +250,6 @@ class FleetRules:
         ]
 
 
-def add_fleet_rules(chart: Chart, *, unpinned_https_egress: frozenset[str] = frozenset()) -> None:
-    chart.node.add_validation(FleetRules(chart, unpinned_https_egress=unpinned_https_egress))
+def add_fleet_rules(scope: Construct, *, unpinned_https_egress: frozenset[str] = frozenset()) -> None:
+    """Check every object under `scope` when it synthesizes; an App checks all its charts together."""
+    scope.node.add_validation(FleetRules(scope, unpinned_https_egress=unpinned_https_egress))

@@ -10,6 +10,7 @@ from cdk8s import App, Chart
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecHealthChecks
 
 from cluster.cdk8s import flux
+from cluster.cdk8s.agentplane import egress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_app, write_yaml
@@ -50,7 +51,17 @@ def write_environment_manifests(
     write_yaml(
         root / env.output_dir / "kustomization.yaml",
         kustomize_kustomization(
-            resources=[write_app(root, env.output_dir, app), *env.extra_resources],
+            resources=[
+                write_app(
+                    root,
+                    env.output_dir,
+                    app,
+                    # The interception proxy terminates TLS for the namespace; its allowlist is the
+                    # EgressPolicy objects, not SNI on its own egress rule.
+                    unpinned_https_egress=frozenset({egress.NAME}),
+                ),
+                *env.extra_resources,
+            ],
             components=[posixpath.relpath(env.image_pins, env.output_dir)],
         ),
     )

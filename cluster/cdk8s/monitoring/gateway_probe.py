@@ -25,7 +25,6 @@ from prometheus_operator_podmonitor_crds.com.coreos.monitoring import (
 from prometheus_operator_prometheusrule_crds.com.coreos.monitoring import PrometheusRuleSpecGroupsRules
 
 from cluster.cdk8s import node_scheduling
-from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     Kustomization,
@@ -248,7 +247,6 @@ def chart(app: App, mesh: Mesh) -> Chart:
         metadata=ApiObjectMetadata(name=_NAME, namespace=NAMESPACE),
         groups=[group(_NAME, _rules(nodes))],
     )
-    add_fleet_rules(chart)
     return chart
 
 

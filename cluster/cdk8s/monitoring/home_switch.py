@@ -30,7 +30,6 @@ from tofu_controller.io.fluxcd.contrib.infra import (
 from cluster.cdk8s import terraform
 from cluster.cdk8s.cert_manager import cluster_ca
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.fleet_rules import add_fleet_rules
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.home_lan import HOME_LAN
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
@@ -125,7 +124,6 @@ def chart(app: App, module: ArtifactGeneratorSpecArtifacts) -> Chart:
             )
         ],
     )
-    add_fleet_rules(chart)
     return chart
 
 

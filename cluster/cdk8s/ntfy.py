@@ -34,7 +34,7 @@ from external_secrets_crds.io.external_secrets import (
 )
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cnpg, fleet_rules, namespaces, node_scheduling, pod_policy
+from cluster.cdk8s import cnpg, namespaces, node_scheduling, pod_policy
 from cluster.cdk8s.external_secrets.kubernetes_store import ESO_SERVICE_ACCOUNT, cluster_secret_store
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
@@ -256,7 +256,6 @@ class Ntfy(Construct):
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     Ntfy(chart, NAME)
-    fleet_rules.add_fleet_rules(chart)
     return chart
 
 

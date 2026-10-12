@@ -8,7 +8,6 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:artifact_generators",
-        "//cluster/cdk8s:fleet_rules",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:image_automation",
         "//cluster/cdk8s:manifest_roots",
