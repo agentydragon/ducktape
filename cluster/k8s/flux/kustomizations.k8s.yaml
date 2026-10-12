@@ -3710,8 +3710,6 @@ spec:
   dependsOn:
     - name: agentplane-crds
       namespace: ducktape-flux
-    - name: agent-sandbox-controller
-      namespace: ducktape-flux
     - name: cert-manager-trust
       namespace: ducktape-flux
     - name: cnpg
@@ -3915,8 +3913,6 @@ spec:
   deletionPolicy: Orphan
   dependsOn:
     - name: agentplane-crds
-      namespace: ducktape-flux
-    - name: agent-sandbox-controller
       namespace: ducktape-flux
     - name: cert-manager-trust
       namespace: ducktape-flux
