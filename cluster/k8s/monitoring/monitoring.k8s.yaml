@@ -330,6 +330,29 @@ spec:
                       type: Gauge
                     help: A PolicyBinding's spec.expiresAt, in Unix seconds.
                     name: agentplane_policybinding_expires_at
+              - commonLabels:
+                  role: source
+                groupVersionKind:
+                  group: volsync.backube
+                  kind: ReplicationSource
+                  version: v1alpha1
+                labelsFromPath:
+                  obj_name:
+                    - metadata
+                    - name
+                  obj_namespace:
+                    - metadata
+                    - namespace
+                metrics:
+                  - each:
+                      gauge:
+                        nilIsZero: true
+                        path:
+                          - spec
+                          - paused
+                      type: Gauge
+                    help: Whether the VolSync ReplicationSource is paused (spec.paused).
+                    name: volsync_replicationsource_paused
         enabled: true
       fullnameOverride: kube-state-metrics
       metricLabelsAllowlist:
@@ -370,6 +393,13 @@ spec:
               - agentplane.allegedly.works
             resources:
               - policybindings
+            verbs:
+              - list
+              - watch
+          - apiGroups:
+              - volsync.backube
+            resources:
+              - replicationsources
             verbs:
               - list
               - watch

@@ -380,6 +380,7 @@ def _values() -> dict[str, object]:
                         ("helm.toolkit.fluxcd.io", "helmreleases"),
                         ("source.toolkit.fluxcd.io", "gitrepositories"),
                         ("agentplane.allegedly.works", "policybindings"),
+                        ("volsync.backube", "replicationsources"),
                     )
                 ]
             },
@@ -422,6 +423,31 @@ def _values() -> dict[str, object]:
                                         "name": "agentplane_policybinding_expires_at",
                                         "help": "A PolicyBinding's spec.expiresAt, in Unix seconds.",
                                         "each": {"type": "Gauge", "gauge": {"path": ["spec", "expiresAt"]}},
+                                    }
+                                ],
+                            },
+                            # VolSync keeps reporting a paused source out of sync; the
+                            # VolSyncVolumeOutOfSync alert (volsync.py) joins on these labels to
+                            # skip it.
+                            {
+                                "groupVersionKind": {
+                                    "group": "volsync.backube",
+                                    "version": "v1alpha1",
+                                    "kind": "ReplicationSource",
+                                },
+                                "commonLabels": {"role": "source"},
+                                "labelsFromPath": {
+                                    "obj_namespace": ["metadata", "namespace"],
+                                    "obj_name": ["metadata", "name"],
+                                },
+                                "metrics": [
+                                    {
+                                        "name": "volsync_replicationsource_paused",
+                                        "help": "Whether the VolSync ReplicationSource is paused (spec.paused).",
+                                        "each": {
+                                            "type": "Gauge",
+                                            "gauge": {"path": ["spec", "paused"], "nilIsZero": True},
+                                        },
                                     }
                                 ],
                             },

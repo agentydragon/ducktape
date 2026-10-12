@@ -8,6 +8,8 @@ need to read a local token file.
 
 from __future__ import annotations
 
+from textwrap import dedent
+
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_helm.io.fluxcd.toolkit.helm import (
@@ -105,10 +107,16 @@ def chart(app: App) -> Chart:
                 [
                     # VolSync sets the gauge when a scheduled sync is still unfinished at its next
                     # scheduled start, and clears it when a sync completes. Schedule-less objects
-                    # (rsync-tls destinations) never set it.
+                    # (rsync-tls destinations) never set it. A paused source keeps its last value,
+                    # so it is excluded via kube-state-metrics' spec.paused (monitoring/stack.py).
                     Rule.alert(
                         "VolSyncVolumeOutOfSync",
-                        "volsync_volume_out_of_sync == 1",
+                        dedent(
+                            """\
+                            volsync_volume_out_of_sync == 1
+                            unless on (obj_namespace, obj_name, role) (kube_customresource_volsync_replicationsource_paused == 1)
+                            """
+                        ),
                         for_="1h",
                         labels={"severity": "warning"},
                         summary=(

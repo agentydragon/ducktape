@@ -97,7 +97,9 @@ spec:
           annotations:
             description: "{{ $labels.method }} {{ $labels.role }} {{ $labels.obj_namespace }}/{{ $labels.obj_name }} has not completed a sync within its schedule interval. Check status.lastSyncTime and the mover pod logs; a restic mover failing with `repository is already locked` needs `restic unlock` once no mover is running."
             summary: VolSync {{ $labels.role }} {{ $labels.obj_namespace }}/{{ $labels.obj_name }} missed its sync schedule
-          expr: volsync_volume_out_of_sync == 1
+          expr: |
+            volsync_volume_out_of_sync == 1
+            unless on (obj_namespace, obj_name, role) (kube_customresource_volsync_replicationsource_paused == 1)
           for: 1h
           labels:
             severity: warning
