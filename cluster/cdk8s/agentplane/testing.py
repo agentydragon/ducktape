@@ -195,6 +195,7 @@ ENV = Environment(
         ],
     ),
     own_sandboxes=_OWN_SANDBOXES,
+    vm_sandboxes=True,
 )
 
 
@@ -400,6 +401,7 @@ def agentplane_testing(
     cert_manager_trust: Kustomization,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -418,6 +420,6 @@ def agentplane_testing(
             )
         ],
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds, agent_sandbox_controller, cert_manager_trust, cnpg, external_secrets_operator
+            agentplane_crds, agent_sandbox_controller, cert_manager_trust, cnpg, external_secrets_operator, kyverno
         ),
     )

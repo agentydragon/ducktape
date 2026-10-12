@@ -382,6 +382,7 @@ ENV = Environment(
         ],
     ),
     own_sandboxes=False,
+    vm_sandboxes=False,
 )
 
 

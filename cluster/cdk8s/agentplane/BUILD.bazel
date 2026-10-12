@@ -329,6 +329,7 @@ py_library(
     deps = [
         ":egress",
         ":environment",
+        ":launcher_relay",
         ":llm_ingress",
         ":platform_routes",
         ":runner_gateway",
@@ -997,6 +998,45 @@ py_test(
         "//cluster/cdk8s:model_selections",
         "//model_catalog:catalog",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "launcher_relay",
+    srcs = ["launcher_relay.py"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane/egress:sidecar",
+        "//cluster/cdk8s/providers/kyverno:cluster_policy",
+        "//cluster/cdk8s/providers/kyverno:clusterpolicy",
+        "//util:settings_contract",
+        "@pypi//cdk8s",
+        "@pypi//constructs",
+        "@pypi//more_itertools",
+    ],
+)
+
+py_test(
+    name = "test_launcher_relay",
+    # Eleven Kyverno CLI runs take 35-60s on RBE.
+    size = "medium",
+    srcs = ["test_launcher_relay.py"],
+    data = [
+        "@multitool//tools/kyverno",
+        "@nodejs_linux_amd64//:bin/node",
+    ],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":conftest",
+        ":launcher_relay",
+        "//:conftest",
+        "//agentplane:crd_group",
+        "//cluster/validation/kyverno:apply",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )
 

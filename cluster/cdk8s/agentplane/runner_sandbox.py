@@ -10,6 +10,7 @@ so image-pins/ covers them too.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from typing import Any
 
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecNetworkPolicyManagement,
@@ -37,7 +38,7 @@ from constructs import Construct
 from agentplane.crd_group import GROUP
 from agentplane.egress import sidecar
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import egress, llm_ingress, platform_routes, sandbox_pod
+from cluster.cdk8s.agentplane import egress, launcher_relay, llm_ingress, platform_routes, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
@@ -83,7 +84,10 @@ class RunnerSandbox(Construct):
         )
         if env.own_sandboxes:
             platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
-        RunnerTemplate(self, "runner-template", env, name="runner", image=_IMAGE)
+        template = RunnerTemplate(self, "runner-template", env, name="runner", image=_IMAGE)
+        if env.vm_sandboxes:
+            assert template.own_pod is not None  # vm_sandboxes needs own_sandboxes (Environment)
+            launcher_relay.LauncherRelayPolicy(self, "launcher-relay", namespace=namespace, runner_pod=template.own_pod)
 
 
 class RunnerTemplate(Construct):
@@ -104,6 +108,8 @@ class RunnerTemplate(Construct):
         self.env = env
         self.buildbuddy_secret = buildbuddy_secret
         self.extra_harness_env = extra_harness_env
+        # Our own SandboxTemplate's rendered Pod template, where the environment has one.
+        self.own_pod: dict[str, Any] | None = None
         self._add_sandbox_template(name=name, image=image)
 
     def _runner_container(self, image: str) -> SandboxTemplateSpecPodTemplateSpecContainers:
@@ -269,6 +275,7 @@ class RunnerTemplate(Construct):
             containers = {container["name"]: container for container in spec["podTemplate"]["spec"]["containers"]}
             containers[sidecar.CONTAINER_NAME]["env"].append(platform_routes.sidecar_env(self.env.namespace))
             containers["runner"]["args"].extend(platform_routes.runner_args(self.env.namespace))
+            self.own_pod = spec["podTemplate"]
             ApiObject(
                 self, "own-sandboxtemplate", api_version=f"{GROUP}/v1alpha1", kind="SandboxTemplate", metadata=metadata
             ).add_json_patch(

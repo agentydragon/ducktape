@@ -1601,6 +1601,7 @@ def generate_manifests(root: Path) -> None:
         cert_manager_trust_kustomization,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
+        kyverno_kustomization,
     )
     agent_workspaces_app_artifact = artifact(
         "agent-workspaces-app", agent_workspaces.OUTPUT_DIR, agent_workspaces.PINS_DIR

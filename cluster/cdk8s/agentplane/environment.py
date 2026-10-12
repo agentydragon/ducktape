@@ -153,6 +153,9 @@ class Environment:
     # Whether this environment runs the Sandbox Controller and our own runner SandboxTemplates
     # beside agent-sandbox's: testing does, ahead of staging.
     own_sandboxes: bool
+    # Whether KubeVirt launchers of this environment's VM Sandboxes get the egress relay
+    # (launcher_relay.py). Only our own Sandboxes have VMs, so it needs `own_sandboxes`.
+    vm_sandboxes: bool
     notifications_github: GitHubAppProps | None = None
     # Binding scopes and cluster binding management the Sandbox Service keeps after their catalog
     # entries are removed, so the bindings existing Sandboxes still hold can be cleaned up.
@@ -176,3 +179,7 @@ class Environment:
     # same value — the separate flag buys only that inherited names apply first and stay
     # overridable. If nothing else needs that ordering, one flag is serving one name.
     harness_inherited_env: Sequence[str] = ("TZDIR",)
+
+    def __post_init__(self) -> None:
+        if self.vm_sandboxes and not self.own_sandboxes:
+            raise ValueError(f"{self.namespace}: vm_sandboxes needs own_sandboxes")

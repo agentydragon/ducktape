@@ -337,7 +337,7 @@ flowchart LR
     VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Candidate: production provider and API]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 7]
-    VM_EGRESS[Candidate: production admission and egress integration]
+    VM_EGRESS[Blocked: live launcher relay checks]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
@@ -347,6 +347,7 @@ flowchart LR
     VM_PROVIDER --> VM_PROCESS_ISOLATION
     VM_IMAGE --> VM_LIFECYCLE
     VM_PROVIDER --> VM_LIFECYCLE
+    VM_PROVIDER --> VM_EGRESS
     VM_EGRESS --> VM_LIFECYCLE
     VM_PROCESS_ISOLATION --> VM_LIFECYCLE
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
@@ -393,17 +394,16 @@ onto today's code, then close #8843 unmerged; it cannot be rebased. A Sandbox's 
 from its `SandboxTemplate`, so `CreateSandbox`, its proto and the app need no change (operator,
 2026-10-12 PDT).
 
-### `VM_EGRESS` — integrate production admission and proxy path
+### `VM_EGRESS` — check the launcher relay live
 
-**Candidate.** Implement the selected launcher-injection/proxy route on the production stack: a
-VM's relay comes from the admission policy on virt-launcher (#8840,
-`cluster/cdk8s/agentplane/kubevirt_experiment/policy.py`), not from a Pod template, so the
-template-level sidecar check the Action box decision adds covers pods only. The relay's grants are
-the VM ServiceAccount's egress bindings; it reads
-`PolicyBinding`s only.
-Verify proxy-only credentials, routing, token replacement and denied cross-environment access;
-check failure scope for the new admission configuration. Do not repeat the entire completed
-prototype matrix or require simultaneous cluster-wide disasters.
+**Blocked on the VM provider.** `agentplane-testing` deploys the launcher relay policy
+(`cluster/cdk8s/agentplane/launcher_relay.py`), which copies a runner Pod's egress sidecar, routes and
+tokens into the virt-launcher of a VM controlled by one of our Sandboxes. Once the provider creates
+such a VM, check on it: no token reaches the guest; the proxy and each platform route answer the
+guest at `10.0.2.1`; the relay is ready, which needs the VM's masquerade interface to list ports so
+kubelet's probe on 3129 is not forwarded to the guest; the runner fence admits the launcher and
+another Sandbox's guest cannot reach it; a forged launcher is refused. Do not repeat the entire
+completed prototype matrix or require simultaneous cluster-wide disasters.
 
 ### `VM_PROCESS_ISOLATION` — protect control from harness processes
 
@@ -438,8 +438,9 @@ absence of every imaginable failure, establishes the delivered contract.
 ### `KUBEVIRT_EXPERIMENT_RETIRE` — delete the KubeVirt experiment
 
 **Blocked on the VM capstone.** Once the production provider covers it, move anything still needed
-(the launcher relay admission policy, the acceptance driver if it becomes the VM lifecycle test)
-into production code, then delete `cluster/cdk8s/agentplane/kubevirt_experiment/` and the manifests it generates.
+(the acceptance driver, if it becomes the VM lifecycle test) into production code, then delete
+`cluster/cdk8s/agentplane/kubevirt_experiment/`, its launcher policy (production's is
+`launcher_relay.py`) and the manifests it generates.
 
 ### `LOCAL_BAZEL` — bounded local client in a VM
 

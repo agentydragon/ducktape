@@ -52,6 +52,10 @@ flowchart TB
         runner[Runner + native drivers]
         sidecar[Egress sidecar]
     end
+    subgraph vm_sandbox[VM Sandbox launcher Pod, testing]
+        guest[Guest: runner + native drivers]
+        relay[Egress relay, added by Kyverno]
+    end
     cmd_sandbox[Action box Pods]
     proxy[Egress proxy]
     llm[LLM ingress]
@@ -96,6 +100,9 @@ flowchart TB
     runner --> sidecar -->|all outbound traffic| proxy
     sidecar -.->|testing, our Sandboxes: platform routes, RunnerControl Connect| gw
     sidecar -.->|testing, our Sandboxes: platform routes, RunnerIngress Push| hs
+    guest --> relay -->|all outbound traffic| proxy
+    relay -.->|platform routes| gw
+    relay -.->|platform routes| hs
     proxy -->|policy watches, EgressReady| k8s
     proxy -->|RunnerControl Connect: commands, lifecycle| gw
     proxy -->|RunnerIngress Push: Events| hs
@@ -110,7 +117,8 @@ flowchart TB
   Service, the only way into retained history.
 - **Runner traffic is outbound.** Everything a runner sends goes through its Pod's egress
   sidecar to the egress proxy, which authenticates the Pod and substitutes credentials, and runner
-  Pods admit no connections. Commands and lifecycle requests reach runners over the `RunnerControl`
+  Pods admit no connections. A VM Sandbox's guest sends the same traffic to an identical relay that
+  Kyverno adds to its KubeVirt launcher Pod. Commands and lifecycle requests reach runners over the `RunnerControl`
   stream they dial to the Runner Gateway, routed per Sandbox by its `<sandbox>-control` Service and
   `<sandbox>-runner` Lease ([runner control stream](docs/runner_control.md)).
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,

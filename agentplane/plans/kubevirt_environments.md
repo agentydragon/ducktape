@@ -100,9 +100,9 @@ general composition, but does not implement our relay injection or token mounts.
 **Selected v1 approach:** KubeVirt owns VM lifecycle; Kyverno injects the relay container and its
 private projected-token mounts into launcher Pods. The disposable pinned-stack prototype verified
 the launcher owner/ServiceAccount boundary, token isolation, guest route, token rotation, and
-cross-environment denial. See the linked platform evidence. Production policy ownership and
-Sandbox Service integration remain open; revisit the mechanism only if those changes expose a
-concrete limitation. A hook adapter, dedicated admission server and KubeVirt fork are outside v1:
+cross-environment denial. See the linked platform evidence. The production policy is
+`cluster/cdk8s/agentplane/launcher_relay.py`, deployed to `agentplane-testing`; revisit the
+mechanism only if its live check (`VM_EGRESS`) exposes a concrete limitation. A hook adapter, dedicated admission server and KubeVirt fork are outside v1:
 this relay needs no domain or cloud-init hook, and the hook protocol alone cannot supply its mounts.
 
 The repo already owns Kyverno
@@ -113,7 +113,7 @@ integration finds a concrete limitation, not additional components of the select
 
 | Mechanism                                            | Fit and unresolved work                                                                                                                                                                                                                                                                                                                   |
 | ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Existing Kyverno admission                           | Can mutate the launcher Pod to add the relay and projected volumes. The disposable prototype verified owner/SA selection, token mounts, reinvocation and admission ordering. Production policy scope and admission failure isolation remain to be implemented and accepted.                                                               |
+| Existing Kyverno admission                           | Can mutate the launcher Pod to add the relay and projected volumes. The disposable prototype verified owner/SA selection, token mounts, reinvocation and admission ordering. The production policy narrows its webhook to launcher creates and token-volume updates in its namespace; live acceptance remains.                            |
 | Kubernetes `MutatingAdmissionPolicy`                 | Runs CEL mutation in the API server, with no webhook service. Check the cluster's API/version/feature-gate support. It cannot simply perform arbitrary live VMI/VM reads like a webhook; require a separately enforced trusted mapping from controller-created VM intent to Pod identity.                                                 |
 | KubeVirt hook sidecar plus declarative admission     | KubeVirt creates the hook container; our wrapper implements the handshake and runs the relay. Admission supplies identity and token mounts omitted by the hook schema. Viable if KubeVirt lifecycle integration is useful; never inject a second relay through the admission policy.                                                      |
 | Native KubeVirt extension with no admission mutation | Would need supported launcher ServiceAccount selection and proxy-only projected volumes as well as container creation. Those are not supplied by the v1.8.2 hook API. An upstream enhancement or maintained KubeVirt patch is an explicit option, with API/upgrade maintenance cost; implementing only the hook protocol is insufficient. |
@@ -128,8 +128,8 @@ operate a new service.
 
 The Kyverno policy supplies the relay, resource budget, readiness probe, projected token volume
 and proxy-only mounts before Pod creation. Select the managed namespace and launcher labels; additionally
-verify the controller owner UID against a live VMI and its managed VM, approved template, and recorded
-ServiceAccount. Labels or caller-supplied annotations alone cannot select an identity. Reject
+verify the controller owner UID against a live VMI, its VM, the Sandbox controlling that VM, and the
+ServiceAccount the same Sandbox controls. Labels or caller-supplied annotations alone cannot select an identity. Reject
 inconsistent preexisting relay/token configuration; reinvocation must be idempotent. Restrict who can
 create Pods or mutate these VMs/VMIs and use admission validation for the final invariants.
 
@@ -285,7 +285,7 @@ The [DAG VM lane](task_dag.md#4-vm-environment-phases) now sequences these separ
 - `VM_IMAGE`: digest-pinned guest and bounded retained storage, tested with both harnesses.
 - `VM_PROVIDER`: typed provider/API, reconciliation, grants and UI. Review its service contracts
   and schema rollout; design and image work can proceed independently.
-- `VM_EGRESS`: integrate the already-selected launcher admission/proxy path with production policy.
+- `VM_EGRESS`: check the deployed launcher relay on a provider-made VM.
 - `VM_PROCESS_ISOLATION`: enforce/test harness-process boundaries and aggregate resource budgets
   after image/provider support. This is the concrete agent-kills-itself risk, not a cosmetic VM switch.
 - `VM_LIFECYCLE`: integrate image/provider/control networking/egress/isolation and perform bounded
