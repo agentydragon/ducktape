@@ -13,8 +13,7 @@ from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, run
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.service import Runner
 from agentplane.runner.testing.gateway import Gateway, dialing
-from agentplane.runner_gateway.command_delivery import CommandRefusedError
-from agentplane.runner_gateway.lifecycle_control import ControlRefusedError
+from agentplane.runner_gateway.lifecycle_control import CommandRefusedError, ControlRefusedError
 
 # gazelle:include_dep @pypi//protobuf
 

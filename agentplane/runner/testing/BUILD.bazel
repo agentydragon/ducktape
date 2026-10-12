@@ -131,7 +131,6 @@ py_library(
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:config",
         "//agentplane/runner:service",
-        "//agentplane/runner_gateway:command_delivery",
         "//agentplane/runner_gateway:lifecycle_control",
         "@pypi//protobuf",
         "@pypi//pytest",
