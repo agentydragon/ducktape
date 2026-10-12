@@ -7,7 +7,7 @@ fetch, EventSource, rendering, and page reload are not replaced by the visual ha
 import asyncio
 import json
 import re
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager, suppress
 from dataclasses import replace
 from urllib.parse import parse_qs, urlsplit
@@ -77,6 +77,27 @@ from util.visual_review import VisualReviewAsset
 # gazelle:include_dep @pypi//protobuf
 
 pytest_plugins = ("agentplane.app.testing.thread_browser",)
+
+
+async def route_once(page: Page, url: str, handler: Callable[[Route], Awaitable[None]]) -> None:
+    """Hand `handler` the first request matching `url`; later ones fall through to the network.
+
+    Unlike `page.route(..., times=1)`, the route stays registered, so request interception stays on
+    until the test unroutes. Dropping the last route disables interception in Chromium, and a request
+    the page issues at that moment can stay paused forever, such as the command status lookup that
+    follows a lost reply.
+    """
+    handled = False
+
+    async def first(route: Route) -> None:
+        nonlocal handled
+        if handled:
+            await route.fallback()
+            return
+        handled = True
+        await handler(route)
+
+    await page.route(url, first)
 
 
 async def _review_screenshot(page: Page, name: str, label: str) -> None:
@@ -1819,7 +1840,7 @@ async def test_reload_redelivers_an_unsaved_command_with_its_original_identity(t
         intercepted.put_nowait(route.request)
         await route.abort()
 
-    await page.route("**/threads/*/commands", lose_request, times=1)
+    await route_once(page, "**/threads/*/commands", lose_request)
     composer = message_composer(page)
     await composer.fill("Test input retained across an unsent request")
     await composer.press("Enter")
@@ -1886,7 +1907,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
         finally:
             reply_finished.set()
 
-    await page.route("**/threads/*/commands", hold_reply, times=1)
+    await route_once(page, "**/threads/*/commands", hold_reply)
     try:
         composer = message_composer(page)
         await composer.fill("Test input saved without its HTTP reply")
@@ -1928,7 +1949,7 @@ async def test_lost_runner_receipt_reconciles_from_thread_without_retry(thread_b
         receipts.put_nowait(receipt)
         await route.fulfill(status=504, content_type="application/json", body='{"detail":"outcome uncertain"}')
 
-    await page.route("**/threads/*/commands", lose_receipt, times=1)
+    await route_once(page, "**/threads/*/commands", lose_receipt)
     composer = message_composer(page)
     await composer.fill("Test late admission from feed")
     await composer.press("Enter")
@@ -1960,7 +1981,7 @@ async def test_unconfirmed_command_retries_with_same_identity_then_reconciles(th
         requests.put_nowait(json_format.Parse(route.request.post_data, command_pb2.Command()))
         await route.fulfill(status=504, content_type="application/json", body='{"detail":"outcome uncertain"}')
 
-    await page.route("**/threads/*/commands", lose_receipt, times=1)
+    await route_once(page, "**/threads/*/commands", lose_receipt)
     try:
         composer = message_composer(page)
         await composer.fill("Test uncertain admission")
@@ -2039,8 +2060,8 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
         await drop_reply.wait()
         await route.abort()
 
-    await page.route("**/threads/*/commands", lose_committed_reply, times=1)
-    await page.route("**/threads/*/commands/*", hold_command_status, times=1)
+    await route_once(page, "**/threads/*/commands", lose_committed_reply)
+    await route_once(page, "**/threads/*/commands/*", hold_command_status)
     try:
         composer = message_composer(page)
         await composer.fill("Test input whose admission neither browser channel observed")
@@ -2186,7 +2207,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
         await drop_reply.wait()
         await route.abort()
 
-    await page.route("**/threads/*/commands", lose_committed_reply, times=1)
+    await route_once(page, "**/threads/*/commands", lose_committed_reply)
     try:
         composer = message_composer(page)
         await composer.fill("Test input pending across Electric reconnect")
@@ -2278,7 +2299,7 @@ async def test_terminal_shape_error_keeps_rows_and_follows_on_from_where_it_stop
     async def terminal_shape_error(route: Route) -> None:
         await route.fulfill(status=400, content_type="text/plain", body="shape rejected")
 
-    await page.route("**/sync/entities?*", terminal_shape_error, times=1)
+    await route_once(page, "**/sync/entities?*", terminal_shape_error)
     try:
         # No click recovers it: the window reopens its log, by itself, at the position it had read through.
         async with page.expect_response(
