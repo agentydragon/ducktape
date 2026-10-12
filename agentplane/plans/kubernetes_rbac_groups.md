@@ -1,7 +1,7 @@
 # Reusable Kubernetes RBAC grant groups
 
-Status: **design decided (operator, 2026-10-12 PDT); implementation waits on the operator's
-go-ahead.** The [task DAG](task_dag.md) tracks it as `K8S_POLICY_CRDS` through
+Status: **design decided (operator, 2026-10-12 PDT); implementation in progress.** The
+[task DAG](task_dag.md) tracks it as `POLICY_CRDS` through
 `K8S_POLICY_RUNTIME_GRANTS`, plus `MANAGED_SA_RBAC` (accounts without a Sandbox). This plan records a preferred Agentplane-owned controller shape alongside the
 prior art and acceptance checks; CRD fields and migration still need review. Existing
 [agent RBAC documentation](../../cluster/docs/agent_rbac.md) describes deployed/static
@@ -63,7 +63,14 @@ but do not let both reconcilers own the same bindings. This direction buys live 
 we choose snapshot semantics instead, a deployment-managed group catalog and existing Sandbox
 state could avoid the new CRs initially.
 
-Decided (operator, 2026-10-12 PDT): the two CRs follow the existing policy-set pattern,
+Decided (operator, 2026-10-12 PDT): egress, Action and Kubernetes policy merge into one generic
+`PolicySet` of typed rules (a `type` discriminator) and one `PolicyBinding`. Each reader handles
+only its own rule types and writes its own condition type (`KubernetesReady`, `ActionsReady`,
+`EgressReady`) through server-side apply; `EgressCredential` stays separate. Kubernetes rules come
+first; Actions and egress move over afterwards. The sketch below predates the merge and shows the
+Kubernetes rule content.
+
+Earlier decision, same day: the two CRs follow the existing policy-set pattern,
 `EgressPolicy`/`EgressBinding` and `ActionPolicySet`/`ActionPolicyBinding` in
 `agentplane/crds/`. A subject-free set names role refs and namespaces; a binding names one
 ServiceAccount subject (`ServiceAccountRef`, `agentplane/subjects.py`), a list of set names and
