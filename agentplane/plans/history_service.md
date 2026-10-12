@@ -42,14 +42,14 @@ Properties the target keeps:
   acknowledged through every seal cursor.
 - **Sessions can outlive a Sandbox later:** the History Service keys by Session and records each
   Sandbox as an incarnation, and a teardown seal ends an incarnation, not the Session, so reviving a
-  Session in a new Sandbox ([task DAG section 8](task_dag.md#8-sessions-that-outlive-their-sandbox))
+  Session in a new Sandbox ([task DAG section 8](task_dag.md#8-our-own-sandbox-resource-sessions-that-outlive-their-pod))
   needs no change here.
 
 Invariants once the refactor is done (operator, 2026-10-11 PDT). Each one still broken is closed by
 a node in the [task DAG](task_dag.md):
 
 - **One provisioner.** Only the Sandbox Service creates, changes or deletes Sandboxes, whoever asks
-  for them, the Action Service's command Sandboxes included.
+  for them. Action Service boxes are plain Pods, not Sandboxes (#10012).
 - **One durable event log outside the runner:** the History Service's, written only through its
   ingress. The Runner Gateway's command submission records keep each admission entry; they are
   command receipts, not a second log.

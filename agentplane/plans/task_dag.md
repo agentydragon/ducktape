@@ -65,7 +65,7 @@ Notification Service sends is not rendered as a user message. The lean: the Runn
 verified provenance on the runner Command, and the runner echoes it into the Event that journals
 the input, so it reaches history with the input itself; the gateway keeps no command records.
 The field rides `SubmitCommand` as it addresses a Session's Sandbox through `SessionDestination`
-(#10129, in flight) and is delivered through the replica holding the runner stream. The harness never sees it. Notification-specific authorization
+(#10129) and is delivered through the replica holding the runner stream. The harness never sees it. Notification-specific authorization
 belongs here, not in the generic command-admission path; attachments are invalid on controls. No
 untyped extension dictionary.
 
@@ -483,7 +483,7 @@ flowchart LR
     POLICY_SANDBOX_CUTOVER --> SANDBOX_RBAC
     POLICY_SANDBOX_CUTOVER --> OLD_POLICY_KINDS_DROP
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
-    SANDBOX_RBAC[Candidate: bounded deployed grant checks]
+    SANDBOX_RBAC[Blocked: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
 ```
 
@@ -561,7 +561,7 @@ public-coder) stay Flux bindings. Test an allowed and a denied request. Static c
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
 
-**Candidate; security-relevant remaining check.** Inspect the concrete managed-Sandbox grant path
+**Blocked on the policy cutover; security-relevant.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
 and verify intended versus unrelated scope, including Role edits and credential-use boundaries,
 without recording credentials. Use [agent RBAC](../../cluster/docs/agent_rbac.md) and existing tests;
 only unresolved deployed wiring needs a live check, not a repeat of every already-covered operation.
@@ -589,15 +589,16 @@ Target: [History Service plan](history_service.md).
 
 ```mermaid
 flowchart TD
-    HISTORY_SERVICE_OWNERSHIP[Capstone: History Service owns log and fold]
+    HISTORY_SERVICE_OWNERSHIP[Candidate: service READMEs state outage behavior]
     THREAD_READ_POLICY[Scoped archive reads]
     HISTORY_SERVICE_OWNERSHIP -. enforce at the final owner .-> THREAD_READ_POLICY
 ```
 
-### `HISTORY_SERVICE_OWNERSHIP` — capstone
+### `HISTORY_SERVICE_OWNERSHIP` — History Service ownership
 
-The History Service is the only owner of the raw log and fold; the app is a facade over it. Each
-service's README states what unrelated agents can still do while it is down or rolling.
+**Candidate; what is left of the capstone.** The History Service is the only owner of the raw log
+and fold and the app is a facade over it (#9836). Left: each service's README states what unrelated
+agents can still do while it is down or rolling.
 
 ## 8. Our own Sandbox resource: Sessions that outlive their Pod
 
@@ -620,8 +621,8 @@ flowchart TD
     DURABLE_SESSION_LIFECYCLE[Decision: Session lifetime and revival]
     SESSION_STATE_VOLUME_DESIGN[Decision: what the state PVC holds]
     AGENTPLANE_SANDBOX_RESOURCE[Unscheduled: our own Sandbox resource]
-    CLAUDE_PORTABLE_STATE[Candidate: Claude resumes on a new incarnation]
-    CODEX_PORTABLE_STATE[Candidate: Codex resumes on a new incarnation]
+    CLAUDE_PORTABLE_STATE[Blocked: Claude resumes on a new incarnation]
+    CODEX_PORTABLE_STATE[Blocked: Codex resumes on a new incarnation]
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
@@ -650,19 +651,18 @@ flowchart TD
 
 ### `DURABLE_SESSION_LIFECYCLE` — Session lifetime and revival
 
-**Decision.** Replaces the frozen `THREAD_OUTLIVES_SANDBOX`. Decide: what a revived Session gets
-back (native harness state only, or also its workspace files); which launch configuration a new
-incarnation uses (the Sandbox's recorded one, or a current template, which also decides whether an
-image upgrade happens on revival); who may revive and how (an explicit API call, never implicitly
-on a read or a notification). Sessions that share a Sandbox revive together, since they share its
-state PVC. Open since the operator asked for idle expiry (2026-10-11 PDT): whether a command
-arriving at the Runner Gateway for a stopped Sandbox starts it automatically, against the
-explicit-call lean above, and what the user sees while it starts.
+**Decision.** Decide: what a revived Session gets
+back (native harness state only, or also its workspace files); who may revive. Each incarnation
+uses the Sandbox's template as it is at that start (`AGENTPLANE_SANDBOX_RESOURCE`), so revival
+picks up template and image updates. Sessions that share a Sandbox revive together,
+since they share its state PVC. Direction (operator, 2026-10-12 PDT): a new user message or a
+notification resumes a stopped Sandbox, never a read. Both reach the Runner Gateway as commands, so
+one hook covers them: it sets the Sandbox back to running and holds the command until the new
+incarnation's runner connects. Open: what the user sees while it starts.
 
 ### `SESSION_STATE_VOLUME_DESIGN` — what the state PVC holds
 
-**Decision; direction set by the operator, 2026-10-10 and 2026-10-12 PDT.** Replaces the frozen
-`THREAD_PORTABLE_STATE`. One filesystem PVC per Sandbox holds the native harness files and the
+**Decision; direction set by the operator, 2026-10-10 and 2026-10-12 PDT.** One filesystem PVC per Sandbox holds the native harness files and the
 runner's state, separate from the workspace; each incarnation's runner continues the same journal
 on it. The Sandbox Service creates and owns it, with no owner reference, mounted as a volume in pods
 and through virtiofs in VMs (`VM_VIRTIOFS`), never from agent-sandbox's `volumeClaimTemplates`,
@@ -684,7 +684,10 @@ suspension and PVC creation, but its `Sandbox` is also the Sandbox Service's onl
 (binding, grants, provisioning state and finalizers are annotations on it), so ours takes that
 over, including ownership of the Sandbox's `PolicyBinding`. Its templates are an Agentplane kind
 too, read only by the Sandbox Service; Action Service boxes keep a catalog of their own (#10012).
-Replaces the imperative-only `CreateSandbox` too. If the Sandbox Service becomes a real
+The spec names its template rather than copying it: each incarnation, a resume included,
+resolves the name to the template as it is then, so an updated template applies at the next start
+(operator, 2026-10-12 PDT), and the state-schema check below refuses one whose runner cannot read
+the kept state. Replaces the imperative-only `CreateSandbox` too. If the Sandbox Service becomes a real
 controller or operator for it, rename the service to say so (operator, 2026-10-11 PDT).
 
 It also carries the operator's eventual "pause, replace the image, resume" (2026-10-12 PDT), for
@@ -711,13 +714,13 @@ install stays for `cluster/cdk8s/agent_workspaces.py`.
 
 ### `CLAUDE_PORTABLE_STATE` — Claude evidence
 
-**Candidate after the volume design.** Start a new incarnation (a new Pod, possibly a newer image)
+**Blocked on the volume design.** Start a new incarnation (a new Pod, possibly a newer image)
 on a kept state PVC and resume, checking continuation and prompt-cache cost. The frozen
 `RUNNER_IMAGE_UPGRADE_PROOF` is the same experiment. Independent of Codex.
 
 ### `CODEX_PORTABLE_STATE` — Codex evidence
 
-**Candidate after the volume design.** The same for Codex; neither harness waits for the other.
+**Blocked on the volume design.** The same for Codex; neither harness waits for the other.
 
 ### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes stop
 
@@ -741,7 +744,7 @@ that it resumed after a seal.
 ### `SESSION_REVIVE` — start a stopped Sandbox again
 
 **Blocked on incarnations and per-harness evidence.** Schedule a new Pod or VM for a stopped
-Sandbox from the decided launch configuration, possibly on a new image, and resume each harness as
+Sandbox from its template as it is now, possibly on a new image, and resume each harness as
 a new incarnation of the same Session and history. Ships per harness as its evidence lands. Test
 revival after a long stop, a refused incompatible state PVC, and concurrent revive requests.
 
