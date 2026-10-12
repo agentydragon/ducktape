@@ -203,6 +203,25 @@ py_library(
 )
 
 py_library(
+    name = "sandbox_controller",
+    srcs = ["sandbox_controller.py"],
+    deps = [
+        ":environment",
+        ":service_workload",
+        "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
+        "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "llm_ingress",
     srcs = ["llm_ingress.py"],
     deps = [
@@ -579,6 +598,7 @@ py_library(
         ":notifications",
         ":policy_controller",
         ":runner_sandbox",
+        ":sandbox_controller",
         ":staging_config",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:mcp_settings",

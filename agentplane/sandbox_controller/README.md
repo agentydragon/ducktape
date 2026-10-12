@@ -21,16 +21,15 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
 
 ## Running
 
-Not deployed yet. Locally:
+Staging runs it from `cluster/cdk8s/agentplane/sandbox_controller.py`, which also holds its RBAC.
+Locally:
 
 ```bash
 bb run //agentplane/sandbox_controller/cmd:sandbox-controller -- --namespace=<namespace>
 ```
 
-It uses the in-cluster config or `KUBECONFIG`. Its ServiceAccount needs to list and watch
-Sandboxes and SandboxTemplates, update Sandboxes and their status, and create, delete, list and
-watch Pods and PVCs in its namespace. It serves metrics on `:8080` and `/healthz`/`/readyz` on
-`:8081`, and replicas elect a leader by a Lease in the namespace.
+It uses the in-cluster config or `KUBECONFIG`, serves metrics on `:8080` and `/healthz`/`/readyz`
+on `:8081`, and replicas elect a leader by a Lease in the namespace.
 
 ## Design notes
 

@@ -677,23 +677,21 @@ calls the gateway to seal. Action Service boxes keep a catalog of their own (#10
 
 ```mermaid
 flowchart TD
-    SANDBOX_CONTROLLER_DEPLOY[Candidate: run the Sandbox Controller on staging]
+    SANDBOX_RUNNER_TEMPLATES[Candidate: runner SandboxTemplates of our kind]
     SANDBOX_CONTROLLER_PROVISIONING[Candidate: the controller provisions a Sandbox]
     SANDBOX_CONTROLLER_TEARDOWN[Candidate: deleting a Sandbox seals it first]
     SANDBOX_IMAGE_REPLACE[Candidate: replace the runner image between incarnations]
     SANDBOX_CREATE_CUTOVER[Blocked: Sandboxes are created as ours]
-    SANDBOX_CONTROLLER_DEPLOY --> SANDBOX_CREATE_CUTOVER
+    SANDBOX_RUNNER_TEMPLATES --> SANDBOX_CREATE_CUTOVER
     SANDBOX_CONTROLLER_PROVISIONING --> SANDBOX_CREATE_CUTOVER
     SANDBOX_CONTROLLER_TEARDOWN --> SANDBOX_CREATE_CUTOVER
     SANDBOX_CREATE_CUTOVER --> AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox]
 ```
 
-### `SANDBOX_CONTROLLER_DEPLOY` — run the Sandbox Controller on staging
+### `SANDBOX_RUNNER_TEMPLATES` — runner SandboxTemplates of our kind
 
-**Candidate; its RBAC gets the operator's review, so no auto-merge.** Deployment, RBAC, network
-policy and metrics, as `cluster/cdk8s/agentplane/policy_controller.py` does, plus the runner
-`SandboxTemplate`s rendered from the same `RunnerTemplate` construct as agent-sandbox's, with the
-state volume as a claim instead of a `volumeClaimTemplate`. Updates the README diagram.
+**Candidate.** The runner `SandboxTemplate`s of our kind, rendered from the same `RunnerTemplate`
+construct as agent-sandbox's, with the state volume as a claim instead of a `volumeClaimTemplate`.
 
 ### `SANDBOX_CONTROLLER_PROVISIONING` — the controller provisions a Sandbox
 
@@ -723,7 +721,7 @@ live in [the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md).
 
 ### `SANDBOX_CREATE_CUTOVER` — Sandboxes are created as ours
 
-**Blocked on deploy, provisioning and teardown; decision card before the PR.** `CreateSandbox` and
+**Blocked on runner templates, provisioning and teardown; decision card before the PR.** `CreateSandbox` and
 the rest of the Sandbox Service API, the app's live view and the Runner Gateway's destination
 lookup read and write our `Sandbox` instead of agent-sandbox's, replacing the imperative-only
 `CreateSandbox`. Existing staging Sandboxes stay on agent-sandbox until `AGENT_SANDBOX_RETIRE`
