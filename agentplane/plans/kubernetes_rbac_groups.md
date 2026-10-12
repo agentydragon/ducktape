@@ -1,6 +1,7 @@
 # Reusable Kubernetes RBAC grant groups
 
-Status: **preferred design sketched; no new Kubernetes authority or rollout approved.** The
+Status: **CR shape decided (policy set and binding); semantics, authority and rollout open; no new
+Kubernetes authority approved.** The
 [task DAG](task_dag.md) tracks `KUBERNETES_RBAC_POLICIES` (decision), `KUBERNETES_RBAC_POLICY_BINDINGS`
 (implementation after the decision), and `MANAGED_SA_RBAC` (later accounts without a
 Sandbox). This plan records a preferred Agentplane-owned controller shape alongside the
@@ -64,11 +65,18 @@ but do not let both reconcilers own the same bindings. This direction buys live 
 we choose snapshot semantics instead, a deployment-managed group catalog and existing Sandbox
 state could avoid the new CRs initially.
 
-Sketch two CRs (names, API versions and validation rules are not yet final):
+Decided (operator, 2026-10-12 PDT): the two CRs follow the existing policy-set pattern,
+`EgressPolicy`/`EgressBinding` and `ActionPolicySet`/`ActionPolicyBinding` in
+`agentplane/crds/`. A subject-free set names role refs and namespaces; a binding names one
+ServiceAccount subject (`ServiceAccountRef`, `agentplane/subjects.py`), a list of set names and
+an optional `expiresAt`. A Sandbox SA and an SA with no Sandbox (the claude.ai caller) are
+bound the same way. Unlike egress and Actions, which check bindings on each request, the API
+server evaluates the generated RBAC bindings itself, so the controller must delete them when a
+binding expires. Names, API versions and validation rules are not yet final:
 
 ```yaml
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: KubernetesGrantGroup # cluster-scoped, no subject or SA
+kind: KubernetesPolicySet # cluster-scoped, no subject or SA
 metadata:
   name: low-privilege-cluster-diagnostics
 spec:
@@ -80,21 +88,27 @@ spec:
       clusterWide: true
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: SandboxGrantAssignment # namespaced with its Sandbox
+kind: KubernetesPolicyBinding
 metadata:
   name: coder-diagnostics
   namespace: agentplane-staging
 spec:
-  sandboxRef: { name: coder-123, uid: "sandbox-uid" }
-  groups: [low-privilege-cluster-diagnostics]
+  subject: { namespace: agentplane-staging, name: coder-123 }
+  sets: [low-privilege-cluster-diagnostics]
+  expiresAt: "2026-10-13T00:00:00Z" # optional
 ```
+
+Still open: live or snapshot semantics; namespace lists rendered by cdk8s or selected by
+label; who may write sets and bindings; whether a Sandbox's binding carries an owner reference
+to it; stamping the SA's UID so a same-name replacement does not inherit grants; per-instance
+labels; the controller as its own Deployment; and cutting staging over by recreating Sandboxes
+whose grants are frozen annotations today.
 
 The definition refers only to **existing** Roles/ClusterRoles. Its namespaced entries support
 `Role` (existing in each named target namespace) or `ClusterRole`; cluster-wide entries
 support only `ClusterRole`. Choose explicit namespace names first, rather than introducing a
-selector whose label writer might inadvertently acquire grant authority. An assignment
-references one Sandbox by **name and UID**; derive the SA namespace/name from that Sandbox,
-never accept a caller-selected subject. Presets populate _new_ assignments, not existing
+selector whose label writer might inadvertently acquire grant authority. A binding names its
+SA subject; who may write a binding for which SA is the authority question below. Presets populate _new_ assignments, not existing
 Sandboxes. An authorized one-off binding can use a dedicated singleton group through the
 same assignment path; removing that membership must not revoke another group's overlapping
 grant. Status belongs on the assignment (observed group generations, readiness/error and
@@ -253,5 +267,5 @@ operator inspects both intent and expanded grants, and verify representative all
 requests with the affected SAs. If selecting RBAC Manager, first prove that an externally owned
 Sandbox SA can be bound without RBAC Manager trying to own/create/delete it; do not test with a
 production SA or credentials. Only after the policy shape is reviewed should
-`KUBERNETES_RBAC_POLICY_BINDINGS` implement it. `MANAGED_SA_RBAC` then extends the chosen
-assignment/one-off model to SAs with no Sandbox owner, with separate lifecycle and expiry.
+`KUBERNETES_RBAC_POLICY_BINDINGS` implement it; an SA with no Sandbox is an ordinary binding
+of the same CR.

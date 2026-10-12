@@ -507,14 +507,14 @@ expansion (acceptable) with live updates to existing bound SAs (preferred); keep
 grant operation, which may use the same group mechanism. Decide ownership, namespace expansion,
 role-edit/revocation behavior and inspection. The launch catalog is not already a live policy.
 See the [RBAC grant-group plan](kubernetes_rbac_groups.md) for the current behavior, prior art,
-trade-offs and acceptance cases. The preferred live design is an Agentplane-owned,
-subject-free group CR and per-Sandbox assignment CR, reconciled by a separate small controller
-image/ServiceAccount with narrowly reviewed binding-write and named-role `bind` authority;
-final CRD schemas, migration and RBAC grants still require review. Snapshot expansion remains
-an acceptable simpler fallback. The operator leans toward the CR and small controller (2026-10-12
-PDT), not yet a decision. Either way the UI shows a group as one named chip (say, "basic cluster
-diag"), never the hundreds of namespace bindings it expands to. The same controller could expire a
-grant, giving time-limited Kubernetes permissions.
+trade-offs and acceptance cases. Decided (operator, 2026-10-12 PDT): the policy-set CR pattern of
+egress and Actions, a subject-free set of role refs and namespaces plus a binding naming one SA,
+its sets and an optional `expiresAt`, reconciled by a small controller with narrowly reviewed
+binding-write and named-role `bind` authority. Still open: live or snapshot semantics, namespace
+lists or selectors, who writes sets and bindings, SA-UID stamping, and the staging cutover. Either way the UI shows a group as one named chip (say, "basic cluster
+diag"), never the hundreds of namespace bindings it expands to. `expiresAt` gives time-limited
+grants; since the API server evaluates the generated RBAC bindings, the controller deletes them at
+expiry.
 
 ### `KUBERNETES_RBAC_POLICY_BINDINGS` — apply groups and one-SA changes
 
@@ -526,12 +526,10 @@ add/remove, overlaps and restart. See the [plan](kubernetes_rbac_groups.md).
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 
-**Blocked on reviewed policy/ownership model and reusable group binding.** Extend the chosen
-group assignment and one-SA runtime model to accounts without a Sandbox, including
-owner/reconciliation/expiry when no Sandbox can own the binding. Do not fight GitOps over objects.
-Existing grant views can ship first; add this grant kind when it exists. Keep ordinary authorization
-and cleanup tests; no dependency on a new external-credential broker. See the
-[RBAC grant-group plan](kubernetes_rbac_groups.md).
+**Blocked on the caller review and the binding implementation.** An account without a Sandbox,
+such as the claude.ai caller, gets an ordinary binding of the same CR (operator, 2026-10-12 PDT),
+owned by GitOps rather than a Sandbox, so no separate grant model is needed. What remains is
+granting it the sets `CLAUDE_AI_SA` approves and testing an allowed and a denied request.
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
 
