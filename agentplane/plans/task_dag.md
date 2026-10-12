@@ -377,7 +377,7 @@ runs virtiofsd as uid/gid 107 with all capabilities dropped and no setting to ch
 file a guest writes lands on the PVC as `107:107`, `chown` to anything else fails, and only guest
 root and a guest user whose uid and gid are both 107 can write. Checked live: a `107:107` guest user
 creates, renames, `chmod`s and deletes files, and a pod running as `107:107` then edits all of it.
-The guest image therefore runs the runner and harness as a `107:107` user. `agentplane-testing`'s
+The guest image therefore runs the runner as guest root and the harness as a `107:107` user (`VM_PROCESS_ISOLATION`). `agentplane-testing`'s
 4Gi container limit caps a guest at about 1.7Gi: raise testing's limits or use small VMs there
 (operator, 2026-10-12 PDT).
 
@@ -646,8 +646,7 @@ VM-local rather than on a PVC, so it is dropped on a switch from VM to pod, and 
 PVC once the cluster has block storage that can move between kinds (OpenEBS or another
 provisioner); VM-local means a disk the VM keeps across stop and start, deleted only with the
 Sandbox, since a revived conversation refers to files the agent made (operator, 2026-10-12 PDT). Decide: storage class, since `local-path` pins a volume to one node and so pins every incarnation
-there; file ownership, since files a VM writes are `107:107` (`VM_IMAGE`), so pods run the
-runner as `107:107` too and a Session moves between kinds with no `chown` (checked live); its quota (TODO, deferred by the
+there; file ownership, since files a VM writes are `107:107` (`VM_IMAGE`), so pods run the runner and harness as `107:107` and a Session moves between kinds with no `chown` (checked live); its quota (TODO, deferred by the
 operator 2026-10-12: `local-path` enforces no PVC size, and inside a guest `df` shows the node's
 whole disk; #4717 tracks a capacity-enforcing provisioner); and refusing an incompatible harness or
 runner version rather than attempting it.
