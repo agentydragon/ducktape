@@ -53,7 +53,9 @@ class Settings(AppSettingsConfig):
     catalog in that file.
     """
 
-    namespace: str = Field(description="The app's own namespace.")
+    # CLEANUP(added 2026-10-13): Delete the field once the manifests stop setting it (a settings class
+    #   rejects unknown keys, so the manifest change lands first and the pinned image follows).
+    namespace: str | None = Field(default=None, description="Read by nothing.")
     sandbox_namespace: str = Field(
         description="Namespace whose Sandbox inventory the app observes. Separate from the app's own "
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."

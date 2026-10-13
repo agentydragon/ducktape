@@ -160,7 +160,7 @@ async def test_revoke_deletes_a_runtime_binding_and_refuses_one_from_git(
 
 
 @pytest.mark.usefixtures("seeded")
-async def test_revoke_refuses_the_sandbox_own_binding(
+async def test_the_sandbox_own_binding_is_not_listed_and_revoke_refuses_it(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
     """The Sandbox controller keeps that binding equal to the Sandbox's spec, so deleting it would
@@ -169,6 +169,7 @@ async def test_revoke_refuses_the_sandbox_own_binding(
         "live", subject=LIVE.model_dump(), policy_sets=["pypi"], from_git=False, sandbox_controlled="live"
     )
 
+    assert "live" not in [view.name for view in await egress.bindings_for(LIVE)]
     with pytest.raises(SandboxOwnedBindingError):
         await egress.revoke("live")
     assert ("policybindings", "live") in custom_objects.objects

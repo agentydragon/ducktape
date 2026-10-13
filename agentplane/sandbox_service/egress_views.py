@@ -189,14 +189,15 @@ def matching_bindings(
     *,
     subject: ServiceAccountRef,
 ) -> list[BindingView]:
-    """Every binding naming this subject, in name order."""
+    """Every binding naming this subject, in name order, but for the Sandbox's own: that is its spec's
+    `policySets`, which the Sandbox's bound policy already shows, and it is not the app's to revoke."""
     sets = egress_sets(policy_sets)
     known = _credentials_by_name(credentials)
     return sorted(
         (
             binding_view(binding, sets, known)
             for binding in map(PolicyBinding.model_validate, bindings)
-            if binding.spec.subject == subject
+            if binding.spec.subject == subject and not is_sandbox_controlled(binding)
         ),
         key=lambda view: view.name,
     )
