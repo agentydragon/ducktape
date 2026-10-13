@@ -667,7 +667,6 @@ flowchart TD
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
     WORKSPACE_VOLUME[Blocked: a workspace volume tracked apart from the state PVC]
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
-    WORKSPACE_CONVERSION[Decision: convert a workspace volume while suspended]
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENTPLANE_SANDBOX_RESOURCE[In progress: our own Sandbox resource]
@@ -680,7 +679,6 @@ flowchart TD
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     NODE_LOCAL_BLOCK_STORAGE --> WORKSPACE_VOLUME
     AGENTPLANE_SANDBOX_RESOURCE --> WORKSPACE_VOLUME
-    WORKSPACE_VOLUME --> WORKSPACE_CONVERSION
     WORKSPACE_VOLUME --> WORKSPACE_NODE_PORTABILITY
     WORKSPACE_VOLUME --> SANDBOX_ARCHIVE
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
@@ -742,25 +740,17 @@ template switches from VM to Pod. The pod's `/state/workspaces` content is not v
 disk mounts over that path. Track the workspace as its own volume in the Sandbox, apart from the state
 PVC, for both kinds, and when it is gone (dropped, or never made) resume reconciles by creating a
 fresh one, so losing a workspace never loses the runner's state. Workspaces can be large (tens of GB
-of build caches), so this is where the block storage matters. Portable workspaces and runner state
-between VM and Pod then depend on the storage config moving together; `WORKSPACE_CONVERSION` decides
-how.
+of build caches), so this is where the block storage matters. Pods and VMs use the same block storage
+(`STATE_VOLUME_BLOCK`), so a Sandbox switching between them keeps both volumes and needs no
+compatibility rules or conversion (operator, 2026-10-13 PDT).
 
 ### `SANDBOX_SPEC_EDIT` — edit a suspended Sandbox's template or kind
 
 **Unscheduled; operator, 2026-10-13 PDT.** Let the operator change a Sandbox's template, including a
 switch between VM and Pod, from the app, only while the Sandbox is suspended. Each incarnation
 already reads the template as it is then (`SANDBOX_IMAGE_REPLACE`), and no spec is replaced
-automatically (`SANDBOX_LIFECYCLE`); this is the explicit, operator-driven edit. Needs `WORKSPACE_VOLUME`
-to say what happens to the workspace on a kind switch.
-
-### `WORKSPACE_CONVERSION` — convert a workspace volume while suspended
-
-**Decision; operator, 2026-10-13 PDT.** While a Sandbox is suspended, allow "convert the workspace
-volume into this other type" (for example block to filesystem, or to another storage class), perhaps
-through volsync. Decide whether to define which Sandbox kinds are compatible with which volume types
-and refuse the rest up front, or to try the start and surface the Kubernetes or KubeVirt error.
-Blocked on `WORKSPACE_VOLUME`.
+automatically (`SANDBOX_LIFECYCLE`); this is the explicit, operator-driven edit. Needs `WORKSPACE_VOLUME`,
+so a kind switch keeps the workspace.
 
 ### `WORKSPACE_NODE_PORTABILITY` — move a workspace between nodes
 
