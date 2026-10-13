@@ -79,7 +79,7 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 	tracker := clienttesting.NewObjectTracker(scheme, serializer.NewCodecFactory(scheme).UniversalDecoder())
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjectTracker(tracker).WithObjects(append(objects, sandbox)...).
 		WithStatusSubresource(&Sandbox{}, &kubevirtv1.VirtualMachineInstance{}).Build()
-	return &Reconciler{Client: c}, c
+	return &Reconciler{Client: c, KubeVirt: true}, c
 }
 
 func reconcileOnce(t *testing.T, r *Reconciler) {

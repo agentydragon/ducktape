@@ -7,10 +7,13 @@ import (
 	"os"
 
 	corev1 "k8s.io/api/core/v1"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/selection"
+	"k8s.io/client-go/discovery"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/client-go/rest"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/cache"
@@ -58,9 +61,26 @@ func run(namespace, metricsAddress, probeAddress string) error {
 		return err
 	}
 	ours := labels.NewSelector().Add(*labelled)
-	// The cache holds one namespace, and of its Pods, PVCs, ServiceAccounts, PolicyBindings, VMs
-	// and VMIs only those carrying the Sandbox label.
-	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), ctrl.Options{
+	config := ctrl.GetConfigOrDie()
+	kubeVirt, err := servesKubeVirt(config)
+	if err != nil {
+		return err
+	}
+	// The cache holds one namespace, and of its Pods, PVCs, ServiceAccounts, PolicyBindings and,
+	// where KubeVirt is installed, VMs and VMIs only those carrying the Sandbox label.
+	byObject := map[client.Object]cache.ByObject{
+		&corev1.Pod{}:                     {Label: ours},
+		&corev1.PersistentVolumeClaim{}:   {Label: ours},
+		&corev1.ServiceAccount{}:          {Label: ours},
+		&policycontroller.PolicyBinding{}: {Label: ours},
+	}
+	if kubeVirt {
+		byObject[&kubevirtv1.VirtualMachine{}] = cache.ByObject{Label: ours}
+		byObject[&kubevirtv1.VirtualMachineInstance{}] = cache.ByObject{Label: ours}
+	} else {
+		ctrl.Log.WithName("sandbox-controller").Info("KubeVirt's API is not served: VM Sandboxes stay unready")
+	}
+	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: metricsAddress},
 		HealthProbeBindAddress: probeAddress,
@@ -70,20 +90,13 @@ func run(namespace, metricsAddress, probeAddress string) error {
 		LeaderElectionNamespace: namespace,
 		Cache: cache.Options{
 			DefaultNamespaces: map[string]cache.Config{namespace: {}},
-			ByObject: map[client.Object]cache.ByObject{
-				&corev1.Pod{}:                        {Label: ours},
-				&corev1.PersistentVolumeClaim{}:      {Label: ours},
-				&corev1.ServiceAccount{}:             {Label: ours},
-				&policycontroller.PolicyBinding{}:    {Label: ours},
-				&kubevirtv1.VirtualMachine{}:         {Label: ours},
-				&kubevirtv1.VirtualMachineInstance{}: {Label: ours},
-			},
+			ByObject:          byObject,
 		},
 	})
 	if err != nil {
 		return err
 	}
-	if err := (&sandboxcontroller.Reconciler{Client: mgr.GetClient()}).SetupWithManager(mgr); err != nil {
+	if err := (&sandboxcontroller.Reconciler{Client: mgr.GetClient(), KubeVirt: kubeVirt}).SetupWithManager(mgr); err != nil {
 		return err
 	}
 	if err := mgr.AddHealthzCheck("ping", healthz.Ping); err != nil {
@@ -93,4 +106,17 @@ func run(namespace, metricsAddress, probeAddress string) error {
 		return err
 	}
 	return mgr.Start(ctrl.SetupSignalHandler())
+}
+
+// servesKubeVirt is whether the cluster serves the VirtualMachine API this controller watches.
+func servesKubeVirt(config *rest.Config) (bool, error) {
+	discoveryClient, err := discovery.NewDiscoveryClientForConfig(config)
+	if err != nil {
+		return false, err
+	}
+	_, err = discoveryClient.ServerResourcesForGroupVersion(kubevirtv1.GroupVersion.String())
+	if apierrors.IsNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
 }

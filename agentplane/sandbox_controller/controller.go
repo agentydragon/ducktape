@@ -45,6 +45,9 @@ const (
 // +kubebuilder:object:generate=false
 type Reconciler struct {
 	client.Client
+	// Whether the cluster serves KubeVirt's API. Without it VM Sandboxes stay unready and Pod
+	// Sandboxes are unaffected.
+	KubeVirt bool
 }
 
 // StateVolumeName is the Sandbox's state PVC.
@@ -125,6 +128,9 @@ func (r *Reconciler) workload(ctx context.Context, sandbox *Sandbox) (workload, 
 	var err error
 	if w.pod, err = r.pod(ctx, sandbox); err != nil {
 		return w, err
+	}
+	if !r.KubeVirt {
+		return w, nil
 	}
 	if w.vm, err = r.vm(ctx, sandbox); err != nil {
 		return w, err
@@ -298,6 +304,9 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 		return w, blocked, err
 	}
 	if template.Spec.VM != nil {
+		if !r.KubeVirt {
+			return w, &unready{"KubeVirtMissing", "the cluster does not serve KubeVirt's API, so a VM Sandbox cannot run"}, nil
+		}
 		return r.startVM(ctx, sandbox, w, template)
 	}
 	if w.vm != nil {
@@ -434,16 +443,17 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: obj.GetNamespace(), Name: name}}}
 	})
-	return ctrl.NewControllerManagedBy(mgr).
+	builder := ctrl.NewControllerManagedBy(mgr).
 		For(&Sandbox{}).
-		Owns(&kubevirtv1.VirtualMachine{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.ConfigMap{}).
 		Owns(&policycontroller.PolicyBinding{}).
 		// A virt-launcher Pod is its VMI's, not the Sandbox's, so Pods map back by the label.
 		Watches(&corev1.Pod{}, bySandboxLabel).
-		Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel).
 		Watches(&corev1.PersistentVolumeClaim{}, bySandboxLabel).
-		Watches(&SandboxTemplate{}, byTemplate).
-		Complete(r)
+		Watches(&SandboxTemplate{}, byTemplate)
+	if r.KubeVirt {
+		builder = builder.Owns(&kubevirtv1.VirtualMachine{}).Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel)
+	}
+	return builder.Complete(r)
 }

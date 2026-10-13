@@ -259,3 +259,15 @@ func TestTemplateWithBothKindsIsRefused(t *testing.T) {
 		t.Errorf("Running reason = %s, want TemplateInvalid", reason)
 	}
 }
+
+func TestVMTemplateWithoutKubeVirtStaysUnreadyAndCreatesNothing(t *testing.T) {
+	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
+	r.KubeVirt = false
+	reconcileOnce(t, r)
+	if getPod(t, c) != nil {
+		t.Fatal("created a Pod for a VM template")
+	}
+	if reason := runningReason(t, c); reason != "KubeVirtMissing" {
+		t.Errorf("Running reason = %s, want KubeVirtMissing", reason)
+	}
+}

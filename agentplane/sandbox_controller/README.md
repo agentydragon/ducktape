@@ -38,7 +38,8 @@ Locally:
 bb run //agentplane/sandbox_controller/cmd:sandbox-controller -- --namespace=<namespace>
 ```
 
-It watches KubeVirt's VirtualMachines and VMIs, so the cluster needs KubeVirt's CRDs. It uses the
+Where the cluster serves KubeVirt's API it watches VirtualMachines and VMIs; where not, VM Sandboxes
+stay unready (`KubeVirtMissing`) and Pod Sandboxes are unaffected. It uses the
 in-cluster config or `KUBECONFIG`, serves metrics on `:8080` and `/healthz`/`/readyz`
 on `:8081`, and replicas elect a leader by a Lease in the namespace.
 
