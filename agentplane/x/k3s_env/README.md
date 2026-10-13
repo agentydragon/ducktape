@@ -12,7 +12,7 @@ per-Deployment readiness.
 
 ## Result
 
-Every Deployment of the stack except Dex (13, the app included) becomes Available on one RBE action (about 8.5 minutes with the images
+Every Deployment of the stack except Dex (13, the app included) becomes Available and a pod Sandbox starts on one RBE action (about 10 minutes with the images
 already in the cache), with the changes below. Breaks found on the way, in order:
 
 - **Kernel sysctls:** the kubelet needs every `/proc/sys/kernel` entry present in the shadow copy, not only
@@ -34,11 +34,13 @@ already in the cache), with the changes below. Breaks found on the way, in order
   are External Secrets functions). `render.py` does not evaluate those, and the image's gomplate rejects them.
   Dex returns once the emulation renders that template (it needs a bcrypt hash).
 
-The Nix-built `runner`, `agentplane-sandbox` and `agentplane-sandbox-build` images are pulled from the
-Forgejo registry (newest `devel-*` tag, retagged `:unset`) with `FORGEJO_IMAGES_USERNAME` and
-`FORGEJO_IMAGES_PASSWORD`, which the test inherits from the Bazel client environment. Untried: no run has
-had the credentials yet.
+- **Runner image:** the `runner` SandboxTemplate's image is Nix-built and private. `:runner_image` builds an
+  equivalent from the runner plus the pinned Claude Code and Codex binaries at `/bin/claude` and `/bin/codex`
+  (debian-slim base, no toolbox), so the environment needs no registry credential. The test applies a `Sandbox`
+  on that template and asserts its Pod becomes Ready (both containers, 10 minutes end to end).
+- **Storage classes:** the manifest's `local-path-ovh-hdd` does not exist on k3s, so every `storageClassName`
+  becomes `local-path`; without it the Sandbox's state PVC never binds and the Pod stays Pending.
 
 Not yet reached: Service port≠targetPort under headless Services (egress is 80→8082; only the agent-facing
 rules URL uses it), Dex/OIDC public hostnames, real credentials for the LLM path, and any test traffic: the
-Deployments are Available but nothing has exercised them.
+Deployments are Available and the Sandbox Pod is Ready, but no session has run a turn.
