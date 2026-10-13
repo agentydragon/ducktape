@@ -42,7 +42,7 @@ follows it; code that differs converges on it.
 - A fake plays exactly one service. A test peer standing in for two services is two servicers over
   shared state, registered on one server.
 - A generic handler is right only where no generated code exists for the service, such as a proxy
-  test relaying opaque bytes.
+  relaying opaque bytes (`runner_gateway/runner_proxy.py`) or its test.
 - A servicer takes its collaborators as concrete objects (a frozen `Resources` dataclass once there
   are several). Inject the client or component that owns an operation, not a bare `Callable` for it.
 

@@ -13,6 +13,8 @@ while that service is down or rolling. A deleting Sandbox gets no `SessionsSeale
 
 - `runner_control.py`, `lifecycle_control.py`, `connection_records.py`: the runner connection, and
   the commands and lifecycle requests the replica holding it sends on it.
+- `runner_proxy.py`: the runner's `Runner` service, forwarded unchanged to the runner through the
+  connection this replica holds ([runner proxy](../docs/runner_control.md#runner-proxy)).
 - `session_registry.py`, `session_lifecycle.py`: Session identities, and opening and resuming
   Sessions.
 - `commands/`: the `sandbox_commands` database that holds the Session identities.

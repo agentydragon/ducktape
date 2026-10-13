@@ -135,6 +135,23 @@ since whether they ran is unknown, and a call after it ends fails the same way; 
 passes fails with `DEADLINE_EXCEEDED` and its late reply is dropped. A reconnect replays none of
 them. Only unary calls are carried; nothing here needs a streaming `Runner` method.
 
+## Runner proxy
+
+The gateway replica holding a Sandbox's connection also serves `agentplane.proto.runner_control.Runner`
+on its gRPC port, which the Sandbox's `<sandbox>-control` Service reaches. A call is forwarded as a
+tunnelled `Call` without decoding its messages, so the proxy serves every method of the service and
+answers with the runner's own status and bytes. It has no database.
+
+- **Sandbox.** The caller names it in the `x-agentplane-sandbox` header, the same name its target
+  carries; a gRPC server cannot see the dialed `:authority`. A missing or repeated header is
+  `INVALID_ARGUMENT`, an unknown Sandbox `NOT_FOUND`.
+- **Authorization.** The bearer is a `token_audience` token. The `caller_accounts` may call every
+  method but `Seal`, which only `sandbox_controller_account` may; unset, nobody may.
+- **Holder.** A replica that does not hold the Sandbox's current connection answers `UNAVAILABLE`
+  before acting, and the caller dials the control Service again.
+- **Deadline.** The caller's remaining deadline travels in the `Call`; a call without one waits until
+  the runner answers or the connection ends.
+
 ## Event ingress
 
 Status: **accepted design (operator, 2026-10-10 PDT); deployed.** The runner pushes

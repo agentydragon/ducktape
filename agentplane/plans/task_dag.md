@@ -870,30 +870,18 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 
 ```mermaid
 flowchart TD
-    GATEWAY_RUNNER_PROXY[Candidate: the gateway proxies Runner at the control address]
     RUNNER_SESSION_LAUNCH[Candidate: the runner owns bootstrap, platform text and starting]
     APP_SESSION_DEFAULTS[Candidate: the app sends complete Session specs]
     HISTORY_SESSION_SANDBOX[Candidate: the History Service records each Session's Sandbox]
-    CONTROLLER_SEALS[Blocked: the Sandbox controller seals]
+    CONTROLLER_SEALS[Candidate: the Sandbox controller seals]
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
-    GATEWAY_RUNNER_PROXY --> CONTROLLER_SEALS
-    GATEWAY_RUNNER_PROXY --> GATEWAY_WRAPPER_RETIRE
     RUNNER_SESSION_LAUNCH --> APP_SESSION_DEFAULTS
     APP_SESSION_DEFAULTS --> GATEWAY_WRAPPER_RETIRE
     HISTORY_SESSION_SANDBOX --> GATEWAY_WRAPPER_RETIRE
     CONTROLLER_SEALS --> GATEWAY_WRAPPER_RETIRE
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
 ```
-
-### `GATEWAY_RUNNER_PROXY` — the gateway proxies `Runner` at the control address
-
-**Candidate.** The replica holding a Sandbox's connection serves `agentplane.proto.runner_control.Runner`
-at `<sandbox>-control` as a generic unary handler: it forwards the serialized request as a tunnel
-`Call` and returns the `Reply`'s status and bytes. It names the Sandbox by `:authority`; if
-grpc-python does not expose that to the server, the shared client sets a header from the same
-target. Per-method authorization: callers' accounts as `RunnerGateway` allows them now, `Seal` for
-the Sandbox controller only. Nothing calls it yet.
 
 ### `RUNNER_SESSION_LAUNCH` — the runner owns bootstrap, platform text and starting
 
@@ -923,9 +911,11 @@ registry.
 
 ### `CONTROLLER_SEALS` — the Sandbox controller seals
 
-**Blocked on `GATEWAY_RUNNER_PROXY`.** For a deleting Sandbox of our kind the Sandbox controller
-calls `Runner.Seal` through the proxy, repeats it until every seal is flushed, and sets
-`SessionsSealed` itself. `runner_gateway/deletion_seals.py` and the gateway's write to Sandboxes go.
+**Candidate.** For a deleting Sandbox of our kind the Sandbox controller
+calls `Runner.Seal` through the gateway's `Runner` proxy, repeats it until every seal is flushed, and
+sets `SessionsSealed` itself. It authenticates with `token_audience` and names the Sandbox in
+`x-agentplane-sandbox`. The proxy refuses `Seal` until cdk8s sets `sandbox_controller_account` on the
+gateway, which waits for the rollout of an image that reads it. `runner_gateway/deletion_seals.py` and the gateway's write to Sandboxes go.
 
 ### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
 

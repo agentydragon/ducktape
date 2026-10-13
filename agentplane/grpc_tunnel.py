@@ -94,16 +94,19 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
     ) -> Response | grpc.aio.UnaryUnaryCall[Request, Response]:
         # Generated stubs call with a message and expect their method's output message back.
         assert isinstance(request, Message), request
+        method = client_call_details.method
+        method = method.decode() if isinstance(method, bytes) else method
+        response = await self.forward(method, request.SerializeToString(), deadline_s=client_call_details.timeout)
+        return cast(Response, _response_type(method).FromString(response))
+
+    async def forward(self, method: str, request: bytes, *, deadline_s: float | None) -> bytes:
+        """Call `method` with the serialized `request` and return the serialized response, or raise the
+        call's status as an `AioRpcError`. The callee sees the remaining `deadline_s`."""
         if self._ended:
             raise _status(grpc.StatusCode.UNAVAILABLE, "the tunnel has ended")
-        method = client_call_details.method
-        call = grpc_tunnel_pb2.Call(
-            call_id=next(self._call_ids),
-            method=method.decode() if isinstance(method, bytes) else method,
-            request=request.SerializeToString(),
-        )
-        if (timeout := client_call_details.timeout) is not None:
-            call.timeout.FromTimedelta(timedelta(seconds=timeout))
+        call = grpc_tunnel_pb2.Call(call_id=next(self._call_ids), method=method, request=request)
+        if deadline_s is not None:
+            call.timeout.FromTimedelta(timedelta(seconds=deadline_s))
         waiting: asyncio.Future[grpc_tunnel_pb2.Reply] = asyncio.get_running_loop().create_future()
         self._pending[call.call_id] = waiting
         current = asyncio.current_task()
@@ -115,7 +118,7 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
             except (grpc.RpcError, asyncio.InvalidStateError) as error:
                 raise _status(grpc.StatusCode.UNAVAILABLE, "the tunnel ended before the call was sent") from error
             try:
-                async with asyncio.timeout(timeout):
+                async with asyncio.timeout(deadline_s):
                     reply = await waiting
             except TimeoutError as error:
                 raise _status(grpc.StatusCode.DEADLINE_EXCEEDED, "the callee did not answer in time") from error
@@ -124,7 +127,7 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
             self._calls.discard(current)
         if reply.code != grpc.StatusCode.OK.value[0]:
             raise _status(_CODES.get(reply.code, grpc.StatusCode.UNKNOWN), reply.details)
-        return cast(Response, _response_type(call.method).FromString(reply.response))
+        return reply.response
 
 
 @asynccontextmanager

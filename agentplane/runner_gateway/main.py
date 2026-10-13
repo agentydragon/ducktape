@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from agentplane.grpc_serving import add_health, serving
 from agentplane.proto import runner_control_pb2_grpc
+from agentplane.runner_gateway import runner_proxy
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases, ConnectionRecords
 from agentplane.runner_gateway.deletion_seals import DeletionSeals
 from agentplane.runner_gateway.destinations import DestinationResolver
@@ -50,12 +51,17 @@ async def gateway(
     leases = ConnectionLeases()
     timing = ControlTiming()
     control = LifecycleControl(leases)
+    principals = WorkloadPrincipalResolver(
+        authentication=k8s_client.AuthenticationV1Api(api),
+        audience=settings.token_audience,
+        allowed_service_account_namespaces={
+            account.namespace
+            for account in (*settings.caller_accounts, settings.sandbox_controller_account)
+            if account is not None
+        },
+    )
     resources = Resources(
-        principals=WorkloadPrincipalResolver(
-            authentication=k8s_client.AuthenticationV1Api(api),
-            audience=settings.token_audience,
-            allowed_service_account_namespaces={a.namespace for a in settings.caller_accounts},
-        ),
+        principals=principals,
         sessions=sessions,
         control=control,
         destinations=destinations,
@@ -66,6 +72,19 @@ async def gateway(
         lifecycle_timeout_s=settings.lifecycle_timeout_s,
     )
     add_service(resources, server)
+    server.add_generic_rpc_handlers(
+        (
+            runner_proxy.RunnerProxy(
+                runner_proxy.Resources(
+                    principals=principals,
+                    caller_accounts=settings.caller_accounts,
+                    sandboxes=sandboxes,
+                    control=control,
+                    sandbox_controller_account=settings.sandbox_controller_account,
+                )
+            ),
+        )
+    )
     if settings.port == settings.runner_control_port:
         raise ValueError("gRPC and runner control stream ports must differ")
     # A separate listener, so the network fence can admit the egress proxy to it and nothing else.
