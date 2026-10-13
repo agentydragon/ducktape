@@ -2736,19 +2736,17 @@ class HarnessEventSource extends EventTarget {
       const inboxes = url.searchParams
         .getAll("thread_id")
         .filter((session) => session in states)
-        .map(
-          (session): InboxNoticeState => ({
-            inbox_id: `inbox-${session}`,
-            session_id: session,
-            queued: 0,
-            unacknowledged: 0,
-            notice: null,
-            notice_wait_reason: null,
-            eligible_at: null,
-            error: null,
-            ...states[session],
-          })
-        );
+        .map((session): InboxNoticeState => ({
+          inbox_id: `inbox-${session}`,
+          session_id: session,
+          queued: 0,
+          unacknowledged: 0,
+          notice: null,
+          notice_wait_reason: null,
+          eligible_at: null,
+          error: null,
+          ...states[session],
+        }));
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify({ observed_at: ago(0), inboxes }) }));
       // A dropped Thread listing takes the notice stream down with it, so the badges show stale too.
       if (flags.has("threadStreamDropped")) this.drop();
