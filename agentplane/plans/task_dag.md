@@ -1075,7 +1075,7 @@ external Connections call, so renaming them is a wire change.
 
 Dead code, finished gates, compatibility shims and stale names found by the 2026-10-10 PDT audit of
 devel. A gate counts as legacy once its rollout is finished on both testing and staging or nothing
-reads it; the delta settlement flag stays with `SETTLE_DELTAS_ALWAYS_ON`. Lane named per
+reads it; the delta settlement flag stays (operator, 2026-10-13 PDT). Lane named per
 node; leftovers of in-flight work belong to the lane already changing that code. Upstream-gated
 tombstones with a verifiable condition in code (`keepingOffset` in
 `thread_store.tsx`, the jsdom pragma in `markdown.test.tsx`) need no node.
@@ -1084,7 +1084,6 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 flowchart TD
     ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
-    COHERENCE_REFACTORS[Section 11 coherence refactors] --> REFACTOR_COHERENCE_AUDIT
 ```
 
 ### `ACTION_EXECUTION_AUDIT_TRIM` — execution reconciliation columns
@@ -1096,7 +1095,7 @@ drop both columns and the enum.
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 
-**Blocked on the cutover's retirements, the split and the section 11 refactors**, which remove the
+**Blocked on the cutover's retirements and the split**, which remove the
 transitional pieces the other nodes name. Sweep devel for unused modules, functions, settings, proto
 fields, tables and columns; one name per concept across code, settings, manifests, protos and docs
 (Sandbox Service, Runner Gateway, History Service, ingress, control; Session for the raw stream,
@@ -1135,23 +1134,7 @@ resumed harness or a lost push reads back) once acknowledged entries are gone, i
 
 ## 11. Coherence refactors
 
-Refactors found by reading devel (2026-10-11 PDT) against the quality bar and
-[gRPC services](../docs/grpc_services.md). Each lands as its own PR; all of them feed
-`REFACTOR_COHERENCE_AUDIT`.
-
-```mermaid
-flowchart TD
-    subgraph COHERENCE_REFACTORS[Coherence refactors]
-        SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
-    end
-    COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
-```
-
-### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
-
-**Unscheduled; operator, 2026-10-11 PDT: keep the flag for debugging for now, may retire it later.**
-Settlement is on by default; `ingress.settle_deltas` turns it off. Retiring the flag makes
-settlement unconditional: delete the setting, `Environment.settle_deltas` and the `Store` flag.
+No refactor is open here.
 
 ## 12. The Runner Gateway serves the runner's own service
 
