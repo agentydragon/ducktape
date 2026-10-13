@@ -318,7 +318,7 @@ sequenceDiagram
     I-->>R: ack
     R-->>L: stage = Quiesced
     L-->>C: watch event
-    C->>C: Quiesced; record quiescedIncarnation, then delete Pod or VM
+    C->>C: Quiesced, record quiescedIncarnation, then delete Pod or VM
 ```
 
 Interruption is part of `Quiesce` rather than a second RPC: the runner already owns turn state, and
