@@ -8,6 +8,7 @@ import type {
   ActionPolicySetView,
   ActionPolicyUnavailable,
   ActionPolicyView,
+  BoundPolicyView,
   EffectivePolicyView,
   ReadyConditionView,
 } from "./client";
@@ -334,6 +335,65 @@ export function ActionPolicySection({
         policies={policy.auto_approve_if}
         empty="Nothing: every Action from this ServiceAccount waits for the operator."
       />
+    </Stack>
+  );
+}
+
+/**
+ * Every rule of the PolicySets a Sandbox names, whichever reader enforces it. The Action Service
+ * view above holds only the action rules, so a set's egress and Kubernetes rules show here.
+ */
+export function BoundPolicySection({ policy }: { policy: BoundPolicyView | null }): JSX.Element {
+  if (!policy) return <></>;
+  return (
+    <Stack gap="xs">
+      <Title order={5}>Policy set rules</Title>
+      {policy.missing_policy_sets.length > 0 && (
+        <Text size="sm" c="red" role="alert">
+          No PolicySet answers to {policy.missing_policy_sets.join(", ")}.
+        </Text>
+      )}
+      {policy.policy_sets.length === 0 && (
+        <Text size="sm" c="dimmed">
+          This Sandbox names no PolicySets.
+        </Text>
+      )}
+      {policy.policy_sets.map((policySet) => (
+        <Stack key={policySet.name} gap={4}>
+          <Text size="sm" fw={600}>
+            {policySet.name}{" "}
+            <Text span size="xs" c="dimmed">
+              generation {policySet.generation}
+            </Text>
+          </Text>
+          <Table.ScrollContainer minWidth={480} type="native">
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>#</Table.Th>
+                  <Table.Th>Type</Table.Th>
+                  <Table.Th>Rule</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {policySet.rules.map((rule) => (
+                  <Table.Tr key={rule.number}>
+                    <Table.Td>{rule.number}</Table.Td>
+                    <Table.Td>
+                      <Badge variant="light" style={WHOLE_BADGE}>
+                        {rule.type}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <CodeBlock text={JSON.stringify(rule.fields, null, 1)} language="json" />
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </Stack>
+      ))}
     </Stack>
   );
 }

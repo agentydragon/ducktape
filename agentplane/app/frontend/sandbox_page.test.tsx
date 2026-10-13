@@ -52,6 +52,7 @@ const live = vi.hoisted(
         threads: [] as SandboxSnapshot["threads"],
         bindings: [],
         action_policy: null,
+        bound_policy: null,
         watch: { fresh: true, stale_after_seconds: 60, refreshed_seconds_ago: {} },
       },
       health: null,

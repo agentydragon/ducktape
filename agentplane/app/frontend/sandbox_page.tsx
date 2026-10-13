@@ -37,7 +37,7 @@ import {
   type SandboxView,
   type ThreadView,
 } from "./client";
-import { ActionPolicySection } from "./actions/policy";
+import { ActionPolicySection, BoundPolicySection } from "./actions/policy";
 import { Disclosure } from "./disclosure";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
@@ -569,7 +569,10 @@ export function SandboxPage({
           <EgressSection name={name} bindings={live.snapshot?.bindings ?? null} />
         </Tabs.Panel>
         <Tabs.Panel value="policy" pt="sm">
-          <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
+          <Stack gap="md">
+            <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
+            <BoundPolicySection policy={live.snapshot?.bound_policy ?? null} />
+          </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
           {sandbox && <StatusView sandbox={sandbox} />}

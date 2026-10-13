@@ -646,6 +646,7 @@ py_library(
     deps = [
         ":action_federation",
         ":action_policy",
+        ":bound_policy",
         ":database_updates",
         ":identity",
         ":sandbox_models",
@@ -654,6 +655,7 @@ py_library(
         "//agentplane:crd_group",
         "//agentplane:grpc_calls",
         "//agentplane:kubernetes_watch",
+        "//agentplane:policy_sets",
         "//agentplane:sandbox_resource",
         "//agentplane:sse",
         "//agentplane:subjects",
@@ -874,6 +876,26 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "bound_policy",
+    srcs = ["bound_policy.py"],
+    deps = [
+        "//agentplane:policy_sets",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_bound_policy",
+    srcs = ["test_bound_policy.py"],
+    deps = [
+        ":bound_policy",
+        ":conftest",
+        "//:conftest",
+        "@pypi//pytest_bazel",
     ],
 )
 

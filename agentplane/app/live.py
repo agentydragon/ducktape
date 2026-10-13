@@ -42,6 +42,7 @@ from agentplane import sandbox_resource
 from agentplane.action_service.policies import resources
 from agentplane.app.action_federation import OperatorFederationError, operator_actions, upstream_failure_detail
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
+from agentplane.app.bound_policy import BoundPolicyView, bound_policy_view
 from agentplane.app.database_updates import Channel
 from agentplane.app.identity import CallerIdentity, require_caller
 from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sandbox_view
@@ -54,6 +55,7 @@ from agentplane.egress.decisions import Decision
 from agentplane.egress.decisions_client import DecisionsClient, DecisionsUnavailableError
 from agentplane.grpc_calls import ServiceError
 from agentplane.kubernetes_watch import Freshness
+from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandbox_resource import Sandbox
 from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API
@@ -154,6 +156,9 @@ class SandboxSnapshot(BaseModel):
         description="The Action Service's answer for the sandbox, or why it could not be asked; None only with "
         "the sandbox, since a policy subject pins its UID and a gone sandbox has none."
     )
+    bound_policy: BoundPolicyView | None = Field(
+        description="Every rule of the PolicySets the sandbox names; None only with the sandbox."
+    )
     threads: list[ThreadView] | ThreadsUnavailable
     watch: WatchHealth
 
@@ -173,6 +178,7 @@ class LiveIndex:
     bindings: dict[str, object] = field(default_factory=dict)
     policies: dict[str, object] = field(default_factory=dict)
     credentials: dict[str, object] = field(default_factory=dict)
+    rule_sets: dict[str, object] = field(default_factory=dict)
     # The action policy kinds are a trigger, not a copy: the Action Service's informer holds the
     # objects, and the sandbox stream asks it again whenever this moves. Only the names stay, for a
     # relist to reconcile against.
@@ -197,6 +203,12 @@ class LiveIndex:
         api_client = self.core_v1.api_client  # type: ignore[attr-defined]
         parsed = Sandbox.model_validate(raw)
         return http_sandbox_view(sandbox_view(parsed, incarnation_pod(parsed, self.pods), api_client=api_client))
+
+    def bound_policy_for(self, name: str) -> BoundPolicyView | None:
+        raw = self.sandboxes.get(name)
+        if raw is None:
+            return None
+        return bound_policy_view(Sandbox.model_validate(raw).spec.policy_sets, self.rule_sets.values())
 
     def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
         return matching_bindings(
@@ -294,6 +306,14 @@ def watch_for(
                 key=_name,
                 names=lambda: set(index.credentials),
                 apply=lambda name, obj: apply_to(index.credentials, name, obj),
+            ),
+            WatchedKind(
+                name=f"{POLICY_SETS_PLURAL}.{GROUP}",
+                list=custom_objects.list_namespaced_custom_object,
+                args=(GROUP, VERSION, sandbox_namespace, POLICY_SETS_PLURAL),
+                key=_name,
+                names=lambda: set(index.rule_sets),
+                apply=lambda name, obj: apply_to(index.rule_sets, name, obj),
             ),
             WatchedKind(
                 name=resources.POLICY_SETS_PLURAL,
@@ -537,6 +557,7 @@ async def live_sandbox(
             sandbox=sandbox,
             bindings=[] if sandbox is None else index.bindings_for(sandbox.service_account),
             action_policy=None if sandbox is None else await policy.for_subject(sandbox.service_account),
+            bound_policy=index.bound_policy_for(name),
             threads=await threads_frame(store, name, include_archived=include_archived),
             watch=_health(index),
         )
