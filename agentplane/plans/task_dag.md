@@ -672,6 +672,9 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE[In progress: our own Sandbox resource]
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
+    SESSION_QUEUE_DESIGN[Decision: where the Session message queue sits and what it owns]
+    SESSION_MESSAGE_QUEUE[Blocked: a durable queue that revives a Sandbox and delivers the message]
+    SUSPENDED_COMPOSER[Blocked: the composer stays enabled while a Session is suspended]
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
     HOSTED_THREAD_SURFACES[Blocked: show and revive stopped Sessions]
     VM_PROVIDER[VM provider, section 4]
@@ -689,6 +692,10 @@ flowchart TD
     SESSION_INCARNATIONS --> SESSION_REVIVE
     SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes suspend]
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
+    SESSION_QUEUE_DESIGN --> SESSION_MESSAGE_QUEUE
+    SESSION_REVIVE --> SESSION_MESSAGE_QUEUE
+    SESSION_MESSAGE_QUEUE --> SUSPENDED_COMPOSER
+    SESSION_QUEUE_DESIGN -. may own .-> SANDBOX_IDLE_EXPIRY
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
 ```
@@ -703,7 +710,8 @@ since they share its state PVC. Direction (operator, 2026-10-11 PDT): a new user
 notification resumes a stopped Sandbox, never a read. Both reach the Runner Gateway as commands, so
 one hook covers them: the gateway finds the Sandbox in its Session registry, sets the Sandbox
 resource's desired state to running and holds the command until the new incarnation's runner
-connects. Resuming by Session ID works while the Sandbox exists, stopped or not. Open: what the user sees while it starts.
+connects. A command held only while the sender waits is lost if the sender goes away;
+`SESSION_MESSAGE_QUEUE` is the durable version. Resuming by Session ID works while the Sandbox exists, stopped or not. Open: what the user sees while it starts.
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
 
@@ -825,7 +833,9 @@ and state-volume-owner PRs land, leaves this node.
 together. One is what Agent Sandbox did, plus VM support: a template, a Pod or VM per incarnation,
 and a state volume that stays. The other is specific to our runner running inside: sealing a
 Session's journal before the incarnation goes (`SANDBOX_LIFECYCLE`, `CONTROLLER_SEALS`). Separated,
-the first could be reused without the runner. Decide where the line falls (resource, controller or package) and what each side owns.
+the first could be reused without the runner. Decide where the line falls (resource, controller or package) and what each side owns. A
+layered pair, a Sandbox and a runner that runs inside one, is the direction `SESSION_QUEUE_DESIGN`
+points to, if the queue also owns suspension.
 
 ### `SANDBOX_RUNNER_LAYERING` — add the runner and harnesses to a platform user's image
 
@@ -865,6 +875,34 @@ template as it is now, possibly on a new image, and resume each harness as
 a new incarnation of the same Session and history. Test
 revival after a long stop, a refused incompatible state PVC, and concurrent revive requests.
 
+### `SESSION_QUEUE_DESIGN` — where the Session message queue sits and what it owns
+
+**Decision; operator, 2026-10-13 PDT.** Now that Sandboxes are durable, sending a message to a
+Session in a specific Sandbox should restore the Sandbox if it is suspended and deliver the message
+once the runner is available. That needs a durable queue between the end user and the harness, which
+the operator accepts: "write a message, press Enter, close the window, come back three hours later
+and the agent has resumed and finished" is not possible without a controller and a queue. Working
+name "session egress controller", inside or above the Runner Gateway. Decide: where it sits and
+whether it is a new service or part of the gateway; what is durable and where, with the ordering,
+deduplication and acknowledgement `THREAD_SUCCESSOR_DELIVERY` needs; what happens to a message whose
+Session is deleted or whose revival fails; which senders may revive, since a notification or a user
+message resumes a Sandbox but an agent's message does not (`AGENT_MESSAGE_RECEPTION`) unless decided
+otherwise; and whether it also owns other lifecycle, for example deciding that nothing happened for
+an hour and suspending (`SANDBOX_IDLE_EXPIRY`). Owning suspension points toward layered resources,
+a Sandbox and a runner that runs inside one (`SANDBOX_GENERIC_SPLIT`).
+
+### `SESSION_MESSAGE_QUEUE` — a durable queue that revives a Sandbox and delivers the message
+
+**Blocked on `SESSION_QUEUE_DESIGN` and `SESSION_REVIVE`.** Implement what the design chooses: accept
+a message for a Session whose Sandbox is suspended, set the Sandbox running, and deliver the message
+to the runner once it connects, surviving the sender going away. Test a message sent while
+suspended, the sender gone before the runner is up, a failed revival, and duplicate sends.
+
+### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
+
+**Blocked on `SESSION_MESSAGE_QUEUE`.** A suspended Session in the app has an enabled composer;
+sending queues the message and shows that the Sandbox is starting and the message waits.
+
 ### `THREAD_SUCCESSOR_DELIVERY` — commands unsettled across incarnations
 
 **Blocked on revival.** A command whose admission was ambiguous when an incarnation ended is not
@@ -873,7 +911,7 @@ replayed into the next one; it stays unknown and is shown as such. Moved from th
 ### `HOSTED_THREAD_SURFACES` — show and revive stopped Sessions
 
 **Blocked on revival.** The app lists Sessions whose Sandbox has no
-running incarnation, reads their history from the History Service, and offers an explicit revive.
+running incarnation, reads their history from the History Service, and offers an explicit revive,.
 Moved from the freezer.
 
 ## 8. Ownership and naming cleanup
