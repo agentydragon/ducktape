@@ -524,6 +524,23 @@ ts_library(
 )
 
 ts_library(
+    name = "decision_groups",
+    srcs = ["decision_groups.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+agentplane_vitest_test(
+    name = "decision_groups_test",
+    srcs = ["decision_groups.test.ts"],
+    deps = [
+        ":client",
+        ":decision_groups",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "thread_groups",
     srcs = ["thread_groups.ts"],
     tsconfig = TSCONFIG,
@@ -697,6 +714,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":decision_groups",
         ":live",
         ":live_stream",
         ":stream_status",
