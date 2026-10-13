@@ -33,7 +33,9 @@ async def test_streams_the_console_with_the_service_credentials() -> None:
         return ws
 
     app = web.Application()
-    app.router.add_get("/apis/subresources.kubevirt.io/v1/namespaces/{namespace}/virtualmachineinstances/{vmi}/console", console)
+    app.router.add_get(
+        "/apis/subresources.kubevirt.io/v1/namespaces/{namespace}/virtualmachineinstances/{vmi}/console", console
+    )
     async with kubernetes_api(app) as configuration:
         output = [chunk async for chunk in stream_console(configuration, namespace="sandboxes-test", vmi="vm-test")]
 
@@ -50,7 +52,9 @@ async def test_a_vm_that_cannot_be_attached_is_unavailable(status: type[web.HTTP
         raise status()
 
     app = web.Application()
-    app.router.add_get("/apis/subresources.kubevirt.io/v1/namespaces/{namespace}/virtualmachineinstances/{vmi}/console", refuse)
+    app.router.add_get(
+        "/apis/subresources.kubevirt.io/v1/namespaces/{namespace}/virtualmachineinstances/{vmi}/console", refuse
+    )
     async with kubernetes_api(app) as configuration:
         with pytest.raises(ConsoleUnavailableError):
             [chunk async for chunk in stream_console(configuration, namespace="sandboxes-test", vmi="vm-test")]

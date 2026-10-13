@@ -13,9 +13,7 @@ CONSOLE_PATH = "/apis/subresources.kubevirt.io/v1/namespaces/{namespace}/virtual
 CONSOLE_SUBPROTOCOL = "plain.kubevirt.io"
 
 
-async def stream_console(
-    configuration: k8s_client.Configuration, *, namespace: str, vmi: str
-) -> AsyncIterator[bytes]:
+async def stream_console(configuration: k8s_client.Configuration, *, namespace: str, vmi: str) -> AsyncIterator[bytes]:
     """The console's output from the moment of attach. KubeVirt serves one attached client per VMI at a
     time and replays nothing; nothing is written to the guest."""
     async with WsApiClient(configuration=configuration) as ws_api:

@@ -92,8 +92,7 @@ class SandboxServiceClient:
         view = await self.get(name)
         destination = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid)
         call = self.stub.StreamConsole(
-            sandbox_service_pb2.StreamConsoleRequest(destination=destination),
-            metadata=await bearer(self.token_file),
+            sandbox_service_pb2.StreamConsoleRequest(destination=destination), metadata=await bearer(self.token_file)
         )
         try:
             async for response in call:
