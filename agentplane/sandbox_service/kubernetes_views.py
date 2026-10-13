@@ -67,7 +67,9 @@ def sandbox_view(
 
 def _phase(sandbox: sandbox_resource.Sandbox) -> SandboxPhase:
     if sandbox.metadata.deletion_timestamp is not None:
-        return SandboxPhase.SANDBOX_PHASE_TEARING_DOWN if sandbox.sessions_sealed else SandboxPhase.SANDBOX_PHASE_SEALING
+        return (
+            SandboxPhase.SANDBOX_PHASE_TEARING_DOWN if sandbox.sessions_sealed else SandboxPhase.SANDBOX_PHASE_SEALING
+        )
     incarnated = sandbox.status.incarnation is not None
     if sandbox.spec.running:
         return SandboxPhase.SANDBOX_PHASE_RUNNING if incarnated else SandboxPhase.SANDBOX_PHASE_CREATING
