@@ -26,6 +26,7 @@ py_library(
     testonly = True,
     srcs = ["conftest.py"],
     deps = [
+        ":ollama_warmup",
         "//agentplane/app:sandbox_models",
         "//agentplane/app/testing:client",
         "//agentplane/proto:runner_pb2",
@@ -347,6 +348,29 @@ py_test(
         "//agentplane/proto:runner_pb2",
         "@pypi//httpx",
         "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "ollama_warmup",
+    srcs = ["ollama_warmup.py"],
+    deps = [
+        "//model_catalog:catalog",
+        "@pypi//httpx",
+    ],
+)
+
+py_test(
+    name = "test_ollama_warmup",
+    srcs = ["test_ollama_warmup.py"],
+    deps = [
+        ":conftest",
+        ":ollama_warmup",
+        "//:conftest",
+        "//model_catalog:catalog",
+        "@pypi//httpx",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

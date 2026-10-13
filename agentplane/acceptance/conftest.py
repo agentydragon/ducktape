@@ -15,6 +15,7 @@ from typing import cast
 import pytest
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
+from agentplane.acceptance.ollama_warmup import warm_ollama
 from agentplane.app.sandbox_models import NewSandbox, SandboxView, SessionDefaults, sandbox_has_ready_pod
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
@@ -111,6 +112,7 @@ async def model(client: Client, harness: runner_pb2.Harness) -> str:
     config_harness = Harness(runner_pb2.Harness.Name(harness))
     offered = catalog.harnesses[config_harness]
     assert offered, f"the deployment offers no model for {harness}"
+    await warm_ollama(offered[0])
     return offered[0]
 
 
