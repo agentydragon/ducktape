@@ -29,6 +29,8 @@ already in the cache), with the changes below. Breaks found on the way, in order
   by Pod IP; `failurePolicy` is set to `Ignore`). It generates `postgres-app` itself. Its `postgres-rw` Service is
   a reserved ClusterIP that cannot be disabled, so the Cluster adds a headless `postgres-primary` Service and
   CoreDNS rewrites `postgres-rw.<ns>` to it. The operator and instance Pods also need the `KUBERNETES_SERVICE_*` env.
+- **No resource limits:** every container and the CNPG Cluster lose `resources.limits` (requests stay). The app's
+  500m CPU limit throttled Python imports by about 14s each on the shared VM.
 - **Namespaces:** the manifest's Roles live in `litellm` and `ollama`, so empty ones are created.
 - **Dex dropped:** its config reaches the Pod through an ExternalSecret template (`regexReplaceAll`, `htpasswd`
   are External Secrets functions). `render.py` does not evaluate those, and the image's gomplate rejects them.

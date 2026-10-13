@@ -5,6 +5,7 @@ manifest and reports, per Deployment, whether it became Available. It fails at t
 piece with the Pod states and logs of whatever did not start.
 """
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -20,8 +21,17 @@ from pathlib import Path
 import pytest_bazel
 import yaml
 
+from agentplane.acceptance.agent import Agent
+from agentplane.acceptance.conftest import AUDIENCE, POD_TEMPLATE, TESTING_SERVICE_ACCOUNT, wait_until_running
+from agentplane.app.sandbox_models import NewSandbox
+from agentplane.app.testing.client import Client
+from agentplane.proto import runner_pb2
+from agentplane.runner.harness import Harness
 from agentplane.x.k3s_env import render
 from util.bazel.runfiles import get_required_path
+
+# `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
+# gazelle:include_dep @pypi//protobuf
 
 logger = logging.getLogger(__name__)
 
@@ -243,6 +253,18 @@ class K3s:
         return "\n".join(parts)
 
 
+async def _run_turn(base_url: str, token: str) -> str:
+    """One real Qwen turn through the app, a Pod Sandbox and LiteLLM; returns the agent's answer."""
+    async with Client(base_url=base_url, token=token) as client:
+        catalog = await client.models()
+        model = catalog.harnesses[Harness.CLAUDE][0]
+        await client.create_sandbox(NewSandbox(name="smoke", template=POD_TEMPLATE))
+        await wait_until_running(client, "smoke")
+        agent = await Agent.open(client, sandbox="smoke", harness=runner_pb2.HARNESS_CLAUDE, model=model)
+        turn = await agent.run("Reply with the single word: pong")
+        return turn.answer
+
+
 def _openssl_ca(work: Path) -> tuple[str, str]:
     key, cert = work / "ca.key", work / "ca.crt"
     _run("openssl", "ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(key))
@@ -317,39 +339,21 @@ def test_stack_comes_up() -> None:
             )
             if "condition met" not in out:
                 failed.append(name)
-        sandbox_ready = ""
+        answer = ""
         if not failed:
-            k3s.kubectl(
-                "apply",
-                "-f",
-                "-",
-                input_text=yaml.safe_dump(
-                    {
-                        "apiVersion": "agentplane.allegedly.works/v1alpha1",
-                        "kind": "Sandbox",
-                        "metadata": {"name": "smoke", "namespace": render.NAMESPACE},
-                        "spec": {"template": "runner", "running": True},
-                    }
-                ),
-            )
-            sandbox_ready = k3s.kubectl(
-                "wait",
-                "--for=condition=Ready",
-                "pod",
-                "-l",
-                "agentplane.allegedly.works/sandbox=smoke",
-                "-n",
-                render.NAMESPACE,
-                "--timeout=240s",
-                check=False,
-            )
+            app_ip = k3s.kubectl(
+                "get", "pod", "-n", render.NAMESPACE, "-l", "app.kubernetes.io/name=agentplane-app",
+                "-o", "jsonpath={.items[0].status.podIP}",
+            )  # fmt: skip
+            token = k3s.kubectl(
+                "-n", render.NAMESPACE, "create", "token", TESTING_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
+            ).strip()
+            answer = asyncio.run(_run_turn(f"http://{app_ip}:8080", token))
         print("memory:", _run("free", "-m"))
-        print(
-            "sandbox:", sandbox_ready, k3s.kubectl("get", "sandbox", "-n", render.NAMESPACE, "-o", "yaml", check=False)
-        )
+        print("answer:", answer)
         print(k3s.report())
         assert not failed, f"Deployments not Available: {failed}"
-        assert "condition met" in sandbox_ready, f"Sandbox Pod not Ready: {sandbox_ready}"
+        assert answer, "the Qwen turn returned no answer"
     finally:
         process.terminate()
         shutil.rmtree(work, ignore_errors=True)

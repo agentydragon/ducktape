@@ -131,6 +131,7 @@ def _cnpg_cluster_fixups(cluster: dict[str, Any], node_ip: str) -> None:
     spec = cluster["spec"]
     spec.pop("affinity", None)
     spec["monitoring"] = {"enablePodMonitor": False}
+    spec.get("resources", {}).pop("limits", None)
     spec["storage"]["storageClass"] = "local-path"
     spec["env"] = [
         {"name": "KUBERNETES_SERVICE_HOST", "value": node_ip},
@@ -169,6 +170,8 @@ def _pod_spec_fixups(pod: dict[str, Any], node_ip: str) -> None:
     pod.pop("topologySpreadConstraints", None)
     for container in [*pod.get("containers", []), *pod.get("initContainers", [])]:
         container["imagePullPolicy"] = "IfNotPresent"
+        # A CPU limit throttles Python imports by seconds on the one shared VM; requests still place the Pods.
+        container.get("resources", {}).pop("limits", None)
         # No kube-proxy means no `kubernetes.default` ClusterIP; in-cluster clients dial the apiserver directly.
         container.setdefault("env", []).extend(
             [

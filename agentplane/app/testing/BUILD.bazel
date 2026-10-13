@@ -193,7 +193,10 @@ py_library(
 py_library(
     name = "client",
     srcs = ["client.py"],
-    visibility = ["//agentplane/acceptance:__pkg__"],
+    visibility = [
+        "//agentplane/acceptance:__pkg__",
+        "//agentplane/x/k3s_env:__pkg__",
+    ],
     deps = [
         "//agentplane/app:live",
         "//agentplane/app:model_catalog",
