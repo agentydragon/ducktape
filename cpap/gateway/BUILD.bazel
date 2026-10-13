@@ -4,7 +4,10 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 py_library(
     name = "health",
     srcs = ["health.py"],
-    deps = ["@pypi//pydantic"],
+    deps = [
+        "@pypi//dbus_fast",
+        "@pypi//pydantic",
+    ],
 )
 
 py_test(
@@ -42,7 +45,10 @@ py_wheel(
     },
     python_requires = ">=3.14",
     # SYNC: must match propagatedBuildInputs of cpap-gateway-health in nix/packages/default.nix.
-    requires = ["pydantic>=2.0"],
+    requires = [
+        "dbus-fast",
+        "pydantic>=2.0",
+    ],
     version = "0.1.0",
     deps = [":health_pkg"],
 )

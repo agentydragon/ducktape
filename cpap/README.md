@@ -14,7 +14,8 @@ WiFi capabilities.
 
 The gateway logs its kernel and journal to the serial console, which KubeVirt's
 `guest-console-log` container ships to Loki. A minute timer runs `cpap-gateway-health`
-(<gateway/health.py>, released as a wheel and pinned into the guest image) and logs
+(<gateway/health.py>, released as a wheel and pinned into the guest image). It keeps
+the card's NetworkManager profile (in memory, from the KubeVirt secret disk) and logs
 each change between `connected`, `card-away` (the radio sees other networks but not
 the card, which is normal while the CPAP travels), `card-visible`, and the two
 wedged-adapter states `no-wifi-device` and `radio-deaf` (a scan finds no networks at

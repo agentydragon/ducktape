@@ -14,7 +14,6 @@ from cpap.gateway.health import (
     StopProxy,
     classify,
     find_adapters,
-    parse_nmcli_terse,
     plan,
 )
 
@@ -24,11 +23,11 @@ CARD = "Test CPAP card"
 @pytest.mark.parametrize(
     ("observation", "expected"),
     [
-        (Observation(wifi_iface=None, has_card_route=False, ssids=frozenset()), State.NO_WIFI_DEVICE),
-        (Observation(wifi_iface="wlan0", has_card_route=True, ssids=frozenset()), State.CONNECTED),
-        (Observation(wifi_iface="wlan0", has_card_route=False, ssids=frozenset({CARD, "x"})), State.CARD_VISIBLE),
-        (Observation(wifi_iface="wlan0", has_card_route=False, ssids=frozenset({"x"})), State.CARD_AWAY),
-        (Observation(wifi_iface="wlan0", has_card_route=False, ssids=frozenset()), State.RADIO_DEAF),
+        (Observation(wifi_iface=None, card_connected=False, ssids=frozenset()), State.NO_WIFI_DEVICE),
+        (Observation(wifi_iface="wlan0", card_connected=True, ssids=frozenset()), State.CONNECTED),
+        (Observation(wifi_iface="wlan0", card_connected=False, ssids=frozenset({CARD, "x"})), State.CARD_VISIBLE),
+        (Observation(wifi_iface="wlan0", card_connected=False, ssids=frozenset({"x"})), State.CARD_AWAY),
+        (Observation(wifi_iface="wlan0", card_connected=False, ssids=frozenset()), State.RADIO_DEAF),
     ],
 )
 def test_classify(observation: Observation, expected: State) -> None:
@@ -68,14 +67,6 @@ def test_wedged_radio_escalates_alternately() -> None:
 def test_missing_device_counts_as_failure() -> None:
     current, _ = plan(State.NO_WIFI_DEVICE, HealthState(state=State.RADIO_DEAF, consecutive_failures=3))
     assert current.consecutive_failures == 4
-
-
-@pytest.mark.parametrize(
-    ("line", "fields"),
-    [("wlan0:wifi", ["wlan0", "wifi"]), (r"Cafe\: free:", ["Cafe: free", ""]), (r"back\\slash", ["back\\slash"])],
-)
-def test_parse_nmcli_terse(line: str, fields: list[str]) -> None:
-    assert parse_nmcli_terse(line) == fields
 
 
 def test_find_adapters(tmp_path: Path) -> None:
