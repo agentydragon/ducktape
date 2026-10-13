@@ -84,8 +84,8 @@ run against a server this repo controls end to end.
 
 These cases read only `public-coder-agent/agentplane-testing-acceptance-operator` via
 `kubectl get --raw=/api/v1/namespaces/public-coder-agent/secrets/agentplane-testing-acceptance-operator`
-using the existing kubeconfig and Haku Console Kubernetes proxy
-(`https://haku-kubeapi.allegedly.works`). No operator environment variables or
+using the existing kubeconfig and either the Haku Console Kubernetes proxy
+(`https://haku-kubeapi.allegedly.works`) or a Sandbox's in-cluster API server. No operator environment variables or
 pre-issued cookie are used. Missing proxy/RBAC/reflection or malformed Secret data
 fails **BLOCKED**, without printing kubectl output or decoded values.
 

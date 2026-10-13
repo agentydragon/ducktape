@@ -25,6 +25,8 @@ from agentplane.app.action_federation import UpstreamFailure
 from agentplane.app.oidc import SECURE_COOKIE
 
 KUBE_PROXY = "https://haku-kubeapi.allegedly.works"
+# A Sandbox's kubeconfig names its own workload ServiceAccount, so it is as scoped as the proxy's.
+IN_CLUSTER_API = "https://kubernetes.default.svc.cluster.local"
 DEFAULT_SECRET_PATH = "/api/v1/namespaces/public-coder-agent/secrets/agentplane-testing-acceptance-operator"
 SECRET_PATH = DEFAULT_SECRET_PATH
 _DEX_AUTHORIZATION_PATH = "/dex/auth"
@@ -102,8 +104,8 @@ def read_operator_credentials() -> OperatorCredentials:
     __tracebackhide__ = True
     # Project only the active server, never raw kubeconfig credentials. Reject direct cluster access.
     server = _kubectl("config", "view", "--minify", "-o", "jsonpath={.clusters[0].cluster.server}")
-    if server.strip() != KUBE_PROXY.encode():
-        raise LoginBlockedError("BLOCKED: current kubeconfig must use the Haku Console Kubernetes proxy")
+    if server.strip() not in {KUBE_PROXY.encode(), IN_CLUSTER_API.encode()}:
+        raise LoginBlockedError("BLOCKED: current kubeconfig must use the Haku Console Kubernetes proxy or a Sandbox's")
     secret_path = os.environ.get("AGENTPLANE_OPERATOR_SECRET_PATH", DEFAULT_SECRET_PATH)
     if (
         re.fullmatch(
