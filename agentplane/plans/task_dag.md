@@ -56,7 +56,7 @@ far a command or message got: `NOTIFICATION_COMMAND_OUTCOME_DESIGN` (did the har
 reach the model's context), `AGENT_MESSAGING_DESIGN` (accepted, delivered, handled and acknowledged
 as separate states), `THREAD_SUCCESSOR_DELIVERY` (ambiguous across an incarnation) and
 `DISPATCHER_CORE` (queued, delivered once the runner is up). Decide the states once, from
-submission to the model's context: what each means, which component records it, and which survive an
+submission to the model's context (the design adds a no-op state, for a command that had nothing to do, such as `InterruptTurn` on a suspended Sandbox): what each means, which component records it, and which survive an
 incarnation ending. Today `CommandAdmitted` and `harness_user_message_confirmed` are the recorded
 points. The four nodes then cite it, instead of each defining its own.
 
@@ -673,9 +673,9 @@ starts, once, with its durable log and outcome as today, and expose its progress
 successful bootstrap stays the precondition of opening a Session: an `OpenSession` that meets a
 bootstrap still running is refused with a retryable code, and one that meets a failed or
 interrupted bootstrap is refused for good (use a new Sandbox). The result reaches the Sandbox's
-conditions as a runner fact on the connection Lease (`RUNNER_FACTS_ON_LEASE`) and may then be part
-of `Ready`; while the bootstrap runs inside the first `OpenSession`, `Ready` cannot wait on it,
-because the Session Dispatcher waits for `Ready` before it sends that call.
+conditions as a runner fact on the connection Lease (`RUNNER_FACTS_ON_LEASE`), is republished at each
+connect because it lasts the Sandbox's lifetime, and is part of `Ready`. `BootstrapFailed` is
+terminal.
 
 ## 7. Our own Sandbox resource: Sessions that outlive their Pod
 
@@ -930,7 +930,7 @@ from which the History Service records it, and its seal ends that incarnation, n
 the kept volume the runner journal and its cursors simply continue; the next incarnation journals
 that it resumed after a seal.
 
-Open piece: `QUIESCE_INCARNATION_KEY` lets a new incarnation's runner accept work, but a journal the earlier
+Open piece (`SANDBOX_IDLE_EXPIRY` waits for it, since a sealed journal cannot restart today): `QUIESCE_INCARNATION_KEY` lets a new incarnation's runner accept work, but a journal the earlier
 incarnation sealed stays sealed. This node decides how such a journal is reopened and what the ingress
 does with the next cursor range.
 
@@ -939,7 +939,8 @@ does with the next cursor range.
 **Blocked on incarnations.** The controller schedules a new Pod or VM
 for a stopped Sandbox, set running by an explicit call or by the gateway's resume hook, from its
 template as it is now, possibly on a new image, and resume each harness as
-a new incarnation of the same Session and history. Test
+a new incarnation of the same Session and history. Incarnation N+1 is created only after N has fully
+terminated, and the runner treats an interrupted Session setup as resumable. Test
 revival after a long stop, a refused incompatible state PVC, and concurrent revive requests.
 
 ### `QUIESCE_INCARNATION_KEY` — the sealed marker belongs to one incarnation
@@ -984,8 +985,9 @@ on transitions only and stamped with the incarnation UID, clearing them when a d
 incarnation connects. Facts: the seal stage (draining, flushing, sealed), the Sandbox's aggregate busy (any Session busy, or a background process or attached terminal running) with the time it
 became idle (`SANDBOX_IDLE_EXPIRY`), and the bootstrap result (`BOOTSTRAP_PROGRESS_CONTRACT`). Busy and idle
 facts ride the regular 15-second renewal write, so they add no etcd writes. The
-runner republishes its stage on reconnect so a gateway rollout loses nothing. Order: the
-controller reads the annotations before the gateway starts writing them.
+runner republishes its stage on reconnect so a gateway rollout loses nothing. A first-connection
+annotation, persisted, tells `NeverRan` (a Sandbox whose runner has not connected yet) from a runner
+that is down. Order: the controller reads the annotations before the gateway starts writing them.
 
 ### `SEAL_RENAME` — Seal, Sealed and Sealing get names that say which fact they mean
 
@@ -998,7 +1000,9 @@ cursor. This is a wire and stored-field change across the runner, gateway, contr
 Service, app and docs: readers accept both names before any writer emits the new one, and the
 Sandbox status field is added beside the old, switched, then removed. Land it before
 `QUIESCE_WITHOUT_POLLING` and the rest of the sealing nodes, so they are written once; it
-conflicts with nearly all of them, which is fine, but the order saves work.
+conflicts with nearly all of them, which is fine, but the order saves work. `Quiesce` returns at
+lameduck entry and drops the cursors, so the controller reads `Quiesce` before the runner's `Seal`
+is renamed.
 
 ### `QUIESCE_WITHOUT_POLLING` — the controller is told when a seal finishes
 
@@ -1041,9 +1045,11 @@ the one job of delivery, proposed in `docs/adr_sandbox_session_control.md`. Its 
 command, like the runner's. It accepts a message,
 persists it before it acknowledges the sender, delivers it through the gateway's runner proxy to a
 running Sandbox, and reports a delivery state the sender can read: the runner deduplicates on the
-command ID, a reply lost across an incarnation boundary is unknown and not replayed
-(`THREAD_SUCCESSOR_DELIVERY`), and a message for a deleted Session or a failed delivery ends in a
-terminal state with a reason and a time to live. Replicas shard Sandboxes by a per-Sandbox Lease
+command ID, a reply lost across an incarnation boundary is redelivered to the next incarnation
+(`THREAD_SUCCESSOR_DELIVERY`), delivery is first-in first-out per Session, and `StopRunnerSession`
+cancels the inputs queued before it. A message for a deleted Session or a failed delivery ends in a
+terminal state with a reason and a time to live; a command admitted but not dispatched when the
+Sandbox is torn down ends as `ended_by_teardown`. Replicas shard Sandboxes by a per-Sandbox Lease
 so each has one active owner. Authorization names which senders may send, and the sender kinds
 that may wake are `DISPATCHER_WAKE_ON_SEND`'s. It does not depend on the History Service to deliver. This
 node moves no sender and wakes nothing, so it can land beside the direct path with no change for
@@ -1114,8 +1120,9 @@ is starting and the message waits.
 
 ### `THREAD_SUCCESSOR_DELIVERY` — commands unsettled across incarnations
 
-**Blocked on revival.** A command whose admission was ambiguous when an incarnation ended is not
-replayed into the next one; it stays unknown and is shown as such. Moved from the freezer.
+**Blocked on revival.** A command whose admission was ambiguous when an incarnation ended is
+redelivered to the next one, which resolves the ambiguity (the runner deduplicates on the command
+ID). It is `unknown` only when the Sandbox was deleted. Moved from the freezer.
 
 ### `HOSTED_THREAD_SURFACES` — show and revive stopped Sessions
 
