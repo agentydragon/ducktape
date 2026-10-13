@@ -631,4 +631,4 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
    "Delivery Service" is the runner-up but collides with the runner's `DeliverCommand`, the last hop
    it makes.
 9. ~~Suspend during setup or bootstrap?~~ **Decided (operator, 2026-10-13):** suspend waits for the Sandbox bootstrap and for every Session's setup; deletion does not (D3).
-10. ~~How idle suspension is expressed?~~ **Decided (operator, 2026-10-13): `status.suspendedBy: Idle`** recorded by the controller, and the Sandbox Service wakes by bumping `spec.wakeGeneration`, so `spec.running` is never edited by a layer that acts on the CR (Sandbox lifecycle).
+10. **How idle suspension is expressed.** Recommend: the controller writes `status.suspendedBy: Idle` and the Sandbox Service wakes by bumping `spec.wakeGeneration`, so `spec.running` is never edited by a layer that acts on the CR (Sandbox lifecycle). The alternative is a controller write to its own spec, which breaks the rule.
