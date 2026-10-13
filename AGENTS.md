@@ -345,6 +345,7 @@ exits 0 without running tests.
 
 ```python
 import pytest_bazel
+
 # ... tests ...
 if __name__ == "__main__":
     pytest_bazel.main()
@@ -402,7 +403,11 @@ text being present is welcome, but do not require every screenshot test to dupli
 functional test suite. Keep shared render-health checks; a passing test does not mean the
 image is unchanged or visually correct. Review the published before/after images.
 
-See <util/testing/frontend_visual/README.md> for the capture API and publication workflow.
+Every review screenshot comes from `deterministic_browser_context` through
+`VisualPage.capture()`; never launch Chromium yourself, screenshot from `util.playwright`'s
+`page`, or write manifest entries by hand. Entry points and traps (unpinned animations, raw
+`page.screenshot()`): <util/testing/frontend_visual/README.md> § One way in. Publication
+workflow: <devinfra/pr_visuals/README.md>.
 
 ### Live OpenAI API Tests
 

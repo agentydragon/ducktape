@@ -5,8 +5,8 @@ import pydantic
 import pytest
 import pytest_bazel
 
-from util.testing.visual_review import retain_review_asset, upsert_review_asset, write_visual_review_manifest
-from util.visual_review import VisualReviewAsset, VisualReviewManifest
+from util.testing.visual_review import upsert_review_asset, write_visual_review_manifest
+from util.visual_review import VisualReviewAsset
 
 
 def test_write_visual_review_manifest(tmp_path: Path) -> None:
@@ -54,26 +54,6 @@ def test_upsert_review_asset_accumulates_and_keeps_the_first_label_of_a_path(tmp
         "title": "Example UI",
         "assets": [{"path": "a.png", "label": "A"}, {"path": "b.png", "label": "B"}],
     }
-
-
-def test_retain_review_asset_accumulates_across_calls(tmp_path: Path) -> None:
-    render_a = tmp_path / "renders" / "a.first.png"
-    render_a.parent.mkdir()
-    render_a.write_bytes(b"png-a")
-    render_b = tmp_path / "renders" / "b.png"
-    render_b.write_bytes(b"png-b")
-    out_dir = tmp_path / "out"
-
-    retain_review_asset(render_a, title="Example UI", label="A", name="a.png", output_dir=out_dir)
-    retain_review_asset(render_b, title="Example UI", label="B", output_dir=out_dir)
-    # Re-retaining an existing asset updates the file, not the manifest.
-    retain_review_asset(render_a, title="Example UI", label="A again", name="a.png", output_dir=out_dir)
-
-    assert (out_dir / "a.png").read_bytes() == b"png-a"
-    assert (out_dir / "b.png").read_bytes() == b"png-b"
-    manifest = VisualReviewManifest.model_validate_json((out_dir / "visual-review.json").read_text())
-    assert manifest.title == "Example UI"
-    assert [(asset.path, asset.label) for asset in manifest.assets] == [("a.png", "A"), ("b.png", "B")]
 
 
 if __name__ == "__main__":

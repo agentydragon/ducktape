@@ -13,6 +13,7 @@ import asyncio
 import json
 import os
 import tempfile
+import weakref
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -47,6 +48,14 @@ DISABLE_ANIMATIONS_CSS = get_required_path(own_repo_rlocation("util/testing/disa
 # The instant visual harnesses freeze page clocks to, so date-relative text renders the same on
 # every run. 2025-02-01T12:00:00Z.
 FROZEN_NOW_MS = 1_738_411_200_000
+
+# Contexts `deterministic_browser_context` opened, so a screenshot publisher can refuse a page from any
+# other launch (`util.playwright`'s `page` carries none of the pinning).
+_DETERMINISTIC_CONTEXTS: weakref.WeakSet[BrowserContext] = weakref.WeakSet()
+
+
+def is_deterministic_context(context: BrowserContext) -> bool:
+    return context in _DETERMINISTIC_CONTEXTS
 
 
 def chromium_executable() -> str | None:
@@ -99,6 +108,7 @@ async def deterministic_browser_context(
             locale="en-US",
             timezone_id="UTC",
         ) as context:
+            _DETERMINISTIC_CONTEXTS.add(context)
             if frozen_now_ms is not None:
                 await context.add_init_script(frozen_clock_script(frozen_now_ms))
             yield context

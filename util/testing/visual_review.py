@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import json
-import shutil
 from collections.abc import Iterable
 from pathlib import Path
 
-from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.visual_review import MANIFEST_NAME, VisualReviewAsset, VisualReviewManifest
 
 
@@ -38,28 +36,6 @@ def upsert_review_asset(output_dir: Path, *, title: str, asset: VisualReviewAsse
     if all(existing.path != asset.path for existing in assets):
         assets.append(asset)
     return write_visual_review_manifest(output_dir, title=title, assets=assets)
-
-
-def retain_review_asset(
-    png_path: Path, *, title: str, label: str, name: str | None = None, output_dir: Path | None = None
-) -> Path:
-    """Copy `png_path` into undeclared test outputs and upsert the manifest.
-
-    One call per rendered case: the manifest accumulates assets across calls
-    within a test execution, so parametrized tests never need the full case
-    list upfront. The trusted publisher (devinfra/pr_visuals/publisher.py) picks
-    manifest + assets up from passing CI runs.
-
-    `name` overrides the published asset basename (defaults to the source
-    file's); `output_dir` overrides the undeclared-outputs destination (tests
-    of this helper only).
-    """
-    out_dir = output_dir if output_dir is not None else undeclared_outputs_dir()
-    asset_name = name or png_path.name
-    out_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copyfile(png_path, out_dir / asset_name)
-    upsert_review_asset(out_dir, title=title, asset=VisualReviewAsset(path=asset_name, label=label))
-    return out_dir / asset_name
 
 
 def publish_review_png(png: bytes, *, output_dir: Path, title: str, name: str, label: str) -> Path:

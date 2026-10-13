@@ -62,10 +62,9 @@ Use one of the shared harnesses and it's automatic:
   PNG and registers it in `visual-review.json`. Tests own setup, readiness,
   interactions, and capture checkpoints; see
   <../../util/testing/frontend_visual/README.md>.
-- Other Python image producers (`py_test`): call
-  `util.testing.visual_review.retain_review_asset(png, title=..., label=...)`
-  once per rendered case — it copies the PNG into undeclared outputs and
-  accumulates the manifest.
+- Other Python image producers (`py_test`, e.g. the GNOME shell captures): call
+  `util.testing.visual_review.publish_review_png(png, ...)` once per rendered
+  case — it writes the PNG into undeclared outputs and accumulates the manifest.
 - Custom drivers write the manifest themselves via
   `util.testing.visual_review.write_visual_review_manifest`.
 

@@ -11,6 +11,8 @@ from util.testing.frontend_visual import (
     deterministic_browser_context,
     disable_animations_script,
 )
+from util.testing.undeclared_outputs import undeclared_outputs_dir
+from util.testing.visual_capture import VisualPage
 
 # gazelle:include_dep //util:playwright
 
@@ -127,6 +129,12 @@ async def test_animations_script_pins_a_page_that_mounts_after_it(playwright: Pl
         play_states = await page.evaluate("document.getAnimations().map(animation => animation.playState)")
 
     assert play_states == ["paused"]
+
+
+async def test_visual_page_refuses_a_page_from_another_launch(page: Page) -> None:
+    # `page` is util.playwright's: container flags only, none of the render pinning.
+    with pytest.raises(ValueError, match="deterministic_browser_context"):
+        VisualPage(page, output_dir=undeclared_outputs_dir(), title="Not pinned")
 
 
 if __name__ == "__main__":

@@ -71,8 +71,7 @@ from agentplane.runner_gateway.client import RunnerGatewayClient
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, MOBILE, SMALL_MOBILE, Viewport
-from util.testing.visual_review import upsert_review_asset
-from util.visual_review import VisualReviewAsset
+from util.testing.visual_capture import VisualPage
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -100,9 +99,9 @@ async def route_once(page: Page, url: str, handler: Callable[[Route], Awaitable[
 
 
 async def _review_screenshot(page: Page, name: str, label: str) -> None:
-    output_dir = undeclared_outputs_dir()
-    await page.screenshot(path=output_dir / name)
-    upsert_review_asset(output_dir, title="Agentplane Thread browser", asset=VisualReviewAsset(path=name, label=label))
+    await VisualPage(page, output_dir=undeclared_outputs_dir(), title="Agentplane Thread browser").capture(
+        name.removesuffix(".png"), label=label
+    )
 
 
 @pytest.fixture

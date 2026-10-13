@@ -79,6 +79,34 @@ use explicit names for multiple checkpoints in one test. Pass a strict
 `devtools_viewport` retains device-pixel compatibility for existing galleries.
 Duplicate output names within an execution fail instead of overwriting an image.
 
+## One way in
+
+Every review screenshot comes from a page of `deterministic_browser_context`
+(`util/testing/frontend_visual.py`) published by `VisualPage.capture()`. Choose the entry by
+where the page is served:
+
+- Mounted by a bundled harness: `VisualHarness.open()` or the `view` fixture
+  (`util/testing/visual_fixtures.py`).
+- Served by a real server: `deterministic_browser_context(...)` plus `VisualPage(page, ...)`,
+  constructed before navigating.
+- Native UI (GNOME shell, ...): `publish_review_png()` (`util/testing/visual_review.py`), as
+  `util/testing/gnome.py` does.
+
+Traps, each of which renders differently from one execution to the next or hides a failure:
+
+- **`util.playwright`'s `browser`/`page` fixtures** carry only the container flags, not the font
+  profile or raster flags. `VisualPage` refuses such a page; do not screenshot a review asset from
+  one.
+- **Raw `page.screenshot()` plus a hand-written manifest entry** skips the font, image and paint
+  readiness checks and the page-error check. Diagnostic screenshots are fine; anything reviewers see
+  goes through `capture()`.
+- **A real-server page does not get the animation-pinning CSS** that inline harnesses inline. Pin it
+  with `disable_animations_script()` as a context init script, or pass `animations="disabled"` to
+  `capture()`; an unpinned spinner is captured at a random rotation.
+- **`frozen_now_ms=None`** (live clock) is for pages whose replication runs on real time; any other
+  date-dependent text needs a frozen instant.
+- **Sleeping for a duration** instead of waiting for the state (`STYLE.md` § Waiting).
+
 ## Health and determinism
 
 Each harness opening gets a fresh deterministic browser: pinned Chromium, font profile,

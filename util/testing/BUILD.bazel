@@ -128,7 +128,6 @@ py_library(
     srcs = ["visual_review.py"],
     visibility = ["//visibility:public"],
     deps = [
-        ":undeclared_outputs",
         "//util:visual_review",
     ],
 )
@@ -171,6 +170,8 @@ py_test(
     tags = ["visual"],
     deps = [
         ":frontend_visual",
+        ":undeclared_outputs",
+        ":visual_capture",
         "//:conftest",
         "//util:playwright",
         "@pypi//playwright",
