@@ -11,9 +11,14 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from agentplane.egress.decisions import DecisionRecord, Outcome, Phase
 from agentplane.egress.policy import DenyReason
+from agentplane.postgres.wakeups import notify
 from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//asyncpg
+
+# Committed with every batch of decisions, to every replica listening: the admin port's change stream
+# wakes on it.
+DECISIONS_CHANNEL = "agentplane_egress_decisions"
 
 
 class Base(DeclarativeBase):
@@ -79,10 +84,11 @@ class DecisionStore:
             value["subject_namespace"] = None if record.subject is None else record.subject.namespace
             value["subject_name"] = None if record.subject is None else record.subject.name
             values.append(value)
-        async with self.engine.begin() as connection:
-            await connection.execute(
+        async with self._sessions.begin() as session:
+            await session.execute(
                 insert(DecisionRecordRow).values(values).on_conflict_do_nothing(index_elements=["event_id"])
             )
+            await notify(session, DECISIONS_CHANNEL)
 
     async def recent(self, subject: ServiceAccountRef | None) -> list[DecisionRecord]:
         """One subject's recent decisions, or -- for `None` -- the refusals that never authenticated."""

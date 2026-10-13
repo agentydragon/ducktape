@@ -196,6 +196,7 @@ py_library(
     visibility = ["//agentplane/acceptance:__pkg__"],
     deps = [
         "//agentplane/app:api",
+        "//agentplane/app:live",
         "//agentplane/app:model_catalog",
         "//agentplane/app:presets",
         "//agentplane/app:sandbox_models",

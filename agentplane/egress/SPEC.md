@@ -189,6 +189,9 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
   remove committed history. `/decisions?namespace=<ns>&name=<name>` selects one subject and keeps
   the list response and existing field names (`at` is decision time); omitting both selects the
   requests that never authenticated. A lookup spans every workload that has run as that account.
+- `/decisions/changes` streams a payload-free `changed` frame when any replica commits decisions,
+  on subscribing, and after every quiet heartbeat. A reader re-reads `/decisions`, which stays the
+  authority; the stream ends when the proxy loses its database connection.
 - Responses contain at most 200 recent records by default, ordered by decision time then event
   ID, oldest first within that window. This is not a global causal or insertion order.
 - Logging is diagnostic and best effort, not a mandatory lossless audit. A bounded asynchronous

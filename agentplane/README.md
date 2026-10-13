@@ -72,7 +72,7 @@ flowchart TB
     app -->|gRPC: Session and Thread reads, change and Session-opening watch| hs
     app -->|HTTP| notif
     app -->|HTTP: operator decisions| actions
-    app -->|HTTP admin port: egress decisions| proxy
+    app -->|HTTP admin port: egress decisions and a stream of when they change| proxy
     app -->|Thread shapes for the browser| electric
     app -->|SandboxTemplates, Sandbox and policy reads| k8s
     app -->|OIDC| authentik

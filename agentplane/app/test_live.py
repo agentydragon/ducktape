@@ -32,6 +32,8 @@ from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
 from agentplane.app.live import (
     PODS_PLURAL,
     ActionPolicyFrames,
+    DecisionsSnapshot,
+    DecisionsUnavailable,
     LiveIndex,
     SandboxesSnapshot,
     ThreadsSnapshot,
@@ -39,6 +41,7 @@ from agentplane.app.live import (
     WatchHealth,
     action_policy_frame,
     frames,
+    live_egress_decisions,
     live_threads,
     threads_frame,
 )
@@ -52,6 +55,7 @@ from agentplane.app.operator_sessions import (
 )
 from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.shutdown import Drain
+from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.thread_test_support import Replica
@@ -362,6 +366,7 @@ def app(
 def test_the_streams_need_a_caller(app: FastAPI) -> None:
     with TestClient(app) as unauthenticated:
         assert unauthenticated.get("/live/sandboxes").status_code == 401
+        assert unauthenticated.get("/live/sandboxes/runner-1/egress/decisions").status_code == 401
         assert unauthenticated.get("/live/sandboxes/runner-1").status_code == 401
         assert unauthenticated.get("/live/threads").status_code == 401
 
@@ -485,6 +490,74 @@ async def _next_snapshot(stream: AsyncIterator[bytes]) -> object:
         event, payload = _read(await anext(stream))
         if event == "snapshot":
             return payload
+
+
+async def _next_decisions(stream: AsyncIterator[str | bytes | memoryview]) -> DecisionsSnapshot:
+    while True:
+        frame = await anext(stream)
+        assert isinstance(frame, bytes)
+        if frame.startswith(b"event: snapshot\n"):
+            return DecisionsSnapshot.model_validate_json(frame.partition(b"data: ")[2])
+
+
+async def test_egress_decision_stream_rereads_when_the_proxy_reports_a_change(
+    seeded: LiveIndex, decisions: DecisionsClient, egress_admin: FakeEgressAdmin
+) -> None:
+    subject = (NAMESPACE, "runner-1")
+    egress_admin.decisions[subject] = [decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow")]
+    drain = Drain()
+    response = await live_egress_decisions(index=seeded, decisions=decisions, shutdown=drain, name="runner-1")
+    stream = aiter(response.body_iterator)
+    try:
+        async with asyncio.timeout(10):
+            first = await _next_decisions(stream)
+            assert isinstance(first.decisions, list)
+            assert [(d.method, d.host) for d in first.decisions] == [("GET", "api.github.com")]
+            assert not first.watching
+
+            egress_admin.decisions[subject].append(decision("2026-09-02T10:00:02Z", "POST", "pypi.org", "deny"))
+            decisions.changes.notify()
+            second = await _next_decisions(stream)
+            assert isinstance(second.decisions, list)
+            assert [d.host for d in second.decisions] == ["api.github.com", "pypi.org"]
+
+            egress_admin.reachable = False
+            decisions.changes.notify()
+            assert isinstance((await _next_decisions(stream)).decisions, DecisionsUnavailable)
+    finally:
+        drain.begin()
+        async for _ in stream:
+            pass
+
+
+async def test_watching_the_proxy_wakes_readers_whether_it_answers_or_not(
+    decisions: DecisionsClient, egress_admin: FakeEgressAdmin
+) -> None:
+    woken = asyncio.Event()
+    with decisions.changes.subscribe(woken):
+        for reachable in (True, False):
+            egress_admin.reachable = reachable
+            woken.clear()
+            task = asyncio.create_task(decisions.watch(retry_interval_s=0.01))
+            try:
+                async with asyncio.timeout(10):
+                    await woken.wait()
+            finally:
+                task.cancel()
+                await asyncio.wait([task])
+
+
+async def test_egress_decision_stream_says_a_sandbox_is_missing(seeded: LiveIndex, decisions: DecisionsClient) -> None:
+    drain = Drain()
+    response = await live_egress_decisions(index=seeded, decisions=decisions, shutdown=drain, name="nope")
+    stream = aiter(response.body_iterator)
+    try:
+        async with asyncio.timeout(10):
+            assert isinstance((await _next_decisions(stream)).decisions, DecisionsUnavailable)
+    finally:
+        drain.begin()
+        async for _ in stream:
+            pass
 
 
 if __name__ == "__main__":

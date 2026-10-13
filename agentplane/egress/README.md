@@ -151,7 +151,7 @@ identity authorities. Missing or forged destination auth fails closed.
 
 The API shares the central process's current enforcement `Index` through `RulesProjection`, which
 projects the subject the bearer proved and returns only the redacted field allowlist. Operator
-`/decisions` and `/healthz` remain on the separate admin listener, not the rules API. Network policy
+`/decisions`, `/decisions/changes` and `/healthz` remain on the separate admin listener, not the rules API. Network policy
 admits the agent API from central egress only. Service target-port separation prevents recursion.
 The Service may select a different replica from the one that admitted the request. The answer is
 an informational snapshot of the answering replica, not a global acknowledgement or admission promise.

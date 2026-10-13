@@ -16,7 +16,7 @@ import App from "../app";
 import { sampleConnection } from "../connections_fixture";
 import type { BindingView, Decision, McpLinkageView, PolicyView, SandboxView, ThreadView } from "../client";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
-import type { SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
+import type { DecisionsSnapshot, SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
 import type { InboxNoticeState } from "../thread_notices";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { CommandSchema } from "../../../proto/command_pb";
@@ -377,7 +377,59 @@ const DECISIONS: Decision[] = [
     substituted: true,
   },
   {
+    at: ago(7 * 60_000),
+    method: "GET",
+    host: "api.github.com",
+    port: 443,
+    outcome: "allow",
+    address: "140.82.116.5",
+    reason: null,
+    binding: "ready-sandbox-github-public",
+    policy: "github-public",
+    rule: 0,
+    substituted: true,
+  },
+  {
+    at: ago(6 * 60_000),
+    method: "GET",
+    host: "api.github.com",
+    port: 443,
+    outcome: "allow",
+    address: "140.82.116.5",
+    reason: null,
+    binding: "ready-sandbox-github-public",
+    policy: "github-public",
+    rule: 0,
+    substituted: true,
+  },
+  {
+    at: ago(5 * 60_000),
+    method: "GET",
+    host: "pypi.org",
+    port: 443,
+    outcome: "deny",
+    address: null,
+    reason: "no-rule",
+    binding: null,
+    policy: null,
+    rule: null,
+    substituted: false,
+  },
+  {
     at: ago(4 * 60_000),
+    method: "GET",
+    host: "pypi.org",
+    port: 443,
+    outcome: "deny",
+    address: null,
+    reason: "no-rule",
+    binding: null,
+    policy: null,
+    rule: null,
+    substituted: false,
+  },
+  {
+    at: ago(3 * 60_000),
     method: "GET",
     host: "pypi.org",
     port: 443,
@@ -405,11 +457,11 @@ const DECISIONS: Decision[] = [
 ];
 
 /** The phone fixture shows the proxy unreachable, the desktop one its decisions; both fit on a page. */
-function egressDecisions(): Decision[] | Response {
+function egressDecisions(): DecisionsSnapshot {
   if (window.matchMedia("(max-width: 600px)").matches) {
-    return Response.json({ detail: "the egress proxy did not answer: connection refused" }, { status: 502 });
+    return { watching: true, decisions: { detail: "the egress proxy did not answer: connection refused" } };
   }
-  return DECISIONS;
+  return { watching: true, decisions: DECISIONS };
 }
 
 const SPEC: SessionSpec = create(SessionSpecSchema, {
@@ -2384,7 +2436,6 @@ routes.push(
     /^\/actions\/([^/]+)\/decision$/,
     (match) => ({ ...ACTIONS.find((request) => request.id === match[1]), state: "allowed", version: 2 }),
   ],
-  ["GET", /^\/sandboxes\/([^/]+)\/egress\/decisions$/, () => egressDecisions()],
   ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS.map((session) => toJson(SessionSummarySchema, session))],
   [
     "GET",
@@ -2714,6 +2765,10 @@ class HarnessEventSource extends EventTarget {
       };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
       if (flags.has("threadStreamDropped")) this.drop();
+      return;
+    }
+    if (/^\/live\/sandboxes\/[^/]+\/egress\/decisions$/.test(url.pathname)) {
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(egressDecisions()) }));
       return;
     }
     if (url.pathname === "/live/sandboxes") {

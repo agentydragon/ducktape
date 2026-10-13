@@ -26,7 +26,6 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
-from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.threads.bridge import RunnerBridge
@@ -854,39 +853,6 @@ async def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
         await client.post("/sandboxes", json={"name": "demo", "template": TEMPLATE, "egress_policies": ["vanished"]})
     ).status_code == 422
     assert all(kind != "sandboxes" or name in {"live", "fresh"} for kind, name in custom_objects.objects)
-
-
-async def test_egress_decisions_come_from_the_proxy(client: httpx.AsyncClient, egress_admin: FakeEgressAdmin) -> None:
-    egress_admin.decisions[(NAMESPACE, "live")] = [
-        decision("2026-09-02T10:00:00Z", "CONNECT", "api.github.com", "allow"),
-        decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow", address="140.82.116.5"),
-        decision("2026-09-02T10:00:02Z", "POST", "pypi.org", "deny", reason="no-rule"),
-    ]
-
-    response = await client.get("/sandboxes/live/egress/decisions")
-
-    assert response.status_code == 200, response.text
-    assert [(d["method"], d["host"], d["outcome"], d["reason"]) for d in response.json()] == [
-        ("CONNECT", "api.github.com", "allow", None),
-        ("GET", "api.github.com", "allow", None),
-        ("POST", "pypi.org", "deny", "no-rule"),
-    ]
-    # The proxy resolves and pins the host itself; the address it dialled reaches the page.
-    assert [d["address"] for d in response.json()] == [None, "140.82.116.5", None]
-    assert egress_admin.queries == [(NAMESPACE, "live")], (
-        "the route asks for the account the sandbox runs as, namespace included"
-    )
-    assert (await client.get("/sandboxes/nope/egress/decisions")).status_code == 404
-    assert egress_admin.queries == [(NAMESPACE, "live")]
-
-
-async def test_egress_decisions_are_502_when_the_proxy_is_unreachable(
-    client: httpx.AsyncClient, egress_admin: FakeEgressAdmin
-) -> None:
-    egress_admin.reachable = False
-
-    assert (await client.get("/sandboxes/live/egress/decisions")).status_code == 502
-    assert [b["name"] for b in (await client.get("/sandboxes/live/egress")).json()] == ["live-granted", "live-seeded"]
 
 
 async def test_every_route_needs_one_of_the_two_credentials(client: httpx.AsyncClient) -> None:

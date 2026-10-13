@@ -75,7 +75,6 @@ from agentplane.app.sandbox_models import (
     sandbox_view,
 )
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
-from agentplane.app.sse import sse_response
 from agentplane.app.threads import bridge as runner_bridge
 from agentplane.app.threads.events import stream
 from agentplane.app.threads.events.debug import (
@@ -91,8 +90,7 @@ from agentplane.app.threads.runner_directory import SandboxNotReachableError
 from agentplane.app.threads.store import MAX_PAGE, InvalidPageTokenError, ThreadPage, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
-from agentplane.egress.decisions import Decision
-from agentplane.egress.decisions_client import DecisionsClient, DecisionsUnavailableError
+from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc_calls import RefusedError, ServiceError
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import runner_pb2
@@ -113,6 +111,7 @@ from agentplane.sandbox_service.kubernetes_grants import (
     UnknownKubernetesGrantError,
     resolve_grants,
 )
+from agentplane.sse import sse_response
 from agentplane.subjects import ServiceAccountRef
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -180,7 +179,6 @@ def _service[T](pick: Callable[[AppServices], T]) -> Any:
 Services = Annotated[AppServices, _service(lambda services: services)]
 Inventory = Annotated[SandboxServiceClient, _service(lambda services: services.inventory)]
 Egress = Annotated[EgressAccess, _service(lambda services: services.egress)]
-Decisions = Annotated[DecisionsClient, _service(lambda services: services.decisions)]
 EventLogs = Annotated[EventLogStore, _service(lambda services: services.event_logs)]
 Content = Annotated[ContentStore, _service(lambda services: services.content)]
 OperatorSessions = Annotated[OperatorSessionStore, _service(lambda services: services.operator_sessions)]
@@ -372,12 +370,6 @@ async def grant_sandbox_egress(inventory: Inventory, egress: Egress, name: str, 
     """Grant egress policies to a sandbox already running: a new binding naming it, never an edit of
     one it has, so this grant's expiry and revocation are its own."""
     return await egress.grant(await inventory.get(name), body.policies)
-
-
-@router.get("/{name}/egress/decisions")
-async def sandbox_egress_decisions(inventory: Inventory, decisions: Decisions, name: str) -> list[Decision]:
-    """What recently left or was refused, from the proxy; 502 when the proxy cannot be asked."""
-    return await decisions.recent(sandbox_view(await inventory.get(name)).service_account)
 
 
 egress_router = APIRouter(prefix="/egress", tags=["egress"])
@@ -1000,7 +992,6 @@ _ERROR_STATUS: dict[type[Exception], int] = {
     SandboxNotFoundError: status.HTTP_404_NOT_FOUND,
     SandboxRunningError: status.HTTP_409_CONFLICT,
     BindingNotFoundError: status.HTTP_404_NOT_FOUND,
-    DecisionsUnavailableError: status.HTTP_502_BAD_GATEWAY,
     FluxOwnedBindingError: status.HTTP_409_CONFLICT,
     # 422 rather than 404: the sandbox in the path is there, and 404 on these routes already
     # says it is not. The body parsed and named something that does not resolve.
