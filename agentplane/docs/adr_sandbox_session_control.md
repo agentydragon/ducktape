@@ -133,14 +133,14 @@ problem.
 
 Facts have different truth sources, so each gets its own condition and `Ready` is their AND:
 
-| Condition         | Source of truth                                                               | Meaning                                                                                     |
-| ----------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `Running`         | controller (Pod or VMI)                                                       | an incarnation exists and runs                                                              |
-| `WorkloadReady`   | controller (Pod Ready)                                                        | what `Ready` reports today (#10326)                                                         |
-| `RunnerConnected` | gateway (connection Lease)                                                    | a runner of this incarnation holds a live connection                                        |
-| `Bootstrapped`    | runner (bootstrap result, republished at each connect)                        | the Sandbox's bootstrap ran to success; Sandbox-lifetime, not per incarnation               |
-| `Ready`           | controller                                                                    | all of the above for the current incarnation; reason `BootstrapFailed` if bootstrap failed  |
-| `Quiesced`        | controller, from the runner's quiesce stage published on the connection Lease | False with reason `Draining`, then `Flushing`; True once every final cursor is acknowledged |
+| Condition         | Source of truth                                                               | Meaning                                                                                                                       |
+| ----------------- | ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `Running`         | controller (Pod or VMI)                                                       | an incarnation exists and runs                                                                                                |
+| `WorkloadReady`   | controller (Pod Ready)                                                        | what `Ready` reports today (#10326)                                                                                           |
+| `RunnerConnected` | gateway (connection Lease)                                                    | a runner of this incarnation holds a live connection                                                                          |
+| `Bootstrapped`    | runner (bootstrap result, republished at each connect)                        | the Sandbox's bootstrap ran to success; Sandbox-lifetime; False with reason `BootstrapFailed` if it failed or was interrupted |
+| `Ready`           | controller                                                                    | all of the above for the current incarnation; reason `BootstrapFailed` if bootstrap failed                                    |
+| `Quiesced`        | controller, from the runner's quiesce stage published on the connection Lease | False with reason `Draining`, then `Flushing`; True once every final cursor is acknowledged                                   |
 
 The Sandbox's bootstrap runs once, at runner start and before any Session opens (operator, 2026-10-13), and
 `Ready` includes `Bootstrapped`. Its outcome lives on the state volume, so each incarnation's runner republishes
@@ -492,6 +492,7 @@ Creating -> Starting -> Booting -> Ready -> Quiescing -> Suspended
                                    ^                                |
                                    |------------ Resuming ----------|
 Any state --delete--> Quiescing (if not quiesced and not NeverRan) -> Tearing down -> gone
+Booting --bootstrap failed or interrupted--> BootstrapFailed (terminal; never retried; use a new Sandbox)
 Ready -> Degraded (runner crash loop; no automatic replacement) -> Ready or operator action
 Suspended -> Archived (SANDBOX_ARCHIVE)
 ```
