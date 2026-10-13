@@ -9,7 +9,7 @@ import { kubernetesTarget, resource } from "./resource_common";
 
 const resourcesGetArguments = z.strictObject({ ...resource, namespace: z.string().min(1).optional() });
 
-export function canDecideOnCompactCardResourcesGet(args: unknown): boolean {
+export function offersCardDecisionButtonsResourcesGet(args: unknown): boolean {
   return resourcesGetArguments.safeParse(args).success;
 }
 function GetPane({ args }: { args: z.infer<typeof resourcesGetArguments> }): JSX.Element {

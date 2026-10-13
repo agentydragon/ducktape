@@ -5,7 +5,7 @@ import type { z } from "zod";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { zPodsInNamespaceArguments } from "../../schemas/kubernetes_admin/pods_list_in_namespace";
 
-export function canDecideOnCompactCardPodsInNamespace(args: unknown): boolean {
+export function offersCardDecisionButtonsPodsInNamespace(args: unknown): boolean {
   return zPodsInNamespaceArguments.safeParse(args).success;
 }
 
@@ -66,7 +66,7 @@ function PodsInNamespaceLabel({ args }: { args: z.infer<typeof zPodsInNamespaceA
 export const podsInNamespaceLabel: ArgumentsPreview = definePreview(zPodsInNamespaceArguments, PodsInNamespaceLabel);
 
 // This is intentionally a separate widget from the opened pane: each Action owns both
-// representations. Compact-card decision eligibility lives in a separate capability registry.
+// representations. Card decision buttons eligibility lives in a separate capability registry.
 function PodsInNamespaceCollapsed({ args }: { args: z.infer<typeof zPodsInNamespaceArguments> }): JSX.Element {
   const hasFilters = args.fieldSelector !== undefined || args.labelSelector !== undefined;
   return (

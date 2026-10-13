@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { type CallToolResult, parseCallToolResult } from "../call_tool_result";
 import { mount, SSH_EXEC_ARGUMENTS, sshExec } from "../testing";
 import {
-  canDecideOnCompactCard,
+  actionOffersCardDecisionButtons,
   renderActionCall,
   renderActionLabel,
   renderDetailsArguments,
@@ -367,7 +367,7 @@ describe("details result rendering", () => {
   });
 });
 
-const compactCardDecisionCases: Array<{
+const cardDecisionButtonCases: Array<{
   group: string;
   name: string;
   args: Record<string, unknown>;
@@ -436,7 +436,7 @@ const compactCardDecisionCases: Array<{
 ];
 
 describe("opened-pane renderers", () => {
-  it.each(compactCardDecisionCases.filter(({ name }) => name !== "pods_list_in_namespace"))(
+  it.each(cardDecisionButtonCases.filter(({ name }) => name !== "pods_list_in_namespace"))(
     "draws all displayed request fields for $group/$name",
     async ({ group, name, args, visible }) => {
       const container = await mount(renderPaneOpened({ group, name }, args));
@@ -445,43 +445,46 @@ describe("opened-pane renderers", () => {
   );
 });
 
-describe("compact-card decision capability", () => {
-  it.each(compactCardDecisionCases)(
+describe("card decision buttons capability", () => {
+  it.each(cardDecisionButtonCases)(
     "validates the whole $group/$name request independently",
     ({ group, name, args }) => {
-      expect(canDecideOnCompactCard({ group, name }, args)).toBe(true);
-      expect(canDecideOnCompactCard({ group, name }, { ...args, invisible: "must review" })).toBe(false);
+      expect(actionOffersCardDecisionButtons({ group, name }, args)).toBe(true);
+      expect(actionOffersCardDecisionButtons({ group, name }, { ...args, invisible: "must review" })).toBe(false);
     }
   );
 
   it("requires full review for PR descriptions, hidden defaults, and unknown actions", () => {
-    const pr = compactCardDecisionCases.find((candidate) => candidate.group === "github");
+    const pr = cardDecisionButtonCases.find((candidate) => candidate.group === "github");
     if (pr === undefined) throw new Error("missing pull request fixture");
-    expect(canDecideOnCompactCard({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })).toBe(
-      false
-    );
     expect(
-      canDecideOnCompactCard(
+      actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })
+    ).toBe(false);
+    expect(
+      actionOffersCardDecisionButtons(
         { group: "kubernetes_admin", name: "resources_delete" },
         { apiVersion: "v1", kind: "Pod", name: "api-0" }
       )
     ).toBe(false); // The backend's configured namespace would otherwise be hidden.
-    expect(canDecideOnCompactCard({ group: pr.group, name: pr.name }, { ...pr.args, title: "x".repeat(121) })).toBe(
-      false
-    );
     expect(
-      canDecideOnCompactCard({ group: pr.group, name: pr.name }, { ...pr.args, reviewers: Array(5).fill("reviewer") })
+      actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, { ...pr.args, title: "x".repeat(121) })
     ).toBe(false);
-    expect(canDecideOnCompactCard(SSH_EXEC, SSH_EXEC_ARGUMENTS)).toBe(false);
-    expect(canDecideOnCompactCard({ group: "__proto__", name: "constructor" }, {})).toBe(false);
+    expect(
+      actionOffersCardDecisionButtons(
+        { group: pr.group, name: pr.name },
+        { ...pr.args, reviewers: Array(5).fill("reviewer") }
+      )
+    ).toBe(false);
+    expect(actionOffersCardDecisionButtons(SSH_EXEC, SSH_EXEC_ARGUMENTS)).toBe(false);
+    expect(actionOffersCardDecisionButtons({ group: "__proto__", name: "constructor" }, {})).toBe(false);
   });
 
-  it("still renders a long PR description for review while withholding the compact-card decision", async () => {
-    const pr = compactCardDecisionCases.find((candidate) => candidate.group === "github");
+  it("still renders a long PR description for review while withholding the card decision buttons", async () => {
+    const pr = cardDecisionButtonCases.find((candidate) => candidate.group === "github");
     if (pr === undefined) throw new Error("missing pull request fixture");
     const args = { ...pr.args, body: "important text" };
 
-    expect(canDecideOnCompactCard({ group: pr.group, name: pr.name }, args)).toBe(false);
+    expect(actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, args)).toBe(false);
     const container = await mount(renderPaneOpened({ group: pr.group, name: pr.name }, args));
     expect(container.textContent).toContain("open Review");
   });

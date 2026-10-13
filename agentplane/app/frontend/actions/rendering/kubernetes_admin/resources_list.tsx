@@ -18,7 +18,7 @@ const resourcesListArguments = z.strictObject({
   ...listSelectors,
 });
 
-export function canDecideOnCompactCardResourcesList(args: unknown): boolean {
+export function offersCardDecisionButtonsResourcesList(args: unknown): boolean {
   return resourcesListArguments.safeParse(args).success;
 }
 

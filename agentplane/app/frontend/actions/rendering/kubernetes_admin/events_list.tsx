@@ -10,7 +10,7 @@ const eventsListArguments = z.strictObject({
   fieldSelector: z.string().min(1).optional(),
 });
 
-export function canDecideOnCompactCardEventsList(args: unknown): boolean {
+export function offersCardDecisionButtonsEventsList(args: unknown): boolean {
   return eventsListArguments.safeParse(args).success;
 }
 

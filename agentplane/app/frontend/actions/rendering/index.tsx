@@ -9,7 +9,7 @@ import { type CallToolResult, CallToolResultView, toolValue } from "../call_tool
 import type { ActionRequestView } from "../client";
 import { renderPreview, type ArgumentsPreview, type CallPreview } from "./entry";
 import {
-  canDecideOnCompactCardPullRequest,
+  offersCardDecisionButtonsPullRequest,
   createPullRequestLabel,
   createPullRequestPane,
 } from "./github/create_pull_request";
@@ -36,9 +36,9 @@ import {
   systemInfoArguments,
   systemInfoResult,
 } from "./grocy";
-import { canDecideOnCompactCardEventsList, eventsListLabel, eventsListPane } from "./kubernetes_admin/events_list";
+import { offersCardDecisionButtonsEventsList, eventsListLabel, eventsListPane } from "./kubernetes_admin/events_list";
 import {
-  canDecideOnCompactCardPodsInNamespace,
+  offersCardDecisionButtonsPodsInNamespace,
   podsInNamespaceCollapsed,
   podsInNamespaceDetails,
   podsInNamespaceLabel,
@@ -52,24 +52,24 @@ import {
   podsExecLabel,
   podsExecPane,
 } from "./kubernetes_admin/pods_exec";
-import { canDecideOnCompactCardPodsLog, podsLogLabel, podsLogPreview } from "./kubernetes_admin/pods_log";
+import { offersCardDecisionButtonsPodsLog, podsLogLabel, podsLogPreview } from "./kubernetes_admin/pods_log";
 import {
   resourcesApplyCollapsed,
   resourcesApplyLabel,
   resourcesApplyManifest,
 } from "./kubernetes_admin/resources_apply";
 import {
-  canDecideOnCompactCardResourcesDelete,
+  offersCardDecisionButtonsResourcesDelete,
   resourcesDeleteLabel,
   resourcesDeletePane,
 } from "./kubernetes_admin/resources_delete";
 import {
-  canDecideOnCompactCardResourcesGet,
+  offersCardDecisionButtonsResourcesGet,
   resourcesGetLabel,
   resourcesGetPane,
 } from "./kubernetes_admin/resources_get";
 import {
-  canDecideOnCompactCardResourcesList,
+  offersCardDecisionButtonsResourcesList,
   resourcesListLabel,
   resourcesListPane,
 } from "./kubernetes_admin/resources_list";
@@ -253,21 +253,21 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
   ],
 ]);
 
-// Deciding on the compact card is deliberately a separate capability: a custom pane renderer does not grant a
-// decision there. Each entry validates the complete Action arguments independently of its views.
-const COMPACT_CARD_DECISIONS: ReadonlyMap<string, ReadonlyMap<string, (args: unknown) => boolean>> = new Map([
+// Card decision buttons are deliberately a separate capability: a custom pane renderer does not grant them.
+// Each entry validates the complete Action arguments independently of its views.
+const CARD_DECISION_BUTTONS: ReadonlyMap<string, ReadonlyMap<string, (args: unknown) => boolean>> = new Map([
   [
     "kubernetes_admin",
     new Map([
-      ["pods_list_in_namespace", canDecideOnCompactCardPodsInNamespace],
-      ["resources_get", canDecideOnCompactCardResourcesGet],
-      ["resources_list", canDecideOnCompactCardResourcesList],
-      ["resources_delete", canDecideOnCompactCardResourcesDelete],
-      ["pods_log", canDecideOnCompactCardPodsLog],
-      ["events_list", canDecideOnCompactCardEventsList],
+      ["pods_list_in_namespace", offersCardDecisionButtonsPodsInNamespace],
+      ["resources_get", offersCardDecisionButtonsResourcesGet],
+      ["resources_list", offersCardDecisionButtonsResourcesList],
+      ["resources_delete", offersCardDecisionButtonsResourcesDelete],
+      ["pods_log", offersCardDecisionButtonsPodsLog],
+      ["events_list", offersCardDecisionButtonsEventsList],
     ]),
   ],
-  ["github", new Map([["create_pull_request", canDecideOnCompactCardPullRequest]])],
+  ["github", new Map([["create_pull_request", offersCardDecisionButtonsPullRequest]])],
 ]);
 
 function presentation(action: ActionIdentity): ActionPresentation | undefined {
@@ -340,7 +340,7 @@ export function renderDetailsResult(action: ActionIdentity, result: CallToolResu
   return drawn ?? <CallToolResultView result={result} />;
 }
 
-/** Whether this invocation may be decided from the compact card; independent of the presentation chosen. */
-export function canDecideOnCompactCard(action: ActionIdentity, args: unknown): boolean {
-  return COMPACT_CARD_DECISIONS.get(action.group)?.get(action.name)?.(args) ?? false;
+/** Whether this invocation gets card decision buttons; independent of the presentation chosen. */
+export function actionOffersCardDecisionButtons(action: ActionIdentity, args: unknown): boolean {
+  return CARD_DECISION_BUTTONS.get(action.group)?.get(action.name)?.(args) ?? false;
 }

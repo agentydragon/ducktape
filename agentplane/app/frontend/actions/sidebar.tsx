@@ -8,7 +8,7 @@ import { Link, useLocation } from "react-router";
 import { JsonView } from "../json_view";
 import { ResizeHandle, usePaneSize } from "../resize_handle";
 import {
-  canDecideOnCompactCard,
+  actionOffersCardDecisionButtons,
   renderActionLabel,
   renderPaneCollapsed,
   renderPaneOpened,
@@ -69,7 +69,7 @@ function PendingActionList({
         const collapsedPreview = renderPaneCollapsed(request.action, request.arguments);
         const openedPreview = renderPaneOpened(request.action, request.arguments);
         const showRequestTitle = shouldRenderPaneRequestTitle(request.action, request.arguments, request.title);
-        const decision = canDecideOnCompactCard(request.action, request.arguments) ? (
+        const decision = actionOffersCardDecisionButtons(request.action, request.arguments) ? (
           <ActionDecisionButtons
             size="xs"
             deciding={actions.deciding === request.id}
