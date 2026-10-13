@@ -37,11 +37,6 @@ const (
 	// On the Pod or the VirtualMachine and its VMI and virt-launcher Pod, the state PVC, the
 	// ServiceAccount and the PolicyBinding: the Sandbox they belong to.
 	SandboxLabel = "agentplane.allegedly.works/sandbox"
-	// On a state PVC created before the Sandbox owned it: the Sandbox that created it, so the
-	// controller can adopt it. CLEANUP(added 2026-10-13): delete this and the adoption in
-	// stateVolume once no state PVC lacks an owner reference (check `kubectl get pvc -l
-	// agentplane.allegedly.works/sandbox` on each cluster).
-	SandboxUIDAnnotation = "agentplane.allegedly.works/sandbox-uid"
 	// On the Runner Gateway's Lease for a Sandbox: the Pod UID of the runner that last connected.
 	PodUIDAnnotation = "agentplane.allegedly.works/pod-uid"
 	// Seals a deleted Sandbox's Sessions, then deletes its Pod or VM; the state PVC goes by garbage
@@ -321,22 +316,7 @@ func (r *Reconciler) stateVolume(ctx context.Context, sandbox *Sandbox) (*corev1
 	if err := r.Get(ctx, key, &pvc); err != nil {
 		return nil, client.IgnoreNotFound(err)
 	}
-	if metav1.GetControllerOf(&pvc) == nil && pvc.Annotations[SandboxUIDAnnotation] == string(sandbox.UID) {
-		if err := r.adopt(ctx, sandbox, &pvc); err != nil {
-			return nil, err
-		}
-	}
 	return &pvc, nil
-}
-
-// adopt makes the Sandbox the PVC's controller. The reference does not block the owner's deletion,
-// so foreground propagation and namespace deletion cannot remove the state before the seal
-// completes; garbage collection takes the PVC once the finalizer clears.
-func (r *Reconciler) adopt(ctx context.Context, sandbox *Sandbox, pvc *corev1.PersistentVolumeClaim) error {
-	if err := controllerutil.SetControllerReference(sandbox, pvc, r.Scheme(), controllerutil.WithBlockOwnerDeletion(false)); err != nil {
-		return err
-	}
-	return r.Update(ctx, pvc)
 }
 
 // ensureStateVolume creates the state PVC from the template if it does not exist yet, owned by the

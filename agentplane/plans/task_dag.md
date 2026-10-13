@@ -864,7 +864,7 @@ and state-volume-owner PRs land, leaves this node.
   woken. Only an unsealed stopped Sandbox runs once more to seal.
 - **The Sandbox owns its state PVC.** `<sandbox>-state` has the Sandbox as controller owner with
   `blockOwnerDeletion: false`, so foreground deletion cannot remove it before the seal. The
-  explicit PVC delete and the `sandbox-uid` annotation go away.
+  explicit PVC delete goes away.
 - **Conditions.** `Running`, and `Sealed` in place of `SessionsSealed`, with reasons `Sealed`,
   `NeverRan`, `Unsealed` and `Sealing`. The Sandbox's phase is derived from `spec.running`, the
   deletion timestamp, the live incarnation and `Sealed`, never stored.

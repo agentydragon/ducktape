@@ -362,10 +362,9 @@ func TestTemplateDefiningTheStateVolumeIsRefused(t *testing.T) {
 	}
 }
 
-func TestAnotherSandboxesStateVolumeIsNotAdopted(t *testing.T) {
+func TestStateVolumeTheSandboxDoesNotOwnIsNotUsed(t *testing.T) {
 	stale := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
 		Namespace: namespace, Name: StateVolumeName(sandboxName),
-		Annotations: map[string]string{SandboxUIDAnnotation: "uid-previous-sandbox"},
 	}}
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"), stale)
 	reconcileOnce(t, r)
@@ -490,21 +489,6 @@ func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 	}
 }
 
-func TestStateVolumeCreatedBeforeOwnershipIsAdopted(t *testing.T) {
-	legacy := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
-		Namespace: namespace, Name: StateVolumeName(sandboxName),
-		Annotations: map[string]string{SandboxUIDAnnotation: "uid-sandbox"},
-	}}
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"), legacy)
-	reconcileOnce(t, r)
-	if pvc := getPVC(t, c); pvc == nil || !metav1.IsControlledBy(pvc, getSandbox(t, c)) {
-		t.Fatal("the Sandbox's own state PVC was not adopted")
-	}
-	if getPod(t, c) == nil {
-		t.Fatal("adopting the state PVC blocked the Pod")
-	}
-}
-
 func TestDeletingAStoppedSandboxRunsItOnceMoreToSeal(t *testing.T) {
 	r, c := newReconciler(t, false, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
@@ -521,10 +505,9 @@ func TestDeletingAStoppedSandboxRunsItOnceMoreToSeal(t *testing.T) {
 	}
 }
 
-func TestDeletionLeavesAnotherSandboxesStateVolume(t *testing.T) {
+func TestDeletionLeavesAStateVolumeTheSandboxDoesNotOwn(t *testing.T) {
 	stale := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
 		Namespace: namespace, Name: StateVolumeName(sandboxName),
-		Annotations: map[string]string{SandboxUIDAnnotation: "uid-previous-sandbox"},
 	}}
 	r, c := newReconciler(t, false, testTemplate("test-image:v1"), stale)
 	reconcileOnce(t, r)
