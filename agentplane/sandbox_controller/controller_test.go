@@ -496,3 +496,15 @@ func TestDeletionLeavesAnotherSandboxesStateVolume(t *testing.T) {
 		t.Fatalf("a Sandbox with nothing to seal or delete is still present: %v", err)
 	}
 }
+
+func TestDeletionWithoutASealerWaitsForTheRunnerGateway(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	r.Sealer, r.Leases = nil, nil
+	reconcileOnce(t, r)
+	deleteSandbox(t, c)
+	reconcileOnce(t, r)
+	reconcileOnce(t, r)
+	if getPod(t, c) == nil {
+		t.Fatal("the Pod went before anything sealed the Sessions")
+	}
+}

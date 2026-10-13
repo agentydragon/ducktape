@@ -904,9 +904,11 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 ```mermaid
 flowchart TD
     APP_SESSION_DEFAULTS[Candidate: the app sends complete Session specs]
+    CONTROLLER_SEALS[Candidate: the Sandbox controller seals]
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
     APP_SESSION_DEFAULTS --> GATEWAY_WRAPPER_RETIRE
+    CONTROLLER_SEALS --> GATEWAY_WRAPPER_RETIRE
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
 ```
 
@@ -917,12 +919,21 @@ Sandbox was made from on the Sandbox (a label) and fills a complete `SessionSpec
 from it. `session_defaults` leaves `CreateSandboxRequest`, `SandboxBinding` and our Sandbox's spec,
 and `CreateSessionRequest` loses its field mask.
 
+### `CONTROLLER_SEALS` — the Sandbox controller seals
+
+**Candidate; the controller's sealer code has landed.** Two steps remain, each after the previous
+one's image is pinned in every environment. First, cdk8s passes the controller `--runner-gateway-target`
+and `--runner-gateway-token-file` (a projected token for audience `token_audience`), admits the
+controller to the gateway, and sets `sandbox_controller_account` on the gateway; the controller's
+`Sealer` and `Leases` become required. Then `runner_gateway/deletion_seals.py`, `sealing.py` and the
+gateway's write to Sandboxes go.
+
 ### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
 
 **Blocked on the nodes above.** The app and the Notification Service
 call `Runner` through the proxy and ask the History Service where a Session runs. Delete the
 `RunnerGateway` service and proto, its client, `session_registry.py`, `destinations.py`,
-`session_lifecycle.py` and `wire.py`. This makes
+`sealing.py`, `session_lifecycle.py` and `wire.py`. This makes
 `GATEWAY_CLIENT_SPLIT` and `SANDBOX_DATABASE_RENAME` moot; delete them here.
 
 ### `GATEWAY_DATABASE_DROP` — drop the `sandbox_commands` database

@@ -205,7 +205,6 @@ py_library(
     srcs = ["sandbox_controller.py"],
     deps = [
         ":environment",
-        ":runner_gateway",
         ":service_workload",
         "//cluster/cdk8s:api_resource",
         "//cluster/cdk8s:cilium",

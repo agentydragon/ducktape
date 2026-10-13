@@ -2060,9 +2060,6 @@ data:
         name: agentplane-app
       - namespace: agentplane-staging
         name: agentplane-notifications
-    sandbox_controller_account:
-      namespace: agentplane-staging
-      name: agentplane-sandbox-controller
     token_audience: agentplane-runner-gateway
     runner_control_audience: agentplane-runner-control
     port: 8080
@@ -2286,6 +2283,12 @@ rules:
       - list
       - watch
   - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxes/status
+    verbs:
+      - patch
+  - apiGroups:
       - coordination.k8s.io
     resources:
       - leases
@@ -2369,14 +2372,6 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-notifications
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-sandbox-controller
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:
@@ -5170,8 +5165,6 @@ spec:
       containers:
         - args:
             - --namespace=agentplane-staging
-            - --runner-gateway-target={sandbox}-control.{namespace}.svc:8080
-            - --runner-gateway-token-file=/var/run/secrets/agentplane-runner-gateway/token
           image: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset
           imagePullPolicy: IfNotPresent
           livenessProbe:
@@ -5212,10 +5205,6 @@ spec:
             privileged: false
             readOnlyRootFilesystem: false
             runAsNonRoot: true
-          volumeMounts:
-            - mountPath: /var/run/secrets/agentplane-runner-gateway
-              name: runner-gateway-token
-              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -5235,14 +5224,6 @@ spec:
       setHostnameAsFQDN: false
       shareProcessNamespace: false
       terminationGracePeriodSeconds: 30
-      volumes:
-        - name: runner-gateway-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-runner-gateway
-                  expirationSeconds: 3600
-                  path: token
 ---
 apiVersion: v1
 kind: Service
@@ -5427,14 +5408,6 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: agentplane-sandbox-controller
