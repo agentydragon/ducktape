@@ -83,7 +83,7 @@ component that "keeps Sandboxes and their messages", D4 shows what would move.
 
 ```mermaid
 flowchart LR
-    Sender[App, Notification Service, agents] -- Dispatch --> K[Session Dispatcher]
+    Sender[App, Notification Service, agents] -- OpenSession, Dispatch --> K[Session Dispatcher]
     K --> KDB[(keeper database)]
     K -- ResumeSandbox on send --> SS[Sandbox Service]
     K -- Runner calls through proxy --> GW[Runner Gateway]
@@ -298,7 +298,7 @@ What remains of the runner surface for direct use once the Dispatcher exists:
 | `Runner` method  | After the Dispatcher                                                       |
 | ---------------- | -------------------------------------------------------------------------- |
 | `DeliverCommand` | Dispatcher (senders); direct for system callers and tests                  |
-| `OpenSession`    | Dispatcher, as an internal step of `Dispatch`; direct for system callers   |
+| `OpenSession`    | Dispatcher (its own `OpenSession`); direct for system callers              |
 | `ResumeSession`  | Dispatcher, as an internal step of `Dispatch` (the harness half of waking) |
 | `Quiesce`        | Sandbox Controller only                                                    |
 | `ListSessions`   | direct; reads need no wake                                                 |
@@ -308,26 +308,28 @@ and never suspended), because the runner, gateway and controller do not depend o
 just has no wake-on-send and no idle suspension. That optionality costs nothing in code: absent
 callers.
 
-**The Dispatcher's RPC surface.** Callers address a Session and never open, resume or wake anything:
+**The Dispatcher's RPC surface.** Callers state intent; waking, resuming and delivering are internal steps:
 
-- `Dispatch(dispatch_id, session_id, sandbox?, session_spec?, command)`: stores the dispatch durably and
-  returns `QUEUED`; it does not wait for delivery. `dispatch_id` is the `command_id`, and a retry with the
-  same payload returns the same record. The Dispatcher then does whatever the Session needs, as internal
-  steps: resume the Sandbox if it is suspended (where the sender may wake it), wait for `Ready`, open the
-  Session on the runner if the runner does not have it, resume its harness if stopped, and `DeliverCommand`.
+- `OpenSession(session_id, sandbox, spec, setup_script?)`: stores the Session's creation durably and
+  returns `QUEUED`. The client mints the Session ID, as everywhere (invariant: one ID, client-minted),
+  which makes it idempotent: a retry with the same payload returns the same record, and another Sandbox,
+  spec or setup script for a known ID is refused. The Dispatcher waits for the Sandbox to be `Ready`
+  (resuming it where the sender may wake it) and calls the runner's `OpenSession`, which is itself
+  idempotent. The Dispatcher's `OpenSession` is a different RPC from the runner's of the same name: it
+  queues, the runner's executes.
+- `Dispatch(dispatch_id, session_id, command)`: stores the command durably and returns `QUEUED`; it does
+  not wait for delivery. `dispatch_id` is the `command_id`. The Dispatcher resolves the Session's Sandbox
+  from its own record or the History Service's Session directory, resumes the Sandbox if suspended, waits
+  for `Ready`, resumes a stopped harness, and calls `DeliverCommand`. An unknown Session fails
+  `NOT_FOUND`; a command queued behind its Session's `OpenSession` waits for it.
 - `GetDispatch`, `WatchDispatches` (stream, by Session or Sandbox), `ListDispatches`, `CancelDispatch`
-  (not once delivery is ambiguous).
+  (not once delivery is ambiguous). A Session's open is a dispatch like a command, with the same states.
 
-There is no `DispatchOpen` and no Dispatcher RPC that opens a Session. The client mints the Session ID, as
-everywhere (invariant: one ID, client-minted).
+**Where a new Session's spec comes from.** `OpenSession` carries it, from the caller (the app resolves its
+presets into a concrete `SessionSpec` first; the Dispatcher knows no preset). The Dispatcher stores it with the
+Session record and does not interpret it.
 
-**Where a new Session's spec comes from.** The first `Dispatch` to a Session ID that no record knows carries
-`session_spec` and `sandbox`; the Dispatcher stores both with the Session's first dispatch and makes the ID
-idempotent: another Sandbox or spec for a known ID is refused. A `Dispatch` to a Session the History Service
-or the Dispatcher already knows carries neither; the stored spec and placement are used, and a spec on such a
-call must equal the stored one. A `Dispatch` to an unknown ID without a spec fails `NOT_FOUND`.
-
-**The Dispatcher never creates Sandboxes.** The Sandbox named on a first dispatch must exist; a missing one
+**The Dispatcher never creates Sandboxes.** The Sandbox named in `OpenSession` must exist; a missing one
 fails the dispatch. Creating, deleting and templating Sandboxes stays with the Sandbox Service. The Dispatcher
 only asks it to resume a suspended one. It needs a Sandbox _name_, never an address; the gateway resolves the
 name from the dialed host.
@@ -515,9 +517,10 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
 7. **A way for an operator to hold a Sandbox suspended against wake-on-send?** Needs a decision
    before the Dispatcher lands.
 8. **Name.** Session Dispatcher, `Quiesce`, `Quiesced`, `Draining` and `Flushing` are confirmed
-   (operator, 2026-10-13). `Dispatch` is the one send RPC; there is no open RPC, because the Dispatcher
-   wakes, opens and resumes as internal steps (D4). The queue service is "Session Dispatcher" and a
-   dispatch is one queued command. The names to avoid are taken:
+   (operator, 2026-10-13). The Dispatcher has an explicit `OpenSession` (the spec and setup script are
+   real input) and a `Dispatch` that takes only a Session ID and a command; waking and resuming are
+   internal (D4). The queue service is "Session Dispatcher" and a dispatch is one queued command or
+   Session creation. The names to avoid are taken:
    `inbox` is the Notification Service's (`inbox_id`, `InboxView`), `outbox` is the Action
    Service's (`action_outbox`), "mailbox" is already the task DAG's word for an agent's receiving
    side (`AGENT_MESSAGING`), `relay` is the egress `SidecarRelay`, `queue` names the runner's and
