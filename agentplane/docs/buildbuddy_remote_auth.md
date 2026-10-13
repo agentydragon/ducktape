@@ -81,7 +81,7 @@ nested Bazel authentication fails.
 A BuildBuddy-specific request-body rewrite would make hosted remote builds work while keeping the
 real key out of the local Sandbox:
 
-1. Admit and authenticate the request under the ordinary EgressBinding and EgressPolicy decision.
+1. Admit and authenticate the request under the ordinary egress rule decision.
 2. Match only `remote.buildbuddy.io`, `POST`, and the exact
    `/buildbuddy.service.BuildBuddyService/Run` gRPC method.
 3. Substitute the ordinary outer `x-buildbuddy-api-key` metadata target.

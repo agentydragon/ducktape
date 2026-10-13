@@ -39,7 +39,7 @@ is a combination of them:
 
 - identity: a Kubernetes ServiceAccount;
 - what may run without a human: `PolicySet`/`PolicyBinding` ([action policies](action_policies.md));
-- network reach and credentials: `EgressPolicy`/`EgressBinding` ([egress](../egress/SPEC.md));
+- network reach and credentials: `PolicySet`/`PolicyBinding` rules of type `egress` ([egress](../egress/SPEC.md));
 - cluster permissions: ordinary RBAC bindings;
 - execution environment: `SandboxTemplate`; harness and model per session.
 

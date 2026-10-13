@@ -13,7 +13,7 @@ Pod recipe (`cluster/cdk8s/agentplane/sandbox_pod.py`) and nothing else.
 ## The contract
 
 **A sandbox is a shell as yourself.** It runs as the calling ServiceAccount, reaches what that
-account's `EgressBinding`s allow, and — because a Pod proves its ServiceAccount, and the account
+account's `PolicyBinding`s allow, and — because a Pod proves its ServiceAccount, and the account
 carries `agentplane.allegedly.works/use-action-service` — is admitted to the Action Service as that
 same account. No caller obtains authority it did not already hold.
 
@@ -93,7 +93,7 @@ already rests on ([identity evidence](../../docs/sandbox_egress_identity_evidenc
 the proxy reviews that token against the API server audience and requires it to resolve to the same
 Pod it authenticated, so a substituted credential provably belongs to the caller being decided.
 
-RBAC is then standing on the calling account, beside its `EgressBinding`s, and every sandbox of that
+RBAC is then standing on the calling account, beside its `PolicyBinding`s, and every sandbox of that
 account has it. Under the contract above that is the intent rather than a leak.
 
 Verified from a sandbox on staging, 2026-09-19: a `SelfSubjectReview` through the proxy returns
@@ -167,7 +167,7 @@ refuses, or minting one per caller through TokenRequest, which would let the Act
 any account that can call it.
 
 **Standing bindings on the caller, mirrored onto per-sandbox accounts.** The alternative that keeps
-per-sandbox accounts: read the caller's `EgressBinding`s and write derived ones onto each new
+per-sandbox accounts: read the caller's `PolicyBinding`s and write derived ones onto each new
 account. It breaks a property the egress specification states plainly — "creating one is the whole
 act of allowing, and deleting it the whole act of taking that back" — because deleting the source
 takes back nothing already copied. Kubernetes cannot repair that: garbage collection deletes a

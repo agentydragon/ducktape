@@ -153,7 +153,7 @@ Allowing `host`/`remote-node`:443 alone completes TLS but returns HTTP 403
 (`server: envoy`, `Access denied`). A remote Gateway does not have that local source
 pod policy, so the same request can succeed there (#9495).
 
-Keep public-origin Agentplane `EgressPolicy` rules in sync with the shared backend
+Keep public-origin Agentplane egress rules in sync with the shared backend
 Cilium grants in `agentplane/egress_staging_credentials.py`. Reference the Service's selector and
 **target** port: ActivityWatch's read Service maps 5600 to 5603, and Grocy's public
 route targets Authentik on 9000. The proxy's application policy continues to scope
@@ -215,7 +215,7 @@ destination.
 - Keep node:443 open and fence the names where they can actually be
   expressed: the DNS rule under `toPorts.rules.dns` (§ Consequence: an
   FQDN allowlist cannot fence our own public services), or the workload's
-  own application-level allowlist, e.g. an agentplane `EgressPolicy`.
+  own application-level allowlist, e.g. an agentplane egress `PolicySet`.
 - Pin SNI on a **different port**, which carries its own L7 layer. Scoping
   Dex's `targetPort` narrows Dex and nothing else, which is how staging's
   proxy keeps both today.

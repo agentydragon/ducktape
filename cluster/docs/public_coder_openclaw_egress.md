@@ -66,7 +66,7 @@ mounts a short-lived projected token, with audience `agentplane-egress`. The ded
 Kubernetes-audience token. Kubernetes calls still use the existing Haku static-Agent
 bearer through the Haku kube-api proxy, with unchanged authorization.
 
-The staging gateway admits that exact ServiceAccount through an explicit EgressBinding.
+The staging gateway admits that exact ServiceAccount through an explicit `PolicyBinding`.
 This does **not** grant access to the staging application's operator API or login secret,
 and does not change any managed-agent preset or testing-environment binding. Public
 Internet access preserves Iron's existing unrestricted public destinations. The app's

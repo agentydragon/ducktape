@@ -387,8 +387,8 @@ substitution. It does not admit staging app or Authentik login origins.
 The existing `agentplane-testing-operator` Role and its static Haku
 RoleBinding remain Flux-owned. This is a
 **testing-only write grant**: it can create, patch, and delete Sandboxes, create
-Pod exec and port-forward sessions, create/patch/delete ActionPolicySets and
-ActionPolicyBindings, and mint the `agentplane-agent` ServiceAccount token used
+Pod exec and port-forward sessions, create/patch/delete PolicySets and
+PolicyBindings, and mint the `agentplane-agent` ServiceAccount token used
 by the testing app. It also reads testing SandboxTemplates, Pods, and Pod logs.
 It grants no write access in `agentplane-staging` and no direct Kubernetes
 Secret read. Pod exec can expose data mounted in testing Pods, and a holder can

@@ -205,7 +205,7 @@ paths through an `HTTPRoute` at
 stay off that origin. FastMCP's automatic Host/Origin guard protects loopback access without
 categorically rejecting requests carrying Origin; authority comes from the explicit validated
 bearer, not Origin or browser cookies.
-Staging's current `basic` `EgressPolicy` permits the REST and `/mcp` paths with the same
+Staging's current `basic` `PolicySet` permits the REST and `/mcp` paths with the same
 workload credential substitution. The protocol tests exercise substitution at that boundary.
 
 ### External OAuth

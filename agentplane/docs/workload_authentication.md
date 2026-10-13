@@ -24,7 +24,7 @@ Pod-local egress sidecar
         v
 central egress proxy
   validates TokenReview
-  EgressPolicy selects exact host/method/path and credentialRef
+  an `egress` rule selects exact host/method/path and credentialRef
   authenticatedWorkloadToken substitutes the already-authenticated bearer
         |
         +-----------------------------+

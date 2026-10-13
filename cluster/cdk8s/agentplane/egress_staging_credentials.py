@@ -57,7 +57,7 @@ _GROCY_SF_ACCOUNT = "agentplane-grocy-sf-readonly"
 _HAKU_MAIL_TOKEN = "haku-mail-token"
 
 # The staging-only egress PolicySets created below, each carrying a credential that exists
-# only here. Exported because a launch preset or an EgressBinding refers to them by name; as in
+# only here. Exported because a launch preset or a PolicyBinding refers to them by name; as in
 # egress.py, a name lives with the policy that answers to it.
 FORGEJO_HAKU_POLICY = "forgejo-haku"
 FORGEJO_FINANCE_AGENT_POLICY = "forgejo-finance-agent"

@@ -27,19 +27,20 @@ spec:
       field: password
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
+kind: PolicySet
 metadata:
   name: public-coder-matrix-login
 spec:
   rules:
-    - hosts: [matrix.allegedly.works]
+    - type: egress
+      hosts: [matrix.allegedly.works]
       methods: [POST]
       paths: [/_matrix/client/v3/login]
       credentialRef:
         name: matrix-login
 ```
 
-Bind this policy only to the intended workload identities. The agent discovers the placeholder
+Bind this set only to the intended workload identities. The agent discovers the placeholder
 and the `jsonField` target from `/v1/rules`, then sends `Content-Type: application/json` and a
 login object whose `password` value equals that placeholder. The gateway replaces that value
 only after workload authentication and host/method/path/credential authorization. The same

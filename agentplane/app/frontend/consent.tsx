@@ -219,8 +219,8 @@ export function ConnectionConsent({
             )}
             <Text size="sm">
               Connections acting as the same ServiceAccount share its Action receipts. What it may do without an
-              operator is whatever ActionPolicyBindings name it; everything else waits for human approval. Each
-              submitted Action records the specific client connection.
+              operator is whatever PolicyBindings name it; everything else waits for human approval. Each submitted
+              Action records the specific client connection.
             </Text>
             <Group justify="flex-end">
               {attempt !== null ? (
