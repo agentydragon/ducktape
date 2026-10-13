@@ -80,7 +80,7 @@ flowchart TB
     hist_db -.->|staging: WAL archive, on-demand base backups| outside
 
     ss -->|Sandboxes, egress grants| k8s
-    gw -->|control Services, Leases; SessionsSealed on deleting Sandboxes| k8s
+    gw -->|control Services, Leases| k8s
     hs -->|ingest, fold, read| hist_db
     notif -->|Sandbox lookups| ss
     notif -->|commands| gw
@@ -92,6 +92,7 @@ flowchart TB
     policy -->|PolicyBindings, RoleBindings| k8s
     sandboxctl -->|Sandboxes, Pods, VMs, state PVCs, PolicyBindings| k8s
     sandboxctl -->|creates| sandbox
+    sandboxctl -->|Runner.Seal on deletion| gw
     k8s -->|runs| cmd_sandbox
     cmd_sandbox -->|all outbound traffic| proxy
     actions -->|MCP servers, GitHub, web push| outside

@@ -86,7 +86,7 @@ func (r *Reconciler) startVM(ctx context.Context, sandbox *Sandbox, w workload, 
 	}
 	if err := r.Create(ctx, vm); err != nil {
 		if apierrors.IsAlreadyExists(err) {
-			return w, &unready{"VMConflict", fmt.Sprintf("VM %s exists and is not this Sandbox's", vm.Name)}, nil
+			return w, &unready{reason: "VMConflict", message: fmt.Sprintf("VM %s exists and is not this Sandbox's", vm.Name)}, nil
 		}
 		return w, nil, err
 	}
@@ -101,13 +101,13 @@ func (r *Reconciler) startVM(ctx context.Context, sandbox *Sandbox, w workload, 
 func renderVM(sandbox *Sandbox, template *SandboxTemplate) (*kubevirtv1.VirtualMachine, *unready) {
 	spec := template.Spec.VM.DeepCopy()
 	if spec.Template == nil {
-		return nil, &unready{"TemplateInvalid", fmt.Sprintf("SandboxTemplate %s has no VM template", template.Name)}
+		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s has no VM template", template.Name)}
 	}
 	instance := &spec.Template.Spec
 	volume := template.Spec.StateVolume.Name
 	if slices.ContainsFunc(instance.Volumes, func(v kubevirtv1.Volume) bool { return v.Name == volume }) ||
 		slices.ContainsFunc(instance.Domain.Devices.Filesystems, func(f kubevirtv1.Filesystem) bool { return f.Name == volume }) {
-		return nil, &unready{"TemplateInvalid", fmt.Sprintf("SandboxTemplate %s defines the state volume %s itself", template.Name, volume)}
+		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the state volume %s itself", template.Name, volume)}
 	}
 	if blocked := withLaunchDisk(sandbox, template, instance); blocked != nil {
 		return nil, blocked

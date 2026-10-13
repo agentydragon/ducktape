@@ -30,18 +30,23 @@ func main() {
 	namespace := flag.String("namespace", "", "where the Sandboxes, their templates, Pods and state PVCs live")
 	metricsAddress := flag.String("metrics-bind-address", ":8080", "where Prometheus metrics are served")
 	probeAddress := flag.String("health-probe-bind-address", ":8081", "where /healthz and /readyz are served")
+	gatewayTarget := flag.String("runner-gateway-target", "", "the Runner Gateway's address for one Sandbox, a template of {sandbox} and {namespace}: the Sandbox's own control Service")
+	gatewayTokenFile := flag.String("runner-gateway-token-file", "", "the projected ServiceAccount token the Runner Gateway accepts from this controller")
 	flag.Parse()
 	ctrl.SetLogger(zap.New())
 	log := ctrl.Log.WithName("sandbox-controller")
-	if err := run(*namespace, *metricsAddress, *probeAddress); err != nil {
+	if err := run(*namespace, *metricsAddress, *probeAddress, sandboxcontroller.GatewaySealer{Target: *gatewayTarget, TokenFile: *gatewayTokenFile}); err != nil {
 		log.Error(err, "controller failed")
 		os.Exit(1)
 	}
 }
 
-func run(namespace, metricsAddress, probeAddress string) error {
+func run(namespace, metricsAddress, probeAddress string, sealer sandboxcontroller.GatewaySealer) error {
 	if namespace == "" {
 		return errors.New("--namespace is required")
+	}
+	if sealer.Target == "" || sealer.TokenFile == "" {
+		return errors.New("--runner-gateway-target and --runner-gateway-token-file are required")
 	}
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
@@ -96,7 +101,7 @@ func run(namespace, metricsAddress, probeAddress string) error {
 	if err != nil {
 		return err
 	}
-	if err := (&sandboxcontroller.Reconciler{Client: mgr.GetClient(), KubeVirt: kubeVirt}).SetupWithManager(mgr); err != nil {
+	if err := (&sandboxcontroller.Reconciler{Client: mgr.GetClient(), KubeVirt: kubeVirt, Sealer: sealer, Leases: mgr.GetAPIReader()}).SetupWithManager(mgr); err != nil {
 		return err
 	}
 	if err := mgr.AddHealthzCheck("ping", healthz.Ping); err != nil {

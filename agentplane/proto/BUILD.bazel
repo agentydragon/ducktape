@@ -1,4 +1,5 @@
 load("@aspect_rules_ts//ts:proto.bzl", "ts_proto_library")
+load("@io_bazel_rules_go//proto:def.bzl", "go_proto_library")
 load("@protobuf//bazel:proto_library.bzl", "proto_library")
 load("//devinfra/python:grpc.bzl", "py_grpc_service_library")
 load("//devinfra/python:proto.bzl", "py_proto_library_with_mypy_stubs")
@@ -211,4 +212,53 @@ py_grpc_service_library(
     name = "history_service_pb2_grpc",
     proto = ":history_service_proto",
     py_proto = ":history_service_pb2",
+)
+
+# The Sandbox controller calls `Runner.Seal` through the Runner Gateway's proxy.
+go_proto_library(
+    name = "command_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/command",
+    proto = ":command_proto",
+)
+
+go_proto_library(
+    name = "event_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/event",
+    proto = ":event_proto",
+    deps = [":command_go_proto"],
+)
+
+go_proto_library(
+    name = "event_log_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/event_log",
+    proto = ":event_log_proto",
+    deps = [":event_go_proto"],
+)
+
+go_proto_library(
+    name = "runner_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/runner",
+    proto = ":runner_proto",
+)
+
+go_proto_library(
+    name = "grpc_tunnel_go_proto",
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/grpc_tunnel",
+    proto = ":grpc_tunnel_proto",
+)
+
+go_proto_library(
+    name = "runner_control_go_proto",
+    compilers = [
+        "@io_bazel_rules_go//proto:go_proto",
+        "@io_bazel_rules_go//proto:go_grpc_v2",
+    ],
+    importpath = "github.com/agentydragon/ducktape/agentplane/proto/runner_control",
+    proto = ":runner_control_proto",
+    deps = [
+        ":command_go_proto",
+        ":event_log_go_proto",
+        ":grpc_tunnel_go_proto",
+        ":runner_go_proto",
+    ],
 )

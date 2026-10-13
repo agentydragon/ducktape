@@ -2,6 +2,7 @@ package sandboxcontroller
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
@@ -224,12 +225,14 @@ func TestVMDeletionWaitsForTheVMIBeforeTheStateVolume(t *testing.T) {
 	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
 	reconcileOnce(t, r)
 	vmi, _ := startVMI(t, c, kubevirtv1.Running)
+	connect(t, c)
+	r.Sealer.(*fakeSealer).err = errors.New("runner unreachable")
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
 	if getVM(t, c) == nil {
 		t.Fatal("deletion removed the VM before the Sessions were sealed")
 	}
-	sealSessions(t, c)
+	sealSessions(t, r)
 	reconcileOnce(t, r)
 	if getVM(t, c) != nil {
 		t.Fatal("deletion left the VM once the Sessions were sealed")

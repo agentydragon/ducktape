@@ -75,8 +75,18 @@ def runner_control(namespace: str) -> ServiceRef:
 
 
 class RunnerGateway(Construct):
-    def __init__(self, scope: Construct, id: str, env: Environment, *, callers: dict[ServiceAccountRef, Pods]) -> None:
-        """`callers` are the Session API's clients and their Pods."""
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        callers: dict[ServiceAccountRef, Pods],
+        sandbox_controller: tuple[ServiceAccountRef, Pods],
+    ) -> None:
+        """`callers` are the Session API's clients and their Pods; `sandbox_controller` is the one
+        caller of `Runner.Seal`."""
+        controller_account, controller_pods = sandbox_controller
         super().__init__(scope, id)
         self.env = env
         endpoint = service(env.namespace)
@@ -92,6 +102,7 @@ class RunnerGateway(Construct):
                     caller.model_dump()
                     for caller in sorted(callers, key=lambda caller: (caller.namespace, caller.name))
                 ],
+                "sandbox_controller_account": controller_account.model_dump(),
                 "token_audience": TOKEN_AUDIENCE,
                 "runner_control_audience": RUNNER_CONTROL_AUDIENCE,
                 "port": endpoint.port.number,
@@ -138,7 +149,7 @@ class RunnerGateway(Construct):
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[
-                *(pods.admit(endpoint.pod_port) for pods in callers.values()),
+                *(pods.admit(endpoint.pod_port) for pods in (*callers.values(), controller_pods)),
                 egress.proxy(env.namespace).pods.admit(control.pod_port),
             ],
             egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER), database.egress(env.namespace)],
@@ -169,11 +180,9 @@ class RunnerGateway(Construct):
             "role",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
-                # Resolving a Session's Sandbox and its runner Pod, and marking a deleting Sandbox's
-                # Sessions sealed.
+                # Resolving a Session's Sandbox and its runner Pod.
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
-                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes/status")], verbs=["patch"]),
                 # Runner connection records, each owned by its Sandbox: the Lease every replica
                 # watches, and the control Service and EndpointSlice its holder points at itself.
                 RolePolicyRule(

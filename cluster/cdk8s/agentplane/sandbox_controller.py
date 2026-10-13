@@ -9,6 +9,7 @@ from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import cilium
+from cluster.cdk8s.agentplane import runner_gateway
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -22,6 +23,7 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller"
 _GROUP = "agentplane.allegedly.works"
 _HEALTH_PORT = 8081
+_GATEWAY_TOKEN_DIR = "/var/run/secrets/agentplane-runner-gateway"
 
 
 def metrics(namespace: str) -> ServiceRef:
@@ -43,7 +45,11 @@ class SandboxController(Construct):
             serves=[endpoint],
             container="sandbox-controller",
             image=f"{_IMAGE}:unset",
-            args=[f"--namespace={namespace}"],
+            args=[
+                f"--namespace={namespace}",
+                f"--runner-gateway-target={runner_gateway.control_target(namespace)}",
+                f"--runner-gateway-token-file={_GATEWAY_TOKEN_DIR}/token",
+            ],
             ports=[endpoint.port.container_port(), Port(name="health", number=_HEALTH_PORT).container_port()],
             readiness=http_probe("/readyz", port=_HEALTH_PORT, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=_HEALTH_PORT, initial_delay_seconds=10, period_seconds=30),
@@ -52,6 +58,9 @@ class SandboxController(Construct):
                 memory=MemoryResources(request=Size.mebibytes(64), limit=Size.mebibytes(256)),
             ),
             termination_grace=Duration.seconds(30),
+        )
+        workload.project_tokens(
+            "runner-gateway-token", _GATEWAY_TOKEN_DIR, {"token": runner_gateway.TOKEN_AUDIENCE}, first_volume=True
         )
         Role(
             self,
@@ -97,7 +106,8 @@ class SandboxController(Construct):
                     resources=[custom_resource(_GROUP, "policybindings")],
                     verbs=["get", "list", "watch", "create", "update", "delete"],
                 ),
-                # Leader election.
+                # Leader election, and whether a runner ever connected: the Runner Gateway's Lease for
+                # the Sandbox.
                 RolePolicyRule(
                     resources=[custom_resource("coordination.k8s.io", "leases")], verbs=["get", "create", "update"]
                 ),
@@ -116,7 +126,11 @@ class SandboxController(Construct):
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[cilium.SCRAPERS.admit(endpoint.pod_port)],
-            egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER)],
+            egress=[
+                cilium.dns_egress(),
+                EgressRule.to_entities(Entity.KUBE_APISERVER),
+                runner_gateway.service(namespace).egress(),
+            ],
         )
         ServiceMonitor(
             self,

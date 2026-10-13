@@ -8,7 +8,6 @@ kind and plural, so only the group tells them apart.
 from __future__ import annotations
 
 from collections.abc import Set
-from datetime import datetime
 from enum import StrEnum
 from uuid import UUID
 
@@ -24,7 +23,7 @@ SANDBOXES_PLURAL = "sandboxes"
 TEMPLATES_PLURAL = "sandboxtemplates"
 SANDBOX_KIND = "Sandbox"
 SANDBOX_API_VERSION = f"{GROUP}/{VERSION}"
-# Set by the Runner Gateway on a deleting Sandbox once its runner sealed every Session and the
+# Set by the Sandbox Controller on a deleting Sandbox once its runner sealed every Session and the
 # ingress acknowledged each seal; the controller deletes nothing of the Sandbox before.
 SESSIONS_SEALED = "SessionsSealed"
 # On a Sandbox's Pod, or its VM, VMI and virt-launcher Pod: the Sandbox's name.
@@ -32,7 +31,6 @@ SANDBOX_LABEL = f"{GROUP}/sandbox"
 # A VM Sandbox's runner runs in its VMI's virt-launcher Pod, which the VMI controls.
 VMI_API_VERSION = "kubevirt.io/v1"
 VMI_KIND = "VirtualMachineInstance"
-_APPLY_PATCH = "application/apply-patch+yaml"
 
 
 class OperatingMode(StrEnum):
@@ -111,35 +109,3 @@ async def read_sandbox(custom_objects: CustomObjectsClient, namespace: str, name
             return None
         raise
     return Sandbox.model_validate(raw)
-
-
-async def report_sessions_sealed(
-    custom_objects: CustomObjectsClient, sandbox: Sandbox, *, message: str, field_manager: str, now: datetime
-) -> None:
-    """Apply `SessionsSealed` server-side under `field_manager`, so the controller's conditions stay."""
-    metadata = sandbox.metadata
-    condition = Condition(
-        type=SESSIONS_SEALED,
-        status=ConditionStatus.TRUE,
-        reason="Sealed",
-        message=message,
-        observed_generation=metadata.generation,
-        last_transition_time=now,
-    )
-    await custom_objects.patch_namespaced_custom_object_status(
-        GROUP,
-        VERSION,
-        metadata.namespace,
-        SANDBOXES_PLURAL,
-        metadata.name,
-        {
-            "apiVersion": SANDBOX_API_VERSION,
-            "kind": SANDBOX_KIND,
-            # A precondition: a recreated Sandbox of the name is refused, not marked sealed.
-            "metadata": {"name": metadata.name, "namespace": metadata.namespace, "uid": str(metadata.uid)},
-            "status": {"conditions": [condition.model_dump(mode="json", by_alias=True, exclude_none=True)]},
-        },
-        _content_type=_APPLY_PATCH,
-        field_manager=field_manager,
-        force=True,
-    )

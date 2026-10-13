@@ -6,10 +6,12 @@ Reconciles `Sandbox` into a state PVC that outlives every incarnation, its own S
 `CreateSandbox` writes these Sandboxes. Its runner template reaches platform services over the
 egress sidecar's platform routes. `spec.sessionDefaults` is the Runner
 Gateway's to read; `spec.bootstrap` and the Sandbox's identity reach its runner through the Sandbox's
-launch ConfigMap (a Pod mounts it, a VM gets it as a disk). Deletion waits for the
-[Runner Gateway](../runner_gateway/README.md)'s `SessionsSealed` condition.
+launch ConfigMap (a Pod mounts it, a VM gets it as a disk). Deletion first has the runner seal every
+Session: the controller calls `Runner.Seal` through the [Runner Gateway](../runner_gateway/README.md)'s
+[runner proxy](../docs/runner_control.md#runner-proxy), at the Sandbox's own control Service, and sets the
+`SessionsSealed` condition.
 
-Because the Runner Gateway sets that condition only once the History Service's ingress has
+Because the controller sets that condition only once the History Service's ingress has
 acknowledged every seal, deleting a Sandbox waits while the History Service is down or rolling;
 everything else the controller does is unaffected.
 
@@ -51,9 +53,10 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   deletion a blocking reference would remove the state while a sealing runner still writes to it.
 - **The Pod is deleted before the finalizer clears**, in separate reconciles, so the PVC, which
   garbage collection removes afterwards, never goes while a container can still write to it.
-- **The gateway seals, the controller deletes.** The Runner Gateway holds the runner's control
-  stream, so it seals and reports through the `SessionsSealed` condition; the controller makes no
-  gRPC call.
+- **The runner seals, the controller asks.** The seal is a unary `Runner.Seal` through the gateway
+  proxy, repeated every few seconds until every seal is flushed; the controller never holds a runner
+  connection. A Sandbox with no connection Lease, the Runner Gateway's record that a runner ever
+  connected, has nothing to seal.
 - **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Sealing`. To give up on the seal,
   remove the finalizer by hand: the PVC is owned, so it goes with the Sandbox, and the Pod or VM
   with it.
