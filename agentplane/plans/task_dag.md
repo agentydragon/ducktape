@@ -669,6 +669,7 @@ flowchart TD
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
     WORKSPACE_CONVERSION[Decision: convert a workspace volume while suspended]
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
+    SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENTPLANE_SANDBOX_RESOURCE[In progress: our own Sandbox resource]
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
@@ -682,6 +683,8 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE --> WORKSPACE_VOLUME
     WORKSPACE_VOLUME --> WORKSPACE_CONVERSION
     WORKSPACE_VOLUME --> WORKSPACE_NODE_PORTABILITY
+    WORKSPACE_VOLUME --> SANDBOX_ARCHIVE
+    WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
     SANDBOX_SPEC_EDIT -. related .-> WORKSPACE_VOLUME
     SESSION_STATE_VOLUME_DESIGN -. related .-> WORKSPACE_VOLUME
     AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
@@ -765,6 +768,15 @@ Blocked on `WORKSPACE_VOLUME`.
 **Unscheduled; operator, 2026-10-13 PDT: even later.** A reasonably fast, node-portable workspace, or
 node portability by copying: volsync from node to node, through S3 on SeaweedFS or directly, while the
 Sandbox is suspended. Node-local volumes stay the default; this only moves them.
+
+### `SANDBOX_ARCHIVE` — a suspended Sandbox archived to object storage
+
+**Unscheduled; operator, 2026-10-13 PDT: a thought that volsync suggests, not a plan.** Resource
+affordances for a Sandbox that still exists but whose volumes sit in restic or S3, so it must be
+rehydrated before it can start, freeing the node's disk meanwhile. Sandbox status would say that it
+is archived and where, and resuming one rehydrates first. Related to `WORKSPACE_NODE_PORTABILITY`,
+which shares the copy mechanism. Needs `WORKSPACE_VOLUME`; the runner's state PVC would archive the
+same way.
 
 ### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
 
