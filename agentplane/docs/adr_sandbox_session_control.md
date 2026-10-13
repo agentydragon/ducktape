@@ -83,7 +83,7 @@ component that "keeps Sandboxes and their messages", D4 shows what would move.
 
 ```mermaid
 flowchart LR
-    Sender[App, Notification Service, agents] -- Dispatch, DispatchOpen --> K[Session Dispatcher]
+    Sender[App, Notification Service, agents] -- Dispatch --> K[Session Dispatcher]
     K --> KDB[(keeper database)]
     K -- ResumeSandbox on send --> SS[Sandbox Service]
     K -- Runner calls through proxy --> GW[Runner Gateway]
@@ -279,7 +279,7 @@ resume", not as failure.
 
 ### D4. The queue service: required or optional, one door or two, separate or merged
 
-The queue service does one job: **delivery.** Accept a message or Session creation durably, wake the
+The queue service does one job: **delivery.** Accept a message durably, wake the
 Sandbox, deliver once the runner is Ready, survive the sender leaving. It needs a database, the
 Sandbox's name, the gateway and the Sandbox Service. Idle policy is the controller's (below).
 
@@ -295,25 +295,42 @@ not a new path.
 
 What remains of the runner surface for direct use once the Dispatcher exists:
 
-| `Runner` method  | After the Dispatcher                                                     |
-| ---------------- | ------------------------------------------------------------------------ |
-| `DeliverCommand` | Dispatcher (senders); direct for system callers and tests                |
-| `OpenSession`    | Dispatcher (it can wait for a Sandbox to run); direct for system callers |
-| `ResumeSession`  | Dispatcher only in practice: it is the harness half of waking            |
-| `Quiesce`        | Sandbox Controller only                                                  |
-| `ListSessions`   | direct; reads need no wake                                               |
+| `Runner` method  | After the Dispatcher                                                       |
+| ---------------- | -------------------------------------------------------------------------- |
+| `DeliverCommand` | Dispatcher (senders); direct for system callers and tests                  |
+| `OpenSession`    | Dispatcher, as an internal step of `Dispatch`; direct for system callers   |
+| `ResumeSession`  | Dispatcher, as an internal step of `Dispatch` (the harness half of waking) |
+| `Quiesce`        | Sandbox Controller only                                                    |
+| `ListSessions`   | direct; reads need no wake                                                 |
 
 A deployment with no Dispatcher is a valid reduced configuration (a Sandbox that is started by hand
 and never suspended), because the runner, gateway and controller do not depend on the Dispatcher. It
 just has no wake-on-send and no idle suspension. That optionality costs nothing in code: absent
 callers.
 
-**Starting a Session that does not exist.** The client mints the Session ID, as everywhere
-(invariant: one ID, client-minted). `OpenSession(session_id, sandbox, spec)` is stored durably in
-the Dispatcher's database and made idempotent by the ID: a retry returns the same record, the same ID in
-another Sandbox is refused. The Dispatcher then waits for the Sandbox to be Ready and calls the runner's
-`OpenSession`, which is itself idempotent. The Dispatcher needs a Sandbox _name_, never an address; the
-gateway resolves the name from the dialed host.
+**The Dispatcher's RPC surface.** Callers address a Session and never open, resume or wake anything:
+
+- `Dispatch(dispatch_id, session_id, sandbox?, session_spec?, command)`: stores the dispatch durably and
+  returns `QUEUED`; it does not wait for delivery. `dispatch_id` is the `command_id`, and a retry with the
+  same payload returns the same record. The Dispatcher then does whatever the Session needs, as internal
+  steps: resume the Sandbox if it is suspended (where the sender may wake it), wait for `Ready`, open the
+  Session on the runner if the runner does not have it, resume its harness if stopped, and `DeliverCommand`.
+- `GetDispatch`, `WatchDispatches` (stream, by Session or Sandbox), `ListDispatches`, `CancelDispatch`
+  (not once delivery is ambiguous).
+
+There is no `DispatchOpen` and no Dispatcher RPC that opens a Session. The client mints the Session ID, as
+everywhere (invariant: one ID, client-minted).
+
+**Where a new Session's spec comes from.** The first `Dispatch` to a Session ID that no record knows carries
+`session_spec` and `sandbox`; the Dispatcher stores both with the Session's first dispatch and makes the ID
+idempotent: another Sandbox or spec for a known ID is refused. A `Dispatch` to a Session the History Service
+or the Dispatcher already knows carries neither; the stored spec and placement are used, and a spec on such a
+call must equal the stored one. A `Dispatch` to an unknown ID without a spec fails `NOT_FOUND`.
+
+**The Dispatcher never creates Sandboxes.** The Sandbox named on a first dispatch must exist; a missing one
+fails the dispatch. Creating, deleting and templating Sandboxes stays with the Sandbox Service. The Dispatcher
+only asks it to resume a suspended one. It needs a Sandbox _name_, never an address; the gateway resolves the
+name from the dialed host.
 
 **Placement.** Callers pass the Sandbox when they know it (the app resolves Thread to Session to
 Sandbox through the History Service already). The Dispatcher falls back to the History Service's
@@ -498,9 +515,9 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
 7. **A way for an operator to hold a Sandbox suspended against wake-on-send?** Needs a decision
    before the Dispatcher lands.
 8. **Name.** Session Dispatcher, `Quiesce`, `Quiesced`, `Draining` and `Flushing` are confirmed
-   (operator, 2026-10-13). Still open: whether `Dispatch` and `DispatchOpen` are one RPC with a
-   command-or-open body. The queue service is "Session Dispatcher", with `Dispatch` and `DispatchOpen` as its
-   RPCs and a dispatch as one queued message or Session creation. The names to avoid are taken:
+   (operator, 2026-10-13). `Dispatch` is the one send RPC; there is no open RPC, because the Dispatcher
+   wakes, opens and resumes as internal steps (D4). The queue service is "Session Dispatcher" and a
+   dispatch is one queued command. The names to avoid are taken:
    `inbox` is the Notification Service's (`inbox_id`, `InboxView`), `outbox` is the Action
    Service's (`action_outbox`), "mailbox" is already the task DAG's word for an agent's receiving
    side (`AGENT_MESSAGING`), `relay` is the egress `SidecarRelay`, `queue` names the runner's and
