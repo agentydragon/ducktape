@@ -666,13 +666,12 @@ tokens.
 **Candidate; operator, 2026-10-13 PDT: run the Sandbox's bootstrap before any Session opens, not
 inside the first one.** Per-Session setup is already asynchronous: the Session opens at once and
 its setup output and outcome reach history as `SetupStarted`/`SetupOutput`/`SetupFinished` Events.
-The Sandbox bootstrap (the launch file's, once per Sandbox) is not: the runner runs it inside the
-first `OpenSession`, which the Runner Gateway's `open_session` (`runner_gateway/session_lifecycle.py`)
-holds until the script exits, and nothing shows its output or progress. Start it when the runner
-starts, once, with its durable log and outcome as today, and expose its progress and result. A
-successful bootstrap stays the precondition of opening a Session: an `OpenSession` that meets a
-bootstrap still running is refused with a retryable code, and one that meets a failed or
-interrupted bootstrap is refused for good (use a new Sandbox). A failed or interrupted bootstrap
+The Sandbox bootstrap (the launch file's, once per Sandbox) starts when the runner starts, but
+nothing shows its output or progress, and an `OpenSession` that meets it still running waits for it,
+which the Runner Gateway's `open_session` (`runner_gateway/session_lifecycle.py`) holds until the
+script exits. Expose its progress and result. A successful bootstrap stays the precondition of
+opening a Session: an `OpenSession` that meets a bootstrap still running is refused with a retryable
+code, and one that meets a failed or interrupted bootstrap is refused for good (use a new Sandbox). A failed or interrupted bootstrap
 is a Sandbox state of its own, `BootstrapFailed` (operator, 2026-10-13 PDT): terminal, never retried,
 shown as the reason on `Bootstrapped` and `Ready`. A Sandbox is not suspendable until its bootstrap has either succeeded or failed (operator,
 2026-10-13 PDT), so a suspend never interrupts it; likewise a suspend waits for every Session's setup to
