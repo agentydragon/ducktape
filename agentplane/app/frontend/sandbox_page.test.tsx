@@ -11,7 +11,6 @@ import type * as LiveModule from "./live";
 import type { Live, SandboxSnapshot } from "./live";
 import { SandboxRoute } from "./app";
 import { SandboxPage } from "./sandbox_page";
-import { TestEventSource } from "./actions/testing";
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();
@@ -68,8 +67,6 @@ vi.mock("./live", async (importOriginal) => ({
   ...(await importOriginal<typeof LiveModule>()),
   useLive: () => live,
 }));
-
-vi.stubGlobal("EventSource", TestEventSource);
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;

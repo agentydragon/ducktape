@@ -2,7 +2,7 @@
 
 import asyncio
 import contextlib
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 
 from sqlalchemy.engine import URL
 
@@ -15,7 +15,7 @@ class DecisionChanges:
         self._database_url = database_url
         self._heartbeat_s = heartbeat_s
 
-    async def follow(self) -> AsyncIterator[None]:
+    async def follow(self) -> AsyncGenerator[None]:
         """Yields on subscribing, so a reader re-reads what committed before it listened, then at each
         commit and after every `heartbeat_s` of quiet, which tells the reader the stream is alive.
         Ends when the LISTEN connection is lost; the reader subscribes again.
