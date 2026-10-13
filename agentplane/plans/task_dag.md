@@ -550,8 +550,6 @@ flowchart LR
     EGRESS_CREDENTIAL_TRANSPORT_DESIGN[Decision: credential upstream schemes and ports]
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
-    DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
-    ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
     ACTION_SURFACES_DESIGN -. related .-> NOTIFICATION_PRESENTATION
     SANDBOX_FORM_TERMINOLOGY[Unscheduled: distinguish launch preset and runtime template labels]
@@ -829,16 +827,6 @@ Known inconsistency, left as is (operator, 2026-10-24: acceptable for now, handl
 thought through): notification buttons ignore `offersCardDecisionButtons`. The service worker offers
 Approve/Deny whenever exactly one Action waits, whatever its arguments, so a notification can approve
 a call (a long shell script, a large file push) that the app offers only on the full card.
-
-### `DOCKABLE_PANES` — dockable panes in the web app
-
-**Unscheduled; operator, 2026-10-13 PDT.** Let the operator arrange the app's panes (thread browser,
-Actions queue, several threads at once, Action detail) by dragging them into a layout of their own,
-with split resizing, a layout that persists, and one selected pane at a time on a phone. Open spike
-[#9721](https://github.com/agentydragon/ducktape/pull/9721) builds this as an experimental
-`/#/mosaic` shell on `react-mosaic-component`, split-only without tabs, beside the classic routes;
-it is stale and is the starting point. Settle whether docking replaces the classic routes or stays
-an alternative, and fold the Action tiles into the surfaces `ACTION_SURFACES_DESIGN` settles.
 
 ### `CLAUDE_CODE_WEB_BRIDGE` — Claude Code web sessions in Agentplane
 
