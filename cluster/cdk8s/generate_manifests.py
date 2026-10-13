@@ -1658,6 +1658,7 @@ def generate_manifests(root: Path) -> None:
         cert_manager_trust_kustomization,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
+        kyverno_kustomization,
     )
     public_coder_agent_access_artifact = artifact("public-coder-agent-access", public_coder_app.ACCESS_DIR)
     public_coder_agent_access_kustomization = agents_flux_kustomizations.public_coder_agent_access(

@@ -22,7 +22,7 @@ an MCP approval gateway for any MCP-capable LLM product.
 - [Policy Controller](policy_controller/README.md): expires `PolicyBinding`s and keeps the
   RoleBindings they grant. Runs on staging and `agentplane-testing`; only Flux writes `PolicyBinding`s yet.
 - [Sandbox Controller](sandbox_controller/README.md): reconciles `Sandbox` into its ServiceAccount,
-  `PolicyBinding`, state PVC and Pods or a KubeVirt VM (VMs on `agentplane-testing` only).
+  `PolicyBinding`, state PVC and Pods or a KubeVirt VM (VMs on staging and `agentplane-testing`).
 - [LLM ingress](llm_ingress/README.md): authenticated hop in front of LiteLLM.
 - [Notification service](notification_service/README.md): subscriptions and session inboxes.
 - [Indexing](indexing/README.md): Git semantic search.
@@ -52,7 +52,7 @@ flowchart TB
         runner[Runner + native drivers]
         sidecar[Egress sidecar]
     end
-    subgraph vm_sandbox[VM Sandbox launcher Pod, testing]
+    subgraph vm_sandbox[VM Sandbox launcher Pod]
         guest[Guest: runner + native drivers]
         relay[Egress relay, added by Kyverno]
     end
@@ -90,7 +90,7 @@ flowchart TB
     github -->|webhooks over an HTTPS route| notif
     actions -->|execute: box Pods as the caller, exec| k8s
     policy -->|PolicyBindings, RoleBindings| k8s
-    sandboxctl -->|Sandboxes, Pods, VMs on testing, state PVCs, PolicyBindings| k8s
+    sandboxctl -->|Sandboxes, Pods, VMs, state PVCs, PolicyBindings| k8s
     sandboxctl -->|creates| sandbox
     k8s -->|runs| cmd_sandbox
     cmd_sandbox -->|all outbound traffic| proxy

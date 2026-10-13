@@ -379,7 +379,7 @@ ENV = Environment(
             EgressRule.to_endpoints(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
         ],
     ),
-    vm_sandboxes=False,
+    vm_sandboxes=True,
 )
 
 
@@ -534,6 +534,7 @@ def agentplane_staging(
     cert_manager_trust: Kustomization,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -575,6 +576,6 @@ def agentplane_staging(
         ],
         decryption=sops_decryption(ENV.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds, cert_manager_trust, cnpg, external_secrets_operator
+            agentplane_crds, cert_manager_trust, cnpg, external_secrets_operator, kyverno
         ),
     )

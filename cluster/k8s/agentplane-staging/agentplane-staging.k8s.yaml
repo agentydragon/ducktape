@@ -4719,6 +4719,386 @@ spec:
         requests:
           storage: 10Gi
 ---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
+  name: agentplane-staging-launcher-relay
+spec:
+  background: false
+  failurePolicy: Fail
+  rules:
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Pod/ephemeralcontainers
+              namespaces:
+                - agentplane-staging
+              operations:
+                - UPDATE
+      name: protect-token-on-update
+      validate:
+        deny:
+          conditions:
+            any:
+              - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+              - key: "{{ length((request.object.spec.initContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+              - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+        message: Only the launcher relay may mount its projected tokens.
+    - context:
+        - name: vmiOwner
+          variable:
+            default: {}
+            jmesPath: request.object.metadata.ownerReferences[?kind=='VirtualMachineInstance' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachineinstances/{{vmiOwner.name || 'missing'}}
+          name: vmi
+        - name: vmOwner
+          variable:
+            default: {}
+            jmesPath: vmi.metadata.ownerReferences[?kind=='VirtualMachine' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachines/{{vmOwner.name || 'missing'}}
+          name: vm
+        - name: sandbox
+          variable:
+            default: {}
+            jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
+          name: account
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - agentplane-staging
+              operations:
+                - CREATE
+              selector:
+                matchLabels:
+                  kubevirt.io: virt-launcher
+      name: authenticate-launcher
+      validate:
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.userInfo.username }}"
+                operator: NotEquals
+                value: system:serviceaccount:kubevirt:kubevirt-controller
+              - key: "{{ vmiOwner.uid }}"
+                operator: NotEquals
+                value: "{{vmi.metadata.uid}}"
+              - key: "{{ vmOwner.uid }}"
+                operator: NotEquals
+                value: "{{vm.metadata.uid}}"
+              - key: "{{ sandbox.uid || '' }}"
+                operator: NotEquals
+                value: "{{account.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0].uid || 'none'}}"
+              - key: "{{ length(vmi.spec.volumes[?serviceAccount] || `[]`) }}"
+                operator: NotEquals
+                value: 0
+        message: A launcher must be created by KubeVirt for a live VirtualMachine controlled by a Sandbox, which also controls the ServiceAccount of the same name.
+    - context:
+        - name: vmiOwner
+          variable:
+            default: {}
+            jmesPath: request.object.metadata.ownerReferences[?kind=='VirtualMachineInstance' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachineinstances/{{vmiOwner.name || 'missing'}}
+          name: vmi
+        - name: vmOwner
+          variable:
+            default: {}
+            jmesPath: vmi.metadata.ownerReferences[?kind=='VirtualMachine' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachines/{{vmOwner.name || 'missing'}}
+          name: vm
+        - name: sandbox
+          variable:
+            default: {}
+            jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
+          name: account
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - agentplane-staging
+              operations:
+                - CREATE
+              selector:
+                matchLabels:
+                  kubevirt.io: virt-launcher
+      mutate:
+        patchStrategicMerge:
+          spec:
+            automountServiceAccountToken: false
+            containers:
+              - env:
+                  - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
+                    value: agentplane-egress.agentplane-staging.svc.cluster.local
+                  - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
+                    value: "8888"
+                  - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
+                    value: "3128"
+                  - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
+                    value: 0.0.0.0
+                  - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
+                    value: "3129"
+                  - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
+                    value: /var/run/agentplane-egress/token
+                  - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
+                    value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
+                  - name: AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES
+                    value: '{"control": {"listen_port": 3130, "upstream": "agentplane-runner-gateway.agentplane-staging.svc.cluster.local:8082", "token_file": "/var/run/agentplane-egress/runner-control-token"}, "ingress": {"listen_port": 3131, "upstream": "agentplane-history-service.agentplane-staging.svc.cluster.local:8081", "token_file": "/var/run/agentplane-egress/runner-ingress-token"}}'
+                  - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_HOST
+                    value: 0.0.0.0
+                image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
+                name: egress-sidecar
+                readinessProbe:
+                  failureThreshold: 1
+                  httpGet:
+                    path: /readyz
+                    port: 3129
+                  periodSeconds: 2
+                  timeoutSeconds: 1
+                resources:
+                  limits:
+                    cpu: 100m
+                    memory: 128Mi
+                  requests:
+                    cpu: 10m
+                    memory: 32Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                      - ALL
+                  runAsGroup: 1000
+                  runAsNonRoot: true
+                  runAsUser: 1000
+                volumeMounts:
+                  - mountPath: /var/run/agentplane-egress
+                    name: egress-token
+                    readOnly: true
+            imagePullSecrets:
+              - name: forgejo-images-creds
+            serviceAccountName: "{{account.metadata.name}}"
+            volumes:
+              - name: egress-token
+                projected:
+                  sources:
+                    - serviceAccountToken:
+                        audience: agentplane-egress
+                        expirationSeconds: 600
+                        path: token
+                    - serviceAccountToken:
+                        audience: https://localhost:7445
+                        expirationSeconds: 600
+                        path: kubernetes-token
+                    - serviceAccountToken:
+                        audience: agentplane-notifications
+                        expirationSeconds: 600
+                        path: notifications-token
+                    - serviceAccountToken:
+                        audience: agentplane-runner-control
+                        expirationSeconds: 600
+                        path: runner-control-token
+                    - serviceAccountToken:
+                        audience: agentplane-runner-ingress
+                        expirationSeconds: 600
+                        path: runner-ingress-token
+      name: inject-relay
+    - context:
+        - name: vmiOwner
+          variable:
+            default: {}
+            jmesPath: request.object.metadata.ownerReferences[?kind=='VirtualMachineInstance' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachineinstances/{{vmiOwner.name || 'missing'}}
+          name: vmi
+        - name: vmOwner
+          variable:
+            default: {}
+            jmesPath: vmi.metadata.ownerReferences[?kind=='VirtualMachine' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachines/{{vmOwner.name || 'missing'}}
+          name: vm
+        - name: sandbox
+          variable:
+            default: {}
+            jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
+          name: account
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - agentplane-staging
+              operations:
+                - CREATE
+              selector:
+                matchLabels:
+                  kubevirt.io: virt-launcher
+      name: validate-relay
+      validate:
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.serviceAccountName }}"
+                operator: NotEquals
+                value: "{{account.metadata.name}}"
+              - key: "{{ request.object.spec.automountServiceAccountToken }}"
+                operator: NotEquals
+                value: false
+              - key: "{{ length(request.object.spec.containers[?name=='egress-sidecar']) }}"
+                operator: NotEquals
+                value: 1
+              - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+              - key: "{{ length((request.object.spec.initContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+        message: The launcher's relay identity must stay out of the compute and init containers.
+  validationFailureAction: enforce
+  webhookConfiguration:
+    matchConditions:
+      - expression: "request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && object.spec.volumes.exists(v, v.name == 'egress-token'))"
+        name: launcher-or-token-volume
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-runner-vm-config
+  namespace: agentplane-staging
+data:
+  config.json: '{"version":1,"control":{"target":"10.0.2.1:3130","bearer":"platform-route"},"ingress":{"target":"10.0.2.1:3131","bearer":"platform-route"},"llm_base_url":"http://agentplane-llm-ingress.agentplane-staging.svc.cluster.local:8080","proxy_url":"http://10.0.2.1:3128"}'
+  kubeconfig: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: in-cluster
+        cluster:
+          server: https://kubernetes.default.svc.cluster.local
+          certificate-authority: /run/agentplane/ca-certificates.crt
+    users:
+      - name: workload
+        user:
+          token: agentplane-credential-kubernetes-workload
+    contexts:
+      - name: in-cluster
+        context:
+          cluster: in-cluster
+          user: workload
+    current-context: in-cluster
+immutable: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: SandboxTemplate
+metadata:
+  name: runner-vm
+  namespace: agentplane-staging
+spec:
+  vm:
+    dataVolumeTemplates:
+      - metadata:
+          name: workspace
+        spec:
+          pvc:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 10Gi
+            storageClassName: local-path-ovh-hdd
+          source:
+            blank: {}
+    template:
+      metadata:
+        labels:
+          app.kubernetes.io/name: agentplane-runner
+      spec:
+        domain:
+          cpu:
+            cores: 1
+          devices:
+            autoattachGraphicsDevice: false
+            disks:
+              - bootOrder: 1
+                disk:
+                  bus: virtio
+                name: rootdisk
+              - disk:
+                  bus: virtio
+                name: workspace
+                serial: workspace
+              - disk:
+                  bus: virtio
+                name: config
+                serial: agentplane-config
+              - disk:
+                  bus: virtio
+                name: trust
+                serial: agentplane-trust
+            interfaces:
+              - masquerade: {}
+                name: default
+                ports:
+                  - port: 22
+          firmware:
+            bootloader:
+              efi:
+                secureBoot: false
+          resources:
+            requests:
+              memory: 1536Mi
+        networks:
+          - name: default
+            pod: {}
+        nodeSelector:
+          kubevirt.io/schedulable: "true"
+        volumes:
+          - containerDisk:
+              image: git.allegedly.works/ducktape-ci/agentplane-runner-vm:unset
+              imagePullPolicy: IfNotPresent
+            name: rootdisk
+          - dataVolume:
+              name: workspace
+            name: workspace
+          - configMap:
+              name: agentplane-runner-vm-config
+            name: config
+          - configMap:
+              name: agentplane-egress-ca
+            name: trust
+  stateVolume:
+    name: state
+    claim:
+      storageClassName: local-path-ovh-hdd
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+---
 apiVersion: v1
 kind: ServiceAccount
 metadata:
