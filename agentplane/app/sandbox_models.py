@@ -12,7 +12,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from agentplane.proto import sandbox_service_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND, OperatingMode
+from agentplane.sandbox_resource import OperatingMode
 from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf
@@ -127,24 +127,13 @@ def sandbox_view(value: sandbox_service_pb2.Sandbox) -> SandboxView:
 
 
 def sandbox_has_ready_pod(view: SandboxView) -> bool:
+    """The Sandbox service shows a Pod only while it is the Sandbox's incarnation, a VM's virt-launcher Pod included."""
     if (
         view.phase != SandboxPhase.RUNNING
         or view.pod is None
-        or view.pod.name != view.name
         or view.pod.namespace != view.namespace
         or not view.pod.uid
         or view.pod.deleting
-    ):
-        return False
-    owners = [owner for owner in view.pod.owner_references if owner.controller]
-    if len(owners) != 1:
-        return False
-    owner = owners[0]
-    if (
-        owner.api_version != SANDBOX_API_VERSION
-        or owner.kind != SANDBOX_KIND
-        or owner.name != view.name
-        or owner.uid != str(view.uid)
     ):
         return False
     status = view.pod.status
