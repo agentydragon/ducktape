@@ -971,15 +971,17 @@ the incarnation's UID (the Pod, or a VM's virt-launcher Pod); the runner writes 
 it last saw and removes it on a `Welcome` with a different one, before it accepts any call. A `Welcome`
 without a UID keeps today's behavior, so a runner pinned before the gateway keeps working. A runner
 restart inside an incarnation stays sealed; a new incarnation starts unsealed. The Lease's stage
-annotation carries the same UID. Order: the gateway image that sends the UID is pinned before the
-runner image that reads it. The sealer flags in the manifests (`CONTROLLER_SEALS`) wait for this,
+annotation carries the same UID. The gateway, the runner image and the VM guest's runner wheel pin
+independently, so pin order does not matter here; `INCARNATION_UID_REQUIRED` takes the tolerance out
+later. The sealer flags in the manifests (`CONTROLLER_SEALS`) wait for this,
 or a resumed Sandbox would refuse work. How a sealed journal is reopened is `SESSION_INCARNATIONS`'s.
 
 ### `INCARNATION_UID_REQUIRED` — the runner rejects a `Welcome` without the incarnation UID
 
 **Blocked on `QUIESCE_INCARNATION_KEY` landing and the gateway image that sends the UID pinned in
 every environment, and in the VM guest's runner wheel pin.** Removes the missing-UID tolerance: a
-`Welcome` without a UID ends the stream. Pin ordering is not relied on before this; afterwards a
+`Welcome` without a UID ends the stream, and the `None` path in the runner store's incarnation
+adoption (marked by its `CLEANUP` tombstone) goes. Pin ordering is not relied on before this; afterwards a
 runner too old to know the field cannot meet a gateway that no longer sends it.
 
 ### `QUIESCE_INTERRUPT` — refuse at entry and interrupt turns before sealing
