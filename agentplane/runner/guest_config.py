@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from collections.abc import Iterable, Mapping
 from pathlib import Path
@@ -167,6 +168,7 @@ def make_runner_config(config: GuestConfig, launch: SandboxLaunch) -> RunnerConf
 
 def main() -> None:
     """Entry point used by the dedicated NixOS guest's systemd unit."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
     config = read_guest_config()
     runner_config = make_runner_config(
         config, SandboxLaunch.read(LAUNCH_PATH, platform_instructions=config.platform_instructions)
