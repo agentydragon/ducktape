@@ -16,6 +16,9 @@ NAMESPACE = "agentplane-testing"
 POSTGRES_SERVICE = "postgres-rw"
 
 # Kinds a bare k3s has no CRD for and that the services do not read.
+LITELLM_INTERNAL_HOST = "litellm.litellm.svc.cluster.local"
+LITELLM_EXTERNAL_HOST = "litellm.allegedly.works"
+
 DROPPED_KINDS = frozenset(
     {
         "CiliumNetworkPolicy",
@@ -175,8 +178,30 @@ def _pod_spec_fixups(pod: dict[str, Any], node_ip: str) -> None:
         )
 
 
-def rewrite(docs: Iterable[Mapping[str, Any]], *, overrides: Mapping[str, str], node_ip: str) -> list[dict[str, Any]]:
-    """The manifest `docs` rewritten for k3s; `overrides` maps a Secret name to the one value it holds."""
+def _use_external_litellm(node: Any) -> None:
+    """Point at the public LiteLLM: the cluster-internal Service is not here, and its rules were `clusterInternal`."""
+    if isinstance(node, dict):
+        if node.get("hosts") == [LITELLM_INTERNAL_HOST]:
+            node["hosts"] = [LITELLM_EXTERNAL_HOST]
+            node.pop("clusterInternal", None)
+        for key, value in node.items():
+            node[key] = _use_external_litellm(value)
+        return node
+    if isinstance(node, list):
+        return [_use_external_litellm(value) for value in node]
+    if isinstance(node, str):
+        return node.replace(f"http://{LITELLM_INTERNAL_HOST}:4000", f"https://{LITELLM_EXTERNAL_HOST}")
+    return node
+
+
+def rewrite(
+    docs: Iterable[Mapping[str, Any]], *, overrides: Mapping[str, str], node_ip: str, external_litellm: bool = False
+) -> list[dict[str, Any]]:
+    """The manifest `docs` rewritten for k3s.
+
+    `overrides` maps a Secret name to the one value it holds; `external_litellm` sends LiteLLM traffic to the
+    public endpoint, which `overrides` must then hold a key for.
+    """
     out: list[dict[str, Any]] = []
     for original in docs:
         doc = copy.deepcopy(dict(original))
@@ -194,6 +219,8 @@ def rewrite(docs: Iterable[Mapping[str, Any]], *, overrides: Mapping[str, str], 
         elif kind == "SandboxTemplate":
             _pod_spec_fixups(doc["spec"]["pod"]["spec"], node_ip)
         _use_local_path(doc)
+        if external_litellm:
+            doc = _use_external_litellm(doc)
         out.append(doc)
     return out
 

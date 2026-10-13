@@ -113,6 +113,7 @@ py_test(
         "//agentplane/crds",
         "//cluster:agentplane_testing_manifest",
     ] + [":" + name + "_tarball" for name in _IMAGES],
+    env_inherit = ["LITELLM_QWEN_KEY"],
     exec_properties = {
         "dockerNetwork": "bridge",
         "recycle-runner": "false",
