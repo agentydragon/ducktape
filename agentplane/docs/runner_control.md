@@ -343,8 +343,8 @@ Service reach the holder through the control Service (`control_target`, a requir
 Each operation is its own `Runner` method:
 
 - `ListSessions` reads.
-- `OpenSession` creates a Session with a spec and starts it, first running the Sandbox's
-  bootstrap from its launch file if it has not run; an existing Session is confirmed and its
+- `OpenSession` creates a Session with a spec and starts it once the Sandbox's
+  bootstrap, which the runner began at start, has succeeded; an existing Session is confirmed and its
   stopped harness started.
 - `ResumeSession` restarts a stopped harness on its retained spec.
 - `Seal` fences, stops every harness and setup, and seals every journal.

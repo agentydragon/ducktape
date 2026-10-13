@@ -113,10 +113,8 @@ async def test_runner_death_interrupts_bootstrap_without_rerunning_it(
     os.mkfifo(state / "started")
     script = "echo run >> runs\necho $$ > started\nwhile :; do sleep 1; done\n"
     first_runner = await start_runner(bootstrap=script)
-    opening = asyncio.create_task(driver.attach("bootstrap-1", spec=spec))
     pid = int(await asyncio.to_thread((state / "started").read_text))
     await first_runner.crash([pid])
-    opening.cancel()
 
     await start_runner(bootstrap=script)
     first = await refusal(driver.attach("bootstrap-1", spec=spec))

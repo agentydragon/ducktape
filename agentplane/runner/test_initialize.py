@@ -50,7 +50,7 @@ async def test_bootstrap_runs_before_the_first_session_and_not_again(
     assert (result.result.executed, result.result.exit_code) == (True, 0)
 
 
-async def test_an_abandoned_open_leaves_the_bootstrap_running(
+async def test_bootstrap_runs_at_runner_start_before_any_session_opens(
     config: RunnerConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
 ) -> None:
     # The script blocks writing to this pipe until the test reads it, so its first step is observable.
@@ -58,12 +58,12 @@ async def test_an_abandoned_open_leaves_the_bootstrap_running(
     os.mkfifo(config.state_dir / "started")
     script = "printf 'first\\n' > started\nwhile [ ! -f continue ]; do sleep 0.01; done\nprintf 'second\\n' >&2\n"
     async with running(bootstrapped(config, script), gateway):
-        driver = RunnerDriver(gateway)
-        abandoned = asyncio.create_task(driver.attach("abandoned-1", spec=spec))
         assert await asyncio.to_thread((config.state_dir / "started").read_text) == "first\n"
-        abandoned.cancel()
+        driver = RunnerDriver(gateway)
+        assert await driver.list_sessions() == []
+        opening = asyncio.create_task(driver.attach("early-1", spec=spec))
         (config.state_dir / "continue").touch()
-        opened = await driver.attach("abandoned-2", spec=spec)
+        opened = await opening
 
     assert opened.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
     (output, finished) = recorded(config.state_dir)

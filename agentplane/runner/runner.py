@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import os
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, suppress
@@ -27,6 +28,8 @@ from agentplane.runner.store import SessionRecord, SessionStore, StateOwner, val
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
+
+logger = logging.getLogger(__name__)
 
 _MAX_BOOTSTRAP_BYTES = 65_536
 _FOLLOW_PAGE = 128
@@ -187,10 +190,17 @@ class Runner:
             log.append_output(attempt, source, data)
 
     async def startup(self) -> None:
-        """Load every stored session and record what the previous runner process took with it."""
+        """Load every stored session and record what the previous runner process took with it, then
+        start the Sandbox bootstrap if it has not run, so it never waits for a first Session."""
         for session_id in self.store.session_ids():
             session = await self._load(session_id)
             await session.recover_after_restart()
+        if self.config.launch.bootstrap is not None:
+            try:
+                await self.initialize(self.config.launch.bootstrap)
+            except InitializationConflictError:
+                # Every open refuses with the same error, which is where the caller sees it.
+                logger.exception("the Sandbox selected a different bootstrap script")
 
     async def _load(self, session_id: str) -> Session:
         async with self._sessions_lock:
@@ -226,8 +236,7 @@ class Runner:
         return await self._load(session_id) if self.store.exists(session_id) else None
 
     async def open_session(self, session_id: str, spec: runner_pb2.SessionSpec, setup_script: str | None) -> Session:
-        """Create the session with `spec` and start it, running the Sandbox bootstrap first if it has
-        not run; or confirm an existing one with the same spec and start its stopped harness."""
+        """Create the session with `spec` and start it once the Sandbox bootstrap has succeeded; or confirm an existing one with the same spec and start its stopped harness."""
         session_id = self._valid_session_id(session_id)
         self._refuse_sealed()
         launched = runner_pb2.SessionSpec()
@@ -244,7 +253,7 @@ class Runner:
         return session
 
     async def _bootstrap(self) -> None:
-        """Run the Sandbox's bootstrap if it has not run, and refuse unless it succeeded."""
+        """Wait for the Sandbox's bootstrap, which `startup` began, and refuse unless it succeeded."""
         if self.config.launch.bootstrap is None:
             return
         log, execution = await self.initialize(self.config.launch.bootstrap)

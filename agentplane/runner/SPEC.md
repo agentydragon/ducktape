@@ -12,9 +12,9 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 
 - The Sandbox's launch file (`--launch-file`, written by the Sandbox controller) carries the
   Sandbox's identity and the bootstrap shell source. The runner executes the bootstrap with
-  `/bin/sh -eu` from `state_dir` inside the first `OpenSession` that creates a Session, before that
-  Session starts; a Sandbox without a bootstrap runs nothing. A failed or interrupted bootstrap
-  refuses every `OpenSession` that would create a Session with `FAILED_PRECONDITION`.
+  `/bin/sh -eu` from `state_dir` when the runner starts, before any Session opens; a Sandbox without a bootstrap
+  runs nothing. An `OpenSession` that would create a Session waits for a running bootstrap, and a failed or
+  interrupted one refuses it with `FAILED_PRECONDITION`.
 - The first request durably selects the script digest at the fixed path
   `<state_dir>/initialization/request.json`, before the script starts. The runner thereafter refuses
   changed source, including after a failed attempt: two possibly incompatible initializations must
