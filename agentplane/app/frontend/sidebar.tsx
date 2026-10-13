@@ -8,6 +8,7 @@ import IconArchive from "@tabler/icons-react/dist/esm/icons/IconArchive.mjs";
 import IconArchiveOff from "@tabler/icons-react/dist/esm/icons/IconArchiveOff.mjs";
 import IconBox from "@tabler/icons-react/dist/esm/icons/IconBox.mjs";
 import IconHeartbeat from "@tabler/icons-react/dist/esm/icons/IconHeartbeat.mjs";
+import IconLayoutDashboard from "@tabler/icons-react/dist/esm/icons/IconLayoutDashboard.mjs";
 import IconListCheck from "@tabler/icons-react/dist/esm/icons/IconListCheck.mjs";
 import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
 import IconSearch from "@tabler/icons-react/dist/esm/icons/IconSearch.mjs";
@@ -18,8 +19,9 @@ import { Link, useLocation, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, type SandboxView, type ThreadView } from "./client";
 import { ActionsSidebarSection } from "./actions/sidebar";
-import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing, type Live, type ThreadsSnapshot } from "./live";
+import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing } from "./live";
 import { MarkGlyph } from "./mark_glyph";
+import { usePhoneWidth } from "./phone_width";
 import { ResizeHandle, usePaneSize } from "./resize_handle";
 import { sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
@@ -31,22 +33,6 @@ import { ScrollDebugTools } from "./threads/scroll_debug_tools";
 import { snapshotFresh, threadStatusFromSnapshot } from "./thread_status";
 
 const SEARCH_PAUSE_MS = 300;
-
-// Matches sidebar.css's own phone breakpoint.
-const PHONE_QUERY = "(max-width: 560px)";
-
-/** Whether the sidebar is currently rendering as the phone-width full-screen overlay rather than a
- * docked desktop column -- the two need different close-on-navigate behavior below. */
-function usePhoneWidth(): boolean {
-  const [phone, setPhone] = useState(() => window.matchMedia(PHONE_QUERY).matches);
-  useEffect(() => {
-    const query = window.matchMedia(PHONE_QUERY);
-    const onChange = (event: MediaQueryListEvent): void => setPhone(event.matches);
-    query.addEventListener("change", onChange);
-    return () => query.removeEventListener("change", onChange);
-  }, []);
-  return phone;
-}
 
 function GroupStateIcon({ sandbox }: { sandbox: SandboxView | null }): JSX.Element {
   if (sandbox === null) {
@@ -220,48 +206,32 @@ type SidebarProps = {
   onClose: () => void;
 };
 
-export function Sidebar(props: SidebarProps): JSX.Element {
-  return <SidebarView {...props} live={useRequiredThreadsLive()} />;
-}
-
-function SidebarView({
-  settingsOpen,
-  onOpenSettings,
-  open,
-  onClose,
-  live,
-}: SidebarProps & { live: Live<ThreadsSnapshot> }): JSX.Element {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const threadRoute = useMatch("/threads/:threadId");
-  const sandboxRoute = useMatch("/sandboxes/:name");
+/** The Thread list: search, Sandbox groups, paging and the archived toggle. It belongs to neither
+ * the sidebar column nor the route, so a docked pane renders it with its own open handler. */
+export function ThreadsBrowserContent({
+  currentThreadId,
+  currentSandboxName = null,
+  onOpenThread,
+  onNavigate,
+}: {
+  currentThreadId: string | null;
+  currentSandboxName?: string | null;
+  onOpenThread: (thread: ThreadView) => void;
+  onNavigate: () => void;
+}): JSX.Element {
+  const live = useRequiredThreadsLive();
   const { listing, setListing } = useThreadListing();
   const [search, setSearch] = useState(listing.search ?? "");
-  const pane = usePaneSize("agentplane-sidebar-width", 240, 180, 480);
   const data = live.snapshot;
   const fresh = snapshotFresh(live);
   const [error, setError] = useState<string | null>(null);
-  const phone = usePhoneWidth();
-
-  useEffect(() => {
-    // Escape dismisses the phone-width overlay, the way it would any other full-screen modal.
-    // At desktop width there's nothing modal to dismiss -- collapsing the persistent column would
-    // just be a surprising side effect of a keypress unrelated to the sidebar.
-    if (!open || !phone) return;
-    function onKeyDown(event: KeyboardEvent): void {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [open, phone, onClose]);
 
   const threads = data?.threads ?? [];
-  const current = threadRoute?.params.threadId ?? null;
   const groups = groupThreads(
     threads,
     Object.fromEntries((data?.sandboxes ?? []).map((sandbox) => [sandbox.name, sandbox])),
     listing.includeArchived,
-    current
+    currentThreadId
   );
   const archived = data?.archived_count ?? 0;
   const notices = useThreadNotices(threads.map((thread) => thread.id));
@@ -286,6 +256,90 @@ function SidebarView({
     }
   }
 
+  return (
+    <div className="agentplane-sidebar-thread-list">
+      <TextInput
+        size="xs"
+        placeholder="Search threads"
+        aria-label="Search threads"
+        leftSection={<IconSearch size={12} />}
+        value={search}
+        onChange={(event) => setSearch(event.currentTarget.value)}
+      />
+      {error && (
+        <Text c="red" size="xs" px={4}>
+          {error}
+        </Text>
+      )}
+      {data === null && !error && (
+        <Text c="dimmed" size="xs" px={4}>
+          Loading threads…
+        </Text>
+      )}
+      {data !== null && groups.length === 0 && (
+        <Text c="dimmed" size="xs" px={4}>
+          {listing.search === null ? "No threads yet." : "No matching threads."}
+        </Text>
+      )}
+      {groups.map((group) => (
+        <ThreadGroupSection
+          key={group.sandboxName}
+          group={group}
+          fresh={fresh}
+          current={currentThreadId}
+          currentSandbox={currentSandboxName === group.sandboxName}
+          notices={notices}
+          onNavigate={onNavigate}
+          onOpen={onOpenThread}
+          onToggleArchived={(thread) => void toggleArchived(thread)}
+        />
+      ))}
+      {data?.more && (
+        <Button
+          variant="subtle"
+          size="compact-xs"
+          onClick={() => setListing({ ...listing, limit: listing.limit + THREAD_PAGE })}
+        >
+          Show more threads
+        </Button>
+      )}
+      {(archived > 0 || listing.includeArchived) && (
+        <div className="agentplane-sidebar-archived-toggle">
+          <Text size="xs">Show archived ({archived})</Text>
+          <Switch
+            size="xs"
+            checked={listing.includeArchived}
+            onChange={(event) =>
+              setListing({ ...listing, includeArchived: event.currentTarget.checked, limit: THREAD_PAGE })
+            }
+            aria-label="Show archived threads"
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function Sidebar({ settingsOpen, onOpenSettings, open, onClose }: SidebarProps): JSX.Element {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const threadRoute = useMatch("/threads/:threadId");
+  const sandboxRoute = useMatch("/sandboxes/:name");
+  const pane = usePaneSize("agentplane-sidebar-width", 240, 180, 480);
+  const phone = usePhoneWidth();
+
+  useEffect(() => {
+    // Escape dismisses the phone-width overlay, the way it would any other full-screen modal.
+    // At desktop width there's nothing modal to dismiss -- collapsing the persistent column would
+    // just be a surprising side effect of a keypress unrelated to the sidebar.
+    if (!open || !phone) return;
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, phone, onClose]);
+
   /** Every navigation out of the sidebar also closes it, but only at phone width, where it's a
    * full-screen overlay standing in the way of the page it just navigated to. At desktop width
    * this is a no-op: collapsing the persistent column on every click would undo the reader's own
@@ -297,10 +351,6 @@ function SidebarView({
   function goTo(path: string): void {
     closeIfPhone();
     void navigate(path);
-  }
-
-  function openThread(thread: ThreadView): void {
-    goTo(`/threads/${encodeURIComponent(thread.id)}`);
   }
 
   return (
@@ -336,66 +386,12 @@ function SidebarView({
         </div>
       </div>
       <div className="agentplane-sidebar-body">
-        <div className="agentplane-sidebar-thread-list">
-          <TextInput
-            size="xs"
-            placeholder="Search threads"
-            aria-label="Search threads"
-            leftSection={<IconSearch size={12} />}
-            value={search}
-            onChange={(event) => setSearch(event.currentTarget.value)}
-          />
-          {error && (
-            <Text c="red" size="xs" px={4}>
-              {error}
-            </Text>
-          )}
-          {data === null && !error && (
-            <Text c="dimmed" size="xs" px={4}>
-              Loading threads…
-            </Text>
-          )}
-          {data !== null && groups.length === 0 && (
-            <Text c="dimmed" size="xs" px={4}>
-              {listing.search === null ? "No threads yet." : "No matching threads."}
-            </Text>
-          )}
-          {groups.map((group) => (
-            <ThreadGroupSection
-              key={group.sandboxName}
-              group={group}
-              fresh={fresh}
-              current={current}
-              currentSandbox={sandboxRoute?.params.name === group.sandboxName}
-              notices={notices}
-              onNavigate={closeIfPhone}
-              onOpen={openThread}
-              onToggleArchived={(thread) => void toggleArchived(thread)}
-            />
-          ))}
-          {data?.more && (
-            <Button
-              variant="subtle"
-              size="compact-xs"
-              onClick={() => setListing({ ...listing, limit: listing.limit + THREAD_PAGE })}
-            >
-              Show more threads
-            </Button>
-          )}
-          {(archived > 0 || listing.includeArchived) && (
-            <div className="agentplane-sidebar-archived-toggle">
-              <Text size="xs">Show archived ({archived})</Text>
-              <Switch
-                size="xs"
-                checked={listing.includeArchived}
-                onChange={(event) =>
-                  setListing({ ...listing, includeArchived: event.currentTarget.checked, limit: THREAD_PAGE })
-                }
-                aria-label="Show archived threads"
-              />
-            </div>
-          )}
-        </div>
+        <ThreadsBrowserContent
+          currentThreadId={threadRoute?.params.threadId ?? null}
+          currentSandboxName={sandboxRoute?.params.name ?? null}
+          onOpenThread={(thread) => goTo(`/threads/${encodeURIComponent(thread.id)}`)}
+          onNavigate={closeIfPhone}
+        />
         <ActionsSidebarSection onNavigate={closeIfPhone} />
       </div>
       <div className="agentplane-sidebar-footer">
@@ -418,6 +414,11 @@ function SidebarView({
             onClick={() => goTo("/actions")}
           >
             <IconListCheck size={15} />
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label="Dockable workspace" withArrow>
+          <ActionIcon variant="subtle" aria-label="Dockable workspace" onClick={() => goTo("/dock")}>
+            <IconLayoutDashboard size={15} />
           </ActionIcon>
         </Tooltip>
         <Tooltip label="System status" withArrow>
