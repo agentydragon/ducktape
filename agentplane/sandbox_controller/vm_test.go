@@ -164,8 +164,16 @@ func TestVMSandboxIsReadyWhenItsLauncherPodIsReady(t *testing.T) {
 	}
 	setPodReady(t, c, launcher, corev1.ConditionTrue)
 	reconcileOnce(t, r)
+	if got := getCondition(t, c, WorkloadReady); got.Status != metav1.ConditionTrue {
+		t.Errorf("WorkloadReady = %s/%s with a Ready launcher, want True", got.Status, got.Reason)
+	}
+	if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "NeverConnected" {
+		t.Errorf("Ready = %s/%s with a guest runner that never reached the gateway, want False/NeverConnected", got.Status, got.Reason)
+	}
+	connect(t, c, string(launcher.UID))
+	reconcileOnce(t, r)
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionTrue {
-		t.Errorf("Ready = %s/%s with a Ready launcher, want True", got.Status, got.Reason)
+		t.Errorf("Ready = %s/%s with a connected guest runner, want True", got.Status, got.Reason)
 	}
 }
 

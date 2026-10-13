@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"os"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -101,7 +102,7 @@ func run(namespace, metricsAddress, probeAddress string, sealer sandboxcontrolle
 	if err != nil {
 		return err
 	}
-	reconciler := &sandboxcontroller.Reconciler{Client: mgr.GetClient(), KubeVirt: kubeVirt}
+	reconciler := &sandboxcontroller.Reconciler{Client: mgr.GetClient(), KubeVirt: kubeVirt, Now: time.Now}
 	if sealer.Target != "" {
 		reconciler.Sealer, reconciler.Leases = sealer, mgr.GetAPIReader()
 	}

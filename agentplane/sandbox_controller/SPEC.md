@@ -97,7 +97,15 @@ virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunni
 `PolicyBindingConflict`, `PodConflict` or `VMConflict` (a Pod or VM of the Sandbox's name that
 it does not control).
 
-The `Ready` condition is True while the Sandbox runs and the incarnation Pod is Ready (`PodReady`).
+`WorkloadReady` is True while the Sandbox runs and the incarnation Pod is Ready (`PodReady`).
 Otherwise it is False with `PodNotReady` when everything runs but the Pod is not Ready, and else
-with the reason and message of `Running`. It is the workload's readiness and says nothing of whether
-the runner has connected to the Runner Gateway.
+with the reason and message of `Running`.
+
+`RunnerConnected` is True while the Runner Gateway's connection Lease for the Sandbox names the
+incarnation's Pod and was renewed within its duration plus a grace, so a connection from an earlier
+incarnation never counts and a gateway rollout's brief drop does not. It is False with `NeverConnected`,
+`AwaitingRunner`, `ConnectionLost` or `WorkloadNotReady`. Losing the connection restarts and replaces
+nothing. A controller not configured to read Leases omits it.
+
+`Ready` is True while both hold, and otherwise False with the reason and message of the first that
+does not. It means the Sandbox can take work; the lifecycle phase is separate.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -30,6 +31,7 @@ const (
 )
 
 var (
+	testNow    = time.Date(2026, 10, 13, 12, 0, 0, 0, time.UTC)
 	sandboxKey = client.ObjectKey{Namespace: namespace, Name: sandboxName}
 	request    = reconcile.Request{NamespacedName: sandboxKey}
 	pvcKey     = client.ObjectKey{Namespace: namespace, Name: StateVolumeName(sandboxName)}
@@ -81,7 +83,7 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 	tracker := clienttesting.NewObjectTracker(scheme, serializer.NewCodecFactory(scheme).UniversalDecoder())
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjectTracker(tracker).WithObjects(append(objects, sandbox)...).
 		WithStatusSubresource(&Sandbox{}, &kubevirtv1.VirtualMachineInstance{}).Build()
-	return &Reconciler{Client: c, KubeVirt: true, Sealer: &fakeSealer{}, Leases: c}, c
+	return &Reconciler{Client: c, KubeVirt: true, Sealer: &fakeSealer{}, Leases: c, Now: func() time.Time { return testNow }}, c
 }
 
 func reconcileOnce(t *testing.T, r *Reconciler) {
@@ -160,10 +162,25 @@ func setPodReady(t *testing.T, c client.Client, pod *corev1.Pod, ready corev1.Co
 	}
 }
 
-func TestSandboxIsReadyWhileItsPodIsReady(t *testing.T) {
+func getCondition(t *testing.T, c client.Client, conditionType string) *metav1.Condition {
+	t.Helper()
+	condition := meta.FindStatusCondition(getSandbox(t, c).Status.Conditions, conditionType)
+	if condition == nil {
+		t.Fatalf("no %s condition", conditionType)
+	}
+	return condition
+}
+
+func TestSandboxIsReadyWhileItsPodIsReadyAndItsRunnerConnected(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
+	pod := getPod(t, c)
+	pod.UID = "uid-pod"
+	if err := c.Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
 	setPodReady(t, c, getPod(t, c), corev1.ConditionFalse)
+	connect(t, c, "uid-pod")
 	reconcileOnce(t, r)
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "PodNotReady" {
 		t.Errorf("Ready = %s/%s with a running Pod that is not Ready, want False/PodNotReady", got.Status, got.Reason)
@@ -171,7 +188,88 @@ func TestSandboxIsReadyWhileItsPodIsReady(t *testing.T) {
 	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
 	reconcileOnce(t, r)
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionTrue {
-		t.Errorf("Ready = %s/%s with a Ready Pod, want True", got.Status, got.Reason)
+		t.Errorf("Ready = %s/%s with a Ready Pod and a connected runner, want True", got.Status, got.Reason)
+	}
+	if got := getCondition(t, c, WorkloadReady); got.Status != metav1.ConditionTrue {
+		t.Errorf("WorkloadReady = %s/%s, want True", got.Status, got.Reason)
+	}
+}
+
+func TestSandboxWhoseRunnerNeverConnectedIsNotReady(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
+	result, err := r.Reconcile(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := getCondition(t, c, WorkloadReady); got.Status != metav1.ConditionTrue {
+		t.Errorf("WorkloadReady = %s/%s with a Ready Pod, want True", got.Status, got.Reason)
+	}
+	if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "NeverConnected" {
+		t.Errorf("Ready = %s/%s, want False/NeverConnected", got.Status, got.Reason)
+	}
+	if result.RequeueAfter != runnerConnectPoll {
+		t.Errorf("requeue = %s, want %s to look for the runner again", result.RequeueAfter, runnerConnectPoll)
+	}
+}
+
+func TestRunnerOfAnEarlierIncarnationDoesNotMakeTheSandboxReady(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	pod := getPod(t, c)
+	pod.UID = "uid-pod"
+	if err := c.Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
+	connect(t, c, "uid-earlier-pod")
+	reconcileOnce(t, r)
+	if got := getCondition(t, c, RunnerConnected); got.Status != metav1.ConditionFalse || got.Reason != "AwaitingRunner" {
+		t.Errorf("RunnerConnected = %s/%s, want False/AwaitingRunner", got.Status, got.Reason)
+	}
+}
+
+func TestConnectionDropIsToleratedUntilTheLeaseLapsesPastTheGrace(t *testing.T) {
+	r, c := runningWithRunner(t)
+	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
+	reconcileOnce(t, r)
+	if got := getReadyCondition(t, c); got.Status != metav1.ConditionTrue {
+		t.Fatalf("Ready = %s/%s with a connected runner, want True", got.Status, got.Reason)
+	}
+	// The Lease's 30 s duration has passed, as in a Runner Gateway rollout, but not the grace.
+	r.Now = func() time.Time { return testNow.Add(45 * time.Second) }
+	result, err := r.Reconcile(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := getReadyCondition(t, c); got.Status != metav1.ConditionTrue {
+		t.Errorf("Ready = %s/%s inside the grace, want True", got.Status, got.Reason)
+	}
+	if want := 30*time.Second + runnerDisconnectGrace - 45*time.Second; result.RequeueAfter != want {
+		t.Errorf("requeue = %s, want %s, the moment the connection would lapse", result.RequeueAfter, want)
+	}
+	r.Now = func() time.Time { return testNow.Add(2 * time.Minute) }
+	reconcileOnce(t, r)
+	if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "ConnectionLost" {
+		t.Errorf("Ready = %s/%s past the grace, want False/ConnectionLost", got.Status, got.Reason)
+	}
+	if pod := getPod(t, c); !pod.DeletionTimestamp.IsZero() {
+		t.Error("the Pod is deleted because its connection lapsed; nothing is replaced for it")
+	}
+}
+
+func TestControllerWithoutLeasesReportsReadyFromTheWorkloadAlone(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	r.Leases = nil
+	reconcileOnce(t, r)
+	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
+	reconcileOnce(t, r)
+	if got := getReadyCondition(t, c); got.Status != metav1.ConditionTrue {
+		t.Errorf("Ready = %s/%s, want True without a connection to check", got.Status, got.Reason)
+	}
+	if meta.FindStatusCondition(getSandbox(t, c).Status.Conditions, RunnerConnected) != nil {
+		t.Error("RunnerConnected is reported with no Leases to read")
 	}
 }
 
@@ -399,9 +497,11 @@ func sealSessions(t *testing.T, r *Reconciler) {
 // connect is the Runner Gateway writing the Sandbox's connection Lease.
 func connect(t *testing.T, c client.Client, runner string) {
 	t.Helper()
-	lease := &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{
-		Namespace: namespace, Name: sandboxName + "-runner", Annotations: map[string]string{PodUIDAnnotation: runner},
-	}}
+	renewed, duration := metav1.NewMicroTime(testNow), int32(30)
+	lease := &coordinationv1.Lease{
+		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName + "-runner", Annotations: map[string]string{PodUIDAnnotation: runner}},
+		Spec:       coordinationv1.LeaseSpec{RenewTime: &renewed, LeaseDurationSeconds: &duration},
+	}
 	if err := c.Create(context.Background(), lease); err != nil {
 		t.Fatal(err)
 	}

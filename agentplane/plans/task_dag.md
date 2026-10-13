@@ -707,7 +707,6 @@ flowchart TD
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     CONTROL_SERVICE_OWNER[Candidate: the controller creates the Sandbox's control Service]
-    RUNNER_CONNECTED_READY[Candidate: the Sandbox's Ready condition includes the runner connection]
     SESSION_ACTIVITY_STREAM[Decision: one derivation of folded Session activity for listeners]
     DISPATCHER_CORE[Blocked: the Session Dispatcher delivers to running Sandboxes]
     DISPATCHER_SESSION_CREATE[Blocked: dispatched Session creation]
@@ -759,8 +758,6 @@ flowchart TD
     QUIESCE_INTERRUPT --> DISPATCHER_WAKE_ON_SEND
     RUNNER_FACTS_ON_LEASE -. carries the boot result .-> BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap, section 6]
     RUNNER_FACTS_ON_LEASE -. busyness is its input .-> SESSION_ACTIVITY_STREAM
-    CONTROL_SERVICE_OWNER -. same Service and Lease .-> RUNNER_CONNECTED_READY
-    RUNNER_CONNECTED_READY --> DISPATCHER_WAKE_ON_SEND
     DISPATCHER_CORE --> DISPATCHER_SESSION_CREATE
     DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
     DISPATCHER_CORE --> APP_SENDS_VIA_DISPATCHER
@@ -1042,19 +1039,6 @@ caller sees no endpoints and not a DNS failure, and the gateway writes only the 
 with less Kubernetes access. One shared constant fixes the name and port. Order: the controller image
 that creates it is pinned, then the gateway stops creating it, then its permission goes.
 
-### `RUNNER_CONNECTED_READY` — the Sandbox's Ready condition includes the runner connection
-
-**Candidate; the transport is the connection Lease (operator, 2026-10-13 PDT).** `Ready` covers the Pod or VM, not whether the runner has connected, so a VM
-whose guest runner never reaches the gateway reads ready. The controller writes the conditions from
-facts others publish: `WorkloadReady` (today's `Ready`), `RunnerConnected` (the connection Lease's
-liveness for the current incarnation), and `Ready` as their AND, keyed to the incarnation UID so a
-connection from the last incarnation is never read as this one's. `Ready` means "can take work"
-only; the lifecycle phase stays separate. A gateway rollout drops every connection at once, so the
-controller debounces `RunnerConnected` and replaces or restarts nothing because of it. The Lease
-already carries the Pod UID and liveness, so this does not wait for `RUNNER_FACTS_ON_LEASE`. The app reads `Ready` instead of inspecting the incarnation only once the controller image
-that publishes it is pinned. Test a runner that connects late, one that never connects, and a
-connection that drops while the Pod keeps running.
-
 ### `SESSION_ACTIVITY_STREAM` — one derivation of folded Session activity for listeners
 
 **Decision; operator, 2026-10-13 PDT.** Suspension no longer waits on it: the Sandbox controller
@@ -1095,7 +1079,7 @@ its own record is authoritative.
 
 ### `DISPATCHER_WAKE_ON_SEND` — a send wakes a suspended Sandbox
 
-**Blocked on `DISPATCHER_CORE`, `SESSION_REVIVE`, `RUNNER_CONNECTED_READY`, `QUIESCE_INTERRUPT`
+**Blocked on `DISPATCHER_CORE`, `SESSION_REVIVE`, `QUIESCE_INTERRUPT`
 and `SANDBOX_SESSION_CONTROL_DESIGN` (the hold choice).** A message for a suspended Sandbox's
 Session resumes the Sandbox through the Sandbox Service, then delivers once `Ready` holds for the new
 incarnation, keying every attempt to the incarnation UID; a delivery refused by a sealing runner

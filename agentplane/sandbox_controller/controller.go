@@ -27,8 +27,14 @@ import (
 
 const (
 	Running = "Running"
-	// True while the incarnation Pod, a VM's virt-launcher Pod included, is Ready. The workload's own
+	// True while the incarnation Pod, a VM's virt-launcher Pod included, is Ready: the workload's own
 	// readiness, which says nothing of whether the runner has connected to the Runner Gateway.
+	WorkloadReady = "WorkloadReady"
+	// True while the incarnation's runner holds a live connection to the Runner Gateway, read from the
+	// Gateway's Lease for the Sandbox. Absent from a controller not configured with Leases.
+	RunnerConnected = "RunnerConnected"
+	// True when the Sandbox can take work: WorkloadReady and RunnerConnected. The lifecycle phase is
+	// separate.
 	Ready = "Ready"
 	// Set True on a deleting Sandbox, by this controller or the Runner Gateway, once its runner has
 	// sealed every Session and the ingress has acknowledged each seal; nothing of the Sandbox is
@@ -50,6 +56,11 @@ const (
 	templateIndex = "spec.template"
 	// How soon a seal that failed or is not yet acknowledged is asked again.
 	sealRetry = 2 * time.Second
+	// How soon a runner that has not connected yet is looked for again; the Lease is not watched.
+	runnerConnectPoll = 5 * time.Second
+	// How long past its Lease's expiry a runner still counts as connected. A Runner Gateway rollout
+	// drops every connection at once and the runners reconnect to the new replicas.
+	runnerDisconnectGrace = time.Minute
 )
 
 // Reconciler converges one Sandbox at a time: its state PVC, its Pod or VirtualMachine, and its
@@ -69,6 +80,8 @@ type Reconciler struct {
 	Sealer Sealer
 	// Reads the Lease the Runner Gateway writes for each connection, uncached.
 	Leases client.Reader
+	// The current time, for the liveness of a connection Lease.
+	Now func() time.Time
 }
 
 // StateVolumeName is the Sandbox's state PVC.
@@ -127,7 +140,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		if err != nil || blocked == nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{RequeueAfter: blocked.retryAfterOrZero()}, r.updateStatus(ctx, &sandbox, w, blocked)
+		return r.updateStatus(ctx, &sandbox, w, blocked)
 	}
 	if controllerutil.AddFinalizer(&sandbox, StateVolumeFinalizer) {
 		if err := r.Update(ctx, &sandbox); err != nil {
@@ -157,7 +170,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 	}
-	return ctrl.Result{RequeueAfter: blocked.retryAfterOrZero()}, r.updateStatus(ctx, &sandbox, w, blocked)
+	return r.updateStatus(ctx, &sandbox, w, blocked)
 }
 
 func (r *Reconciler) workload(ctx context.Context, sandbox *Sandbox) (workload, error) {
@@ -495,7 +508,7 @@ func withSandboxLabel(labels map[string]string, sandbox *Sandbox) map[string]str
 	return labels
 }
 
-func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workload, blocked *unready) error {
+func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workload, blocked *unready) (ctrl.Result, error) {
 	status := sandbox.Status.DeepCopy()
 	status.Incarnation = nil
 	if pod := w.incarnation(); pod != nil {
@@ -517,18 +530,46 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workl
 		condition.Reason, condition.Message = "Stopped", "no Pod; the state PVC is kept"
 	}
 	meta.SetStatusCondition(&status.Conditions, condition)
-	meta.SetStatusCondition(&status.Conditions, readyCondition(sandbox, condition, w.incarnation()))
+	workloadReady := workloadReadyCondition(sandbox, condition, w.incarnation())
+	meta.SetStatusCondition(&status.Conditions, workloadReady)
+	ready := workloadReady
+	var recheck time.Duration
+	if r.Leases == nil {
+		meta.RemoveStatusCondition(&status.Conditions, RunnerConnected)
+	} else {
+		connected, after, err := r.runnerConnectedCondition(ctx, sandbox, workloadReady, w.incarnation())
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		meta.SetStatusCondition(&status.Conditions, connected)
+		recheck = after
+		if workloadReady.Status == metav1.ConditionTrue {
+			ready = connected
+		}
+	}
+	ready.Type = Ready
+	meta.SetStatusCondition(&status.Conditions, ready)
+	result := ctrl.Result{RequeueAfter: earliest(blocked.retryAfterOrZero(), recheck)}
 	if equality.Semantic.DeepEqual(status, &sandbox.Status) {
-		return nil
+		return result, nil
 	}
 	sandbox.Status = *status
-	return r.Status().Update(ctx, sandbox)
+	return result, r.Status().Update(ctx, sandbox)
 }
 
-// readyCondition is True only while the Sandbox runs and its incarnation Pod is Ready; otherwise it
-// carries the reason `running` gives, or `PodNotReady` when everything runs but the Pod is not Ready.
-func readyCondition(sandbox *Sandbox, running metav1.Condition, incarnation *corev1.Pod) metav1.Condition {
-	condition := metav1.Condition{Type: Ready, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation, Reason: running.Reason, Message: running.Message}
+// earliest is the shorter of two requeue delays, where zero is none.
+func earliest(a, b time.Duration) time.Duration {
+	if a == 0 || (b != 0 && b < a) {
+		return b
+	}
+	return a
+}
+
+// workloadReadyCondition is True only while the Sandbox runs and its incarnation Pod is Ready;
+// otherwise it carries the reason `running` gives, or `PodNotReady` when everything runs but the Pod
+// is not Ready.
+func workloadReadyCondition(sandbox *Sandbox, running metav1.Condition, incarnation *corev1.Pod) metav1.Condition {
+	condition := metav1.Condition{Type: WorkloadReady, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation, Reason: running.Reason, Message: running.Message}
 	if running.Status != metav1.ConditionTrue {
 		return condition
 	}
@@ -539,6 +580,42 @@ func readyCondition(sandbox *Sandbox, running metav1.Condition, incarnation *cor
 		condition.Reason, condition.Message = "PodNotReady", fmt.Sprintf("Pod %s is running but not Ready", incarnation.Name)
 	}
 	return condition
+}
+
+// runnerConnectedCondition is True while the Runner Gateway's Lease names this incarnation's Pod and
+// was renewed within its duration plus the grace, so a connection from an earlier incarnation never
+// counts and a brief drop does not. It also says when to look again, since no watch event ends the
+// wait: while the runner has not connected, and at the moment a live connection would lapse.
+func (r *Reconciler) runnerConnectedCondition(ctx context.Context, sandbox *Sandbox, workload metav1.Condition, incarnation *corev1.Pod) (metav1.Condition, time.Duration, error) {
+	condition := metav1.Condition{Type: RunnerConnected, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
+	if workload.Status != metav1.ConditionTrue {
+		condition.Reason, condition.Message = "WorkloadNotReady", "the incarnation is not Ready"
+		return condition, 0, nil
+	}
+	var lease coordinationv1.Lease
+	if err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + "-runner"}, &lease); err != nil {
+		if !apierrors.IsNotFound(err) {
+			return condition, 0, err
+		}
+		condition.Reason, condition.Message = "NeverConnected", "no runner has connected"
+		return condition, runnerConnectPoll, nil
+	}
+	if runner := lease.Annotations[PodUIDAnnotation]; runner == "" || runner != string(incarnation.UID) {
+		condition.Reason, condition.Message = "AwaitingRunner", fmt.Sprintf("the runner that connected last is not Pod %s's", incarnation.Name)
+		return condition, runnerConnectPoll, nil
+	}
+	if lease.Spec.RenewTime == nil || lease.Spec.LeaseDurationSeconds == nil {
+		condition.Reason, condition.Message = "ConnectionLost", "the connection Lease records no renewal"
+		return condition, runnerConnectPoll, nil
+	}
+	lapse := lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second + runnerDisconnectGrace)
+	if remaining := lapse.Sub(r.Now()); remaining > 0 {
+		condition.Status, condition.Reason = metav1.ConditionTrue, "Connected"
+		condition.Message = fmt.Sprintf("Pod %s's runner is connected to the Runner Gateway", incarnation.Name)
+		return condition, remaining, nil
+	}
+	condition.Reason, condition.Message = "ConnectionLost", fmt.Sprintf("Pod %s's runner has not renewed its connection since %s", incarnation.Name, lease.Spec.RenewTime.Format(time.RFC3339))
+	return condition, runnerConnectPoll, nil
 }
 
 func podReady(pod *corev1.Pod) bool {
