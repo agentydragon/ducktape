@@ -261,15 +261,6 @@ class Console(Construct):
                     "launch_routine",
                     "token",
                 ),
-                # Web Push: the VAPID key the console signs approval notifications with. Its
-                # public half is derived at startup and handed to each browser at subscribe
-                # time, so rotating it makes every enrolled device re-subscribe.
-                self._from_secret(
-                    SecretRef(namespace=NAMESPACE, name="haku-console-web-push-vapid").key("private-key-pem"),
-                    "web_push",
-                    "private_key_pem",
-                ),
-                (env_name(Settings, "web_push", "subject"), EnvValue.from_value("mailto:agentydragon@gmail.com")),
                 # The Authentik-gated origin of Haku's own UI, framed as a sandboxed cross-origin
                 # iframe (haku/console/docs/containment.md).
                 (env_name(Settings, "haku_ui_url"), EnvValue.from_value("https://haku-ui.allegedly.works")),

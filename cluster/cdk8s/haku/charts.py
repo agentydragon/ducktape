@@ -41,7 +41,6 @@ EXTRA_RESOURCES = (
     # links GitHub with it (cluster/k8s/haku/console/README.md).
     "haku-console-github-mcp-client-credentials.sops.yaml",
     "routine-launch-token.sops.yaml",
-    "web-push-vapid.sops.yaml",
     "static-metadata.yaml",
     "image-metadata.yaml",
 )

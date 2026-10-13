@@ -552,7 +552,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: config
-    secret.reloader.stakater.com/reload: haku-console-agent-api,haku-console-oidc,haku-console-public-coder-agent,haku-console-web-push-vapid,haku-routine-launch-token
+    secret.reloader.stakater.com/reload: haku-console-agent-api,haku-console-oidc,haku-console-public-coder-agent,haku-routine-launch-token
   labels:
     app.kubernetes.io/name: haku-console
   name: haku-console
@@ -592,14 +592,6 @@ spec:
                   key: token
                   name: haku-routine-launch-token
                   optional: false
-            - name: HAKU_CONSOLE__WEB_PUSH__PRIVATE_KEY_PEM
-              valueFrom:
-                secretKeyRef:
-                  key: private-key-pem
-                  name: haku-console-web-push-vapid
-                  optional: false
-            - name: HAKU_CONSOLE__WEB_PUSH__SUBJECT
-              value: mailto:agentydragon@gmail.com
             - name: HAKU_CONSOLE__HAKU_UI_URL
               value: https://haku-ui.allegedly.works
             - name: HAKU_CONSOLE__AUTH_ORIGIN
