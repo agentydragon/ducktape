@@ -181,11 +181,7 @@ async def test_settings(settings_view: VisualPage) -> None:
 
 @pytest.mark.parametrize(
     ("tab", "ready_text"),
-    [
-        ("Agents", "Public Coder"),
-        ("Grants", "Public Coder"),
-        ("System", "Mixed revisions"),
-    ],
+    [("Agents", "Public Coder"), ("Grants", "Public Coder"), ("System", "Mixed revisions")],
     ids=["agents", "grants", "system"],
 )
 async def test_settings_tab(settings_view: VisualPage, tab: str, ready_text: str) -> None:
