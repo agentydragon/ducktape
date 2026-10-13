@@ -88,6 +88,8 @@ class SandboxController(Construct):
                 RolePolicyRule(
                     resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch", "create"]
                 ),
+                # Each Sandbox's control Service, which the Runner Gateway points at the connected runner.
+                RolePolicyRule(resources=[custom_resource("", "services")], verbs=["get", "list", "watch", "create"]),
                 # Each Sandbox's launch ConfigMap (its identity and bootstrap), kept current while it lives.
                 RolePolicyRule(
                     resources=[custom_resource("", "configmaps")], verbs=["get", "list", "watch", "create", "update"]
