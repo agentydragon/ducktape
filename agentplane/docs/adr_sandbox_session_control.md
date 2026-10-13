@@ -258,14 +258,12 @@ Lease and per-Session data stays out of Kubernetes. The two cannot be served sid
 reading both shapes, so the controller learns `Quiesce` first, then the runner's `Seal` is renamed
 (reader before writer).
 
-**Setup and bootstrap meet quiesce.** Quiesce cancels a running setup script (`SetupInterrupted`), and
-`Runner.resume` refuses a Session whose setup is `FAILED` or `INTERRUPTED` (`SetupFailedError`); an interrupted
-bootstrap is terminal. A suspend during either would permanently lose the Session or the Sandbox. Decided here
-(open decision 9 for the operator): idle suspension counts a running setup or bootstrap as busy, so it never
-interrupts one; an operator suspend or delete waits for a running bootstrap, bounded by the drain deadline, and
-interrupts a setup that the next resume re-runs from the start. The re-run needs the runner to treat
-`INTERRUPTED` as resumable (only `FAILED` stays terminal), which is a precondition for any suspend not followed by
-a delete.
+**Setup and bootstrap meet quiesce** (operator, 2026-10-13). A Sandbox is not suspendable until its Sandbox-level
+bootstrap has succeeded or failed, and a suspend also waits for every Session's setup to complete; deletion waits
+for neither. Quiesce would otherwise cancel a running setup (`SetupInterrupted`) and `Runner.resume` refuses a
+Session whose setup is `FAILED` or `INTERRUPTED` (`SetupFailedError`), and an interrupted bootstrap is terminal,
+so a suspend during either would permanently lose the Session or the Sandbox. Running setup and bootstrap also
+count as busy for idle suspension. Delete interrupts them, since the Sandbox is going away.
 
 **Sealed journals cannot restart today.** `Session._sealing` is initialised from `journal.sealed_cursor` and
 `ensure_running` then raises `JournalSealedError`, so every Session of a suspended Sandbox is unresumable until
@@ -274,11 +272,11 @@ door for every Session until then, and `SANDBOX_IDLE_EXPIRY` is gated on that no
 
 **Transitions the sequence must cover.**
 
-- _Resume during `Quiescing`._ The Dispatcher can set `spec.running = true` while the drain runs. Lameduck is
-  durable for the incarnation and cannot be cancelled, so the controller finishes quiesce and teardown, then
-  starts incarnation N+1. In between `Ready` is False with reason `Draining` although running is desired. The
-  Dispatcher keys each attempt to the incarnation UID and does not treat incarnation N's `Draining` refusal as a
-  failure of N+1.
+- _Resume during `Quiescing`._ A Sandbox that is quiescing does not accept a resume command (operator,
+  2026-10-13): the Sandbox Service refuses `spec.running = true` with a retryable code until the Sandbox is
+  `Suspended`, and the Dispatcher retries then. While it is quiescing `Ready` is False with reason `Draining`.
+  The Dispatcher keys each attempt to the incarnation UID and does not treat incarnation N's `Draining` refusal
+  as a failure of N+1.
 - _Delete before the runner was ever up._ Delete during `Creating`, `Starting`, `Booting` or `Resuming` skips
   quiesce only if the incarnation never ran (`NeverRan`). A runner that connected and then lost its connection
   (gateway outage) looks the same on the current Lease, so `NeverRan` comes from a fact persisted at the first
@@ -632,5 +630,5 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
    Service's retention hold. No `Dispatcher` or `dispatch` identifier exists in the code today;
    "Delivery Service" is the runner-up but collides with the runner's `DeliverCommand`, the last hop
    it makes.
-9. **Suspend during setup or bootstrap.** Recommend: idle suspension never interrupts either (they count as busy); an operator suspend or delete waits for a running bootstrap up to the drain deadline, and an interrupted setup re-runs on the next resume, which needs the runner to treat `INTERRUPTED` as resumable (D3).
+9. ~~Suspend during setup or bootstrap?~~ **Decided (operator, 2026-10-13):** suspend waits for the Sandbox bootstrap and for every Session's setup; deletion does not (D3).
 10. **How idle suspension is expressed.** Recommend: the controller writes `status.suspendedBy: Idle` and the Sandbox Service wakes by bumping `spec.wakeGeneration`, so `spec.running` is never edited by a layer that acts on the CR (Sandbox lifecycle). The alternative is a controller write to its own spec, which breaks the rule.
