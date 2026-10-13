@@ -3,7 +3,7 @@
 import { act } from "react";
 import { describe, expect, it, vi } from "vitest";
 
-import { STALE_AFTER_MS } from "../stream_status";
+import { STALE_AFTER_MS, streamRegistry } from "../stream_status";
 import { ActionRequests, stateLabel } from "./requests";
 import {
   TestEventSource,
@@ -196,11 +196,11 @@ describe("ActionRequests", () => {
         TestEventSource.current!.readyState = 0;
         TestEventSource.current?.dispatchEvent(new Event("error"));
       });
-      expect(container.querySelector('[role="alert"]')).toBeNull();
+      expect([...streamRegistry.getStatuses().values()].map((status) => status.standing)).toEqual(["current"]);
       expect(container.textContent).toContain("Pending (1)");
 
       await act(async () => vi.advanceTimersByTime(STALE_AFTER_MS));
-      expect(container.querySelector('[role="alert"]')).not.toBeNull();
+      expect([...streamRegistry.getStatuses().values()].map((status) => status.standing)).toEqual(["stale"]);
       expect(container.textContent).toContain("Pending (1)");
     } finally {
       vi.useRealTimers();

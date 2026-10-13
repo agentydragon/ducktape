@@ -124,7 +124,7 @@ async def test_threads_provisioning(view: VisualPage, app: AgentplaneFixture) ->
 async def test_threads_updates_disconnected(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.THREAD_DATABASE_DISCONNECTED)
     await app.mount_app("/")
-    await view.page.wait_for_selector('[role="alert"]', state="attached")
+    await view.page.wait_for_selector('[data-connection="stale"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 
@@ -132,7 +132,7 @@ async def test_threads_updates_disconnected(view: VisualPage, app: AgentplaneFix
 async def test_threads_watch_stale(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.WATCH_STALE)
     await app.mount_app("/")
-    await view.page.wait_for_selector('[role="alert"]', state="attached")
+    await view.page.wait_for_selector('[data-connection="stale"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 
@@ -147,6 +147,7 @@ async def test_sandboxes(view: VisualPage, app: AgentplaneFixture) -> None:
 async def test_sandboxes_stale(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.WATCH_STALE)
     await app.mount_app("/sandboxes")
+    await view.page.wait_for_selector('[data-connection="stale"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 
@@ -247,7 +248,7 @@ async def test_session_suspended_sandbox(view: VisualPage, app: AgentplaneFixtur
 async def test_session_inventory_stale(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.set_flag(Flag.WATCH_STALE)
     await app.mount_thread(IDLE_THREAD)
-    await view.page.wait_for_selector(':text("so this page is not being updated")', state="attached")
+    await view.page.wait_for_selector('[data-connection="stale"]', state="attached")
     await view.page.wait_for_selector('[data-thread-anchor="34"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture()
