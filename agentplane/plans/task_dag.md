@@ -462,24 +462,10 @@ flowchart LR
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
     ISOLATED_ACCEPTANCE_CI[Unscheduled: acceptance tests in their own CI workflow]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
-    APP_ROLLOUT_STREAMS[Candidate: an app rollout does not break event streams]
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
     ACTION_SURFACES_DESIGN -. related .-> NOTIFICATION_PRESENTATION
 ```
-
-### `APP_ROLLOUT_STREAMS` — an app rollout does not break event streams
-
-**Candidate; high, since it makes acceptance runs flaky.** On `agentplane-testing` every Deployment
-uses one replica with the `Recreate` strategy (`cluster/cdk8s/agentplane/testing.py`), and Flux
-rolls the app's image on each devel merge, which was about every eight minutes on 2026-10-13. Each
-rollout drops the app's Session event stream, so the `[claude]` acceptance case, which runs about
-five minutes, fails with "stream ended before the turn completed" and 503s. Do either or both: the
-stream clients (the acceptance driver and the web app's feed) resume after a reconnect from their
-last position instead of ending, or testing's app rolls without a gap (`RollingUpdate`, which needs
-two replicas and a readiness gate; staging already rolls this way). Resuming is the root fix, since
-any rollout or crash drops a stream; the rollout change only shrinks the window. Parallel with
-everything else in this section. Only the by-hand acceptance runs against the shared testing environment are hit; a run in isolation (`ISOLATED_ACCEPTANCE_CI`) has no app rolling under it, but real streams still drop on any rollout or crash.
 
 ### `ACTION_SURFACES_DESIGN` — where and in what states Actions render
 
