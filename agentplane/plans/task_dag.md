@@ -544,11 +544,15 @@ not ad hoc grants. Test an allowed and denied operation; do not add privileges a
 
 ### `POLICY_RUNTIME_GRANTS` — time-limited grants
 
-**Candidate.** A grant is a `PolicyBinding` of any rule type, not only egress. The Sandbox
-Service's `GrantEgress`/`RevokeEgress` already create and delete one but are named for egress and
-take egress policies only (`egress_policies`, the egress-only views); make them a generic
-grant/revoke of PolicySets with an optional `expiresAt`, renaming the RPCs and their callers
-together, and add UI chips showing each binding's set, expiry and ready conditions.
+**Candidate; direction from the operator, 2026-10-13 PDT.** A grant is a `PolicyBinding` of any
+rule type, not only egress, and the app creates and deletes it with the Kubernetes API on behalf of
+the operator who asked: a user changing RBAC is the app's request, and the layers that execute on
+the CRs act on them without editing them. The Sandbox Service's `GrantEgress`/`RevokeEgress` (which
+write today, for egress only, via `egress_policies` and egress-only views) go, with their callers.
+The app takes over what they enforce (refusing a Flux-applied or Sandbox-controlled binding,
+the owner reference on the Sandbox) and gets the `policybindings` create/delete permission the
+Sandbox Service has today. Grants take an optional `expiresAt`, and the UI shows chips with each
+binding's set, expiry and ready conditions.
 One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry, so no reader
 handles expiry itself.
 
