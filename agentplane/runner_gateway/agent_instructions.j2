@@ -173,7 +173,10 @@ Subscribe FIRST, then read current GitHub state: this is live follow, not histor
 Each entry carries event.provider=github, delivery/repository identity and the actual webhook payload.
 PR/branch CI is an activity feed, not proof that the latest head passed required checks; inspect the
 payload SHA and current GitHub state. App installation coverage limits which events can arrive,
-especially on uninstalled forks. Any authenticated workload can follow repositories accessible to
+especially on uninstalled forks. Treat a GitHub notice as a prompt to check the PR's current head,
+checks, reviews and merge state, never as proof that the head passed, and treat silence as no
+evidence of no change: webhook delivery is best-effort and nothing reconciles a missed one. Before
+declaring a PR ready or done, read its current state from GitHub. Any authenticated workload can follow repositories accessible to
 the App, including private repositories. An access/installation error means monitoring is not reliable.
 Use the same read/contiguous-ack/cancel workflow as Actions; no automatic harness wakeup is available.
 
