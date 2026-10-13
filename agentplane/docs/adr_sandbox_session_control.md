@@ -531,8 +531,10 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
    gateway-health connectivity node, not its goal.
 5. ~~Controller creates the control Service?~~ **Decided (operator, 2026-10-13): yes** (D1).
 6. **Interrupt inside the one `Quiesce` operation, and the renames in D3 (`Quiesced`, `Draining`, `Flushing`, `quiescedIncarnation`)?** Recommend yes (D3).
-7. **A way for an operator to hold a Sandbox suspended against wake-on-send?** Needs a decision
-   before the Dispatcher lands.
+7. ~~A way for an operator to hold a Sandbox suspended against wake-on-send?~~ **Decided
+   (operator, 2026-10-13): `spec.wakeOnSend: false`.** A Sandbox with it set is not woken by a send:
+   the Dispatcher queues the message and the Sandbox stays suspended. It doubles as the feature gate
+   for wake-on-send, so the Dispatcher can land with waking off.
 8. **Name.** Session Dispatcher, `Quiesce`, `Quiesced`, `Draining` and `Flushing` are confirmed
    (operator, 2026-10-13). The Dispatcher has an explicit `OpenSession` (the spec and setup script are
    real input) and one RPC per command, each taking a Session ID; waking and resuming are internal (D4). The queue service is "Session Dispatcher" and a dispatch is one queued command or
