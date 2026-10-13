@@ -87,8 +87,7 @@ PUBLIC_DUCKTAPE_READS_SET = "public-ducktape-reads"
 PUBLIC_DUCKTAPE_FORK_READS_SET = "public-ducktape-fork-reads"
 PUBLIC_GAFFER_PRIVATE_READS_SET = "public-gaffer-private-reads"
 DUCKTAPE_PR_FAILED_JOBS_SET = "ducktape-pr-failed-jobs"
-FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET = "finance-agent-gaffer-branch-creation"
-FINANCE_AGENT_GAFFER_PR_CREATION_SET = "finance-agent-gaffer-pr-creation"
+GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET = "gaffer-private-branch-and-pr-creation"
 
 
 def _action_rule(entry: ActionPolicySetSpecAutoApproveIf) -> PolicySetSpecRules:
@@ -493,19 +492,23 @@ def add_staging_action_policies(scope: Construct) -> None:
         ],
     )
 
-    # This grants finance-agent only the additive GitHub create-branch operation in its private
-    # Gaffer repository. GitHub's CreateRef rejects an existing branch name rather than moving
-    # that ref; pushing commits, editing files and creating PRs remain on the human-approval path.
+    # Two additive GitHub writes in the private Gaffer repository, and nothing else; pushing
+    # commits, editing files, merging and reviewer requests remain on the human-approval path.
+    #  - create_branch: GitHub's CreateRef rejects an existing branch name rather than moving that ref.
+    #  - create_pull_request: opening a PR creates a review object but does not merge it or change
+    #    either branch. It may notify reviewers and trigger repository workflows, so approval is
+    #    scoped to this repository and this one Action.
     _policy_set(
         scope,
-        "finance-agent-gaffer-branch-creation",
+        "gaffer-private-branch-and-pr-creation",
         metadata=ApiObjectMetadata(
-            name=FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
+            name=GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": (
-                    "Auto-approves only GitHub MCP create_branch calls for agentydragon/gaffer-private; "
-                    "existing branches cannot be overwritten, and other writes remain human-approved."
+                    "Auto-approves only GitHub MCP create_branch and create_pull_request calls targeting "
+                    "agentydragon/gaffer-private; existing branches cannot be overwritten, the PR is not "
+                    "merged, and other writes remain human-approved."
                 )
             },
         ),
@@ -523,27 +526,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                     "required": ["owner", "repo", "branch"],
                     "additionalProperties": False,
                 },
-            )
-        ],
-    )
-
-    # Opening a PR creates a review object but does not merge it or change either branch. It may
-    # notify reviewers and trigger repository workflows, so scope auto-approval to this repository
-    # and the GitHub MCP create_pull_request Action alone. Reviewer requests stay on the human path.
-    _policy_set(
-        scope,
-        "finance-agent-gaffer-pr-creation",
-        metadata=ApiObjectMetadata(
-            name=FINANCE_AGENT_GAFFER_PR_CREATION_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": (
-                    "Auto-approves only GitHub MCP create_pull_request calls targeting "
-                    "agentydragon/gaffer-private; the PR is not merged and other writes remain human-approved."
-                )
-            },
-        ),
-        auto_approve_if=[
+            ),
             AutoApproveIf.argument_schema(
                 actions={"github": ["create_pull_request"]},
                 schema={
@@ -561,7 +544,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                     "required": ["owner", "repo", "title", "head", "base"],
                     "additionalProperties": False,
                 },
-            )
+            ),
         ],
     )
 

@@ -3637,8 +3637,7 @@ data:
           - public-gaffer-private-reads
           - github-identity-reads
           - ssh-reads
-          - finance-agent-gaffer-branch-creation
-          - finance-agent-gaffer-pr-creation
+          - gaffer-private-branch-and-pr-creation
           - ducktape-pr-failed-jobs
           - shared-diagnostics
           - testing-access
@@ -8556,8 +8555,8 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: ActionPolicySet
 metadata:
   annotations:
-    description: Auto-approves only GitHub MCP create_branch calls for agentydragon/gaffer-private; existing branches cannot be overwritten, and other writes remain human-approved.
-  name: finance-agent-gaffer-branch-creation
+    description: Auto-approves only GitHub MCP create_branch and create_pull_request calls targeting agentydragon/gaffer-private; existing branches cannot be overwritten, the PR is not merged, and other writes remain human-approved.
+  name: gaffer-private-branch-and-pr-creation
   namespace: agentplane-staging
 spec:
   autoApproveIf:
@@ -8583,50 +8582,6 @@ spec:
           - repo
           - branch
         type: object
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  annotations:
-    description: Auto-approves only GitHub MCP create_branch calls for agentydragon/gaffer-private; existing branches cannot be overwritten, and other writes remain human-approved.
-  name: finance-agent-gaffer-branch-creation
-  namespace: agentplane-staging
-spec:
-  rules:
-    - type: action_auto_approve
-      policy:
-        type: argument_schema
-        actions:
-          github:
-            - create_branch
-        schema:
-          additionalProperties: false
-          properties:
-            branch:
-              minLength: 1
-              type: string
-            from_branch:
-              minLength: 1
-              type: string
-            owner:
-              const: agentydragon
-            repo:
-              const: gaffer-private
-          required:
-            - owner
-            - repo
-            - branch
-          type: object
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Auto-approves only GitHub MCP create_pull_request calls targeting agentydragon/gaffer-private; the PR is not merged and other writes remain human-approved.
-  name: finance-agent-gaffer-pr-creation
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
     - type: argument_schema
       actions:
         github:
@@ -8665,11 +8620,35 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
-    description: Auto-approves only GitHub MCP create_pull_request calls targeting agentydragon/gaffer-private; the PR is not merged and other writes remain human-approved.
-  name: finance-agent-gaffer-pr-creation
+    description: Auto-approves only GitHub MCP create_branch and create_pull_request calls targeting agentydragon/gaffer-private; existing branches cannot be overwritten, the PR is not merged, and other writes remain human-approved.
+  name: gaffer-private-branch-and-pr-creation
   namespace: agentplane-staging
 spec:
   rules:
+    - type: action_auto_approve
+      policy:
+        type: argument_schema
+        actions:
+          github:
+            - create_branch
+        schema:
+          additionalProperties: false
+          properties:
+            branch:
+              minLength: 1
+              type: string
+            from_branch:
+              minLength: 1
+              type: string
+            owner:
+              const: agentydragon
+            repo:
+              const: gaffer-private
+          required:
+            - owner
+            - repo
+            - branch
+          type: object
     - type: action_auto_approve
       policy:
         type: argument_schema

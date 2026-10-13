@@ -16,8 +16,7 @@ from more_itertools import one
 from cluster.cdk8s.agentplane import staging
 from cluster.cdk8s.agentplane.actions_staging_policies import (
     DUCKTAPE_PR_FAILED_JOBS_SET,
-    FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
-    FINANCE_AGENT_GAFFER_PR_CREATION_SET,
+    GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
 )
 from cluster.cdk8s.agentplane.app_settings import _PUBLIC_CODER_INSTRUCTIONS, DUCKTAPE_PR_INSTRUCTIONS
 from cluster.cdk8s.agentplane.staging_config import _FINANCE_AGENT_INSTRUCTIONS, HAKU_ACTION_POLICY_SETS
@@ -40,14 +39,12 @@ def test_ducktape_preset_installs_hooks_without_direnv() -> None:
 def test_gaffer_write_policies_are_finance_agent_only() -> None:
     cfg = staging.ENV.app_config
     finance_policies = cfg.sandbox_presets["finance-agent"].policy_sets
-    assert FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET in finance_policies
-    assert FINANCE_AGENT_GAFFER_PR_CREATION_SET in finance_policies
+    assert GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET in finance_policies
     for name, preset in cfg.sandbox_presets.items():
         if name == "finance-agent":
             continue
         policies = preset.policy_sets
-        assert FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET not in policies
-        assert FINANCE_AGENT_GAFFER_PR_CREATION_SET not in policies
+        assert GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET not in policies
 
 
 def test_haku_preset_binds_what_its_account_binding_names(
