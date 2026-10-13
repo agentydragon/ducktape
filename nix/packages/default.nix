@@ -37,6 +37,13 @@ let
           disabledTests = (old.disabledTests or [ ]) ++ [
             "test_single_thread"
           ];
+          # test_nested_task_group_filtering[trio]: racy, the trio nursery sometimes
+          # surfaces its ExceptionGroup wrapper instead of the parent task's error
+          # (one anyio derivation both passed and failed in CI). The asyncio
+          # variant stays enabled.
+          disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [
+            "tests/test_taskgroups.py::test_nested_task_group_filtering[trio]"
+          ];
         });
         python-ulid = pyprev.python-ulid.overrideAttrs (old: {
           # test_same_millisecond_overflow: writes directly to the shared

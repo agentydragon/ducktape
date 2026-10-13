@@ -77,7 +77,10 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     environment: ${{ inputs.environment || null }}
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # A warm run takes ~2 min. After a flake update nothing in the overridden
+    # Python set (nix/packages/default.nix) is cached, and the first run
+    # rebuilds it from source in ~40 min.
+    timeout-minutes: 90
     env:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     steps:
