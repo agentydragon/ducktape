@@ -482,7 +482,10 @@ and a pretty toggle), history, the policy view, and the Web Push notification (f
 registry separate from the React one). Several of them choose independently what to render, whether
 to offer a decision, and how tall to let the card grow. Settle which surfaces exist, what each is
 for (a glance, a quick decision, full review, a record), and which states each has, so that one
-rule decides inline approval and height and each Action type is described once. The compact-card
+rule decides inline approval and height and each Action type is described once.
+Direction (operator, 2026-10-13 PDT): whether quick approval is offered is not a per-kind
+allowlist (`QUICK_APPROVALS`); the Action type's own TypeScript implementation decides for each
+invocation from its content (for example a read-only call against a listed resource). The compact-card
 fixes under way (decision buttons on collapsed cards, a height cap, more Actions allowed inline)
 land first and need not wait for this.
 
