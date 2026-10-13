@@ -126,7 +126,7 @@ def _discriminated(members: list[Any], discriminator: str | None, value: dict[st
 
 def _check_present(annotation: Any, value: Any) -> None:
     """Validate what `value` carries of `annotation`. A nested model's remaining fields may come
-    from another source (a secret's env var completes `web_push`), so a mapping is checked key by
+    from another source (a secret's env var completes `launch_routine`), so a mapping is checked key by
     key against the model's fields rather than as a whole."""
     resolved, discriminator = _resolve(annotation)
     resolved = _without_none(resolved)

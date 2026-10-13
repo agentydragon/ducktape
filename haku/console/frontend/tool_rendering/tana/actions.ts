@@ -1,5 +1,4 @@
-// Card and notification action descriptions for tana's tools. React-free so `../../sw.ts`
-// can bundle them (see ../action_entry.ts).
+// Action descriptions for tana's tools (see ../action_entry.ts).
 
 import { type ActionEntry, fixed, fromArgs } from "../action_entry";
 import { zSetFieldOptionArgs } from "./schemas";

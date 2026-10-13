@@ -2,9 +2,7 @@
 // Trash node"), optionally computed from its parsed arguments. The per-server maps live beside their
 // widgets in `<server>/actions.ts`; `actions.ts` composes them.
 //
-// Leaf module, and **React-free** like everything on this side of the split: the service worker
-// (`../sw.ts`) bundles the action registry to title push notifications, and must not drag React,
-// Mantine, and CodeMirror into a bundle the browser loads to show a notification.
+// Leaf module, and **React-free** like everything on this side of the split.
 
 import type { z } from "zod";
 

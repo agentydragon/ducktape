@@ -88,25 +88,6 @@ whole argument/result payloads, so hundreds of rows make a multi-megabyte respon
 refreshes only the newest page and merges it over older pages; result/argument editors initialize
 near the viewport rather than for every retained row.
 
-## Notifications — Web Push for pending approvals
-
-Web Push reaches an Operator when no console tab is open. The server (`notifications/push.py`,
-`notifications/push_routes.py`) shows one versioned notification per queued call; the service worker
-(`frontend/sw.ts`) offers Approve/Deny and deep-links to the audit view. A push grants no authority:
-buttons call the ordinary exact-Origin decision endpoint under the Operator session.
-
-`PendingApprovalNotifier` updates that notification on approval, denial, or withdrawal. Calls that
-never queue are never pushed. Preserve these operational contracts:
-
-- The VAPID private key is the console's push identity; rotating it invalidates every subscription.
-- Push payload changes are additive within a `kind`, because an installed service worker may lag the
-  server by a day. Non-additive changes require a new variant.
-- An expired one-hour Operator session turns a notification action into a re-authentication deep
-  link rather than a failed decision.
-
-Third-party notification action services are intentionally not used: they would need a deciding
-credential outside the console's origin, contrary to <../docs/security.md> invariant #4.
-
 ## Perimeter / deploy
 
 Cluster topology and operations are owned by <../../cluster/k8s/haku/console/README.md>. In

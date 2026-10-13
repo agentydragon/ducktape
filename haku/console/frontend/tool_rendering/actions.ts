@@ -1,15 +1,12 @@
 // Registry mapping each MCP server id to its per-tool action descriptions — the one-line summary
-// the approvals card's identity line shows ("Grocy: Add 5 items to stock", "Tana: Trash node") and the
-// title a push notification is rendered with.
+// the approvals card's identity line shows ("Grocy: Add 5 items to stock", "Tana: Trash node").
 //
 // Composes the per-server maps in `<server>/actions.ts`, as `index.tsx` composes the per-server
 // widget registries: adding a server is "write a new directory + a registry entry here". A tool with
 // no entry falls back to `serverId.toolName`.
 //
-// **This side of the split is React-free**, and must stay that way: the service worker (`../sw.ts`)
-// reads this registry to title notifications, and must not drag React, Mantine, and CodeMirror into
-// a bundle the browser loads to show one. Sharing the registry also keeps the card and the
-// notification from phrasing the same call differently.
+// **This side of the split is React-free** and shares one registry, so the card and its text
+// cannot phrase the same call differently.
 
 import type { ActionEntry, ToolAction } from "./action_entry";
 import { gmailActions } from "./gmail/actions";

@@ -52,7 +52,7 @@ from haku.console.mcp_config import (
     validate_in_process_server_bindings,
 )
 from haku.console.models import ConfigResponse
-from haku.console.notifications import console_events, push, push_routes
+from haku.console.notifications import console_events
 from haku.console.settings import Settings
 from haku.console.tools import grants as grants_tools, kubernetes as kubernetes_tools
 
@@ -137,17 +137,6 @@ def create_app(
     operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
     console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     tool_call_ledger = approval.PostgresToolCallLedger(db_sessions)
-    # Web Push reaches the operator's browsers when none of them has the console open. Without a
-    # VAPID identity there is nothing to sign with, so the console simply never notifies.
-    push_subscription_store = push.PostgresPushSubscriptionStore(db_sessions)
-    push_identity = push.PushIdentity(settings.web_push) if settings.web_push else None
-    approval_notifier: push.Notifier | push.NullNotifier = (
-        push.Notifier(
-            identity=push_identity, subscriptions=push_subscription_store, console_base_url=settings.public_base_url
-        )
-        if push_identity is not None
-        else push.NullNotifier()
-    )
     agent_authority = PostgresAgentAuthority(
         db_sessions,
         public_base_url=settings.public_base_url,
@@ -245,7 +234,6 @@ def create_app(
         invalidation_publisher=console_event_hub,
         executor=dispatcher,
         in_process_servers=in_process_servers,
-        approval_notifier=approval_notifier,
     )
 
     @asynccontextmanager
@@ -267,7 +255,6 @@ def create_app(
                 if kubernetes_authorization is not None:
                     await kubernetes_authorization.aclose()
                 await console_event_hub.aclose()
-                await approval_notifier.aclose()
 
     app = FastAPI(title="Haku console", lifespan=_lifespan)
     # The capability router reads settings off app.state (see haku.console.capabilities).
@@ -283,8 +270,6 @@ def create_app(
     app.state.console_event_hub = console_event_hub
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher
-    app.state.push_subscription_store = push_subscription_store
-    app.state.push_identity = push_identity
     app.state.kubernetes_authorization = kubernetes_authorization
     app.state.grant_catalog = grant_catalog
     app.state.kubernetes_grants = kubernetes_grants
@@ -326,7 +311,6 @@ def create_app(
     app.include_router(approval.router, dependencies=operator_only)
     app.include_router(grant_routes.router, dependencies=operator_only)
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
-    app.include_router(push_routes.router, dependencies=operator_only)
     app.include_router(enrollment_routes.entry_router)
     # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The
     # endpoint remains fail-closed unless configured SAR authorization is present.
