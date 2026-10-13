@@ -343,6 +343,7 @@ def test_stack_comes_up() -> None:
         )
         print(k3s.report())
         assert not failed, f"Deployments not Available: {failed}"
+        assert "condition met" in sandbox_ready, f"Sandbox Pod not Ready: {sandbox_ready}"
     finally:
         process.terminate()
         shutil.rmtree(work, ignore_errors=True)
