@@ -1347,7 +1347,7 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
         )
         assert await page.evaluate("() => window.getSelection()?.toString()") == line_text
 
-    for _ in range(2):
+    for repeat in range(2):
         await select_command_line("echo command line 0")
         await show_all.click()
         # Deliver layout/ResizeObserver callbacks: the old observer measured a detached node and
@@ -1362,9 +1362,10 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
         await read_at(page, command.locator(".cm-line").filter(has_text="echo command line 20"), 0.5)
         await expect(collapse).to_be_in_viewport()
         await select_command_line("echo command line 20")
-        await _review_screenshot(
-            page, f"thread-command-expanded-{viewport_name}.png", f"Expanded command on {viewport_name}"
-        )
+        if repeat == 0:  # review outputs are unique per name
+            await _review_screenshot(
+                page, f"thread-command-expanded-{viewport_name}.png", f"Expanded command on {viewport_name}"
+            )
         await collapse.click()
         await frames(page)
         assert await editor.evaluate("node => node.isConnected"), "collapsing remounted the CodeMirror editor"
@@ -1394,9 +1395,10 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
         )
         assert nested_heading_display == "flex", "collapsed ClampedBlock styles hid a nested disclosure heading"
         await expect(call.locator(".agentplane-disclosure-summary").first).to_have_attribute("aria-expanded", "true")
-        await _review_screenshot(
-            page, f"thread-command-collapsed-{viewport_name}.png", f"Collapsed command on {viewport_name}"
-        )
+        if repeat == 0:
+            await _review_screenshot(
+                page, f"thread-command-collapsed-{viewport_name}.png", f"Collapsed command on {viewport_name}"
+            )
 
 
 @pytest.mark.parametrize("following", [False, True], ids=["mid-thread", "following"])
