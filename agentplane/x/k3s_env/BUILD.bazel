@@ -1,10 +1,62 @@
-load("@rules_oci//oci:defs.bzl", "oci_load")
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
+load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
+load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 # Spike: does the rendered `agentplane-testing` stack come up on a bare k3s inside an RBE action?
 # Manual only: it downloads k3s at run time and runs it as root.
 
-# Bazel-built service images, loaded into k3s's containerd. The Nix-built runner images are not.
+# The runner image the `runner` SandboxTemplate names, built by Bazel from the runner and its two
+# pinned native harnesses at the paths the template passes (`/bin/claude`, `/bin/codex`). It has
+# the runner's own tools only: the Nix-built image (agentplane/runner/image.nix) is the one with a
+# full toolbox, and this one exists so the disposable environment needs no registry credential.
+aspect_py_binary(
+    name = "runner_image_bin",
+    main = "runner_entrypoint.py",
+    deps = [":runner_entrypoint"],
+)
+
+py_image_layer(
+    name = "runner_layers",
+    binary = ":runner_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+pkg_tar(
+    name = "runner_harnesses",
+    srcs = [
+        "@agentplane_codex_cli_linux_x64//:files",
+        "@claude_code_cli_linux_x64//:claude",
+    ],
+    mode = "0755",
+    package_dir = "/opt/harnesses",
+    remap_paths = {
+        "external/claude_code_cli_linux_x64": "claude",
+        "external/agentplane_codex_cli_linux_x64": "codex",
+    },
+    strip_prefix = ".",
+    symlinks = {
+        "/bin/claude": "/opt/harnesses/claude/claude",
+        "/bin/codex": "/opt/harnesses/codex/bin/codex",
+    },
+)
+
+oci_image(
+    name = "runner_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("runner_image_bin"),
+    env = py_image_env(binary_name = "runner_image_bin"),
+    tars = [
+        ":runner_layers",
+        ":runner_harnesses",
+        "//third_party/debian_slim:cacerts",
+    ],
+    user = "1000:1000",
+)
+
+# Bazel-built service images, loaded into k3s's containerd.
 _IMAGES = {
     "action_service": "//agentplane/action_service:image",
     "action_service_migrate": "//agentplane/action_service:migration_image",
@@ -20,6 +72,7 @@ _IMAGES = {
     "notification_service_migrate": "//agentplane/notification_service:migration_image",
     "oauth_fixture": "//agentplane/action_service/testing:oauth_mcp_server_image",
     "policy_controller": "//agentplane/policy_controller:image",
+    "runner": ":runner_image",
     "runner_gateway": "//agentplane/runner_gateway:image",
     "runner_gateway_migrate": "//agentplane/runner_gateway/commands:migration_image",
     "sandbox_controller": "//agentplane/sandbox_controller:image",
@@ -31,7 +84,7 @@ _IMAGES = {
         name = name + "_load",
         testonly = True,
         image = image,
-        repo_tags = ["git.allegedly.works/ducktape-ci/agentplane-" + name.replace("_", "-") + ":unset"],
+        repo_tags = ["git.allegedly.works/ducktape-ci/" + ("" if name == "runner" else "agentplane-") + name.replace("_", "-") + ":unset"],
     )
     for name, image in _IMAGES.items()
 ]
@@ -60,10 +113,6 @@ py_test(
         "//agentplane/crds",
         "//cluster:agentplane_testing_manifest",
     ] + [":" + name + "_tarball" for name in _IMAGES],
-    env_inherit = [
-        "FORGEJO_IMAGES_USERNAME",
-        "FORGEJO_IMAGES_PASSWORD",
-    ],
     exec_properties = {
         "dockerNetwork": "bridge",
         "recycle-runner": "false",
@@ -83,4 +132,10 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
     ],
+)
+
+py_library(
+    name = "runner_entrypoint",
+    srcs = ["runner_entrypoint.py"],
+    deps = ["//agentplane/runner:main"],
 )
