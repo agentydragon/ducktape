@@ -178,7 +178,7 @@ def _pod_spec_fixups(pod: dict[str, Any], node_ip: str) -> None:
         )
 
 
-def _use_external_litellm(node: Any) -> None:
+def _use_external_litellm(node: Any) -> Any:
     """Point at the public LiteLLM: the cluster-internal Service is not here, and its rules were `clusterInternal`."""
     if isinstance(node, dict):
         if node.get("hosts") == [LITELLM_INTERNAL_HOST]:
