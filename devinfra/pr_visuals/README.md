@@ -154,7 +154,10 @@ cache-busting commit (e.g. an rbe-worker image pin bump). Devel-push
 publications advance the pointers after the commit bundle upload completes;
 targets resolved through a pointer are marked `baseline_fallback` in the
 bundle metadata and the PR comment warns that those differences may predate
-the PR. If neither source carries the target, every asset classifies as `new`.
+the PR. Each modified or removed screenshot on such a baseline is labelled
+`stale baseline` (comment and gallery), naming the baseline commit and the
+merge base; whether the image itself differs at the merge base is unknowable,
+since that bundle holds no image for the target. If neither source carries the target, every asset classifies as `new`.
 
 ## Check-runs
 

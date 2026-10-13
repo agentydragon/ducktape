@@ -953,6 +953,8 @@ def test_build_bundle_falls_back_to_devel_pointer(tmp_path: Path) -> None:
     assert metadata["base_sha"] == pointer_sha
     assert metadata["baseline_fallback"] is True
     assert metadata["assets"][0]["classification"] == "modified"
+    assert metadata["assets"][0]["baseline_stale"] is True
+    assert metadata["merge_base_sha"] == base_sha
 
 
 def test_build_bundle_all_new_when_no_baseline_anywhere(tmp_path: Path) -> None:
@@ -1069,6 +1071,33 @@ def test_success_comment_body_warns_when_comparison_uses_fallback_baseline() -> 
 
     assert "[!WARNING]" in body
     assert "`fedcba98`" in body
+
+
+def test_success_comment_body_labels_each_stale_screenshot() -> None:
+    def asset(path: str, *, stale: bool | None) -> ReviewAsset:
+        return ReviewAsset(path=path, label=path, classification="modified", changed_fraction=0.5, baseline_stale=stale)
+
+    body = success_comment_body(
+        repository="r",
+        commit_sha="0123456789abcdef0123456789abcdef01234567",
+        url="https://v/commits/sha/",
+        review_tests=[
+            ReviewTest(
+                target_label="//ex:visuals",
+                slug="ex-visuals-abcdef",
+                title="Example UI",
+                base_sha="fedcba9876543210fedcba9876543210fedcba98",
+                merge_base_sha="1111111122222222333333334444444455555555",
+                baseline_fallback=True,
+                summary=ClassificationCounts(modified=2),
+                assets=[asset("a.png", stale=True), asset("b.png", stale=None)],
+            )
+        ],
+        base_sha="1" * 40,
+    )
+
+    assert body.count("stale baseline") == 1
+    assert "baseline from `fedcba98`, not merge base `11111111`" in body
 
 
 def test_success_comment_body_hides_zero_count_buckets_per_test() -> None:

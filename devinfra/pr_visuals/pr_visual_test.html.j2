@@ -21,7 +21,7 @@
         {% set unchanged = assets | selectattr("classification", "equalto", "unchanged") | list %}
         {% for asset in modified %}
         <figure id="{{ asset.path }}">
-          <figcaption>{{ asset.label }}<span class="badge modified">modified</span>
+          <figcaption>{{ asset.label }}<span class="badge modified">modified</span>{% if asset.baseline_stale %}<span class="badge removed" title="This screenshot's baseline is not from the PR's merge base, so the diff may include devel drift.">stale baseline {{ base_sha[:8] }} ≠ merge base {{ merge_base_sha[:8] }}</span>{% endif %}
             {% if asset.dimension_changed %}<span class="badge modified">dims {{ asset.candidate_dimensions[0] }}×{{ asset.candidate_dimensions[1] }} ← {{ asset.baseline_dimensions[0] }}×{{ asset.baseline_dimensions[1] }}</span>{% endif %}
             <span class="metric">{{ "%.2f"|format(asset.changed_fraction * 100) }}% · {{ asset.changed_pixels }} px</span></figcaption>
           {% if asset.dimension_changed %}
@@ -56,7 +56,7 @@
         {% endfor %}
         {% for asset in removed %}
         <figure id="{{ asset.path }}">
-          <figcaption>{{ asset.label }}<span class="badge removed">removed</span></figcaption>
+          <figcaption>{{ asset.label }}<span class="badge removed">removed</span>{% if asset.baseline_stale %}<span class="badge removed" title="This screenshot's baseline is not from the PR's merge base, so the diff may include devel drift.">stale baseline {{ base_sha[:8] }} ≠ merge base {{ merge_base_sha[:8] }}</span>{% endif %}</figcaption>
           <a class="sample-frame" href="{{ asset.baseline_url }}"><img src="{{ asset.baseline_url }}" alt="{{ asset.label }} before" loading="lazy"></a>
         </figure>
         {% endfor %}

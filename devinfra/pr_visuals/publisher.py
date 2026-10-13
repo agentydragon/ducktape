@@ -159,14 +159,17 @@ class ReviewAsset(BaseModel):
     candidate_dimensions: list[int] | None = None
     baseline_dimensions: list[int] | None = None
     dimension_changed: bool | None = None
+    # True on a modified/removed screenshot whose baseline image came from a commit other than the
+    # PR's merge base (see ResolvedBaseline.fallback), so the diff may include devel drift.
+    baseline_stale: bool | None = None
 
 
 class ReviewTest(BaseModel):
     """A test target's review data, serialized to per-test and commit metadata.
 
     `base_sha` is the commit whose bundle the comparison actually used —
-    the PR's base commit, or (with `baseline_fallback=True`) the devel-latest
-    pointer's commit when the base bundle lacked this target.
+    the PR's base commit (`merge_base_sha`), or (with `baseline_fallback=True`)
+    the devel-latest pointer's commit when the base bundle lacked this target.
     """
 
     target_label: str
@@ -174,6 +177,7 @@ class ReviewTest(BaseModel):
     title: str
     assets: list[ReviewAsset]
     base_sha: str | None = None
+    merge_base_sha: str | None = None
     baseline_fallback: bool | None = None
     summary: ClassificationCounts | None = None
     preview: ReviewAsset | None = None
@@ -521,6 +525,7 @@ def _classify_test_assets(
     baseline_dir = target_dir / "baseline"
     diff_dir = target_dir / "diff"
     enriched: list[ReviewAsset] = []
+    stale = True if baseline.fallback else None
 
     def materialize_baseline(path: str) -> Path | None:
         body = baseline_source.fetch(_baseline_key(baseline.commit_sha, test.slug, path))
@@ -556,6 +561,7 @@ def _classify_test_assets(
                 candidate_dimensions=list(comparison.actual_size),
                 baseline_dimensions=list(comparison.baseline_size),
                 dimension_changed=comparison.dimension_changed,
+                baseline_stale=stale,
             )
         )
     candidate_paths = {asset.path for asset in test.manifest.assets}
@@ -563,7 +569,11 @@ def _classify_test_assets(
         if path in candidate_paths:
             continue
         if materialize_baseline(path) is not None:
-            enriched.append(ReviewAsset(path=path, label=baseline_asset.get("label", path), classification="removed"))
+            enriched.append(
+                ReviewAsset(
+                    path=path, label=baseline_asset.get("label", path), classification="removed", baseline_stale=stale
+                )
+            )
     return enriched
 
 
@@ -613,6 +623,7 @@ def build_bundle(
             title=test.manifest.title,
             assets=assets,
             base_sha=baseline.commit_sha if baseline is not None else base_sha,
+            merge_base_sha=base_sha,
             baseline_fallback=baseline.fallback if baseline is not None else None,
             summary=_asset_summary(assets) if base_sha else None,
             preview=_pick_preview(assets) if base_sha else None,
@@ -697,8 +708,16 @@ def _preview_img(url: str, alt: str) -> str:
     return f'<a href="{escaped_url}"><img src="{escaped_url}" width="260" alt="{escaped_alt}"></a>'
 
 
-def _asset_comment_lines(asset: ReviewAsset, *, asset_base: str) -> list[str]:
+def stale_baseline_note(test: ReviewTest) -> str:
+    """Where a stale baseline came from relative to the merge base, in one phrase."""
+    baseline = f"`{test.base_sha[:8]}`" if test.base_sha else "an unavailable commit"
+    merge_base = f"`{test.merge_base_sha[:8]}`" if test.merge_base_sha else "the merge base"
+    return f"baseline from {baseline}, not merge base {merge_base}"
+
+
+def _asset_comment_lines(asset: ReviewAsset, *, asset_base: str, test: ReviewTest) -> list[str]:
     label = html.escape(asset.label)
+    stale = f" · ⚠️ stale baseline: {stale_baseline_note(test)}" if asset.baseline_stale else ""
     if asset.classification == "modified":
         fraction = asset.changed_fraction or 0.0
         diff = (
@@ -707,7 +726,7 @@ def _asset_comment_lines(asset: ReviewAsset, *, asset_base: str) -> list[str]:
             else _preview_img(_asset_url(asset_base, asset, "diff"), f"{asset.label} diff")
         )
         return [
-            f"<p><strong>{label}</strong> · {fraction:.1%} changed</p>",
+            f"<p><strong>{label}</strong> · {fraction:.1%} changed{stale}</p>",
             "",
             "| Before | After | Diff |",
             "| --- | --- | --- |",
@@ -723,7 +742,7 @@ def _asset_comment_lines(asset: ReviewAsset, *, asset_base: str) -> list[str]:
         ]
     if asset.classification == "removed":
         return [
-            f"<p><strong>{label}</strong> · removed</p>",
+            f"<p><strong>{label}</strong> · removed{stale}</p>",
             "",
             _preview_img(_asset_url(asset_base, asset, "baseline"), f"{asset.label} baseline"),
         ]
@@ -761,7 +780,7 @@ def _target_section(test: ReviewTest, *, url: str, open_section: bool) -> list[s
         "",
     ]
     for index, asset in enumerate(assets):
-        content = _asset_comment_lines(asset, asset_base=asset_base)
+        content = _asset_comment_lines(asset, asset_base=asset_base, test=test)
         if len(assets) <= INLINE_ASSET_LIMIT:
             lines.extend([*content, ""])
             continue
@@ -770,6 +789,8 @@ def _target_section(test: ReviewTest, *, url: str, open_section: bool) -> list[s
             asset_title += f" — {asset.changed_fraction:.1%} changed"
         elif asset.classification is not None:
             asset_title += f" — {asset.classification}"
+        if asset.baseline_stale:
+            asset_title += " — ⚠️ stale baseline"
         asset_open = open_section and index == 0
         lines += [
             "<details open>" if asset_open else "<details>",
