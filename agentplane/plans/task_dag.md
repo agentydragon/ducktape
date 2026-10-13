@@ -702,7 +702,6 @@ flowchart TD
     SANDBOX_SESSION_CONTROL_DESIGN[Decision: the open choices in the Sandbox and Session control design]
     QUIESCE_INCARNATION_KEY[In progress: the sealed marker belongs to one incarnation]
     INCARNATION_UID_REQUIRED[Blocked: the runner rejects a Welcome without the incarnation UID]
-    QUIESCE_INTERRUPT[Candidate: refuse at entry and interrupt turns before sealing]
     RUNNER_FACTS_ON_LEASE[Blocked: the runner publishes stage, busy and boot facts on the connection Lease]
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
@@ -756,8 +755,6 @@ flowchart TD
     RUNNER_FACTS_ON_LEASE --> SANDBOX_IDLE_EXPIRY
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
     SEAL_RENAME -. rename before the next sealing node lands .-> QUIESCE_WITHOUT_POLLING
-    QUIESCE_INTERRUPT -. interrupt precedes the seal .-> QUIESCE_WITHOUT_POLLING
-    QUIESCE_INTERRUPT --> DISPATCHER_WAKE_ON_SEND
     RUNNER_FACTS_ON_LEASE -. carries the boot result .-> BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap, section 6]
     RUNNER_FACTS_ON_LEASE -. busyness is its input .-> SESSION_ACTIVITY_STREAM
     CONTROL_SERVICE_OWNER -. same Service and Lease .-> RUNNER_CONNECTED_READY
@@ -987,7 +984,7 @@ implement it, and the ones marked blocked on this node wait for one of these ans
 - **Idleness:** suspension reads the runner's busy state, so `SESSION_ACTIVITY_STREAM` shrinks to
   the folded activity notifications and the UI read.
 
-Parallel with all of it: `QUIESCE_INCARNATION_KEY`, `QUIESCE_INTERRUPT`. The doc leaves this node when
+Parallel with all of it: `QUIESCE_INCARNATION_KEY`. The doc leaves this node when
 its choices are made and `docs/` describes the result.
 
 ### `QUIESCE_INCARNATION_KEY` — the sealed marker belongs to one incarnation
@@ -1009,17 +1006,6 @@ or a resumed Sandbox would refuse work. How a sealed journal is reopened is `SES
 every environment, and in the VM guest's runner wheel pin.** Removes the missing-UID tolerance: a
 `Welcome` without a UID ends the stream. Pin ordering is not relied on before this; afterwards a
 runner too old to know the field cannot meet a gateway that no longer sends it.
-
-### `QUIESCE_INTERRUPT` — refuse at entry and interrupt turns before sealing
-
-**Candidate.** The runner refuses new and resumed Sessions at once but still admits commands to a
-Session whose journal is not yet sealed, and it stops a turn rather than interrupting it. Inside
-the one seal operation: refuse everything but draining operations from the start, with a distinct
-code a sender reads as "retry after resume"; interrupt active turns through the command protocol,
-wait up to a deadline, then stop the harnesses; record in history that teardown ended the turn, so
-it reads differently from a user's interrupt. Nothing is live, since the sealer flags are not in
-the manifests. It edits the same runner store code as `QUIESCE_INCARNATION_KEY`; whichever lands
-second rebases. Readers of the new code (the Session Dispatcher) land after it.
 
 ### `RUNNER_FACTS_ON_LEASE` — the runner publishes stage, busy and boot facts on the connection Lease
 
@@ -1119,11 +1105,11 @@ its own record is authoritative.
 
 ### `DISPATCHER_WAKE_ON_SEND` — a send wakes a suspended Sandbox
 
-**Blocked on `DISPATCHER_CORE`, `SESSION_REVIVE`, `RUNNER_CONNECTED_READY`, `QUIESCE_INTERRUPT`
+**Blocked on `DISPATCHER_CORE`, `SESSION_REVIVE`, `RUNNER_CONNECTED_READY`
 and `SANDBOX_SESSION_CONTROL_DESIGN` (the hold choice).** A message for a suspended Sandbox's
 Session resumes the Sandbox through the Sandbox Service, then delivers once `Ready` holds for the new
 incarnation, keying every attempt to the incarnation UID; a delivery refused by a sealing runner
-with the retryable code is redelivered after the resume. Which senders may wake: a user message and
+with `ABORTED` (the gateway flattens runner codes it does not list to `FAILED_PRECONDITION`, so it forwards this one) is redelivered after the resume. Which senders may wake: a user message and
 a notification, not an agent's message unless `AGENT_MESSAGE_RECEPTION` decides so. Also here:
 rate limits and per-sender quotas, since a resume starts a Pod or VM and every harness; resuming
 only the Sessions that have pending work; a bounded wait with a visible reason when the volume's

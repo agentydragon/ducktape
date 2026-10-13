@@ -229,7 +229,7 @@ class Runner:
         """Create the session with `spec` and start it, running the Sandbox bootstrap first if it has
         not run; or confirm an existing one with the same spec and start its stopped harness."""
         session_id = self._valid_session_id(session_id)
-        self._refuse_sealed()
+        self.refuse_work()
         launched = runner_pb2.SessionSpec()
         launched.CopyFrom(spec)
         launched.instructions = self.config.launch.instructions(session_id, spec.instructions)
@@ -260,7 +260,7 @@ class Runner:
     async def resume(self, session_id: str) -> Session:
         """Restart a stopped harness on the session's retained spec."""
         session_id = self._valid_session_id(session_id)
-        self._refuse_sealed()
+        self.refuse_work()
         if not self.store.exists(session_id):
             raise SessionUnknownError(f"session {session_id} does not exist")
         session = await self._load(session_id)
@@ -276,8 +276,17 @@ class Runner:
         except ValueError as error:
             raise InvalidRequestError(str(error)) from error
 
-    def _refuse_sealed(self) -> None:
-        if self.store.sealed:
+    @property
+    def lameduck(self) -> bool:
+        return self.store.sealed
+
+    def enter_lameduck(self) -> None:
+        """Durably refuse everything but draining operations, across runner restarts."""
+        self.store.seal()
+
+    def refuse_work(self) -> None:
+        """Raise unless the runner still accepts new work; a sender retries after the Sandbox resumes."""
+        if self.lameduck:
             raise SandboxSealedError("this Sandbox is sealed: its sessions can be followed, not created or resumed")
 
     async def _confirm(self, session_id: str, spec: runner_pb2.SessionSpec, setup_script: str | None) -> Session:
@@ -327,16 +336,16 @@ class Runner:
     async def _start(self, session: Session) -> None:
         """Start the harness of a session whose setup allows it; one still in setup starts when the
         setup succeeds."""
-        if self.store.sealed:
+        if self.lameduck:
             # Sealing began meanwhile and may have listed the store before it held this session.
             await session.seal()
-            raise SandboxSealedError("this Sandbox is sealed: its sessions can be followed, not created or resumed")
+            self.refuse_work()
         if session.setup_state in (runner_pb2.SETUP_STATE_NOT_REQUIRED, runner_pb2.SETUP_STATE_SUCCEEDED):
             await session.ensure_running()
 
     async def seal(self) -> runner_pb2.SealResponse:
-        """Sandbox teardown: refuse new and resumed sessions, stop every harness, seal every journal."""
-        self.store.seal()
+        """Sandbox teardown: refuse new work, interrupt running turns, stop every harness, seal every journal."""
+        self.enter_lameduck()
         sessions = [await self._load(session_id) for session_id in self.store.session_ids()]
         cursors = await asyncio.gather(*(session.seal() for session in sessions))
         return runner_pb2.SealResponse(

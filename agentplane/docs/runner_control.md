@@ -98,8 +98,9 @@ message Heartbeat {}
   `PERMISSION_DENIED` backs off to its maximum interval.
 - **`Runner` status codes.** A refused call names its cause: `NOT_FOUND` (unknown Session),
   `ALREADY_EXISTS` (another spec, setup or bootstrap script for one already recorded, or a
-  `command_id` admitted with another payload), `INVALID_ARGUMENT`, `FAILED_PRECONDITION` (the
-  Sandbox is sealed, the Session's setup failed, its harness is stopped for a delivery, or it could
+  `command_id` admitted with another payload), `INVALID_ARGUMENT`, `ABORTED` (the Sandbox is
+  sealing or sealed: the same call succeeds once it resumes), `FAILED_PRECONDITION` (the
+  Session's journal is sealed, its setup failed, its harness is stopped for a delivery, or it could
   not be started) and `UNAVAILABLE` (the state volume failed; a retry may succeed). Anything else,
   such as a harness that did not launch, is `UNKNOWN`.
 
@@ -341,11 +342,12 @@ Each operation is its own `Runner` method:
   bootstrap from its launch file if it has not run; an existing Session is confirmed and its
   stopped harness started.
 - `ResumeSession` restarts a stopped harness on its retained spec.
-- `Seal` fences, stops every harness and setup, and seals every journal.
+- `Seal` fences, interrupts active turns, stops every harness and setup, and seals every journal.
 
 Only `OpenSession` and `ResumeSession` create a Session or start a harness. The runner orders `Seal` by arrival: it waits for every command admission
-already under way, and every call that arrives after it waits for it, so no command delivered
-before it lands after it. Only the replica holding the runner's stream calls the runner: callers reach it through the Sandbox's control Service
+already under way, and every call that arrives after it that starts or resumes work is refused
+with `ABORTED` at once, so no command delivered before it lands after it and none after it is lost
+silently. Only the replica holding the runner's stream calls the runner: callers reach it through the Sandbox's control Service
 ([Connection records](#connection-records-in-kubernetes)), and background work such as sealing runs on the replica holding the Lease. Calls are bounded by the
 calling RPC's deadline, like command deliveries, and a reconnect replays none of them.
 

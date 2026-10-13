@@ -113,6 +113,8 @@ message TurnCompleted {
   TurnStatus status = 2;
   string error = 3;
   string interrupted_by_command_id = 4;
+  // The Sandbox's teardown interrupted the turn, not a command or the harness's own end.
+  bool ended_by_teardown = 5;
 }
 
 message ItemStarted {
