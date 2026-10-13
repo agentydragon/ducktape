@@ -78,10 +78,13 @@ in
     ln -sf ${pkgs.bashInteractiveFHS}/bin/sh bin/sh
   '';
 
+  # Deliberately no plain `LD_LIBRARY_PATH`: it applies to every process, and a Nix-built binary
+  # from a different nixpkgs channel (the runner's unstable Python, glibc 2.44) would load this
+  # channel's glibc 2.42 ahead of its RUNPATH and abort with "stack smashing detected". nix-ld
+  # exports `LD_LIBRARY_PATH` only to the FHS binaries it loads.
   env = [
-    "LD_LIBRARY_PATH=${runtimeLibs}"
     # What nix-ld's stub loader reads while the environment survives; Bazel strips
-    # LD_LIBRARY_PATH from actions, and `nixLdLibraries` covers a scrubbed environment.
+    # the environment from actions, and `nixLdLibraries` covers a scrubbed one.
     "NIX_LD=${pkgs.glibc}/lib/ld-linux-x86-64.so.2"
     "NIX_LD_LIBRARY_PATH=${runtimeLibs}"
   ];
