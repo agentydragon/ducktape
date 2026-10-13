@@ -137,7 +137,7 @@ otherwise misreads every call:
   event sequence to a terminal state;
 - nothing is retried after dispatch, which is what a command with side effects needs, and
   `execution_unknown` is reported as itself rather than as a failure;
-- an `ActionPolicySet` and a binding for the calling account are the access control. Without them
+- a `PolicySet` and a `PolicyBinding` for the calling account are the access control. Without them
   every command waits for a human, which is not an exec loop.
 
 Staging also offers each of them to external Connections as a direct tool (`sandbox__exec` and so on;

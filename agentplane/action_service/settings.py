@@ -57,8 +57,8 @@ class Settings(YamlFileSettings):
     token_audience: str = Field(min_length=1, description="Accepted projected-token audience of Sandbox callers.")
     reader_accounts: frozenset[ServiceAccountRef] = frozenset()
     policy_namespace: str = Field(
-        description="Kubernetes namespace whose ActionPolicySets and ActionPolicyBindings this service watches; "
-        "it writes Ready conditions only on those objects."
+        description="Kubernetes namespace whose PolicySets and PolicyBindings this service watches; "
+        "it writes `ActionsReady` conditions only on those bindings."
     )
     caller_service_account_namespaces: Set[str] = Field(
         description="Kubernetes namespaces whose labeled ServiceAccounts may authenticate Action Service callers "

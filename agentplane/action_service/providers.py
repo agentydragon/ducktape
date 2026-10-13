@@ -14,9 +14,8 @@ from agentplane.subjects import ServiceAccountRef
 
 
 class ResolvedPolicySet(BaseModel):
-    """One valid set a binding names, with its auto-approve policies in evaluation order: an
-    `ActionPolicySet`'s `autoApproveIf`, or a `PolicySet`'s `action_auto_approve` rules, each at its
-    position in that list."""
+    """One valid set a binding names, with its auto-approve policies in evaluation order: a
+    `PolicySet`'s `action_auto_approve` rules, each at its position in the set's rules."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -28,13 +27,11 @@ class ResolvedPolicySet(BaseModel):
 
 
 class BindingKind(StrEnum):
-    ACTION_POLICY_BINDING = "ActionPolicyBinding"
     POLICY_BINDING = "PolicyBinding"
 
 
 class ResolvedBinding(BaseModel):
-    """One binding naming the caller, with the valid sets it names that exist: an unexpired, valid
-    `ActionPolicyBinding`, or a `PolicyBinding`."""
+    """One `PolicyBinding` naming the caller, with the valid sets it names that exist."""
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 

@@ -143,23 +143,10 @@ class Actions(Construct):
         rules_by_namespace: dict[str, list[RolePolicyRule]] = {
             namespace: [
                 RolePolicyRule(
-                    resources=[
-                        custom_resource(GROUP, resource)
-                        for resource in ("actionpolicysets", "actionpolicybindings", "policysets", "policybindings")
-                    ],
+                    resources=[custom_resource(GROUP, resource) for resource in ("policysets", "policybindings")],
                     verbs=["get", "list", "watch"],
                 ),
-                RolePolicyRule(
-                    resources=[
-                        custom_resource(GROUP, resource)
-                        for resource in (
-                            "actionpolicysets/status",
-                            "actionpolicybindings/status",
-                            "policybindings/status",
-                        )
-                    ],
-                    verbs=["patch"],
-                ),
+                RolePolicyRule(resources=[custom_resource(GROUP, "policybindings/status")], verbs=["patch"]),
             ]
         }
         for caller_namespace in self.env.actions.caller_service_account_namespaces:

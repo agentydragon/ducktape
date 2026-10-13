@@ -52,7 +52,6 @@ from agentplane.action_service.models import (
     Verdict,
     service_account_key,
 )
-from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.policy_view import CallerActionPolicyView
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
@@ -63,6 +62,7 @@ from agentplane.action_service.testing.callers import in_sync_index
 from agentplane.action_service.testing.credentials import WORKLOAD_CREDENTIAL_PLACEHOLDER
 from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
 from agentplane.action_service.testing.mcp_client import asgi_mcp_client, text_of
+from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set
 from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionSubscription, ActionUpdateBroker
 from agentplane.changes import ChangeSignal
@@ -98,40 +98,16 @@ def sandbox(label: str) -> WorkloadPrincipal:
 def _policy_index() -> PolicyIndex:
     """Workload a bound to `test-reads`, workload b to nothing: what each may read of its own policy."""
     index = in_sync_index()
-    for name, spec in (
-        ("test-reads", {"autoApproveIf": [{"type": "exact_actions", "actions": {"test-group": ["alpha"]}}]}),
-        ("test-other", {"autoApproveIf": [{"type": "exact_actions", "actions": {"test-group": ["beta"]}}]}),
+    for name, policy in (
+        ("test-reads", {"type": "exact_actions", "actions": {"test-group": ["alpha"]}}),
+        ("test-other", {"type": "exact_actions", "actions": {"test-group": ["beta"]}}),
     ):
-        policy_set = parse_policy_set(
-            {
-                "metadata": {
-                    "name": name,
-                    "namespace": NAMESPACE,
-                    "uid": f"uid-{name}",
-                    "generation": 1,
-                    "resourceVersion": "1",
-                },
-                "spec": spec,
-            }
-        )
-        index.policy_sets[policy_set.namespaced_name] = policy_set
+        add_policy_set(index, name, [policy], namespace=NAMESPACE)
     for name, account, sets in (
         ("test-a-reads", sandbox("a").service_account_name, ["test-reads", "test-vanished"]),
         ("test-elsewhere", "test-runner-elsewhere", ["test-other"]),
     ):
-        binding = parse_binding(
-            {
-                "metadata": {
-                    "name": name,
-                    "namespace": NAMESPACE,
-                    "uid": f"uid-{name}",
-                    "generation": 1,
-                    "resourceVersion": "1",
-                },
-                "spec": {"subject": {"namespace": NAMESPACE, "name": account}, "policySets": sets},
-            }
-        )
-        index.bindings[binding.namespaced_name] = binding
+        add_policy_binding(index, name, ServiceAccountRef(namespace=NAMESPACE, name=account), sets, namespace=NAMESPACE)
     for admitted in (workload("a"), workload("b")):
         index.service_accounts[service_account_key(admitted)] = admitted
     return index

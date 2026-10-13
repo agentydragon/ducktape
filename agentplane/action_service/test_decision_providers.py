@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Callable
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -33,13 +33,13 @@ from agentplane.action_service.models import (
     ProviderVerdict,
     Verdict,
 )
-from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_evaluation import AUTO_APPROVE_REASON, PROVIDER_NAME, PolicySetDecisionProvider
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.providers import DecisionContext
 from agentplane.action_service.service import ActionService, InvalidActionArgumentsError
 from agentplane.action_service.store import ActionConflictError
 from agentplane.action_service.testing.lifecycle import wait_for_state
+from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set
 from agentplane.action_service.testing.stores import action_store
 from agentplane.changes import ChangeSignal
 from agentplane.kubernetes_watch import Freshness
@@ -341,45 +341,30 @@ async def test_provider_reason_is_projected_separately_from_human_note(
         assert operator_view.decision == result.decision
 
 
-def _meta(name: str, *, generation: int = 1, version: str = "1") -> dict[str, Any]:
-    return {
-        "name": name,
-        "namespace": NAMESPACE,
-        "uid": f"uid-{name}",
-        "generation": generation,
-        "resourceVersion": version,
-    }
-
-
 def _index(
     *,
-    sets: dict[str, dict[str, Any]] | None = None,
-    bindings: dict[str, dict[str, Any]] | None = None,
+    sets: dict[str, list[dict[str, Any]]] | None = None,
+    bindings: dict[str, tuple[ServiceAccountRef, list[str]]] | None = None,
     synced: bool = True,
 ) -> PolicyIndex:
-    """An index from raw specs, parsed the way the informer parses them, so invalid ones stay invalid."""
+    """An index from raw policies, parsed the way the informer parses them, so invalid ones stay refused."""
     index = PolicyIndex(
         listed=synced, freshness=Freshness(stale_after_seconds=900, at={"test-kind": NOW}), clock=lambda: NOW
     )
-    for name, spec in (sets or {}).items():
-        policy_set = parse_policy_set({"metadata": _meta(name, generation=4, version="40"), "spec": spec})
-        index.policy_sets[policy_set.namespaced_name] = policy_set
-    for name, spec in (bindings or {}).items():
-        binding = parse_binding({"metadata": _meta(name, version="7"), "spec": spec})
-        index.bindings[binding.namespaced_name] = binding
+    for name, policies in (sets or {}).items():
+        add_policy_set(index, name, policies, generation=4, namespace=NAMESPACE)
+    for name, (subject, named) in (bindings or {}).items():
+        add_policy_binding(index, name, subject, named, resource_version="7", namespace=NAMESPACE)
     return index
 
 
-BOUNDED_ECHO: dict[str, Any] = {
-    "autoApproveIf": [
-        {
-            "type": "argument_schema",
-            "actions": {"agentplane": ["echo"]},
-            "schema": {"type": "object", "required": ["n"], "properties": {"n": {"type": "integer", "maximum": 5}}},
-        }
-    ]
-}
-OWN_SUBJECT: dict[str, Any] = SUBJECT.model_dump()
+BOUNDED_ECHO: list[dict[str, Any]] = [
+    {
+        "type": "argument_schema",
+        "actions": {"agentplane": ["echo"]},
+        "schema": {"type": "object", "required": ["n"], "properties": {"n": {"type": "integer", "maximum": 5}}},
+    }
+]
 
 
 def _service(
@@ -407,11 +392,8 @@ async def test_bound_subject_is_auto_approved_with_evidence_and_an_execution(
     github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
     index = _index(
-        sets={"bounded-echo": BOUNDED_ECHO, "unused": {"autoApproveIf": []}},
-        bindings={
-            "coder-bounded": {"subject": OWN_SUBJECT, "policySets": ["bounded-echo", "missing"]},
-            "coder-unused": {"subject": OWN_SUBJECT, "policySets": ["unused"]},
-        },
+        sets={"bounded-echo": BOUNDED_ECHO, "unused": []},
+        bindings={"coder-bounded": (SUBJECT, ["bounded-echo", "missing"]), "coder-unused": (SUBJECT, ["unused"])},
     )
     service = _service(engine, echo_catalog, mcp_executor, index, github_visibility())
     async with service:
@@ -434,7 +416,7 @@ async def test_bound_subject_is_auto_approved_with_evidence_and_an_execution(
         assert allowed.decision.policy_evidence.matched == MatchedPolicy(
             namespace=NAMESPACE,
             policy_set="bounded-echo",
-            source=PolicySource.AUTO_APPROVE_IF,
+            source=PolicySource.RULES,
             index=0,
             type=PolicyKind.ARGUMENT_SCHEMA,
         )
@@ -459,59 +441,23 @@ async def test_bound_subject_is_auto_approved_with_evidence_and_an_execution(
         pytest.param(lambda: None, id="no-policy-objects"),
         pytest.param(
             lambda: _index(
-                sets={"bounded-echo": BOUNDED_ECHO},
-                bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["bounded-echo"]}},
-                synced=False,
+                sets={"bounded-echo": BOUNDED_ECHO}, bindings={"coder": (SUBJECT, ["bounded-echo"])}, synced=False
             ),
             id="unsynced",
         ),
         pytest.param(lambda: _index(sets={"bounded-echo": BOUNDED_ECHO}), id="no-binding"),
         pytest.param(
-            lambda: _index(
-                sets={"bounded-echo": BOUNDED_ECHO},
-                bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["other"]}},
-            ),
+            lambda: _index(sets={"bounded-echo": BOUNDED_ECHO}, bindings={"coder": (SUBJECT, ["other"])}),
             id="missing-set",
         ),
         pytest.param(
-            lambda: _index(
-                sets={"broken": {"autoApproveIf": [{"type": "anything"}]}},
-                bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["broken"]}},
-            ),
+            lambda: _index(sets={"broken": [{"type": "anything"}]}, bindings={"coder": (SUBJECT, ["broken"])}),
             id="invalid-set",
         ),
         pytest.param(
             lambda: _index(
                 sets={"bounded-echo": BOUNDED_ECHO},
-                bindings={
-                    "coder": {
-                        # A subject is a namespace and a name together; half of one parses as neither.
-                        "subject": {"name": "coder"},
-                        "policySets": ["bounded-echo"],
-                    }
-                },
-            ),
-            id="invalid-binding",
-        ),
-        pytest.param(
-            lambda: _index(
-                sets={"bounded-echo": BOUNDED_ECHO},
-                bindings={
-                    "coder": {
-                        "subject": OWN_SUBJECT,
-                        "policySets": ["bounded-echo"],
-                        "expiresAt": (NOW - timedelta(minutes=1)).isoformat(),
-                    }
-                },
-            ),
-            id="expired-binding",
-        ),
-        pytest.param(
-            lambda: _index(
-                sets={"bounded-echo": BOUNDED_ECHO},
-                bindings={
-                    "other": {"subject": {"namespace": NAMESPACE, "name": "workload-b"}, "policySets": ["bounded-echo"]}
-                },
+                bindings={"other": (ServiceAccountRef(namespace=NAMESPACE, name="workload-b"), ["bounded-echo"])},
             ),
             id="another-account",
         ),
@@ -519,23 +465,21 @@ async def test_bound_subject_is_auto_approved_with_evidence_and_an_execution(
             lambda: _index(
                 sets={"bounded-echo": BOUNDED_ECHO},
                 bindings={
-                    "account": {
-                        "subject": {"namespace": "agentplane-elsewhere", "name": SUBJECT.name},
-                        "policySets": ["bounded-echo"],
-                    }
+                    "account": (
+                        ServiceAccountRef(namespace="agentplane-elsewhere", name=SUBJECT.name),
+                        ["bounded-echo"],
+                    )
                 },
             ),
             id="same-name-other-namespace",
         ),
         pytest.param(
-            lambda: _index(
-                sets={"no-policies": {}}, bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["no-policies"]}}
-            ),
+            lambda: _index(sets={"no-policies": []}, bindings={"coder": (SUBJECT, ["no-policies"])}),
             id="set-with-no-policies",
         ),
     ],
 )
-async def test_nothing_grants_without_a_matching_valid_unexpired_binding(
+async def test_nothing_grants_without_a_matching_valid_binding(
     mcp_executor: McpActionGroupExecutor,
     engine: AsyncEngine,
     echo_catalog: ActionCatalog,
@@ -561,15 +505,12 @@ async def test_binding_change_after_admission_leaves_the_decision_alone(
     echo_catalog: ActionCatalog,
     github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
-    index = _index(
-        sets={"bounded-echo": BOUNDED_ECHO},
-        bindings={"coder": {"subject": OWN_SUBJECT, "policySets": ["bounded-echo"]}},
-    )
+    index = _index(sets={"bounded-echo": BOUNDED_ECHO}, bindings={"coder": (SUBJECT, ["bounded-echo"])})
     service = _service(engine, echo_catalog, mcp_executor, index, github_visibility())
     async with service:
         allowed = await service.submit(body("before-removal"), CALLER)
         assert allowed.state is ActionState.ALLOWED
-        index.bindings.clear()
+        index.policy_bindings.clear()
         assert (await service.submit(body("after-removal"), CALLER)).state is ActionState.DECISION_PENDING
         view = await wait_for_state(service, allowed.id, CALLER, want=ActionState.SUCCEEDED)
         assert view.decision == allowed.decision

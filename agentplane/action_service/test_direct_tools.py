@@ -40,7 +40,6 @@ from agentplane.action_service.direct_tools import DIRECT_CALL_TITLE
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.mcp_frontend import DisconnectSignalMiddleware, create_server
 from agentplane.action_service.models import ActionState, CallerPrincipal, ExecutionResult, ExecutionState
-from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_evaluation import PROVIDER_NAME, PolicySetDecisionProvider
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
@@ -50,6 +49,7 @@ from agentplane.action_service.store import ActionStore
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, TEST_NAMESPACE, admitted_callers
 from agentplane.action_service.testing.fixtures import ScriptedExecutor, lifespan_in_own_task
 from agentplane.action_service.testing.mcp_client import asgi_mcp_client, text_of
+from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -104,33 +104,19 @@ def _policies() -> PolicyIndex:
     """PERSONAL may run `snapshot`, `internal` and `exec` outright, and `search` only for public
     targets; OTHER is bound to nothing."""
     index = admitted_callers(PERSONAL, OTHER)
-    metadata = {"namespace": TEST_NAMESPACE, "generation": 1, "resourceVersion": "1"}
-    policy_set = parse_policy_set(
-        {
-            "metadata": {"name": "test-direct", "uid": "uid-test-direct", **metadata},
-            "spec": {
-                "autoApproveIf": [
-                    {
-                        "type": "exact_actions",
-                        "actions": {"test-mcp": ["snapshot", "internal"], "test-sandbox": ["exec"]},
-                    },
-                    {
-                        "type": "argument_schema",
-                        "actions": {"test-mcp": ["search"]},
-                        "schema": {"type": "object", "required": ["public"], "properties": {"public": {"const": True}}},
-                    },
-                ]
+    add_policy_set(
+        index,
+        "test-direct",
+        [
+            {"type": "exact_actions", "actions": {"test-mcp": ["snapshot", "internal"], "test-sandbox": ["exec"]}},
+            {
+                "type": "argument_schema",
+                "actions": {"test-mcp": ["search"]},
+                "schema": {"type": "object", "required": ["public"], "properties": {"public": {"const": True}}},
             },
-        }
+        ],
     )
-    index.policy_sets[policy_set.namespaced_name] = policy_set
-    binding = parse_binding(
-        {
-            "metadata": {"name": "test-personal-direct", "uid": "uid-test-personal-direct", **metadata},
-            "spec": {"subject": {"namespace": TEST_NAMESPACE, "name": PERSONAL.name}, "policySets": ["test-direct"]},
-        }
-    )
-    index.bindings[binding.namespaced_name] = binding
+    add_policy_binding(index, "test-personal-direct", PERSONAL, ["test-direct"])
     return index
 
 

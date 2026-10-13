@@ -41,7 +41,7 @@ from agentplane.action_service.models import (
     OperatorPrincipal,
     Verdict,
 )
-from agentplane.action_service.policies.resources import BINDINGS_PLURAL, POLICY_SETS_PLURAL, SERVICE_ACCOUNTS_PLURAL
+from agentplane.action_service.policies.resources import SERVICE_ACCOUNTS_PLURAL
 from agentplane.action_service.policy_evaluation import PROVIDER_NAME
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.runtime import running_executor
@@ -435,29 +435,30 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
 
     async with fake_apiserver(
         namespace_of={
-            POLICY_SETS_PLURAL: namespace,
-            BINDINGS_PLURAL: namespace,
             SERVICE_ACCOUNTS_PLURAL: namespace,
             policy_sets.POLICY_SETS_PLURAL: namespace,
             policy_sets.POLICY_BINDINGS_PLURAL: namespace,
         }
     ) as fake:
         fake.put(
-            POLICY_SETS_PLURAL,
+            policy_sets.POLICY_SETS_PLURAL,
             {
                 "apiVersion": f"{GROUP}/{VERSION}",
-                "kind": "ActionPolicySet",
+                "kind": "PolicySet",
                 "metadata": {"name": "bounded-echo", "namespace": namespace},
                 "spec": {
-                    "autoApproveIf": [
+                    "rules": [
                         {
-                            "type": "argument_schema",
-                            "actions": {"fixture": ["echo"]},
-                            "schema": {
-                                "type": "object",
-                                "required": ["message"],
-                                "properties": {"message": {"type": "string", "maxLength": 200}},
-                                "additionalProperties": False,
+                            "type": "action_auto_approve",
+                            "policy": {
+                                "type": "argument_schema",
+                                "actions": {"fixture": ["echo"]},
+                                "schema": {
+                                    "type": "object",
+                                    "required": ["message"],
+                                    "properties": {"message": {"type": "string", "maxLength": 200}},
+                                    "additionalProperties": False,
+                                },
                             },
                         }
                     ]
@@ -465,10 +466,10 @@ async def test_main_auto_approves_the_bound_service_account_from_watched_policy_
             },
         )
         fake.put(
-            BINDINGS_PLURAL,
+            policy_sets.POLICY_BINDINGS_PLURAL,
             {
                 "apiVersion": f"{GROUP}/{VERSION}",
-                "kind": "ActionPolicyBinding",
+                "kind": "PolicyBinding",
                 "metadata": {"name": "fixture-echo", "namespace": namespace},
                 "spec": {"subject": {"namespace": bound.namespace, "name": bound.name}, "policySets": ["bounded-echo"]},
             },

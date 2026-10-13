@@ -1,7 +1,7 @@
 """Configured Actions as MCP tools of their own, for callers on an external Connection.
 
 A group's reviewed `direct_tools` names the Actions an external Connection also sees as tools named
-`<group>__<action>`, listed only where an `autoApproveIf` policy bound to the caller names the
+`<group>__<action>`, listed only where an `action_auto_approve` policy bound to the caller names the
 Action: one no policy of the caller's could approve would refuse every call. A call is an ordinary
 Action admitted through `submit_decided`, so it either runs and answers as its tool did, or is
 refused before anything is persisted, saying why. The listing is presentation only; every call is

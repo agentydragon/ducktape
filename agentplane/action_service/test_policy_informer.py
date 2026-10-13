@@ -1,4 +1,4 @@
-"""The informer against the fake API server: sync, Ready status writes, label changes, deletion."""
+"""The informer against the fake API server: sync, ActionsReady status writes, label changes, deletion."""
 
 from __future__ import annotations
 
@@ -14,16 +14,7 @@ from kubernetes_asyncio.client import ApiClient, CoreV1Api, CustomObjectsApi
 
 from agentplane import policy_sets
 from agentplane.action_service.models import NamespacedName
-from agentplane.action_service.policies.resources import (
-    ACTIONS_READY_CONDITION,
-    BINDINGS_PLURAL,
-    CALLER_LABEL,
-    POLICY_SETS_PLURAL,
-    SERVICE_ACCOUNTS_PLURAL,
-    ActionPolicyBinding,
-    ActionPolicySet,
-    InvalidResource,
-)
+from agentplane.action_service.policies.resources import ACTIONS_READY_CONDITION, CALLER_LABEL, SERVICE_ACCOUNTS_PLURAL
 from agentplane.action_service.policy_informer import PolicyIndex, PolicyInformer
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.kubernetes_watch import Freshness
@@ -33,10 +24,6 @@ from util.kubernetes import CustomObjectsClient
 
 NAMESPACE = "agentplane-policy-test"
 NOW = datetime(2026, 9, 12, 12, 0, tzinfo=UTC)
-VALID_SET = "reads"
-GITHUB_SET = "github-reads"
-INVALID_SET = "broken"
-BINDING = "caller-reads"
 RULES_SET = "test-rules"
 REFUSING_SET = "test-refused-rules"
 POLICY_BINDING = "test-policy-binding"
@@ -51,25 +38,7 @@ KUBERNETES_READY = {
 }
 
 
-def policy_set(name: str, spec: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "apiVersion": f"{GROUP}/{VERSION}",
-        "kind": "ActionPolicySet",
-        "metadata": {"name": name, "namespace": NAMESPACE},
-        "spec": spec,
-    }
-
-
-def binding(name: str, subject: dict[str, Any], policy_sets: list[str]) -> dict[str, Any]:
-    return {
-        "apiVersion": f"{GROUP}/{VERSION}",
-        "kind": "ActionPolicyBinding",
-        "metadata": {"name": name, "namespace": NAMESPACE},
-        "spec": {"subject": subject, "policySets": policy_sets},
-    }
-
-
-def generic_set(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
+def policy_set(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "apiVersion": f"{GROUP}/{VERSION}",
         "kind": "PolicySet",
@@ -98,29 +67,8 @@ def service_account(name: str, *, labeled: bool) -> dict[str, Any]:
 
 def seed(fake: FakeApiServer) -> None:
     fake.put(
-        POLICY_SETS_PLURAL,
-        policy_set(VALID_SET, {"autoApproveIf": [{"type": "exact_actions", "actions": {"g": ["a"]}}]}),
-    )
-    fake.put(
-        POLICY_SETS_PLURAL,
-        policy_set(
-            GITHUB_SET,
-            {
-                "autoApproveIf": [
-                    {"type": "github_repository", "actions": {"g": ["a"]}, "owner": "test-owner", "repository": "r"},
-                    {"type": "github_public_repository", "actions": {"g": ["a"]}},
-                ]
-            },
-        ),
-    )
-    fake.put(
-        POLICY_SETS_PLURAL,
-        policy_set(INVALID_SET, {"autoApproveIf": [{"type": "no_such_kind", "actions": {"g": ["a"]}}]}),
-    )
-    fake.put(BINDINGS_PLURAL, binding(BINDING, {"namespace": NAMESPACE, "name": CALLER}, [VALID_SET]))
-    fake.put(
         policy_sets.POLICY_SETS_PLURAL,
-        generic_set(
+        policy_set(
             RULES_SET,
             [
                 {"type": "kubernetes_cluster_role_binding", "clusterRole": "test-reader"},
@@ -130,7 +78,7 @@ def seed(fake: FakeApiServer) -> None:
     )
     fake.put(
         policy_sets.POLICY_SETS_PLURAL,
-        generic_set(REFUSING_SET, [{"type": "action_auto_approve", "policy": {"type": "no_such_kind", "actions": {}}}]),
+        policy_set(REFUSING_SET, [{"type": "action_auto_approve", "policy": {"type": "no_such_kind", "actions": {}}}]),
     )
     # Another reader's condition already on the binding, which this service's writes must keep.
     fake.put(
@@ -145,8 +93,6 @@ def seed(fake: FakeApiServer) -> None:
 async def fake() -> AsyncIterator[FakeApiServer]:
     async with fake_apiserver(
         namespace_of={
-            POLICY_SETS_PLURAL: NAMESPACE,
-            BINDINGS_PLURAL: NAMESPACE,
             SERVICE_ACCOUNTS_PLURAL: NAMESPACE,
             policy_sets.POLICY_SETS_PLURAL: NAMESPACE,
             policy_sets.POLICY_BINDINGS_PLURAL: NAMESPACE,
@@ -178,58 +124,14 @@ async def index(fake: FakeApiServer) -> AsyncIterator[PolicyIndex]:
             await asyncio.gather(task, return_exceptions=True)
 
 
-def key(name: str) -> NamespacedName:
-    return NamespacedName(NAMESPACE, name)
-
-
-def _ready(index: PolicyIndex, name: str, status: str, generation: int) -> bool:
-    ready = index.policy_sets[key(name)].status.ready()
-    return ready is not None and ready.status == status and ready.observed_generation == generation
-
-
-async def test_initial_sync_keeps_invalid_objects_and_only_labeled_callers(index: PolicyIndex) -> None:
-    assert isinstance(index.policy_sets[key(VALID_SET)], ActionPolicySet)
-    assert isinstance(index.policy_sets[key(GITHUB_SET)], ActionPolicySet)
-    broken = index.policy_sets[key(INVALID_SET)]
-    assert isinstance(broken, InvalidResource)
-    assert "autoApproveIf.0" in broken.message
-    assert isinstance(index.bindings[key(BINDING)], ActionPolicyBinding)
+async def test_initial_sync_indexes_rule_sets_bindings_and_only_labeled_callers(index: PolicyIndex) -> None:
+    assert isinstance(index.rule_sets[RULES_SET], policy_sets.PolicySet)
+    assert isinstance(index.rule_sets[REFUSING_SET], policy_sets.RefusedPolicySet)
+    assert index.policy_bindings[POLICY_BINDING].spec.subject == ServiceAccountRef(namespace=NAMESPACE, name=CALLER)
     assert index.caller_service_accounts() == [ServiceAccountRef(namespace=NAMESPACE, name=CALLER)]
     assert index.admits(ServiceAccountRef(namespace=NAMESPACE, name=CALLER))
     assert not index.admits(ServiceAccountRef(namespace=NAMESPACE, name=UNLABELED))
     assert not index.admits(ServiceAccountRef(namespace="agentplane-other", name=CALLER))
-
-
-async def test_ready_is_written_once_per_generation_and_names_the_fault(
-    fake: FakeApiServer, index: PolicyIndex
-) -> None:
-    await index.wait_for(
-        lambda: (
-            _ready(index, VALID_SET, "True", 1)
-            and _ready(index, GITHUB_SET, "True", 1)
-            and _ready(index, INVALID_SET, "False", 1)
-            and index.bindings[key(BINDING)].status.ready() is not None
-        )
-    )
-    written = {name: patch["conditions"][0] for name, patch in fake.status_patches}
-    assert written[VALID_SET]["reason"] == "Valid"
-    assert written[GITHUB_SET]["reason"] == "Valid"
-    assert written[INVALID_SET]["reason"] == "Invalid"
-    assert "no_such_kind" in written[INVALID_SET]["message"]
-    assert written[INVALID_SET]["observedGeneration"] == 1
-    assert written[VALID_SET]["lastTransitionTime"] == "2026-09-12T12:00:00Z"
-    # The MODIFIED event carrying the written status is not a reason to write it again.
-    assert sorted(name for name, _ in fake.status_patches if name != POLICY_BINDING) == sorted(
-        [BINDING, GITHUB_SET, INVALID_SET, VALID_SET]
-    )
-
-    fake.put(
-        POLICY_SETS_PLURAL,
-        policy_set(INVALID_SET, {"autoApproveIf": [{"type": "exact_actions", "actions": {"g": ["a"]}}]}),
-    )
-    await index.wait_for(lambda: _ready(index, INVALID_SET, "True", 2))
-    assert isinstance(index.policy_sets[key(INVALID_SET)], ActionPolicySet)
-    assert [name for name, _ in fake.status_patches].count(INVALID_SET) == 2
 
 
 def _actions_ready(fake: FakeApiServer) -> dict[str, Any] | None:
@@ -258,19 +160,19 @@ async def test_actions_ready_names_unavailable_sets_and_keeps_other_readers_cond
 
 async def test_label_removal_and_deletion_reach_the_index(fake: FakeApiServer, index: PolicyIndex) -> None:
     fake.put(SERVICE_ACCOUNTS_PLURAL, service_account(CALLER, labeled=False))
-    await index.wait_for(lambda: key(CALLER) not in index.service_accounts)
+    await index.wait_for(lambda: NamespacedName(NAMESPACE, CALLER) not in index.service_accounts)
     assert not index.admits(ServiceAccountRef(namespace=NAMESPACE, name=CALLER))
     fake.put(SERVICE_ACCOUNTS_PLURAL, service_account(UNLABELED, labeled=True))
-    await index.wait_for(lambda: key(UNLABELED) in index.service_accounts)
-    fake.delete(BINDINGS_PLURAL, BINDING)
-    await index.wait_for(lambda: key(BINDING) not in index.bindings)
+    await index.wait_for(lambda: NamespacedName(NAMESPACE, UNLABELED) in index.service_accounts)
+    fake.delete(policy_sets.POLICY_BINDINGS_PLURAL, POLICY_BINDING)
+    await index.wait_for(lambda: POLICY_BINDING not in index.policy_bindings)
 
 
 async def test_watch_end_relists(fake: FakeApiServer, index: PolicyIndex) -> None:
     """Changes made while no watch is open are picked up by the relist that follows."""
     fake.close_watches()
-    fake.put(POLICY_SETS_PLURAL, policy_set("late", {"autoApproveIf": []}))
-    await index.wait_for(lambda: key("late") in index.policy_sets)
+    fake.put(policy_sets.POLICY_SETS_PLURAL, policy_set("late", []))
+    await index.wait_for(lambda: "late" in index.rule_sets)
 
 
 if __name__ == "__main__":

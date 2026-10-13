@@ -36,7 +36,6 @@ from agentplane.action_service.models import (
     ProviderVerdict,
     Verdict,
 )
-from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_evaluation import PROVIDER_NAME, PolicySetDecisionProvider
 from agentplane.action_service.providers import DecisionContext
 from agentplane.action_service.service import ActionService
@@ -44,6 +43,7 @@ from agentplane.action_service.store import ActionConflictError, ActionStore, Ex
 from agentplane.action_service.testing.callers import OTHER, PERSONAL, admitted_callers, in_sync_index
 from agentplane.action_service.testing.fixtures import RecordingExecutor
 from agentplane.action_service.testing.lifecycle import wait_for_state
+from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set
 from agentplane.changes import ChangeSignal
 from agentplane.subjects import ServiceAccountRef
 
@@ -323,28 +323,9 @@ async def test_bound_service_account_is_auto_approved_by_its_binding_only(
     echo_executor: RecordingExecutor,
     github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
-    namespace = PERSONAL.namespace
     index = in_sync_index()
-    policy_set = parse_policy_set(
-        {
-            "metadata": {"name": "echo", "namespace": namespace, "uid": "u1", "generation": 1, "resourceVersion": "1"},
-            "spec": {"autoApproveIf": [{"type": "exact_actions", "actions": {"agentplane": ["echo"]}}]},
-        }
-    )
-    index.policy_sets[policy_set.namespaced_name] = policy_set
-    binding = parse_binding(
-        {
-            "metadata": {
-                "name": "personal-echo",
-                "namespace": namespace,
-                "uid": "u2",
-                "generation": 1,
-                "resourceVersion": "2",
-            },
-            "spec": {"subject": PERSONAL.model_dump(), "policySets": ["echo"]},
-        }
-    )
-    index.bindings[binding.namespaced_name] = binding
+    add_policy_set(index, "echo", [{"type": "exact_actions", "actions": {"agentplane": ["echo"]}}])
+    add_policy_binding(index, "personal-echo", PERSONAL, ["echo"])
     service = ActionService(
         store,
         echo_catalog,

@@ -8,14 +8,12 @@ Decision, not this one's, so the Decision records what it saw.
 from __future__ import annotations
 
 from collections.abc import Sequence
-from datetime import datetime
 
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.models import (
     BindingEvidence,
     MatchedPolicy,
-    NamespacedName,
     PolicyEvidence,
     PolicySetEvidence,
     PolicySource,
@@ -24,7 +22,6 @@ from agentplane.action_service.models import (
 )
 from agentplane.action_service.policies.kind import Matched, NotMatched
 from agentplane.action_service.policies.registry import Policy, evaluate, lists
-from agentplane.action_service.policies.resources import ActionPolicySet, InvalidResource
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.providers import BindingKind, DecisionContext, ResolvedBinding, ResolvedPolicySet
 from agentplane.policy_sets import PolicyBinding, PolicySet, subject_bindings
@@ -37,43 +34,14 @@ NO_MATCH_REASON = "no_auto_approve_match"
 _DESCRIPTION_LIMIT = 500
 
 
-def resolve_bindings(index: PolicyIndex, caller: ServiceAccountRef, now: datetime) -> tuple[ResolvedBinding, ...]:
-    """The caller's bindings, each with the valid sets it names that exist; a set it names that is
-    missing or invalid contributes nothing. Nothing before sync.
-
-    First its unexpired, valid `ActionPolicyBinding`s in key order, then its `PolicyBinding`s in name
-    order, which the Policy Controller deletes at expiry. A grant's caller is matched by the
-    ServiceAccount behind it; the operator asks about that ServiceAccount directly, without a grant."""
+def resolve_bindings(index: PolicyIndex, caller: ServiceAccountRef) -> tuple[ResolvedBinding, ...]:
+    """The caller's `PolicyBinding`s in name order (the Policy Controller deletes one at expiry), each
+    with the valid sets it names that exist; a set it names that is missing or refused contributes
+    nothing. Nothing before sync. A grant's caller is matched by the ServiceAccount behind it; the
+    operator asks about that ServiceAccount directly, without a grant."""
     if not index.synced:
         return ()
-    resolved: list[ResolvedBinding] = []
-    for key in sorted(index.bindings):
-        binding = index.bindings[key]
-        if isinstance(binding, InvalidResource):
-            continue
-        spec = binding.spec
-        if spec.expires_at is not None and spec.expires_at <= now:
-            continue
-        if spec.subject != caller:
-            continue
-        resolved.append(
-            ResolvedBinding(
-                kind=BindingKind.ACTION_POLICY_BINDING,
-                namespace=binding.metadata.namespace,
-                name=binding.metadata.name,
-                resource_version=binding.metadata.resource_version,
-                expires_at=spec.expires_at,
-                policy_sets=tuple(
-                    _action_policy_set(policy_set)
-                    for name in spec.policy_sets
-                    if isinstance(
-                        policy_set := index.policy_sets.get(NamespacedName(binding.metadata.namespace, name)),
-                        ActionPolicySet,
-                    )
-                ),
-            )
-        )
-    resolved.extend(
+    return tuple(
         ResolvedBinding(
             kind=BindingKind.POLICY_BINDING,
             namespace=resolution.binding.metadata.namespace,
@@ -83,17 +51,6 @@ def resolve_bindings(index: PolicyIndex, caller: ServiceAccountRef, now: datetim
             policy_sets=tuple(_rule_set(resolution.binding, policy_set) for policy_set in resolution.sets),
         )
         for resolution in subject_bindings(index.rule_sets, index.policy_bindings, caller)
-    )
-    return tuple(resolved)
-
-
-def _action_policy_set(policy_set: ActionPolicySet) -> ResolvedPolicySet:
-    return ResolvedPolicySet(
-        namespace=policy_set.metadata.namespace,
-        name=policy_set.metadata.name,
-        generation=policy_set.metadata.generation,
-        source=PolicySource.AUTO_APPROVE_IF,
-        policies=tuple(enumerate(policy_set.spec.auto_approve_if)),
     )
 
 
@@ -142,9 +99,8 @@ def _evidence(context: DecisionContext, matched: MatchedPolicy) -> PolicyEvidenc
 class PolicySetDecisionProvider:
     """Allows a request the caller's bindings auto-approve; anything else is no opinion.
 
-    Auto-approval is the only form an Action policy takes, an `ActionPolicySet`'s `autoApproveIf` or a
-    `PolicySet`'s `action_auto_approve` rules; there is no deny form, so what does not match waits for
-    a human.
+    Auto-approval is the only form an Action policy takes, a `PolicySet`'s `action_auto_approve`
+    rules; there is no deny form, so what does not match waits for a human.
     """
 
     name = PROVIDER_NAME

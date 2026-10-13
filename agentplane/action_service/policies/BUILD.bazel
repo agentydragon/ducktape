@@ -63,8 +63,6 @@ py_library(
         ":kind",
         ":registry",
         "//agentplane:crd_group",
-        "//agentplane:subjects",
-        "//agentplane/action_service:models",
         "@pypi//pydantic",
     ],
 )
@@ -121,10 +119,12 @@ py_test(
     name = "test_resources",
     srcs = ["test_resources.py"],
     deps = [
+        ":exact_actions",
         ":resources",
         "//:conftest",
-        "//agentplane:subjects",
+        "//agentplane:policy_sets",
         "//agentplane/action_service:conftest",
+        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

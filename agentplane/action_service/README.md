@@ -307,7 +307,7 @@ A group's `direct_tools` names Actions an external Connection also gets as MCP t
 (`direct_tools.py`), named `<group>__<action>` with the Action's schema, description, title and
 annotations (mirrored from an MCP backend's `tools/list`, declared by the sandbox roster). Each
 request lists them for a caller whose bearer is a Connection grant, keeping only those an
-`autoApproveIf` policy of its bindings names (`policy_evaluation.auto_approvable`); a workload
+`action_auto_approve` policy of its bindings names (`policy_evaluation.auto_approvable`); a workload
 bearer sees none. A group offering them must not have `__` in its key, and a sandbox group's names
 must be in its roster at startup.
 
@@ -431,22 +431,16 @@ is accepted.
 
 ## Action policy sets and bindings
 
-`policies/resources` parses `ActionPolicySet` and `ActionPolicyBinding` (CRDs in
-`agentplane/crds/`) strictly: an unknown key or policy kind, an invalid JSON Schema, or
-a subject that is not a namespaced ServiceAccount makes the object an `InvalidResource`.
-`policy_informer` list-and-watches both kinds only in `policy_namespace`, and labeled caller
-ServiceAccounts only in `caller_service_account_namespaces`, into one `PolicyIndex`. It writes each
-set's and binding's `Ready` condition with `observedGeneration`, so `kubectl get` shows a refused
-edit and a writer can wait for the service to have seen a spec change. The status subresource is
-the informer's only write, and the rendered Roles grant these permissions independently in the
-namespaces that need them.
-
-The generic `PolicySet`/`PolicyBinding` go through `agentplane/policy_sets.py`, the resolver every
-rule type's reader shares: `parse_action_rule` keeps a set's `action_auto_approve` rules and skips
-the others, and `ConditionReporter` writes this service's `ActionsReady` by server-side apply under
-its own field manager, so the Policy Controller's `KubernetesReady` on the same binding stays.
-`policy_evaluation.resolve_bindings` flattens both pairs into one `ResolvedBinding` shape, old kind
-first, which admission, the evidence and the policy views all read.
+`PolicySet` and `PolicyBinding` (CRDs in `agentplane/crds/`) go through `agentplane/policy_sets.py`,
+the resolver every rule type's reader shares: `policies/resources.parse_action_rule` keeps a set's
+`action_auto_approve` rules, parsed strictly (an unknown key or policy kind or an invalid JSON Schema
+refuses the set), and skips the others. `policy_informer` list-and-watches both kinds only in
+`policy_namespace`, and labeled caller ServiceAccounts only in `caller_service_account_namespaces`,
+into one `PolicyIndex`. `ConditionReporter` writes this service's `ActionsReady` on each binding by
+server-side apply under its own field manager, so the Policy Controller's `KubernetesReady` on the same
+binding stays; it is the informer's only write, and the rendered Roles grant these permissions
+independently in the namespaces that need them. `policy_evaluation.resolve_bindings` flattens the
+pairs into one `ResolvedBinding` shape, which admission, the evidence and the policy views all read.
 
 Each policy kind is one module under `policies/` holding its wire model and its evaluator
 (`exact_actions`; `argument_schema` over the `jsonschema` package; `github_repository` and
@@ -455,7 +449,7 @@ boundaries and the unauthenticated visibility lookup; `home_assistant_entity_con
 over the arguments of `ha_call_service`);
 `policies/registry` assembles the `type`-discriminated union and dispatches evaluation after the
 shared "is the Action listed" gate. `policy_evaluation` holds `resolve_bindings` (the caller's
-unexpired valid bindings and the valid sets they name, nothing before sync) and
+bindings and the valid sets they name, nothing before sync) and
 `PolicySetDecisionProvider`, the one production `DecisionProvider`, which `main` builds with the
 `RepositoryVisibilityService` the `github_visibility` settings describe (`api_base_url`,
 `cache_ttl_seconds`); staging's network policy admits `api.github.com:443` for that lookup.
@@ -463,7 +457,7 @@ unexpired valid bindings and the valid sets they name, nothing before sync) and
 from the workload principal, `ServiceAccountCaller` from the grant) and those bindings; the
 provider's allow carries `PolicyEvidence`, persisted on the Decision and projected as `DecisionView.policy_evidence`, whose `matched.repository`
 names the repository a GitHub kind resolved and whether the public lookup confirmed it. A set has
-no deny form: `autoApproveIf` is the only list, and what it does not match waits for a human.
+no deny form: `action_auto_approve` is the only rule, and what it does not match waits for a human.
 Dispatch re-checks caller authority, never policy.
 
 `policy_view` projects that same `resolve_bindings` for readers: `GET /v1/action-policy` answers
@@ -471,7 +465,7 @@ the authenticated caller (the ServiceAccount its Pod runs as, on the workload ro
 `get_action_policy` tool a `target` (the caller itself by default, or a named ServiceAccount) with
 the redacted `CallerActionPolicyView`, and
 `GET /v1/operator/action-policy/service-accounts/{namespace}/{name}` answers the operator with
-`SubjectActionPolicyView`, adding each binding's labels and `Ready` verdict and each named set as
+`SubjectActionPolicyView`, adding each binding's labels and `ActionsReady` verdict and each named set as
 present, refused or missing. Both carry `synced`; the integration app's Sandbox page reads the
 operator form.
 
@@ -484,8 +478,8 @@ composition against a fake API server.
 ## Authentication boundaries
 
 `caller_service_account_namespaces` lists the Kubernetes namespaces whose labeled ServiceAccounts
-may authenticate callers. `policy_namespace` names where ActionPolicySets, ActionPolicyBindings, PolicySets and
-PolicyBindings are read and their conditions are written. These settings are independent: a binding in a policy
+may authenticate callers. `policy_namespace` names where PolicySets and PolicyBindings are read and
+`ActionsReady` is written. These settings are independent: a binding in a policy
 namespace can name a ServiceAccount in another caller namespace. Neither setting approves Actions or
 selects an MCP destination.
 

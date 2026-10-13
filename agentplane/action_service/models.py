@@ -70,7 +70,7 @@ def service_account_key(account: ServiceAccountRef) -> NamespacedName:
 
 
 class PolicyKind(StrEnum):
-    """The `type` of one ActionPolicySet policy; each names one Python evaluator."""
+    """The `type` of one Action policy; each names one Python evaluator."""
 
     EXACT_ACTIONS = "exact_actions"
     ARGUMENT_SCHEMA = "argument_schema"
@@ -111,7 +111,6 @@ class MatchedRepository(BaseModel):
 class PolicySource(StrEnum):
     """Which list of a set the matched policy sits in. Persisted in Decisions: append-only."""
 
-    AUTO_APPROVE_IF = "autoApproveIf"  # an ActionPolicySet's
     RULES = "rules"  # a PolicySet's
 
 

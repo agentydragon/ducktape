@@ -400,7 +400,7 @@ class ActionService:
             action=body.action,
             arguments=body.arguments,
             caller=caller,
-            bindings=resolve_bindings(self._policies, caller, self._clock()),
+            bindings=resolve_bindings(self._policies, caller),
         )
         return list(await asyncio.gather(*(self._ask(provider, context) for provider in self._providers)))
 
@@ -419,21 +419,21 @@ class ActionService:
 
     def auto_approvable(self, principal: CallerPrincipal) -> frozenset[ActionIdentity]:
         """The Actions the caller's bindings could auto-approve now, for some arguments."""
-        return auto_approvable(resolve_bindings(self._policies, principal.account, self._clock()))
+        return auto_approvable(resolve_bindings(self._policies, principal.account))
 
     def caller_action_policy(
         self, principal: CallerPrincipal, external_grant: ExternalGrantProvenance | None
     ) -> CallerActionPolicyView:
         """What the caller's own bindings auto-decide, resolved as admission would resolve them now."""
-        return caller_view(self._policies, principal.account, self._clock())
+        return caller_view(self._policies, principal.account)
 
     def target_action_policy(self, subject: ServiceAccountRef) -> CallerActionPolicyView:
         """What a named subject's bindings auto-decide, in the view a caller may see."""
-        return caller_view(self._policies, subject, self._clock())
+        return caller_view(self._policies, subject)
 
     def subject_action_policy(self, subject: ServiceAccountRef) -> SubjectActionPolicyView:
         """The operator's view of what a named subject's bindings auto-decide, resolved the same way."""
-        return subject_view(self._policies, subject, self._clock())
+        return subject_view(self._policies, subject)
 
     async def list_requests(
         self, principal: ReadPrincipal, *, states: tuple[ActionState, ...] = (), idempotency_key: str | None = None

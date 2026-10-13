@@ -36,11 +36,11 @@ from agentplane.action_service.models import (
     OperatorPrincipal,
     Verdict,
 )
-from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_view import SubjectActionPolicyView
 from agentplane.action_service.service import ActionService, ExecutionLease, Executor
 from agentplane.action_service.testing.callers import admitted_callers, in_sync_index
 from agentplane.action_service.testing.credentials import OperatorIdp
+from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set
 from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
@@ -580,23 +580,24 @@ async def test_operator_reads_a_named_subjects_effective_policy(
     and gets the same resolution admission uses, with each named set's standing. A workload bearer
     is not an operator on this surface either."""
     index = in_sync_index()
-    metadata = {"namespace": NAMESPACE, "uid": "test-uid", "generation": 2, "resourceVersion": "9"}
-    policy_set = parse_policy_set(
-        {
-            "metadata": {"name": "reads", **metadata},
-            "spec": {"autoApproveIf": [{"type": "exact_actions", "actions": {"agentplane": ["echo"]}}]},
-        }
+    add_policy_set(
+        index,
+        "reads",
+        [{"type": "exact_actions", "actions": {"agentplane": ["echo"]}}],
+        generation=2,
+        namespace=NAMESPACE,
     )
-    index.policy_sets[policy_set.namespaced_name] = policy_set
     account = ServiceAccountRef(namespace=NAMESPACE, name="test-client")
-    for name, subject in (("sandbox-a-reads", ACCOUNT_A.model_dump()), ("client-reads", account.model_dump())):
-        bound = parse_binding(
-            {
-                "metadata": {"name": name, "labels": {"test.example/writer": name}, **metadata},
-                "spec": {"subject": subject, "policySets": ["reads", "gone"]},
-            }
+    for name, subject in (("sandbox-a-reads", ACCOUNT_A), ("client-reads", account)):
+        add_policy_binding(
+            index,
+            name,
+            subject,
+            ["reads", "gone"],
+            resource_version="9",
+            labels={"test.example/writer": name},
+            namespace=NAMESPACE,
         )
-        index.bindings[bound.namespaced_name] = bound
     service = ActionService(
         action_store(make_sessionmaker(engine)),
         echo_catalog,

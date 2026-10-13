@@ -176,3 +176,15 @@ py_library(
         "@pypi//more_itertools",
     ],
 )
+
+py_library(
+    name = "policies",
+    srcs = ["policies.py"],
+    deps = [
+        ":callers",
+        "//agentplane:policy_sets",
+        "//agentplane:subjects",
+        "//agentplane/action_service:policy_informer",
+        "//agentplane/action_service/policies:resources",
+    ],
+)

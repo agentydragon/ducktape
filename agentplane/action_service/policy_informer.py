@@ -1,10 +1,7 @@
 """Read-only list-and-watch of policy sets, bindings and caller ServiceAccounts into this replica's index.
 
-The one write is each set's and binding's `Ready` condition: `True` once the spec parsed, `False`
-with the validation report otherwise, stamped with the generation it judged so `kubectl get`
-shows a bad runtime edit and a watcher can tell when a spec change has been seen. On a generic
-`PolicyBinding` it is `ActionsReady` instead, `False` while a set it names is missing or holds an
-Action rule this service refuses; a `PolicySet` has no status of its own.
+The one write is each `PolicyBinding`'s `ActionsReady` condition, `False` while a set it names is
+missing or holds an Action rule this service refuses; a `PolicySet` has no status of its own.
 """
 
 from __future__ import annotations
@@ -15,7 +12,6 @@ from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from functools import partial
-from typing import Literal
 
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import CoreV1Api
@@ -26,20 +22,10 @@ from agentplane.action_service.policies.registry import Policy
 from agentplane.action_service.policies.resources import (
     ACTIONS_FIELD_MANAGER,
     ACTIONS_READY_CONDITION,
-    BINDINGS_PLURAL,
     CALLER_LABEL,
     CALLER_LABEL_SELECTOR,
-    POLICY_SETS_PLURAL,
-    READY_CONDITION,
     SERVICE_ACCOUNTS_PLURAL,
-    ActionPolicyBinding,
-    ActionPolicySet,
-    Condition,
-    InvalidResource,
-    ObjectMeta,
     parse_action_rule,
-    parse_binding,
-    parse_policy_set,
 )
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.kubernetes_watch import Freshness
@@ -60,8 +46,6 @@ from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
 logger = logging.getLogger(__name__)
 
-_MERGE_PATCH = "application/merge-patch+json"
-
 
 @dataclass
 class PolicyIndex:
@@ -69,9 +53,7 @@ class PolicyIndex:
     `changed` pulses on every mutation so readers can wait for a state rather than a duration."""
 
     freshness: Freshness
-    policy_sets: dict[NamespacedName, ActionPolicySet | InvalidResource] = field(default_factory=dict)
-    bindings: dict[NamespacedName, ActionPolicyBinding | InvalidResource] = field(default_factory=dict)
-    # The generic kinds in the policy namespace, of which this service reads the Action rules.
+    # The policy namespace's kinds, of which this service reads the Action rules.
     rule_sets: dict[str, PolicySet[Policy] | RefusedPolicySet] = field(default_factory=dict)
     policy_bindings: dict[str, PolicyBinding] = field(default_factory=dict)
     service_accounts: dict[NamespacedName, ServiceAccountRef] = field(default_factory=dict)
@@ -128,26 +110,6 @@ def _keys_in(store: Mapping[NamespacedName, object], namespace: str) -> set[Name
     return {key for key in store if key.namespace == namespace}
 
 
-def ready_condition(obj: ActionPolicySet | ActionPolicyBinding | InvalidResource, now: datetime) -> Condition:
-    """The Ready condition this replica wants on the object, keeping the transition time when only
-    the generation moved."""
-    observed = obj.status.ready()
-    status: Literal["True", "False", "Unknown"]
-    if isinstance(obj, InvalidResource):
-        status, reason, message = "False", "Invalid", obj.message
-    else:
-        status, reason, message = "True", "Valid", "spec accepted"
-    transitioned = observed.last_transition_time if observed is not None and observed.status == status else now
-    return Condition(
-        type=READY_CONDITION,
-        status=status,
-        reason=reason,
-        message=message,
-        observed_generation=obj.metadata.generation,
-        last_transition_time=transitioned,
-    )
-
-
 def actions_ready(index: PolicyIndex, binding: PolicyBinding, now: datetime) -> policy_sets.Condition:
     """The ActionsReady condition this replica wants on a `PolicyBinding`: whether every set it
     names exists and parses; the sets that do grant either way."""
@@ -183,29 +145,8 @@ class PolicyInformer:
         # The index's, not one of its own: it stamps the cycle times the index reads back as
         # freshness, and a second clock would be one more thing that has to agree.
         self._clock = index.clock
-        # What this replica last wrote, by object UID, so a write is not repeated while its own MODIFIED
-        # event is in flight and a recreated object (same name, new UID) is judged afresh.
-        self._written: dict[str, Condition] = {}
         self._reporter = ConditionReporter(custom_objects, field_manager=ACTIONS_FIELD_MANAGER)
         kinds: list[WatchedKind] = [
-            WatchedKind(
-                name=f"{policy_namespace}/{POLICY_SETS_PLURAL}",
-                list=custom_objects.list_namespaced_custom_object,
-                args=(GROUP, VERSION, policy_namespace, POLICY_SETS_PLURAL),
-                parse=parse_policy_set,
-                key=lambda obj: obj.namespaced_name,
-                names=partial(_keys_in, index.policy_sets, policy_namespace),
-                apply=lambda key, obj: apply_to(index.policy_sets, key, obj),
-            ),
-            WatchedKind(
-                name=f"{policy_namespace}/{BINDINGS_PLURAL}",
-                list=custom_objects.list_namespaced_custom_object,
-                args=(GROUP, VERSION, policy_namespace, BINDINGS_PLURAL),
-                parse=parse_binding,
-                key=lambda obj: obj.namespaced_name,
-                names=partial(_keys_in, index.bindings, policy_namespace),
-                apply=lambda key, obj: apply_to(index.bindings, key, obj),
-            ),
             WatchedKind(
                 name=f"{policy_namespace}/{policy_sets.POLICY_SETS_PLURAL}",
                 list=custom_objects.list_namespaced_custom_object,
@@ -260,47 +201,11 @@ class PolicyInformer:
         await self._index.notify()
 
     async def _reconcile_status(self) -> None:
+        if not self._index.listed:
+            # A set a binding names may merely not have been listed yet; reporting it missing would be false.
+            return
         now = self._clock()
-        for plural, store in self._stores():
-            for obj in list(store.values()):
-                desired = ready_condition(obj, now)
-                if _same(obj.status.ready(), desired) or _same(self._written.get(obj.metadata.uid), desired):
-                    continue
-                self._written[obj.metadata.uid] = desired
-                await self._write(plural, obj.metadata, desired)
-        # Forget objects that are gone, judged against the stores as they stand after the awaits above:
-        # a snapshot taken before them would forget another kind's write still in flight, and the next
-        # event would repeat it.
-        held = {obj.metadata.uid for _, store in self._stores() for obj in store.values()}
-        for uid in set(self._written) - held:
-            del self._written[uid]
         await self._reporter.report(
             (binding, actions_ready(self._index, binding, now))
             for binding in list(self._index.policy_bindings.values())
         )
-
-    def _stores(
-        self,
-    ) -> tuple[tuple[str, Mapping[NamespacedName, ActionPolicySet | ActionPolicyBinding | InvalidResource]], ...]:
-        return ((POLICY_SETS_PLURAL, self._index.policy_sets), (BINDINGS_PLURAL, self._index.bindings))
-
-    async def _write(self, plural: str, metadata: ObjectMeta, condition: Condition) -> None:
-        body = {"status": {"conditions": [condition.model_dump(mode="json", by_alias=True, exclude_none=True)]}}
-        try:
-            await self._custom_objects.patch_namespaced_custom_object_status(
-                GROUP, VERSION, metadata.namespace, plural, metadata.name, body, _content_type=_MERGE_PATCH
-            )
-        except k8s_client.ApiException as error:
-            # The object may be gone or edited meanwhile; the next event re-judges it. Nothing else
-            # depends on the write, so an outage here is loud but not fatal.
-            logger.warning("Ready status write for %s/%s failed: %s", plural, metadata.name, error.reason)
-            self._written.pop(metadata.uid, None)
-
-
-def _same(observed: Condition | None, desired: Condition) -> bool:
-    return observed is not None and (
-        observed.status,
-        observed.reason,
-        observed.message,
-        observed.observed_generation,
-    ) == (desired.status, desired.reason, desired.message, desired.observed_generation)

@@ -13,7 +13,6 @@ import pytest
 import pytest_bazel
 from pydantic import JsonValue
 
-from agentplane import policy_sets
 from agentplane.action_service.catalog import ActionIdentity
 from agentplane.action_service.github_policy.visibility import RepositoryVisibilityService
 from agentplane.action_service.models import (
@@ -23,14 +22,6 @@ from agentplane.action_service.models import (
     PolicySource,
     ProviderVerdict,
     service_account_key,
-)
-from agentplane.action_service.policies.resources import (
-    ActionPolicyBinding,
-    ActionPolicySet,
-    InvalidResource,
-    parse_action_rule,
-    parse_binding,
-    parse_policy_set,
 )
 from agentplane.action_service.policy_evaluation import AUTO_APPROVE_REASON, PolicySetDecisionProvider, resolve_bindings
 from agentplane.action_service.policy_informer import PolicyIndex
@@ -44,8 +35,8 @@ from agentplane.action_service.policy_view import (
     subject_view,
 )
 from agentplane.action_service.providers import BindingKind, DecisionContext
+from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set, add_rule_set
 from agentplane.kubernetes_watch import Freshness
-from agentplane.policy_sets import PolicyBinding
 from agentplane.subjects import ServiceAccountRef
 
 NAMESPACE = "agentplane-test"
@@ -65,101 +56,62 @@ SCHEMA_POLICY: dict[str, Any] = {
 }
 
 
-def _meta(
-    name: str, *, generation: int = 1, version: str = "1", labels: dict[str, str] | None = None
-) -> dict[str, Any]:
-    return {
-        "name": name,
-        "namespace": NAMESPACE,
-        "uid": f"uid-{name}",
-        "generation": generation,
-        "resourceVersion": version,
-        **({"labels": labels} if labels is not None else {}),
-    }
+type SetSpec = tuple[str, list[dict[str, Any]]]
 
 
-def policy_set(name: str, policies: list[dict[str, Any]], **meta: Any) -> ActionPolicySet | InvalidResource:
-    return parse_policy_set({"metadata": _meta(name, **meta), "spec": {"autoApproveIf": policies}})
-
-
-def binding(
-    name: str, subject: dict[str, Any], sets: list[str], *, expires_at: str | None = None, **meta: Any
-) -> ActionPolicyBinding | InvalidResource:
-    spec: dict[str, Any] = {"subject": subject, "policySets": sets}
-    if expires_at is not None:
-        spec["expiresAt"] = expires_at
-    return parse_binding({"metadata": _meta(name, **meta), "spec": spec})
-
-
-def index_of(*objects: ActionPolicySet | ActionPolicyBinding | InvalidResource, synced: bool = True) -> PolicyIndex:
-    index = PolicyIndex(
+def index_of(*, synced: bool = True) -> PolicyIndex:
+    return PolicyIndex(
         listed=synced, freshness=Freshness(stale_after_seconds=900, at={"test-kind": NOW}), clock=lambda: NOW
     )
-    for obj in objects:
-        key = obj.namespaced_name
-        if isinstance(obj, ActionPolicySet) or (
-            isinstance(obj, InvalidResource) and obj.metadata.name.startswith("set")
-        ):
-            index.policy_sets[key] = obj
-        else:
-            index.bindings[key] = obj
-    return index
 
 
-def test_resolution_takes_unexpired_valid_bindings_naming_the_caller_with_their_existing_sets() -> None:
-    reads = policy_set("set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}])
-    broken = policy_set("set-broken", [{"type": "nope", "actions": {"everything": ["echo"]}}])
-    index = index_of(
-        reads,
-        broken,
-        binding("b-workload", WORKLOAD.model_dump(), ["set-reads", "set-broken", "set-missing"]),
-        binding("b-granted", GRANTED.model_dump(), ["set-reads"]),
-        binding("b-expired", WORKLOAD.model_dump(), ["set-reads"], expires_at=(NOW - timedelta(seconds=1)).isoformat()),
-        binding("b-later", WORKLOAD.model_dump(), ["set-reads"], expires_at=(NOW + timedelta(hours=1)).isoformat()),
-        binding(
-            "b-other-account", ServiceAccountRef(namespace=NAMESPACE, name="someone-else").model_dump(), ["set-reads"]
-        ),
-        binding("b-invalid", {"name": "coder"}, ["set-reads"]),
+def test_resolution_takes_the_bindings_naming_the_caller_with_their_existing_valid_sets() -> None:
+    index = index_of()
+    add_policy_set(index, "set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}])
+    add_policy_set(index, "set-broken", [{"type": "nope", "actions": {"everything": ["echo"]}}])
+    add_policy_binding(index, "b-workload", WORKLOAD, ["set-reads", "set-broken", "set-missing"])
+    add_policy_binding(index, "b-granted", GRANTED, ["set-reads"])
+    add_policy_binding(index, "b-later", WORKLOAD, ["set-reads"], expires_at=NOW + timedelta(hours=1))
+    add_policy_binding(
+        index, "b-other-account", ServiceAccountRef(namespace=NAMESPACE, name="someone-else"), ["set-reads"]
     )
-    for_workload = resolve_bindings(index, WORKLOAD, NOW)
+    for_workload = resolve_bindings(index, WORKLOAD)
     assert [resolved.name for resolved in for_workload] == ["b-later", "b-workload"]
     assert [[s.name for s in resolved.policy_sets] for resolved in for_workload] == [["set-reads"], ["set-reads"]]
-    for_account = resolve_bindings(index, CALLER, NOW)
+    for_account = resolve_bindings(index, CALLER)
     assert [resolved.name for resolved in for_account] == ["b-granted"]
-    assert resolve_bindings(index, ServiceAccountRef(namespace="agentplane-other", name=WORKLOAD.name), NOW) == ()
-    assert resolve_bindings(index, ServiceAccountRef(namespace=NAMESPACE, name="x"), NOW) == ()
+    assert resolve_bindings(index, ServiceAccountRef(namespace="agentplane-other", name=WORKLOAD.name)) == ()
+    assert resolve_bindings(index, ServiceAccountRef(namespace=NAMESPACE, name="x")) == ()
 
 
 def test_nothing_resolves_before_the_informer_has_synced() -> None:
-    index = index_of(
-        policy_set("set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}]),
-        binding("b-workload", WORKLOAD.model_dump(), ["set-reads"]),
-        synced=False,
-    )
-    assert resolve_bindings(index, WORKLOAD, NOW) == ()
+    index = index_of(synced=False)
+    add_policy_set(index, "set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}])
+    add_policy_binding(index, "b-workload", WORKLOAD, ["set-reads"])
+    assert resolve_bindings(index, WORKLOAD) == ()
     index.listed = True
-    assert len(resolve_bindings(index, WORKLOAD, NOW)) == 1
+    assert len(resolve_bindings(index, WORKLOAD)) == 1
 
 
 def test_every_kind_projects_to_its_own_view() -> None:
-    index = index_of(
-        policy_set(
-            "set-kinds",
-            [
-                {"type": "exact_actions", "actions": {"everything": ["echo"]}},
-                SCHEMA_POLICY,
-                {"type": "github_repository", "actions": {"github": ["search_code"]}, "owner": "o", "repository": "r"},
-                {"type": "github_public_repository", "actions": {"github": ["get_file_contents"]}},
-                {
-                    "type": "home_assistant_entity_control",
-                    "actions": {"ha-test": ["ha_call_service"]},
-                    "entities": {"light.test_lamp": ["turn_on", "toggle"], "fan.test_fan": ["turn_off"]},
-                },
-            ],
-        ),
-        binding("b-kinds", WORKLOAD.model_dump(), ["set-kinds"]),
+    index = index_of()
+    add_policy_set(
+        index,
+        "set-kinds",
+        [
+            {"type": "exact_actions", "actions": {"everything": ["echo"]}},
+            SCHEMA_POLICY,
+            {"type": "github_repository", "actions": {"github": ["search_code"]}, "owner": "o", "repository": "r"},
+            {"type": "github_public_repository", "actions": {"github": ["get_file_contents"]}},
+            {
+                "type": "home_assistant_entity_control",
+                "actions": {"ha-test": ["ha_call_service"]},
+                "entities": {"light.test_lamp": ["turn_on", "toggle"], "fan.test_fan": ["turn_off"]},
+            },
+        ],
     )
-    views = [entry.policy for entry in caller_view(index, WORKLOAD, NOW).auto_approve_if]
+    add_policy_binding(index, "b-kinds", WORKLOAD, ["set-kinds"])
+    views = [entry.policy for entry in caller_view(index, WORKLOAD).auto_approve_if]
     assert [view.type for view in views] == list(PolicyKind)
     assert isinstance(views[2], GitHubRepositoryView)
     assert (views[2].owner, views[2].repository, views[2].actions) == ("o", "r", {"github": ["search_code"]})
@@ -172,31 +124,31 @@ def test_every_kind_projects_to_its_own_view() -> None:
 @pytest.fixture
 def mixed_index() -> PolicyIndex:
     """One ServiceAccount with a valid, a refused and a missing set on one binding, a second binding
-    of its own, and the bindings the resolution skips: expired, another account's, and one held
-    through a Connection grant."""
-    return index_of(
-        policy_set("set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo", "add"]}}]),
-        policy_set("set-echo", [SCHEMA_POLICY], generation=3),
-        policy_set("set-broken", [{"type": "nope", "actions": {"everything": ["echo"]}}]),
-        binding(
-            "b-workload",
-            WORKLOAD.model_dump(),
-            ["set-reads", "set-broken", "set-missing"],
-            labels={"test.example/managed-by": "test-writer"},
-        ),
-        binding("b-afternoon", WORKLOAD.model_dump(), ["set-echo"], expires_at=(NOW + timedelta(hours=1)).isoformat()),
-        binding("b-expired", WORKLOAD.model_dump(), ["set-reads"], expires_at=(NOW - timedelta(seconds=1)).isoformat()),
-        binding(
-            "b-other-account", ServiceAccountRef(namespace=NAMESPACE, name="someone-else").model_dump(), ["set-reads"]
-        ),
-        binding("b-granted", GRANTED.model_dump(), ["set-echo"]),
+    of its own, and the bindings the resolution skips: another account's, and one held through a
+    Connection grant."""
+    index = index_of()
+    add_policy_set(index, "set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo", "add"]}}])
+    add_policy_set(index, "set-echo", [SCHEMA_POLICY], generation=3)
+    add_policy_set(index, "set-broken", [{"type": "nope", "actions": {"everything": ["echo"]}}])
+    add_policy_binding(
+        index,
+        "b-workload",
+        WORKLOAD,
+        ["set-reads", "set-broken", "set-missing"],
+        labels={"test.example/managed-by": "test-writer"},
     )
+    add_policy_binding(index, "b-afternoon", WORKLOAD, ["set-echo"], expires_at=NOW + timedelta(hours=1))
+    add_policy_binding(
+        index, "b-other-account", ServiceAccountRef(namespace=NAMESPACE, name="someone-else"), ["set-reads"]
+    )
+    add_policy_binding(index, "b-granted", GRANTED, ["set-echo"])
+    return index
 
 
 def test_a_caller_reads_its_own_resolution_and_nothing_of_the_sets_it_cannot_use(mixed_index: PolicyIndex) -> None:
     """The caller view names the bindings admission resolves and, per binding, only the sets that
     contribute: a refused or missing set is simply not there, and another subject's bindings never are."""
-    view = caller_view(mixed_index, WORKLOAD, NOW)
+    view = caller_view(mixed_index, WORKLOAD)
 
     assert view.synced is True
     assert [(b.name, b.policy_sets) for b in view.bindings] == [
@@ -216,17 +168,17 @@ def test_a_caller_reads_its_own_resolution_and_nothing_of_the_sets_it_cannot_use
     assert "set-broken" not in view.model_dump_json()
     assert "set-missing" not in view.model_dump_json()
 
-    other = caller_view(mixed_index, ServiceAccountRef(namespace=NAMESPACE, name="someone-else"), NOW)
+    other = caller_view(mixed_index, ServiceAccountRef(namespace=NAMESPACE, name="someone-else"))
     assert [b.name for b in other.bindings] == ["b-other-account"]
-    assert [b.name for b in caller_view(mixed_index, CALLER, NOW).bindings] == ["b-granted"]
+    assert [b.name for b in caller_view(mixed_index, CALLER).bindings] == ["b-granted"]
 
 
 def test_the_operator_reads_the_same_resolution_with_each_named_set_standing(mixed_index: PolicyIndex) -> None:
     """The subject view keeps the caller's lists and adds what the caller is not shown: labels, the
     Ready verdicts, the refused set's report, and the names nothing answers to."""
-    view = subject_view(mixed_index, WORKLOAD, NOW)
+    view = subject_view(mixed_index, WORKLOAD)
 
-    assert view.auto_approve_if == caller_view(mixed_index, WORKLOAD, NOW).auto_approve_if
+    assert view.auto_approve_if == caller_view(mixed_index, WORKLOAD).auto_approve_if
     afternoon, workload = view.bindings
     assert (workload.name, workload.labels, workload.ready) == (
         "b-workload",
@@ -242,14 +194,14 @@ def test_the_operator_reads_the_same_resolution_with_each_named_set_standing(mix
     assert (afternoon.name, afternoon.labels, afternoon.missing_policy_sets) == ("b-afternoon", {}, [])
     assert [(s.name, s.generation) for s in afternoon.policy_sets] == [("set-echo", 3)]
 
-    account = subject_view(mixed_index, GRANTED, NOW)
+    account = subject_view(mixed_index, GRANTED)
     assert [b.name for b in account.bindings] == ["b-granted"]
-    assert account.auto_approve_if == caller_view(mixed_index, CALLER, NOW).auto_approve_if
+    assert account.auto_approve_if == caller_view(mixed_index, CALLER).auto_approve_if
 
 
 def test_both_views_say_nothing_auto_decides_before_sync(mixed_index: PolicyIndex) -> None:
     mixed_index.listed = False
-    for view in (caller_view(mixed_index, WORKLOAD, NOW), subject_view(mixed_index, WORKLOAD, NOW)):
+    for view in (caller_view(mixed_index, WORKLOAD), subject_view(mixed_index, WORKLOAD)):
         assert view.synced is False
         assert (view.bindings, view.auto_approve_if) == ([], [])
 
@@ -259,14 +211,14 @@ async def test_an_entry_is_named_as_the_decision_names_the_policy_that_matched(
 ) -> None:
     """A caller reads a Decision's evidence and its own policy in one vocabulary: the entry the
     provider records in `MatchedPolicy` is the first `auto_approve_if` entry that matches."""
-    view = caller_view(mixed_index, WORKLOAD, NOW)
+    view = caller_view(mixed_index, WORKLOAD)
     outcome = await PolicySetDecisionProvider(visibility=github_visibility()).decide(
         DecisionContext(
             request_id=uuid4(),
             action=ActionIdentity(group="everything", name="add"),
             arguments={},
             caller=WORKLOAD,
-            bindings=resolve_bindings(mixed_index, WORKLOAD, NOW),
+            bindings=resolve_bindings(mixed_index, WORKLOAD),
         )
     )
 
@@ -276,18 +228,6 @@ async def test_an_entry_is_named_as_the_decision_names_the_policy_that_matched(
     entry = view.auto_approve_if[1]
     assert (matched.policy_set, matched.index, matched.type) == (entry.policy_set, entry.index, entry.policy.type)
     assert entry.binding in {b.name for b in outcome.evidence.bindings}
-
-
-def with_policy_binding(index: PolicyIndex, sets: dict[str, list[dict[str, Any]]], named: list[str]) -> PolicyIndex:
-    """`index` plus PolicySets `sets` and one PolicyBinding of WORKLOAD naming `named`."""
-    for name, rules in sets.items():
-        index.rule_sets[name] = policy_sets.parse_policy_set(
-            {"metadata": _meta(name), "spec": {"rules": rules}}, parse_rule=parse_action_rule
-        )
-    index.policy_bindings["pb-workload"] = PolicyBinding.model_validate(
-        {"metadata": _meta("pb-workload"), "spec": {"subject": WORKLOAD.model_dump(), "policySets": named}}
-    )
-    return index
 
 
 KUBERNETES_RULE: dict[str, Any] = {"type": "kubernetes_cluster_role_binding", "clusterRole": "test-reader"}
@@ -300,22 +240,18 @@ ECHO_RULE: dict[str, Any] = {
 async def test_a_policy_binding_auto_approves_by_its_sets_action_rules_alone(
     github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
-    index = with_policy_binding(
-        index_of(),
-        {
-            "ps-mixed": [KUBERNETES_RULE, ECHO_RULE],
-            "ps-kubernetes": [KUBERNETES_RULE],
-            "ps-refused": [{"type": "action_auto_approve", "policy": {"type": "nope", "actions": {}}}],
-        },
-        ["ps-mixed", "ps-kubernetes", "ps-refused", "ps-missing"],
-    )
+    index = index_of()
+    add_rule_set(index, "ps-mixed", [KUBERNETES_RULE, ECHO_RULE])
+    add_rule_set(index, "ps-kubernetes", [KUBERNETES_RULE])
+    add_rule_set(index, "ps-refused", [{"type": "action_auto_approve", "policy": {"type": "nope", "actions": {}}}])
+    add_policy_binding(index, "pb-workload", WORKLOAD, ["ps-mixed", "ps-kubernetes", "ps-refused", "ps-missing"])
     outcome = await PolicySetDecisionProvider(visibility=github_visibility()).decide(
         DecisionContext(
             request_id=uuid4(),
             action=ActionIdentity(group="everything", name="echo"),
             arguments={},
             caller=WORKLOAD,
-            bindings=resolve_bindings(index, WORKLOAD, NOW),
+            bindings=resolve_bindings(index, WORKLOAD),
         )
     )
     assert outcome.verdict is ProviderVerdict.ALLOW
@@ -325,7 +261,7 @@ async def test_a_policy_binding_auto_approves_by_its_sets_action_rules_alone(
         namespace=NAMESPACE, policy_set="ps-mixed", source=PolicySource.RULES, index=1, type=PolicyKind.EXACT_ACTIONS
     )
 
-    operator = subject_view(index, WORKLOAD, NOW)
+    operator = subject_view(index, WORKLOAD)
     assert [(b.kind, b.name) for b in operator.bindings] == [(BindingKind.POLICY_BINDING, "pb-workload")]
     standing = {view.name: view.refused for view in operator.bindings[0].policy_sets}
     assert standing.keys() == {"ps-mixed", "ps-kubernetes", "ps-refused"}
@@ -333,50 +269,35 @@ async def test_a_policy_binding_auto_approves_by_its_sets_action_rules_alone(
     assert standing["ps-refused"] is not None
     assert "nope" in standing["ps-refused"]
     assert operator.bindings[0].missing_policy_sets == ["ps-missing"]
-    assert [b.policy_sets for b in caller_view(index, WORKLOAD, NOW).bindings] == [["ps-mixed", "ps-kubernetes"]]
-
-
-def test_both_binding_kinds_resolve_for_one_caller_old_kind_first() -> None:
-    index = with_policy_binding(
-        index_of(
-            policy_set("set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}]),
-            binding("b-workload", WORKLOAD.model_dump(), ["set-reads"]),
-        ),
-        {"ps-echo": [ECHO_RULE]},
-        ["ps-echo"],
-    )
-    assert [(resolved.kind, resolved.name) for resolved in resolve_bindings(index, WORKLOAD, NOW)] == [
-        (BindingKind.ACTION_POLICY_BINDING, "b-workload"),
-        (BindingKind.POLICY_BINDING, "pb-workload"),
-    ]
-    index.listed = False
-    assert resolve_bindings(index, WORKLOAD, NOW) == ()
+    assert [b.policy_sets for b in caller_view(index, WORKLOAD).bindings] == [["ps-mixed", "ps-kubernetes"]]
 
 
 GITHUB_READ_ACTIONS = {"github": ["get_file_contents", "search_pull_requests", "search_code"]}
 GET_FILE = ActionIdentity(group="github", name="get_file_contents")
-REPOSITORY_SET = policy_set(
+REPOSITORY_SET: SetSpec = (
     "set-repository",
     [{"type": "github_repository", "actions": GITHUB_READ_ACTIONS, "owner": "test-owner", "repository": "test-repo"}],
 )
-PUBLIC_SET = policy_set("set-public", [{"type": "github_public_repository", "actions": GITHUB_READ_ACTIONS}])
+PUBLIC_SET: SetSpec = ("set-public", [{"type": "github_public_repository", "actions": GITHUB_READ_ACTIONS}])
 
 
-def _context(action: ActionIdentity, arguments: dict[str, JsonValue], *sets: ActionPolicySet) -> DecisionContext:
-    bound = binding("b-github", WORKLOAD.model_dump(), [s.metadata.name for s in sets])
+def _context(action: ActionIdentity, arguments: dict[str, JsonValue], *sets: SetSpec) -> DecisionContext:
+    index = index_of()
+    for name, policies in sets:
+        add_policy_set(index, name, policies)
+    add_policy_binding(index, "b-github", WORKLOAD, [name for name, _ in sets])
     return DecisionContext(
         request_id=uuid4(),
         action=action,
         arguments=arguments,
         caller=WORKLOAD,
-        bindings=resolve_bindings(index_of(*sets, bound), WORKLOAD, NOW),
+        bindings=resolve_bindings(index, WORKLOAD),
     )
 
 
 async def test_github_repository_set_auto_approves_its_repository_with_the_repository_in_evidence(
     github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
-    assert isinstance(REPOSITORY_SET, ActionPolicySet)
     provider = PolicySetDecisionProvider(visibility=github_visibility())
     outcome = await provider.decide(
         _context(GET_FILE, {"owner": "Test-Owner", "repo": "test-repo", "path": "README.md"}, REPOSITORY_SET)
@@ -387,7 +308,7 @@ async def test_github_repository_set_auto_approves_its_repository_with_the_repos
     assert outcome.evidence.matched == MatchedPolicy(
         namespace=NAMESPACE,
         policy_set="set-repository",
-        source=PolicySource.AUTO_APPROVE_IF,
+        source=PolicySource.RULES,
         index=0,
         type=PolicyKind.GITHUB_REPOSITORY,
         repository=MatchedRepository(owner="Test-Owner", repository="test-repo", confirmed_public=False),
@@ -421,7 +342,6 @@ async def test_github_repository_set_misses_take_the_human_path(
     arguments: dict[str, JsonValue],
     github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
-    assert isinstance(REPOSITORY_SET, ActionPolicySet)
     provider = PolicySetDecisionProvider(visibility=github_visibility())
     outcome = await provider.decide(_context(action, arguments, REPOSITORY_SET))
     assert outcome.verdict is ProviderVerdict.NO_OPINION
@@ -431,7 +351,6 @@ async def test_github_repository_set_misses_take_the_human_path(
 async def test_github_public_repository_set_auto_approves_a_confirmed_public_repository(
     github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
-    assert isinstance(PUBLIC_SET, ActionPolicySet)
     provider = PolicySetDecisionProvider(visibility=github_visibility(("someone", "public-thing")))
     outcome = await provider.decide(
         _context(GET_FILE, {"owner": "someone", "repo": "public-thing", "path": "README.md"}, PUBLIC_SET)
@@ -458,7 +377,6 @@ async def test_github_public_repository_set_never_approves_without_a_confirmed_l
     unavailable: bool,
     github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
-    assert isinstance(PUBLIC_SET, ActionPolicySet)
     provider = PolicySetDecisionProvider(visibility=github_visibility(*public, unavailable=unavailable))
     outcome = await provider.decide(
         _context(GET_FILE, {"owner": "someone", "repo": "public-thing", "path": "README.md"}, PUBLIC_SET)
@@ -468,7 +386,7 @@ async def test_github_public_repository_set_never_approves_without_a_confirmed_l
 
 
 CALL_SERVICE = ActionIdentity(group="ha-test", name="ha_call_service")
-HOME_ASSISTANT_SET = policy_set(
+HOME_ASSISTANT_SET: SetSpec = (
     "set-home-assistant",
     [
         {
@@ -484,7 +402,6 @@ LAMP_ON: dict[str, JsonValue] = {"domain": "light", "service": "turn_on", "entit
 async def test_home_assistant_set_auto_approves_a_configured_service_call(
     github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
-    assert isinstance(HOME_ASSISTANT_SET, ActionPolicySet)
     provider = PolicySetDecisionProvider(visibility=github_visibility())
     outcome = await provider.decide(_context(CALL_SERVICE, LAMP_ON, HOME_ASSISTANT_SET))
     assert outcome.verdict is ProviderVerdict.ALLOW
@@ -492,7 +409,7 @@ async def test_home_assistant_set_auto_approves_a_configured_service_call(
     assert outcome.evidence.matched == MatchedPolicy(
         namespace=NAMESPACE,
         policy_set="set-home-assistant",
-        source=PolicySource.AUTO_APPROVE_IF,
+        source=PolicySource.RULES,
         index=0,
         type=PolicyKind.HOME_ASSISTANT_ENTITY_CONTROL,
     )
@@ -511,7 +428,6 @@ async def test_home_assistant_set_misses_take_the_human_path(
     arguments: dict[str, JsonValue],
     github_visibility: Callable[..., RepositoryVisibilityService],
 ) -> None:
-    assert isinstance(HOME_ASSISTANT_SET, ActionPolicySet)
     provider = PolicySetDecisionProvider(visibility=github_visibility())
     outcome = await provider.decide(_context(action, arguments, HOME_ASSISTANT_SET))
     assert outcome.verdict is ProviderVerdict.NO_OPINION
@@ -522,18 +438,17 @@ def test_a_watch_that_stopped_refreshing_stops_auto_deciding() -> None:
     """The bug this guards: listing every kind once is a latch, so a replica whose watches wedged
     went on auto-approving from the snapshot it took before they did -- against bindings an operator
     may since have revoked, with nothing about the answers looking wrong."""
-    index = index_of(
-        policy_set("set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}]),
-        binding("b-workload", WORKLOAD.model_dump(), ["set-reads"]),
-    )
-    assert len(resolve_bindings(index, WORKLOAD, NOW)) == 1
+    index = index_of()
+    add_policy_set(index, "set-reads", [{"type": "exact_actions", "actions": {"everything": ["echo"]}}])
+    add_policy_binding(index, "b-workload", WORKLOAD, ["set-reads"])
+    assert len(resolve_bindings(index, WORKLOAD)) == 1
 
     wedged = NOW + timedelta(seconds=index.freshness.stale_after_seconds + 1)
     index.clock = lambda: wedged
     assert index.listed is True, "the latch is still set: that is the point"
     assert index.synced is False
-    assert resolve_bindings(index, WORKLOAD, wedged) == ()
-    assert caller_view(index, WORKLOAD, wedged).synced is False
+    assert resolve_bindings(index, WORKLOAD) == ()
+    assert caller_view(index, WORKLOAD).synced is False
 
 
 def test_an_account_the_label_admitted_is_refused_once_the_copy_stops_moving() -> None:

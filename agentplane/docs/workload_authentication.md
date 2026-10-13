@@ -68,7 +68,7 @@ metadata is stamped through LiteLLM's documented metadata header. See
 
 PR #5700 uses the same destination-side principal for workload submission and caller-own reads.
 The caller is the ServiceAccount the Pod runs as, so two Pods sharing one are the same caller and
-one `ActionPolicyBinding` covers both. The integration app/BFF operator surface uses separate authentication. See
+one `PolicyBinding` covers both. The integration app/BFF operator surface uses separate authentication. See
 [`../action_service/README.md`](../action_service/README.md).
 
 ## Observed acceptance evidence

@@ -47,22 +47,16 @@ historical Decision or invoking an executor. Revocation does not stop already cl
 
 ## Action policies
 
-An `ActionPolicySet` holds typed policies in `autoApproveIf`;
-an `ActionPolicyBinding` joins one subject -- a namespaced ServiceAccount, which is what a
-workload's Pod runs as and what an external Connection acts as -- to sets by name, optionally until
-`expiresAt`. Both are namespaced Kubernetes objects the service watches in its configured policy
-namespace. Labeled caller ServiceAccounts are watched independently in configured caller
-namespaces, so a binding can target an account outside the policy namespace. The service reads
-`spec` only and reports in each object's `Ready` condition, stamped with the generation it judged,
-whether the spec parsed;
-an invalid set or binding contributes nothing.
-
-The generic `PolicySet` and `PolicyBinding` carry the same grant: each `action_auto_approve` rule of
-a set holds one policy, and the service unions those bindings with the `ActionPolicyBinding`s of the
-same subject. A `PolicySet` with a rule that does not parse contributes nothing; a set a binding
-names that is missing or refused does not stop its other sets from granting. The service reports
-which in the binding's `ActionsReady` condition, beside the other readers' conditions, and never
-judges a `PolicyBinding`'s `expiresAt`: the Policy Controller deletes an expired binding.
+A `PolicySet` holds typed policies as `action_auto_approve` rules; a `PolicyBinding` joins one
+subject -- a namespaced ServiceAccount, which is what a workload's Pod runs as and what an external
+Connection acts as -- to sets by name, optionally until `expiresAt`. Both are namespaced Kubernetes
+objects the service watches in its configured policy namespace. Labeled caller ServiceAccounts are
+watched independently in configured caller namespaces, so a binding can target an account outside
+the policy namespace. The service reads `spec` only. A set with a rule that does not parse
+contributes nothing; a set a binding names that is missing or refused does not stop its other sets
+from granting. The service reports which in the binding's `ActionsReady` condition, beside the other
+readers' conditions, and never judges a binding's `expiresAt`: the Policy Controller deletes an
+expired binding.
 
 Five policy kinds exist. `exact_actions` matches a listed Action by name alone; `argument_schema`
 also requires the arguments to satisfy a JSON Schema with plain JSON Schema semantics, so
@@ -77,13 +71,13 @@ service-call tool, `ha_call_service`, to configured entities and the services co
 the call must name exactly one configured entity, that entity's own domain and one of its
 services, and carry no argument the kind has not reviewed and no `data` that retargets it;
 anything else matches nothing and stays on the human path. This version decides from
-`autoApproveIf` only; the deny lists are accepted and validated and produce no Decision.
+`action_auto_approve` rules only; there is no deny form.
 
 Policies are evaluated once, at admission, against the objects as the service holds them then:
-the caller's unexpired bindings, whose subject is matched from the ServiceAccount the bearer
+the caller's bindings, whose subject is matched from the ServiceAccount the bearer
 proved -- the one its Pod runs as, or the one its Connection acts as -- and never from any request
 field, the
-existing valid sets they name, and the first `autoApproveIf` policy that matches. A match
+existing valid sets they name, and the first `action_auto_approve` policy that matches. A match
 auto-approves with an Execution; no match leaves the request on the human path; until the watch
 has synced, every caller is human-only. A later edit, expiry or deletion changes the next Action's
 Decision, not this one's; dispatch re-checks only caller authority. The Decision records the
@@ -92,7 +86,7 @@ The request is persisted only once evaluation has finished, together with any au
 request is observable as pending only while it waits for a human.
 
 A caller can read an effective policy: the bindings admission would resolve now for its own
-subject, or for a ServiceAccount it names, the sets that resolved, and the `autoApproveIf` entries
+subject, or for a ServiceAccount it names, the sets that resolved, and the auto-approve entries
 in evaluation order, each entry named as a Decision's evidence names the matching policy. The read
 and the Decision come from one resolution, so they cannot disagree; the answer says whose it is; a
 subject the service does not watch reads as no bindings; and it carries `synced`, which is false

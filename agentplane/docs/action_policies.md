@@ -14,16 +14,16 @@ Two namespaced Kubernetes resources in `agentplane.allegedly.works/v1alpha1`
 (`agentplane/crds/`), watched by the Action Service, plus ordinary ServiceAccounts as
 the external-caller principal.
 
-| Kind                  | Spec                                                                           |
-| --------------------- | ------------------------------------------------------------------------------ |
-| `ActionPolicySet`     | `autoApproveIf`: a list of typed policies                                      |
-| `ActionPolicyBinding` | `subject` (`{namespace, name}` of a ServiceAccount), `policySets`, `expiresAt` |
+| Kind            | Spec                                                                           |
+| --------------- | ------------------------------------------------------------------------------ |
+| `PolicySet`     | `rules`: typed rules; each `action_auto_approve` rule holds one policy         |
+| `PolicyBinding` | `subject` (`{namespace, name}` of a ServiceAccount), `policySets`, `expiresAt` |
 
-The generic `PolicySet`/`PolicyBinding` ([Policy Controller](../policy_controller/SPEC.md)) carry the same grant: a
-set's `action_auto_approve` rule holds one policy, and the Action Service reads both pairs.
+Both are shared with the other rule types' readers ([Policy Controller](../policy_controller/SPEC.md));
+the Action Service reads only the `action_auto_approve` rules.
 
 **Every caller is a Kubernetes ServiceAccount.** One principal then carries native permissions
-through ordinary RoleBindings and Action permissions through an `ActionPolicyBinding`, and an
+through ordinary RoleBindings and Action permissions through a `PolicyBinding`, and an
 in-cluster workload is the account its Pod runs as, so there is one identity vocabulary and one
 subject shape. The label `agentplane.allegedly.works/use-action-service: "true"` is what admits an
 account at all, however it arrives: the app labels the ServiceAccount it mints for each Sandbox, and
@@ -38,12 +38,12 @@ new kind, never a DSL. Kinds that consult state outside the arguments arrive wit
 need them, as `github_public_repository` did with its live visibility lookup.
 
 **A policy set is the shared unit** and the only thing a subject references; a one-off grant is a
-small set of its own. `autoApproveIf` auto-approves a matching request; a request matching nothing
+small set of its own. An `action_auto_approve` rule auto-approves a matching request; a request matching nothing
 takes the human path. A set has no deny form; see [Rejected](#rejected) for the design rationale.
 
 **A binding joins one subject to sets, by reference only.** A subject may have many bindings; the
-effective policy is the union of the unexpired bindings' sets. `expiresAt` makes an expired binding
-equivalent to an absent one. A subject is every caller proving that account, so bind only an
+effective policy is the union of the bindings' sets. An expired binding is equivalent to an absent
+one: the Policy Controller deletes it at `expiresAt`. A subject is every caller proving that account, so bind only an
 account dedicated to one workload. No caller-controlled field selects a binding: subjects resolve
 from the authenticated workload principal or the Connection's ServiceAccount, never from a claimed
 Thread ID or type.
@@ -56,7 +56,7 @@ operator with `kubectl`); the split is per object, never per kind.
 - Policy sets and caller ServiceAccounts normally live in Git next to the environment's Action
   Service settings (`cluster/k8s/agentplane-staging/`); one created at runtime is simply
   not Flux-owned.
-- The integration app writes one `ActionPolicyBinding` per Sandbox it launches, naming the
+- The integration app writes one `PolicyBinding` per Sandbox it launches, naming the
   ServiceAccount it gave that Sandbox to run as, with an `ownerReference` to the Sandbox so it is
   garbage collected with it.
   Which sets a preset selects is the app's knowledge, kept in its own labels and annotations; the
@@ -74,8 +74,8 @@ caller-authority checks (an active grant, an eligible ServiceAccount) and adds n
 re-evaluation; stopping approved-but-unclaimed work is an operator cancel, not a policy concern.
 The Decision records binding names and `resourceVersion`s, set generations, and the leaf policy
 that matched, so it explains itself after the objects change. Until the informer has synced, every
-caller is human-only; an object that fails validation contributes nothing and reports `Ready=False`
-with the message in its status, so a bad runtime edit is visible in `kubectl get`.
+caller is human-only; a set with a rule that fails validation contributes nothing, and the binding naming it reports
+`ActionsReady=False` with the message in its status, so a bad runtime edit is visible in `kubectl get`.
 
 Evaluation finishes before the request is persisted, and an auto-decision commits in the same
 transaction as the insert. A request is therefore never observable as `decision_pending` unless it
@@ -97,7 +97,7 @@ for a Sandbox `coder-7f3a` launched from a preset naming `github-reads`:
 ```yaml
 # Written by the integration app at launch.
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicyBinding
+kind: PolicyBinding
 metadata:
   generateName: coder-7f3a-
   namespace: agentplane-staging
@@ -110,7 +110,7 @@ spec:
 ---
 # The operator widens that one Sandbox for the afternoon.
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicyBinding
+kind: PolicyBinding
 metadata:
   name: coder-7f3a-ducktape-push-20260912
   namespace: agentplane-staging
@@ -138,14 +138,14 @@ binding revision they used.
 - **PostgreSQL or app configuration as the policy store.** Ownership is per object: Git through
   Flux for the reviewed sets and callers, a runtime writer for per-Sandbox bindings that must be
   garbage collected with the Sandbox. Kubernetes objects give both writers one authority, an
-  `ownerReference` cascade, and a `Ready` condition for validation feedback; either alternative
+  `ownerReference` cascade, and a status condition for validation feedback; either alternative
   needs a second sync path for one of the writers.
 - **Preset language on the binding** (a `<sandbox>-<preset>` name or a preset field). The service
   would then hold something only the app defines and nothing reads; the binding carries only the
   app's managed-by label, and the preset stays on the Sandbox's own annotation.
 - **`autoDenyIf` and `autoDenyUnless` as accepted-but-unevaluated fields.** A set once carried two
-  more lists that `autoApproveIf` shared its schema anchor with, were parsed and validated, were
-  reported to callers and to the Sandbox page, and decided nothing. `Ready=True` said the spec
+  more lists beside the auto-approve one that were parsed and validated, were
+  reported to callers and to the Sandbox page, and decided nothing. A `Ready=True` said the spec
   parsed, so a deny-only set was indistinguishable in `kubectl get` from a fence, and
   `get_action_policy` told an agent its denials were real when nothing enforced them -- the one
   surface where a reader is guaranteed not to double-check, and the opposite of the guarantee this

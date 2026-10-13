@@ -1,4 +1,4 @@
-"""Strict spec parsing: what this service refuses, and the typed shapes it hands the evaluator."""
+"""Strict rule parsing: what this service refuses, and the typed shapes it hands the evaluator."""
 
 from __future__ import annotations
 
@@ -6,14 +6,11 @@ from typing import Any
 
 import pytest
 import pytest_bazel
+from pydantic import ValidationError
 
-from agentplane.action_service.policies.resources import (
-    ActionPolicyBinding,
-    InvalidResource,
-    parse_binding,
-    parse_policy_set,
-)
-from agentplane.subjects import ServiceAccountRef
+from agentplane import policy_sets
+from agentplane.action_service.policies.exact_actions import ExactActions
+from agentplane.action_service.policies.resources import parse_action_rule
 
 METADATA = {
     "name": "test-object",
@@ -24,101 +21,45 @@ METADATA = {
 }
 
 
-def policy_set(spec: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "apiVersion": "agentplane.allegedly.works/v1alpha1",
-        "kind": "ActionPolicySet",
-        "metadata": METADATA,
-        "spec": spec,
-    }
-
-
-def binding(spec: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "apiVersion": "agentplane.allegedly.works/v1alpha1",
-        "kind": "ActionPolicyBinding",
-        "metadata": METADATA,
-        "spec": spec,
-    }
+def rule(policy: dict[str, Any]) -> dict[str, Any]:
+    return {"type": "action_auto_approve", "policy": policy}
 
 
 @pytest.mark.parametrize(
-    ("spec", "located"),
+    ("policy", "located"),
     [
-        ({"autoApproveIf": [{"type": "allow_all", "actions": {"github": ["x"]}}]}, "autoApproveIf.0"),
-        ({"autoApproveIf": [{"type": "exact_actions"}]}, "actions"),
-        ({"autoApproveIf": [{"type": "exact_actions", "actions": {"github": []}}]}, "actions"),
-        ({"autoApproveIf": [{"type": "exact_actions", "actions": {"github": ["x"]}, "extra": 1}]}, "extra"),
+        ({"type": "allow_all", "actions": {"github": ["x"]}}, "policy"),
+        ({"type": "exact_actions"}, "actions"),
+        ({"type": "exact_actions", "actions": {"github": []}}, "actions"),
+        ({"type": "exact_actions", "actions": {"github": ["x"]}, "extra": 1}, "extra"),
         (
-            {"autoApproveIf": [{"type": "argument_schema", "actions": {"github": ["x"]}, "schema": {"type": "nope"}}]},
+            {"type": "argument_schema", "actions": {"github": ["x"]}, "schema": {"type": "nope"}},
             "not a valid JSON Schema",
         ),
-        ({"autoApproveIf": [{"type": "argument_schema", "actions": {"github": ["x"]}}]}, "schema"),
-        ({"autoApproveIf": [{"type": "github_repository", "actions": {"github": ["x"]}, "owner": "o"}]}, "repository"),
-        (
-            {"autoApproveIf": [{"type": "github_public_repository", "actions": {"github": ["x"]}, "owner": "o"}]},
-            "owner",
-        ),
-        (
-            {"autoApproveIf": [{"type": "home_assistant_entity_control", "actions": {"ha-test": ["ha_call_service"]}}]},
-            "entities",
-        ),
-        ({"autoApproveIf": [{"type": "exact_actions", "actions": {"github": ["Not-A-Key"]}}]}, "actions"),
-        ({"rules": []}, "rules"),
+        ({"type": "argument_schema", "actions": {"github": ["x"]}}, "schema"),
+        ({"type": "github_repository", "actions": {"github": ["x"]}, "owner": "o"}, "repository"),
+        ({"type": "github_public_repository", "actions": {"github": ["x"]}, "owner": "o"}, "owner"),
+        ({"type": "home_assistant_entity_control", "actions": {"ha-test": ["ha_call_service"]}}, "entities"),
+        ({"type": "exact_actions", "actions": {"github": ["Not-A-Key"]}}, "actions"),
     ],
 )
-def test_invalid_policy_set_is_kept_with_its_report(spec: dict[str, Any], located: str) -> None:
-    parsed = parse_policy_set(policy_set(spec))
-    assert isinstance(parsed, InvalidResource)
-    assert parsed.metadata.name == "test-object"
-    assert located in parsed.message
-
-
-def test_binding_subject_is_a_namespaced_service_account() -> None:
-    parsed = parse_binding(
-        binding(
-            {
-                "subject": {"namespace": "agentplane-test", "name": "caller"},
-                "policySets": ["a", "b"],
-                "expiresAt": "2026-09-12T20:00:00Z",
-            }
-        )
+def test_a_rule_this_service_cannot_parse_refuses_its_set_with_the_report(policy: dict[str, Any], located: str) -> None:
+    refused = policy_sets.parse_policy_set(
+        {"metadata": METADATA, "spec": {"rules": [rule(policy)]}}, parse_rule=parse_action_rule
     )
-
-    assert isinstance(parsed, ActionPolicyBinding)
-    assert parsed.spec.subject == ServiceAccountRef(namespace="agentplane-test", name="caller")
-    assert parsed.spec.expires_at is not None
-    assert parsed.spec.expires_at.tzinfo is not None
+    assert isinstance(refused, policy_sets.RefusedPolicySet)
+    assert (refused.name, refused.generation) == ("test-object", 3)
+    assert located in refused.reason
 
 
-@pytest.mark.parametrize(
-    "spec",
-    [
-        {"subject": {}, "policySets": ["a"]},
-        # A subject is a namespace and a name together; neither half stands alone.
-        {"subject": {"name": "caller"}, "policySets": ["a"]},
-        {"subject": {"namespace": "agentplane-test"}, "policySets": ["a"]},
-        # A subject is the flat ServiceAccount reference; a nested kind wrapper is not one.
-        {"subject": {"serviceAccount": {"namespace": "agentplane-test", "name": "caller"}}, "policySets": ["a"]},
-        {"subject": {"sandbox": {"name": "coder-1", "uid": "u"}}, "policySets": ["a"]},
-        {"subject": {"namespace": "agentplane-test", "name": "caller"}, "policySets": []},
-        {"subject": {"namespace": "agentplane-test", "name": "caller"}, "policySets": ["a"], "expiresAt": "tomorrow"},
-        {
-            "subject": {"namespace": "agentplane-test", "name": "caller"},
-            "policySets": ["a"],
-            "expiresAt": "2026-09-12T20:00:00",
-        },
-    ],
-)
-def test_invalid_binding_is_kept_with_its_report(spec: dict[str, Any]) -> None:
-    parsed = parse_binding(binding(spec))
-    assert isinstance(parsed, InvalidResource)
-    assert (parsed.metadata.name, parsed.metadata.namespace, parsed.metadata.generation) == (
-        METADATA["name"],
-        METADATA["namespace"],
-        METADATA["generation"],
-    )
-    assert parsed.message
+def test_a_rule_with_an_unknown_key_is_not_accepted() -> None:
+    with pytest.raises(ValidationError, match="extra"):
+        parse_action_rule({**rule({"type": "exact_actions", "actions": {"github": ["x"]}}), "extra": 1})
+
+
+def test_another_readers_rule_is_skipped_and_an_auto_approve_rule_yields_its_policy() -> None:
+    assert parse_action_rule({"type": "kubernetes_cluster_role_binding", "clusterRole": "test-reader"}) is None
+    assert isinstance(parse_action_rule(rule({"type": "exact_actions", "actions": {"github": ["x"]}})), ExactActions)
 
 
 if __name__ == "__main__":

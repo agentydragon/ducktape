@@ -38,7 +38,7 @@ network reach and approvals together. Each concern is its own visible object, an
 is a combination of them:
 
 - identity: a Kubernetes ServiceAccount;
-- what may run without a human: `ActionPolicySet`/`ActionPolicyBinding` ([action policies](action_policies.md));
+- what may run without a human: `PolicySet`/`PolicyBinding` ([action policies](action_policies.md));
 - network reach and credentials: `EgressPolicy`/`EgressBinding` ([egress](../egress/SPEC.md));
 - cluster permissions: ordinary RBAC bindings;
 - execution environment: `SandboxTemplate`; harness and model per session.
