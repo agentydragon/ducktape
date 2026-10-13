@@ -712,7 +712,7 @@ flowchart TD
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     CONTROL_SERVICE_OWNER[Candidate: the controller creates the Sandbox's control Service]
-    SESSION_ACTIVITY_STREAM[Decision: one derivation of folded Session activity for listeners]
+    SESSION_ACTIVITY_STREAM[Blocked: the UI and notifications read the runner's busy and idle facts]
     DISPATCHER_CORE[Blocked: the Session Dispatcher delivers to running Sandboxes]
     DISPATCHER_SESSION_CREATE[Blocked: dispatched Session creation]
     DISPATCHER_WAKE_ON_SEND[Blocked: a send wakes a suspended Sandbox]
@@ -747,8 +747,6 @@ flowchart TD
     RUNNER_COMMAND_RPCS[Candidate: one Runner RPC per command, section 12] --> DISPATCHER_CORE
     MULTIAGENT_MODEL[Decision: identities and authority vocabulary, section 3] -. who may send and wake .-> DISPATCHER_CORE
     AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. offline behavior .-> DISPATCHER_CORE
-    SESSION_ACTIVITY_STREAM -. must not define a second idleness .-> SANDBOX_IDLE_EXPIRY
-    SANDBOX_SESSION_CONTROL_DESIGN --> SESSION_ACTIVITY_STREAM
     SANDBOX_SESSION_CONTROL_DESIGN --> DISPATCHER_WAKE_ON_SEND
     SANDBOX_SESSION_CONTROL_DESIGN -. decides the level of sealing .-> CONTROLLER_SEALS[Candidate: the Sandbox controller seals, section 12]
     QUIESCE_INCARNATION_KEY --> CONTROLLER_SEALS
@@ -762,7 +760,7 @@ flowchart TD
     QUIESCE_INTERRUPT -. interrupt precedes the seal .-> QUIESCE_WITHOUT_POLLING
     QUIESCE_INTERRUPT --> DISPATCHER_WAKE_ON_SEND
     RUNNER_FACTS_ON_LEASE -. carries the boot result .-> BOOTSTRAP_PROGRESS_CONTRACT
-    RUNNER_FACTS_ON_LEASE -. busyness is its input .-> SESSION_ACTIVITY_STREAM
+    RUNNER_FACTS_ON_LEASE --> SESSION_ACTIVITY_STREAM
     DISPATCHER_CORE --> DISPATCHER_SESSION_CREATE
     BOOTSTRAP_PROGRESS_CONTRACT -. Ready may then include the bootstrap .-> DISPATCHER_SESSION_CREATE
     DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
@@ -962,8 +960,6 @@ implement it, and the ones marked blocked on this node wait for one of these ans
   or only `SubmitInput` (`DISPATCHER_WAKE_ON_SEND`).
 - **Hold against wake-on-send:** whether an operator can keep a Sandbox suspended when a message or
   notification arrives (`DISPATCHER_WAKE_ON_SEND`).
-- **Idleness:** suspension reads the runner's busy state, so `SESSION_ACTIVITY_STREAM` shrinks to
-  the folded activity notifications and the UI read.
 
 Parallel with all of it: `QUIESCE_INCARNATION_KEY`, `QUIESCE_INTERRUPT`. The doc leaves this node when
 its choices are made and `docs/` describes the result.
@@ -1008,7 +1004,8 @@ transport several nodes share: the runner reports facts on the control stream, a
 replica holding the connection writes them as annotations on the Sandbox-owned connection Lease,
 on transitions only and stamped with the incarnation UID, clearing them when a different
 incarnation connects. Facts: the seal stage (draining, flushing, sealed), busy with the time it
-became idle (`SANDBOX_IDLE_EXPIRY`), and the bootstrap result (`BOOTSTRAP_PROGRESS_CONTRACT`). The
+became idle (`SANDBOX_IDLE_EXPIRY`), and the bootstrap result (`BOOTSTRAP_PROGRESS_CONTRACT`). Busy and idle
+facts ride the regular 15-second renewal write, so they add no etcd writes. The
 runner republishes its stage on reconnect so a gateway rollout loses nothing. Order: the
 controller reads the annotations before the gateway starts writing them.
 
@@ -1045,19 +1042,18 @@ caller sees no endpoints and not a DNS failure, and the gateway writes only the 
 with less Kubernetes access. One shared constant fixes the name and port. Order: the controller image
 that creates it is pinned, then the gateway stops creating it, then its permission goes.
 
-### `SESSION_ACTIVITY_STREAM` — one derivation of folded Session activity for listeners
+### `SESSION_ACTIVITY_STREAM` — the UI and notifications read the runner's busy and idle facts
 
-**Decision; operator, 2026-10-13 PDT.** Suspension no longer waits on it: the Sandbox controller
-reads the runner's busy facts (`RUNNER_FACTS_ON_LEASE`). What is left is the folded
-`last_model_activity_at` that the app and the notification service's quiet window
-(`NoticeDebounceSettings`) both derive in different ways. The operator's direction: one component
-derives it and streams Session state updates to listeners, and each listener picks its own moment,
-so the notification service decides when to deliver ("after a minute of quiet, at most ten
-minutes") and sends through `NOTIFICATIONS_VIA_DISPATCHER`. The alternative, where a sender hands the
-queue a delivery window and the queue schedules it, is not the direction. Decide: who derives it
-and from which events; the stream's shape and who may subscribe; whether the History Service's
-field becomes a listener or stays the source; and that busyness, if it is an input, is the runner's
-fact and not a second definition of idle.
+**Blocked on `RUNNER_FACTS_ON_LEASE`; operator, 2026-10-13 PDT.** Suspension and the UI's activity
+facts use the same runner busy/idle definition, so there is one idleness (`SANDBOX_IDLE_EXPIRY`
+reads it from the Lease). The History Service's folded `last_model_activity_at` stays a separate
+timestamp. What is left is the stream of those facts to listeners: the app and the notification
+service's quiet window (`NoticeDebounceSettings`) both derive "last active" in different ways today.
+The operator's direction: listeners pick their own moment, so the notification service decides when
+to deliver ("after a minute of quiet, at most ten minutes") and sends through
+`NOTIFICATIONS_VIA_DISPATCHER`; a sender does not hand the Session Dispatcher a delivery window. Decide
+who publishes the facts to listeners, the stream's shape and who may subscribe. Replace the app's
+and the notification service's own derivations; delete them in the same change.
 
 ### `DISPATCHER_CORE` — the Session Dispatcher delivers to running Sandboxes
 
@@ -1115,7 +1111,7 @@ sender moves.
 
 **Blocked on `DISPATCHER_CORE`; operator, 2026-10-13 PDT.** The Notification Service sends its
 notices through the Session Dispatcher, and keeps choosing when to deliver from its own quiet window or
-from `SESSION_ACTIVITY_STREAM` if that is decided. Parallel with `APP_SENDS_VIA_DISPATCHER`.
+from `SESSION_ACTIVITY_STREAM`. Parallel with `APP_SENDS_VIA_DISPATCHER`.
 
 ### `RUNNER_PROXY_SENDER_RESTRICT` — only system callers send to the runner directly
 
