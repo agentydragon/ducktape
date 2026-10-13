@@ -45,6 +45,7 @@ class ActionPolicyBindingView(BaseModel):
     provenance: BindingProvenance = Field(
         description="git: Flux applied it; app: this app wrote it at Sandbox creation; operator: anything else."
     )
+    generation: int
     expires_at: datetime | None = None
     ready: ReadyConditionView | None = Field(
         default=None, description="Absent until the Action Service has judged the binding at all."
@@ -116,6 +117,7 @@ def _binding_view(binding: SubjectBindingView) -> ActionPolicyBindingView:
         kind=binding.kind,
         name=binding.name,
         provenance=_provenance(binding.labels),
+        generation=binding.generation,
         expires_at=binding.expires_at,
         ready=binding.ready,
         policy_sets=binding.policy_sets,

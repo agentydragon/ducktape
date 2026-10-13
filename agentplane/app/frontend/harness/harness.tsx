@@ -223,6 +223,7 @@ const ACTION_POLICY: ActionPolicyView = {
       kind: "ActionPolicyBinding",
       name: "ready-sandbox-k2m9x",
       provenance: "app",
+      generation: 1,
       expires_at: null,
       ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
       // The preset names public-coder alone; harness-reviews was picked at launch.
@@ -246,6 +247,7 @@ const ACTION_POLICY: ActionPolicyView = {
       kind: "ActionPolicyBinding",
       name: "ready-sandbox-push-afternoon",
       provenance: "operator",
+      generation: 2,
       expires_at: new Date(NOW + 3 * HOUR).toISOString(),
       ready: null,
       policy_sets: [

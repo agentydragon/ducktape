@@ -109,6 +109,7 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
         <Table.Tr>
           <Table.Th>Binding</Table.Th>
           <Table.Th visibleFrom="sm">Provenance</Table.Th>
+          <Table.Th visibleFrom="sm">Generation</Table.Th>
           <Table.Th visibleFrom="sm">Expires</Table.Th>
           <Table.Th visibleFrom="sm">Ready</Table.Th>
           <Table.Th visibleFrom="sm">Policy sets</Table.Th>
@@ -117,7 +118,7 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
       <Table.Tbody>
         {bindings.length === 0 && (
           <Table.Tr>
-            <Table.Td colSpan={5}>
+            <Table.Td colSpan={6}>
               <Text size="sm" c="dimmed">
                 No binding names this ServiceAccount: every Action it submits waits for the operator.
               </Text>
@@ -145,6 +146,7 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
             <Table.Td visibleFrom="sm">
               <Text size="sm">{PROVENANCE[binding.provenance]}</Text>
             </Table.Td>
+            <Table.Td visibleFrom="sm">{binding.generation}</Table.Td>
             <Table.Td visibleFrom="sm">{expiry(binding.expires_at)}</Table.Td>
             <Table.Td visibleFrom="sm">
               <Ready ready={binding.ready} />

@@ -78,6 +78,7 @@ it("shows each set's state, the missing one, and the effective lists in evaluati
         kind: "ActionPolicyBinding",
         name: "test-sandbox-launch",
         provenance: "app",
+        generation: 1,
         expires_at: null,
         ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
         policy_sets: [
