@@ -792,7 +792,10 @@ async def test_browser_replays_streams_and_reloads_one_exact_thread(thread_brows
     page, source = thread_browser.page, thread_browser.source
     await thread_browser.start_replay()
     await expect(page.get_by_text("Test retained prefix", exact=True)).to_be_visible()
-    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" and live suffix")))
+    suffix = source.append(
+        event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" and live suffix"))
+    )
+    await expect_projected_cursor(page, suffix.cursor)
     complete_text = "Test retained prefix and live suffix"
     await expect(page.get_by_text(complete_text, exact=True)).to_be_visible()
     body_reads: list[str] = []
@@ -812,7 +815,10 @@ async def test_browser_replays_streams_and_reloads_one_exact_thread(thread_brows
             item_started=event_pb2.ItemStarted(item_id="test-browser-later", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT)
         )
     )
-    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-later", text="Test later item")))
+    later = source.append(
+        event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-later", text="Test later item"))
+    )
+    await expect_projected_cursor(page, later.cursor)
     await expect(page.get_by_text("Test later item", exact=True)).to_be_visible()
     assert any('"test-browser-later"' in read for read in body_reads)
     # Completed with the text that streamed, the body the reader holds is not read again.
@@ -1732,13 +1738,14 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
             item_completed=event_pb2.ItemCompleted(item_id="test-following-reply", text="Test later successful reply")
         )
     )
-    source.append(
+    completed = source.append(
         event_pb2.Event(
             turn_completed=event_pb2.TurnCompleted(
                 turn_id="test-following-turn", status=event_pb2.TURN_STATUS_COMPLETED
             )
         )
     )
+    await expect_projected_cursor(page, completed.cursor)
     await expect(page.get_by_text("Turn completed", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Turn failed", exact=True)).to_have_count(1)
     await expect(page.get_by_text("Test later successful reply", exact=True)).to_have_count(1)
@@ -1814,7 +1821,7 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
     assert command.HasField("submit_input")
     assert command.submit_input.text == "Test input from the real browser"
     await expect_pending_message_bubble(page, command.submit_input.text)
-    source.append(
+    confirmed = source.append(
         event_pb2.Event(
             harness_user_message_confirmed=event_pb2.HarnessUserMessageConfirmed(
                 harness_message_id="test-confirmed-message",
@@ -1824,6 +1831,7 @@ async def test_browser_sends_a_command_and_transitions_its_message_to_confirmed_
             )
         )
     )
+    await expect_projected_cursor(page, confirmed.cursor)
     await expect(page.locator(".agentplane-user-bubble .agentplane-verbatim")).to_have_text(command.submit_input.text)
     await expect(page.locator('.agentplane-user-bubble[data-message-phase="pending"]')).to_have_count(0)
     await expect(composer).to_have_value("")
@@ -2324,7 +2332,10 @@ async def test_thread_says_it_is_reconnecting_while_electric_retries_a_dropped_c
 
     await page.context.set_offline(False)
     await expect(indicator).to_have_count(0, timeout=35_000)
-    source.append(event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" and reconnected")))
+    reconnected = source.append(
+        event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-browser-item", text=" and reconnected"))
+    )
+    await expect_projected_cursor(page, reconnected.cursor)
     await expect(page.get_by_text("Test retained prefix and reconnected", exact=True)).to_be_visible()
 
 
