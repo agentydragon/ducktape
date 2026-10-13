@@ -9,6 +9,7 @@ import contextlib
 import json
 import logging
 import os
+import secrets
 import shutil
 import socket
 import subprocess
@@ -240,6 +241,8 @@ def test_stack_comes_up() -> None:
             for secret in rewritten
             if secret["kind"] == "Secret" and secret["metadata"]["name"].startswith("postgres-")
         }
+        app_secret = render.cnpg_app_secret(secrets.token_hex(12))
+        roles["app"] = app_secret["stringData"]["password"]
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
         extra = render.egress_ca_objects(
             ca_cert=ca_cert,
@@ -247,7 +250,7 @@ def test_stack_comes_up() -> None:
             system_roots=Path("/etc/ssl/certs/ca-certificates.crt").read_text(),
             cluster_ca=cluster_ca,
         )
-        everything = [*rewritten, *render.postgres_objects(roles), *extra]
+        everything = [*rewritten, app_secret, *render.postgres_objects(roles), *extra]
         # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
         namespaces = [d for d in everything if d["kind"] == "Namespace"]
         rest = [d for d in everything if d["kind"] != "Namespace"]

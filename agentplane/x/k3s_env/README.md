@@ -12,7 +12,7 @@ per-Deployment readiness.
 
 ## Result
 
-All 13 remaining Deployments become Available on one RBE action (about 5.5 minutes with the images
+Every Deployment of the stack except Dex (13, the app included) becomes Available on one RBE action (about 8.5 minutes with the images
 already in the cache), with the changes below. Breaks found on the way, in order:
 
 - **Kernel sysctls:** the kubelet needs every `/proc/sys/kernel` entry present in the shadow copy, not only
@@ -25,6 +25,8 @@ already in the cache), with the changes below. Breaks found on the way, in order
   container gets `KUBERNETES_SERVICE_HOST`/`PORT` for the node IP.
 - **KubeVirt kinds:** the sandbox controller's cache needs `VirtualMachine`/`VirtualMachineInstance` to exist, so
   schemaless stub CRDs are applied. It should instead start without KubeVirt when the kinds are absent.
+- **CNPG's `postgres-app` Secret:** the app reads its database credentials from the Secret CNPG generates for
+  its `app` owner; the plain Postgres stand-in gets an equivalent.
 - **Dex dropped:** its config reaches the Pod through an ExternalSecret template (`regexReplaceAll`, `htpasswd`
   are External Secrets functions). `render.py` does not evaluate those, and the image's gomplate rejects them.
   Dex returns once the emulation renders that template (it needs a bcrypt hash).

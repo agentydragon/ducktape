@@ -4,11 +4,12 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 # Spike: does the rendered `agentplane-testing` stack come up on a bare k3s inside an RBE action?
 # Manual only: it downloads k3s at run time and runs it as root.
 
-# Bazel-built service images, loaded into k3s's containerd. The app, runner and sandbox images
-# are not included (see the test's report for why).
+# Bazel-built service images, loaded into k3s's containerd. The Nix-built runner images are not.
 _IMAGES = {
     "action_service": "//agentplane/action_service:image",
     "action_service_migrate": "//agentplane/action_service:migration_image",
+    "app": "//agentplane/app:image",
+    "app_migrate": "//agentplane/app:migration_image",
     "egress": "//agentplane/egress:image",
     "egress_migrate": "//agentplane/egress:migration_image",
     "egress_sidecar": "//agentplane/egress:sidecar_image",

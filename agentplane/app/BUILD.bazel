@@ -474,6 +474,7 @@ oci_image(
         "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",
+    visibility = ["//agentplane/x/k3s_env:__pkg__"],
 )
 
 py_library(
@@ -518,6 +519,7 @@ oci_image(
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [":migration_layers"],
     user = "1000:1000",
+    visibility = ["//agentplane/x/k3s_env:__pkg__"],
 )
 
 py_test(

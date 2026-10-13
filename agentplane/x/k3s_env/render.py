@@ -34,11 +34,9 @@ DROPPED_KINDS = frozenset(
         "Database",
     }
 )
-# The app image is not visible to this package yet, and the VM template needs KubeVirt.
+# The VM template needs KubeVirt.
 DROPPED_NAMES = frozenset(
     {
-        ("Deployment", "agentplane-app"),
-        ("Service", "agentplane-app"),
         ("SandboxTemplate", "runner-vm"),
         # Its config template calls `regexReplaceAll`, which the image's gomplate does not define.
         ("Deployment", "dex"),
@@ -155,6 +153,22 @@ def rewrite(docs: Iterable[Mapping[str, Any]], *, overrides: Mapping[str, str], 
     return out
 
 
+def cnpg_app_secret(password: str) -> dict[str, Any]:
+    """The Secret CNPG generates for the `app` owner of its initdb database."""
+    return {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {"name": "postgres-app", "namespace": NAMESPACE},
+        "stringData": {
+            "username": "app",
+            "password": password,
+            "host": "postgres-rw.agentplane-testing.svc",
+            "port": "5432",
+            "dbname": "app",
+        },
+    }
+
+
 def postgres_objects(roles: Mapping[str, str]) -> list[dict[str, Any]]:
     """A single plain Postgres under the name the services dial, with each role and its database."""
     sql = "\n".join(
@@ -186,10 +200,7 @@ def postgres_objects(roles: Mapping[str, str]) -> list[dict[str, Any]]:
                                 "name": "postgres",
                                 "image": "docker.io/library/postgres:18",
                                 "args": ["-c", "wal_level=logical", "-c", "max_connections=300", "-c", "fsync=off"],
-                                "env": [
-                                    {"name": "POSTGRES_PASSWORD", "value": _password()},
-                                    {"name": "POSTGRES_DB", "value": "app"},
-                                ],
+                                "env": [{"name": "POSTGRES_PASSWORD", "value": _password()}],
                                 "ports": [{"containerPort": 5432}],
                                 "readinessProbe": {
                                     "exec": {"command": ["pg_isready", "-U", "postgres"]},
