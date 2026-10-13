@@ -210,7 +210,9 @@ async def test_agent_executes_mcp_action(
     marker = f"MCP0-{uuid4()}"
     turn = await agent.run(_execute_echo("everything", marker))
     report = turn.report(McpReport)
-    assert report.output == {"content": [{"type": "text", "text": f"Echo: {marker}"}], "isError": False}, turn.transcript
+    assert report.output == {"content": [{"type": "text", "text": f"Echo: {marker}"}], "isError": False}, (
+        turn.transcript
+    )
 
 
 async def test_operator_links_oauth_mcp_server(
@@ -254,7 +256,9 @@ async def test_operator_links_oauth_mcp_server(
     marker = f"MCP-OAUTH-{uuid4()}"
     turn = await agent.run(_execute_echo("example", marker))
     report = turn.report(McpReport)
-    assert report.output == {"content": [{"type": "text", "text": f"Echo: {marker}"}], "isError": False}, turn.transcript
+    assert report.output == {"content": [{"type": "text", "text": f"Echo: {marker}"}], "isError": False}, (
+        turn.transcript
+    )
 
 
 @pytest.fixture
