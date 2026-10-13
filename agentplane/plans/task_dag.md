@@ -339,6 +339,7 @@ flowchart LR
     VM_PROVIDER[Candidate: production provider and API]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 7]
     VM_EGRESS[Blocked: live launcher relay checks]
+    VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
@@ -347,6 +348,7 @@ flowchart LR
     VM_PROVIDER --> VM_PROCESS_ISOLATION
     VM_PROVIDER --> VM_LIFECYCLE
     VM_PROVIDER --> VM_EGRESS
+    VM_PROVIDER --> VM_RAM_SUSPEND
     VM_EGRESS --> VM_LIFECYCLE
     VM_PROCESS_ISOLATION --> VM_LIFECYCLE
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
@@ -423,6 +425,17 @@ absence of every imaginable failure, establishes the delivered contract.
 (the acceptance driver, if it becomes the VM lifecycle test) into production code, then delete
 `cluster/cdk8s/agentplane/kubevirt_experiment/`, its launcher policy (production's is
 `launcher_relay.py`) and the manifests it generates.
+
+### `VM_RAM_SUSPEND` — suspend a VM to disk with its RAM
+
+**Unscheduled; operator, 2026-10-13 PDT: nice to have.** A stopped VM Sandbox resumes with the memory
+it had, not a cold boot, so a quick resume loses no in-memory state. Find what KubeVirt offers (a
+memory dump or a snapshot with memory) and whether it works with the virtiofs state volume. The
+[VM Sandboxes design](../docs/vm_sandboxes.md#guest-and-storage) records that a VM supports neither
+RAM suspension nor live migration today. Check what a resumed guest must redo: the runner's control stream and
+projected tokens (the relay reopens them per request, so rotation alone needs no restart), and the
+clock. Where storage or the guest cannot carry it, stop/start from the state PVC stays the
+lifecycle.
 
 ### `LOCAL_BAZEL` — bounded local client in a VM
 
