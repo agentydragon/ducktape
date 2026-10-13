@@ -5,7 +5,6 @@ of the operators the cluster provides (cert-manager, trust-manager, External Sec
 Kyverno, the Prometheus operator). Objects of those kinds are dropped or replaced by plain ones.
 """
 
-import base64
 import copy
 import re
 import secrets
@@ -30,8 +29,6 @@ DROPPED_KINDS = frozenset(
         "Password",
         "ResourceQuota",
         "LimitRange",
-        "Cluster",
-        "Database",
     }
 )
 # The VM template needs KubeVirt.
@@ -41,8 +38,18 @@ DROPPED_NAMES = frozenset(
         # Its config template calls `regexReplaceAll`, which the image's gomplate does not define.
         ("Deployment", "dex"),
         ("Service", "dex"),
+        # The registry credentials are not available, and the image pull secrets are dropped anyway.
+        ("ExternalSecret", "forgejo-images-creds"),
     }
 )
+
+
+PRIMARY_SERVICE = "postgres-primary"
+
+
+def extra_namespaces() -> list[dict[str, Any]]:
+    """Namespaces the manifest's Roles live in, for the cluster's LiteLLM and Ollama."""
+    return [{"apiVersion": "v1", "kind": "Namespace", "metadata": {"name": name}} for name in ("litellm", "ollama")]
 
 
 def kubevirt_stub_crds() -> list[dict[str, Any]]:
@@ -116,6 +123,29 @@ def _headless(service: dict[str, Any]) -> None:
         port["port"] = port["targetPort"] if isinstance(port.get("targetPort"), int) else port["port"]
 
 
+def _cnpg_cluster_fixups(cluster: dict[str, Any], node_ip: str) -> None:
+    """The one-node Cluster on k3s: no placement, no PodMonitor, a headless `postgres-rw`, the apiserver by node IP."""
+    spec = cluster["spec"]
+    spec.pop("affinity", None)
+    spec["monitoring"] = {"enablePodMonitor": False}
+    spec["storage"]["storageClass"] = "local-path"
+    spec["env"] = [
+        {"name": "KUBERNETES_SERVICE_HOST", "value": node_ip},
+        {"name": "KUBERNETES_SERVICE_PORT", "value": "6443"},
+    ]
+    # CNPG's own `postgres-rw` is a ClusterIP Service and may not be disabled or replaced; CoreDNS
+    # rewrites its name to this headless one.
+    spec["managed"]["services"] = {
+        "additional": [
+            {
+                "selectorType": "rw",
+                "updateStrategy": "patch",
+                "serviceTemplate": {"metadata": {"name": PRIMARY_SERVICE}, "spec": {"clusterIP": "None"}},
+            }
+        ]
+    }
+
+
 def _pod_spec_fixups(pod: dict[str, Any], node_ip: str) -> None:
     pod.pop("imagePullSecrets", None)
     pod.pop("nodeSelector", None)
@@ -145,86 +175,14 @@ def rewrite(docs: Iterable[Mapping[str, Any]], *, overrides: Mapping[str, str], 
             doc = _external_secret_to_secret(doc, overrides)
         elif kind == "Service":
             _headless(doc)
+        elif kind == "Cluster":
+            _cnpg_cluster_fixups(doc, node_ip)
         elif kind == "Deployment":
             _pod_spec_fixups(doc["spec"]["template"]["spec"], node_ip)
         elif kind == "SandboxTemplate":
             _pod_spec_fixups(doc["spec"]["pod"]["spec"], node_ip)
         out.append(doc)
     return out
-
-
-def cnpg_app_secret(password: str) -> dict[str, Any]:
-    """The Secret CNPG generates for the `app` owner of its initdb database."""
-    return {
-        "apiVersion": "v1",
-        "kind": "Secret",
-        "metadata": {"name": "postgres-app", "namespace": NAMESPACE},
-        "stringData": {
-            "username": "app",
-            "password": password,
-            "host": "postgres-rw.agentplane-testing.svc",
-            "port": "5432",
-            "dbname": "app",
-        },
-    }
-
-
-def postgres_objects(roles: Mapping[str, str]) -> list[dict[str, Any]]:
-    """A single plain Postgres under the name the services dial, with each role and its database."""
-    sql = "\n".join(
-        f"CREATE ROLE {role} LOGIN PASSWORD '{password}'"
-        + (" REPLICATION" if role == "electric" else "")
-        + f";\nCREATE DATABASE {role} OWNER {role};"
-        for role, password in roles.items()
-    )
-    labels = {"app": "postgres"}
-    return [
-        {
-            "apiVersion": "v1",
-            "kind": "ConfigMap",
-            "metadata": {"name": "postgres-init", "namespace": NAMESPACE},
-            "data": {"init.sql": sql},
-        },
-        {
-            "apiVersion": "apps/v1",
-            "kind": "Deployment",
-            "metadata": {"name": "postgres", "namespace": NAMESPACE},
-            "spec": {
-                "replicas": 1,
-                "selector": {"matchLabels": labels},
-                "template": {
-                    "metadata": {"labels": labels},
-                    "spec": {
-                        "containers": [
-                            {
-                                "name": "postgres",
-                                "image": "docker.io/library/postgres:18",
-                                "args": ["-c", "wal_level=logical", "-c", "max_connections=300", "-c", "fsync=off"],
-                                "env": [{"name": "POSTGRES_PASSWORD", "value": _password()}],
-                                "ports": [{"containerPort": 5432}],
-                                "readinessProbe": {
-                                    "exec": {"command": ["pg_isready", "-U", "postgres"]},
-                                    "periodSeconds": 2,
-                                },
-                                "volumeMounts": [{"name": "init", "mountPath": "/docker-entrypoint-initdb.d"}],
-                            }
-                        ],
-                        "volumes": [{"name": "init", "configMap": {"name": "postgres-init"}}],
-                    },
-                },
-            },
-        },
-        {
-            "apiVersion": "v1",
-            "kind": "Service",
-            "metadata": {"name": POSTGRES_SERVICE, "namespace": NAMESPACE},
-            "spec": {"clusterIP": "None", "selector": labels, "ports": [{"port": 5432, "targetPort": 5432}]},
-        },
-    ]
-
-
-def secret_value(secret: Mapping[str, Any], key: str) -> str:
-    return secret["stringData"][key] if "stringData" in secret else base64.b64decode(secret["data"][key]).decode()
 
 
 def egress_ca_objects(*, ca_cert: str, ca_key: str, system_roots: str, cluster_ca: str) -> list[dict[str, Any]]:

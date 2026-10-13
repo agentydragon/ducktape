@@ -4,9 +4,9 @@ Does the rendered `agentplane-testing` stack come up on a bare k3s in an RBE act
 kube-proxy)? Manual only: `bbr test //agentplane/x/k3s_env:test_env --test_output=all`.
 
 `render.py` rewrites the generated manifest for a bare cluster: drops Cilium, Gateway API, Kyverno,
-Prometheus, cert-manager, CNPG and External Secrets kinds, emulates the ExternalSecrets with random
-Secrets, replaces CNPG with a single `postgres` Deployment, makes Services headless (no kube-proxy
-means no ClusterIP) and generates the egress CA. `test_env.py` starts k3s (recipe from
+Prometheus, cert-manager and External Secrets kinds, emulates the ExternalSecrets with random
+Secrets, keeps the CNPG `Cluster` and `Database` objects (the real operator is installed from its release
+manifest), makes Services headless (no kube-proxy means no ClusterIP) and generates the egress CA. `test_env.py` starts k3s (recipe from
 `agentplane/x/k3s_rbe_spike`), imports the Bazel-built image tarballs, applies everything and reports
 per-Deployment readiness.
 
@@ -25,8 +25,11 @@ already in the cache), with the changes below. Breaks found on the way, in order
   container gets `KUBERNETES_SERVICE_HOST`/`PORT` for the node IP.
 - **KubeVirt kinds:** the sandbox controller's cache needs `VirtualMachine`/`VirtualMachineInstance` to exist, so
   schemaless stub CRDs are applied. It should instead start without KubeVirt when the kinds are absent.
-- **CNPG's `postgres-app` Secret:** the app reads its database credentials from the Secret CNPG generates for
-  its `app` owner; the plain Postgres stand-in gets an equivalent.
+- **Real CNPG:** the operator runs unmodified (its webhooks are reachable because the apiserver can call Services
+  by Pod IP; `failurePolicy` is set to `Ignore`). It generates `postgres-app` itself. Its `postgres-rw` Service is
+  a reserved ClusterIP that cannot be disabled, so the Cluster adds a headless `postgres-primary` Service and
+  CoreDNS rewrites `postgres-rw.<ns>` to it. The operator and instance Pods also need the `KUBERNETES_SERVICE_*` env.
+- **Namespaces:** the manifest's Roles live in `litellm` and `ollama`, so empty ones are created.
 - **Dex dropped:** its config reaches the Pod through an ExternalSecret template (`regexReplaceAll`, `htpasswd`
   are External Secrets functions). `render.py` does not evaluate those, and the image's gomplate rejects them.
   Dex returns once the emulation renders that template (it needs a bcrypt hash).

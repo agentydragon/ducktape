@@ -9,7 +9,6 @@ import contextlib
 import json
 import logging
 import os
-import secrets
 import shutil
 import socket
 import subprocess
@@ -27,6 +26,7 @@ from util.bazel.runfiles import get_required_path
 logger = logging.getLogger(__name__)
 
 K3S_VERSION = "v1.33.4+k3s1"
+CNPG_MANIFEST_URL = "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.0/cnpg-1.30.0.yaml"
 DEPLOY_TIMEOUT_SECONDS = 240
 
 
@@ -142,7 +142,13 @@ class K3s:
             )  # fmt: skip
         corefile = self.kubectl(
             "-n", "kube-system", "get", "configmap/coredns", "-o", "jsonpath={.data.Corefile}"
-        ).replace(".:53 {", f".:53 {{\n    bind {self.node_ip}", 1)
+        ).replace(
+            ".:53 {",
+            f".:53 {{\n    bind {self.node_ip}\n"
+            f"    rewrite name exact postgres-rw.{render.NAMESPACE}.svc.cluster.local "
+            f"{render.PRIMARY_SERVICE}.{render.NAMESPACE}.svc.cluster.local",
+            1,
+        )
         self.kubectl(
             "-n", "kube-system", "patch", "configmap/coredns", "--type", "merge", "-p",
             json.dumps({"data": {"Corefile": corefile}}),
@@ -174,6 +180,39 @@ class K3s:
                 str(tarball),
             )
 
+    def install_cnpg_operator(self) -> None:
+        """The release manifest of the operator the cluster runs (`cluster/cdk8s/cnpg_operator.py`)."""
+        manifest = self.work / "cnpg.yaml"
+        _run("curl", "-fsSL", "-o", str(manifest), CNPG_MANIFEST_URL)
+        self.kubectl("apply", "--server-side", "-f", str(manifest))
+        # No kube-proxy: the operator dials the apiserver directly, and the apiserver cannot reach the
+        # webhook Service, so an unreachable webhook must not fail the request. The operator still needs
+        # the configurations to exist: it injects its CA into them at startup.
+        for kind, name in (
+            ("mutatingwebhookconfiguration", "cnpg-mutating-webhook-configuration"),
+            ("validatingwebhookconfiguration", "cnpg-validating-webhook-configuration"),
+        ):
+            configuration = json.loads(self.kubectl("get", f"{kind}/{name}", "-o", "json"))
+            for webhook in configuration["webhooks"]:
+                webhook["failurePolicy"] = "Ignore"
+                webhook["timeoutSeconds"] = 2
+            self.kubectl("apply", "--server-side", "--force-conflicts", "-f", "-", input_text=json.dumps(configuration))
+        self.kubectl(
+            "-n", "cnpg-system", "set", "env", "deploy/cnpg-controller-manager",
+            f"KUBERNETES_SERVICE_HOST={self.node_ip}", "KUBERNETES_SERVICE_PORT=6443",
+        )  # fmt: skip
+        waited = self.kubectl(
+            "-n", "cnpg-system", "wait", "--for=condition=Available", "deploy/cnpg-controller-manager", "--timeout=240s",
+            check=False,
+        )  # fmt: skip
+        if "condition met" not in waited:
+            raise RuntimeError(
+                f"CNPG operator not Available: {waited}\n"
+                + self.kubectl("-n", "cnpg-system", "get", "pods", "-o", "wide", check=False)
+                + self.kubectl("-n", "cnpg-system", "describe", "pods", check=False)[-3000:]
+                + self.kubectl("-n", "cnpg-system", "logs", "deploy/cnpg-controller-manager", "--tail=40", check=False)
+            )
+
     def pull_published_images(self, repositories: list[str]) -> None:
         """Pull the newest `devel-*` tag of each Nix-built image and retag it `:unset`, as the manifest names it."""
         user, password = os.environ["FORGEJO_IMAGES_USERNAME"], os.environ["FORGEJO_IMAGES_PASSWORD"]
@@ -195,6 +234,10 @@ class K3s:
             self.kubectl("get", "pods", "-A", "-o", "wide", check=False),
             self.kubectl("get", "events", "-A", "--sort-by=.lastTimestamp", check=False)[-6000:],
         ]
+        parts.append(self.kubectl("get", "cluster,database", "-A", check=False))
+        parts.append(
+            self.kubectl("-n", "cnpg-system", "logs", "deploy/cnpg-controller-manager", "--tail=25", check=False)
+        )
         pods = self.kubectl("get", "pods", "-n", render.NAMESPACE, "-o", "name", check=False).split()
         for pod in pods:
             ready = self.kubectl(
@@ -248,18 +291,15 @@ def test_stack_comes_up() -> None:
     try:
         ca_cert, ca_key = _openssl_ca(work)
         k3s.import_images(tarballs)
-        k3s.pull_published_images(["runner", "agentplane-sandbox", "agentplane-sandbox-build"])
+        if "FORGEJO_IMAGES_PASSWORD" in os.environ:
+            k3s.pull_published_images(["runner", "agentplane-sandbox", "agentplane-sandbox-build"])
+        else:
+            logger.warning("no Forgejo credentials: the runner images are missing, so no Sandbox can start")
         for crd in crds:
             k3s.kubectl("apply", "-f", str(crd))
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(render.kubevirt_stub_crds()))
+        k3s.install_cnpg_operator()
         rewritten = render.rewrite(yaml.safe_load_all(manifest.read_text()), overrides={}, node_ip=k3s.node_ip)
-        roles = {
-            secret["stringData"]["username"]: secret["stringData"]["password"]
-            for secret in rewritten
-            if secret["kind"] == "Secret" and secret["metadata"]["name"].startswith("postgres-")
-        }
-        app_secret = render.cnpg_app_secret(secrets.token_hex(12))
-        roles["app"] = app_secret["stringData"]["password"]
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
         extra = render.egress_ca_objects(
             ca_cert=ca_cert,
@@ -267,12 +307,12 @@ def test_stack_comes_up() -> None:
             system_roots=Path("/etc/ssl/certs/ca-certificates.crt").read_text(),
             cluster_ca=cluster_ca,
         )
-        everything = [*rewritten, app_secret, *render.postgres_objects(roles), *extra]
+        everything = [*rewritten, *render.extra_namespaces(), *extra]
         # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
         namespaces = [d for d in everything if d["kind"] == "Namespace"]
         rest = [d for d in everything if d["kind"] != "Namespace"]
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
-        k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest), check=False)
+        print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest), check=False)[-3000:])
         logger.info("applied %s objects", len(rest))
 
         failed: list[str] = []
