@@ -467,6 +467,8 @@ flowchart LR
     SERVICE_LOG_FLAGS[Unscheduled: logging flags in the services]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
     ISOLATED_ACCEPTANCE_CI[Unscheduled: acceptance tests in their own CI workflow]
+    DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
+    ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
 ```
 
 ### `ACTION_SURFACES_DESIGN` — where and in what states Actions render
@@ -483,6 +485,16 @@ for (a glance, a quick decision, full review, a record), and which states each h
 rule decides inline approval and height and each Action type is described once. The compact-card
 fixes under way (decision buttons on collapsed cards, a height cap, more Actions allowed inline)
 land first and need not wait for this.
+
+### `DOCKABLE_PANES` — dockable panes in the web app
+
+**Unscheduled; operator, 2026-10-13 PDT.** Let the operator arrange the app's panes (thread browser,
+Actions queue, several threads at once, Action detail) by dragging them into a layout of their own,
+with split resizing, a layout that persists, and one selected pane at a time on a phone. Open spike
+[#9721](https://github.com/agentydragon/ducktape/pull/9721) builds this as an experimental
+`/#/mosaic` shell on `react-mosaic-component`, split-only without tabs, beside the classic routes;
+it is stale and is the starting point. Settle whether docking replaces the classic routes or stays
+an alternative, and fold the Action tiles into the surfaces `ACTION_SURFACES_DESIGN` settles.
 
 ### `CLAUDE_CODE_WEB_BRIDGE` — Claude Code web sessions in Agentplane
 
