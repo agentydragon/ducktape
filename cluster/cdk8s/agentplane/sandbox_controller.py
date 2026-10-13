@@ -67,7 +67,9 @@ class SandboxController(Construct):
                 # only to who may update the owner's finalizers.
                 RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxes/finalizers")], verbs=["update"]),
                 RolePolicyRule(resources=[custom_resource(_GROUP, "sandboxtemplates")], verbs=["get", "list", "watch"]),
-                RolePolicyRule(resources=[custom_resource("", "pods")], verbs=["get", "list", "watch", "create", "delete"]),
+                RolePolicyRule(
+                    resources=[custom_resource("", "pods")], verbs=["get", "list", "watch", "create", "delete"]
+                ),
                 # Update only to make the Sandbox the owner of a PVC created before it owned them.
                 RolePolicyRule(
                     resources=[custom_resource("", "persistentvolumeclaims")],
