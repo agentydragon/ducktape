@@ -80,8 +80,12 @@ async def test_resumes_after_the_last_entry_when_the_stream_closes_without_an_en
         assert await _cursors(client) == [1, 2, 3]
 
 
+async def _forbidden(after: int, writer: asyncio.StreamWriter) -> None:
+    await _respond(writer, "403 Forbidden")
+
+
 async def test_waits_out_a_rollout_that_has_no_replica_up() -> None:
-    async with _app(_first_two_then_close, _unavailable, _unavailable, _rest_then_end) as (client, _):
+    async with _app(_first_two_then_close, _unavailable, _forbidden, _unavailable, _rest_then_end) as (client, _):
         assert await _cursors(client) == [1, 2, 3]
 
 

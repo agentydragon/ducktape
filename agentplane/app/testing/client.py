@@ -41,12 +41,16 @@ logger = logging.getLogger(__name__)
 REQUEST_SECONDS = 30.0
 
 
-# How long a Thread's stream may stay down, reconnecting, before the caller is told. An app rollout
-# takes a minute or two to bring a replica up behind the Service.
-RECONNECT_SECONDS = 180.0
+# How long a Thread's stream may stay down, reconnecting, before the caller is told. Testing's app
+# Deployment recreates its only replica, which took about three minutes to answer again (migrate
+# initContainer, then startup) when its pod was deleted on 2026-10-13.
+RECONNECT_SECONDS = 600.0
 RECONNECT_PAUSE_SECONDS = 2.0
-# What the Service or ingress answers while no app replica is ready.
-_ROLLING_STATUSES = frozenset({HTTPStatus.BAD_GATEWAY, HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.GATEWAY_TIMEOUT})
+# What the public route answers while no app replica is ready: mostly 503, with intermittent 403s
+# observed on testing during the same gap.
+_ROLLING_STATUSES = frozenset(
+    {HTTPStatus.FORBIDDEN, HTTPStatus.BAD_GATEWAY, HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.GATEWAY_TIMEOUT}
+)
 
 
 class SessionStreamError(Exception):
@@ -174,8 +178,8 @@ class Client:
     ) -> AsyncIterator[event_log_pb2.EventEntry]:
         """The Thread's events from `after`, ending when the app sends the `end` frame.
 
-        A stream that drops without one -- an app rollout or crash, a closed connection, a `502`,
-        `503` or `504` while no replica is up -- is reopened after the last entry yielded, so a
+        A stream that drops without one -- an app rollout or crash, a closed connection, a `403`,
+        `502`, `503` or `504` while no replica is up -- is reopened after the last entry yielded, so a
         caller sees every entry once and in order. An outage that outlasts `RECONNECT_SECONDS`
         without delivering an entry raises. `read_seconds` bounds how long a single frame may take
         to arrive, so a wedged session fails a caller rather than hanging it.
