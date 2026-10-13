@@ -955,6 +955,8 @@ implement it, and the ones marked blocked on this node wait for one of these ans
 
 - Settled (operator, 2026-10-13 PDT): the service is the Session Dispatcher, the seal renames
   (`SEAL_RENAME`), and one RPC per command with no command union (`RUNNER_COMMAND_RPCS`).
+- **Which commands wake:** whether `InterruptTurn` and `StopRunnerSession` wake a suspended Sandbox,
+  or only `SubmitInput` (`DISPATCHER_WAKE_ON_SEND`).
 - **Hold against wake-on-send:** whether an operator can keep a Sandbox suspended when a message or
   notification arrives (`DISPATCHER_WAKE_ON_SEND`).
 - **Idleness:** suspension reads the runner's busy state, so `SESSION_ACTIVITY_STREAM` shrinks to
