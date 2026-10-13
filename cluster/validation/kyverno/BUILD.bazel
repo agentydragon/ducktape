@@ -24,7 +24,6 @@ py_library(
     ],
 )
 
-
 # One target per policy: a failure names the policy it belongs to, and a single
 # policy can be run on its own.
 
@@ -63,7 +62,6 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
-
 
 py_test(
     name = "test_restrict_agent_gateway_routes",

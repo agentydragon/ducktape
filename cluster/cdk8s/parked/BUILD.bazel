@@ -70,4 +70,3 @@ py_library(
         "@pypi//cdk8s",
     ],
 )
-

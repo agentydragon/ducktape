@@ -1105,7 +1105,6 @@ py_library(
     ],
 )
 
-
 py_library(
     name = "ntfy",
     srcs = ["ntfy.py"],
