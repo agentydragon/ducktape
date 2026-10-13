@@ -133,14 +133,14 @@ problem.
 
 Facts have different truth sources, so each gets its own condition and `Ready` is their AND:
 
-| Condition         | Source of truth                                                                   | Meaning                                                                                     |
-| ----------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `Running`         | controller (Pod or VMI)                                                           | an incarnation exists and runs                                                              |
-| `WorkloadReady`   | controller (Pod Ready)                                                            | what `Ready` reports today (#10326)                                                         |
-| `RunnerConnected` | gateway (connection Lease)                                                        | a runner of this incarnation holds a live connection                                        |
-| `Bootstrapped`    | runner (bootstrap result)                                                         | the Sandbox's bootstrap ran to success                                                      |
-| `Ready`           | controller                                                                        | all of the above for the current incarnation                                                |
-| `Quiesced`        | controller, from the runner's `Quiesce` response and its ingress acknowledgements | False with reason `Draining`, then `Flushing`; True once every final cursor is acknowledged |
+| Condition         | Source of truth                                                               | Meaning                                                                                     |
+| ----------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `Running`         | controller (Pod or VMI)                                                       | an incarnation exists and runs                                                              |
+| `WorkloadReady`   | controller (Pod Ready)                                                        | what `Ready` reports today (#10326)                                                         |
+| `RunnerConnected` | gateway (connection Lease)                                                    | a runner of this incarnation holds a live connection                                        |
+| `Bootstrapped`    | runner (bootstrap result)                                                     | the Sandbox's bootstrap ran to success                                                      |
+| `Ready`           | controller                                                                    | all of the above for the current incarnation                                                |
+| `Quiesced`        | controller, from the runner's quiesce stage published on the connection Lease | False with reason `Draining`, then `Flushing`; True once every final cursor is acknowledged |
 
 Two rules make this safe. Conditions are keyed to the incarnation UID, so a connection or boot
 fact from incarnation N is never read as incarnation N+1's. And a condition is written by exactly
@@ -155,7 +155,7 @@ Transport for the gateway's and runner's facts:
 | Gateway writes the Sandbox's status                                           | Fewest hops                                                                                                                                                            | Two writers on one status; breaks "layers that act on CRs do not edit them"                                             |
 
 Recommend the **Lease**: `RunnerConnected` is the Lease's liveness, and runner-reported facts
-(`Bootstrapped`, busy state) ride its annotations, written on transition only. If the approved
+(`Bootstrapped`, busy state, the quiesce stage of D3) ride its annotations, written on transition only. If the approved
 gRPC-health node is built, its output should still land as a fact the controller folds; the choice
 here is only the transport. A gateway rollout drops every connection at once; the controller must
 treat the reconnect window as connectivity lost, not as a Sandbox failure, and must not replace or
@@ -181,7 +181,7 @@ the runner is only refusing new work is wrong. Proposed:
 
 | Today                      | Proposed                                                                | Meaning                                                                   |
 | -------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| RPC `Runner.Seal`          | `Runner.Quiesce`                                                        | The one operation, idempotent, repeated until done                        |
+| RPC `Runner.Seal`          | `Runner.Quiesce`                                                        | The one operation; idempotent, so a repeat is safe                        |
 | (no name)                  | reason `Draining`                                                       | Refusing new work; interrupting turns, stopping harnesses                 |
 | (no name)                  | reason `Flushing`                                                       | Harnesses stopped, journals final; waiting for the ingress to acknowledge |
 | `Sealed`, `SessionsSealed` | condition `Quiesced`, True only when every final cursor is acknowledged | Safe to remove the Pod or VM                                              |
@@ -207,13 +207,17 @@ sequenceDiagram
     participant C as Sandbox Controller
     participant R as Runner (through gateway proxy)
     participant I as Ingress (History Service)
-    C->>R: Quiesce (first call)
+    participant L as Connection Lease
+    C->>R: Quiesce (one call, returns once lameduck is entered)
     R->>R: enter lameduck (durable): refuse all but draining operations [Draining]
+    R-->>L: stage = Draining (Lease annotation, through the gateway)
     R->>R: interrupt active turns (InterruptTurn), wait up to a deadline
-    R->>R: stop harnesses, seal journals [Flushing]
+    R->>R: stop harnesses, seal journals
+    R-->>L: stage = Flushing
     R->>I: push to the final cursor
     I-->>R: ack
-    C->>R: Quiesce (repeat until every Session acknowledged)
+    R-->>L: stage = Quiesced
+    L-->>C: watch event
     C->>C: Quiesced; record quiescedIncarnation, then delete Pod or VM
 ```
 
@@ -222,6 +226,24 @@ a caller wanting "suspend only if still idle" is better served by a precondition
 request (`if idle since T`) than by a drain phase to coordinate. It needs a deadline after which a
 turn that ignores the interrupt is stopped anyway, and a defined history entry showing a turn ended
 by teardown.
+
+**The controller is told, not polling.** Today the controller repeats `Seal` every few seconds
+until every Session reports flushed. Instead, `Quiesce` is called once and returns when the runner
+has entered lameduck. From then on the runner publishes its stage (`Draining`, `Flushing`,
+`Quiesced`) as a connection-Lease annotation, written on each transition by the gateway replica
+holding its connection (D2's transport), and the controller reacts to the Lease watch event. The
+runner, not the controller, knows when the ingress acknowledges the last cursor, so the signal
+originates where the fact is, and the History Service is never a dependency of the controller.
+
+Two things keep this level-triggered rather than reliant on one event: the runner republishes its
+stage whenever it reconnects (a gateway rollout or a dropped stream loses nothing), and the
+controller re-issues the idempotent `Quiesce` when it finds a Sandbox that should be quiescing
+whose Lease shows no stage. A runner that never progresses is caught by a deadline the controller
+requeues for, not by periodic checks, and ends as a stuck `Quiescing` Sandbox whose finalizer an
+operator removes by hand. Rejected: a server-streaming `Quiesce` held open by the controller (it
+is lost on every gateway rollout and ties up a connection per quiescing Sandbox for no fact the
+Lease does not already carry), and the History Service notifying the controller (a new
+dependency the other path does not need).
 
 Commands arriving at a draining runner are refused with a code the Mailbox reads as "retry after
 resume", not as failure.
