@@ -14,7 +14,6 @@ function sandboxOwnedBy(apiVersion: string): SandboxView {
     operating_mode: "Running",
     service_account: { namespace: "agentplane-test", name: "test-sandbox" },
     status: null,
-    initializing: false,
     deleting: false,
     pod: {
       name: "test-sandbox",

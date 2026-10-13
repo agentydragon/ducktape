@@ -569,10 +569,7 @@ export function SandboxPage({
           <EgressSection name={name} bindings={live.snapshot?.bindings ?? null} />
         </Tabs.Panel>
         <Tabs.Panel value="policy" pt="sm">
-          <Stack gap="md">
-            <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
-            {sandbox && <KubernetesGrantStatus sandbox={sandbox} />}
-          </Stack>
+          <ActionPolicySection policy={live.snapshot?.action_policy ?? null} />
         </Tabs.Panel>
         <Tabs.Panel value="status" pt="sm">
           {sandbox && <StatusView sandbox={sandbox} />}
