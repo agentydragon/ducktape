@@ -12,7 +12,14 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.proto import command_pb2, event_pb2, runner_control_pb2, runner_control_pb2_grpc, runner_pb2
+from agentplane.proto import (
+    command_pb2,
+    event_log_pb2,
+    event_pb2,
+    runner_control_pb2,
+    runner_control_pb2_grpc,
+    runner_pb2,
+)
 from agentplane.runner.config import ClaudeLaunch, RunnerConfig
 from agentplane.runner.control import RunnerControlClient, RunnerService
 from agentplane.runner.harness_process import HarnessProcess
@@ -159,6 +166,57 @@ async def test_a_redelivered_command_is_admitted_once_and_answered_from_the_jour
     assert first.admission.event.command_admitted.command == submit("test-input")
     assert (await runner.sessions[RUNNING].journal.admitted_entry("test-input")) == first.admission
     assert gateway.control.authorizations == ["Bearer test-placeholder"]
+
+
+async def test_each_command_rpc_admits_its_command_and_a_command_id_belongs_to_one_operation(
+    dial: Callable[[], Awaitable[Service]],
+) -> None:
+    service = await dial()
+    admissions: dict[str, event_log_pb2.EventEntry] = {
+        "submit_input": (
+            await service.SubmitInput(
+                runner_control_pb2.SubmitInputRequest(session_id=RUNNING, command_id="test-submit", text="test input")
+            )
+        ).admission,
+        "change_model": (
+            await service.ChangeModel(
+                runner_control_pb2.ChangeModelRequest(session_id=RUNNING, command_id="test-model", model="test-model")
+            )
+        ).admission,
+        "change_reasoning_effort": (
+            await service.ChangeReasoningEffort(
+                runner_control_pb2.ChangeReasoningEffortRequest(
+                    session_id=RUNNING, command_id="test-effort", effort="high"
+                )
+            )
+        ).admission,
+        "interrupt_turn": (
+            await service.InterruptTurn(
+                runner_control_pb2.InterruptTurnRequest(
+                    session_id=RUNNING, command_id="test-interrupt", turn_id="test-turn"
+                )
+            )
+        ).admission,
+        "stop_runner_session": (
+            await service.StopRunnerSession(
+                runner_control_pb2.StopRunnerSessionRequest(session_id=RUNNING, command_id="test-stop")
+            )
+        ).admission,
+    }
+    for operation, admission in admissions.items():
+        assert admission.event.command_admitted.command.WhichOneof("operation") == operation
+    redelivered = await service.SubmitInput(
+        runner_control_pb2.SubmitInputRequest(session_id=RUNNING, command_id="test-submit", text="test input")
+    )
+    assert redelivered.admission == admissions["submit_input"]
+    assert (
+        await refusal(
+            service.ChangeModel(
+                runner_control_pb2.ChangeModelRequest(session_id=RUNNING, command_id="test-submit", model="test-model")
+            )
+        )
+        == grpc.StatusCode.ALREADY_EXISTS
+    )
 
 
 @pytest.mark.parametrize("ending", ["stopped", "sealed"])
