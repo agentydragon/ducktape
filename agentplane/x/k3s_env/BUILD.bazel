@@ -63,6 +63,7 @@ py_test(
         "dockerNetwork": "bridge",
         "recycle-runner": "false",
         "EstimatedComputeUnits": "4",
+        "EstimatedFreeDiskBytes": "50GB",
     },
     tags = [
         "external",
