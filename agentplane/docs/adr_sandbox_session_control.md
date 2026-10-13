@@ -180,8 +180,8 @@ The Sandbox's `Sealed` condition is False with reason `Sealing` until the operat
 True once the ingress has acknowledged every final cursor. The Pod or VM may go only then.
 Per-Session cursors never appear in Kubernetes.
 
-Today the runner refuses new Sessions at
-entry, but commands to a Session whose journal is not yet sealed are still admitted, and a turn is
+Today the runner refuses new Sessions
+immediately, but commands to a Session whose journal is not yet sealed are still admitted, and a turn is
 stopped rather than interrupted through the command protocol. The change is to refuse at entry and
 interrupt before stopping, inside the same `Seal`.
 
