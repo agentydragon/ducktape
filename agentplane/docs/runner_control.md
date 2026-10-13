@@ -34,6 +34,7 @@ service Runner {
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
   rpc Seal(runner.SealRequest) returns (runner.SealResponse);
+  rpc Quiesce(runner.QuiesceRequest) returns (runner.QuiesceResponse);
   rpc DeliverCommand(DeliverCommandRequest) returns (DeliverCommandResponse);
 }
 
@@ -150,7 +151,7 @@ answers with the runner's own status and bytes. It has no database.
   carries; a gRPC server cannot see the dialed `:authority`. A missing or repeated header is
   `INVALID_ARGUMENT`, an unknown Sandbox `NOT_FOUND`.
 - **Authorization.** The bearer is a `token_audience` token. The `caller_accounts` may call every
-  method but `Seal`, which only `sandbox_controller_account` may; unset, nobody may.
+  method but `Seal` and `Quiesce`, which only `sandbox_controller_account` may; unset, nobody may.
 - **Holder.** A replica that does not hold the Sandbox's current connection answers `UNAVAILABLE`
   before acting, and the caller dials the control Service again.
 - **Deadline.** The caller's remaining deadline travels in the `Call`; a call without one waits until
