@@ -10,7 +10,6 @@ from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND, SANDB
 from agentplane.sandbox_service.errors import SandboxTearingDownError
 from agentplane.sandbox_service.reader import SandboxReader
 
-
 _TEARING_DOWN = {SandboxPhase.SANDBOX_PHASE_SEALING, SandboxPhase.SANDBOX_PHASE_TEARING_DOWN}
 # A sealing Sandbox runs its runner once more to seal, so its Sessions stay readable.
 _RUNNER_REACHABLE = {SandboxPhase.SANDBOX_PHASE_RUNNING, SandboxPhase.SANDBOX_PHASE_SEALING}

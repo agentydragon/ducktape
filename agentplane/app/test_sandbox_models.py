@@ -4,8 +4,7 @@ import pytest
 import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
 
-from agentplane.app.sandbox_models import SandboxPhase as ViewPhase
-from agentplane.app.sandbox_models import sandbox_view
+from agentplane.app.sandbox_models import SandboxPhase as ViewPhase, sandbox_view
 from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxPhase, ServiceAccount
 
 # gazelle:include_dep @pypi//protobuf

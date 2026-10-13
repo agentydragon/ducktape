@@ -327,7 +327,10 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
       thread({ id: "t-2", sandbox: "demo-a1b2", name: "Clean up the stale branch" }),
       thread({ id: "t-3", sandbox: "prod-x7f2", name: "Investigate flaky CI" }),
     ],
-    { "demo-a1b2": sandbox("demo-a1b2"), "prod-x7f2": sandbox("prod-x7f2", { operating_mode: "Suspended", phase: "Suspended", pod: null }) }
+    {
+      "demo-a1b2": sandbox("demo-a1b2"),
+      "prod-x7f2": sandbox("prod-x7f2", { operating_mode: "Suspended", phase: "Suspended", pod: null }),
+    }
   );
 
   expect(container.textContent).toContain("demo-a1b2");

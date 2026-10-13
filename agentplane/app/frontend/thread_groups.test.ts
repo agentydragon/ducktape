@@ -36,7 +36,10 @@ it("groups threads by sandbox, newest thread first fixing each group's order", (
   const newest = threadView({ id: "t-newest", sandbox: "sb-b" });
   const middle = threadView({ id: "t-middle", sandbox: "sb-a" });
   const oldest = threadView({ id: "t-oldest", sandbox: "sb-a" });
-  const sandboxes = { "sb-a": sandboxView("sb-a"), "sb-b": sandboxView("sb-b", { operating_mode: "Suspended", phase: "Suspended" }) };
+  const sandboxes = {
+    "sb-a": sandboxView("sb-a"),
+    "sb-b": sandboxView("sb-b", { operating_mode: "Suspended", phase: "Suspended" }),
+  };
 
   const groups = groupThreads([newest, middle, oldest], sandboxes, false, null);
 
