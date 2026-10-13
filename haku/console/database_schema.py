@@ -616,21 +616,10 @@ class OperatorLoginFlow(Base):
 metadata = Base.metadata
 
 
-# Tables that exist in the database and in no ORM class. Dropping one takes the release after the
-# one that stopped naming it, because `maxUnavailable: 0` keeps the previous image serving through
-# the roll and that image selects every table it maps. `test_agent_authority_schema` excludes these
-# from its ORM-versus-database comparison, which is otherwise exact.
-# CLEANUP(added 2026-10-13): drop `push_subscriptions` and its index in a migration once every
-#   console pod runs an image that no longer maps the table (Web Push was removed).
-UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset({"push_subscriptions"})
-
-# The same for `(table, column)` pairs in tables that stay. A separate set rather than an entry
-# in the one above, which hides a whole table — naming `conversation_item` there would stop the
-# comparison noticing any drift in it.
+# `(table, column)` pairs that exist in the database and in no ORM class. Dropping one takes the
+# release after the one that stopped naming it, because `maxUnavailable: 0` keeps the previous image
+# serving through the roll and that image selects every column it maps. `test_agent_authority_schema`
+# excludes these from its ORM-versus-database comparison, which is otherwise exact.
 UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
     {("agents", "auto_approval_policy"), ("enrollment_interactions", "auto_approval_policy")}
 )
-
-# Indexes the database has and no ORM class declares. Reachable only through a column above: an
-# index over columns that are all still mapped would be drift rather than an unfinished drop.
-UNMAPPED_INDEXES_PENDING_DROP: frozenset[str] = frozenset({"idx_push_subscriptions_operator_id"})

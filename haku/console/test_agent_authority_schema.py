@@ -18,12 +18,7 @@ from sqlalchemy import Connection, Engine, create_engine, text
 from sqlalchemy.exc import IntegrityError, ProgrammingError
 
 from haku.console.database_migrate import apply_migrations
-from haku.console.database_schema import (
-    UNMAPPED_COLUMNS_PENDING_DROP,
-    UNMAPPED_INDEXES_PENDING_DROP,
-    UNMAPPED_TABLES_PENDING_DROP,
-    metadata,
-)
+from haku.console.database_schema import UNMAPPED_COLUMNS_PENDING_DROP, metadata
 from haku.console.identity.agent import (
     AgentStatus,
     ClientRegistrationKind,
@@ -546,21 +541,15 @@ def _create_static_agent(conn: Connection, *, identity: IdentityIds, label: str,
 
 
 def _not_awaiting_its_drop(name: str | None, type_: str, parent_names: dict[str, str | None]) -> bool:
-    """Hide the names an expand/contract has unmapped but not yet dropped.
+    """Hide the columns an expand/contract has unmapped but not yet dropped.
 
     Each exists in the database and in no ORM class, which is otherwise exactly the difference this
-    comparison is for — so each is named in `UNMAPPED_{TABLES,COLUMNS,INDEXES}_PENDING_DROP` beside
-    the tombstone that says when it goes, and everything else still has to match exactly.
+    comparison is for — so each is named in `UNMAPPED_COLUMNS_PENDING_DROP` beside the tombstone
+    that says when it goes, and everything else still has to match exactly.
     """
-    match type_:
-        case "table":
-            return name not in UNMAPPED_TABLES_PENDING_DROP
-        case "column":
-            return (parent_names["table_name"], name) not in UNMAPPED_COLUMNS_PENDING_DROP
-        case "index":
-            return name not in UNMAPPED_INDEXES_PENDING_DROP
-        case _:
-            return True
+    if type_ == "column":
+        return (parent_names["table_name"], name) not in UNMAPPED_COLUMNS_PENDING_DROP
+    return True
 
 
 def _enum_values(engine: Engine) -> dict[str, tuple[str, ...]]:
