@@ -183,7 +183,7 @@ class RunnerControlClient:
         target: str,
         bearer: str,
         timing: StreamTiming,
-        adopt_incarnation: Callable[[str], None],
+        adopt_incarnation: Callable[[str | None], None],
     ) -> None:
         self.runner = runner
         # Told each Welcome's incarnation before the gateway's first call can arrive.
@@ -225,9 +225,7 @@ class RunnerControlClient:
                     raise StreamLostError(await call.code(), await call.details())
                 if first.WhichOneof("frame") != "welcome":
                     raise StreamLostError(None, f"expected Welcome, got {first.WhichOneof('frame')}")
-                if not first.welcome.incarnation_uid:
-                    raise StreamLostError(None, "the Welcome names no incarnation")
-                self.adopt_incarnation(first.welcome.incarnation_uid)
+                self.adopt_incarnation(first.welcome.incarnation_uid or None)
                 welcomed_at = loop.time()
                 logger.info("runner control stream connected at epoch %d", first.welcome.connection_epoch)
                 await self.serve(call, runner)

@@ -90,5 +90,17 @@ async def test_a_new_incarnation_on_the_same_state_is_not_sealed(
         assert not next_incarnation.store.sealed
 
 
+async def test_a_gateway_that_names_no_incarnation_leaves_the_seal_to_the_state(
+    config: RunnerConfig, last_cursors: dict[str, int], gateway: Gateway
+) -> None:
+    del last_cursors
+    gateway.control.incarnation_uid = ""
+    async with running(config, gateway):
+        await RunnerDriver(gateway).seal()
+    async with running(config, gateway) as restarted:
+        await RunnerDriver(gateway).list_sessions()
+        assert restarted.store.sealed
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

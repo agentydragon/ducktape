@@ -140,7 +140,7 @@ def validate_session_id(session_id: str) -> str:
 class SessionStore:
     def __init__(self, root: Path) -> None:
         self.root = root
-        # None until the first `Welcome` names the incarnation.
+        # None until a `Welcome` names the incarnation.
         self._incarnation_uid: str | None = None
         make_directory(root)
 
@@ -154,25 +154,28 @@ class SessionStore:
     def sealed(self) -> bool:
         return (self.root / "sealed").is_file()
 
-    def adopt_incarnation(self, incarnation_uid: str) -> None:
+    def adopt_incarnation(self, incarnation_uid: str | None) -> None:
         """Learn which incarnation of its Sandbox this runner is, from the gateway's `Welcome`, before
         any call is served. The state volume outlives incarnations, so a seal recorded by an earlier
-        one is dropped; a seal recorded by this one, such as before a runner restart, stands."""
+        one is dropped; a seal recorded by this one, such as before a runner restart, stands. `None`,
+        from a gateway that does not name the incarnation, keeps every marker.
+
+        CLEANUP(added 2026-10-13): require the UID, and drop `None`, once the gateway image that sends
+        `Welcome.incarnation_uid` is pinned in every environment and in the VM guest's runner wheel.
+        """
         self._incarnation_uid = incarnation_uid
         marker = self.root / "sealed"
-        if marker.is_file() and marker.read_text() != incarnation_uid:
+        if incarnation_uid is not None and marker.is_file() and marker.read_text() != incarnation_uid:
             marker.unlink()
             sync_directory(self.root)
 
     def seal(self) -> None:
         """Durably refuse new and resumed sessions in this incarnation, across runner restarts."""
-        if self._incarnation_uid is None:
-            raise RuntimeError("the incarnation is unknown until the first Welcome")
         marker = self.root / "sealed"
         if not marker.is_file():
             staged = self.root / "sealed.tmp"
             with staged.open("w") as file:
-                file.write(self._incarnation_uid)
+                file.write(self._incarnation_uid or "")
                 file.flush()
                 os.fsync(file.fileno())
             staged.replace(marker)

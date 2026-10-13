@@ -334,7 +334,7 @@ class Runner:
         if session.setup_state in (runner_pb2.SETUP_STATE_NOT_REQUIRED, runner_pb2.SETUP_STATE_SUCCEEDED):
             await session.ensure_running()
 
-    def adopt_incarnation(self, incarnation_uid: str) -> None:
+    def adopt_incarnation(self, incarnation_uid: str | None) -> None:
         self.store.adopt_incarnation(incarnation_uid)
 
     async def seal(self) -> runner_pb2.SealResponse:

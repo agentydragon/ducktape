@@ -86,7 +86,7 @@ message Heartbeat {}
 - **The incarnation.** `Welcome.incarnation_uid` is the UID of the Pod the gateway authenticated, which
   is the Sandbox's current incarnation (a VM's virt-launcher Pod for a VM Sandbox). The runner tells
   its Sessions' seal apart from an earlier incarnation's by it ([teardown seal](../runner/SPEC.md#teardown-seal)),
-  and ends the connection if a `Welcome` names none. A gateway names the incarnation before any runner requires it.
+  and keeps every seal if a `Welcome` names none, as before the field existed.
 - **Later streams bind to the epoch.** Every RPC other than `Connect` carries the connection epoch
   from `Welcome` in metadata and is refused once that epoch is superseded.
 - **Message size.** gRPC's default 4 MiB per message.
