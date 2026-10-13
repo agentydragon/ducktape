@@ -69,6 +69,7 @@ py_library(
         "//agentplane/sandbox_service:egress_views",
         "//agentplane/sandbox_service/testing:backend",
         "//agentplane/sandbox_service/testing:fake_inventory",
+        "//util/testing:undeclared_outputs",
         "@pypi//asyncpg",
         "@pypi//fastapi",
         "@pypi//httpx",

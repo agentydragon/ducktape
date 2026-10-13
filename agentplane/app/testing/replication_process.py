@@ -6,8 +6,13 @@ The replay gate holds actual Electric/reconciliation response bytes without rewr
 
 import asyncio
 import multiprocessing
+import os
 import signal
 import socket
+import sys
+import threading
+import time
+import traceback
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -54,6 +59,7 @@ from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
+from util.testing.undeclared_outputs import undeclared_outputs_dir
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg
@@ -157,6 +163,52 @@ class ReadyServer(uvicorn.Server):
         self._connection.send(Ready(self._url))
 
 
+STALL_THRESHOLD_S = 1.0
+
+
+@asynccontextmanager
+async def _recording_loop_stalls() -> AsyncIterator[None]:
+    """Appends to an undeclared output the stack of the event-loop thread whenever the loop stops
+    ticking for `STALL_THRESHOLD_S`, with how long the watchdog thread itself went unscheduled: a gap
+    in both is the process or its host stopping, a gap in the loop alone is code blocking it."""
+    loop_thread = threading.get_ident()
+    last_tick = time.monotonic()
+    stop = threading.Event()
+
+    def watch() -> None:
+        reported_for = 0.0
+        previous = time.monotonic()
+        while not stop.wait(0.1):
+            now = time.monotonic()
+            if now - last_tick > STALL_THRESHOLD_S and reported_for != last_tick:
+                reported_for = last_tick
+                stack = "".join(traceback.format_stack(sys._current_frames()[loop_thread]))
+                with (undeclared_outputs_dir() / "app-loop-stalls.log").open("a") as log:
+                    log.write(
+                        f"pid={os.getpid()} wall={time.time():.3f} loop_silent_s={now - last_tick:.2f} "
+                        f"watchdog_gap_s={now - previous:.2f}\n{stack}\n"
+                    )
+            previous = now
+
+    watchdog = threading.Thread(target=watch, name="test-app-loop-stall-watchdog", daemon=True)
+    watchdog.start()
+
+    async def tick() -> None:
+        nonlocal last_tick
+        while True:
+            last_tick = time.monotonic()
+            await asyncio.sleep(0.02)
+
+    ticking = asyncio.create_task(tick(), name="test-app-loop-tick")
+    try:
+        yield
+    finally:
+        ticking.cancel()
+        await asyncio.gather(ticking, return_exceptions=True)
+        stop.set()
+        watchdog.join()
+
+
 def _run(
     database_url: str,
     service_port: int,
@@ -213,6 +265,7 @@ async def _serve(
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         content = ContentStore(engine, history_reader=history)
         async with (
+            _recording_loop_stalls(),
             # One peer serves both services.
             dial(f"127.0.0.1:{service_port}") as channel,
             history,
