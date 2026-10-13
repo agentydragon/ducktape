@@ -315,8 +315,8 @@ callers.
   which makes it idempotent: a retry with the same payload returns the same record, and another Sandbox,
   spec or setup script for a known ID is refused. The Dispatcher waits for the Sandbox to be `Ready`
   (resuming it where the sender may wake it) and calls the runner's `OpenSession`, which is itself
-  idempotent. The Dispatcher's `OpenSession` is a different RPC from the runner's of the same name: it
-  queues, the runner's executes.
+  idempotent. The Dispatcher's `OpenSession` is a different RPC from the runner's of the same name
+  (kept by the operator, 2026-10-13): it queues, the runner's executes.
 - One RPC per command, mirroring the runner's: `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`,
   `InterruptTurn` and `StopRunnerSession`, each taking `(command_id, session_id, <that command's fields>)`.
   Each stores the command durably and returns `QUEUED`; none waits for delivery. `command_id` is the
