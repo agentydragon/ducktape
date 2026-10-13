@@ -161,6 +161,21 @@ here is only the transport. A gateway rollout drops every connection at once; th
 treat the reconnect window as connectivity lost, not as a Sandbox failure, and must not replace or
 restart anything because of it (no automatic spec replacement, operator 2026-10-13).
 
+**etcd write cost of runner facts.** The gateway already renews every connected Sandbox's Lease every
+`touch_s` (15 s by default), so each connected Sandbox costs about four etcd writes a minute before this
+design adds anything. Runner facts therefore add no writes: the gateway holds the latest busy/idle and stage
+facts in memory and puts them on the Lease in the next scheduled renewal, so an annotation change rides a write
+that happens anyway. Busy/idle transitions can be frequent while an agent works (each turn ends and starts),
+which is why they are not written on their own; the controller needs `idleSince` only to minutes of
+precision, so up to one renewal interval of lag is harmless. The quiesce stage is rare and takes the same
+path. Cost on the reading side: the controller's Lease watch already sees a renewal event every 15 s per
+connected Sandbox and must filter on annotation or holder changes rather than reconcile on each. Rejected
+here: the controller subscribing to a gateway gRPC watch for idle. It saves no write that matters next to the
+renewals, and it needs the controller to find and track every gateway replica, resynchronise after a gateway
+or controller restart, and depend on the gateway being up to decide anything; the Lease is a record that
+outlives both. Revisit only if the renewal write rate itself becomes a problem, and then lengthen `touch_s`
+before adding a second channel.
+
 ### D3. Quiescing is one operation; names say which stage a Sandbox is in
 
 **Quiescing is one operation on the whole runner, not on its Sessions** (operator, 2026-10-13). It
