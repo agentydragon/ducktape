@@ -80,6 +80,12 @@ const threadSearchArguments = z.strictObject({
 
 type ThreadSearchArguments = z.infer<typeof threadSearchArguments>;
 
+/** The compact card shows only the query, so a page token or spam/trash search needs the full card. */
+export function offersCardDecisionButtonsThreadSearch(args: unknown): boolean {
+  const parsed = threadSearchArguments.safeParse(args);
+  return parsed.success && !parsed.data.pageToken && !parsed.data.includeSpamTrash;
+}
+
 function ThreadSearchLabel({ args }: { args: ThreadSearchArguments }): JSX.Element {
   void args;
   return <Text fw={600}>Gmail: Search threads</Text>;

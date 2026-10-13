@@ -23,9 +23,13 @@ import {
   gmailThreadSearchCollapsed,
   gmailThreadSearchLabel,
   gmailThreadSearchOpened,
+  offersCardDecisionButtonsThreadSearch,
   gmailThreadsResult,
 } from "./gmail";
 import {
+  offersCardDecisionButtonsProductsList,
+  offersCardDecisionButtonsQuantityUnitsList,
+  offersCardDecisionButtonsSystemInfo,
   productsListLabel,
   productsListArguments,
   productsListResult,
@@ -213,6 +217,7 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
           label: gmailThreadSearchLabel,
           pane: { collapsed: gmailThreadSearchCollapsed, opened: gmailThreadSearchOpened },
           details: { arguments: gmailThreadSearchOpened, result: gmailThreadsResult },
+          offersCardDecisionButtons: offersCardDecisionButtonsThreadSearch,
         },
       ],
     ]),
@@ -228,6 +233,7 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
           label: productsListLabel,
           pane: { opened: productsListArguments },
           details: { arguments: productsListArguments, result: productsListResult },
+          offersCardDecisionButtons: offersCardDecisionButtonsProductsList,
         },
       ],
       [
@@ -236,6 +242,7 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
           label: quantityUnitsListLabel,
           pane: { opened: quantityUnitsListArguments },
           details: { arguments: quantityUnitsListArguments, result: quantityUnitsListResult },
+          offersCardDecisionButtons: offersCardDecisionButtonsQuantityUnitsList,
         },
       ],
       [
@@ -244,6 +251,7 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
           label: systemInfoLabel,
           pane: { opened: systemInfoArguments },
           details: { arguments: systemInfoArguments, result: systemInfoResult },
+          offersCardDecisionButtons: offersCardDecisionButtonsSystemInfo,
         },
       ],
     ]),

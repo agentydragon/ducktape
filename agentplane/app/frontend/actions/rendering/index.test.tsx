@@ -409,6 +409,15 @@ const cardDecisionButtonCases: Array<{
     args: { namespace: "prod", fieldSelector: "type=Warning" },
     visible: ["field selector", "type=Warning"],
   },
+  { group: "grocy_sf", name: "products_list", args: { detail: "full" }, visible: ["Full Product records"] },
+  { group: "grocy_sf", name: "quantity_units_list", args: {}, visible: ["Quantity unit names"] },
+  { group: "grocy_sf", name: "get_system_info", args: {}, visible: ["No arguments."] },
+  {
+    group: "gmail",
+    name: "threads_list",
+    args: { q: "from:deployments@example.com", maxResults: 5 },
+    visible: ["from:deployments@example.com", "Maximum results"],
+  },
   {
     group: "github",
     name: "create_pull_request",
@@ -453,6 +462,13 @@ describe("card decision buttons capability", () => {
       expect(actionOffersCardDecisionButtons({ group, name }, { ...args, invisible: "must review" })).toBe(false);
     }
   );
+
+  it("withholds card decision buttons from a Gmail search the card cannot fully show", () => {
+    const search = { group: "gmail", name: "threads_list" };
+    expect(actionOffersCardDecisionButtons(search, { q: "label:inbox" })).toBe(true);
+    expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", pageToken: "next" })).toBe(false);
+    expect(actionOffersCardDecisionButtons(search, { q: "label:inbox", includeSpamTrash: true })).toBe(false);
+  });
 
   it("never offers card decision buttons for a delete", () => {
     expect(

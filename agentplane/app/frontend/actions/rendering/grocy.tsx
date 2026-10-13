@@ -55,6 +55,18 @@ export const quantityUnitsListArguments: ArgumentsPreview = definePreview(listAr
 
 const noArguments = z.strictObject({});
 
+export function offersCardDecisionButtonsProductsList(args: unknown): boolean {
+  return listArguments.safeParse(args).success;
+}
+
+export function offersCardDecisionButtonsQuantityUnitsList(args: unknown): boolean {
+  return listArguments.safeParse(args).success;
+}
+
+export function offersCardDecisionButtonsSystemInfo(args: unknown): boolean {
+  return noArguments.safeParse(args).success;
+}
+
 function SystemInfoRequest(): JSX.Element {
   return (
     <Text size="sm" c="dimmed">
