@@ -126,7 +126,13 @@ class ConnectionLeases:
 
     def __init__(self) -> None:
         self._leases: dict[UUID, ConnectionLease] = {}
+        self._watch: ListWatch | None = None
         self.changed = asyncio.Condition()
+
+    @property
+    def synced(self) -> bool:
+        """Whether the cache has listed every Lease, so a Sandbox without one has none."""
+        return self._watch is not None and self._watch.synced
 
     def watch(self, coordination: k8s_client.CoordinationV1Api, namespace: str, *, resync_seconds: int) -> ListWatch:
         async def ignore(*_: object) -> None:
@@ -136,7 +142,7 @@ class ConnectionLeases:
             async with self.changed:
                 self.changed.notify_all()
 
-        return ListWatch(
+        self._watch = ListWatch(
             kinds=(
                 WatchedKind(
                     name="leases",
@@ -153,13 +159,15 @@ class ConnectionLeases:
             on_change=notify,
             on_cycle=ignore,
         )
+        return self._watch
 
     async def wait_for(self, predicate: Callable[[], bool]) -> None:
         async with self.changed:
             await self.changed.wait_for(predicate)
 
     def read_epoch(self, sandbox_uid: UUID) -> int | None:
-        """The current connection's epoch, live or not."""
+        """The current connection's epoch, live or not; `None` for a Sandbox no runner ever connected to.
+        The Lease outlives the connection and is written before `Welcome`."""
         lease = self._leases.get(sandbox_uid)
         return None if lease is None else lease.epoch
 

@@ -9,7 +9,7 @@ replicas, apart from the Sandbox Service and its RBAC. It reads Sandboxes
 
 It does not call the History Service, so Sessions, commands and lifecycle requests keep working
 while that service is down or rolling. A deleting Sandbox gets no `SessionsSealed` condition until the runner reports every seal acknowledged by its ingress
-(`deletion_seals.py`), so it is not deleted until the History Service is back.
+(`deletion_seals.py`), so it is not deleted until the History Service is back. A Sandbox no runner ever connected to (no connection Lease) has nothing to seal and is marked at once.
 
 - `runner_control.py`, `lifecycle_control.py`, `connection_records.py`: the runner connection, and
   the commands and lifecycle requests the replica holding it sends on it.

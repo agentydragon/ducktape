@@ -74,5 +74,18 @@ async def test_a_deleting_sandbox_is_sealed_then_marked(runner: ScriptedRunner, 
     assert condition["status"] == "True"
 
 
+async def test_a_deleting_sandbox_no_runner_connected_to_is_marked_without_a_seal(
+    cluster: Cluster, leases: ConnectionLeases, sessions: SessionRegistry
+) -> None:
+    seals = DeletionSeals(
+        cast(CustomObjectsClient, k8s_client.CustomObjectsApi(cluster.api)),
+        namespace=SANDBOX_NAMESPACE,
+        sealing=Sealing(sessions, control=LifecycleControl(leases)),
+    )
+    async with background(seals.run(resync_seconds=60), name="deletion-seals"):
+        mark_deleting(cluster)
+        await cluster.fake.wait_for(lambda: sealed_condition(cluster) is not None)
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
