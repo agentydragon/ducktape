@@ -335,7 +335,6 @@ py_test(
         ":sandbox_models",
         "//:conftest",
         "//agentplane/runner:harness",
-        "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

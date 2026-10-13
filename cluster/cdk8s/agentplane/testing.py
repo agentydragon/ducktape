@@ -162,13 +162,12 @@ ENV = Environment(
     image_pins=f"{HAND_WRITTEN_ROOT}/agentplane-testing-image-pins",
     extra_resources=(),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
-    app_config=app_settings.on_policy_sets(
-        app_settings.settings(
-            namespace=TESTING_NAMESPACE,
-            models=TESTING_APP_MODELS,
-            thread_preset_codex_model=GPT6_LUNA_RESPONSES,
-            action_federation=_ACTION_FEDERATION,
-        )
+    app_config=app_settings.settings(
+        namespace=TESTING_NAMESPACE,
+        models=TESTING_APP_MODELS,
+        thread_preset_codex_model=GPT6_LUNA_RESPONSES,
+        action_federation=_ACTION_FEDERATION,
+        public_coder_policy_sets=[],
     ),
     settle_deltas=True,
     db=DbProps(instances=1, wal_archive=False),

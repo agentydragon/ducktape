@@ -40,19 +40,7 @@ class SandboxPreset(BaseModel):
 
     title: str
     template: str
-    egress_policies: list[str] = Field(default_factory=list, description="EgressPolicy names every launch is granted.")
-    action_policy_sets: list[str] = Field(
-        default_factory=list,
-        description="ActionPolicySet names every launch is bound to: what its harness may do without the operator.",
-    )
-    kubernetes_grants: list[str] = Field(
-        default_factory=list, description="Enabled Kubernetes grant names to prefill at Sandbox launch."
-    )
-    policy_sets: list[str] = Field(
-        default_factory=list,
-        description="PolicySet names to prefill, where Sandboxes are Agentplane's own kind, in place of the "
-        "three lists above.",
-    )
+    policy_sets: list[str] = Field(default_factory=list, description="PolicySet names every launch is prefilled with.")
     thread_preset: str
     bootstrap: str = Field(default="", max_length=65_536)
 
@@ -83,18 +71,6 @@ class PresetCatalog(BaseModel):
         }
         if missing:
             raise ValueError(f"SandboxPresets name unknown ThreadPresets: {sorted(missing)}")
-        return self
-
-    @model_validator(mode="after")
-    def _fields_fit_the_kind(self) -> PresetCatalog:
-        """A preset fills only the fields the Sandbox Service accepts: policy sets, not grants."""
-        misfit = sorted(
-            name
-            for name, preset in self.sandboxes.items()
-            if preset.egress_policies or preset.action_policy_sets or preset.kubernetes_grants
-        )
-        if misfit:
-            raise ValueError(f"SandboxPresets fill fields the Sandbox Service refuses: {misfit}")
         return self
 
     def views(self) -> list[SandboxPresetView]:

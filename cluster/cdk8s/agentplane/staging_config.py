@@ -28,7 +28,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     SSH_READS_SET,
     TANA_READS_SET,
 )
-from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, on_policy_sets, settings
+from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, settings
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
@@ -87,10 +87,14 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
         models=models,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
-        action_policy_sets=[COMMON_GITHUB_READ_SET, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
+        public_coder_policy_sets=[
+            COMMON_GITHUB_READ_SET,
+            GITHUB_IDENTITY_READS_SET,
+            SSH_READS_SET,
+            *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["public-coder"]),
+        ],
         kubernetes_grants={TOOL_CONFIG_GRANT: tool_config_grant(namespace), **agent_access_profiles.catalog()},
     )
-    cfg.sandbox_presets["public-coder"].kubernetes_grants = list(agent_access_profiles.MANAGED_GRANTS["public-coder"])
     # The "haku" and "finance-agent" launch presets live only here, not in app_settings.py:
     # they name staging-only credentials (haku: forgejo-haku, haku-mailbox; finance-agent:
     # forgejo-finance-agent, plaid-pgweb) that agentplane-testing never provisions, so there is
@@ -136,7 +140,7 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
         template="runner",
         # These policies are what a *launch* is granted, independent of which
         # caller/ServiceAccount stamps it.
-        egress_policies=[
+        policy_sets=[
             BASIC_POLICY,
             FORGEJO_HAKU_POLICY,
             PACKAGES_POLICY,
@@ -150,13 +154,13 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
             GITHUB_AGENTYDRAGON_AGENT_POLICY,
             GITHUB_ACTIONS_LOGS_POLICY,
             AGENTPLANE_TESTING_POLICY,
+            # Bound at launch rather than by a static account: a managed runner Pod runs as its own
+            # per-Sandbox ServiceAccount, so the `haku-agent` binding never reaches it
+            # and the preset is the only thing that decides what this Haku may do without the operator.
+            *HAKU_ACTION_POLICY_SETS,
+            *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["haku"]),
         ],
-        # Bound at launch rather than by a static account: a managed runner Pod runs as its own
-        # per-Sandbox ServiceAccount, so the `haku-agent` binding never reaches it
-        # and the preset is the only thing that decides what this Haku may do without the operator.
-        action_policy_sets=list(HAKU_ACTION_POLICY_SETS),
         thread_preset=_THREAD_PRESET_HAKU_CODEX,
-        kubernetes_grants=list(agent_access_profiles.MANAGED_GRANTS["haku"]),
         # Each new Thread gets its own haku-state and ducktape checkout.
     )
     cfg.thread_presets[_THREAD_PRESET_FINANCE_AGENT_CODEX] = ThreadPreset(
@@ -172,7 +176,7 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
     cfg.sandbox_presets["finance-agent"] = SandboxPreset(
         title="Finance agent",
         template="runner",
-        egress_policies=[
+        policy_sets=[
             BASIC_POLICY,
             PACKAGES_POLICY,
             AIQUOTA_READ_POLICY,
@@ -184,22 +188,19 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
             GITHUB_CLONE_POLICY,
             GITHUB_ACTIONS_LOGS_POLICY,
             BUILDBUDDY_POLICY,
-        ],
-        # Same GitHub read sets as public-coder: finance-agent forks/pushes/PRs ducktape
-        # through the same agentydragon-agent account. Gaffer branch and PR creation are the only
-        # additional auto-approved writes for this preset; pushes and other changes remain gated.
-        action_policy_sets=[
+            # Same GitHub read sets as public-coder: finance-agent forks/pushes/PRs ducktape
+            # through the same agentydragon-agent account. Gaffer branch and PR creation are the only
+            # additional auto-approved writes for this preset; pushes and other changes remain gated.
             COMMON_GITHUB_READ_SET,
             GITHUB_IDENTITY_READS_SET,
             SSH_READS_SET,
             GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
+            *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["finance-agent"]),
         ],
         thread_preset=_THREAD_PRESET_FINANCE_AGENT_CODEX,
-        kubernetes_grants=list(agent_access_profiles.MANAGED_GRANTS["finance-agent"]),
     )
     for preset in ("public-coder", "finance-agent"):
-        cfg.sandbox_presets[preset].action_policy_sets.append(DUCKTAPE_PR_FAILED_JOBS_SET)
-        cfg.sandbox_presets[preset].egress_policies.append(AGENTPLANE_TESTING_POLICY)
+        cfg.sandbox_presets[preset].policy_sets += [DUCKTAPE_PR_FAILED_JOBS_SET, AGENTPLANE_TESTING_POLICY]
     public_coder = cfg.sandbox_presets["public-coder"]
     thread = cfg.thread_presets[public_coder.thread_preset].model_copy(deep=True)
     thread.title = "Public coder / ducktape / Codex"
@@ -211,4 +212,4 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
     sandbox.template = "runner-ducktape"
     sandbox.thread_preset = "public-coder-ducktape-codex"
     cfg.sandbox_presets["public-coder-ducktape"] = sandbox
-    return on_policy_sets(cfg)
+    return cfg

@@ -3300,14 +3300,14 @@ data:
           - github-actions-logs
           - buildbuddy
           - public-coder-pr-visuals
-          - agentplane-testing
           - common-github-read
           - github-identity-reads
           - ssh-reads
-          - ducktape-pr-failed-jobs
           - shared-diagnostics
           - testing-access
           - public-inventory
+          - ducktape-pr-failed-jobs
+          - agentplane-testing
         thread_preset: public-coder-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
@@ -3363,17 +3363,17 @@ data:
           - github-clone
           - github-actions-logs
           - buildbuddy
-          - agentplane-testing
           - common-github-read
           - github-identity-reads
           - ssh-reads
           - gaffer-private-branch-and-pr-creation
-          - ducktape-pr-failed-jobs
           - shared-diagnostics
           - testing-access
           - public-inventory
           - coinbase-credentials
           - spend-policy-config
+          - ducktape-pr-failed-jobs
+          - agentplane-testing
         thread_preset: finance-agent-codex
       public-coder-ducktape:
         title: Public coder / ducktape
@@ -3386,14 +3386,14 @@ data:
           - github-actions-logs
           - buildbuddy
           - public-coder-pr-visuals
-          - agentplane-testing
           - common-github-read
           - github-identity-reads
           - ssh-reads
-          - ducktape-pr-failed-jobs
           - shared-diagnostics
           - testing-access
           - public-inventory
+          - ducktape-pr-failed-jobs
+          - agentplane-testing
         thread_preset: public-coder-ducktape-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
