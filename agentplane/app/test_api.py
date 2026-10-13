@@ -321,12 +321,12 @@ async def test_delete_starts_teardown_once_the_sandbox_is_suspended(
 ) -> None:
     custom_objects.objects[(SANDBOXES_PLURAL, "live")]["metadata"]["finalizers"] = ["test-finalizer"]
     assert (await client.delete("/sandboxes/live")).status_code == 409
-    assert not (await client.get("/sandboxes/live")).json()["deleting"]
+    assert (await client.get("/sandboxes/live")).json()["phase"] == "Running"
 
     assert (await client.post("/sandboxes/live/suspend")).status_code == 204
     assert (await client.delete("/sandboxes/live")).status_code == 204
     # The Sandbox Controller's finalizer holds it until its Sessions are sealed.
-    assert (await client.get("/sandboxes/live")).json()["deleting"]
+    assert (await client.get("/sandboxes/live")).json()["phase"] == "Sealing"
     assert (await client.delete("/sandboxes/live")).status_code == 204
     assert (await client.delete("/sandboxes/nope")).status_code == 404
 

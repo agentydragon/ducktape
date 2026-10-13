@@ -30,7 +30,7 @@ const live = vi.hoisted(
           operating_mode: "Running",
           service_account: { namespace: "agentplane-test", name: "startup-test" },
           status: null,
-          deleting: false,
+          phase: "Running",
           pod: {
             name: "startup-test",
             namespace: "agentplane-test",

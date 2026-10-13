@@ -75,8 +75,7 @@ export function podIp(sandbox: SandboxView): string | null {
 export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
   if (
     !sandbox ||
-    sandbox.deleting ||
-    sandbox.operating_mode !== "Running" ||
+    sandbox.phase !== "Running" ||
     !sandbox.pod ||
     sandbox.pod.name !== sandbox.name ||
     sandbox.pod.namespace !== sandbox.namespace ||
@@ -99,8 +98,10 @@ export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
 }
 
 export function sandboxSummary(sandbox: SandboxView): { label: string; kind: SandboxStatusKind } {
-  if (sandbox.deleting) return { label: "Deleting", kind: "gone" };
-  if (sandbox.operating_mode === "Suspended") return { label: "Suspended", kind: "suspended" };
+  if (sandbox.phase === "Tearing down") return { label: "Deleting", kind: "gone" };
+  if (sandbox.phase === "Sealing") return { label: "Sealing", kind: "pending" };
+  if (sandbox.phase === "Suspending") return { label: "Suspending", kind: "pending" };
+  if (sandbox.phase === "Suspended") return { label: "Suspended", kind: "suspended" };
   // Neutral nouns: a VM Sandbox has no Pod of its own to name here. The tooltip carries the Pod's phase.
   if (!sandbox.pod) return { label: "Not started", kind: "pending" };
   if (sandbox.pod.deleting) return { label: "Shutting down", kind: "gone" };

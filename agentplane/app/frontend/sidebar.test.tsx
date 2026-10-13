@@ -51,7 +51,7 @@ function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxVie
     operating_mode: "Running",
     service_account: { namespace: "agentplane-test", name },
     status: null,
-    deleting: false,
+    phase: "Running",
     pod: {
       name,
       namespace: "agentplane-test",
@@ -237,7 +237,7 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   await pushSnapshot(
     stream,
     snapshot([renamed], {
-      "test-sandbox": sandbox("test-sandbox", { operating_mode: "Suspended", pod: null }),
+      "test-sandbox": sandbox("test-sandbox", { operating_mode: "Suspended", phase: "Suspended", pod: null }),
       "test-threadless": sandbox("test-threadless", { pod: null }),
     })
   );
@@ -327,7 +327,7 @@ it("groups threads by sandbox, showing each group's state, name and visible thre
       thread({ id: "t-2", sandbox: "demo-a1b2", name: "Clean up the stale branch" }),
       thread({ id: "t-3", sandbox: "prod-x7f2", name: "Investigate flaky CI" }),
     ],
-    { "demo-a1b2": sandbox("demo-a1b2"), "prod-x7f2": sandbox("prod-x7f2", { operating_mode: "Suspended", pod: null }) }
+    { "demo-a1b2": sandbox("demo-a1b2"), "prod-x7f2": sandbox("prod-x7f2", { operating_mode: "Suspended", phase: "Suspended", pod: null }) }
   );
 
   expect(container.textContent).toContain("demo-a1b2");
@@ -358,9 +358,9 @@ it("opens retained Thread history even when its Sandbox is gone", async () => {
 
 it.each([
   ["a running Pod", {}, "ready"],
-  ["a suspended Sandbox", { operating_mode: "Suspended", pod: null }, "suspended"],
-  ["a running Sandbox with no Pod yet", { pod: null }, "pending"],
-  ["a Sandbox being deleted", { deleting: true }, "gone"],
+  ["a suspended Sandbox", { operating_mode: "Suspended", phase: "Suspended", pod: null }, "suspended"],
+  ["a running Sandbox with no Pod yet", { phase: "Creating", pod: null }, "pending"],
+  ["a Sandbox being deleted", { phase: "Tearing down" }, "gone"],
 ] as const)("marks a group's Sandbox by its status: %s", async (_name, overrides, status) => {
   const box = sandbox("test-marked", overrides);
   await render([], { [box.name]: box });
@@ -369,7 +369,7 @@ it.each([
 
 it("renders only a suspended Sandbox's name in its icon's gray, not the link blue", async () => {
   const running = sandbox("test-running");
-  const suspended = sandbox("test-suspended", { operating_mode: "Suspended", pod: null });
+  const suspended = sandbox("test-suspended", { operating_mode: "Suspended", phase: "Suspended", pod: null });
   await render([], { [running.name]: running, [suspended.name]: suspended });
   const link = (name: string): HTMLElement => {
     const node = container.querySelector<HTMLElement>(`a[href="/sandboxes/${name}"]`);

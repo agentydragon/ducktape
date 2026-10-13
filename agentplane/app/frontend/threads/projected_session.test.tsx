@@ -65,7 +65,7 @@ function inventorySandbox(operating_mode: "Running" | "Suspended" = "Running"): 
     operating_mode,
     status: null,
     service_account: { namespace: "agentplane-test", name: THREAD.sandbox },
-    deleting: false,
+    phase: operating_mode,
     pod:
       operating_mode === "Suspended"
         ? null
