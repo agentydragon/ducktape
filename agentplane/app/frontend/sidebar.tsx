@@ -114,7 +114,7 @@ function ThreadRow({
       }}
     >
       <span className="agentplane-sidebar-row-mark">
-        <ThreadStatusIndicator kind={status.kind} label={status.label} size="small" />
+        <ThreadStatusIndicator kind={status.kind} label={status.label} />
         <ThreadNoticeBadge inboxes={notices.bySession?.get(thread.id) ?? []} live={notices.live} />
       </span>
       <span className="agentplane-sidebar-row-name">{label}</span>
