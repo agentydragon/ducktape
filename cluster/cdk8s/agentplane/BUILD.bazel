@@ -440,7 +440,6 @@ py_library(
         ":testing",
         "//agentplane/action_service/policies:resources",
         "//agentplane/action_service/sandbox:actions",
-        "//agentplane/crds:actionpolicybinding",
         "//agentplane/crds:policybinding",
         "//agentplane/crds:policyset",
         "//cluster/cdk8s:agent_access_profiles",

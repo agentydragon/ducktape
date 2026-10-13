@@ -523,7 +523,6 @@ flowchart LR
     POLICY_RUNTIME_GRANTS[Candidate: web app affordances for bindings and sets]
     AGENT_PERMISSION_REQUESTS[Unscheduled: agents ask the operator for time-limited permissions]
     POLICY_RUNTIME_GRANTS -. related .-> AGENT_PERMISSION_REQUESTS
-    OLD_POLICY_KINDS_DROP[Candidate: drop the old policy kinds]
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
@@ -584,13 +583,6 @@ specific Action type for the request instead of the Kubernetes MCP escape hatch,
 view that shows the operator the account, the sets and the duration rather than a blob of Kubernetes
 YAML. Related to `POLICY_RUNTIME_GRANTS`, which gives the operator the web app for creating the same
 bindings by hand; an approved request would create the same kind of `PolicyBinding`.
-
-### `OLD_POLICY_KINDS_DROP` — drop the old policy kinds
-
-**Candidate; the operator merges it.** Delete the
-`ActionPolicySet`/`ActionPolicyBinding` and `EgressPolicy`/`EgressBinding` CRDs, their readers in
-the Action Service and egress proxy (with the proxy's admin `/bindings` observations), and the presets' separate `egress_policies`, `action_policy_sets`
-and `kubernetes_grants` fields (`app/presets.py`, once the manifest generator stops setting them).
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 

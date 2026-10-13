@@ -89,11 +89,7 @@ OPERATOR_CRDS: dict[str, set[str]] = {
     },
     "openclaw-operator": {"OpenClawInstance", "OpenClawSelfConfig"},
     "agentplane-crds": {
-        "EgressPolicy",
-        "EgressBinding",
         "EgressCredential",
-        "ActionPolicySet",
-        "ActionPolicyBinding",
         "PolicySet",
         "PolicyBinding",
         "Sandbox.agentplane.allegedly.works",

@@ -9,9 +9,6 @@
 
 # Each *_crds module below is generated at build time by cdk8s_import, not a pip
 # package -- gazelle can't resolve it from the requirements manifest.
-# gazelle:resolve py agentplane_actionpolicyset_crds //agentplane/crds:actionpolicyset
-# gazelle:resolve py agentplane_actionpolicybinding_crds //agentplane/crds:actionpolicybinding
-# gazelle:resolve py agentplane_egresspolicy_crds //agentplane/crds:egresspolicy
 # gazelle:resolve py agentplane_egresscredential_crds //agentplane/crds:egresscredential
 # gazelle:resolve py agentplane_policyset_crds //agentplane/crds:policyset
 # gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding
@@ -80,30 +77,6 @@ py_test(
 # one CRD per invocation, so each kind gets its own target and module_name (distinct
 # names so importing several together, as the actions/egress constructs will, doesn't
 # collide on one shared top-level Python package).
-
-cdk8s_import(
-    name = "actionpolicyset",
-    crd = "manifests/crd-actionpolicysets.yaml",
-    module_name = "agentplane_actionpolicyset_crds",
-    module_path = "works/allegedly/agentplane",
-    visibility = ["//visibility:public"],
-)
-
-cdk8s_import(
-    name = "actionpolicybinding",
-    crd = "manifests/crd-actionpolicybindings.yaml",
-    module_name = "agentplane_actionpolicybinding_crds",
-    module_path = "works/allegedly/agentplane",
-    visibility = ["//visibility:public"],
-)
-
-cdk8s_import(
-    name = "egresspolicy",
-    crd = "manifests/crd-egresspolicies.yaml",
-    module_name = "agentplane_egresspolicy_crds",
-    module_path = "works/allegedly/agentplane",
-    visibility = ["//visibility:public"],
-)
 
 cdk8s_import(
     name = "egresscredential",

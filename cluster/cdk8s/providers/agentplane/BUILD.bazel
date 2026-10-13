@@ -4,9 +4,6 @@
 # authoritative YAML source under //agentplane/crds -- see that package's BUILD.bazel header --
 # and this package only depends on those targets.
 
-# gazelle:resolve py agentplane_actionpolicyset_crds //agentplane/crds:actionpolicyset
-# gazelle:resolve py agentplane_actionpolicybinding_crds //agentplane/crds:actionpolicybinding
-# gazelle:resolve py agentplane_egresspolicy_crds //agentplane/crds:egresspolicy
 # gazelle:resolve py agentplane_egresscredential_crds //agentplane/crds:egresscredential
 # gazelle:resolve py agentplane_policyset_crds //agentplane/crds:policyset
 # gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding

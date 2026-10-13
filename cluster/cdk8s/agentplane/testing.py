@@ -339,7 +339,7 @@ class AcceptanceToken(Construct):
     """Lets `agentplane-staging`'s `claude-ai` and `haku-agent` mint this namespace's app token,
     so their sandboxes can run the acceptance suite's harness scenarios
     (`agentplane/acceptance/README.md`), which ask the API server for nothing else. None of
-    `AgentRbac`'s Sandbox lifecycle, exec or ActionPolicy writes are granted by this Role:
+    `AgentRbac`'s Sandbox lifecycle, exec or PolicySet and PolicyBinding writes are granted by this Role:
     the token is an identity for the app, as `_TOKEN_RULE` says. `claude-ai` separately
     receives `AgentRbac` in testing; `haku-agent` does not.
     """

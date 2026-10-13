@@ -38,7 +38,7 @@ def test_committed_files_are_generated() -> None:
     ],
 )
 def test_policy_host_schema_admits_only_supported_wildcards(host: str, valid: bool) -> None:
-    crd = yaml.safe_load(_committed(CRDS_DIR / "crd-egresspolicies.yaml"))
+    crd = yaml.safe_load(_committed(CRDS_DIR / "crd-policysets.yaml"))
     for version in crd["spec"]["versions"]:
         rule = version["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"]["rules"]["items"]
         pattern = rule["properties"]["hosts"]["items"]["pattern"]

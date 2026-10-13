@@ -99,7 +99,7 @@ def add_staging_egress_credentials(scope: Construct, *, namespace: str, credenti
     _plaid_pgweb(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
     inference_credentials(construct, reader=reader, credentials_namespace=credentials_namespace)
     add_gateway_resources(construct, reader=reader, namespace=namespace, credentials_namespace=credentials_namespace)
-    # Keep these grants in sync with the EgressPolicies in the named functions below.
+    # Keep these grants in sync with the egress PolicySets in the named functions below.
     # Local Gateways check the selected backend's identity/target port, even for a public hostname.
     NetworkPolicy(
         construct,

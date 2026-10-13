@@ -1,8 +1,7 @@
 """Derived schemas of the Agentplane CRDs, written by `bb run //agentplane/crds:generate_bin` and
 pinned to the committed files by `:test_generate`.
 
-The CRDs themselves are the `crd-*.yaml` files in this package's `manifests/` directory. A binding CRD's subject --
-`EgressBinding.spec.subjects[]`, `ActionPolicyBinding.spec.subject`, `PolicyBinding.spec.subject` --
+The CRDs themselves are the `crd-*.yaml` files in this package's `manifests/` directory. `PolicyBinding.spec.subject`
 is `agentplane.subjects.ServiceAccountRef`, the model every binding reader decides against, so its schema block
 is spliced into the otherwise hand-written CRD from the model's own JSON schema. Each served version's
 `openAPIV3Schema` is then dumped verbatim to `cluster/schemas/<group>/<kind>_<version>.json`, where
@@ -28,22 +27,14 @@ from util.bazel.workspace import get_build_workspace_directory
 CRDS_DIR = Path("agentplane/crds/manifests")
 SCHEMAS_DIR = Path("cluster/schemas")
 CRD_FILES = (
-    "crd-egresspolicies.yaml",
-    "crd-egressbindings.yaml",
     "crd-egresscredentials.yaml",
-    "crd-actionpolicysets.yaml",
-    "crd-actionpolicybindings.yaml",
     "crd-policysets.yaml",
     "crd-policybindings.yaml",
     "crd-sandboxtemplates.yaml",
     "crd-sandboxes.yaml",
 )
 # The spec field holding a binding CRD's subject; an array field's items are the subject.
-_SUBJECT_FIELDS = {
-    "crd-egressbindings.yaml": "subjects",
-    "crd-actionpolicybindings.yaml": "subject",
-    "crd-policybindings.yaml": "subject",
-}
+_SUBJECT_FIELDS = {"crd-policybindings.yaml": "subject"}
 
 
 class _FlowSequenceDumper(yaml.SafeDumper):
