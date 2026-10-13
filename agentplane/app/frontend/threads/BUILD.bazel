@@ -168,6 +168,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:client",
         "//agentplane/app/frontend:disclosure",
+        "//agentplane/app/frontend:format_time",
         "//agentplane/app/frontend:live",
         "//agentplane/app/frontend:notification_status",
         "//agentplane/app/frontend:sandbox_status",
@@ -180,7 +181,6 @@ ts_library(
         "//agentplane/app/frontend:topbar",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_pb",
-        "//agentplane/app/frontend:format_time",
     ],
 )
 
