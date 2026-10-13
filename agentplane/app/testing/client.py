@@ -8,9 +8,13 @@ dispatches on `entry.event.WhichOneof("observation")`, the same way the app and 
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
+import time
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
+from http import HTTPStatus
 from types import TracebackType
 from typing import Any, Self
 from uuid import UUID
@@ -32,11 +36,25 @@ from agentplane.sandbox_service.egress_views import BindingView, PolicyView
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
 
+logger = logging.getLogger(__name__)
+
 REQUEST_SECONDS = 30.0
 
 
+# How long a Thread's stream may stay down, reconnecting, before the caller is told. An app rollout
+# takes a minute or two to bring a replica up behind the Service.
+RECONNECT_SECONDS = 180.0
+RECONNECT_PAUSE_SECONDS = 2.0
+# What the Service or ingress answers while no app replica is ready.
+_ROLLING_STATUSES = frozenset({HTTPStatus.BAD_GATEWAY, HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.GATEWAY_TIMEOUT})
+
+
 class SessionStreamError(Exception):
-    """The app ended a session's event stream with an error frame."""
+    """The app ended a session's event stream with an error frame, or it stayed down too long."""
+
+
+class _StreamDroppedError(Exception):
+    """The stream's replica went away; the stream is to be reopened after its last entry."""
 
 
 @dataclass(frozen=True)
@@ -154,9 +172,13 @@ class Client:
     async def events(
         self, thread_id: UUID, *, after: int, read_seconds: float
     ) -> AsyncIterator[event_log_pb2.EventEntry]:
-        """The Thread's events from `after`. Ends when the stream does; `read_seconds` bounds how
-        long a single frame may take to arrive, so a wedged session fails a caller rather than
-        hanging it.
+        """The Thread's events from `after`, ending when the app sends the `end` frame.
+
+        A stream that drops without one -- an app rollout or crash, a closed connection, a `502`,
+        `503` or `504` while no replica is up -- is reopened after the last entry yielded, so a
+        caller sees every entry once and in order. An outage that outlasts `RECONNECT_SECONDS`
+        without delivering an entry raises. `read_seconds` bounds how long a single frame may take
+        to arrive, so a wedged session fails a caller rather than hanging it.
 
         Server-sent events, parsed as the format actually specifies: a frame is terminated by a
         blank line, `data:` may repeat and is joined with newlines, and a comment line (`:`) is a
@@ -165,27 +187,48 @@ class Client:
         """
         timeout = httpx.Timeout(REQUEST_SECONDS, read=read_seconds)
         url = f"/threads/{thread_id}/events/stream"
-        async with self._http.stream(
-            "GET", url, params={"after": after}, headers={"Accept": "text/event-stream"}, timeout=timeout
-        ) as response:
-            response.raise_for_status()
-            kind, data = "message", []
-            async for line in response.aiter_lines():
-                if line.startswith(":"):
-                    continue
-                if line.startswith("event:"):
-                    kind = line.removeprefix("event:").strip()
-                elif line.startswith("data:"):
-                    data.append(line.removeprefix("data:").strip())
-                elif not line:
-                    frame, payload = kind, "\n".join(data)
+        cursor = after
+        outage_began: float | None = None
+        while True:
+            try:
+                async with self._http.stream(
+                    "GET", url, params={"after": cursor}, headers={"Accept": "text/event-stream"}, timeout=timeout
+                ) as response:
+                    if response.status_code in _ROLLING_STATUSES:
+                        raise _StreamDroppedError(f"{response.status_code=}")
+                    response.raise_for_status()
                     kind, data = "message", []
-                    if frame == "end":
-                        return
-                    if frame == "error":
-                        raise SessionStreamError(f"Thread {thread_id}: {payload}")
-                    if frame == "event" and payload:
-                        yield _event(payload)
+                    async for line in response.aiter_lines():
+                        if line.startswith(":"):
+                            continue
+                        if line.startswith("event:"):
+                            kind = line.removeprefix("event:").strip()
+                        elif line.startswith("data:"):
+                            data.append(line.removeprefix("data:").strip())
+                        elif not line:
+                            frame, payload = kind, "\n".join(data)
+                            kind, data = "message", []
+                            if frame == "end":
+                                return
+                            if frame == "error":
+                                raise SessionStreamError(f"Thread {thread_id}: {payload}")
+                            if frame == "event" and payload:
+                                entry = _event(payload)
+                                cursor = entry.cursor
+                                outage_began = None
+                                yield entry
+                    reason = "the stream closed without an end frame"
+            except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadError, httpx.RemoteProtocolError) as error:
+                reason = f"{error!r}"
+            except _StreamDroppedError as error:
+                reason = str(error)
+            outage_began = outage_began if outage_began is not None else time.monotonic()
+            if time.monotonic() - outage_began > RECONNECT_SECONDS:
+                raise SessionStreamError(
+                    f"Thread {thread_id}: no event for {RECONNECT_SECONDS}s after {cursor=}: {reason}"
+                )
+            logger.warning("Thread %s stream dropped (%s); resuming after cursor %d", thread_id, reason, cursor)
+            await asyncio.sleep(RECONNECT_PAUSE_SECONDS)
 
 
 def _event(payload: str) -> event_log_pb2.EventEntry:

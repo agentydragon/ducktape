@@ -1,4 +1,4 @@
-load("//devinfra/python:defs.bzl", "py_library")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(
     default_testonly = True,
@@ -217,4 +217,18 @@ py_library(
     name = "system_status",
     srcs = ["system_status.py"],
     deps = ["//agentplane/app:system_status"],
+)
+
+py_test(
+    name = "test_client",
+    srcs = ["test_client.py"],
+    deps = [
+        ":client",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/proto:event_log_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
 )
