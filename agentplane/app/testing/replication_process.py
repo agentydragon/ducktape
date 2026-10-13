@@ -37,6 +37,7 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.replication_source import SANDBOX
+from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.history_watch import HistoryWatch, SessionOpenings
@@ -281,6 +282,7 @@ async def _serve(
                 operator_sessions=OperatorSessionStore(engine),
                 notifications_http=notifications_http,
                 notifications_token_file=Path(directory) / "notifications-token",
+                system_status=answering_system_status(),
             )
             # Authentication is tested separately; the production routes, HTTP transport, ingestion,
             # PostgreSQL notifications, and SSE generator all run here unchanged.

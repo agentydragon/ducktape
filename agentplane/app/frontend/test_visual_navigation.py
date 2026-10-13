@@ -81,6 +81,23 @@ async def test_debug_tools_in_sidebar_footer(view: VisualPage, app: AgentplaneFi
     await view.capture(target=page.locator("#app"))
 
 
+@DESKTOP_AND_MOBILE
+async def test_system_status_page(view: VisualPage, app: AgentplaneFixture) -> None:
+    """The sidebar's System entry opens the page: one row per component, a down one with its reason."""
+    await app.mount_app("/")
+    await view.check(context="fixture ready")
+    page = view.page
+    await _open_phone_navigation(page)
+    await page.get_by_role("button", name="System status").click()
+    healthy = page.get_by_role("row", name=re.compile("Healthy component"))
+    down = page.get_by_role("row", name=re.compile("Down component"))
+    await expect(healthy.get_by_text("ok", exact=True)).to_be_visible()
+    await expect(down.get_by_text("down", exact=True)).to_be_visible()
+    await expect(down).to_contain_text("UNAVAILABLE: connection refused")
+    await wait_for_stable(page)
+    await view.capture(target=page.locator("#app"))
+
+
 async def open_phone_drawer(view: VisualPage, app: AgentplaneFixture) -> Page:
     """Mount the thread list and open its navigation drawer."""
     await app.mount_app("/")

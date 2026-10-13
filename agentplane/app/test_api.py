@@ -28,6 +28,7 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
+from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
@@ -160,6 +161,7 @@ def bare_app(
         operator_sessions=operator_sessions,
         notifications_http=notifications_http,
         notifications_token_file=notifications_token_file,
+        system_status=answering_system_status(),
     )
 
 
@@ -518,6 +520,7 @@ async def test_a_runner_that_has_not_connected_is_a_503(
                 electric=electric_proxy,
                 notifications_http=notifications_http,
                 notifications_token_file=notifications_token_file,
+                system_status=answering_system_status(),
             )
             async with _agent_client(app) as client:
                 response = await client.get("/sandboxes/live/sessions")
@@ -611,6 +614,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
             electric=electric_proxy,
             notifications_http=notifications_http,
             notifications_token_file=notifications_token_file,
+            system_status=answering_system_status(),
         )
         async with _agent_client(app) as http, asyncio.timeout(10):
             response = await http.post(
@@ -687,6 +691,13 @@ async def test_every_route_needs_one_of_the_two_credentials(client: httpx.AsyncC
         await client.get("/sandboxes", headers={"Authorization": "", "x-authentik-username": "root"})
     ).status_code == 401
     assert (await client.get("/healthz", headers={"Authorization": ""})).status_code == 204
+
+
+async def test_system_status_lists_each_component(client: httpx.AsyncClient) -> None:
+    response = await client.get("/system/status")
+    assert response.status_code == 200
+    assert [(component["name"], component["state"]) for component in response.json()] == [("Test component", "ok")]
+    assert (await client.get("/system/status", headers={"Authorization": ""})).status_code == 401
 
 
 async def test_thread_sync_routes_authenticate_before_dispatch(client: httpx.AsyncClient) -> None:

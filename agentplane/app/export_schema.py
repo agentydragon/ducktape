@@ -27,6 +27,7 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.system_status import SystemStatusChecker
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.runner_directory import RunnerDirectory
@@ -100,6 +101,7 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
         operator_sessions=OperatorSessionStore(engine),
         notifications_http=httpx.AsyncClient(base_url="http://schema.invalid"),
         notifications_token_file=Path("/schema-unused-token"),
+        system_status=SystemStatusChecker([], timeout_s=1),
     ).openapi()
     components = document["components"]
     if not isinstance(components, dict) or not isinstance(components.get("schemas"), dict):

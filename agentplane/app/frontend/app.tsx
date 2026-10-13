@@ -15,6 +15,7 @@ import { SandboxList } from "./sandboxes";
 import { ProjectedSession } from "./threads/projected_session";
 import { Settings, type SettingsTab } from "./settings/dialog";
 import { Sidebar } from "./sidebar";
+import { SystemStatus } from "./system";
 import { ConnectionIndicator } from "./stream_status";
 import { electricThreadSync } from "./threads/thread_store";
 import { ThreadSyncContext } from "./threads/thread_sync";
@@ -144,6 +145,7 @@ function AppRoutes(): JSX.Element {
     <Routes>
       <Route path="/" element={<ThreadsLanding />} />
       <Route path="/sandboxes" element={<SandboxListRoute />} />
+      <Route path="/system" element={<SystemStatus />} />
       <Route path="/actions" element={<ActionsPage />} />
       <Route path="/actions/:requestId" element={<ActionRequestRoute />} />
       <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />

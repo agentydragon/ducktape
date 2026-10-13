@@ -32,6 +32,7 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog
 from agentplane.app.settings import Settings
 from agentplane.app.shutdown import Drain, drain_of
+from agentplane.app.system_status import SystemStatusChecker, grpc_health_probe, http_health_probe
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.history_watch import HistoryWatch, SessionOpenings
@@ -55,6 +56,9 @@ from util.kubernetes import CustomObjectsClient
 # The bundle's entry; runfiles resolve files, not directories, so the mount is its parent.
 FRONTEND_INDEX = "_main/agentplane/app/frontend/dist/index.html"
 SERVICE_WORKER = "_main/agentplane/app/frontend/service_worker/bundled/sw.js"
+
+# Each System page probe's budget; the probes run together, so the page answers within it.
+SYSTEM_STATUS_TIMEOUT_S = 5
 
 
 class SpaFiles(StaticFiles):
@@ -111,6 +115,7 @@ async def async_main(settings: Settings) -> None:
         httpx.AsyncClient(base_url=str(settings.electric_url), timeout=httpx.Timeout(65, connect=5)) as electric_http,
         dial(settings.sandbox_service_target) as sandbox_service_channel,
         dial(settings.runner_gateway_target) as gateway_channel,
+        dial(settings.history_service_target) as history_health_channel,
         HistoryServiceClient(
             settings.history_service_target,
             token_file=settings.history_service_token_file,
@@ -193,6 +198,18 @@ async def async_main(settings: Settings) -> None:
             operator_sessions=OperatorSessionStore(engine),
             notifications_http=notifications_http,
             notifications_token_file=settings.notifications_token_file,
+            system_status=SystemStatusChecker(
+                [
+                    grpc_health_probe("Sandbox Service", sandbox_service_channel),
+                    grpc_health_probe("Runner Gateway", gateway_channel),
+                    grpc_health_probe("History Service", history_health_channel),
+                    http_health_probe("Action Service", actions_http, "/healthz"),
+                    http_health_probe("Notification Service", notifications_http, "/healthz"),
+                    http_health_probe("Egress proxy", admin_http, "/healthz"),
+                    http_health_probe("Electric", electric_http, "/v1/health"),
+                ],
+                timeout_s=SYSTEM_STATUS_TIMEOUT_S,
+            ),
         )
         worker = await asyncio.to_thread(Path(get_required_path(SERVICE_WORKER)).read_bytes)
 

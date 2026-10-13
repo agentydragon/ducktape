@@ -58,6 +58,7 @@ from agentplane.app.shutdown import Drain
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
+from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.testing.thread_test_support import Replica
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events import event_log
@@ -360,6 +361,7 @@ def app(
         ),
         notifications_http=notifications_http,
         notifications_token_file=notifications_token_file,
+        system_status=answering_system_status(),
     )
 
 

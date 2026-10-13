@@ -91,6 +91,12 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 - `electric.py`: authenticated, scope-checked metadata, selected-command, and payload shape proxy.
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
   per-listener thread copies. The scope read is a long poll held until the thread's first fold.
+- `system_status.py`: the System page's checks. `GET /system/status` probes, concurrently and each
+  within a 5-second budget, the gRPC health service of the Sandbox Service, Runner Gateway and
+  History Service and the `/healthz` of the Action Service, Notification Service and egress proxy
+  admin port, plus Electric's `/v1/health`; a probe that fails or times out is `down` with its
+  reason, never an error response. LLM ingress is not probed: the app's NetworkPolicy has no egress
+  to it. The Kubernetes API is not probed either; the freshness of the live views shows it.
 - `action_federation.py`: request-bound operator federation into the canonical Action Service.
 - `consent.py`: browser-session-bound enrollment BFF; the Action Service owns consent and grants.
 - `operator_sessions.py`: PostgreSQL browser identity and pending OAuth state, shared across replicas.

@@ -16,6 +16,7 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
+from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -91,6 +92,7 @@ async def test_lazy_scoped_evidence_and_native_expansion(
         electric=electric_proxy,
         notifications_http=notifications_http,
         notifications_token_file=notifications_token_file,
+        system_status=answering_system_status(),
     )
     path = f"/threads/{thread}/evidence"
     params = {"projection_epoch": scope.projection_epoch, "entity_kind": "item", "entity_id": "first"}

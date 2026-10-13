@@ -7,6 +7,7 @@ import { ActionIcon, Button, Switch, Text, TextInput, Tooltip } from "@mantine/c
 import IconArchive from "@tabler/icons-react/dist/esm/icons/IconArchive.mjs";
 import IconArchiveOff from "@tabler/icons-react/dist/esm/icons/IconArchiveOff.mjs";
 import IconBox from "@tabler/icons-react/dist/esm/icons/IconBox.mjs";
+import IconHeartbeat from "@tabler/icons-react/dist/esm/icons/IconHeartbeat.mjs";
 import IconListCheck from "@tabler/icons-react/dist/esm/icons/IconListCheck.mjs";
 import IconPlus from "@tabler/icons-react/dist/esm/icons/IconPlus.mjs";
 import IconSearch from "@tabler/icons-react/dist/esm/icons/IconSearch.mjs";
@@ -417,6 +418,15 @@ function SidebarView({
             onClick={() => goTo("/actions")}
           >
             <IconListCheck size={15} />
+          </ActionIcon>
+        </Tooltip>
+        <Tooltip label="System status" withArrow>
+          <ActionIcon
+            variant={location.pathname === "/system" ? "light" : "subtle"}
+            aria-label="System status"
+            onClick={() => goTo("/system")}
+          >
+            <IconHeartbeat size={15} />
           </ActionIcon>
         </Tooltip>
         <Tooltip label="Settings" withArrow>

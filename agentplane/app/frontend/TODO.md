@@ -70,3 +70,10 @@ client can leave bodies past a size to be read when shown, and a memory budget a
 ## Multi-operator Action outcome notifications
 
 - Consider notifying when an Action is allowed if Agentplane becomes a multi-operator/multi-user system, so operators other than the approver can see that another person approved it.
+
+## System page probes
+
+The System page omits LLM ingress, because the app's NetworkPolicy has no egress to it, and the
+Kubernetes API, whose reachability the app has but does not probe (the live views show only the
+watch's freshness). Add either as a probe in `main.py`, with the NetworkPolicy rule LLM ingress
+needs, if an operator wants to see it there.

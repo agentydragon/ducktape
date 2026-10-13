@@ -67,6 +67,7 @@ from agentplane.app.operator_sessions import (
 from agentplane.app.presets import PresetCatalog, SandboxPresetView
 from agentplane.app.sandbox_models import NewSandbox, SandboxView, create_request, sandbox_has_ready_pod, sandbox_view
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
+from agentplane.app.system_status import ComponentStatus, SystemStatusChecker
 from agentplane.app.threads import bridge as runner_bridge
 from agentplane.app.threads.events import stream
 from agentplane.app.threads.events.debug import (
@@ -128,6 +129,7 @@ class AppServices:
     operator_sessions: OperatorSessionStore
     notifications_http: httpx.AsyncClient
     notifications_token_file: FilePath
+    system_status: SystemStatusChecker
     models: ModelCatalog
     presets: PresetCatalog
     egress: EgressAccess
@@ -337,6 +339,14 @@ async def grant_sandbox_egress(inventory: Inventory, egress: Egress, name: str, 
     """Grant egress policies to a sandbox already running: a new binding naming it, never an edit of
     one it has, so this grant's expiry and revocation are its own."""
     return await egress.grant(await inventory.get(name), body.policies)
+
+
+system_router = APIRouter(prefix="/system", tags=["system"])
+
+
+@system_router.get("/status")
+async def read_system_status(services: Services) -> list[ComponentStatus]:
+    return await services.system_status.check_all()
 
 
 egress_router = APIRouter(prefix="/egress", tags=["egress"])
@@ -1002,6 +1012,7 @@ def create_app(
     operator_sessions: OperatorSessionStore,
     notifications_http: httpx.AsyncClient,
     notifications_token_file: FilePath,
+    system_status: SystemStatusChecker,
 ) -> FastAPI:
     """The whole HTTP surface, guarded. Each of `oidc` and `reviewer` enables one way to authenticate,
     and an app given neither answers 401 to everything but /healthz."""
@@ -1055,6 +1066,7 @@ def create_app(
         operator_sessions=operator_sessions,
         notifications_http=notifications_http,
         notifications_token_file=notifications_token_file,
+        system_status=system_status,
         models=catalog,
         presets=configured_presets,
         egress=egress,
@@ -1083,6 +1095,7 @@ def create_app(
         action_policy_router,
         live_router,
         electric_router,
+        system_router,
     ):
         app.include_router(api_router, dependencies=[Depends(require_caller)])
     if oidc is not None:

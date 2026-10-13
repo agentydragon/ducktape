@@ -739,6 +739,35 @@ ts_library(
 )
 
 ts_library(
+    name = "system",
+    srcs = ["system.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":client",
+        ":time_ago",
+        ":topbar",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "system_test",
+    srcs = ["system.test.tsx"],
+    deps = [
+        ":client",
+        ":system",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/@types/react-dom",
+        "//:node_modules/react",
+        "//:node_modules/react-dom",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "notification_status",
     srcs = ["notification_status.tsx"],
     tsconfig = TSCONFIG,
@@ -983,6 +1012,7 @@ ts_library(
         ":shell_css",
         ":sidebar",
         ":stream_status",
+        ":system",
         ":tab_metadata",
         ":topbar",
         "//:node_modules/@mantine/core",

@@ -88,6 +88,7 @@ export function modelsForHarness(catalog: ModelCatalog, harness: Harness): Model
     return option ? [option] : [];
   });
 }
+export type ComponentStatus = components["schemas"]["ComponentStatus"];
 export type Decision = components["schemas"]["Decision"];
 export type Connection = components["schemas"]["Connection"];
 export type CallerServiceAccount = components["schemas"]["ServiceAccountRef"];

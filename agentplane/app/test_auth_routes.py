@@ -33,6 +33,7 @@ from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
+from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
@@ -137,6 +138,7 @@ def serve(
             electric=electric_proxy,
             notifications_http=notifications_http,
             notifications_token_file=notifications_token_file,
+            system_status=answering_system_status(),
         )
         # The database pool belongs to this event loop, not serve_app's dedicated thread.
         async with serve_app(idp, sock=idp_sock), serve_app_in_loop(app, sock=app_sock):

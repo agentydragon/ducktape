@@ -35,6 +35,7 @@ from agentplane.app.settings import Settings
 from agentplane.app.shutdown import drain_of
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS, TEST_REASONING_EFFORTS
+from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.history_watch import SessionOpenings
 from agentplane.app.threads.runner_directory import RunnerDirectory
@@ -241,6 +242,7 @@ async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_open
         electric=electric_proxy,
         notifications_http=notifications_http,
         notifications_token_file=notifications_token_file,
+        system_status=answering_system_status(),
     )
     port = pick_free_port()
     # A budget the test would never wait out: the stream has to end because of the drain, not this.

@@ -38,6 +38,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.testing.history import SeededEventLogStore, register_gateway_session
 from agentplane.app.testing.model_test_data import TEST_MODELS
+from agentplane.app.testing.system_status import answering_system_status
 from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
 from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.history_watch import SessionOpenings
@@ -249,6 +250,7 @@ async def app_url(
         electric=electric_proxy,
         notifications_http=notifications_http,
         notifications_token_file=notifications_token_file,
+        system_status=answering_system_status(),
     )
     sock = bind_free_port()
     async with serve_app_in_loop(app, sock=sock):

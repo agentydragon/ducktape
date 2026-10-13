@@ -2005,6 +2005,14 @@ routes.push(
   ],
   [
     "GET",
+    /^\/system\/status$/,
+    () => [
+      { name: "Healthy component", state: "ok", detail: null, checked_at: ago(4000) },
+      { name: "Down component", state: "down", detail: "UNAVAILABLE: connection refused", checked_at: ago(4000) },
+    ],
+  ],
+  [
+    "GET",
     /^\/presets$/,
     () => [
       {

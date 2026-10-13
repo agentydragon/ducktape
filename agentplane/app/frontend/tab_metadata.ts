@@ -12,6 +12,7 @@ export interface ThreadTabStatus {
 export function appDocumentTitle(pathname: string, settingsOpen: boolean): string {
   if (settingsOpen) return `Settings — ${DEFAULT_APP_TITLE}`;
   if (pathname === "/actions" || pathname.startsWith("/actions/")) return `Actions — ${DEFAULT_APP_TITLE}`;
+  if (pathname === "/system") return `System — ${DEFAULT_APP_TITLE}`;
   if (pathname === "/sandboxes") return `Sandboxes — ${DEFAULT_APP_TITLE}`;
   if (pathname.startsWith("/sandboxes/")) {
     const encodedName = pathname.slice("/sandboxes/".length).split("/")[0];
