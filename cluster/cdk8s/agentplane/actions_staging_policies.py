@@ -553,7 +553,21 @@ def add_staging_action_policies(scope: Construct) -> None:
         scope,
         "role-claude-ai-sandbox-reader",
         metadata=ApiObjectMetadata(name="claude-ai-sandbox-reader", namespace=_NAMESPACE),
-        rules=[RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"])],
+        rules=[
+            RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"]),
+            # A `kind: vm` Sandbox's guest: state, and `virtctl console` for a runner that never connected.
+            RolePolicyRule(
+                resources=[
+                    custom_resource("kubevirt.io", "virtualmachines"),
+                    custom_resource("kubevirt.io", "virtualmachineinstances"),
+                ],
+                verbs=["get", "list", "watch"],
+            ),
+            RolePolicyRule(
+                resources=[custom_resource("subresources.kubevirt.io", "virtualmachineinstances/console")],
+                verbs=["get"],
+            ),
+        ],
     )
     RoleBinding(
         scope,
