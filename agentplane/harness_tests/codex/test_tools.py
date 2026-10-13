@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import shlex
 
@@ -216,7 +217,23 @@ async def test_subagent_spawn_and_wait_report_the_child_identity(
 
         assert handled == {"call_spawn_child", "call_wait_child", "child_start", "call_child_shell"}
         assert child_thread_ids == {spawned_id}
-        assert (await turn.completed()).params.turn.status is wire.TurnStatus.COMPLETED
+        # Codex tells the parent about the child's completion with a user message of its own. When that
+        # lands after the parent's final answer, the parent takes one more model request in the same
+        # turn, and the turn completes only once it is answered.
+        turn_done = asyncio.ensure_future(turn.completed())
+        while True:
+            late_request = asyncio.ensure_future(openai_responses.await_next_request())
+            await asyncio.wait({turn_done, late_request}, return_when=asyncio.FIRST_COMPLETED)
+            if not late_request.done():
+                late_request.cancel()
+                break
+            async with late_request.result() as exchange:
+                assert exchange.request.client_metadata.thread_id == turn.thread_id
+                assert any("subagent_notification" in message.text for message in exchange.request.messages("user"))
+                await exchange.send(
+                    *responses_sse.response_stream([responses_sse.Message("NOTIFICATION_SEEN")], model=MODEL).events
+                )
+        assert (await turn_done).params.turn.status is wire.TurnStatus.COMPLETED
         assert run.running
 
     captured = run.native_frames()
