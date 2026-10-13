@@ -8,6 +8,7 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from uuid import uuid4
 
+import httpx
 import pytest
 import pytest_bazel
 from google.protobuf.json_format import MessageToDict
@@ -30,8 +31,10 @@ def _entry(cursor: int) -> bytes:
     return _frame("event", MessageToDict(event_log_pb2.EventEntry(cursor=cursor)), cursor=cursor)
 
 
-async def _respond(writer: asyncio.StreamWriter, status: str, body: bytes = b"") -> None:
-    writer.write(f"HTTP/1.1 {status}\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n".encode() + body)
+async def _respond(
+    writer: asyncio.StreamWriter, status: str, body: bytes = b"", content_type: str = "text/event-stream"
+) -> None:
+    writer.write(f"HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nConnection: close\r\n\r\n".encode() + body)
     await writer.drain()
 
 
@@ -80,12 +83,12 @@ async def test_resumes_after_the_last_entry_when_the_stream_closes_without_an_en
         assert await _cursors(client) == [1, 2, 3]
 
 
-async def _forbidden(after: int, writer: asyncio.StreamWriter) -> None:
-    await _respond(writer, "403 Forbidden")
+async def _proxy_denied(after: int, writer: asyncio.StreamWriter) -> None:
+    await _respond(writer, "403 Forbidden", b"Access denied\r\n", "text/plain")
 
 
 async def test_waits_out_a_rollout_that_has_no_replica_up() -> None:
-    async with _app(_first_two_then_close, _unavailable, _forbidden, _unavailable, _rest_then_end) as (client, _):
+    async with _app(_first_two_then_close, _unavailable, _proxy_denied, _unavailable, _rest_then_end) as (client, _):
         assert await _cursors(client) == [1, 2, 3]
 
 
@@ -127,6 +130,15 @@ async def _serve_again(port: int) -> asyncio.Server:
 async def test_an_outage_with_no_entries_is_reported() -> None:
     async with _app(*[_unavailable] * 100) as (client, _):
         with pytest.raises(SessionStreamError):
+            await _cursors(client)
+
+
+async def test_an_app_refusal_is_not_retried() -> None:
+    async def refused(after: int, writer: asyncio.StreamWriter) -> None:
+        await _respond(writer, "403 Forbidden", b"{}", "application/json")
+
+    async with _app(refused) as (client, _):
+        with pytest.raises(httpx.HTTPStatusError):
             await _cursors(client)
 
 

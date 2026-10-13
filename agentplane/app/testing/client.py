@@ -46,11 +46,17 @@ REQUEST_SECONDS = 30.0
 # initContainer, then startup) when its pod was deleted on 2026-10-13.
 RECONNECT_SECONDS = 600.0
 RECONNECT_PAUSE_SECONDS = 2.0
-# What the public route answers while no app replica is ready: mostly 503, with intermittent 403s
-# observed on testing during the same gap.
-_ROLLING_STATUSES = frozenset(
-    {HTTPStatus.FORBIDDEN, HTTPStatus.BAD_GATEWAY, HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.GATEWAY_TIMEOUT}
-)
+_ROLLING_STATUSES = frozenset({HTTPStatus.BAD_GATEWAY, HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.GATEWAY_TIMEOUT})
+
+
+def _no_app_answered(response: httpx.Response) -> bool:
+    """What the public route answers while no app replica is ready: a 502/503/504, and on testing
+    intermittently the proxy's own `403` with a plain-text "Access denied" body. The app's own
+    refusals are JSON, so a JSON `403` is a verdict, not a gap."""
+    return response.status_code in _ROLLING_STATUSES or (
+        response.status_code == HTTPStatus.FORBIDDEN
+        and response.headers.get("content-type", "").startswith("text/plain")
+    )
 
 
 class SessionStreamError(Exception):
@@ -178,8 +184,7 @@ class Client:
     ) -> AsyncIterator[event_log_pb2.EventEntry]:
         """The Thread's events from `after`, ending when the app sends the `end` frame.
 
-        A stream that drops without one -- an app rollout or crash, a closed connection, a `403`,
-        `502`, `503` or `504` while no replica is up -- is reopened after the last entry yielded, so a
+        A stream that drops without one -- an app rollout or crash, a closed connection, a `502`, `503` or `504`, or the proxy's plain-text `403`, while no replica is up -- is reopened after the last entry yielded, so a
         caller sees every entry once and in order. An outage that outlasts `RECONNECT_SECONDS`
         without delivering an entry raises. `read_seconds` bounds how long a single frame may take
         to arrive, so a wedged session fails a caller rather than hanging it.
@@ -198,7 +203,7 @@ class Client:
                 async with self._http.stream(
                     "GET", url, params={"after": cursor}, headers={"Accept": "text/event-stream"}, timeout=timeout
                 ) as response:
-                    if response.status_code in _ROLLING_STATUSES:
+                    if _no_app_answered(response):
                         raise _StreamDroppedError(f"{response.status_code=}")
                     response.raise_for_status()
                     kind, data = "message", []

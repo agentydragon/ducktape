@@ -227,6 +227,7 @@ py_test(
         "//:conftest",
         "//agentplane/app:conftest",
         "//agentplane/proto:event_log_pb2",
+        "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
