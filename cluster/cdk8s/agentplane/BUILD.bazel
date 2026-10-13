@@ -274,6 +274,7 @@ py_library(
         "//cluster/cdk8s:config_format",
         "//cluster/cdk8s:node_scheduling",
         "//cluster/cdk8s/forgejo_registry:pull_credentials",
+        "//cluster/cdk8s/providers/agent_sandbox:sandbox_template",
         "//cluster/cdk8s/providers/agent_sandbox:sandboxtemplate",
         "//util:settings_contract",
         "@pypi//cdk8s",

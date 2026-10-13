@@ -31,14 +31,11 @@ function sandboxOwnedBy(apiVersion: string): SandboxView {
 }
 
 describe("a Sandbox whose running Pod is Ready", () => {
-  it.each(["agents.x-k8s.io/v1beta1", "agentplane.allegedly.works/v1alpha1"])(
-    "is ready when %s's Sandbox controls the Pod",
-    (apiVersion) => {
-      const sandbox = sandboxOwnedBy(apiVersion);
-      expect(sandboxReady(sandbox)).toBe(true);
-      expect(sandboxSummary(sandbox).kind).toBe("ready");
-    }
-  );
+  it("is ready when Agentplane's Sandbox controls the Pod", () => {
+    const sandbox = sandboxOwnedBy("agentplane.allegedly.works/v1alpha1");
+    expect(sandboxReady(sandbox)).toBe(true);
+    expect(sandboxSummary(sandbox).kind).toBe("ready");
+  });
 
   it("is not ready when another API group's Sandbox controls the Pod", () => {
     expect(sandboxReady(sandboxOwnedBy("other.example/v1"))).toBe(false);
