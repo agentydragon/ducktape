@@ -381,10 +381,7 @@ the facts live in the runner and Lease, not in controller memory. A message sent
 that is about to suspend is safe without a lock: the sealing runner refuses it with a retryable code
 and the Dispatcher redelivers after resume. To avoid pointless suspend-resume flapping the Dispatcher
 marks a Sandbox it holds pending messages for (a Sandbox-level annotation, not a per-Session list)
-and the controller does not start an idle suspend while the mark is set. `SESSION_ACTIVITY_STREAM`
-still decides the shared derivation for notifications and the UI; this proposal only says
-suspension should not wait on it, and that if the stream becomes the one derivation, busyness is
-its input rather than a competing definition.
+and the controller does not start an idle suspend while the mark is set. `SESSION_ACTIVITY_STREAM` (the UI's activity facts) uses the same runner busy/idle definition (operator, 2026-10-13), so there is one definition of idle; the History Service's folded `last_model_activity_at` stays a separate timestamp for the UI and the notification quiet window.
 
 **Separate service or merge with the gateway.** "Both required" is not an argument to merge:
 required-ness says nothing about failure domain, state or replica shape.
@@ -461,7 +458,7 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
 | Node                                                        | Where it lands                                                                                                            |
 | ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | `SESSION_QUEUE_DESIGN`, `SESSION_MESSAGE_QUEUE`             | Dispatcher; this document answers the new-service fork and the dependency questions                                       |
-| `SESSION_ACTIVITY_STREAM`                                   | Open; busyness is the Dispatcher's input, folded activity stays the History Service's                                     |
+| `SESSION_ACTIVITY_STREAM`                                   | Built on the runner's busy/idle facts, the same definition idle suspension uses (operator, 2026-10-13)                    |
 | `SANDBOX_IDLE_EXPIRY`                                       | Controller: `spec.idleSuspendAfter`, runner busy facts, the D3 sequence                                                   |
 | `SESSION_REVIVE`, `SESSION_INCARNATIONS`                    | Controller starts the incarnation; History Service records it from the runner's announcement                              |
 | `BOOTSTRAP_PROGRESS_CONTRACT`                               | Runner fact on the Lease; `Bootstrapped` condition                                                                        |
