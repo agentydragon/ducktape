@@ -20,7 +20,12 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 - While `spec.running` is set, the Sandbox has exactly one Pod, named after it and controlled by
   it, with the template's state volume backed by the PVC. A Pod that goes away or ends while the
   Sandbox is running is replaced by a new incarnation on the same PVC.
-- Clearing `spec.running` deletes the Pod.
+- Clearing `spec.running` deletes the Pod, once the runner that connected from it has sealed every
+  Session (`status.sealedIncarnation` names the sealed Pod). A Pod whose runner never connected has
+  nothing to seal. The Sandbox stays held, with `Running` reason `Sealing`, while the seal fails or
+  the ingress has not acknowledged it. Applies only to a controller configured to seal.
+- A resumed Sandbox whose Pod is already sealed gets a new incarnation, as a sealed runner takes no
+  new Sessions.
 - Each incarnation reads `spec.template` and the template as they are when it starts. Editing
   either never changes a running Pod or VM, its kind included.
 - A template that does not exist, sets neither or both kinds, or defines the state volume itself,

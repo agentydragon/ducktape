@@ -91,6 +91,10 @@
             }
           }
         },
+        "sealedIncarnation": {
+          "description": "The UID of the last incarnation whose runner sealed every Session, kept after it stops. A runner that connected and is not this one has Sessions still to seal before the Sandbox stops or is deleted.",
+          "type": "string"
+        },
         "conditions": {
           "type": "array",
           "x-kubernetes-list-type": "map",
@@ -98,7 +102,7 @@
             "type"
           ],
           "items": {
-            "description": "A metav1.Condition. `Running` is the controller's: True once the Pod runs, otherwise False with a reason naming the state or what blocks it. `SessionsSealed` is the Runner Gateway's, on a deleting Sandbox: True once its runner sealed every Session and the ingress acknowledged each seal.",
+            "description": "A metav1.Condition. `Running` is the controller's: True once the Pod runs, otherwise False with a reason naming the state or what blocks it. `SessionsSealed` is set on a deleting Sandbox: True once its runner sealed every Session and the ingress acknowledged each seal.",
             "type": "object",
             "required": [
               "type",

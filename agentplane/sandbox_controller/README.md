@@ -9,8 +9,9 @@ Gateway's to read; `spec.bootstrap` and the Sandbox's identity reach its runner 
 launch ConfigMap (a Pod mounts it, a VM gets it as a disk). Deletion first has the runner seal every
 Session: the controller calls `Runner.Seal` through the [Runner Gateway](../runner_gateway/README.md)'s
 [runner proxy](../docs/runner_control.md#runner-proxy), at the Sandbox's own control Service, and sets the
-`SessionsSealed` condition. Started without `--runner-gateway-target`, it leaves the seal to the
-gateway, which then sets the condition.
+`SessionsSealed` condition. Suspension seals the same way before the Pod stops, recorded as
+`status.sealedIncarnation`. Started without `--runner-gateway-target`, it seals nothing before a
+suspension and leaves the seal for deletion to the gateway, which then sets the condition.
 
 Because that condition is set only once the History Service's ingress has
 acknowledged every seal, deleting a Sandbox waits while the History Service is down or rolling;

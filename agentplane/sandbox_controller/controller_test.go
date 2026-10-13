@@ -337,9 +337,11 @@ func sealSessions(t *testing.T, r *Reconciler) {
 }
 
 // connect is the Runner Gateway writing the Sandbox's connection Lease.
-func connect(t *testing.T, c client.Client) {
+func connect(t *testing.T, c client.Client, runner string) {
 	t.Helper()
-	lease := &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName + "-runner"}}
+	lease := &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{
+		Namespace: namespace, Name: sandboxName + "-runner", Annotations: map[string]string{PodUIDAnnotation: runner},
+	}}
 	if err := c.Create(context.Background(), lease); err != nil {
 		t.Fatal(err)
 	}
@@ -364,7 +366,7 @@ func TestDeletionOfASandboxNoRunnerConnectedToSealsNothing(t *testing.T) {
 func TestDeletionWaitsForTheRunnerToSealAndFlush(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
-	connect(t, c)
+	connect(t, c, "uid-runner")
 	sealer := r.Sealer.(*fakeSealer)
 	deleteSandbox(t, c)
 	for _, answer := range []struct {
@@ -401,7 +403,7 @@ func deleteSandbox(t *testing.T, c client.Client) {
 func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
-	connect(t, c)
+	connect(t, c, "uid-runner")
 	r.Sealer.(*fakeSealer).err = errors.New("runner unreachable")
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
@@ -434,7 +436,7 @@ func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 func TestDeletingAStoppedSandboxRunsItOnceMoreToSeal(t *testing.T) {
 	r, c := newReconciler(t, false, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
-	connect(t, c)
+	connect(t, c, "uid-runner")
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
 	if getPod(t, c) == nil {
@@ -478,5 +480,88 @@ func TestDeletionWithoutASealerWaitsForTheRunnerGateway(t *testing.T) {
 	reconcileOnce(t, r)
 	if getPod(t, c) == nil {
 		t.Fatal("the Pod went before anything sealed the Sessions")
+	}
+}
+
+// runningWithRunner is a running Sandbox whose Pod has a UID and whose runner connected from it.
+func runningWithRunner(t *testing.T) (*Reconciler, client.Client) {
+	t.Helper()
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	pod := getPod(t, c)
+	pod.UID = "uid-pod"
+	if err := c.Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+	connect(t, c, "uid-pod")
+	reconcileOnce(t, r)
+	return r, c
+}
+
+func TestSuspensionWaitsForTheRunnerToSeal(t *testing.T) {
+	r, c := runningWithRunner(t)
+	sealer := r.Sealer.(*fakeSealer)
+	sealer.err = errors.New("runner unreachable")
+	setRunning(t, c, false)
+	result, err := r.Reconcile(context.Background(), request)
+	if err != nil || result.RequeueAfter == 0 {
+		t.Fatalf("a failed seal is asked again: %v, %v", result, err)
+	}
+	if getPod(t, c) == nil || runningReason(t, c) != "Sealing" {
+		t.Fatal("the Pod stopped before its runner sealed")
+	}
+
+	sealer.err = nil
+	reconcileOnce(t, r)
+	if sealed := getSandbox(t, c).Status.SealedIncarnation; sealed == nil || *sealed != "uid-pod" {
+		t.Fatalf("sealed incarnation = %v, want uid-pod", sealed)
+	}
+	reconcileOnce(t, r)
+	if getPod(t, c) != nil {
+		t.Fatal("the Pod outlived its seal")
+	}
+	if meta.IsStatusConditionTrue(getSandbox(t, c).Status.Conditions, SessionsSealed) {
+		t.Fatal("suspension recorded the deletion-only SessionsSealed condition")
+	}
+}
+
+func TestSuspensionOfAnIncarnationNoRunnerConnectedFromSealsNothing(t *testing.T) {
+	r, c := runningWithRunner(t)
+	pod := getPod(t, c)
+	pod.UID = "uid-later-pod"
+	if err := c.Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+	setRunning(t, c, false)
+	reconcileOnce(t, r)
+	if getPod(t, c) != nil {
+		t.Fatal("the Pod was held for a seal it had none to make")
+	}
+	if calls := r.Sealer.(*fakeSealer).calls; calls != 0 {
+		t.Errorf("sealed %d times for an incarnation whose runner never connected", calls)
+	}
+}
+
+func TestResumingASealedIncarnationReplacesIt(t *testing.T) {
+	r, c := runningWithRunner(t)
+	setRunning(t, c, false)
+	reconcileOnce(t, r)
+	setRunning(t, c, true)
+	reconcileOnce(t, r)
+	if getPod(t, c) != nil {
+		t.Fatal("a resumed Sandbox kept the Pod whose runner sealed its Sessions")
+	}
+}
+
+func TestDeletingASuspendedSealedSandboxAsksNoRunner(t *testing.T) {
+	r, c := runningWithRunner(t)
+	setRunning(t, c, false)
+	reconcileOnce(t, r)
+	reconcileOnce(t, r)
+	calls := r.Sealer.(*fakeSealer).calls
+	deleteSandbox(t, c)
+	reconcileOnce(t, r)
+	if got := r.Sealer.(*fakeSealer).calls; got != calls || getPod(t, c) != nil {
+		t.Fatalf("seals %d -> %d, Pod present %v: the sealed runner is not asked again nor run once more", calls, got, getPod(t, c) != nil)
 	}
 }
