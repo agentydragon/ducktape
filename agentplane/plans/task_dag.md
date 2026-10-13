@@ -564,12 +564,10 @@ flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     POLICY_RUNTIME_GRANTS[Candidate: web app affordances for bindings and sets]
-    AGENT_PERMISSION_INSTRUCTIONS[Candidate: tell agents how and when to ask for a permission]
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
     POLICY_RUNTIME_GRANTS --> AGENT_PERMISSION_REQUESTS
     ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
-    AGENT_PERMISSION_INSTRUCTIONS -. related .-> AGENT_PERMISSION_REQUESTS
     POLICY_RUNTIME_GRANTS -. verify afterwards .-> SANDBOX_RBAC
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
@@ -619,15 +617,6 @@ app takes over what they enforce (refusing a Flux-applied or Sandbox-controlled 
 reference on the Sandbox) and gets the `policybindings` create/delete permission the Sandbox Service
 has today. One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry,
 so no reader handles expiry itself.
-
-### `AGENT_PERMISSION_INSTRUCTIONS` — tell agents how and when to ask for a permission
-
-**Candidate; operator, 2026-10-13 PDT.** An agent running in Agentplane should ask the operator in
-natural terms ("can I have permission X for two hours?") and the operator approves or denies. An
-agent can already do this by applying a `PolicyBinding` through the Kubernetes admin Action. Missing
-is the guidance that makes asking the normal route: how, with which sets and duration, and when to
-ask rather than work around a refusal. It needs nothing built, so it runs in parallel with the other
-nodes here; `AGENT_PERMISSION_REQUESTS` later replaces the Kubernetes route it describes.
 
 ### `AGENT_PERMISSION_REQUESTS` — an Action type and approval view for permission requests
 
