@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import UTC, datetime
-
 from fastapi import FastAPI, Request
 
 from agentplane.egress.agent_view import AgentEgressView, agent_view
@@ -19,17 +16,14 @@ PATH = "/v1/rules"
 class RulesProjection:
     """Project one caller's effective rules without exposing source resources."""
 
-    def __init__(self, index: Index, clock: Callable[[], datetime] = lambda: datetime.now(UTC)) -> None:
+    def __init__(self, index: Index) -> None:
         self._index = index
-        self._clock = clock
 
     def for_caller(self, principal: WorkloadPrincipal) -> AgentEgressView:
         """The view of the ServiceAccount the bearer proved. Nothing here can go stale between
         authentication and projection: the subject is the token's, not an object in the index."""
         return agent_view(
-            self._index,
-            ServiceAccountRef(namespace=principal.namespace, name=principal.service_account_name),
-            self._clock(),
+            self._index, ServiceAccountRef(namespace=principal.namespace, name=principal.service_account_name)
         )
 
 

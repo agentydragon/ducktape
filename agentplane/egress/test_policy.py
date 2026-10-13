@@ -5,7 +5,6 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime
 
 import pytest
 import pytest_bazel
@@ -48,7 +47,6 @@ from agentplane.kubernetes_watch import Freshness
 from agentplane.policy_sets import NumberedRule, PolicySet
 from agentplane.subjects import ServiceAccountRef
 
-NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 SECRET_VALUE = "real-value"
 APP_SECRET_VALUE = "real-app-value"
 NAMESPACE = "agentplane-test"
@@ -344,13 +342,13 @@ def test_the_same_name_in_another_namespace_is_a_different_subject() -> None:
     bound = index(policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"])])
     elsewhere = ServiceAccountRef(namespace="somewhere-else", name=CALLER.name)
 
-    assert evaluate(bound, CALLER, request(), NOW) == Allowed("b", "github", 0)
-    assert evaluate(bound, elsewhere, request(), NOW) == Denied(DenyReason.NO_BINDING)
+    assert evaluate(bound, CALLER, request()) == Allowed("b", "github", 0)
+    assert evaluate(bound, elsewhere, request()) == Denied(DenyReason.NO_BINDING)
 
 
 @pytest.mark.parametrize("case", CASES, ids=[case.name for case in CASES])
 def test_evaluate(case: Case) -> None:
-    assert evaluate(case.index, CALLER, case.request, NOW) == case.expected
+    assert evaluate(case.index, CALLER, case.request) == case.expected
 
 
 def scoped_index(policy_name: str, credential_: EgressCredential) -> Index:
@@ -369,7 +367,6 @@ def test_authenticated_workload_source_substitutes_only_the_validated_context_be
         scoped,
         CALLER,
         request(authorization=f"Bearer {dynamic.placeholder}"),
-        NOW,
         authenticated_workload=AuthenticatedWorkloadContext(bearer=token, caller=CALLER, pod_uid="pod-a-uid"),
     )
     assert decision == Allowed("b", "workload", 0, (HeaderRewrite(header=AUTHORIZATION, values=(f"Bearer {token}",)),))
@@ -380,15 +377,13 @@ def test_authenticated_workload_source_fails_without_authenticated_context() -> 
     dynamic = workload_credential("agentplane-workload", BEARER)
     scoped = scoped_index("workload", dynamic)
     egress = request(authorization=f"Bearer {dynamic.placeholder}")
-    assert evaluate(scoped, CALLER, egress, NOW) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
+    assert evaluate(scoped, CALLER, egress) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
     stale = AuthenticatedWorkloadContext(
         bearer="stale-token",
         caller=ServiceAccountRef(namespace=NAMESPACE, name="someone-else"),
         pod_uid="an-old-pod-uid",
     )
-    assert evaluate(scoped, CALLER, egress, NOW, authenticated_workload=stale) == Denied(
-        DenyReason.CREDENTIAL_UNAVAILABLE
-    )
+    assert evaluate(scoped, CALLER, egress, authenticated_workload=stale) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
 
 
 def test_projected_workload_source_substitutes_the_token_for_its_own_audience() -> None:
@@ -406,7 +401,6 @@ def test_projected_workload_source_substitutes_the_token_for_its_own_audience() 
         scoped_index("projected", projected),
         CALLER,
         request(authorization=f"Bearer {projected.placeholder}"),
-        NOW,
         authenticated_workload=context,
     )
     assert decision == Allowed(
@@ -422,11 +416,9 @@ def test_projected_workload_source_fails_when_its_audience_did_not_survive_revie
     projected = projected_credential("kubernetes-workload", BEARER)
     scoped = scoped_index("projected", projected)
     egress = request(authorization=f"Bearer {projected.placeholder}")
-    assert evaluate(scoped, CALLER, egress, NOW) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
+    assert evaluate(scoped, CALLER, egress) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
     without = AuthenticatedWorkloadContext(bearer="hop", caller=CALLER, pod_uid="pod-a-uid", projected={})
-    assert evaluate(scoped, CALLER, egress, NOW, authenticated_workload=without) == Denied(
-        DenyReason.CREDENTIAL_UNAVAILABLE
-    )
+    assert evaluate(scoped, CALLER, egress, authenticated_workload=without) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
 
 
 def test_projected_workload_source_is_unusable_by_another_caller() -> None:
@@ -443,7 +435,6 @@ def test_projected_workload_source_is_unusable_by_another_caller() -> None:
         scoped_index("projected", projected),
         CALLER,
         request(authorization=f"Bearer {projected.placeholder}"),
-        NOW,
         authenticated_workload=someone_else,
     )
     assert decision == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
@@ -473,7 +464,7 @@ def test_a_basic_username_target_takes_the_half_before_the_first_colon() -> None
         "github",
         credential("github-pat", BasicUsernameTarget(header=AUTHORIZATION, method=TargetMethod.BASIC_USERNAME)),
     )
-    decision = evaluate(scoped, CALLER, request(authorization=basic(f"{PLACEHOLDER}:")), NOW)
+    decision = evaluate(scoped, CALLER, request(authorization=basic(f"{PLACEHOLDER}:")))
     rewritten = (HeaderRewrite(header=AUTHORIZATION, values=(basic(f"{SECRET_VALUE}:"),)),)
     assert decision == Allowed("b", "github", 0, rewritten)
 
@@ -484,7 +475,7 @@ def test_a_whole_value_target_takes_the_header_entire() -> None:
     scoped = scoped_index(
         "github", credential("github-pat", WholeValueTarget(header=header, method=TargetMethod.WHOLE_VALUE))
     )
-    decision = evaluate(scoped, CALLER, request(**{"x-api-key": PLACEHOLDER}), NOW)
+    decision = evaluate(scoped, CALLER, request(**{"x-api-key": PLACEHOLDER}))
     assert decision == Allowed("b", "github", 0, (HeaderRewrite(header=header, values=(SECRET_VALUE,)),))
 
 
@@ -496,7 +487,7 @@ def test_substitution_covers_every_value_of_the_header() -> None:
         path="/repos/x",
         headers={"authorization": [f"Bearer {PLACEHOLDER}", "Bearer other"]},
     )
-    decision = evaluate(BASE_INDEX, CALLER, egress, NOW)
+    decision = evaluate(BASE_INDEX, CALLER, egress)
     rewritten = (HeaderRewrite(header=AUTHORIZATION, values=(f"Bearer {SECRET_VALUE}", "Bearer other")),)
     assert decision == Allowed("b", "github", 0, rewritten)
 
@@ -507,7 +498,7 @@ def test_a_rule_naming_a_credential_the_namespace_does_not_hold_forwards_untouch
     scoped = index(
         policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"])], credentials=[]
     )
-    assert evaluate(scoped, CALLER, request(authorization=f"Bearer {PLACEHOLDER}"), NOW) == Allowed("b", "github", 0)
+    assert evaluate(scoped, CALLER, request(authorization=f"Bearer {PLACEHOLDER}")) == Allowed("b", "github", 0)
 
 
 @pytest.mark.parametrize(
@@ -555,17 +546,15 @@ def test_blanket_requires_a_binding_and_respects_method_and_path() -> None:
     limited = policy("public", Rule(hosts=["*"], methods=["GET"], paths=["/public/*"]))
     rules = index(policies=[limited], bindings=[])
     allowed_request = request(host="arbitrary.example.org", path="/public/file")
-    assert evaluate(rules, CALLER, allowed_request, NOW) == Denied(DenyReason.NO_BINDING)
+    assert evaluate(rules, CALLER, allowed_request) == Denied(DenyReason.NO_BINDING)
     rules.policy_bindings["b"] = binding("b", policies=["public"])
-    allowed = evaluate(rules, CALLER, allowed_request, NOW)
+    allowed = evaluate(rules, CALLER, allowed_request)
     assert allowed == Allowed("b", "public", 0)
     assert not allowed.cluster_internal
-    assert evaluate(rules, CALLER, request(host="arbitrary.example.org", path="/private"), NOW) == Denied(
+    assert evaluate(rules, CALLER, request(host="arbitrary.example.org", path="/private")) == Denied(DenyReason.NO_RULE)
+    assert evaluate(rules, CALLER, request(method="POST", host="arbitrary.example.org", path="/public/file")) == Denied(
         DenyReason.NO_RULE
     )
-    assert evaluate(
-        rules, CALLER, request(method="POST", host="arbitrary.example.org", path="/public/file"), NOW
-    ) == Denied(DenyReason.NO_RULE)
 
 
 def test_blanket_does_not_send_a_known_credential_to_another_host_or_path() -> None:
@@ -574,7 +563,7 @@ def test_blanket_does_not_send_a_known_credential_to_another_host_or_path() -> N
         request(host="untrusted.example.org", authorization=f"Bearer {PLACEHOLDER}"),
         request(path="/outside-github-rule", authorization=f"Bearer {PLACEHOLDER}"),
     ]:
-        assert evaluate(rules, CALLER, outbound, NOW) == Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
+        assert evaluate(rules, CALLER, outbound) == Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
 
 
 MATRIX_CREDENTIAL = credential("matrix-login", JsonFieldTarget(method=TargetMethod.JSON_FIELD, field="password"))
@@ -615,7 +604,7 @@ def matrix_request(
 
 def test_json_secret_is_substituted_only_after_credential_authorization() -> None:
     outbound = matrix_request()
-    decision = evaluate(matrix_index(), CALLER, outbound, NOW)
+    decision = evaluate(matrix_index(), CALLER, outbound)
     assert isinstance(decision, Allowed)
     assert decision.body_rewrite is not None
     assert json.loads(decision.body_rewrite.content) == {"password": SECRET_VALUE}
@@ -627,20 +616,20 @@ def test_json_secret_is_substituted_only_after_credential_authorization() -> Non
     "outbound", [matrix_request(method="GET"), matrix_request(host="other.test"), matrix_request(path="/elsewhere")]
 )
 def test_otherwise_allowed_requests_cannot_redeem_json_credentials_off_route(outbound: EgressRequest) -> None:
-    assert evaluate(matrix_index(), CALLER, outbound, NOW) == Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
+    assert evaluate(matrix_index(), CALLER, outbound) == Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
 
 
 def test_json_route_fails_closed_for_invalid_body_missing_secret_or_revoked_binding() -> None:
     rules = matrix_index()
-    assert evaluate(rules, CALLER, matrix_request(body=b"{broken"), NOW) == Denied(DenyReason.INVALID_BODY)
+    assert evaluate(rules, CALLER, matrix_request(body=b"{broken")) == Denied(DenyReason.INVALID_BODY)
     rules.secrets.clear()
-    assert evaluate(rules, CALLER, matrix_request(), NOW) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
+    assert evaluate(rules, CALLER, matrix_request()) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
     rules.policy_bindings.clear()
-    assert evaluate(rules, CALLER, matrix_request(), NOW) == Denied(DenyReason.NO_BINDING)
+    assert evaluate(rules, CALLER, matrix_request()) == Denied(DenyReason.NO_BINDING)
 
 
 def test_nonjson_uploads_to_unrelated_routes_are_unchanged() -> None:
-    assert evaluate(matrix_index(), CALLER, matrix_request(path="/upload", body=b"not json"), NOW) == Allowed(
+    assert evaluate(matrix_index(), CALLER, matrix_request(path="/upload", body=b"not json")) == Allowed(
         "b", "matrix", 1
     )
 
@@ -648,7 +637,7 @@ def test_nonjson_uploads_to_unrelated_routes_are_unchanged() -> None:
 def test_body_credential_is_known_even_without_a_binding_naming_it() -> None:
     rules = matrix_index()
     rules.policy_sets["matrix"] = policy("matrix", Rule(hosts=["matrix.test"]))
-    assert evaluate(rules, CALLER, matrix_request(), NOW) == Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
+    assert evaluate(rules, CALLER, matrix_request()) == Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
 
 
 def policy_binding_index(*sets: PolicySet[Rule], subject: ServiceAccountRef = CALLER) -> Index:
@@ -661,7 +650,7 @@ def policy_binding_index(*sets: PolicySet[Rule], subject: ServiceAccountRef = CA
 
 def test_a_policy_binding_grants_its_existing_sets_rules_by_their_set_position() -> None:
     rules = policy_binding_index(PolicySet(name="github", rules=(NumberedRule(number=2, rule=GITHUB_RULE),)))
-    assert evaluate(rules, CALLER, request(authorization=f"Bearer {PLACEHOLDER}"), NOW) == Allowed(
+    assert evaluate(rules, CALLER, request(authorization=f"Bearer {PLACEHOLDER}")) == Allowed(
         "pb", "github", 2, SWAPPED
     )
 
@@ -680,7 +669,7 @@ def test_a_policy_binding_grants_its_existing_sets_rules_by_their_set_position()
     ],
 )
 def test_a_policy_binding_without_egress_rules_for_the_caller_is_no_binding(rules: Index) -> None:
-    assert evaluate(rules, CALLER, request(), NOW) == Denied(DenyReason.NO_BINDING)
+    assert evaluate(rules, CALLER, request()) == Denied(DenyReason.NO_BINDING)
 
 
 if __name__ == "__main__":

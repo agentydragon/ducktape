@@ -251,9 +251,7 @@ class EgressAddon:
             subject = caller
             if not self._index.available(self._clock()):
                 raise IdentityRejectedError(DenyReason.UNAVAILABLE, "enforcement index unavailable")
-            decision = evaluate(
-                self._index, caller, egress, self._clock(), authenticated_workload=authenticated_workload
-            )
+            decision = evaluate(self._index, caller, egress, authenticated_workload=authenticated_workload)
             if isinstance(decision, Allowed):
                 admitted = decision
                 pin = await self._resolver.pin(egress.host, egress.port, internal=decision.cluster_internal)
@@ -262,9 +260,7 @@ class EgressAddon:
                 if not self._index.available(self._clock()):
                     decision = Denied(DenyReason.UNAVAILABLE)
                 else:
-                    decision = evaluate(
-                        self._index, caller, egress, self._clock(), authenticated_workload=authenticated_workload
-                    )
+                    decision = evaluate(self._index, caller, egress, authenticated_workload=authenticated_workload)
                     if decision != admitted:
                         decision = Denied(DenyReason.UNAVAILABLE)
         except IdentityRejectedError as error:

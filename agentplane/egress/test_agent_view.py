@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
-
 import pytest
 import pytest_bazel
 from pydantic import TypeAdapter
@@ -30,7 +28,6 @@ from agentplane.kubernetes_watch import Freshness
 from agentplane.policy_sets import NumberedRule, PolicyBinding, PolicySet
 from agentplane.subjects import ServiceAccountRef
 
-NOW = datetime(2026, 9, 4, 12, 0, tzinfo=UTC)
 SECRET_VALUE = "the-real-credential"
 DESCRIPTION = "a token for the bot account, which can write to its own repositories"
 NAMESPACE = "agentplane-test"
@@ -83,7 +80,7 @@ def test_a_sandbox_is_told_every_target_and_not_just_the_placeholder() -> None:
     what presenting it does, and an agent given only an opaque placeholder cannot weigh whether it
     should.
     """
-    view = agent_view(_index(), CALLER, NOW)
+    view = agent_view(_index(), CALLER)
 
     (policy,) = view.policies
     assert policy.name == "github"
@@ -105,7 +102,7 @@ def test_a_sandbox_is_told_every_target_and_not_just_the_placeholder() -> None:
 def test_the_secret_and_its_whereabouts_are_absent_from_the_whole_document() -> None:
     """The value, the Secret it lives in and the key within it: a sandbox learns none of them, and
     this is checked over the serialised document so a field added anywhere fails it."""
-    document = agent_view(_index(), CALLER, NOW).model_dump_json()
+    document = agent_view(_index(), CALLER).model_dump_json()
 
     assert PLACEHOLDER in document, "anchor: the projection is populated, so the absences below mean something"
     for forbidden in (SECRET_VALUE, "vault-entry", "credential-key", "secretRef", "secret_ref"):
@@ -114,13 +111,13 @@ def test_the_secret_and_its_whereabouts_are_absent_from_the_whole_document() -> 
 
 def test_a_policy_that_does_not_exist_contributes_nothing_and_voids_nothing() -> None:
     """A binding grants whatever resolves: the missing name is absent, the rest still stands."""
-    view = agent_view(_index(policies=["github", "gone"]), CALLER, NOW)
+    view = agent_view(_index(policies=["github", "gone"]), CALLER)
 
     assert [policy.name for policy in view.policies] == ["github"]
 
 
 def test_a_binding_whose_every_policy_is_missing_grants_nothing() -> None:
-    view = agent_view(_index(policies=["gone"]), CALLER, NOW)
+    view = agent_view(_index(policies=["gone"]), CALLER)
 
     assert view.policies == []
 
@@ -129,7 +126,7 @@ def test_a_subject_no_binding_names_sees_an_empty_view_rather_than_an_error() ->
     """No egress is a normal state, not a failure: the answer is an empty list."""
     other = ServiceAccountRef(namespace=NAMESPACE, name="other")
 
-    view = agent_view(_index(), other, NOW)
+    view = agent_view(_index(), other)
 
     assert view.subject == other
     assert view.policies == []
@@ -144,7 +141,7 @@ def test_json_target_is_discoverable_without_exposing_credential_source_or_value
             )
         }
     )
-    view = agent_view(rules, CALLER, NOW)
+    view = agent_view(rules, CALLER)
     target = view.policies[0].rules[0].credential
     assert target is not None
     assert target.targets == [JsonFieldTarget(method=TargetMethod.JSON_FIELD, field="password")]

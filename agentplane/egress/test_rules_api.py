@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
 
 import httpx
 import pytest
@@ -18,7 +17,6 @@ from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
-NOW = datetime(2026, 9, 5, 12, 0, tzinfo=UTC)
 SUBJECT_A = {"namespace": SANDBOX_NAMESPACE, "name": SANDBOX_A}
 
 
@@ -27,7 +25,7 @@ async def api(workload_resolver: WorkloadPrincipalResolver) -> AsyncIterator[htt
     """The rules app over an empty index: the subject's identity is the whole answer."""
     app = create_rules_app(
         WorkloadPrincipalAuthenticator(workload_resolver),
-        RulesProjection(Index(freshness=Freshness(stale_after_seconds=180)), clock=lambda: NOW),
+        RulesProjection(Index(freshness=Freshness(stale_after_seconds=180))),
     )
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url=f"http://{RULES_HOST}") as client:
         yield client

@@ -156,7 +156,7 @@ class Grant:
     policies: tuple[PolicySet[Rule], ...]
 
 
-def subject_grants(index: Index, caller: ServiceAccountRef, now: datetime) -> list[Grant]:
+def subject_grants(index: Index, caller: ServiceAccountRef) -> list[Grant]:
     """The bindings of either kind that give this caller egress rules, in name order."""
     return [
         Grant(binding=resolution.binding.metadata.name, policies=sets)
@@ -244,7 +244,6 @@ def evaluate(
     index: Index,
     caller: ServiceAccountRef,
     request: EgressRequest,
-    now: datetime,
     authenticated_workload: AuthenticatedWorkloadContext | None = None,
 ) -> Decision:
     """Fail closed: only a matching rule admits, and the placeholder the request presents picks which.
@@ -254,7 +253,7 @@ def evaluate(
     came. So a placeholder is never forwarded, and widening what a subject may reach never takes a
     credential away from it.
     """
-    grants = subject_grants(index, caller, now)
+    grants = subject_grants(index, caller)
     if not grants:
         return Denied(DenyReason.NO_BINDING)
     matches = _matching_rules(grants, request)

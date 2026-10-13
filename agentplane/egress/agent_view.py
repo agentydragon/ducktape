@@ -22,8 +22,6 @@ someone writes it in. The value source never does. Targets deliberately share th
 
 from __future__ import annotations
 
-from datetime import datetime
-
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.egress.policy import Index, subject_grants
@@ -92,7 +90,7 @@ def _rule_view(index: Index, rule: Rule) -> RuleView:
     )
 
 
-def agent_view(index: Index, caller: ServiceAccountRef, now: datetime) -> AgentEgressView:
+def agent_view(index: Index, caller: ServiceAccountRef) -> AgentEgressView:
     """The caller's own view, from the same bindings the decision reads.
 
     Built from `subject_grants`, so what it reports and what the proxy admits cannot drift: an
@@ -103,7 +101,7 @@ def agent_view(index: Index, caller: ServiceAccountRef, now: datetime) -> AgentE
         subject=caller,
         policies=[
             PolicyView(name=policy.name, rules=[_rule_view(index, numbered.rule) for numbered in policy.rules])
-            for grant in subject_grants(index, caller, now)
+            for grant in subject_grants(index, caller)
             for policy in grant.policies
         ],
     )
