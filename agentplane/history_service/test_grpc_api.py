@@ -13,7 +13,7 @@ from agentplane.grpc_serving import serving
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.evidence import EvidenceReader
 from agentplane.history_service.grpc_api import Resources, add_service
-from agentplane.history_service.storage.store import Store
+from agentplane.history_service.storage.store import Store, Writer
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.testing.sessions import WRITER, retained_session
 from agentplane.history_service.thread_reads import ThreadReader
@@ -105,6 +105,33 @@ async def test_reader_reads_unfolded_history(
     )
     # Not folded yet: the lag is the whole committed prefix.
     assert (summary.committed_cursor, summary.HasField("projection_epoch")) == (1, False)
+    assert (summary.sandbox.namespace, summary.sandbox.name) == (WRITER.namespace, WRITER.name)
+
+
+async def test_find_sessions_by_the_name_of_the_sandbox_that_wrote_them(
+    stub: history_service_pb2_grpc.HistoryServiceAsyncStub, history: Store
+) -> None:
+    session_id = await retained_session(history, [EVENT])
+    await history.bind_writer(uuid4(), Writer(namespace=WRITER.namespace, name="test-other-sandbox", uid="other-uid"))
+
+    exact = await stub.FindSessions(
+        history_service_pb2.FindSessionsRequest(sandbox_name=WRITER.name), metadata=bearer(READER_TOKEN)
+    )
+    partial = await stub.FindSessions(
+        history_service_pb2.FindSessionsRequest(sandbox_name_contains=WRITER.name.upper()[5:]),
+        metadata=bearer(READER_TOKEN),
+    )
+
+    expected = history_service_pb2.SessionSandbox(
+        session_id=str(session_id), sandbox=history_service_pb2.SandboxRef(namespace=WRITER.namespace, name=WRITER.name)
+    )
+    assert list(exact.sessions) == list(partial.sessions) == [expected]
+
+
+async def test_find_sessions_requires_a_name_match(stub: history_service_pb2_grpc.HistoryServiceAsyncStub) -> None:
+    with pytest.raises(grpc.aio.AioRpcError) as refused:
+        await stub.FindSessions(history_service_pb2.FindSessionsRequest(), metadata=bearer(READER_TOKEN))
+    assert refused.value.code() == grpc.StatusCode.INVALID_ARGUMENT
 
 
 @pytest.mark.parametrize(

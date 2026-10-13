@@ -119,6 +119,24 @@ class HistoryService(history_service_pb2_grpc.HistoryServiceServicer):
             return history_service_pb2.BatchGetSessionSummariesResponse(summaries=summaries)
 
     @override
+    async def FindSessions(
+        self, request: history_service_pb2.FindSessionsRequest, context: grpc.aio.ServicerContext
+    ) -> history_service_pb2.FindSessionsResponse:
+        async with self.request(context):
+            match request.WhichOneof("sandbox"):
+                case "sandbox_name":
+                    sessions = await self.resources.summaries.find(
+                        sandbox_name=request.sandbox_name, sandbox_name_contains=None
+                    )
+                case "sandbox_name_contains":
+                    sessions = await self.resources.summaries.find(
+                        sandbox_name=None, sandbox_name_contains=request.sandbox_name_contains
+                    )
+                case _:
+                    raise ValueError("a Sandbox name match is required")
+            return history_service_pb2.FindSessionsResponse(sessions=sessions)
+
+    @override
     async def ReadThreadEntities(
         self, request: history_service_pb2.ReadThreadEntitiesRequest, context: grpc.aio.ServicerContext
     ) -> history_service_pb2.ReadThreadEntitiesResponse:

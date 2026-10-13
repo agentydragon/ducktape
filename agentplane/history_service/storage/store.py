@@ -99,6 +99,8 @@ class Store:
                         writer_namespace=writer.namespace,
                         writer_name=writer.name,
                         writer_uid=writer.uid,
+                        sandbox_namespace=writer.namespace,
+                        sandbox_name=writer.name,
                         source_id=None,
                         last_cursor=0,
                     )
@@ -109,6 +111,8 @@ class Store:
             assert row is not None
             if row.writer_uid is None:
                 row.writer_namespace, row.writer_name, row.writer_uid = writer.namespace, writer.name, writer.uid
+                if row.sandbox_name is None:
+                    row.sandbox_namespace, row.sandbox_name = writer.namespace, writer.name
             elif (row.writer_namespace, row.writer_name, row.writer_uid) != (writer.namespace, writer.name, writer.uid):
                 raise WriterMismatchError(session_id)
             if created is not None:

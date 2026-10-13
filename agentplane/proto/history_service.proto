@@ -21,6 +21,9 @@ service HistoryService {
   // The observations an entity was folded from, and the native harness frames behind each.
   rpc ReadEntityEvidence(ReadEntityEvidenceRequest) returns (ReadEntityEvidenceResponse);
   rpc ReadNativeFrames(ReadNativeFramesRequest) returns (ReadNativeFramesResponse);
+  // Every Session written by a Sandbox with a matching name, deleted Sandboxes included, in no
+  // particular order.
+  rpc FindSessions(FindSessionsRequest) returns (FindSessionsResponse);
   // Tells the caller when fold state it may hold changed, which names nothing: re-read what you hold.
   // On request it also names each Session the History Service records.
   rpc WatchSessionSummaries(WatchSessionSummariesRequest) returns (stream WatchSessionSummariesResponse);
@@ -136,6 +139,31 @@ message SessionSummary {
   FeedStatus feed_status = 12;
   // With FEED_STATUS_FAILED: why the runner's history was rejected.
   optional string feed_error = 13;
+  // The Sandbox that wrote the Session; absent until recorded.
+  optional SandboxRef sandbox = 14;
+}
+
+message SandboxRef {
+  string namespace = 1;
+  string name = 2;
+}
+
+message FindSessionsRequest {
+  oneof sandbox {
+    // The Sandbox's exact name.
+    string sandbox_name = 1;
+    // Text the Sandbox's name contains, ignoring case.
+    string sandbox_name_contains = 2;
+  }
+}
+
+message FindSessionsResponse {
+  repeated SessionSandbox sessions = 1;
+}
+
+message SessionSandbox {
+  string session_id = 1;
+  SandboxRef sandbox = 2;
 }
 
 message ReadThreadEntitiesRequest {

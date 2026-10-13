@@ -27,6 +27,28 @@ class SummaryReader:
             rows = await session.execute(_summaries().where(SessionHistory.id.in_(session_ids)))
         return [_summary(*row) for row in rows]
 
+    async def find(
+        self, *, sandbox_name: str | None, sandbox_name_contains: str | None
+    ) -> list[history_service_pb2.SessionSandbox]:
+        """Every Session written by a Sandbox named `sandbox_name`, or whose name contains `sandbox_name_contains`."""
+        if (sandbox_name is None) == (sandbox_name_contains is None) or not (sandbox_name or sandbox_name_contains):
+            raise ValueError("exactly one non-empty Sandbox name match is required")
+        match = (
+            SessionHistory.sandbox_name == sandbox_name
+            if sandbox_name is not None
+            else SessionHistory.sandbox_name.icontains(sandbox_name_contains, autoescape=True)
+        )
+        async with self._sessions() as session:
+            rows = await session.execute(
+                select(SessionHistory.id, SessionHistory.sandbox_namespace, SessionHistory.sandbox_name).where(match)
+            )
+        return [
+            history_service_pb2.SessionSandbox(
+                session_id=str(session_id), sandbox=history_service_pb2.SandboxRef(namespace=namespace, name=name)
+            )
+            for session_id, namespace, name in rows
+        ]
+
     async def get(self, session_id: UUID) -> history_service_pb2.SessionSummary:
         async with self._sessions() as session:
             row = (await session.execute(_summaries().where(SessionHistory.id == session_id))).one_or_none()
@@ -48,6 +70,8 @@ def _summary(
     history: SessionHistory, summary: ThreadHistorySummary | None, checkpoint: ThreadCheckpoint | None
 ) -> history_service_pb2.SessionSummary:
     message = history_service_pb2.SessionSummary(session_id=str(history.id), committed_cursor=history.last_cursor)
+    if history.sandbox_name is not None and history.sandbox_namespace is not None:
+        message.sandbox.namespace, message.sandbox.name = history.sandbox_namespace, history.sandbox_name
     if checkpoint is not None:
         message.projection_epoch = checkpoint.projection_epoch
         message.folded_through = checkpoint.through_cursor

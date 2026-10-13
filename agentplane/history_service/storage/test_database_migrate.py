@@ -16,6 +16,7 @@ from agentplane.proto import history_service_pb2, runner_pb2
 
 def _restore_sandbox_locator(connection: Connection) -> None:
     """The follower's columns that migrations before `0014_drop_sandbox_locator` expect."""
+    connection.execute(text("ALTER TABLE session_history DROP COLUMN sandbox_namespace, DROP COLUMN sandbox_name"))
     connection.execute(
         text(
             "ALTER TABLE session_history ADD COLUMN sandbox_namespace varchar, ADD COLUMN sandbox_name varchar, "
@@ -73,6 +74,34 @@ def test_follower_snapshots_take_the_public_session_id(db_url: str) -> None:
     feed.attached.CopyFrom(attached)
     assert stored == feed
     assert summary == MessageToDict(attached)
+
+
+def test_sandbox_of_a_bound_session_is_its_writers_account(db_url: str) -> None:
+    bound, unbound = uuid.uuid4(), uuid.uuid4()
+    engine = create_engine(RUNNER.sync_url(db_url))
+    try:
+        with engine.begin() as connection:
+            connection.execute(
+                text("ALTER TABLE session_history DROP COLUMN sandbox_namespace, DROP COLUMN sandbox_name")
+            )
+            connection.execute(text("UPDATE alembic_version SET version_num = '0016_recovery_reason_null'"))
+            connection.execute(
+                text(
+                    "INSERT INTO session_history (id, writer_namespace, writer_name, writer_uid, last_cursor) "
+                    "VALUES (:id, 'test-namespace', 'test-sandbox', 'test-account-uid', 0)"
+                ),
+                {"id": bound},
+            )
+            connection.execute(text("INSERT INTO session_history (id, last_cursor) VALUES (:id, 0)"), {"id": unbound})
+        RUNNER.apply(db_url)
+        with engine.connect() as connection:
+            rows = {
+                row.id: (row.sandbox_namespace, row.sandbox_name)
+                for row in connection.execute(text("SELECT id, sandbox_namespace, sandbox_name FROM session_history"))
+            }
+    finally:
+        engine.dispose()
+    assert rows == {bound: ("test-namespace", "test-sandbox"), unbound: (None, None)}
 
 
 if __name__ == "__main__":

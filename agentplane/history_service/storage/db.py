@@ -29,6 +29,7 @@ class SessionHistory(Base):
         CheckConstraint(
             "num_nulls(writer_namespace, writer_name, writer_uid) IN (0, 3)", name="history_writer_complete"
         ),
+        CheckConstraint("num_nulls(sandbox_namespace, sandbox_name) IN (0, 2)", name="history_sandbox_complete"),
         Index("ux_history_opened_position", "opened_position", unique=True),
     )
 
@@ -38,6 +39,11 @@ class SessionHistory(Base):
     writer_namespace: Mapped[str | None] = mapped_column(String)
     writer_name: Mapped[str | None] = mapped_column(String)
     writer_uid: Mapped[str | None] = mapped_column(String)
+    # The Sandbox that wrote the Session: its writer's ServiceAccount, since every Sandbox runs as one
+    # named for it, or what was imported for Sessions pushed before writers were bound. Names only; a
+    # Sandbox deleted since stays named.
+    sandbox_namespace: Mapped[str | None] = mapped_column(String)
+    sandbox_name: Mapped[str | None] = mapped_column(String)
     source_id: Mapped[str | None] = mapped_column(String)
     last_cursor: Mapped[int] = mapped_column(BigInteger)
     # Complete SessionFeedState protobuf, absent until a runner prefix is observed.

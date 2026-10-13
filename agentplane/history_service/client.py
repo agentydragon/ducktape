@@ -99,6 +99,17 @@ class HistoryServiceClient:
         )
         return list(response.summaries)
 
+    async def find_sessions(
+        self, *, sandbox_name: str | None = None, sandbox_name_contains: str | None = None
+    ) -> list[history_service_pb2.SessionSandbox]:
+        """Every Session written by a Sandbox with this exact name, or whose name contains the text."""
+        request = history_service_pb2.FindSessionsRequest()
+        if sandbox_name is not None:
+            request.sandbox_name = sandbox_name
+        if sandbox_name_contains is not None:
+            request.sandbox_name_contains = sandbox_name_contains
+        return list((await self.unary(self.stub.FindSessions, request)).sessions)
+
     async def read_thread_entities(
         self, request: history_service_pb2.ReadThreadEntitiesRequest
     ) -> history_service_pb2.ReadThreadEntitiesResponse:

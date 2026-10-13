@@ -848,13 +848,11 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 flowchart TD
     RUNNER_SESSION_LAUNCH[Candidate: the runner owns bootstrap, platform text and starting]
     APP_SESSION_DEFAULTS[Candidate: the app sends complete Session specs]
-    HISTORY_SESSION_SANDBOX[Candidate: the History Service records each Session's Sandbox]
     CONTROLLER_SEALS[Candidate: the Sandbox controller seals]
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
     RUNNER_SESSION_LAUNCH --> APP_SESSION_DEFAULTS
     APP_SESSION_DEFAULTS --> GATEWAY_WRAPPER_RETIRE
-    HISTORY_SESSION_SANDBOX --> GATEWAY_WRAPPER_RETIRE
     CONTROLLER_SEALS --> GATEWAY_WRAPPER_RETIRE
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
 ```
@@ -875,16 +873,6 @@ Sandbox was made from on the Sandbox (a label) and fills a complete `SessionSpec
 from it. `session_defaults` leaves `CreateSandboxRequest`, `SandboxBinding` and our Sandbox's spec,
 and `CreateSessionRequest` loses its field mask.
 
-### `HISTORY_SESSION_SANDBOX` — the History Service records each Session's Sandbox
-
-**Candidate.** The ingress records, with each Session's writer, the Sandbox that writer is. Decide
-in the node: from the Pod-bound token's Pod claim (the Pod is named for its Sandbox) or from a
-lookup, which would make the History Service read Kubernetes. The read API answers which Sandbox
-each Session ran in, and which Sessions a Sandbox name matches, deleted Sandboxes included. The
-History Service learns a Session at its first push, so the app keeps the Sandbox it opened a
-Session in until the History Service has it. Existing Sessions are backfilled from the gateway's
-registry.
-
 ### `CONTROLLER_SEALS` — the Sandbox controller seals
 
 **Candidate.** For a deleting Sandbox of our kind the Sandbox controller
@@ -904,7 +892,7 @@ call `Runner` through the proxy and ask the History Service where a Session runs
 ### `GATEWAY_DATABASE_DROP` — drop the `sandbox_commands` database
 
 **Blocked on `GATEWAY_WRAPPER_RETIRE`; a data drop, merged by the operator.** Drop the database,
-its role, Secret and migration init container once `HISTORY_SESSION_SANDBOX` holds every Session's
+its role, Secret and migration init container once the History Service holds every Session's
 Sandbox.
 
 ## Scope and retirement of stale gates

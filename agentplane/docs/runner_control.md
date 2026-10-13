@@ -232,8 +232,9 @@ TokenReview, as the shared `WorkloadPrincipalAuthenticator` does
 ([workload authentication](workload_authentication.md)), and resolves no Sandbox. The first accepted announcement binds the Session to its writer's ServiceAccount, by namespace, name
 and the UID TokenReview returns, in the transaction that records the Session, so of two concurrent
 first writers one is refused. A call for the Session from any other ServiceAccount fails with
-`PERMISSION_DENIED`. Every Sandbox runs as its own ServiceAccount, so this ties the Session to its
-Sandbox without the ingress knowing Sandboxes. The Pod is not part of the binding, so a replacement
+`PERMISSION_DENIED`. Every Sandbox runs as a ServiceAccount named for it, so this ties the Session to its
+Sandbox, and the History Service reads the Sandbox off the writer's namespace and name without
+resolving it. The Pod is not part of the binding, so a replacement
 Pod of the same Sandbox, opening the same journal from the state volume, keeps writing; the UID
 makes an account recreated under the same name a different writer. Within the Sandbox the trust
 boundary is the control stream's: the binding keeps other Sandboxes out, not processes beside the runner.

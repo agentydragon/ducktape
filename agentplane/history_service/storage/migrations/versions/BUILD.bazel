@@ -17,6 +17,7 @@ exports_files([
     "0014_drop_sandbox_locator.py",
     "0015_session_opened_position.py",
     "0016_recovery_reason_null.py",
+    "0017_session_sandbox.py",
 ])
 
 py_library(
@@ -143,4 +144,13 @@ py_library(
     name = "0016_recovery_reason_null",
     srcs = ["0016_recovery_reason_null.py"],
     deps = ["@pypi//alembic"],
+)
+
+py_library(
+    name = "0017_session_sandbox",
+    srcs = ["0017_session_sandbox.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
 )

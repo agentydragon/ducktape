@@ -36,6 +36,14 @@ UID) in `session_history`; other accounts get `PERMISSION_DENIED`. Entries commi
 `Store.append`, which accepts exact replays and refuses gaps and conflicting entries, and each
 acknowledgement follows its commit.
 
+## Which Sandbox wrote a Session
+
+The History Service never routes to, reads or manages Sandboxes; it records and reports the
+Sandbox a Session was written by. Every Sandbox runs as a ServiceAccount of its own name, so the
+first push that binds a writer also records its namespace and name as the Session's Sandbox
+(`SessionSummary.sandbox`, absent until recorded). `FindSessions` lists the Sessions whose Sandbox
+name equals or contains given text, deleted Sandboxes included. Sandbox UIDs are not recorded.
+
 ## Delta settlement
 
 Each `Store.append` batch that completes an item drops that
