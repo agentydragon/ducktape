@@ -211,11 +211,14 @@ function ThreadGroupSection({
 export function ThreadList({
   detailed,
   onNavigate,
+  onOpenThread,
 }: {
   /** Rows add the harness, model and last activity, for a pane wide enough to hold them. */
   detailed: boolean;
   /** Runs before each navigation the list starts. */
   onNavigate: () => void;
+  /** A docked workspace opens a Thread in a pane of its own instead of navigating to its route. */
+  onOpenThread?: (thread: ThreadView) => void;
 }): JSX.Element {
   const navigate = useNavigate();
   const threadRoute = useMatch("/threads/:threadId");
@@ -248,6 +251,10 @@ export function ThreadList({
   }
 
   function openThread(thread: ThreadView): void {
+    if (onOpenThread !== undefined) {
+      onOpenThread(thread);
+      return;
+    }
     onNavigate();
     void navigate(`/threads/${encodeURIComponent(thread.metadata.threadId)}`);
   }

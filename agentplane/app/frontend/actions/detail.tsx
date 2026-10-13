@@ -33,7 +33,14 @@ function inAppReturnTo(value: unknown): InAppReturnTo | null {
 }
 
 /** Full review page for one pending request or its durable terminal receipt. */
-export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.Element {
+export function ActionRequestDetail({
+  requestId,
+  onDone,
+}: {
+  requestId: string;
+  /** A docked pane closes itself, after Back and after a decision, instead of navigating the route. */
+  onDone?: () => void;
+}): JSX.Element {
   const navigate = useNavigate();
   const location = useLocation();
   const actions = useContext(ActionRequestsContext);
@@ -54,7 +61,7 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
   const error = detail.error === null ? null : displayableError(detail.error);
 
   useEffect(() => {
-    if (returnAfterDecision === null || returnTo === null) return;
+    if (returnAfterDecision === null || (returnTo === null && onDone === undefined)) return;
     if (
       request === undefined ||
       request.id !== returnAfterDecision.requestId ||
@@ -63,11 +70,14 @@ export function ActionRequestDetail({ requestId }: { requestId: string }): JSX.E
     ) {
       return;
     }
-    void navigate(returnTo, { replace: true });
-  }, [request, navigate, returnAfterDecision, returnTo]);
+    if (onDone !== undefined) onDone();
+    else if (returnTo !== null) void navigate(returnTo, { replace: true });
+  }, [request, navigate, onDone, returnAfterDecision, returnTo]);
 
   function goBack(): void {
-    if (returnTo !== null) {
+    if (onDone !== undefined) {
+      onDone();
+    } else if (returnTo !== null) {
       void navigate(-1);
     } else {
       void navigate("/actions", { replace: true });
