@@ -326,9 +326,7 @@ callers.
   directory, resumes the Sandbox if suspended (where the sender may wake it), waits for `Ready`, resumes a
   stopped harness, and calls the runner's RPC of the same name. An unknown Session fails `NOT_FOUND`; a
   command queued behind its Session's `OpenSession` waits for it. A notification is a `SubmitInput` from a
-  different caller, authorized by caller identity, so it has no RPC of its own. Open point: whether
-  `InterruptTurn` and `StopRunnerSession` wake a suspended Sandbox at all; with nothing running, there is
-  nothing to interrupt or stop.
+  different caller, authorized by caller identity, so it has no RPC of its own. `InterruptTurn` and `StopRunnerSession` never wake a suspended Sandbox (operator, 2026-10-13): with nothing running there is nothing to interrupt or stop, so they complete as no-ops.
 - `GetDispatch`, `WatchDispatches` (stream, by Session or Sandbox), `ListDispatches`, `CancelDispatch`
   (not once delivery is ambiguous). A Session's open is a dispatch like a command, with the same states.
 
