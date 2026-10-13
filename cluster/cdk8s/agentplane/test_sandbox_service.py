@@ -80,8 +80,10 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     history_pod = resource("Deployment", history_service.NAME)["spec"]["template"]["spec"]
     history_migration = one(history_pod["initContainers"])
     assert {"name": "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL", "valueFrom": history_secret} in history_migration["env"]
+    # The app reads the cluster, and writes only the operator's PolicyBindings.
     for rule in resource("Role", app.NAME)["rules"]:
-        assert set(rule["verbs"]) <= {"get", "list", "watch"}
+        if rule["resources"] != ["policybindings"]:
+            assert set(rule["verbs"]) <= {"get", "list", "watch"}
     backend_config = yaml.safe_load(resource("ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
     gateway_config = yaml.safe_load(resource("ConfigMap", f"{runner_gateway.NAME}-config")["data"]["config.yaml"])
     # Every runner starts each Session with this platform block, in both environments.
