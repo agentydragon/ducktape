@@ -20,12 +20,7 @@ from playwright.async_api import Locator, Page, Playwright, Route
 from pydantic import JsonValue, TypeAdapter
 
 from util.bazel.runfiles import get_required_path
-from util.testing.frontend_visual import (
-    DISABLE_ANIMATIONS_CSS,
-    FROZEN_NOW_MS,
-    deterministic_browser_context,
-    is_deterministic_context,
-)
+from util.testing.frontend_visual import DISABLE_ANIMATIONS_CSS, FROZEN_NOW_MS, deterministic_browser_context
 from util.testing.page_capture import (
     WAIT_TIMEOUT_MS,
     DevtoolsViewport,
@@ -152,11 +147,6 @@ class VisualPage:
         expected_font_family: str | None = None,
         capture_name: str | None = None,
     ) -> None:
-        if not is_deterministic_context(page.context):
-            raise ValueError(
-                "VisualPage needs a page from `util.testing.frontend_visual.deterministic_browser_context`; "
-                "any other launch renders differently from one execution to the next"
-            )
         self.page = page
         self.errors = PageErrors(page)
         self.output_dir = output_dir

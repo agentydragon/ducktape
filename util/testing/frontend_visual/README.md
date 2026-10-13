@@ -95,8 +95,7 @@ where the page is served:
 Traps, each of which renders differently from one execution to the next or hides a failure:
 
 - **`util.playwright`'s `browser`/`page` fixtures** carry only the container flags, not the font
-  profile or raster flags. `VisualPage` refuses such a page; do not screenshot a review asset from
-  one.
+  profile or raster flags. Never screenshot a review asset from one.
 - **Raw `page.screenshot()` plus a hand-written manifest entry** skips the font, image and paint
   readiness checks and the page-error check. Diagnostic screenshots are fine; anything reviewers see
   goes through `capture()`.

@@ -170,8 +170,6 @@ py_test(
     tags = ["visual"],
     deps = [
         ":frontend_visual",
-        ":undeclared_outputs",
-        ":visual_capture",
         "//:conftest",
         "//util:playwright",
         "@pypi//playwright",
