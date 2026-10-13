@@ -446,7 +446,7 @@ describe("opened-pane renderers", () => {
 });
 
 describe("card decision buttons capability", () => {
-  it.each(cardDecisionButtonCases)(
+  it.each(cardDecisionButtonCases.filter(({ name }) => name !== "resources_delete"))(
     "validates the whole $group/$name request independently",
     ({ group, name, args }) => {
       expect(actionOffersCardDecisionButtons({ group, name }, args)).toBe(true);
@@ -454,18 +454,21 @@ describe("card decision buttons capability", () => {
     }
   );
 
+  it("never offers card decision buttons for a delete", () => {
+    expect(
+      actionOffersCardDecisionButtons(
+        { group: "kubernetes_admin", name: "resources_delete" },
+        { apiVersion: "v1", kind: "Pod", name: "api-0", namespace: "prod" }
+      )
+    ).toBe(false);
+  });
+
   it("requires full review for PR descriptions, hidden defaults, and unknown actions", () => {
     const pr = cardDecisionButtonCases.find((candidate) => candidate.group === "github");
     if (pr === undefined) throw new Error("missing pull request fixture");
     expect(
       actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, { ...pr.args, body: "important text" })
     ).toBe(false);
-    expect(
-      actionOffersCardDecisionButtons(
-        { group: "kubernetes_admin", name: "resources_delete" },
-        { apiVersion: "v1", kind: "Pod", name: "api-0" }
-      )
-    ).toBe(false); // The backend's configured namespace would otherwise be hidden.
     expect(
       actionOffersCardDecisionButtons({ group: pr.group, name: pr.name }, { ...pr.args, title: "x".repeat(121) })
     ).toBe(false);

@@ -12,10 +12,6 @@ const resourcesDeleteArguments = z.strictObject({
   gracePeriodSeconds: z.int().nonnegative().optional(),
 });
 
-export function offersCardDecisionButtonsResourcesDelete(args: unknown): boolean {
-  return resourcesDeleteArguments.safeParse(args).success;
-}
-
 function Delete({ args }: { args: z.infer<typeof resourcesDeleteArguments> }): JSX.Element {
   return (
     <>

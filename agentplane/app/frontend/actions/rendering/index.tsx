@@ -58,11 +58,7 @@ import {
   resourcesApplyLabel,
   resourcesApplyManifest,
 } from "./kubernetes_admin/resources_apply";
-import {
-  offersCardDecisionButtonsResourcesDelete,
-  resourcesDeleteLabel,
-  resourcesDeletePane,
-} from "./kubernetes_admin/resources_delete";
+import { resourcesDeleteLabel, resourcesDeletePane } from "./kubernetes_admin/resources_delete";
 import {
   offersCardDecisionButtonsResourcesGet,
   resourcesGetLabel,
@@ -93,6 +89,9 @@ interface ActionPresentation {
     arguments?: ArgumentsPreview | null;
     result?: ResultPreview | null;
   };
+  /** Card decision buttons are a capability of their own: a custom view does not grant them. The Action decides per
+      invocation, from the complete arguments, whether what the compact card shows is enough to decide on. */
+  offersCardDecisionButtons?: (args: unknown) => boolean;
 }
 
 // React-only per-Action registry. Entries own arbitrary DOM for the slots they implement; they do
@@ -111,6 +110,7 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
             requestTitleIsRedundant: podsInNamespaceTitleIsRedundant,
           },
           details: { arguments: podsInNamespaceDetails },
+          offersCardDecisionButtons: offersCardDecisionButtonsPodsInNamespace,
         },
       ],
       [
@@ -135,11 +135,21 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
       ],
       [
         "resources_get",
-        { label: resourcesGetLabel, pane: { opened: resourcesGetPane }, details: { arguments: resourcesGetPane } },
+        {
+          label: resourcesGetLabel,
+          pane: { opened: resourcesGetPane },
+          details: { arguments: resourcesGetPane },
+          offersCardDecisionButtons: offersCardDecisionButtonsResourcesGet,
+        },
       ],
       [
         "resources_list",
-        { label: resourcesListLabel, pane: { opened: resourcesListPane }, details: { arguments: resourcesListPane } },
+        {
+          label: resourcesListLabel,
+          pane: { opened: resourcesListPane },
+          details: { arguments: resourcesListPane },
+          offersCardDecisionButtons: offersCardDecisionButtonsResourcesList,
+        },
       ],
       [
         "resources_delete",
@@ -149,10 +159,23 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
           details: { arguments: resourcesDeletePane },
         },
       ],
-      ["pods_log", { label: podsLogLabel, pane: { opened: podsLogPreview }, details: { arguments: podsLogPreview } }],
+      [
+        "pods_log",
+        {
+          label: podsLogLabel,
+          pane: { opened: podsLogPreview },
+          details: { arguments: podsLogPreview },
+          offersCardDecisionButtons: offersCardDecisionButtonsPodsLog,
+        },
+      ],
       [
         "events_list",
-        { label: eventsListLabel, pane: { opened: eventsListPane }, details: { arguments: eventsListPane } },
+        {
+          label: eventsListLabel,
+          pane: { opened: eventsListPane },
+          details: { arguments: eventsListPane },
+          offersCardDecisionButtons: offersCardDecisionButtonsEventsList,
+        },
       ],
     ]),
   ],
@@ -165,6 +188,7 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
           label: createPullRequestLabel,
           pane: { opened: createPullRequestPane },
           details: { arguments: createPullRequestPane },
+          offersCardDecisionButtons: offersCardDecisionButtonsPullRequest,
         },
       ],
     ]),
@@ -253,23 +277,6 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
   ],
 ]);
 
-// Card decision buttons are deliberately a separate capability: a custom pane renderer does not grant them.
-// Each entry validates the complete Action arguments independently of its views.
-const CARD_DECISION_BUTTONS: ReadonlyMap<string, ReadonlyMap<string, (args: unknown) => boolean>> = new Map([
-  [
-    "kubernetes_admin",
-    new Map([
-      ["pods_list_in_namespace", offersCardDecisionButtonsPodsInNamespace],
-      ["resources_get", offersCardDecisionButtonsResourcesGet],
-      ["resources_list", offersCardDecisionButtonsResourcesList],
-      ["resources_delete", offersCardDecisionButtonsResourcesDelete],
-      ["pods_log", offersCardDecisionButtonsPodsLog],
-      ["events_list", offersCardDecisionButtonsEventsList],
-    ]),
-  ],
-  ["github", new Map([["create_pull_request", offersCardDecisionButtonsPullRequest]])],
-]);
-
 function presentation(action: ActionIdentity): ActionPresentation | undefined {
   return ACTION_RENDERERS.get(action.group)?.get(action.name);
 }
@@ -342,5 +349,5 @@ export function renderDetailsResult(action: ActionIdentity, result: CallToolResu
 
 /** Whether this invocation gets card decision buttons; independent of the presentation chosen. */
 export function actionOffersCardDecisionButtons(action: ActionIdentity, args: unknown): boolean {
-  return CARD_DECISION_BUTTONS.get(action.group)?.get(action.name)?.(args) ?? false;
+  return presentation(action)?.offersCardDecisionButtons?.(args) ?? false;
 }

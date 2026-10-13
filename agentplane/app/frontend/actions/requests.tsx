@@ -13,7 +13,7 @@ export function stateLabel(state: ActionState): string {
   return state.replaceAll("_", " ");
 }
 
-/** Paired human decisions, shared by the Actions list, detail page, and sidebar quick review. */
+/** Paired human decisions, shared by the Actions list, detail page, and compact card. */
 export function ActionDecisionButtons({
   deciding,
   onDecide,
