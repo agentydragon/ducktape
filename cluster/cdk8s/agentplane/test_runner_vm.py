@@ -28,7 +28,7 @@ def _guest_config(*, console_autologin: bool) -> dict[str, Any]:
         platform_instructions="Test platform guidance.",
     )
     config_map = one(doc for doc in cast(list[dict[str, Any]], Cdk8sTesting.synth(chart)) if doc["kind"] == "ConfigMap")
-    return json.loads(config_map["data"]["config.json"])
+    return cast(dict[str, Any], json.loads(config_map["data"]["config.json"]))
 
 
 @pytest.mark.parametrize(("console_autologin", "rendered"), [(True, True), (False, None)])
