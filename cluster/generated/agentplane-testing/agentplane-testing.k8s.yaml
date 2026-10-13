@@ -5725,6 +5725,8 @@ rules:
       - sandboxtemplates
     verbs:
       - get
+      - list
+      - watch
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -5763,12 +5765,38 @@ rules:
     verbs:
       - get
   - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachines
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachineinstances
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - cdi.kubevirt.io
+    resources:
+      - datavolumes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
       - agentplane.allegedly.works
     resources:
       - policysets
     verbs:
       - create
       - get
+      - list
+      - watch
       - patch
       - delete
   - apiGroups:
@@ -5778,6 +5806,8 @@ rules:
     verbs:
       - create
       - get
+      - list
+      - watch
       - patch
       - delete
   - apiGroups:

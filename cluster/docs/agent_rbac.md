@@ -150,7 +150,7 @@ every sandbox it stamps through the sandbox Action group runs as it
   the `agent-readable-*` namespaces (section 4).
 - The same narrow console metadata, ClickHouse diagnostics, public-coder diagnostics,
   and public-coder VolSync status Roles used by public coder and Haku.
-- `agentplane-testing-operator` in **agentplane-testing**, including Sandbox lifecycle,
+- `agentplane-testing-operator` in **agentplane-testing**, including Sandbox lifecycle, read-only KubeVirt VM/VMI/DataVolume views,
   pod exec, ActionPolicy writes, and testing app-token minting.
 - `get` on two explicitly named Secrets: `agentplane-staging/coinbase-api-credentials`
   (the view-only Coinbase CDP key) and

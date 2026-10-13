@@ -256,7 +256,7 @@ class TestingNamespaceResourceLimits(Construct):
 TESTING_OPERATOR_ROLE_NAME = "agentplane-testing-operator"
 
 _SANDBOX_RULES = [
-    RolePolicyRule(resources=[custom_resource(GROUP, "sandboxtemplates")], verbs=["get"]),
+    RolePolicyRule(resources=[custom_resource(GROUP, "sandboxtemplates")], verbs=["get", "list", "watch"]),
     RolePolicyRule(
         resources=[custom_resource(GROUP, "sandboxes")], verbs=["create", "get", "list", "watch", "patch", "delete"]
     ),
@@ -265,6 +265,15 @@ _SANDBOX_RULES = [
         resources=[custom_resource("", "pods/exec"), custom_resource("", "pods/portforward")], verbs=["create"]
     ),
     RolePolicyRule(resources=[custom_resource("", "pods/log")], verbs=["get"]),
+    # Read-only view of a `kind: vm` Sandbox's guest and its disks, to diagnose one that never starts.
+    RolePolicyRule(
+        resources=[
+            custom_resource("kubevirt.io", "virtualmachines"),
+            custom_resource("kubevirt.io", "virtualmachineinstances"),
+            custom_resource("cdi.kubevirt.io", "datavolumes"),
+        ],
+        verbs=["get", "list", "watch"],
+    ),
 ]
 
 # Mints app-audience tokens for `agentplane-agent`, which has no RoleBindings: an identity for the
@@ -279,7 +288,7 @@ _TOKEN_RULE = RolePolicyRule(
 # ActionsReady condition to know the Action Service has seen it.
 _ACTION_POLICY_RULE = RolePolicyRule(
     resources=[custom_resource(GROUP, "policysets"), custom_resource(GROUP, "policybindings")],
-    verbs=["create", "get", "patch", "delete"],
+    verbs=["create", "get", "list", "watch", "patch", "delete"],
 )
 
 
