@@ -542,19 +542,18 @@ subjects or those grants move to the agent's ServiceAccount.
 Kubernetes scope and egress/Action grants. Record intended authority in generated configuration,
 not ad hoc grants. Test an allowed and denied operation; do not add privileges as part of this review.
 
-### `POLICY_RUNTIME_GRANTS` — time-limited grants
+### `POLICY_RUNTIME_GRANTS` — web app affordances for bindings and sets
 
-**Candidate; direction from the operator, 2026-10-13 PDT.** A grant is a `PolicyBinding` of any
-rule type, not only egress, and the app creates and deletes it with the Kubernetes API on behalf of
-the operator who asked: a user changing RBAC is the app's request, and the layers that execute on
-the CRs act on them without editing them. The Sandbox Service's `GrantEgress`/`RevokeEgress` (which
-write today, for egress only, via `egress_policies` and egress-only views) go, with their callers.
-The app takes over what they enforce (refusing a Flux-applied or Sandbox-controlled binding,
-the owner reference on the Sandbox) and gets the `policybindings` create/delete permission the
-Sandbox Service has today. Grants take an optional `expiresAt`, and the UI shows chips with each
-binding's set, expiry and ready conditions.
-One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry, so no reader
-handles expiry itself.
+**Candidate; operator, 2026-10-13 PDT: a friendlier UI for what the operator can already do with
+`kubectl`.** The web app lets the operator create a `PolicyBinding` of a ServiceAccount to existing
+PolicySets of any rule type, optionally with an `expiresAt`, delete one, and see each binding's set,
+expiry and ready conditions; possibly also create a new PolicySet. The app makes the Kubernetes call
+for the operator who asked, since the layers that execute on these CRs act on them without editing
+them, so the Sandbox Service's egress-only `GrantEgress`/`RevokeEgress` go with their callers. The
+app takes over what they enforce (refusing a Flux-applied or Sandbox-controlled binding, the owner
+reference on the Sandbox) and gets the `policybindings` create/delete permission the Sandbox Service
+has today. One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry,
+so no reader handles expiry itself.
 
 ### `OLD_POLICY_KINDS_DROP` — drop the old policy kinds
 
