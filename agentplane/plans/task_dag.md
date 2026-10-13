@@ -483,9 +483,15 @@ registry separate from the React one). Several of them choose independently what
 to offer a decision, and how tall to let the card grow. Settle which surfaces exist, what each is
 for (a glance, a quick decision, full review, a record), and which states each has, so that one
 rule decides inline approval and height and each Action type is described once.
-Direction (operator, 2026-10-13 PDT): whether quick approval is offered is not a per-kind
+Direction (operator, 2026-10-13 PDT): whether a card offers its decision buttons is not a per-kind
 allowlist (`QUICK_APPROVALS`); the Action type's own TypeScript implementation decides for each
-invocation from its content (for example a read-only call against a listed resource). The compact-card
+invocation from its content (for example a read-only call against a listed resource). Also give
+each representation and visual element one fixed name and use it everywhere (code, UI copy, docs),
+since "quick approve" could mean the buttons on a card or Approve/Deny on a desktop notification.
+Proposed vocabulary, to settle with the design: **compact card** (the glance form in the sidebar
+and the strip), **full card** (the detail view with the whole `ActionCall`), **card decision
+buttons** (Approve/Deny on a compact card), **notification buttons** (Approve/Deny on a Web Push
+notification), **attention strip** (the top "Actions waiting" count). The compact-card
 fixes under way (decision buttons on collapsed cards, a height cap, more Actions allowed inline)
 land first and need not wait for this.
 
