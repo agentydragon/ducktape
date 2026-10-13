@@ -758,8 +758,6 @@ flowchart LR
     RUNNER_HARNESS_DELIVERY_DESIGN[Decision: decoupled harness delivery]
     RUNNER_CODEX_SHARED_PROCESS[Blocked: shared Codex app-server, section 3]
     K3S_BUNDLED_SERVICES_SPIKE[Unscheduled: measure bundled control-plane services]
-    DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
-    ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
     ACTION_SURFACES_DESIGN -. related .-> NOTIFICATION_PRESENTATION
     SANDBOX_FORM_TERMINOLOGY[Unscheduled: distinguish launch preset and runtime template labels]
@@ -911,16 +909,6 @@ design: **full card** (the detail view with the whole `ActionCall`) and **notifi
 (Approve/Deny on a Web Push notification), then use every name everywhere (UI copy, docs), since "quick
 approve" could mean the buttons on a card or on a desktop notification. `NOTIFICATION_PRESENTATION` (section 2) renders notices on the same surfaces and uses the same card
 names.
-
-### `DOCKABLE_PANES` — dockable panes in the web app
-
-**Unscheduled; operator, 2026-10-13 PDT.** Let the operator arrange the app's panes (thread browser,
-Actions queue, several threads at once, Action detail) by dragging them into a layout of their own,
-with split resizing, a layout that persists, and one selected pane at a time on a phone. Open spike
-[#9721](https://github.com/agentydragon/ducktape/pull/9721) builds this as an experimental
-`/#/mosaic` shell on `react-mosaic-component`, split-only without tabs, beside the classic routes;
-it is stale and is the starting point. Settle whether docking replaces the classic routes or stays
-an alternative, and fold the Action tiles into the surfaces `ACTION_SURFACES_DESIGN` settles.
 
 ### `CLAUDE_CODE_WEB_BRIDGE` — Claude Code web sessions in Agentplane
 

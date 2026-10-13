@@ -9,6 +9,7 @@ import { ActionHistory } from "./actions/history";
 import { ActionRequests, ActionRequestsProvider } from "./actions/requests";
 import { ActionsAttentionBar } from "./actions/sidebar";
 import { ConnectionConsent } from "./consent";
+import { DockView } from "./dock";
 import { SandboxPage } from "./sandbox_page";
 import { RoutedThreadsLiveProvider, SandboxesLiveProvider } from "./live";
 import { SandboxList } from "./sandboxes";
@@ -106,6 +107,7 @@ function AppRoutes(): JSX.Element {
   const location = useLocation();
   const threadRoute = useMatch("/threads/:threadId");
   const actionsRoute = useMatch("/actions/*");
+  const dockRoute = useMatch("/dock");
   // Not legacy-path compatibility: api.py's MCP-linkage OAuth callback redirects the browser here
   // on completion, and it needs to land showing the result rather than the Sandboxes list.
   const [settingsTab, setSettingsTab] = useState<SettingsTab | null>(() =>
@@ -140,12 +142,13 @@ function AppRoutes(): JSX.Element {
     () => ({ title: titleNode, actions: actionsNode }),
     [titleNode, actionsNode]
   );
-  const fullBleed = threadRoute !== null;
+  const fullBleed = threadRoute !== null || dockRoute !== null;
   const routes = (
     <Routes>
       <Route path="/" element={<ThreadsLanding />} />
       <Route path="/sandboxes" element={<SandboxListRoute />} />
       <Route path="/system" element={<SystemStatus />} />
+      <Route path="/dock" element={<DockView onOpenSettings={() => setSettingsTab("oauth-clients")} />} />
       <Route path="/actions" element={<ActionsPage />} />
       <Route path="/actions/:requestId" element={<ActionRequestRoute />} />
       <Route path="/connection-enrollments/:handle" element={<ConsentRoute />} />
@@ -158,29 +161,40 @@ function AppRoutes(): JSX.Element {
     <TopbarContext.Provider value={topbarSlots}>
       <ActionRequestsProvider>
         <div className="agentplane-shell">
-          <Sidebar
-            settingsOpen={settingsTab !== null}
-            onOpenSettings={() => setSettingsTab("oauth-clients")}
-            open={sidebarOpen}
-            onClose={() => setSidebarOpen(false)}
-          />
+          {dockRoute === null && (
+            <Sidebar
+              settingsOpen={settingsTab !== null}
+              onOpenSettings={() => setSettingsTab("oauth-clients")}
+              open={sidebarOpen}
+              onClose={() => setSidebarOpen(false)}
+            />
+          )}
           <div className={`agentplane-shell-main${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
             <div className="agentplane-topbar">
-              <ActionIcon
-                variant="subtle"
-                aria-label="Toggle navigation"
-                onClick={() => setSidebarOpen((open) => !open)}
-              >
-                <IconMenu2 size={18} />
-              </ActionIcon>
+              {dockRoute === null && (
+                <ActionIcon
+                  variant="subtle"
+                  aria-label="Toggle navigation"
+                  onClick={() => setSidebarOpen((open) => !open)}
+                >
+                  <IconMenu2 size={18} />
+                </ActionIcon>
+              )}
               <div className="agentplane-topbar-title" ref={titleRef} />
               <div className="agentplane-topbar-actions" ref={actionsRef} />
               <ConnectionIndicator />
             </div>
-            {/* The sidebar carries the queue while it is open, and the Actions pages are the queue. */}
-            {!sidebarOpen && actionsRoute === null && <ActionsAttentionBar />}
-            <div className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}`}>
-              {threadRoute !== null ? <SandboxesLiveProvider>{routes}</SandboxesLiveProvider> : routes}
+            {/* The sidebar carries the queue while it is open, the Actions pages are the queue, and
+                the dock shows it itself unless an Actions pane is open. */}
+            {!sidebarOpen && actionsRoute === null && dockRoute === null && <ActionsAttentionBar />}
+            <div
+              className={`agentplane-shell-main-content${fullBleed ? " agentplane-shell-fullbleed" : ""}${dockRoute !== null ? " agentplane-shell-dock" : ""}`}
+            >
+              {threadRoute !== null || dockRoute !== null ? (
+                <SandboxesLiveProvider>{routes}</SandboxesLiveProvider>
+              ) : (
+                routes
+              )}
             </div>
           </div>
           <Settings
