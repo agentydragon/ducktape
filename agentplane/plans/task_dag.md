@@ -1108,8 +1108,13 @@ to a suspended Sandbox, one arriving while it seals, a failed revival and a resu
 
 ### `APP_SENDS_VIA_DISPATCHER` — the app sends through the Session Dispatcher
 
-**Blocked on `DISPATCHER_CORE`.** The composer and the app's other command sends call the queue
-service instead of `SubmitCommand`, showing its delivery states. Parallel with
+**Blocked on `DISPATCHER_CORE`.** The composer and the app's other command sends call the Session
+Dispatcher instead of `SubmitCommand`, showing its delivery states. The command-progress lights
+(`CommandProgress`: saved in browser, runner accepted, effect confirmed) gain a dispatch stage
+between the browser and the runner: queued in the Dispatcher (operator, 2026-10-13 PDT). It reads
+the delivery states `COMMAND_DELIVERY_STATES` settles, and for a Session whose Sandbox is waking
+(`DISPATCHER_WAKE_ON_SEND`) says so; `SUSPENDED_COMPOSER` is the composer side of the same wait.
+Visual scenarios name each stage's command after the state it shows. Parallel with
 `NOTIFICATIONS_VIA_DISPATCHER`; reader before writer, so the Session Dispatcher lands and is read before any
 sender moves.
 
