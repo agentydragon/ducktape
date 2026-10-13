@@ -117,6 +117,11 @@ def catalog() -> dict[str, KubernetesGrant]:
             namespace="agentplane-staging",
             role_ref=RoleRef(kind="Role", name="claude-ai-coinbase-reader"),
         ),
+        "litellm-disposable-env-key": RoleBindingGrant(
+            kind="RoleBinding",
+            namespace="litellm",
+            role_ref=RoleRef(kind="Role", name="claude-ai-disposable-env-key-reader"),
+        ),
         "agentplane-sandbox-read": RoleBindingGrant(
             kind="RoleBinding",
             namespace="agentplane-staging",
@@ -201,6 +206,7 @@ STATIC_GRANTS = {
         "clickhouse-diagnostics",
         "public-coder-agent-reader",
         "public-coder-volsync-status",
+        "litellm-disposable-env-key",
     ),
     # Preserve redundant narrow inventory bindings; Coinbase access is explicitly approved.
     "haku": (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *PUBLIC_INVENTORY, *HAKU_EXTRAS, "coinbase-credentials"),

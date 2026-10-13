@@ -507,6 +507,7 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
                 "clickhouse-diagnostics",
                 "public-coder-agent-reader",
                 "public-coder-volsync-status",
+                "litellm-disposable-env-key",
             } or grant["role_ref"]["name"] in {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}:
                 expected.update(
                     rbac.rules(

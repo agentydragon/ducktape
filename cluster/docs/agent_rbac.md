@@ -155,9 +155,10 @@ every sandbox it stamps through the sandbox Action group runs as it
 - `get`/`list` on Agentplane `sandboxes` and read-only KubeVirt VM/VMI views, plus the VMI
   `console` subresource, in **agentplane-staging** (`claude-ai-sandbox-reader`), so a read-only
   check needs no approval.
-- `get` on two explicitly named Secrets: `agentplane-staging/coinbase-api-credentials`
-  (the view-only Coinbase CDP key) and
-  `public-coder-agent/agentplane-testing-acceptance-operator` (the testing login).
+- `get` on three explicitly named Secrets: `agentplane-staging/coinbase-api-credentials`
+  (the view-only Coinbase CDP key),
+  `public-coder-agent/agentplane-testing-acceptance-operator` (the testing login), and
+  `litellm/litellm-key-disposable-env` (the Qwen-only key for the disposable test environment).
   No general Secret enumeration or staging login access.
 
 These additions are explicit static profile selections in

@@ -3537,6 +3537,12 @@ data:
         role_ref:
           kind: Role
           name: claude-ai-coinbase-reader
+      litellm-disposable-env-key:
+        kind: RoleBinding
+        namespace: litellm
+        role_ref:
+          kind: Role
+          name: claude-ai-disposable-env-key-reader
       agentplane-sandbox-read:
         kind: RoleBinding
         namespace: agentplane-staging

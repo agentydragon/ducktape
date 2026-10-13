@@ -10,9 +10,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ServiceAccount
+from cdk8s_plus_34 import ServiceAccount, k8s
 from external_secrets_crds.io.external_secrets import ExternalSecretSpecTargetCreationPolicy
 
+from cluster.cdk8s import agent_access_profiles as access
 from cluster.cdk8s.external_secrets.single_secret_store import single_secret_store
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
@@ -128,6 +129,26 @@ def _chart(app: App) -> Chart:
         ),
         data=[remote_data(_TANA_REFRESH_TOKEN, "refresh_token")],
         creation_policy=ExternalSecretSpecTargetCreationPolicy.OWNER,
+    )
+    # The Qwen-only key tf/gitops/litellm-keys mints for the disposable test environment, which
+    # claude-ai's sandboxes read to put into BuildBuddy; no other Secret here is readable.
+    reader_role = "claude-ai-disposable-env-key-reader"
+    k8s.KubeRole(
+        chart,
+        "disposable-env-key-reader",
+        metadata=k8s.ObjectMeta(name=reader_role, namespace=_NAMESPACE),
+        rules=[
+            k8s.PolicyRule(
+                api_groups=[""], resources=["secrets"], resource_names=["litellm-key-disposable-env"], verbs=["get"]
+            )
+        ],
+    )
+    k8s.KubeRoleBinding(
+        chart,
+        "disposable-env-key-reader-binding",
+        metadata=k8s.ObjectMeta(name=reader_role, namespace=_NAMESPACE),
+        role_ref=access.role_ref("litellm-disposable-env-key"),
+        subjects=[subject.k8s() for subject in access.profile_subjects("litellm-disposable-env-key")],
     )
     return chart
 
