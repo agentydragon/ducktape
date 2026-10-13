@@ -465,8 +465,24 @@ app/Sandbox Service database changes requires its own migration safety review.
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     SERVICE_LOG_FLAGS[Unscheduled: logging flags in the services]
+    ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
     ISOLATED_ACCEPTANCE_CI[Unscheduled: acceptance tests in their own CI workflow]
 ```
+
+### `ACTION_SURFACES_DESIGN` — where and in what states Actions render
+
+**Decision; operator, 2026-10-13 PDT: rethink it, since it is a patchwork and possibly redundant.**
+Decide every place an Action is shown and in which states, then reduce the code to that. Surfaces
+found in `app/frontend/actions/` and the service worker: the sidebar rows (collapsed and expanded,
+with Approve/Deny only where `canApproveInline` allows), the top "Actions waiting" strip (a count),
+the Actions page queue and the detail view (`PendingActionCard`, the full `ActionCall`, with a raw
+and a pretty toggle), history, the policy view, and the Web Push notification (formatters in a
+registry separate from the React one). Several of them choose independently what to render, whether
+to offer a decision, and how tall to let the card grow. Settle which surfaces exist, what each is
+for (a glance, a quick decision, full review, a record), and which states each has, so that one
+rule decides inline approval and height and each Action type is described once. The compact-card
+fixes under way (decision buttons on collapsed cards, a height cap, more Actions allowed inline)
+land first and need not wait for this.
 
 ### `CLAUDE_CODE_WEB_BRIDGE` — Claude Code web sessions in Agentplane
 
