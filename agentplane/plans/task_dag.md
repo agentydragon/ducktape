@@ -972,8 +972,13 @@ fold into it when it lands.
 not whether the runner has connected, so a VM whose guest runner never reaches the gateway reads
 ready. The Runner Gateway reports per-Sandbox runner connectivity over gRPC health, and the
 Sandbox controller folds that into `Ready` beside the Pod or VM readiness, so the app reads one
-condition. Which component reports and folds may move with `SANDBOX_SESSION_CONTROL_DESIGN`, which
-decides who owns the control Service the connection is announced through. Test a runner that
+condition; `Ready` means "can take work" only, and the lifecycle phase stays a separate condition.
+The controller probes the gateway rather than the gateway writing a condition, since layers that
+act on Sandboxes do not edit them. Order: the gateway's health RPC, then the controller change; the
+app reads `Ready` instead of inspecting the incarnation only once the controller image that
+publishes it is pinned. Which component reports and folds may move with
+`SANDBOX_SESSION_CONTROL_DESIGN`, which decides who owns the control Service the connection is
+announced through. Test a runner that
 connects late, one that never connects, and a connection that drops while the Pod keeps running.
 
 ### `SESSION_ACTIVITY_STREAM` — one derivation of Session activity, streamed to listeners
