@@ -12,7 +12,7 @@ its `.#public-coder-devbox-container-disk` output is indexed in
 `nix/flake/packages.nix`. The deployment resources stay with their owner under
 `cluster/k8s/agents/public-coder-agent/devbox/`.
 
-No workflow builds this output while Public Coder is parked. Resuming restores
-`.github/workflows/public-coder-devbox-image.yml` from git history; it published
+No workflow builds this output while Public Coder is parked. Resuming moves
+`public-coder-devbox-image.yml` back from `cluster/parked/public-coder-agent/ci/`; it published
 the containerDisk to the private Forgejo registry on `devel`, where Flux's
 ImagePolicy consumes the tags.

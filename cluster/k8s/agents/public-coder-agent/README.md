@@ -21,10 +21,9 @@ the separate cache PVC is retained.
 
 To resume, unsuspend the devbox and backup Flux owners, restore the three replica counts, unpause the backup, restore the devbox run strategy, restore its
 image-restart opt-in/controller if desired, and restore Flux guest-readiness checks.
-The OpenClaw and devbox image workflows (`.github/workflows/openclaw-image.yml`,
-`.github/workflows/public-coder-devbox-image.yml`) and the smoke script they ran
-(`.github/scripts/smoke-openclaw-image.sh`) are removed while parked; restore them from git
-history and let them publish fresh images before resuming.
+The OpenClaw and devbox image workflows and their smoke script are parked in
+`cluster/parked/public-coder-agent/ci/`; move them back and let them publish fresh images
+before resuming.
 Verify model budgets and credentials before resuming; do not recreate PVCs or change
 the embedding identity. The remainder of this document describes the retained setup.
 
