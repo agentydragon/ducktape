@@ -675,6 +675,7 @@ state, which the controller validates; it gets no resume RPC on the Sandbox Serv
 flowchart TD
     VM_PROVIDER[VM provider, section 4] --> SANDBOX_IMAGE_REPLACE[Blocked: replace a VM's runner image between incarnations]
     SANDBOX_LIFECYCLE[In progress: seal before suspend, PVC owned by the Sandbox]
+    SANDBOX_GENERIC_SPLIT[Unscheduled: split the generic Sandbox from the runner's sealing]
 ```
 
 ### `SANDBOX_IMAGE_REPLACE` — replace a VM's runner image between incarnations
@@ -709,6 +710,14 @@ and state-volume-owner PRs land, leaves this node.
 - **Not done:** a force-seal operation (a stuck Sandbox has its finalizer removed by hand), and
   automatic or explicit replacement of a Sandbox's spec. Suspend then resume starts from the
   template as it is then; a stored rendered spec can feed a later diff.
+
+### `SANDBOX_GENERIC_SPLIT` — separate the generic Sandbox from the runner's sealing
+
+**Unscheduled; operator, 2026-10-13 PDT: a later TODO.** Our `Sandbox` resource binds two concerns
+together. One is what Agent Sandbox did, plus VM support: a template, a Pod or VM per incarnation,
+and a state volume that stays. The other is specific to our runner running inside: sealing a
+Session's journal before the incarnation goes (`SANDBOX_LIFECYCLE`, `CONTROLLER_SEALS`). Separated,
+the first could be reused without the runner. Decide where the line falls (resource, controller or package) and what each side owns.
 
 ### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes stop
 
