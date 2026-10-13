@@ -2,6 +2,9 @@ package sandboxcontroller
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"slices"
@@ -35,6 +38,9 @@ const (
 	SandboxUIDAnnotation = "agentplane.allegedly.works/sandbox-uid"
 	// Seals a deleted Sandbox's Sessions, then deletes its Pod and, once that is gone, its state PVC.
 	StateVolumeFinalizer = "agentplane.allegedly.works/state-volume"
+	// On the Pod: a hash of the spec rendered from the template, so a crash-looping Pod can be told
+	// from the current template's.
+	PodSpecHashAnnotation = "agentplane.allegedly.works/pod-spec-hash"
 
 	templateIndex = "spec.template"
 )
@@ -288,6 +294,17 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 			if err := r.deleteIfLive(ctx, w.pod); err != nil {
 				return w, nil, err
 			}
+			return w, nil, nil
+		}
+		// A template change otherwise applies at the next start, but a Pod whose container keeps
+		// crashing serves nothing and nothing restarts it, so one rendered from a template since
+		// replaced is deleted to start from the current one.
+		if crashLooping(w.pod) {
+			stale, err := r.renderedFromOtherSpec(ctx, sandbox, w.pod)
+			if err != nil || !stale {
+				return w, nil, err
+			}
+			return w, nil, r.deleteIfLive(ctx, w.pod)
 		}
 		return w, nil, nil
 	}
@@ -335,6 +352,32 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 	return w, nil, nil
 }
 
+func crashLooping(pod *corev1.Pod) bool {
+	return slices.ContainsFunc(pod.Status.ContainerStatuses, func(status corev1.ContainerStatus) bool {
+		return status.State.Waiting != nil && status.State.Waiting.Reason == "CrashLoopBackOff"
+	})
+}
+
+// renderedFromOtherSpec is whether the Pod's spec differs from what the Sandbox's template renders
+// now. A missing or invalid template is not a difference: the Pod stays until one can replace it.
+func (r *Reconciler) renderedFromOtherSpec(ctx context.Context, sandbox *Sandbox, pod *corev1.Pod) (bool, error) {
+	template, _, err := r.template(ctx, sandbox)
+	if template == nil || template.Spec.Pod == nil {
+		return false, err
+	}
+	current, blocked := render(sandbox, template)
+	return blocked == nil && pod.Annotations[PodSpecHashAnnotation] != current.Annotations[PodSpecHashAnnotation], nil
+}
+
+func specHash(spec *corev1.PodSpec) string {
+	encoded, err := json.Marshal(spec)
+	if err != nil {
+		panic(err) // A PodSpec always marshals.
+	}
+	sum := sha256.Sum256(encoded)
+	return hex.EncodeToString(sum[:8])
+}
+
 // render is the template's Pod for this Sandbox, running as the Sandbox's ServiceAccount, with the
 // state volume filled in.
 func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready) {
@@ -353,12 +396,17 @@ func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready)
 			ClaimName: StateVolumeName(sandbox.Name),
 		}},
 	})
+	annotations := maps.Clone(template.Spec.Pod.Annotations)
+	if annotations == nil {
+		annotations = map[string]string{}
+	}
+	annotations[PodSpecHashAnnotation] = specHash(spec)
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        sandbox.Name,
 			Namespace:   sandbox.Namespace,
 			Labels:      withSandboxLabel(template.Spec.Pod.Labels, sandbox),
-			Annotations: maps.Clone(template.Spec.Pod.Annotations),
+			Annotations: annotations,
 		},
 		Spec: *spec,
 	}, nil

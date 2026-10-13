@@ -275,6 +275,53 @@ func TestEndedPodIsDeleted(t *testing.T) {
 	}
 }
 
+func crashLoop(t *testing.T, c client.Client) {
+	t.Helper()
+	pod := getPod(t, c)
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name:  "runner",
+		State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
+	}}
+	if err := c.Status().Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCrashLoopingPodOfAReplacedTemplateIsRecreatedFromTheCurrentOne(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	crashLoop(t, c)
+	replaceTemplate(t, c, testTemplate("test-image:v2"))
+	reconcileOnce(t, r)
+	if getPod(t, c) != nil {
+		t.Fatal("the crash-looping Pod of the replaced template was kept")
+	}
+	reconcileOnce(t, r)
+	if pod := getPod(t, c); pod == nil || pod.Spec.Containers[0].Image != "test-image:v2" {
+		t.Fatalf("the next Pod does not run the current template's image: %v", pod)
+	}
+}
+
+func TestCrashLoopingPodOfTheCurrentTemplateIsKept(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	crashLoop(t, c)
+	reconcileOnce(t, r)
+	if getPod(t, c) == nil {
+		t.Fatal("deleted a crash-looping Pod that the current template would render again")
+	}
+}
+
+func TestHealthyPodOfAReplacedTemplateIsKeptUntilItsNextStart(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	replaceTemplate(t, c, testTemplate("test-image:v2"))
+	reconcileOnce(t, r)
+	if pod := getPod(t, c); pod == nil || pod.Spec.Containers[0].Image != "test-image:v1" {
+		t.Fatal("replaced a Pod that was not crash-looping")
+	}
+}
+
 func TestMissingTemplateBlocksStart(t *testing.T) {
 	r, c := newReconciler(t, true)
 	reconcileOnce(t, r)
