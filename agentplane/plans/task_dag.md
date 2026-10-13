@@ -711,7 +711,7 @@ flowchart TD
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     CONTROL_SERVICE_OWNER[Candidate: the controller creates the Sandbox's control Service]
-    SESSION_ACTIVITY_STREAM[Blocked: the UI and notifications read the runner's busy and idle facts]
+    SESSION_ACTIVITY_STREAM[Candidate: the UI and notifications read per-Session idle from the History Service]
     DISPATCHER_CORE[Blocked: the Session Dispatcher delivers to running Sandboxes]
     DISPATCHER_SESSION_CREATE[Blocked: dispatched Session creation]
     DISPATCHER_WAKE_ON_SEND[Blocked: a send wakes a suspended Sandbox]
@@ -757,7 +757,6 @@ flowchart TD
     QUIESCE_INTERRUPT -. interrupt precedes the seal .-> QUIESCE_WITHOUT_POLLING
     QUIESCE_INTERRUPT --> DISPATCHER_WAKE_ON_SEND
     RUNNER_FACTS_ON_LEASE -. carries the boot result .-> BOOTSTRAP_PROGRESS_CONTRACT
-    RUNNER_FACTS_ON_LEASE --> SESSION_ACTIVITY_STREAM
     DISPATCHER_CORE --> DISPATCHER_SESSION_CREATE
     BOOTSTRAP_PROGRESS_CONTRACT -. Ready may then include the bootstrap .-> DISPATCHER_SESSION_CREATE
     DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
@@ -982,7 +981,7 @@ second rebases. Readers of the new code (the Session Dispatcher) land after it.
 transport several nodes share: the runner reports facts on the control stream, and the gateway
 replica holding the connection writes them as annotations on the Sandbox-owned connection Lease,
 on transitions only and stamped with the incarnation UID, clearing them when a different
-incarnation connects. Facts: the seal stage (draining, flushing, sealed), the Sandbox's busy with the time it
+incarnation connects. Facts: the seal stage (draining, flushing, sealed), the Sandbox's aggregate busy (any Session busy, or a background process or attached terminal running) with the time it
 became idle (`SANDBOX_IDLE_EXPIRY`), and the bootstrap result (`BOOTSTRAP_PROGRESS_CONTRACT`). Busy and idle
 facts ride the regular 15-second renewal write, so they add no etcd writes. The
 runner republishes its stage on reconnect so a gateway rollout loses nothing. Order: the
@@ -1021,22 +1020,19 @@ caller sees no endpoints and not a DNS failure, and the gateway writes only the 
 with less Kubernetes access. One shared constant fixes the name and port. Order: the controller image
 that creates it is pinned, then the gateway stops creating it, then its permission goes.
 
-### `SESSION_ACTIVITY_STREAM` — the UI and notifications read the runner's busy and idle facts
+### `SESSION_ACTIVITY_STREAM` — the UI and notifications read per-Session idle from the History Service
 
-**Blocked on `RUNNER_FACTS_ON_LEASE`; operator, 2026-10-13 PDT.** The UI shows idle time per
-Session and suspension uses the aggregate over a Sandbox's Sessions; the runner computes both from
-the same per-Session facts, so there is one idleness. A Sandbox is busy while any Session is busy or
-a background process or attached terminal runs, and its `idleSince` is when the last of them went
-idle. Only that aggregate goes on the Lease (`SANDBOX_IDLE_EXPIRY` reads it); per-Session idle times
-stay out of Kubernetes and reach the UI through the runner's per-Session facts and this stream. The
-runner's `SessionSummary` has no per-Session idle field, so this node adds one. The History Service's folded `last_model_activity_at` stays a separate
-timestamp. What is left is the stream of those facts to listeners: the app and the notification
-service's quiet window (`NoticeDebounceSettings`) both derive "last active" in different ways today.
-The operator's direction: listeners pick their own moment, so the notification service decides when
-to deliver ("after a minute of quiet, at most ten minutes") and sends through
-`NOTIFICATIONS_VIA_DISPATCHER`; a sender does not hand the Session Dispatcher a delivery window. Decide
-who publishes the facts to listeners, the stream's shape and who may subscribe. Replace the app's
-and the notification service's own derivations; delete them in the same change.
+**Candidate; operator, 2026-10-13 PDT.** The UI shows idle time per Session; suspension uses the
+Sandbox aggregate from the Lease (`RUNNER_FACTS_ON_LEASE`) and never reads this. The History Service
+already folds runner events into `SessionSummary` (`last_turn_status`, `last_model_activity_at`) and
+serves `watch_session_summaries`; a per-Session `idleSince`, derived from the turn start and end
+events it ingests, is one more folded field, and the existing watch carries it to the UI and the
+notification service. `last_model_activity_at` stays separate. The app and the notification
+service's quiet window (`NoticeDebounceSettings`) both derive "last active" in different ways today;
+delete those derivations in the same change. The operator's direction: listeners pick their own
+moment, so the notification service decides when to deliver ("after a minute of quiet, at most ten
+minutes") and sends through `NOTIFICATIONS_VIA_DISPATCHER`; a sender does not hand the Session
+Dispatcher a delivery window. Per-Session idle times stay out of Kubernetes.
 
 ### `DISPATCHER_CORE` — the Session Dispatcher delivers to running Sandboxes
 
