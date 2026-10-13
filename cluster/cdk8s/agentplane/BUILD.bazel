@@ -862,6 +862,24 @@ py_test(
 )
 
 py_test(
+    name = "test_runner_vm",
+    # Synth imports the agentplane services' Settings, and with them their runtime modules.
+    size = "medium",
+    srcs = ["test_runner_vm.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":runner_vm",
+        ":testing",
+        "//:conftest",
+        "@pypi//cdk8s",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_sandbox_templates",
     # Synth imports the agentplane services' Settings, and with them their runtime modules.
     size = "medium",
