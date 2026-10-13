@@ -15,7 +15,10 @@ exports_files(
 filegroup(
     name = "agentplane_testing_manifest",
     srcs = ["generated/agentplane-testing/agentplane-testing.k8s.yaml"],
-    visibility = ["//agentplane/acceptance:__pkg__"],
+    visibility = [
+        "//agentplane/acceptance:__pkg__",
+        "//agentplane/x/k3s_env:__pkg__",
+    ],
 )
 
 # Just the central ClusterPolicy manifests, so a per-policy test is not

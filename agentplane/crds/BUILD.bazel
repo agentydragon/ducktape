@@ -23,6 +23,7 @@ filegroup(
     name = "crds",
     srcs = glob(["manifests/crd-*.yaml"]),
     visibility = [
+        "//agentplane/x/k3s_env:__pkg__",
         "//cluster/cdk8s:__pkg__",
         "//cluster/validation:__pkg__",
     ],

@@ -1,0 +1,242 @@
+"""Spike: does the rendered `agentplane-testing` stack come up on a bare k3s inside an RBE action?
+
+Starts k3s (no kube-proxy, no Cilium), loads the Bazel-built service images, applies the rewritten
+manifest and reports, per Deployment, whether it became Available. It fails at the first missing
+piece with the Pod states and logs of whatever did not start.
+"""
+
+import contextlib
+import json
+import logging
+import os
+import shutil
+import subprocess
+import tarfile
+import tempfile
+import time
+from pathlib import Path
+
+import pytest_bazel
+import yaml
+
+from agentplane.x.k3s_env import render
+from util.bazel.runfiles import get_required_path
+
+logger = logging.getLogger(__name__)
+
+K3S_VERSION = "v1.33.4+k3s1"
+DEPLOY_TIMEOUT_SECONDS = 240
+
+
+def _run(*command: str, check: bool = True, input_text: str | None = None) -> str:
+    result = subprocess.run(command, capture_output=True, text=True, input=input_text, check=False)
+    if check and result.returncode:
+        raise RuntimeError(f"{command[:3]} exited {result.returncode}: {result.stderr[-2000:]}{result.stdout[-1000:]}")
+    return result.stdout + result.stderr
+
+
+def _shadow_kernel_sysctls(work: Path) -> None:
+    """The Firecracker guest has no CONFIG_KEYS; the kubelet refuses to start without these files."""
+    if Path("/proc/sys/kernel/keys/root_maxkeys").exists():
+        return
+    fake = work / "proc-sys-kernel"
+    fake.mkdir()
+    for path in Path("/proc/sys/kernel").rglob("*"):
+        target = fake / path.relative_to("/proc/sys/kernel")
+        if path.is_dir():
+            target.mkdir(parents=True, exist_ok=True)
+        else:
+            # The kubelet opens some sysctls (panic, osrelease) even when they cannot be read, so an
+            # unreadable one is shadowed by an empty file.
+            target.touch()
+            with contextlib.suppress(OSError):
+                target.write_bytes(path.read_bytes())
+    (fake / "keys").mkdir(exist_ok=True)
+    (fake / "keys/root_maxkeys").write_text("1000000\n")
+    (fake / "keys/root_maxbytes").write_text("25000000\n")
+    _run("mount", "--bind", str(fake), "/proc/sys/kernel")
+
+
+def _read_member(archive: tarfile.TarFile, name: str) -> bytes:
+    member = archive.extractfile(name)
+    assert member
+    return member.read()
+
+
+def _layer_sizes(tarball: Path) -> dict[str, int]:
+    """Layer path (a content digest in docker-format tarballs) to size, per `manifest.json`."""
+    with tarfile.open(tarball) as archive:
+        manifest = json.loads(_read_member(archive, "manifest.json"))
+        return {layer: archive.getmember(layer).size for image in manifest for layer in image["Layers"]}
+
+
+class K3s:
+    def __init__(self, work: Path) -> None:
+        self.work = work
+        self.binary = work / "k3s"
+        self.kubeconfig = work / "kubeconfig"
+        self.data_dir = Path("/var/lib/k3s-env")
+
+    def kubectl(self, *args: str, check: bool = True, input_text: str | None = None) -> str:
+        return _run(
+            str(self.binary), "kubectl", "--kubeconfig", str(self.kubeconfig), *args, check=check, input_text=input_text
+        )
+
+    def start(self) -> subprocess.Popen[bytes]:
+        base = f"https://github.com/k3s-io/k3s/releases/download/{K3S_VERSION.replace('+', '%2B')}"
+        _run("curl", "-fsSL", "-o", str(self.binary), f"{base}/k3s")
+        _run("chmod", "+x", str(self.binary))
+        _shadow_kernel_sysctls(self.work)
+        self.log_path = Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", self.work)) / "k3s.log"
+        log = self.log_path.open("wb")
+        process = subprocess.Popen(
+            [
+                str(self.binary),
+                "server",
+                "--data-dir",
+                str(self.data_dir),
+                "--write-kubeconfig",
+                str(self.kubeconfig),
+                "--write-kubeconfig-mode",
+                "644",
+                "--node-name",
+                "env",
+                "--disable",
+                "traefik,metrics-server,servicelb",
+                "--disable-kube-proxy",
+                "--flannel-backend=host-gw",
+                "--disable-network-policy",
+            ],
+            stdout=log,
+            stderr=subprocess.STDOUT,
+        )
+        deadline = time.monotonic() + 180
+        while time.monotonic() < deadline:
+            if self.kubeconfig.exists() and "env" in self.kubectl("get", "nodes", "-o", "name", check=False):
+                break
+            time.sleep(1)
+        ready = self.kubectl("wait", "--for=condition=Ready", "node/env", "--timeout=180s", check=False)
+        if "condition met" not in ready:
+            raise RuntimeError(f"k3s not ready (exit={process.poll()}): {ready}\n{self.log_path.read_text()[-6000:]}")
+        return process
+
+    def import_images(self, tarballs: list[Path]) -> None:
+        layers: dict[str, int] = {}
+        for tarball in tarballs:
+            layers.update(_layer_sizes(tarball))
+        print(
+            f"{len(layers)} distinct layers, {sum(layers.values()) >> 20} MiB compressed across {len(tarballs)} images"
+        )
+        for tarball in tarballs:
+            print(f"importing {tarball.parent.name} ({tarball.stat().st_size >> 20} MiB)")
+            print(_run("df", "-h", "/var/lib", "/tmp", check=False))
+            _run(
+                str(self.binary),
+                "ctr",
+                "--address",
+                "/run/k3s/containerd/containerd.sock",
+                "-n",
+                "k8s.io",
+                "images",
+                "import",
+                str(tarball),
+            )
+
+    def report(self) -> str:
+        parts = [
+            self.kubectl("get", "pods", "-A", "-o", "wide", check=False),
+            self.kubectl("get", "events", "-A", "--sort-by=.lastTimestamp", check=False)[-6000:],
+        ]
+        pods = self.kubectl("get", "pods", "-n", render.NAMESPACE, "-o", "name", check=False).split()
+        for pod in pods:
+            state = self.kubectl("get", pod, "-n", render.NAMESPACE, "-o", "jsonpath={.status.phase}", check=False)
+            if state != "Running":
+                parts.append(
+                    f"--- {pod} ({state})\n"
+                    + self.kubectl("logs", pod, "-n", render.NAMESPACE, "--all-containers", "--tail=40", check=False)
+                )
+        return "\n".join(parts)
+
+
+def _openssl_ca(work: Path) -> tuple[str, str]:
+    key, cert = work / "ca.key", work / "ca.crt"
+    _run("openssl", "ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(key))
+    _run(
+        "openssl",
+        "req",
+        "-x509",
+        "-new",
+        "-key",
+        str(key),
+        "-days",
+        "3",
+        "-subj",
+        "/CN=agentplane-egress-root-ca",
+        "-addext",
+        "basicConstraints=critical,CA:TRUE",
+        "-out",
+        str(cert),
+    )
+    return cert.read_text(), key.read_text()
+
+
+def test_stack_comes_up() -> None:
+    manifest = get_required_path("_main/cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml")
+    crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
+    tarballs = sorted(get_required_path("_main/agentplane/x/k3s_env").glob("*_load/tarball.tar"))
+
+    work = Path(tempfile.mkdtemp())
+    k3s = K3s(work)
+    process = k3s.start()
+    try:
+        ca_cert, ca_key = _openssl_ca(work)
+        k3s.import_images(tarballs)
+        for crd in crds:
+            k3s.kubectl("apply", "-f", str(crd))
+        rewritten = render.rewrite(yaml.safe_load_all(manifest.read_text()), overrides={})
+        roles = {
+            secret["stringData"]["username"]: secret["stringData"]["password"]
+            for secret in rewritten
+            if secret["kind"] == "Secret" and secret["metadata"]["name"].startswith("postgres-")
+        }
+        cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
+        extra = render.egress_ca_objects(
+            ca_cert=ca_cert,
+            ca_key=ca_key,
+            system_roots=Path("/etc/ssl/certs/ca-certificates.crt").read_text(),
+            cluster_ca=cluster_ca,
+        )
+        everything = [*rewritten, *render.postgres_objects(roles), *extra]
+        # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
+        namespaces = [d for d in everything if d["kind"] == "Namespace"]
+        rest = [d for d in everything if d["kind"] != "Namespace"]
+        k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
+        k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest), check=False)
+        logger.info("applied %s objects", len(rest))
+
+        failed: list[str] = []
+        deployments = [d["metadata"]["name"] for d in rest if d["kind"] == "Deployment"]
+        deadline = time.monotonic() + DEPLOY_TIMEOUT_SECONDS
+        for name in deployments:
+            remaining = max(5, int(deadline - time.monotonic()))
+            out = k3s.kubectl(
+                "wait",
+                "--for=condition=Available",
+                f"deployment/{name}",
+                "-n",
+                render.NAMESPACE,
+                f"--timeout={remaining}s",
+                check=False,
+            )
+            if "condition met" not in out:
+                failed.append(name)
+        print("memory:", _run("free", "-m"))
+        print(k3s.report())
+        assert not failed, f"Deployments not Available: {failed}"
+    finally:
+        process.terminate()
+        shutil.rmtree(work, ignore_errors=True)
+
+
+if __name__ == "__main__":
+    pytest_bazel.main()

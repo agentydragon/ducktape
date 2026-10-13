@@ -1,0 +1,80 @@
+load("@rules_oci//oci:defs.bzl", "oci_load")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+# Spike: does the rendered `agentplane-testing` stack come up on a bare k3s inside an RBE action?
+# Manual only: it downloads k3s at run time and runs it as root.
+
+# Bazel-built service images, loaded into k3s's containerd. The app, runner and sandbox images
+# are not included (see the test's report for why).
+_IMAGES = {
+    "action_service": "//agentplane/action_service:image",
+    "action_service_migrate": "//agentplane/action_service:migration_image",
+    "egress": "//agentplane/egress:image",
+    "egress_migrate": "//agentplane/egress:migration_image",
+    "egress_sidecar": "//agentplane/egress:sidecar_image",
+    "history_migrate": "//agentplane/history_service/storage:migration_image",
+    "history_service": "//agentplane/history_service:image",
+    "llm_ingress": "//agentplane/llm_ingress:image",
+    "notification_service": "//agentplane/notification_service:image",
+    "notification_service_migrate": "//agentplane/notification_service:migration_image",
+    "oauth_fixture": "//agentplane/action_service/testing:oauth_mcp_server_image",
+    "policy_controller": "//agentplane/policy_controller:image",
+    "runner_gateway": "//agentplane/runner_gateway:image",
+    "runner_gateway_migrate": "//agentplane/runner_gateway/commands:migration_image",
+    "sandbox_controller": "//agentplane/sandbox_controller:image",
+    "sandbox_service": "//agentplane/sandbox_service:image",
+}
+
+[
+    oci_load(
+        name = name + "_load",
+        testonly = True,
+        image = image,
+        repo_tags = ["git.allegedly.works/ducktape-ci/agentplane-" + name.replace("_", "-") + ":unset"],
+    )
+    for name, image in _IMAGES.items()
+]
+
+[
+    filegroup(
+        name = name + "_tarball",
+        testonly = True,
+        srcs = [":" + name + "_load"],
+        output_group = "tarball",
+    )
+    for name in _IMAGES
+]
+
+py_library(
+    name = "render",
+    testonly = True,
+    srcs = ["render.py"],
+)
+
+py_test(
+    name = "test_env",
+    size = "large",
+    srcs = ["test_env.py"],
+    data = [
+        "//agentplane/crds",
+        "//cluster:agentplane_testing_manifest",
+    ] + [":" + name + "_tarball" for name in _IMAGES],
+    exec_properties = {
+        "dockerNetwork": "bridge",
+        "recycle-runner": "false",
+        "EstimatedComputeUnits": "4",
+    },
+    tags = [
+        "external",
+        "manual",
+        "no-cache",
+        "requires-network",
+    ],
+    deps = [
+        ":render",
+        "//:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
