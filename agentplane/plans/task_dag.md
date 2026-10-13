@@ -339,6 +339,7 @@ flowchart LR
     VM_PROVIDER[Candidate: production provider and API]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 7]
     VM_EGRESS[Blocked: live launcher relay checks]
+    VM_CONSOLE_AUTOLOGIN[Candidate: root shell on the serial console, testing first]
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
@@ -387,6 +388,17 @@ guest at `10.0.2.1`; the relay is ready, which needs the VM's masquerade interfa
 kubelet's probe on 3129 is not forwarded to the guest; the runner fence admits the launcher and
 another Sandbox's guest cannot reach it; a forged launcher is refused. Do not repeat the entire
 completed prototype matrix or require simultaneous cluster-wide disasters.
+
+### `VM_CONSOLE_AUTOLOGIN` — root shell on the serial console, testing first
+
+**Candidate.** `virtctl console` reaches the guest's serial getty, but the guest has no account
+passwords (`agentplane/runner/vm.nix`), so an attach stops at the login prompt. Autologin makes it a
+root shell, reachable by whoever holds the VMI `console` subresource (`claude-ai` on testing and
+staging). The operator is willing to give this to Claude at least on `agentplane-testing`
+(2026-10-13). The guest image is shared by both clusters, so "testing only" needs the per-environment
+guest config to select it, not a second image; a new `GuestConfig` field must reach the image before
+the ConfigMap that carries it, since the guest rejects unknown fields. Settle that and whether staging
+ever gets it before implementing.
 
 ### `VM_PROCESS_ISOLATION` — protect control from harness processes
 
