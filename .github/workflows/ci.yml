@@ -3,7 +3,7 @@
 # Container images (rbe-container-image, freecad-test) are built by container-images.yml
 # independently. CI uses the pinned image from image_pins.json.
 #
-# Independent workflows (pre-commit, ansible-lint, nix-attic-push, openclaw-image,
+# Independent workflows (pre-commit, ansible-lint, nix-attic-push,
 # container-images) have their own triggers and run separately.
 name: CI
 

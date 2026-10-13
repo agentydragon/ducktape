@@ -2,9 +2,8 @@
 # instance for Git checkouts, direnv, Bazel, BuildBuddy, and tests.
 #
 # Ephemeral KubeVirt containerDisk root (flake output
-# public-coder-devbox-container-disk, published by
-# .github/workflows/public-coder-devbox-image.yml and kept current by Flux image
-# automation) -- nothing written to "/" survives an image update or VM restart.
+# public-coder-devbox-container-disk, kept current
+# by Flux image automation) -- nothing written to "/" survives an image update or VM restart.
 # Accepted: Bazel/BuildBuddy already caches remotely, and this VM's whole point is
 # to always run the current devel config, not to carry local state.
 #

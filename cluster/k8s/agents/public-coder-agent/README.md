@@ -21,6 +21,10 @@ the separate cache PVC is retained.
 
 To resume, unsuspend the devbox and backup Flux owners, restore the three replica counts, unpause the backup, restore the devbox run strategy, restore its
 image-restart opt-in/controller if desired, and restore Flux guest-readiness checks.
+The OpenClaw and devbox image workflows (`.github/workflows/openclaw-image.yml`,
+`.github/workflows/public-coder-devbox-image.yml`) and the smoke script they ran
+(`.github/scripts/smoke-openclaw-image.sh`) are removed while parked; restore them from git
+history and let them publish fresh images before resuming.
 Verify model budgets and credentials before resuming; do not recreate PVCs or change
 the embedding identity. The remainder of this document describes the retained setup.
 
@@ -209,10 +213,8 @@ proxy environment handling.
   next substantial expansion. It includes the gateway, Matrix plugin, and
   formatter/pre-commit tooling. `devbox/` gives the agent a reachable dedicated
   build environment through `ssh devbox`. The devbox's own root disk is an
-  ephemeral KubeVirt `containerDisk`, published automatically by
-  `.github/workflows/public-coder-devbox-image.yml` and kept current by Flux
-  image automation — no manual republish step, but also no persistent local
-  state (Bazel/BuildBuddy caches, checkouts) across an image update or restart.
+  ephemeral KubeVirt `containerDisk`, kept current by Flux image automation
+  — no manual republish step, but also no persistent local state (Bazel/BuildBuddy caches, checkouts) across an image update or restart.
   Its NixOS, Home Manager, and image recipes live in
   `openclaw/public_coder_agent/devbox/`; this directory keeps the deployment
   manifests.

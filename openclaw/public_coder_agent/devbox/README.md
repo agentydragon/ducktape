@@ -12,8 +12,7 @@ its `.#public-coder-devbox-container-disk` output is indexed in
 `nix/flake/packages.nix`. The deployment resources stay with their owner under
 `cluster/k8s/agents/public-coder-agent/devbox/`.
 
-`.github/workflows/public-coder-devbox-image.yml` builds this output on pushes
-to `devel` when the devbox recipe, its shared NixOS modules, or the flake
-registration changes. It publishes the containerDisk to the private Forgejo
-registry. It also accepts manual dispatch from any ref, but publishes only on
-`devel`, where Flux's ImagePolicy consumes the tags.
+No workflow builds this output while Public Coder is parked. Resuming restores
+`.github/workflows/public-coder-devbox-image.yml` from git history; it published
+the containerDisk to the private Forgejo registry on `devel`, where Flux's
+ImagePolicy consumes the tags.
