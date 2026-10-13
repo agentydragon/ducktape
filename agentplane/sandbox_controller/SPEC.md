@@ -95,3 +95,8 @@ virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunni
 `TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `ServiceAccountConflict`,
 `PolicyBindingConflict`, `PodConflict` or `VMConflict` (a Pod or VM of the Sandbox's name that
 it does not control).
+
+The `Ready` condition is True while the Sandbox runs and the incarnation Pod is Ready (`PodReady`).
+Otherwise it is False with `PodNotReady` when everything runs but the Pod is not Ready, and else
+with the reason and message of `Running`. It is the workload's readiness and says nothing of whether
+the runner has connected to the Runner Gateway.

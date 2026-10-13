@@ -154,6 +154,21 @@ func TestRunningVMReportsItsLauncherPodAsTheIncarnation(t *testing.T) {
 	}
 }
 
+func TestVMSandboxIsReadyWhenItsLauncherPodIsReady(t *testing.T) {
+	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
+	reconcileOnce(t, r)
+	_, launcher := startVMI(t, c, kubevirtv1.Running)
+	reconcileOnce(t, r)
+	if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "PodNotReady" {
+		t.Errorf("Ready = %s/%s with a launcher that is not Ready, want False/PodNotReady", got.Status, got.Reason)
+	}
+	setPodReady(t, c, launcher, corev1.ConditionTrue)
+	reconcileOnce(t, r)
+	if got := getReadyCondition(t, c); got.Status != metav1.ConditionTrue {
+		t.Errorf("Ready = %s/%s with a Ready launcher, want True", got.Status, got.Reason)
+	}
+}
+
 func TestStopHaltsTheVMAndKeepsIt(t *testing.T) {
 	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
 	reconcileOnce(t, r)

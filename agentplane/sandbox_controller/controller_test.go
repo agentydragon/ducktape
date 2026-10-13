@@ -142,6 +142,48 @@ func runningReason(t *testing.T, c client.Client) string {
 	return condition.Reason
 }
 
+func getReadyCondition(t *testing.T, c client.Client) *metav1.Condition {
+	t.Helper()
+	condition := meta.FindStatusCondition(getSandbox(t, c).Status.Conditions, Ready)
+	if condition == nil {
+		t.Fatal("no Ready condition")
+	}
+	return condition
+}
+
+func setPodReady(t *testing.T, c client.Client, pod *corev1.Pod, ready corev1.ConditionStatus) {
+	t.Helper()
+	pod.Status.Phase = corev1.PodRunning
+	pod.Status.Conditions = []corev1.PodCondition{{Type: corev1.PodReady, Status: ready}}
+	if err := c.Status().Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSandboxIsReadyWhileItsPodIsReady(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	setPodReady(t, c, getPod(t, c), corev1.ConditionFalse)
+	reconcileOnce(t, r)
+	if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "PodNotReady" {
+		t.Errorf("Ready = %s/%s with a running Pod that is not Ready, want False/PodNotReady", got.Status, got.Reason)
+	}
+	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
+	reconcileOnce(t, r)
+	if got := getReadyCondition(t, c); got.Status != metav1.ConditionTrue {
+		t.Errorf("Ready = %s/%s with a Ready Pod, want True", got.Status, got.Reason)
+	}
+}
+
+func TestSandboxThatIsNotRunningIsNotReadyForTheSameReason(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	got := getReadyCondition(t, c)
+	if got.Status != metav1.ConditionFalse || got.Reason != runningReason(t, c) {
+		t.Errorf("Ready = %s/%s before the Pod runs, want False with the Running reason %s", got.Status, got.Reason, runningReason(t, c))
+	}
+}
+
 func TestRunningSandboxGetsStateVolumeAndPod(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)

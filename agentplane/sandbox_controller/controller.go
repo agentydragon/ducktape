@@ -27,6 +27,9 @@ import (
 
 const (
 	Running = "Running"
+	// True while the incarnation Pod, a VM's virt-launcher Pod included, is Ready. The workload's own
+	// readiness, which says nothing of whether the runner has connected to the Runner Gateway.
+	Ready = "Ready"
 	// Set True on a deleting Sandbox, by this controller or the Runner Gateway, once its runner has
 	// sealed every Session and the ingress has acknowledged each seal; nothing of the Sandbox is
 	// deleted before, unless no runner ever connected.
@@ -534,11 +537,34 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workl
 		condition.Reason, condition.Message = "Stopped", "no Pod; the state PVC is kept"
 	}
 	meta.SetStatusCondition(&status.Conditions, condition)
+	meta.SetStatusCondition(&status.Conditions, readyCondition(sandbox, condition, w.incarnation()))
 	if equality.Semantic.DeepEqual(status, &sandbox.Status) {
 		return nil
 	}
 	sandbox.Status = *status
 	return r.Status().Update(ctx, sandbox)
+}
+
+// readyCondition is True only while the Sandbox runs and its incarnation Pod is Ready; otherwise it
+// carries the reason `running` gives, or `PodNotReady` when everything runs but the Pod is not Ready.
+func readyCondition(sandbox *Sandbox, running metav1.Condition, incarnation *corev1.Pod) metav1.Condition {
+	condition := metav1.Condition{Type: Ready, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation, Reason: running.Reason, Message: running.Message}
+	if running.Status != metav1.ConditionTrue {
+		return condition
+	}
+	if podReady(incarnation) {
+		condition.Status, condition.Reason = metav1.ConditionTrue, "PodReady"
+		condition.Message = fmt.Sprintf("Pod %s is Ready", incarnation.Name)
+	} else {
+		condition.Reason, condition.Message = "PodNotReady", fmt.Sprintf("Pod %s is running but not Ready", incarnation.Name)
+	}
+	return condition
+}
+
+func podReady(pod *corev1.Pod) bool {
+	return pod != nil && slices.ContainsFunc(pod.Status.Conditions, func(c corev1.PodCondition) bool {
+		return c.Type == corev1.PodReady && c.Status == corev1.ConditionTrue
+	})
 }
 
 func podCondition(condition *metav1.Condition, sandbox *Sandbox, pod *corev1.Pod) {
