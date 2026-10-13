@@ -350,12 +350,14 @@ func TestDeletionOfASandboxNoRunnerConnectedToSealsNothing(t *testing.T) {
 	reconcileOnce(t, r)
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
-	reconcileOnce(t, r)
 	if getPod(t, c) != nil {
-		t.Fatal("the Pod outlived a seal that had nothing to seal")
+		t.Fatal("the Pod outlived a Sandbox with nothing to seal")
 	}
 	if calls := r.Sealer.(*fakeSealer).calls; calls != 0 {
 		t.Errorf("asked a runner that never connected to seal %d times", calls)
+	}
+	if meta.IsStatusConditionTrue(getSandbox(t, c).Status.Conditions, SessionsSealed) {
+		t.Error("a Sandbox no runner connected to was recorded as sealed")
 	}
 }
 

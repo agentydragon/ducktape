@@ -27,8 +27,8 @@ import (
 const (
 	Running = "Running"
 	// Set True on a deleting Sandbox, by this controller or the Runner Gateway, once its runner has
-	// sealed every Session and the ingress has acknowledged each seal, or once no runner ever
-	// connected; nothing of the Sandbox is deleted before.
+	// sealed every Session and the ingress has acknowledged each seal; nothing of the Sandbox is
+	// deleted before, unless no runner ever connected.
 	SessionsSealed = "SessionsSealed"
 	// On the Pod or the VirtualMachine and its VMI and virt-launcher Pod, the state PVC, the
 	// ServiceAccount and the PolicyBinding: the Sandbox they belong to.
@@ -182,8 +182,17 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 		return w, nil, err
 	}
 	own := pvc != nil && pvc.Annotations[SandboxUIDAnnotation] == string(sandbox.UID)
-	// Without a state PVC of its own the Sandbox never had a runner, so it has no Session to seal.
-	if own && !meta.IsStatusConditionTrue(sandbox.Status.Conditions, SessionsSealed) {
+	// Without a state PVC of its own the Sandbox never had a runner, so it has no Session to seal;
+	// nor has one whose runner never connected, which is not sealed, only has nothing to seal.
+	needsSeal := own && !meta.IsStatusConditionTrue(sandbox.Status.Conditions, SessionsSealed)
+	if needsSeal && r.Sealer != nil {
+		connected, err := r.everConnected(ctx, sandbox)
+		if err != nil {
+			return w, nil, err
+		}
+		needsSeal = connected
+	}
+	if needsSeal {
 		// Only a running runner seals, so a stopped Sandbox runs once more; the Runner Gateway
 		// refuses every new Session and command for a deleting Sandbox.
 		w, blocked, err := r.converge(ctx, sandbox, w, true, nil)
@@ -193,8 +202,7 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 		if r.Sealer == nil {
 			return w, &unready{reason: "Sealing", message: "waiting for the Runner Gateway to seal every Session"}, nil
 		}
-		blocked, err = r.seal(ctx, sandbox)
-		return w, blocked, err
+		return w, r.seal(ctx, sandbox), nil
 	}
 	if w.pod != nil {
 		if err := r.deleteIfLive(ctx, w.pod); err != nil {
@@ -224,30 +232,30 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 	return w, nil, r.Update(ctx, sandbox)
 }
 
-// seal asks the runner to seal every Session and, once the ingress has acknowledged each seal,
-// records it on the Sandbox's status for the caller to write. A Sandbox whose runner never connected
-// has none to seal. Seal is idempotent, so any failure is asked again.
-func (r *Reconciler) seal(ctx context.Context, sandbox *Sandbox) (*unready, error) {
+// everConnected is whether a runner ever connected for the Sandbox: the Runner Gateway's Lease for it
+// exists.
+func (r *Reconciler) everConnected(ctx context.Context, sandbox *Sandbox) (bool, error) {
 	var lease coordinationv1.Lease
 	err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + "-runner"}, &lease)
-	sealed := metav1.Condition{Type: SessionsSealed, Status: metav1.ConditionTrue, Reason: "Sealed", ObservedGeneration: sandbox.Generation}
-	switch {
-	case apierrors.IsNotFound(err):
-		sealed.Message = "no runner ever connected"
-	case err != nil:
-		return nil, err
-	default:
-		result, err := r.Sealer.Seal(ctx, sandbox)
-		if err != nil {
-			return &unready{reason: "Sealing", message: err.Error(), retryAfter: sealRetry}, nil
-		}
-		if len(result.Unflushed) > 0 {
-			return &unready{reason: "Sealing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: sealRetry}, nil
-		}
-		sealed.Message = fmt.Sprintf("%d Sessions sealed", result.Sessions)
+	return err == nil, client.IgnoreNotFound(err)
+}
+
+// seal asks the runner to seal every Session and, once the ingress has acknowledged each seal,
+// records it on the Sandbox's status for the caller to write. Seal is idempotent, so any failure is
+// asked again.
+func (r *Reconciler) seal(ctx context.Context, sandbox *Sandbox) *unready {
+	result, err := r.Sealer.Seal(ctx, sandbox)
+	if err != nil {
+		return &unready{reason: "Sealing", message: err.Error(), retryAfter: sealRetry}
 	}
-	meta.SetStatusCondition(&sandbox.Status.Conditions, sealed)
-	return &unready{reason: "Sealing", message: sealed.Message}, nil
+	if len(result.Unflushed) > 0 {
+		return &unready{reason: "Sealing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: sealRetry}
+	}
+	message := fmt.Sprintf("%d Sessions sealed", result.Sessions)
+	meta.SetStatusCondition(&sandbox.Status.Conditions, metav1.Condition{
+		Type: SessionsSealed, Status: metav1.ConditionTrue, Reason: "Sealed", Message: message, ObservedGeneration: sandbox.Generation,
+	})
+	return &unready{reason: "Sealing", message: message}
 }
 
 // deleteIfLive deletes obj, that very object, unless its deletion has begun.
