@@ -205,6 +205,36 @@ it("shows approval widgets for Kubernetes resource, pod-list, and log reads", as
   }
 });
 
+it("offers Approve and Deny on a collapsed card of an opted-in Action, including one from an external caller", async () => {
+  vi.stubGlobal("EventSource", ActionStream);
+  const container = await mount(
+    <MemoryRouter initialEntries={["/threads/test-thread"]}>
+      <ActionRequestsProvider>
+        <ActionsSidebarSection />
+      </ActionRequestsProvider>
+    </MemoryRouter>
+  );
+  const read = {
+    ...request("decision_pending", 6),
+    action: { group: "kubernetes_admin", name: "resources_get" },
+    arguments: { apiVersion: "v1", kind: "Pod", name: "api-0" },
+    title: "inspect pod",
+    external_grant: {
+      caller: { namespace: "test-namespace", name: "test-caller" },
+      issuer: "https://issuer.example.test",
+      client_id: "test-client",
+      connection_id: "73000000-0000-4000-8000-000000000001",
+      grant_id: "74000000-0000-4000-8000-000000000001",
+      revision: 1,
+      binding_version: 0,
+    },
+  };
+  await send([read]);
+  expect(container.querySelector(`button[aria-expanded="true"][aria-label^="Collapse"]`)).toBeNull();
+  expect(container.querySelector(`button[aria-label="Approve ${read.title}"]`)).not.toBeNull();
+  expect(container.querySelector(`button[aria-label="Deny ${read.title}"]`)).not.toBeNull();
+});
+
 it("shows the closed-sidebar queue as a collapsed strip only while requests are pending", async () => {
   vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(

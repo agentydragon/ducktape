@@ -111,8 +111,10 @@
   min-width: 0;
 }
 
+/* A card is an overview: a long command or argument list is cut here, and the full text is one tap away. */
 .agentplane-actions-sidebar-collapsed-preview {
   max-width: 100%;
+  max-height: 4.5rem;
   overflow: hidden;
   color: var(--mantine-color-dimmed);
 }
@@ -137,10 +139,18 @@
   font-size: var(--mantine-font-size-xs);
   font-weight: 600;
   overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.agentplane-actions-sidebar-decision {
+  padding: 0 6px 6px 22px;
 }
 
 .agentplane-actions-sidebar-preview {
-  max-height: min(32dvh, 20rem);
+  max-height: min(24dvh, 14rem);
   overflow-y: auto;
   overscroll-behavior: contain;
   border-top: 1px solid var(--mantine-color-default-border);
