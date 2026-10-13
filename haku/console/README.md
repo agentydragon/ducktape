@@ -95,8 +95,13 @@ Web Push reaches an Operator when no console tab is open. The server (`notificat
 (`frontend/sw.ts`) offers Approve/Deny and deep-links to the audit view. A push grants no authority:
 buttons call the ordinary exact-Origin decision endpoint under the Operator session.
 
-`PendingApprovalNotifier` updates that notification on approval, denial, or withdrawal. Calls that
-never queue are never pushed. Preserve these operational contracts:
+The service worker keeps exactly one notification (one tag), rebuilt from `GET /api/approvals/pending`
+on every push: the call itself with Approve/Deny when one waits, a count and first titles when
+several do, none when none do. Chrome revokes notification permission from origins it judges spammy
+(many shown, little engagement), and a notification per call plus a notice per outcome looked like
+that on Android. All pushes share one `Topic`, so a phone that was offline is woken once.
+`PendingApprovalNotifier` pushes on approval, denial, or withdrawal so that notification is rebuilt.
+Calls that never queue are never pushed. Preserve these operational contracts:
 
 - The VAPID private key is the console's push identity; rotating it invalidates every subscription.
 - Push payload changes are additive within a `kind`, because an installed service worker may lag the

@@ -5,6 +5,10 @@ is exactly not the case when the operator is away from the desk — the moment a
 needs to reach them. Web Push covers that gap: the browser's push service holds the message and
 wakes the console's service worker, which renders an OS notification carrying Approve/Deny.
 
+Chrome (Android especially) revokes notification permission from origins it judges spammy, so the
+worker keeps exactly one notification, rebuilt from the pending list on every push; all pushes share
+one `Topic` so an offline phone is woken once rather than replayed a burst.
+
 **A push message is a prompt to decide, never the decision.** The notification is rendered by the
 OS from console-authored content, its buttons are defined by console code, and acting on one is a
 same-origin `fetch` from the console's own service worker carrying the operator's ordinary
@@ -70,6 +74,8 @@ _SEND_TIMEOUT_SECONDS = 10.0
 # else (throttling, 5xx, a network blip) is transient and must not delete the operator's device.
 _DEAD_SUBSCRIPTION_STATUSES = {404, 410}
 _BODY_MAX_CHARS = 240
+# RFC 8030 §5.4: base64url, at most 32 characters.
+_PUSH_TOPIC = "haku-console-approvals"
 
 
 class PushShow(BaseModel):
@@ -96,12 +102,11 @@ class PushShow(BaseModel):
 
 
 class PushRetract(BaseModel):
-    """The call left the queue; collapse its notification to a resolved, non-actionable one.
+    """The call left the queue; the worker re-reads the pending list and rebuilds its one notification.
 
-    Not a bare "close": Chrome requires a `userVisibleOnly` subscription to show *something* per
-    push, and a handler that silently shows nothing spends push budget until the browser starts
-    substituting its own "site updated in the background" notice. Replacing in place is also the
-    better UX — the operator sees that the thing they were pinged about is settled, and by what.
+    Still a push, not silence: Chrome requires a `userVisibleOnly` subscription to show *something*
+    per push, and a handler that shows nothing spends push budget until the browser substitutes its
+    own "site updated in the background" notice.
     """
 
     kind: Literal["retract"] = "retract"
@@ -271,11 +276,9 @@ class Notifier:
         if not subscriptions:
             return
         payload = message.model_dump_json().encode()
-        await asyncio.gather(
-            *(self._send_one(subscription, payload, message.tool_call_id) for subscription in subscriptions)
-        )
+        await asyncio.gather(*(self._send_one(subscription, payload) for subscription in subscriptions))
 
-    async def _send_one(self, subscription: PushSubscription, payload: bytes, tool_call_id: str) -> None:
+    async def _send_one(self, subscription: PushSubscription, payload: bytes) -> None:
         try:
             encoded = WebPusher(
                 {"endpoint": subscription.endpoint, "keys": {"p256dh": subscription.p256dh, "auth": subscription.auth}}
@@ -286,10 +289,11 @@ class Notifier:
                 "Content-Type": "application/octet-stream",
                 "TTL": str(PUSH_TTL_SECONDS),
                 "Urgency": "high",
-                # Collapse key: a retraction supersedes the pending message for the same call
-                # while it is still queued, so a phone that was offline through the whole
-                # exchange wakes to the outcome instead of a dead ask it can no longer act on.
-                "Topic": _collapse_topic(tool_call_id),
+                # One collapse key for every message: a push service holding queued messages for an
+                # offline phone keeps only the newest, so it wakes once and the service worker
+                # rebuilds its single notification from the current pending list, instead of
+                # replaying a burst that Chrome counts against the site as spam.
+                "Topic": _PUSH_TOPIC,
             }
             response = await self._client.post(subscription.endpoint, content=encoded["body"], headers=headers)
         except Exception:
@@ -312,15 +316,6 @@ class Notifier:
                 response.text[:200],
             )
             await self._subscriptions.record_failure(subscription.endpoint)
-
-
-def _collapse_topic(tool_call_id: str) -> str:
-    """RFC 8030 §5.4 topics are base64url and at most 32 characters.
-
-    Tool call ids (``tc_`` + 24 hex) already satisfy both, but the cap is the push service's, not
-    ours — truncating keeps a future id format from turning every push into a 400.
-    """
-    return tool_call_id[:32]
 
 
 def _redacted(endpoint: str) -> str:

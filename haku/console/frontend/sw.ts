@@ -32,6 +32,7 @@ interface NotificationAction {
 declare global {
   interface NotificationOptions {
     actions?: NotificationAction[];
+    renotify?: boolean;
   }
 }
 
@@ -61,9 +62,12 @@ const PENDING_NOTIFICATION_ACTIONS: NotificationAction[] = [
   { action: DENY_ACTION, title: "Deny" },
   { action: DETAILS_ACTION, title: "Details" },
 ];
-// How long a resolved notification lingers before closing itself. Long enough to read on a lock
-// screen, short enough that settled calls do not pile up in the shade.
-const RESOLVED_LINGER_MS = 6000;
+// One notification for the whole pending queue. Chrome (Android especially) revokes notification
+// permission from origins it judges spammy — many shown, few engaged with — so a notification per
+// call plus a notice per outcome is the pattern to avoid.
+const PENDING_TAG = "haku-console-pending";
+const LISTED_TITLES = 3;
+const BODY_MAX_CHARS = 240;
 
 function parsePush(event: PushEvent): PushMessage | null {
   if (!event.data) return null;
@@ -111,33 +115,80 @@ export function notificationActions(
   return PENDING_NOTIFICATION_ACTIONS.slice(0, limit);
 }
 
-async function showPending(message: PushShow): Promise<void> {
-  await self.registration.showNotification(notificationTitle(message), {
-    body: message.rationale,
-    // The call id as tag means a re-sent push replaces rather than stacks, and gives
-    // `retract` a handle on exactly this notification.
-    tag: message.tool_call_id,
-    // A pending call is a question. Leaving it up until answered is the point.
-    requireInteraction: true,
-    actions: notificationActions(),
-    data: message,
-  });
+interface PendingCall {
+  tool_call_id: string;
+  server_id: string;
+  tool_name: string;
+  arguments: Record<string, unknown>;
+  rationale: string;
 }
 
-async function showResolved(message: PushRetract): Promise<void> {
-  // Replace in place rather than just closing. Chrome requires a `userVisibleOnly` subscription to
-  // show something per push and spends the origin's push budget when a handler shows nothing;
-  // exhaust it and the browser substitutes its own "site updated in the background" notice. It also
-  // tells the operator that the call they were pinged about is settled.
-  await self.registration.showNotification(message.outcome, {
-    tag: message.tool_call_id,
-    silent: true,
-    requireInteraction: false,
-    data: message,
-  });
-  await new Promise((resolve) => setTimeout(resolve, RESOLVED_LINGER_MS));
-  for (const notification of await self.registration.getNotifications({ tag: message.tool_call_id })) {
-    notification.close();
+async function fetchPending(): Promise<PendingCall[] | null> {
+  try {
+    const response = await fetch("/api/approvals/pending", { credentials: "include" });
+    if (response.ok) return ((await response.json()) as { approvals: PendingCall[] }).approvals;
+  } catch (error) {
+    console.warn("Could not read pending approvals for a push", error);
+  }
+  return null;
+}
+
+function toShow(call: PendingCall): PushShow {
+  return {
+    kind: "show",
+    tool_call_id: call.tool_call_id,
+    server_id: call.server_id,
+    tool_name: call.tool_name,
+    arguments: call.arguments,
+    rationale:
+      call.rationale.length > BODY_MAX_CHARS ? `${call.rationale.slice(0, BODY_MAX_CHARS - 1)}…` : call.rationale,
+    url: `/_console/tool-calls/${call.tool_call_id}`,
+  };
+}
+
+/** Rebuild the one notification from the queue as it is now. A push only says that something
+ * changed: push services deliver late, out of order, or collapsed, so the message is not trusted
+ * for what to show. */
+async function showPending(message: PushMessage): Promise<void> {
+  const pending = await fetchPending();
+  const options = { tag: PENDING_TAG, requireInteraction: true, renotify: message.kind === "show" };
+  if (pending === null) {
+    // Expired session or offline: say something is waiting without offering decisions.
+    await self.registration.showNotification("Haku Console", {
+      ...options,
+      body: "Open the console to review pending approvals",
+      data: message.kind === "show" ? message : undefined,
+    });
+  } else {
+    await showQueue(pending.map(toShow), message, options);
+  }
+}
+
+async function showQueue(
+  shows: PushShow[],
+  message: PushMessage,
+  options: { tag: string; requireInteraction: boolean; renotify: boolean }
+): Promise<void> {
+  const [first, ...rest] = shows;
+  if (first === undefined) {
+    // Every push must show something, or Chrome shows its own "updated in the background" notice.
+    await self.registration.showNotification("Haku Console", { tag: PENDING_TAG, silent: true });
+    for (const notification of await self.registration.getNotifications({ tag: PENDING_TAG })) notification.close();
+  } else if (rest.length === 0) {
+    await self.registration.showNotification(notificationTitle(first), {
+      ...options,
+      body: first.rationale,
+      silent: message.kind === "retract",
+      actions: notificationActions(),
+      data: first,
+    });
+  } else {
+    await self.registration.showNotification(`${shows.length} approvals waiting`, {
+      ...options,
+      body: shows.slice(0, LISTED_TITLES).map(notificationTitle).join("\n"),
+      silent: message.kind === "retract",
+      data: first,
+    });
   }
 }
 
@@ -145,8 +196,8 @@ self.addEventListener("push", (event) => {
   const message = parsePush(event);
   if (!message) return;
   // waitUntil keeps this worker alive across the await chain; without it the browser may kill it
-  // mid-notification (and, for `retract`, before the linger completes).
-  event.waitUntil(message.kind === "show" ? showPending(message) : showResolved(message));
+  // mid-notification.
+  event.waitUntil(showPending(message));
 });
 
 async function openToolCall(url: string): Promise<void> {

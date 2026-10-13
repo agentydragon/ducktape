@@ -132,7 +132,7 @@ async def test_pending_push_is_encrypted_to_the_subscription_and_carries_the_dee
     assert sent[0].headers["content-encoding"] == "aes128gcm"
     assert sent[0].headers["authorization"].startswith("vapid t=")
     # Collapse key: a later retraction for the same call supersedes this message while queued.
-    assert sent[0].headers["topic"] == record.tool_call_id
+    assert sent[0].headers["topic"] == "haku-console-approvals"
     # The call's identity and arguments travel raw: the service worker describes it through the
     # same registry the approvals card uses, so the two surfaces cannot phrase it differently.
     assert subscriber.decrypt(sent[0].content) == {
