@@ -39,7 +39,8 @@ The same service-caller allowlist gates every RPC:
   defaults and bootstrap, its raw status, and a same-name Pod's identity metadata and raw status as
   separate objects. The operating mode is the desired state; the `phase` is derived from what the
   Sandbox Controller records (deletion asked for, `spec.running`, whether an incarnation exists,
-  `SessionsSealed`) as Creating, Running, Suspending, Suspended, Sealing or Tearing down.
+  `SessionsSealed`, the `Running` condition's reason) as Creating, Running, Suspending, Suspended,
+  Sealing (a stop or deletion held for the runner's seal) or Tearing down.
 - `ListTemplates`: available SandboxTemplates.
 - `CreateSandbox`: concrete template, `policy_sets`, optional session defaults, and bootstrap. The
   requested `name` is the Sandbox's. It runs from the start, bound to `policy_sets` plus the

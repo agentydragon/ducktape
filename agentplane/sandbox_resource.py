@@ -27,6 +27,8 @@ SANDBOX_API_VERSION = f"{GROUP}/{VERSION}"
 # Set by the Runner Gateway on a deleting Sandbox once its runner sealed every Session and the
 # ingress acknowledged each seal; the controller deletes nothing of the Sandbox before.
 SESSIONS_SEALED = "SessionsSealed"
+# The Sandbox Controller's workload condition; its reasons say what the Sandbox is waiting on.
+RUNNING = "Running"
 # On a Sandbox's Pod, or its VM, VMI and virt-launcher Pod: the Sandbox's name.
 SANDBOX_LABEL = f"{GROUP}/sandbox"
 # A VM Sandbox's runner runs in its VMI's virt-launcher Pod, which the VMI controls.
@@ -94,6 +96,9 @@ class Sandbox(_Wire):
     @property
     def sessions_sealed(self) -> bool:
         return any(c.type == SESSIONS_SEALED and c.status is ConditionStatus.TRUE for c in self.status.conditions)
+
+    def running_reason(self) -> str | None:
+        return next((c.reason for c in self.status.conditions if c.type == RUNNING), None)
 
     def runs_in(self, pod: k8s_client.V1Pod) -> bool:
         """Whether `pod` is the incarnation the Sandbox Controller reports, the same object and not

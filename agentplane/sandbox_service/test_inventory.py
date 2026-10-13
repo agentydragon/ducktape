@@ -70,6 +70,10 @@ SEALED = [
 ]
 
 
+def running_because(reason: str) -> list[dict[str, str]]:
+    return [{**SEALED[0], "type": "Running", "status": "False", "reason": reason}]
+
+
 @pytest.mark.parametrize(
     ("running", "incarnated", "deletion", "conditions", "phase"),
     [
@@ -79,6 +83,9 @@ SEALED = [
         (False, False, False, [], SandboxPhase.SANDBOX_PHASE_SUSPENDED),
         (False, True, True, [], SandboxPhase.SANDBOX_PHASE_SEALING),
         (False, False, True, SEALED, SandboxPhase.SANDBOX_PHASE_TEARING_DOWN),
+        (False, True, False, running_because("Sealing"), SandboxPhase.SANDBOX_PHASE_SEALING),
+        (False, True, True, running_because("Sealing"), SandboxPhase.SANDBOX_PHASE_SEALING),
+        (False, True, True, running_because("Deleting"), SandboxPhase.SANDBOX_PHASE_TEARING_DOWN),
     ],
 )
 async def test_phase_follows_what_the_controller_records(
