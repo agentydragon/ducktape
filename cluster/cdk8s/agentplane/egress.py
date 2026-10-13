@@ -453,8 +453,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
         rules=[
             # The package and toolchain mirrors a box needs to install anything: without them
             # `pip install`, `npm install`, a cargo fetch and every Bazel download fail in a
-            # sandbox whose whole purpose is running commands. Taken from the set haku's own
-            # agent reaches (egress_fences.OPENCLAW_SPIKE_ALLOWLIST).
+            # sandbox whose whole purpose is running commands.
             #
             # No credentialRef: these are public, unauthenticated reads, so there is nothing to
             # substitute and a compromised box gains no identity here. That is also why the

@@ -466,8 +466,9 @@ vocabulary the `ducktape.org/parked` annotation already had.
 ### Haku OpenClaw spike retirement
 
 The Haku OpenClaw compatibility spike is decommissioned, including its namespace
-and PVCs. Its app, backup, and dedicated Iron proxy generators and manifests are
-retained under `cluster/cdk8s/parked/` and `cluster/parked/haku-openclaw-spike/`.
+and PVCs. Its app and backup generators and manifests are retained under
+`cluster/cdk8s/parked/` and `cluster/parked/haku-openclaw-spike/`. Its dedicated Iron
+proxy was retained too, then deleted on 2026-10-13; unparking the spike needs a new one.
 Haku sandbox, the Haku CI mitmproxy, and public coder are not decommissioned.
 
 The old app owner used `deletionPolicy: Orphan`; retirement first reconciled that
@@ -483,6 +484,8 @@ backing storage was not audited as part of these checks.
 Park the standalone Codex namespace and Claude's shared mitmproxy, preserving
 rendered manifests, image pins and revival instructions under
 `cluster/parked/{agent-workspaces,agents-mitmproxy}` and retaining their generators.
+The mitmproxy, its generator and its injection policy were deleted on 2026-10-13;
+admitting Claude Pods again needs a new egress proxy.
 Existing Flux owners first reconciled empty directories to prune live resources.
 Live checks on 2026-10-02 at 21:57 UTC confirmed both owners Ready on the #8806
 merge (`93ee322b`), empty inventories, absent namespaces/Pods, and no workspace

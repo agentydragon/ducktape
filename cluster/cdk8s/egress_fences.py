@@ -1,6 +1,6 @@
 """The FQDN fences on the agent egress proxies: one CiliumNetworkPolicy per proxy Pod naming
 what it may resolve and connect to on the public internet, each in its own chart, which the
-writer of the proxy's directory includes (`haku_egress_proxy.py`, `mitmproxy.py`).
+writer of the proxy's directory includes (`haku_egress_proxy.py`).
 
 A fence bounds the proxy Pod, not the sandboxes behind it, whose force-proxy
 CiliumClusterwideNetworkPolicies admit kube-dns as a plain L4 rule. In-cluster traffic is not
@@ -20,10 +20,9 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecEgress
 
 from cluster.cdk8s import cilium
-from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy, dns_allowlist
+from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 
 HAKU_EGRESS_PROXY_NAMESPACE = "haku-egress-proxy"
-MITMPROXY_NAMESPACE = "agents-mitmproxy"
 
 # In-cluster names, deliberately unfenced. `**.` is Cilium's subdomain wildcard (one or more
 # whole labels; a single `*` stops at the label boundary), so this covers in-cluster names and
@@ -117,80 +116,6 @@ _HAKU_CLOUD_API_GROUPS: tuple[tuple[str, ...], ...] = (
     ("*.ankiweb.net",),
 )
 
-# The openclaw spike proxy's iron `allowlist` transform (haku_egress_proxy.py), which bounds it
-# at L7; the DNS rule built from it is the fence's second layer.
-# forgejo-http.forgejo is listed for parity with the iron allowlist; it is never queried in that
-# form, since the search path resolves it as forgejo-http.forgejo.svc.cluster.local first.
-OPENCLAW_SPIKE_ALLOWLIST = (
-    # keep-sorted start
-    "api.anthropic.com",
-    "api.github.com",
-    "bcr.bazel.build",
-    "cache.nixos.org",
-    "channels.nixos.org",
-    "code.forgejo.org",
-    "codeload.github.com",
-    "data.forgejo.org",
-    "files.pythonhosted.org",
-    "forgejo-http.forgejo",
-    "ftp.gnu.org",
-    "ghcr.io",
-    "github.com",
-    "haku.allegedly.works",
-    "index.crates.io",
-    # The kube-apiserver, via the terminate+re-encrypt Gateway route (kube-api-proxy/README.md).
-    # A fence gaining this host is a privilege change: what its holder may do is decided by the
-    # RBAC bound to the identity in its bearer token, not by this list.
-    "kubeapi.allegedly.works",
-    "nixos.org",
-    "nodejs.org",
-    "objects.githubusercontent.com",
-    "pkg-containers.githubusercontent.com",
-    "pypi.org",
-    "raw.githubusercontent.com",
-    "registry.npmjs.org",
-    "release-assets.githubusercontent.com",
-    "releases.bazel.build",
-    "snapshot.debian.org",
-    "static.crates.io",
-    "static.rust-lang.org",
-    # keep-sorted end
-)
-
-# What the shared agents-mitmproxy, the claude-sandbox chokepoint, reaches on the public
-# internet.
-_MITMPROXY_GROUPS: tuple[tuple[str, ...], ...] = (
-    # The build-registry bucket: public package, source and toolchain registries, granted
-    # all-or-none (//cluster/cdk8s:test_egress_fences).
-    (
-        "bcr.bazel.build",
-        "cache.nixos.org",
-        "channels.nixos.org",
-        "code.forgejo.org",
-        "codeload.github.com",
-        "data.forgejo.org",
-        "files.pythonhosted.org",
-        "ftp.gnu.org",
-        "ghcr.io",
-        "github.com",
-        "index.crates.io",
-        "nixos.org",
-        "nodejs.org",
-        "objects.githubusercontent.com",
-        "pkg-containers.githubusercontent.com",
-        "pypi.org",
-        "raw.githubusercontent.com",
-        "registry.npmjs.org",
-        "release-assets.githubusercontent.com",
-        "releases.bazel.build",
-        "snapshot.debian.org",
-        "static.crates.io",
-        "static.rust-lang.org",
-    ),
-    # Model provider APIs reached directly from sandbox pods.
-    ("generativelanguage.googleapis.com", "api.openai.com", "api.anthropic.com"),
-)
-
 
 def _fence(
     app: App, chart_id: str, *, name: str, namespace: str, proxy: str, egress: Sequence[CiliumNetworkPolicySpecEgress]
@@ -224,50 +149,5 @@ def haku_cloud_api(app: App) -> Chart:
             # explicit bypass for `*.svc.cluster.local` and `10.0.0.0/8`). The widest rule in
             # this fence, deliberately -- see the module docstring.
             EgressRule.to_entities(Entity.CLUSTER, ports=[80, 443, 8000, 8080, 11434]),
-        ],
-    )
-
-
-def haku_openclaw_spike(app: App) -> Chart:
-    """The spike's iron proxy. DNS is its only Cilium-side allowlist: the 443 rule below cannot
-    be one, and unlike toFQDNs the DNS rule can express haku.allegedly.works, because it
-    matches before any destination identity exists."""
-    return _fence(
-        app,
-        "openclaw-spike-cnp-egress",
-        name="allow-haku-openclaw-spike-proxy-egress",
-        namespace=HAKU_EGRESS_PROXY_NAMESPACE,
-        proxy="haku-openclaw-spike-proxy",
-        egress=[
-            cilium.dns_egress(protocols=["ANY"], resolves=dns_allowlist(*OPENCLAW_SPIKE_ALLOWLIST, *CLUSTER_DNS)),
-            # Public HTTPS is application-layer allowlisted by iron-proxy. remote-node/host
-            # because allegedly.works is served from node ExternalIPs, which Cilium does not
-            # classify as world. This opens 443 to anything and cannot be narrowed into an
-            # allowlist: a toFQDNs list would fence true-world hosts but could not express
-            # haku.allegedly.works (node identity, cluster/docs/cilium_network_policy.md). What
-            # bounds this proxy is the iron allowlist at L7 and the DNS rule above -- neither of
-            # which stops a destination reached by literal IP.
-            EgressRule.to_entities(Entity.WORLD, Entity.REMOTE_NODE, Entity.HOST, ports=[443]),
-            EgressRule.to_endpoints(
-                {"k8s:io.kubernetes.pod.namespace": "forgejo", "k8s:app.kubernetes.io/name": "forgejo"}, 3000
-            ),
-        ],
-    )
-
-
-def mitmproxy_cloud_api(app: App) -> Chart:
-    return _fence(
-        app,
-        "cnp-cloud-api-egress",
-        name="allow-cloud-api-egress",
-        namespace=MITMPROXY_NAMESPACE,
-        proxy="mitmproxy",
-        egress=[
-            *cilium.fqdn_fence(*_MITMPROXY_GROUPS, resolves_also=CLUSTER_DNS),
-            # Forwarding to any in-cluster Service: sandbox bench Jobs and other workloads keep
-            # mitmproxy in-path even when targeting cluster endpoints (e.g. `ollama.ollama:11434`);
-            # NO_PROXY in the inject policy still permits explicit bypass for
-            # `*.svc.cluster.local` and `10.0.0.0/8`.
-            EgressRule.to_entities(Entity.CLUSTER, ports=[11434, 80, 443, 8000, 8080]),
         ],
     )

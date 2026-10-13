@@ -109,8 +109,8 @@ def _external_secrets(scope: Construct) -> None:
 
 def _ca(scope: Construct) -> None:
     """A dedicated interception root, separate from the cluster internal CA, and the trust
-    bundle publishing it. Standard TLS-interception trust pattern; see `cluster/cdk8s/mitmproxy.md`
-    for the rotation constraint (publish both roots in the Bundle before switching signing keys).
+    bundle publishing it. Standard TLS-interception trust pattern. Rotating it needs an overlap:
+    publish both roots in the Bundle before switching signing keys.
 
     ECDSA P-256 is deliberate and fine: iron-proxy accepts an ECDSA root and mints working leaves
     from it, verified against the pinned image.
@@ -319,7 +319,6 @@ def _deployment(scope: Construct, config_map: k8s.KubeConfigMap, aiquota_bearer:
                     # Private package in the in-cluster Forgejo registry. The credential is
                     # reflected into this namespace by cluster/k8s/forgejo-images/.
                     image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
-                    # Matches haku-openclaw-spike-proxy, which runs the same image.
                     # This namespace sets no pod-security.kubernetes.io labels, so only the
                     # cluster-default baseline applies and none of this is enforced for us -- it
                     # has to be stated here. The deliberate waiver for this agent is about egress

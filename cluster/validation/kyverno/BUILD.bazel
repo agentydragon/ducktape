@@ -24,16 +24,6 @@ py_library(
     ],
 )
 
-py_library(
-    name = "parked_proxy_policy",
-    testonly = True,
-    srcs = ["parked_proxy_policy.py"],
-    deps = [
-        "//cluster/cdk8s/kyverno:proxy_injection",
-        "@pypi//cdk8s",
-        "@pypi//pyyaml",
-    ],
-)
 
 # One target per policy: a failure names the policy it belongs to, and a single
 # policy can be run on its own.
@@ -74,28 +64,6 @@ py_test(
     ],
 )
 
-py_test(
-    name = "test_inject_mitmproxy",
-    srcs = ["test_inject_mitmproxy.py"],
-    data = [
-        "@multitool//tools/kyverno",
-        "@nodejs_linux_amd64//:bin/node",
-    ] + glob([
-        "testdata/pod_*.yaml",
-        "__snapshots__/test_inject_mitmproxy.ambr",
-    ]),
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
-    uses_syrupy = True,
-    deps = [
-        ":apply",
-        ":parked_proxy_policy",
-        ":paths",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
-        "@pypi//syrupy",
-    ],
-)
 
 py_test(
     name = "test_restrict_agent_gateway_routes",
@@ -138,12 +106,9 @@ py_test(
         "testdata/pod_self_wired_egress_proxy.yaml",
         "//cluster:kyverno_policy_files",
         "@multitool//tools/kyverno",
-        "@nodejs_linux_amd64//:bin/node",
     ],
-    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
     deps = [
         ":apply",
-        ":parked_proxy_policy",
         ":paths",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

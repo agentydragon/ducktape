@@ -1,7 +1,6 @@
 # Build of upstream iron-proxy pinned to the v0.50.0 release commit, the first
 # stable release with HTTP/2/gRPC support in MITM mode. Nothing here is specific to
-# any one consumer; two egress fences share this image (public-coder-agent,
-# haku-openclaw-spike-proxy).
+# any one consumer; public-coder-agent's egress fence runs it.
 #
 # The workflow supplies the exact checked-out source tree as this build context;
 # do not fetch a branch or mutable tag here.

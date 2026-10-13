@@ -645,11 +645,6 @@ spec:
       name: metrics-server
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/parked/agents-mitmproxy/**"
-          to: "@artifact/cluster/parked/agents-mitmproxy/"
-      name: agents-mitmproxy
-      originRevision: "@repo"
-    - copy:
         - from: "@repo/cluster/generated/monitoring/alloy/**"
           to: "@artifact/cluster/generated/monitoring/alloy/"
       name: monitoring-alloy

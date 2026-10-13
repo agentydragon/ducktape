@@ -180,9 +180,7 @@ proxy environment handling.
   (`5bd11ab`), the first stable release with the HTTP/2/gRPC MITM support
   BuildBuddy needs, into the private Forgejo registry. Flux rolls the proxy to
   that image after it is published. Whether to return to the official image is
-  the pinning decision in <../../../plans/personal_agents/TODO.md>. The image
-  is shared with `haku-openclaw-spike-proxy`, so it is not owned
-  here — it was first named for public-coder because this was its first consumer.
+  the pinning decision in <../../../plans/personal_agents/TODO.md>.
 - **`gateway.bind: lan`**, unlike the loopback-bound lab rig, because the outpost
   reaches this pod over the cluster network. What makes that safe is
   the app's `public-coder-agent-ingress` NetworkPolicy, which admits only the outpost's pods —

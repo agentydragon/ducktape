@@ -23,7 +23,6 @@ from cluster.cdk8s import (
     descheduler,
     dns_automation,
     ducktape_flux,
-    egress_fences,
     etcd,
     external_creds,
     external_dns,
@@ -48,7 +47,6 @@ from cluster.cdk8s import (
     loki_read_proxy,
     mcp_oauth_state,
     metrics_server,
-    mitmproxy,
     node_feature_discovery,
     ntfy,
     nvidia_device_plugin,
@@ -216,7 +214,6 @@ from cluster.cdk8s.parked import (
     flux_kustomizations as parked_flux_kustomizations,
     haku_openclaw_spike_backup,
     haku_openclaw_spike_config,
-    haku_openclaw_spike_proxy,
 )
 from cluster.cdk8s.plaid_mcp import (
     app as plaid_mcp_app,
@@ -742,16 +739,6 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         write_directory(root, kube_system_artifact, kube_system.chart, hubble_ui.chart),
         kyverno_kustomization,
-    )
-    agents_mitmproxy_artifact = artifact("agents-mitmproxy", mitmproxy.OUTPUT_DIR)
-    write_directory(
-        root,
-        agents_mitmproxy_artifact,
-        mitmproxy.namespace_chart,
-        mitmproxy.chart,
-        egress_fences.mitmproxy_cloud_api,
-        # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
-        unpinned_https_egress={"allow-cloud-api-egress"},
     )
     docker_ci_artifact = artifact("docker-ci", f"{PARKED_ROOT}/docker-ci")
     parked_flux_kustomizations.docker_ci(
@@ -1594,16 +1581,6 @@ def generate_manifests(root: Path) -> None:
         generator_options=haku_openclaw_spike_config.GENERATOR_OPTIONS,
         config_map_generator=[haku_openclaw_spike_config.write_kubeconfig_config_map(root)],
     )
-    write_directory(
-        root,
-        artifact("parked-haku-openclaw-spike-proxy", haku_openclaw_spike_proxy.OUTPUT_DIR),
-        haku_openclaw_spike_proxy.chart,
-        egress_fences.haku_openclaw_spike,
-        siblings=["openclaw-spike-kube-token.sops.yaml"],
-        components=["./image-pins"],
-        # CLEANUP(added 2026-10-12): drop each entry once it pins serverNames or is exempt by design.
-        unpinned_https_egress={"allow-haku-openclaw-spike-proxy-egress"},
-    )
     haku_workspaces_app_artifact = artifact("haku-workspaces-app", haku_workspaces.OUTPUT_DIR)
     haku_workspaces.haku_workspaces(
         flux_chart,
@@ -1865,7 +1842,6 @@ def generate_manifests(root: Path) -> None:
             matrix_app_artifact,
             matrix_user_provisioner_artifact,
             metrics_server_artifact,
-            agents_mitmproxy_artifact,
             monitoring_alloy_artifact,
             monitoring_gateway_probe_artifact,
             monitoring_home_switch_artifact,

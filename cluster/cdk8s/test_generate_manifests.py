@@ -185,7 +185,6 @@ def test_haku_spike_stays_unwired(generated: Path, parsed_yaml_documents: dict[P
     bucket = next(doc for doc in app if doc["kind"] == "Bucket")
     assert bucket["spec"]["reclaimPolicy"] == "Retain"
     assert (archived / "backup/backup.k8s.yaml").is_file()
-    assert (archived / "proxy/proxy.k8s.yaml").is_file()
 
 
 def test_legacy_sandboxes_stay_unwired(generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]) -> None:
@@ -225,14 +224,13 @@ def test_legacy_sandboxes_stay_unwired(generated: Path, parsed_yaml_documents: d
         "public-coder-agent-access",
         "claude-sandbox-secrets",
     } <= owners.keys()
-    for directory, kind in (("agents-mitmproxy", "Deployment"), ("agent-workspaces", "SandboxWarmPool")):
-        archived = [
-            doc
-            for path in (generated / "cluster/parked" / directory).glob("*.k8s.yaml")
-            for doc in parsed_yaml_documents[path]
-            if isinstance(doc, dict)
-        ]
-        assert any(doc["kind"] == kind and doc["spec"]["replicas"] == 1 for doc in archived)
+    archived = [
+        doc
+        for path in (generated / "cluster/parked/agent-workspaces").glob("*.k8s.yaml")
+        for doc in parsed_yaml_documents[path]
+        if isinstance(doc, dict)
+    ]
+    assert any(doc["kind"] == "SandboxWarmPool" and doc["spec"]["replicas"] == 1 for doc in archived)
     assert not any(doc["kind"] == "ImagePolicy" and doc["metadata"]["name"] == "agent-workspace" for doc in active)
 
 

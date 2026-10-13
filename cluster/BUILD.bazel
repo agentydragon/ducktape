@@ -45,7 +45,6 @@ filegroup(
     srcs = glob([
         "parked/**/*.k8s.yaml",
         "parked/agent-workspaces/kustomization.yaml",
-        "parked/agents-mitmproxy/kustomization.yaml",
         "parked/haku-openclaw-spike/**",
         "parked/public-coder-agent/backup/kustomization.yaml",
         "parked/public-coder-agent/devbox/kustomization.yaml",

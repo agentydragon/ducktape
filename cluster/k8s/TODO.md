@@ -9,16 +9,6 @@ Audit findings deferred for later.
       enough retention to use the available storage comfortably, and run a
       restore drill before relying on the backups.
 
-## Mitmproxy: tighten `NO_PROXY`?
-
-The label-selector fix (`ccnp-sandbox-proxy-egress`) and the in-cluster
-forwarding egress rule (`cnp-cloud-api-egress` `toEntities: cluster`) are
-committed. `NO_PROXY` in `inject-mitmproxy.yaml` is unchanged.
-
-- [ ] Decide whether to tighten `NO_PROXY` to force all sandbox traffic
-      through mitmproxy unconditionally — a stricter posture giving full
-      audit but losing the in-cluster bypass escape hatch.
-
 ## Secret layout
 
 - [ ] Restructure the flat agent token files under `secrets/` into clearer
@@ -95,7 +85,7 @@ needs.
 
 **Proxy-mode services** missing the required NetworkPolicy restricting ingress
 to the authentik shared proxy outpost pod (per AGENTS.md):
-agents-mitmproxy, proxmox.
+proxmox.
 
 **Critical unprotected services** (no NetworkPolicy at all):
 external-secrets, forgejo.
@@ -369,16 +359,15 @@ as of 2026-08-04 (operator-facing summary: `haku/docs/security.md`):
 - [ ] Collapse the fences. Five allowlists express about three distinct policies — one
       host (`api.anthropic.com`), build registries plus a model API, and the
       operator-data tier; `agents/public-coder-agent` is a waiver rather than a fence.
-- [ ] Converge on one proxy. mitmproxy (`agents/haku-egress-proxy`, `agents/mitmproxy`)
+- [ ] Converge on one proxy. mitmproxy (`agents/haku-egress-proxy`)
       has no credential placeholders, so `haku-sandbox` sends real unredacted tokens
       upstream where iron would send a placeholder and substitute in a trusted pod.
       Blocked on verifying iron equivalents of `--set stream_large_bodies=1m` (dind
       image layers were buffered whole into memory and OOM-killed the pod) and the
       `--ignore-hosts` raw TLS passthrough for `api.anthropic.com` (interception breaks
       the Managed Agents HTTP/2 session stream).
-- [ ] Enforce at two layers. The mitmproxy fences confine only via Cilium `toFQDNs` —
-      the container has no allowlist; the iron fence confines only in app config — the
-      spike's policy opens `toEntities: [world, remote-node, host]` on 443.
+- [ ] Enforce at two layers. The mitmproxy fence confines only via Cilium `toFQDNs` —
+      the container has no allowlist.
 - [ ] Route cluster-internal traffic through the proxies too. The Kyverno injection
       (`cluster/cdk8s/kyverno/proxy_injection.py`) sets `NO_PROXY` to
       `*.allegedly.works`, `.svc`, `.svc.cluster.local` and `10.0.0.0/8`, so anything

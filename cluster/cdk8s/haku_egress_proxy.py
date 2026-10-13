@@ -1,7 +1,4 @@
-"""Shared Haku sandbox / CI mitmproxy, interception CA, trust bundle and egress fence.
-
-The retired OpenClaw spike's Iron proxy is preserved in parked/haku_openclaw_spike_proxy.py.
-"""
+"""Shared Haku sandbox / CI mitmproxy, interception CA, trust bundle and egress fence."""
 
 from __future__ import annotations
 

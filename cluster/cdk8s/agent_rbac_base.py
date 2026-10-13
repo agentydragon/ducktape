@@ -40,7 +40,17 @@ def _cluster_role(chart: Chart, name: str, *rules: k8s.PolicyRule) -> None:
     k8s.KubeClusterRole(chart, name, metadata=k8s.ObjectMeta(name=name), rules=list(rules))
 
 
+# Ad-hoc compute is parked: external-session identities and credentials stay, Pods do not.
+# TODO: Give claude-sandbox an egress proxy before admitting Pods again. Its agents-mitmproxy (and
+#   the Kyverno policy injecting it) was deleted while parked, leaving the deny-all
+#   `parked-compute-egress` as the namespace's only egress policy. Add a proxy, its injection
+#   policy and fence, then drop the raise in `_add_sandbox`.
+_PODS = 0
+
+
 def _add_sandbox(chart: Chart) -> None:
+    if _PODS:
+        raise NotImplementedError("claude-sandbox has no egress proxy: add one before admitting Pods")
     namespaces.namespace(
         chart, "namespace", name=NAMESPACE, vpa=Vpa.RECOMMEND, labels={"name": NAMESPACE, "environment": "development"}
     )
@@ -55,8 +65,7 @@ def _add_sandbox(chart: Chart) -> None:
                     "requests.memory": "16Gi",
                     "limits.cpu": "8",
                     "limits.memory": "16Gi",
-                    # Park ad-hoc compute without deleting external-session identities or credentials.
-                    "pods": "0",
+                    "pods": str(_PODS),
                     "services": "30",
                     "configmaps": "30",
                     "persistentvolumeclaims": "30",

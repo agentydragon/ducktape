@@ -5,9 +5,8 @@ DNS rule both derive from it, so what a fence holds gets no pin here (editing th
 review). What stays are the claims no single tuple can express -- the named host groups below
 and the rules over which fences may hold them.
 
-The openclaw spike's fence is `OPENCLAW_SPIKE_ALLOWLIST`, which its iron `allowlist` transform
-(rendered from the same tuple) enforces at L7. The `public-coder` proxy is a deliberate waiver that holds no list and reaches the
-whole internet, so no rule here can bind it.
+The `public-coder` proxy is a deliberate waiver that holds no list and reaches the whole
+internet, so no rule here can bind it.
 
 Every set here bounds a proxy's reach on the public internet and nothing else: in-cluster
 traffic is admitted by a `toEntities: cluster` rule, and a `*.allegedly.works` entry in a
@@ -31,8 +30,8 @@ def hosts(*names: str) -> frozenset[str]:
 # source, builds nothing" is a real posture, and a fence holding these without the package
 # registries is a decision rather than the drift the all-or-none rule exists to catch. Still
 # one trust level internally, so it is all-or-none in its own right. Anonymous these are
-# read-only; a fence that also substitutes a credential for them (the OpenClaw spike's)
-# turns them into a push surface.
+# read-only; a fence that also substitutes a credential for them turns them into a push
+# surface.
 GITHUB_GIT = hosts(
     "github.com",
     "codeload.github.com",
@@ -91,14 +90,9 @@ OPERATOR_GOOGLE = hosts("www.googleapis.com", "gmail.googleapis.com", "tasks.goo
 
 # Keyed by the policy name, so a failure names the thing to open.
 OPERATOR_DATA_FENCE = "allow-haku-cloud-api-egress"
-HAKU_OPENCLAW_FENCE = "allow-haku-openclaw-spike-proxy-egress"
 
 # What each fence may connect to on the public internet.
-ALLOWLISTS = {
-    OPERATOR_DATA_FENCE: frozenset(host for group in egress_fences._HAKU_CLOUD_API_GROUPS for host in group),
-    HAKU_OPENCLAW_FENCE: frozenset(egress_fences.OPENCLAW_SPIKE_ALLOWLIST),
-    "allow-cloud-api-egress": frozenset(host for group in egress_fences._MITMPROXY_GROUPS for host in group),
-}
+ALLOWLISTS = {OPERATOR_DATA_FENCE: frozenset(host for group in egress_fences._HAKU_CLOUD_API_GROUPS for host in group)}
 
 
 def test_build_registries_are_all_or_none() -> None:
@@ -134,7 +128,7 @@ def test_no_fence_reaches_the_operators_google_account() -> None:
 def test_github_api_reaches_only_declared_holders() -> None:
     """`api.github.com` is a write surface, so every grant is named explicitly."""
     holders = {fence for fence, allowed in ALLOWLISTS.items() if allowed & GITHUB_API}
-    assert holders == {HAKU_OPENCLAW_FENCE}
+    assert holders == set()
 
 
 if __name__ == "__main__":

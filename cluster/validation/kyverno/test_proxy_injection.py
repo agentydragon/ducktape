@@ -1,6 +1,6 @@
 """Behaviour every proxy-injection policy shares, run through the real `kyverno` CLI.
 
-Both policies come from `cluster/cdk8s/kyverno/proxy_injection.py`, which builds one env
+Each policy comes from `cluster/cdk8s/kyverno/proxy_injection.py`, which builds one env
 list per policy for both container kinds; what is pinned here is what Kyverno does with the
 resulting RFC 6902 patches: a second pass over the same CREATE adds nothing, and a pod that
 already carries the wiring is skipped.
@@ -15,11 +15,10 @@ import pytest
 import pytest_bazel
 
 from cluster.validation.kyverno.apply import apply_twice, assert_not_mutated
-from cluster.validation.kyverno.parked_proxy_policy import parked_mitmproxy_policy
 from cluster.validation.kyverno.paths import manifest, policy
 
-# Active Haku policy and preserved Claude policy -> the namespace each matches.
-POLICIES = {"inject-haku-egress-proxy": "haku-sandbox", "inject-mitmproxy": "claude-sandbox"}
+# Policy -> the namespace it matches.
+POLICIES = {"inject-haku-egress-proxy": "haku-sandbox"}
 
 
 def _pod(namespace: str) -> str:
@@ -50,10 +49,7 @@ def reinvoked(request: pytest.FixtureRequest, tmp_path: Path) -> dict:
     """
     resource = tmp_path / "pod.yaml"
     resource.write_text(_pod(POLICIES[request.param]))
-    policy_path = (
-        parked_mitmproxy_policy(tmp_path) if request.param == "inject-mitmproxy" else policy(request.param, tmp_path)
-    )
-    _, second = apply_twice(policy_path, resource, tmp_path)
+    _, second = apply_twice(policy(request.param, tmp_path), resource, tmp_path)
     return next(d for d in second.mutated_resources if d["kind"] == "Pod")
 
 

@@ -44,7 +44,6 @@ from cluster.cdk8s.generation import config_map_chart, copy_source_file
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.openclaw_gateway import disabled_commands, session_memory_hook, trusted_proxy_gateway
-from cluster.cdk8s.parked import haku_openclaw_spike_proxy
 from cluster.cdk8s.providers.seaweedfs.bucket import Bucket, BucketAccess
 from cluster.cdk8s.providers.seaweedfs.s3_credentials import S3Credentials
 from cluster.cdk8s.secret_ref import SecretRef
@@ -69,7 +68,6 @@ _STATE_CLAIM_NAME = "haku-openclaw-spike-state-v2"
 _IMAGE = "git.allegedly.works/ducktape-ci/haku-openclaw-spike:unset"
 _HOME = "/home/openclaw"
 _CA_BUNDLE = "/etc/ssl/certs/ca-certificates.crt"
-_NO_PROXY = "127.0.0.1,localhost"
 
 # OpenClaw command aliases for the subscription-backed Claude Code runtime.
 _MODEL_ALIASES = {
@@ -312,16 +310,6 @@ def _openclaw_container() -> k8s.Container:
             _HAKU_GIT_PASSWORD,
             _GH_PAT,
             _env("HAKU_STATE_REPO_URL", "http://forgejo-http.forgejo:3000/haku/haku-state.git"),
-            _env("NODE_USE_ENV_PROXY", "1"),
-            # Keep both cases: Node honors the uppercase variables, while curl/libcurl (and
-            # therefore Git over plain HTTP) require the lowercase form and intentionally
-            # ignore uppercase HTTP_PROXY.
-            _env("HTTP_PROXY", haku_openclaw_spike_proxy.OPENCLAW_SPIKE_PROXY.url),
-            _env("HTTPS_PROXY", haku_openclaw_spike_proxy.OPENCLAW_SPIKE_PROXY.url),
-            _env("NO_PROXY", _NO_PROXY),
-            _env("http_proxy", haku_openclaw_spike_proxy.OPENCLAW_SPIKE_PROXY.url),
-            _env("https_proxy", haku_openclaw_spike_proxy.OPENCLAW_SPIKE_PROXY.url),
-            _env("no_proxy", _NO_PROXY),
             _env("NODE_EXTRA_CA_CERTS", _CA_BUNDLE),
             # Python is the other runtime that ignores the mounted system bundle: pip trusts
             # only its vendored certifi, and the hermetic interpreter rules_python downloads
@@ -530,8 +518,8 @@ def _network_policies(scope: Construct) -> None:
             ],
         ),
     )
-    # The app cannot bypass credential substitution: every non-loopback network request
-    # must traverse the dedicated iron-proxy. DNS is the only other egress.
+    # DNS only: the spike's credential-substituting egress proxy was deleted while parked
+    # (`haku_openclaw_spike_app`).
     k8s.KubeNetworkPolicy(
         scope,
         "egress",
@@ -553,27 +541,7 @@ def _network_policies(scope: Construct) -> None:
                         k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(53), protocol="UDP"),
                         k8s.NetworkPolicyPort(port=k8s.IntOrString.from_number(53), protocol="TCP"),
                     ],
-                ),
-                k8s.NetworkPolicyEgressRule(
-                    to=[
-                        k8s.NetworkPolicyPeer(
-                            namespace_selector=k8s.LabelSelector(
-                                match_labels={
-                                    "kubernetes.io/metadata.name": haku_openclaw_spike_proxy.OPENCLAW_SPIKE_PROXY.pods.namespace
-                                }
-                            ),
-                            pod_selector=k8s.LabelSelector(
-                                match_labels=haku_openclaw_spike_proxy.OPENCLAW_SPIKE_PROXY.pods.selector
-                            ),
-                        )
-                    ],
-                    ports=[
-                        k8s.NetworkPolicyPort(
-                            port=k8s.IntOrString.from_number(haku_openclaw_spike_proxy.OPENCLAW_SPIKE_PROXY.pod_port),
-                            protocol="TCP",
-                        )
-                    ],
-                ),
+                )
             ],
         ),
     )
@@ -650,6 +618,13 @@ def haku_openclaw_spike_app(
     external_secrets_operator: Kustomization,
     seaweedfs_operator: Kustomization,
 ) -> Kustomization:
+    # TODO: Give the spike an egress proxy before unparking it. Its iron-proxy, which held the
+    #   real credentials and substituted them for the gateway's placeholders, was deleted while
+    #   parked: the gateway sets no HTTP(S)_PROXY and its egress NetworkPolicy admits DNS only.
+    #   Wire a replacement into `_openclaw_container` and `_network_policies`, point
+    #   `kube-client-config`'s `proxy-url` (still the deleted proxy's address) at it, make this
+    #   node depend on it, and drop the raise.
+    raise NotImplementedError("haku-openclaw-spike has no egress proxy: add one before unparking it")
     return flux_kustomization(
         chart,
         "haku-openclaw-spike-app",

@@ -27,9 +27,11 @@ SOPS ciphertext; do not reuse the old token when reviving the app.
 Revival requires deliberately restoring the Flux/artifact wiring, image workflow
 and automation, Authentik provider/outpost/route (removing the retirement blueprint),
 namespace credential-store admission, SeaweedFS tenant grant, shared-CA distribution,
-GitHub credential grant, and token rotation. The archived proxy expects the shared
-Haku proxy namespace, CA, OAuth and Forgejo credentials to exist. Do not apply this
-archive as-is and assume that its old credential references are still valid.
+GitHub credential grant, and token rotation. It also needs a new egress proxy: the
+spike's iron-proxy, which held the real credentials and substituted them for the
+gateway's placeholders, was deleted while parked, and the Flux node
+(`haku_openclaw_spike_app`) raises until one is wired in. Do not apply this archive
+as-is and assume that its old credential references are still valid.
 
 ## Historical deployment notes
 
@@ -80,10 +82,9 @@ from that metadata; a missing patch fails the build and requires review.
   placeholders only. The init
   container registers the Claude placeholder in OpenClaw's per-agent auth store
   because the `claude-cli` runtime intentionally strips inherited auth variables.
-- `haku-openclaw-spike-proxy` in `haku-egress-proxy` holds the real values and
-  substitutes them only in `Authorization` headers for their exact hosts.
-- Namespace egress permits only DNS and that proxy. The proxy has a separate
-  destination allowlist enforced by Cilium.
+- When it ran, `haku-openclaw-spike-proxy` in `haku-egress-proxy` held the real
+  values and substituted them only in `Authorization` headers for their exact hosts.
+  That proxy is deleted; the archived egress policy now permits DNS only.
 - The pod has no Kubernetes service-account token. Privileged or external work
   remains behind the ordinary Haku Console MCP approval boundary.
 

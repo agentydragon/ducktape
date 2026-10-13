@@ -1,7 +1,7 @@
 """The ClusterPolicies that inject an egress proxy's env and CA bundle into every Pod
 created in a sandbox namespace.
 
-Both use RFC 6902 JSON patches (not patchStrategicMerge) to avoid volume merge
+They use RFC 6902 JSON patches (not patchStrategicMerge) to avoid volume merge
 conflicts with Kyverno autogen + Flux server-side dry-run on Deployments.
 
 Autogen is disabled: JSON patch "add /-" always appends, so if autogen mutates the
@@ -34,7 +34,7 @@ nothing when its recommendation already matches the pod. Pinned by
 //cluster/validation/kyverno:test_proxy_injection, which applies each policy twice.
 
 NO_PROXY is one flat string, injected identically into containers and initContainers.
-Entry by entry, the cluster-addressing set both policies share:
+Entry by entry, the cluster-addressing set every policy shares:
 
   127.0.0.1, localhost    Loopback. A pod's own sidecars, health checks and
                           127.0.0.1-bound helpers must not be shipped to a
@@ -224,37 +224,9 @@ def _injection_policy(
     )
 
 
-def inject_mitmproxy_chart(app: App) -> Chart:
-    """Makes any pod in claude-sandbox (e.g. `kubectl run --image=curlimages/curl`) work
-    turnkey through the shared mitmproxy, without the pod spec knowing about the proxy.
-
-    NO_PROXY is the shared cluster-addressing set only. `*.allegedly.works`, which
-    inject-haku-egress-proxy bypasses, is deliberately still routed through this proxy.
-    Whether to unify it with the other injection policy's bypass set is an open
-    decision; nothing in claude-sandbox depends on the current routing.
-    """
-    chart = Chart(app, "inject-mitmproxy", disable_resource_name_hashes=True)
-    _injection_policy(
-        chart,
-        name="inject-mitmproxy",
-        title="Inject mitmproxy",
-        description=(
-            "Mutates pods in claude-sandbox to automatically inject mitmproxy proxy env vars (HTTP_PROXY, "
-            "HTTPS_PROXY, NO_PROXY, SSL_CERT_FILE, CURL_CA_BUNDLE, REQUESTS_CA_BUNDLE, NODE_EXTRA_CA_CERTS) and "
-            "mount the mitmproxy trust bundle at /mitmproxy-ca/ca-certificates.crt."
-        ),
-        namespace="claude-sandbox",
-        volume="mitmproxy-ca-cert",
-        mount_path="/mitmproxy-ca",
-        proxy_url="http://mitmproxy.agents-mitmproxy.svc.cluster.local:8080",
-        no_proxy=f"127.0.0.1,localhost,{_CLUSTER_NO_PROXY}",
-    )
-    return chart
-
-
 def inject_haku_egress_proxy_chart(app: App) -> Chart:
-    """The haku-sandbox counterpart of inject-mitmproxy, pointing at haku-sandbox's own
-    proxy and CA so the two sandboxes stay isolated.
+    """Makes any pod in haku-sandbox work turnkey through haku-egress-proxy, without the pod
+    spec knowing about the proxy.
 
     NO_PROXY adds `*.allegedly.works` and `.allegedly.works` to the shared set: our own
     public names. They resolve to the public hostNetwork Cilium Gateway IPs, but they are

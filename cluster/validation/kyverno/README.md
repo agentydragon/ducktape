@@ -1,9 +1,8 @@
 # Kyverno policy tests
 
-Tests for the ClusterPolicies in <../../generated/kyverno/policies/> (and the parked
-`inject-mitmproxy`, rendered from its cdk8s chart), driven by the real `kyverno` CLI
-from the multitool lockfile — so they exercise the policy engine itself, not a
-model of it.
+Tests for the ClusterPolicies in <../../generated/kyverno/policies/>, driven by the real
+`kyverno` CLI from the multitool lockfile — so they exercise the policy engine itself, not
+a model of it.
 
 ## Layout
 
@@ -22,7 +21,7 @@ parameterized over them.
 
 ## Coverage
 
-Tested: `default-vpa-requests-only`, `default-disable-service-links`, `inject-mitmproxy`,
+Tested: `default-vpa-requests-only`, `default-disable-service-links`,
 `inject-haku-egress-proxy`, `require-secret-store-conditions`,
 `restrict-agent-gateway-routes`.
 
