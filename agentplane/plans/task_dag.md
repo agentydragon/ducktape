@@ -355,6 +355,7 @@ flowchart LR
     VM_PROVIDER[Candidate: production provider and API]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 7]
     VM_EGRESS[Blocked: live launcher relay checks]
+    VM_CONSOLE_AUTOLOGIN[Candidate: enable autologin on testing once the runner wheel pin has it]
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
@@ -405,6 +406,16 @@ guest at `10.0.2.1`; the relay is ready, which needs the VM's masquerade interfa
 kubelet's probe on 3129 is not forwarded to the guest; the runner fence admits the launcher and
 another Sandbox's guest cannot reach it; a forged launcher is refused. Do not repeat the entire
 completed prototype matrix or require simultaneous cluster-wide disasters.
+
+### `VM_CONSOLE_AUTOLOGIN` — root shell on the serial console, testing first
+
+**Candidate.** The guest image reads `console_autologin` from the guest config and the
+`Environment.vm_console_autologin` flag renders it (staging leaves it off). What remains is switching
+testing on once the guest's embedded runner wheel (`artifacts.agentplane-runner` in
+`nix/artifact-pins.json`, not the image tag) accepts the field: set `vm_console_autologin=True` in
+`agentplane/testing.py`, regenerate, then start a VM Sandbox on testing, check its runner starts, and
+attach with `virtctl console` as `claude-ai` to see a root shell. Staging stays off unless the operator
+says otherwise. Delete this node in that PR.
 
 ### `VM_PROCESS_ISOLATION` — protect control from harness processes
 
