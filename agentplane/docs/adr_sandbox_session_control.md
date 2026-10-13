@@ -509,7 +509,7 @@ and `Idle`, and an operator hold (`spec.wakeOnSend: false`) is distinguishable f
 
 - Suspend and delete both run the D3 sequence; a suspended, already-quiesced Sandbox deletes without
   waking (`quiescedIncarnation`).
-- A wedged seal is cleared by removing the finalizer by hand. No force-seal exists to build around.
+- A wedged seal is cleared by removing the finalizer by hand. That is a break-glass force delete for broken Sandboxes only: it discards unflushed journals and the CR-owned state volume. No force-seal exists to build around.
 - Spec update is suspend, then resume, which re-derives the spec from the current template. The
   rendered spec of each incarnation is stored on the Sandbox for diffing.
 
