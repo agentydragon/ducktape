@@ -57,7 +57,7 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
 - **The runner seals, the controller asks.** The seal is a unary `Runner.Seal` through the gateway
   proxy, repeated every few seconds until every seal is flushed; the controller never holds a runner
   connection. A Sandbox with no connection Lease, the Runner Gateway's record that a runner ever
-  connected, has nothing to seal.
+  connected, has nothing to seal and is deleted without `SessionsSealed`.
 - **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Sealing`. To give up on the seal,
   remove the finalizer by hand: the PVC is owned, so it goes with the Sandbox, and the Pod or VM
   with it.
