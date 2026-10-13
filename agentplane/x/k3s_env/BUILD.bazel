@@ -60,6 +60,10 @@ py_test(
         "//agentplane/crds",
         "//cluster:agentplane_testing_manifest",
     ] + [":" + name + "_tarball" for name in _IMAGES],
+    env_inherit = [
+        "FORGEJO_IMAGES_USERNAME",
+        "FORGEJO_IMAGES_PASSWORD",
+    ],
     exec_properties = {
         "dockerNetwork": "bridge",
         "recycle-runner": "false",

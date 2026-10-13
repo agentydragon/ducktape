@@ -174,6 +174,22 @@ class K3s:
                 str(tarball),
             )
 
+    def pull_published_images(self, repositories: list[str]) -> None:
+        """Pull the newest `devel-*` tag of each Nix-built image and retag it `:unset`, as the manifest names it."""
+        user, password = os.environ["FORGEJO_IMAGES_USERNAME"], os.environ["FORGEJO_IMAGES_PASSWORD"]
+        registry = "git.allegedly.works"
+        ctr = [str(self.binary), "ctr", "--address", "/run/k3s/containerd/containerd.sock", "-n", "k8s.io"]
+        for repository in repositories:
+            listing = _run(
+                "curl", "-fsS", "-u", f"{user}:{password}", f"https://{registry}/v2/ducktape-ci/{repository}/tags/list"
+            )
+            # `devel-<UTC timestamp>-<sha>` sorts oldest to newest.
+            tag = max(t for t in json.loads(listing)["tags"] if t.startswith("devel-"))
+            ref = f"{registry}/ducktape-ci/{repository}"
+            _run(*ctr, "images", "pull", "--user", f"{user}:{password}", f"{ref}:{tag}")
+            _run(*ctr, "images", "tag", "--force", f"{ref}:{tag}", f"{ref}:unset")
+            print(f"pulled {repository}:{tag}")
+
     def report(self) -> str:
         parts = [
             self.kubectl("get", "pods", "-A", "-o", "wide", check=False),
@@ -232,6 +248,7 @@ def test_stack_comes_up() -> None:
     try:
         ca_cert, ca_key = _openssl_ca(work)
         k3s.import_images(tarballs)
+        k3s.pull_published_images(["runner", "agentplane-sandbox", "agentplane-sandbox-build"])
         for crd in crds:
             k3s.kubectl("apply", "-f", str(crd))
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(render.kubevirt_stub_crds()))

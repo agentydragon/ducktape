@@ -31,7 +31,11 @@ already in the cache), with the changes below. Breaks found on the way, in order
   are External Secrets functions). `render.py` does not evaluate those, and the image's gomplate rejects them.
   Dex returns once the emulation renders that template (it needs a bcrypt hash).
 
-Not yet reached: the app, runner, sandbox and runner-vm images (Nix-built or restricted visibility, not in the
-tarball set), Service port≠targetPort under headless Services (egress is 80→8082), Dex/OIDC public hostnames,
-real credentials for the LLM path, and any test traffic: the Deployments are Available but nothing has
-exercised them.
+The Nix-built `runner`, `agentplane-sandbox` and `agentplane-sandbox-build` images are pulled from the
+Forgejo registry (newest `devel-*` tag, retagged `:unset`) with `FORGEJO_IMAGES_USERNAME` and
+`FORGEJO_IMAGES_PASSWORD`, which the test inherits from the Bazel client environment. Untried: no run has
+had the credentials yet.
+
+Not yet reached: Service port≠targetPort under headless Services (egress is 80→8082; only the agent-facing
+rules URL uses it), Dex/OIDC public hostnames, real credentials for the LLM path, and any test traffic: the
+Deployments are Available but nothing has exercised them.
