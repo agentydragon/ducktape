@@ -25,7 +25,7 @@ review with an older result.
 The comment leads with CI or baseline warnings and aggregate change counts, then
 groups changed targets by impact in collapsible sections. The two highest-impact
 targets open by default; each section includes its modified, new, or removed
-screenshots. The comment uses up to 55,000 characters, with the complete gallery
+screenshots, each titled with a link to its anchor in the gallery test page. The comment uses up to 55,000 characters, with the complete gallery
 available for any target omitted to stay within budget.
 
 The gallery index starts in the same target-impact ordering as the comment, with

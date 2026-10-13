@@ -1097,6 +1097,7 @@ def test_success_comment_body_labels_each_stale_screenshot() -> None:
     )
 
     assert body.count("stale baseline") == 1
+    assert 'href="https://v/commits/sha/tests/ex-visuals-abcdef/index.html#a.png"' in body
     assert "`fedcba98`, not merge base `11111111`" in body
 
 

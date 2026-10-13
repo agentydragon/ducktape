@@ -715,8 +715,9 @@ def stale_baseline_note(test: ReviewTest) -> str:
     return f"{baseline}, not merge base {merge_base}"
 
 
-def _asset_comment_lines(asset: ReviewAsset, *, asset_base: str, test: ReviewTest) -> list[str]:
-    label = html.escape(asset.label)
+def _asset_comment_lines(asset: ReviewAsset, *, asset_base: str, gallery_url: str, test: ReviewTest) -> list[str]:
+    anchor = html.escape(f"{gallery_url}#{urllib.parse.quote(asset.path, safe='/')}", quote=True)
+    label = f'<a href="{anchor}">{html.escape(asset.label)}</a>'
     stale = f" · ⚠️ stale baseline ({stale_baseline_note(test)})" if asset.baseline_stale else ""
     if asset.classification == "modified":
         fraction = asset.changed_fraction or 0.0
@@ -780,7 +781,7 @@ def _target_section(test: ReviewTest, *, url: str, open_section: bool) -> list[s
         "",
     ]
     for index, asset in enumerate(assets):
-        content = _asset_comment_lines(asset, asset_base=asset_base, test=test)
+        content = _asset_comment_lines(asset, asset_base=asset_base, gallery_url=gallery_url, test=test)
         if len(assets) <= INLINE_ASSET_LIMIT:
             lines.extend([*content, ""])
             continue
