@@ -485,15 +485,65 @@ Kubernetes is the line not to cross.
 
 Phase is derived, never stored (as for the Sandbox Service today):
 
-```text
-Creating -> Starting -> Booting -> Ready -> Quiescing -> Suspended
-                                   ^                                |
-                                   |------------ Resuming ----------|
-Any state --delete--> Quiescing (if not quiesced and not NeverRan) -> Tearing down -> gone
-Booting --bootstrap failed or interrupted--> BootstrapFailed (terminal; never retried; use a new Sandbox)
-Ready -> Degraded (runner crash loop; no automatic replacement) -> Ready or operator action
-Suspended -> Archived (SANDBOX_ARCHIVE)
+```mermaid
+stateDiagram-v2
+    [*] --> Creating
+    Creating --> Starting: workload created
+    Starting --> Booting: workload running
+    Booting --> Ready: runner connected and Bootstrapped
+    Booting --> BootstrapFailed: bootstrap failed or interrupted
+    Ready --> Quiescing: suspend (waits for bootstrap and every Session setup)
+    Ready --> Degraded: runner crash loop
+    Degraded --> Ready: runner recovers
+    Quiescing --> Suspended: Quiesced, suspend requested
+    Suspended --> Resuming: spec.running true (refused while Quiescing)
+    Resuming --> Booting: new incarnation running
+    Suspended --> Archived: SANDBOX_ARCHIVE
+    Creating --> TearingDown: delete
+    Starting --> TearingDown: delete (NeverRan)
+    Booting --> Quiescing: delete (runner connected before)
+    Ready --> Quiescing: delete
+    Degraded --> Quiescing: delete
+    BootstrapFailed --> Quiescing: delete
+    Quiescing --> TearingDown: Quiesced, delete requested
+    Suspended --> TearingDown: delete (already quiesced)
+    TearingDown --> [*]
 ```
+
+`Booting` covers the runner connecting and the Sandbox bootstrap running; it ends in `Ready` or, for good, in
+`BootstrapFailed`. A delete from a state with a runner that connected in this incarnation quiesces first;
+`NeverRan` (no accepted connection recorded) skips it. Removing the finalizer by hand is the only break-glass out
+of a stuck `Quiescing` or `TearingDown`.
+
+**Sandbox bootstrap.** The bootstrap is the launch file's script, run once per Sandbox, not per incarnation
+(operator, 2026-10-13). The runner starts it when it starts, before any Session opens (`Runner.startup`; a
+Sandbox with no bootstrap succeeds trivially). Its outcome and log live on the state volume, so a later
+incarnation's runner reports the recorded outcome and does not rerun it.
+
+```mermaid
+stateDiagram-v2
+    [*] --> NotRun
+    NotRun --> Running: runner starts
+    NotRun --> Succeeded: Sandbox has no bootstrap
+    Running --> Succeeded: script exits 0
+    Running --> Failed: script exits non-zero
+    Running --> Interrupted: runner process dies mid-script
+    Succeeded --> [*]
+    Failed --> BootstrapFailed
+    Interrupted --> BootstrapFailed
+    BootstrapFailed --> [*]
+```
+
+- `Bootstrapped` is True from `Succeeded`, False with reason `BootstrapFailed` from `Failed` or `Interrupted`, and
+  False with the progress reason while `NotRun` or `Running`. `Ready` includes `Bootstrapped`.
+- `BootstrapFailed` is terminal: never retried, and the Sandbox is replaced rather than repaired. The runner
+  refuses every `OpenSession` that would create a Session with `FAILED_PRECONDITION`.
+- While `Running`, an `OpenSession` waits for the script today. The Dispatcher waits for `Ready`, so it does not
+  reach the runner before then.
+- Suspend is refused until the bootstrap is `Succeeded` or `BootstrapFailed`, so a suspend never interrupts it,
+  and it also waits for every Session's setup to finish. Delete is always allowed and interrupts both.
+- Not built yet: the runner publishing bootstrap progress and result on the connection Lease, and the
+  controller folding `Bootstrapped` into `Ready`.
 
 `Resuming` carries a reason for what it waits on: the state volume's node is down or full, or the
 workload is unschedulable. `Degraded` is a reason on `Ready`, derived from the runner restarting
