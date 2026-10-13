@@ -488,7 +488,6 @@ flowchart LR
     ISOLATED_ACCEPTANCE_CI[Unscheduled: acceptance tests in their own CI workflow]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
     APP_ROLLOUT_STREAMS[Candidate: an app rollout does not break event streams]
-    ISOLATED_ACCEPTANCE_CI -. flaky until .-> APP_ROLLOUT_STREAMS
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
     ACTION_SURFACES_DESIGN -. related .-> NOTIFICATION_PRESENTATION
@@ -505,7 +504,7 @@ stream clients (the acceptance driver and the web app's feed) resume after a rec
 last position instead of ending, or testing's app rolls without a gap (`RollingUpdate`, which needs
 two replicas and a readiness gate; staging already rolls this way). Resuming is the root fix, since
 any rollout or crash drops a stream; the rollout change only shrinks the window. Parallel with
-everything else in this section. `ISOLATED_ACCEPTANCE_CI` stays flaky until it lands.
+everything else in this section. Only the by-hand acceptance runs against the shared testing environment are hit; a run in isolation (`ISOLATED_ACCEPTANCE_CI`) has no app rolling under it, but real streams still drop on any rollout or crash.
 
 ### `ACTION_SURFACES_DESIGN` — where and in what states Actions render
 
