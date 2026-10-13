@@ -1,6 +1,6 @@
 # Sandbox and Session control: who owns what
 
-Status: **proposal, for the operator to accept or redirect.** Nothing here is decided; each fork
+Status: **proposal, for the operator to accept or redirect; every boundary and name is open.** Nothing here is decided; each fork
 names a recommendation and what would change it. Questions for the operator are collected in
 [Open decisions](#open-decisions).
 
@@ -57,13 +57,35 @@ not redesign storage, the History Service, or policy.
 Message sending has no queue today: the app calls `SubmitCommand`, which forwards to a running
 harness or fails. Nothing resumes a Sandbox on a message.
 
+## Where the lines could fall
+
+The "session controller" bundles three jobs that need different things, so the first question is
+where to cut, not what to call the result.
+
+| Job                                                                       | Needs                                                                     |
+| ------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| Workload and runner-aware lifecycle: wake, quiesce, seal, suspend, delete | The Sandbox CR, the runner connection facts, leader election; no database |
+| Idle policy: decide a Sandbox has been idle long enough                   | The same runner facts and a per-Sandbox setting; no database              |
+| Delivery: durable queue of messages and Session creations per Sandbox     | A database, the sender's identity, the gateway                            |
+
+| Cut                                                                                                                               | Result                                                                                                                                                                                                            |
+| --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1. One new service takes all three (the earlier plan-burn-down sketch)                                                            | The new service writes desired state, runs timers and holds a database; the controller keeps only Pods, so lifecycle policy is split across two reconcilers of the same CR                                        |
+| **2. Lifecycle and idle policy stay in the Sandbox Controller; a new service holds only the queue**                               | Idle is declarative (`spec.idleSuspendAfter`) and decided by a leader-elected reconciler that already drives seals; the queue service has one job and one store; no timer state outside Kubernetes and the runner |
+| 3. As 2, and later split the controller into a generic workload layer and a runner-aware layer above it (`SANDBOX_GENERIC_SPLIT`) | Compatible with 2: the runner-aware layer is where quiesce, seal, connectivity and idle already sit, so the split moves files, not responsibilities                                                               |
+| 4. No new service: queue in the gateway, or in the History Service                                                                | The gateway gains a database and the power to wake Sandboxes; the History Service gains routing and waking. Both break an agreed invariant                                                                        |
+
+Recommend **2**, and the rest of this document assumes it. Cut 1 is rejected only because idle
+policy needs nothing the queue has and everything the controller has; if the operator prefers one
+component that "keeps Sandboxes and their messages", D4 shows what would move.
+
 ## Proposed split
 
 ```mermaid
 flowchart LR
-    Sender[App, Notification Service, agents] -- Send, OpenSession --> K[Sandbox Keeper]
+    Sender[App, Notification Service, agents] -- Send, OpenSession --> K[Session Mailbox]
     K --> KDB[(keeper database)]
-    K -- Suspend/Resume, desired state --> SS[Sandbox Service]
+    K -- ResumeSandbox on send --> SS[Sandbox Service]
     K -- Runner calls through proxy --> GW[Runner Gateway]
     K -. placement when caller omits Sandbox .-> HS[History Service]
     SS -- writes spec.running --> CR[(Sandbox CR)]
@@ -74,20 +96,20 @@ flowchart LR
     Runner -- control stream --> GW
     Runner -- journal push --> HS
     Runner -- busy / idle --> GW
-    K -- watches busy state --> GW
+    SC -- idle timer from busy facts --> L
 ```
 
-| Component          | Owns                                                                                                                                                  | Does not own                                              |
-| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| Sandbox CR         | Desired state (`spec.running`, template), current facts (`status`: incarnation, `sealedIncarnation`, conditions)                                      | Anything per Session                                      |
-| Sandbox Controller | Pod or VM, state volume, identity, the `<sandbox>-control` Service, quiesce and seal sequencing, deletion, folding every layer's fact into conditions | Runner connection, Session records, queues, idle policy   |
-| Runner Gateway     | The runner connection and its authentication, the Lease and EndpointSlice, the proxy of `Runner`, per-method authorization                            | Any Kubernetes object besides those two, Sessions, queues |
-| Runner             | Harnesses, journal, admission, quiesce and seal mechanics, busy state                                                                                 | Policy about when to suspend                              |
-| History Service    | Event log, fold, Session directory including the writing Sandbox                                                                                      | Routing, waking, suspending                               |
-| Sandbox Keeper     | The durable Session message queue, wake-on-send, idle timer and the decision to suspend, send-side authorization (who may wake)                       | Sandbox objects (it asks the Sandbox Service), history    |
+| Component          | Owns                                                                                                                                                                   | Does not own                                                        |
+| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Sandbox CR         | Desired state (`spec.running`, template), current facts (`status`: incarnation, `sealedIncarnation`, conditions)                                                       | Anything per Session                                                |
+| Sandbox Controller | Pod or VM, state volume, identity, the `<sandbox>-control` Service, quiesce and seal sequencing, idle suspension, deletion, folding every layer's fact into conditions | Runner connection, Session records, queues                          |
+| Runner Gateway     | The runner connection and its authentication, the Lease and EndpointSlice, the proxy of `Runner`, per-method authorization                                             | Any Kubernetes object besides those two, Sessions, queues           |
+| Runner             | Harnesses, journal, admission, quiesce and seal mechanics, busy state                                                                                                  | Policy about when to suspend                                        |
+| History Service    | Event log, fold, Session directory including the writing Sandbox                                                                                                       | Routing, waking, suspending                                         |
+| Session Mailbox    | The durable queue of messages and Session creations, wake-on-send, send-side authorization (who may wake), delivery states                                             | Sandbox objects (it asks the Sandbox Service), idle policy, history |
 
-"Sandbox Keeper" is a placeholder for the Session controller. It works at Sandbox level because
-suspension needs every Session in a Sandbox idle.
+"Session Mailbox" is a placeholder name for the queue service; it is not a controller. Idle is a
+Sandbox-level fact (every Session in the Sandbox idle), which is why its policy sits on the Sandbox.
 
 ## Decisions
 
@@ -171,77 +193,79 @@ Options for where interruption lives:
 - **Inside `Seal`** (recommended): one idempotent RPC; the runner already owns turn state. Needs a
   deadline after which a turn that ignores the interrupt is stopped anyway, and a defined history
   entry showing a turn ended by teardown.
-- **A separate `Quiesce` RPC:** lets a caller drain without sealing. Only worth it if the Keeper
+- **A separate `Quiesce` RPC:** lets a caller drain without sealing. Only worth it if the Mailbox
   needs a compare-and-suspend ("suspend only if still idle"); that is better expressed as a
   precondition on the suspend request (`if idle since T`) than as a second phase to coordinate.
 
-Commands arriving at a sealing runner are refused with a code the Keeper reads as "retry after
+Commands arriving at a sealing runner are refused with a code the Mailbox reads as "retry after
 resume", not as failure.
 
-### D4. The Session controller: required or optional, one door or two, separate or merged
+### D4. The queue service: required or optional, one door or two, separate or merged
 
-The component does two jobs, separable by what they need:
-
-1. **Delivery:** a durable queue; wake the Sandbox; deliver once the runner is Ready; survive the
-   sender leaving. Needs: its own database, the Sandbox's name, the gateway, the Sandbox Service.
-2. **Idle policy:** decide a Sandbox is idle and ask for suspension. Needs: a busy or activity
-   signal and a timer.
+The queue service does one job: **delivery.** Accept a message or Session creation durably, wake the
+Sandbox, deliver once the runner is Ready, survive the sender leaving. It needs a database, the
+Sandbox's name, the gateway and the Sandbox Service. Idle policy is the controller's (below).
 
 **Required or optional.** Recommended: _required for senders, not for the platform._ Everything
 that sends work to a Session (app composer, Notification Service, agent messaging) goes through the
-Keeper's `Send`, so there is one set of delivery semantics: accepted, then delivered, or failed
+Mailbox's `Send`, so there is one set of delivery semantics: accepted, then delivered, or failed
 with a reason. A second direct path for the same senders means "sometimes queued, sometimes an
 immediate error", which the suspended composer story cannot present. The runner proxy at the
-gateway stays the only runner surface, and system callers still use it directly: the Keeper itself,
+gateway stays the only runner surface, and system callers still use it directly: the Mailbox itself,
 the controller's `Seal`, operator diagnostics and acceptance tests. Per-method authorization at the
 gateway is where "only these callers may call `DeliverCommand`" is enforced; it is a policy edit,
 not a new path.
 
-What remains of the runner surface for direct use once the Keeper exists:
+What remains of the runner surface for direct use once the Mailbox exists:
 
-| `Runner` method  | After the Keeper                                                     |
-| ---------------- | -------------------------------------------------------------------- |
-| `DeliverCommand` | Keeper (senders); direct for system callers and tests                |
-| `OpenSession`    | Keeper (it can wait for a Sandbox to run); direct for system callers |
-| `ResumeSession`  | Keeper only in practice: it is the harness half of waking            |
-| `Seal`           | Sandbox Controller only                                              |
-| `ListSessions`   | direct; reads need no wake                                           |
+| `Runner` method  | After the Mailbox                                                     |
+| ---------------- | --------------------------------------------------------------------- |
+| `DeliverCommand` | Mailbox (senders); direct for system callers and tests                |
+| `OpenSession`    | Mailbox (it can wait for a Sandbox to run); direct for system callers |
+| `ResumeSession`  | Mailbox only in practice: it is the harness half of waking            |
+| `Seal`           | Sandbox Controller only                                               |
+| `ListSessions`   | direct; reads need no wake                                            |
 
-A deployment with no Keeper is a valid reduced configuration (a Sandbox that is started by hand
-and never suspended), because the runner, gateway and controller do not depend on the Keeper. It
+A deployment with no Mailbox is a valid reduced configuration (a Sandbox that is started by hand
+and never suspended), because the runner, gateway and controller do not depend on the Mailbox. It
 just has no wake-on-send and no idle suspension. That optionality costs nothing in code: absent
 callers.
 
 **Starting a Session that does not exist.** The client mints the Session ID, as everywhere
 (invariant: one ID, client-minted). `OpenSession(session_id, sandbox, spec)` is stored durably in
-the Keeper's database and made idempotent by the ID: a retry returns the same record, the same ID in
-another Sandbox is refused. The Keeper then waits for the Sandbox to be Ready and calls the runner's
-`OpenSession`, which is itself idempotent. The Keeper needs a Sandbox _name_, never an address; the
+the Mailbox's database and made idempotent by the ID: a retry returns the same record, the same ID in
+another Sandbox is refused. The Mailbox then waits for the Sandbox to be Ready and calls the runner's
+`OpenSession`, which is itself idempotent. The Mailbox needs a Sandbox _name_, never an address; the
 gateway resolves the name from the dialed host.
 
 **Placement.** Callers pass the Sandbox when they know it (the app resolves Thread to Session to
-Sandbox through the History Service already). The Keeper falls back to the History Service's
+Sandbox through the History Service already). The Mailbox falls back to the History Service's
 Session directory when they do not. A Session that is only queued for creation is known to the
-Keeper alone until its runner pushes, so the Keeper's own record is authoritative until then.
+Mailbox alone until its runner pushes, so the Mailbox's own record is authoritative until then.
 
 **History Service dependency.** Delivery does not need it: admission is the runner's receipt, and
 placement is passed or looked up. Placement lookup and the reading of seal acks (already required
-for any suspend or delete) are the only touches. For idle policy the Keeper should not derive
-activity from history at all (below), so the Keeper runs with the History Service down, except
+for any suspend or delete) are the only touches. For idle policy the controller should not derive
+activity from history at all (below), so idle policy and the Mailbox run with the History Service down, except
 that, as today, nothing can finish sealing while the ingress is down. An outage therefore blocks
 suspension and deletion, not messaging.
 
 **Idle signal.** Two different things get called "last active":
 
 - _Busyness_: is any turn, command, background process or attached terminal active in this runner
-  right now? The runner knows authoritatively and the Keeper must have it without the History
+  right now? The runner knows authoritatively and the controller must have it without the History
   Service.
 - _Last model activity_: a folded timestamp the UI and notification quiet-window read. The History
   Service owns it.
 
 Recommend suspension uses the first: the runner publishes `busy` and `idleSince` on transitions
-(carried like other runner facts in D2), and the Keeper runs the timer. The timer is restartable
-because the facts live in the runner and Lease, not in Keeper memory. `SESSION_ACTIVITY_STREAM`
+(carried like other runner facts in D2), and the Sandbox Controller runs the timer against
+`spec.idleSuspendAfter`, then suspends through the D3 sequence. The timer is restartable because
+the facts live in the runner and Lease, not in controller memory. A message sent to an idle Sandbox
+that is about to suspend is safe without a lock: the sealing runner refuses it with a retryable code
+and the Mailbox redelivers after resume. To avoid pointless suspend-resume flapping the Mailbox
+marks a Sandbox it holds pending messages for (a Sandbox-level annotation, not a per-Session list)
+and the controller does not start an idle suspend while the mark is set. `SESSION_ACTIVITY_STREAM`
 still decides the shared derivation for notifications and the UI; this proposal only says
 suspension should not wait on it, and that if the stream becomes the one derivation, busyness is
 its input rather than a competing definition.
@@ -249,17 +273,17 @@ its input rather than a competing definition.
 **Separate service or merge with the gateway.** "Both required" is not an argument to merge:
 required-ness says nothing about failure domain, state or replica shape.
 
-| Option                    | For                                                                                                                                                                                                                                                     | Against                                                                                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Separate service**      | Gateway stays stateless and database-free (`GATEWAY_DATABASE_DROP`), keeps working through a Keeper or History outage; Keeper has one active owner per Sandbox without constraining gateway replicas; gateway keeps its "never wakes a Sandbox" promise | One extra hop; a second Deployment with its own database                                                                                                        |
-| In the gateway            | One fewer service                                                                                                                                                                                                                                       | Gives the gateway a database and the power to resume Sandboxes; couples queue ownership to connection-holder replicas, which are sharded for a different reason |
-| In the Sandbox Controller | Nearest the desired state                                                                                                                                                                                                                               | A leader-elected reconciler with no database and no event inputs would gain a queue; Kubernetes would hold per-Session data                                     |
-| A CR per queued message   | No new store                                                                                                                                                                                                                                            | Per-Session data in Kubernetes, against the stated boundary; etcd write rate                                                                                    |
+| Option                    | For                                                                                                                                                                                                                                                       | Against                                                                                                                                                         |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Separate service**      | Gateway stays stateless and database-free (`GATEWAY_DATABASE_DROP`), keeps working through a Mailbox or History outage; Mailbox has one active owner per Sandbox without constraining gateway replicas; gateway keeps its "never wakes a Sandbox" promise | One extra hop; a second Deployment with its own database                                                                                                        |
+| In the gateway            | One fewer service                                                                                                                                                                                                                                         | Gives the gateway a database and the power to resume Sandboxes; couples queue ownership to connection-holder replicas, which are sharded for a different reason |
+| In the Sandbox Controller | Nearest the desired state                                                                                                                                                                                                                                 | A leader-elected reconciler with no database would gain a queue; Kubernetes would hold per-Session data. Idle policy, which needs no database, does belong here |
+| A CR per queued message   | No new store                                                                                                                                                                                                                                              | Per-Session data in Kubernetes, against the stated boundary; etcd write rate                                                                                    |
 
-Recommend **separate**. Multiple Keeper replicas shard Sandboxes by a per-Sandbox Lease so each
+Recommend **separate** (cut 2). Multiple Mailbox replicas shard Sandboxes by a per-Sandbox Lease so each
 Sandbox has one active owner, as the gateway fences connection epochs.
 
-**Who may wake.** The Keeper knows the sender's identity, so it enforces which kinds of sender may
+**Who may wake.** The Mailbox knows the sender's identity, so it enforces which kinds of sender may
 resume a Sandbox (user message and notification yes; agent message no unless decided,
 `AGENT_MESSAGE_RECEPTION`). Its ServiceAccount holds the Sandbox Service grant to resume; the
 Sandbox Service stays the only writer of desired state.
@@ -271,7 +295,7 @@ Sandbox Service stays the only writer of desired state.
 | Desired running, template, incarnations, conditions, `sealedIncarnation`, the rendered spec of each incarnation | Sandbox CR (Kubernetes)                       |
 | Runner connected, boot state, busy state                                                                        | Lease annotations (Kubernetes, Sandbox-level) |
 | Session events, directory, writing Sandbox, summaries                                                           | History Service database                      |
-| Queued messages, their delivery state, queued Session creations, idle timers' bookkeeping                       | Keeper database                               |
+| Queued messages, their delivery state, queued Session creations, the pending mark's source                      | Mailbox database                              |
 | Session journal and cursors                                                                                     | Runner volume, mirrored by the ingress        |
 | Per-Session seal cursors and flush state                                                                        | the seal response and the ingress, never a CR |
 
@@ -300,7 +324,7 @@ Message to a suspended Session:
 ```mermaid
 sequenceDiagram
     participant S as Sender
-    participant K as Keeper
+    participant K as Mailbox
     participant SS as Sandbox Service
     participant C as Controller
     participant R as Runner
@@ -318,20 +342,20 @@ sequenceDiagram
 
 Each DAG node fits without reshaping the split. Node edits belong to the Plans burn-down lane.
 
-| Node                                                        | Where it lands                                                                                                                |
-| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `SESSION_QUEUE_DESIGN`, `SESSION_MESSAGE_QUEUE`             | Keeper; this document answers the new-service fork and the dependency questions                                               |
-| `SESSION_ACTIVITY_STREAM`                                   | Open; busyness is the Keeper's input, folded activity stays the History Service's                                             |
-| `SANDBOX_IDLE_EXPIRY`                                       | Keeper timer plus a suspend request                                                                                           |
-| `SESSION_REVIVE`, `SESSION_INCARNATIONS`                    | Controller starts the incarnation; History Service records it from the runner's announcement                                  |
-| `BOOTSTRAP_PROGRESS_CONTRACT`                               | Runner fact on the Lease; `Bootstrapped` condition                                                                            |
-| `CONTROLLER_SEALS`, `SANDBOX_LIFECYCLE`                     | Already the controller's; D3 adds the interrupt step                                                                          |
-| `SANDBOX_GENERIC_SPLIT`                                     | The controller keeps Pod, VM, volume; sealing and runner facts become an optional layer on top; the Keeper is already outside |
-| `SANDBOX_SPEC_EDIT`, `SANDBOX_IMAGE_REPLACE`                | Suspend then resume; no change to the split                                                                                   |
-| `STATE_VOLUME_BLOCK`, `WORKSPACE_VOLUME`, `SANDBOX_ARCHIVE` | Controller; the Keeper only waits for `Ready`                                                                                 |
-| `VM_RAM_SUSPEND`                                            | Needs its own answer to "seal before suspend": see below                                                                      |
-| `THREAD_SUCCESSOR_DELIVERY`, `COMMAND_DELIVERY_STATES`      | The Keeper's delivery states are the vocabulary; the ambiguous-admission case is its `unknown`                                |
-| `AGENT_MESSAGING`, `SUSPENDED_COMPOSER`                     | Senders of `Send`                                                                                                             |
+| Node                                                        | Where it lands                                                                                                         |
+| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `SESSION_QUEUE_DESIGN`, `SESSION_MESSAGE_QUEUE`             | Mailbox; this document answers the new-service fork and the dependency questions                                       |
+| `SESSION_ACTIVITY_STREAM`                                   | Open; busyness is the Mailbox's input, folded activity stays the History Service's                                     |
+| `SANDBOX_IDLE_EXPIRY`                                       | Controller: `spec.idleSuspendAfter`, runner busy facts, the D3 sequence                                                |
+| `SESSION_REVIVE`, `SESSION_INCARNATIONS`                    | Controller starts the incarnation; History Service records it from the runner's announcement                           |
+| `BOOTSTRAP_PROGRESS_CONTRACT`                               | Runner fact on the Lease; `Bootstrapped` condition                                                                     |
+| `CONTROLLER_SEALS`, `SANDBOX_LIFECYCLE`                     | Already the controller's; D3 adds the interrupt step                                                                   |
+| `SANDBOX_GENERIC_SPLIT`                                     | The controller keeps Pod, VM, volume; sealing and runner facts become an optional layer on top; the Mailbox is outside |
+| `SANDBOX_SPEC_EDIT`, `SANDBOX_IMAGE_REPLACE`                | Suspend then resume; no change to the split                                                                            |
+| `STATE_VOLUME_BLOCK`, `WORKSPACE_VOLUME`, `SANDBOX_ARCHIVE` | Controller; the Mailbox only waits for `Ready`                                                                         |
+| `VM_RAM_SUSPEND`                                            | Needs its own answer to "seal before suspend": see below                                                               |
+| `THREAD_SUCCESSOR_DELIVERY`, `COMMAND_DELIVERY_STATES`      | The Mailbox's delivery states are the vocabulary; the ambiguous-admission case is its `unknown`                        |
+| `AGENT_MESSAGING`, `SUSPENDED_COMPOSER`                     | Senders of `Send`                                                                                                      |
 
 ## Complexities not yet named
 
@@ -339,7 +363,7 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
   for the _next_ incarnation to be Ready; delivering to the sealing runner loses it or errors. Key
   every delivery attempt to the incarnation UID, and make the runner refuse after seal with a
   distinct code.
-- **At-least-once with ambiguity.** The Keeper persists the command before acknowledging the
+- **At-least-once with ambiguity.** The Mailbox persists the command before acknowledging the
   sender; the runner deduplicates on `command_id`. A call whose reply was lost across an
   incarnation boundary is `unknown`, not replayed (`THREAD_SUCCESSOR_DELIVERY`).
 - **Competing desires.** An operator suspend, a queued message, an idle timer and a deletion can all
@@ -357,7 +381,7 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
 - **Failed or deleted targets.** A message for a deleted Sandbox or Session, a failed revival, a
   poison command: each needs a terminal state the sender can read, not a silent retry.
 - **History outage blocks suspend and delete.** Intended, since sealing waits for the ingress ack,
-  but it means idle Sandboxes keep running through the outage. The Keeper must back off, not retry
+  but it means idle Sandboxes keep running through the outage. The controller must back off, not retry
   every few seconds per Sandbox.
 - **Interrupt semantics.** A turn interrupted by teardown needs a history entry distinguishing it
   from a user interrupt, and a harness that ignores the interrupt needs the deadline in D3.
@@ -365,33 +389,35 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
   means something different (flush the journal, keep the harness). Settle this before
   `VM_RAM_SUSPEND` assumes the Pod sequence.
 - **Rolling out together.** The gateway rollout reconnects every runner at once and flaps
-  `RunnerConnected`; debounce it. Runner, gateway, controller and Keeper roll independently, so
+  `RunnerConnected`; debounce it. Runner, gateway, controller and Mailbox roll independently, so
   protocol additions (interrupt in `Seal`, Lease annotations) must be accepted by readers before
   writers emit them (image before config).
 - **Credentials across suspension.** Egress grants, PolicyBindings and projected tokens must still
   be valid when a Sandbox resumes hours later; a resume that comes up with expired grants looks
   like a broken Sandbox.
-- **Time.** `idleSince` is measured on the runner; the Keeper should measure its own elapsed time
+- **Time.** `idleSince` is measured on the runner; the controller should measure its own elapsed time
   from observed transitions, so clock skew and a restarted runner cannot suspend early.
 - **Why-not observability.** "Why hasn't my message arrived" needs per-message state (queued,
   waiting for Ready, delivering, delivered, unknown, failed with reason) readable by the sender and
   the same Sandbox conditions as above.
 - **Multiple Sessions per Sandbox.** Idle is the conjunction over all of them, and waking Sandbox
   for one Session should not start the others' harnesses.
-- **Session ID collision.** The client-minted ID must be unique across Sandboxes; the Keeper's
+- **Session ID collision.** The client-minted ID must be unique across Sandboxes; the Mailbox's
   record covers the window before the History Service has seen the Session, and the History
   Service's first-writer binding covers the rest.
 
 ## Open decisions
 
-1. **Keeper as the required door for senders, with direct runner access for system callers?**
+1. **Mailbox as the required door for senders, with direct runner access for system callers?**
    Recommend yes (D4).
-2. **Keeper as its own service rather than in the gateway?** Recommend yes (D4).
-3. **Suspension driven by runner-reported busyness, not history?** Recommend yes (D4).
+2. **Mailbox as its own service rather than in the gateway?** Recommend yes (D4).
+3. **Idle policy in the Sandbox Controller (declarative, from runner-reported busyness) rather
+   than in the queue service or driven by history?** Recommend yes (cut 2, D4).
 4. **Lease annotations rather than gRPC health as the runner-fact transport?** Recommend Lease
    (D2); this changes the approved connectivity node's mechanism, not its goal.
 5. **Controller creates the control Service?** Recommend yes; low stakes (D1).
 6. **Interrupt inside `Seal`?** Recommend yes (D3).
 7. **A way for an operator to hold a Sandbox suspended against wake-on-send?** Needs a decision
-   before the Keeper lands.
-8. **Name.** Sandbox Keeper is the placeholder.
+   before the Mailbox lands.
+8. **Name.** Session Mailbox is a placeholder for the queue service; nothing else here needs a
+   name. Alternatives: Message Queue Service, Delivery Service, Dispatcher.
