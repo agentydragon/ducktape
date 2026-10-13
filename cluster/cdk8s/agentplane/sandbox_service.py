@@ -112,17 +112,20 @@ class SandboxService(Construct):
                 RolePolicyRule(
                     resources=[custom_resource(GROUP, "sandboxes")], verbs=["create", "get", "list", "patch", "delete"]
                 ),
-                RolePolicyRule(resources=[custom_resource(GROUP, "policysets")], verbs=["list"]),
+                RolePolicyRule(resources=[custom_resource(GROUP, "policysets")], verbs=["get", "list"]),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list"]),
                 # GrantEgress and RevokeEgress.
                 RolePolicyRule(
                     resources=[
                         custom_resource(GROUP, resource)
-                        for resource in ("egresspolicies", "egressbindings", "egresscredentials")
+                        for resource in ("egresspolicies", "egressbindings", "egresscredentials", "policybindings")
                     ],
                     verbs=["get", "list"],
                 ),
-                RolePolicyRule(resources=[custom_resource(GROUP, "egressbindings")], verbs=["create", "delete"]),
+                RolePolicyRule(
+                    resources=[custom_resource(GROUP, resource) for resource in ("egressbindings", "policybindings")],
+                    verbs=["create", "delete"],
+                ),
             ],
         )
         RoleBinding(

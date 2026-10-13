@@ -1940,6 +1940,7 @@ rules:
     resources:
       - policysets
     verbs:
+      - get
       - list
   - apiGroups:
       - ""
@@ -1972,7 +1973,21 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
+      - policybindings
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
       - egressbindings
+    verbs:
+      - create
+      - delete
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings
     verbs:
       - create
       - delete
@@ -4231,6 +4246,14 @@ rules:
       - agentplane.allegedly.works
     resources:
       - policysets
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings
     verbs:
       - get
       - list
