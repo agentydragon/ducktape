@@ -154,7 +154,7 @@ Transport for the gateway's and runner's facts:
 | **Lease and its annotations** (already written by the gateway, Sandbox-owned) | No new API; Kubernetes-native watch; survives gateway restarts as a stale-but-honest record (`renewTime` plus duration); the Lease already carries pod UID and boot ID | Controller must requeue on expiry; each fact the runner adds costs a Lease write, so write transitions only             |
 | Gateway writes the Sandbox's status                                           | Fewest hops                                                                                                                                                            | Two writers on one status; breaks "layers that act on CRs do not edit them"                                             |
 
-Recommend the **Lease**: `RunnerConnected` is the Lease's liveness, and runner-reported facts
+**Decided (operator, 2026-10-13): the Lease.** `RunnerConnected` is the Lease's liveness, and runner-reported facts
 (`Bootstrapped`, busy state, the quiesce stage of D3) ride its annotations, written on transition only. If the approved
 gRPC-health node is built, its output should still land as a fact the controller folds; the choice
 here is only the transport. A gateway rollout drops every connection at once; the controller must
@@ -490,13 +490,16 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
 2. **Dispatcher as its own service rather than in the gateway?** Recommend yes (D4).
 3. **Idle policy in the Sandbox Controller (declarative, from runner-reported busyness) rather
    than in the queue service or driven by history?** Recommend yes (cut 2, D4).
-4. **Lease annotations rather than gRPC health as the runner-fact transport?** Recommend Lease
-   (D2); this changes the approved connectivity node's mechanism, not its goal.
+4. ~~Lease annotations rather than gRPC health as the runner-fact transport?~~ **Decided
+   (operator, 2026-10-13): Lease annotations** (D2). This replaces the mechanism of the earlier
+   gateway-health connectivity node, not its goal.
 5. **Controller creates the control Service?** Recommend yes; low stakes (D1).
 6. **Interrupt inside the one `Quiesce` operation, and the renames in D3 (`Quiesced`, `Draining`, `Flushing`, `quiescedIncarnation`)?** Recommend yes (D3).
 7. **A way for an operator to hold a Sandbox suspended against wake-on-send?** Needs a decision
    before the Dispatcher lands.
-8. **Name.** "Session Dispatcher" for the queue service, with `Dispatch` and `DispatchOpen` as its
+8. **Name.** Session Dispatcher, `Quiesce`, `Quiesced`, `Draining` and `Flushing` are confirmed
+   (operator, 2026-10-13). Still open: whether `Dispatch` and `DispatchOpen` are one RPC with a
+   command-or-open body. The queue service is "Session Dispatcher", with `Dispatch` and `DispatchOpen` as its
    RPCs and a dispatch as one queued message or Session creation. The names to avoid are taken:
    `inbox` is the Notification Service's (`inbox_id`, `InboxView`), `outbox` is the Action
    Service's (`action_outbox`), "mailbox" is already the task DAG's word for an agent's receiving
