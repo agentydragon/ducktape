@@ -32,6 +32,8 @@ CONNECTION_EPOCH_ANNOTATION = f"{GROUP}/connection-epoch"
 # Selects the Leases the cache holds; other controllers keep Leases in the Sandbox namespace too.
 CONNECTION_LABEL = f"{GROUP}/runner-connection"
 LEASE_DURATION_S = 30
+# The control Service name suffix (`RecordOwner.control_name`), this port name and `Settings.port` are mirrored by
+# `ControlService*` in agentplane/sandbox_controller/control_service.go, which creates the Service.
 CONTROL_PORT = "grpc"
 # A selector-less Service gets no controller-managed slices; this names the slice's writer instead.
 _SLICE_MANAGER = "agentplane-runner-gateway"

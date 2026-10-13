@@ -131,3 +131,34 @@ func TestForeignServiceAccountBlocksThePod(t *testing.T) {
 		t.Errorf("Running reason = %s, want ServiceAccountConflict", reason)
 	}
 }
+
+func TestSandboxOwnsAControlServiceBeforeAnyRunnerConnects(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	var service corev1.Service
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + ControlServiceSuffix}, &service); err != nil {
+		t.Fatal(err)
+	}
+	if !metav1.IsControlledBy(&service, getSandbox(t, c)) {
+		t.Errorf("Service owner references = %v", service.OwnerReferences)
+	}
+	if service.Spec.ClusterIP != corev1.ClusterIPNone || len(service.Spec.Selector) != 0 {
+		t.Errorf("Service spec = %v, want headless without a selector", service.Spec)
+	}
+}
+
+func TestControlServiceTheGatewayCreatedIsKept(t *testing.T) {
+	created := &corev1.Service{ObjectMeta: metav1.ObjectMeta{
+		Namespace: namespace, Name: sandboxName + ControlServiceSuffix,
+		OwnerReferences: []metav1.OwnerReference{{APIVersion: "agentplane.allegedly.works/v1alpha1", Kind: "Sandbox", Name: sandboxName, UID: "uid-sandbox"}},
+	}, Spec: corev1.ServiceSpec{ClusterIP: corev1.ClusterIPNone}}
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"), created)
+	reconcileOnce(t, r)
+	var service corev1.Service
+	if err := c.Get(context.Background(), client.ObjectKeyFromObject(created), &service); err != nil {
+		t.Fatal(err)
+	}
+	if len(service.Spec.Ports) != 0 {
+		t.Errorf("Service ports = %v, want the gateway's Service untouched", service.Spec.Ports)
+	}
+}
