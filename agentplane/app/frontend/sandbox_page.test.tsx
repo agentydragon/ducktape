@@ -68,6 +68,16 @@ vi.mock("./live", async (importOriginal) => ({
   useLive: () => live,
 }));
 
+/** The Egress panel stays mounted behind its tab and follows a stream that these tests never feed. */
+class SilentEventSource extends EventTarget {
+  static readonly CLOSED = 2;
+  readyState = 1;
+  constructor(readonly url: string) {
+    super();
+  }
+  close(): void {}
+}
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
@@ -106,6 +116,7 @@ async function render(
   claudePaused = false,
   routeNavigation = false
 ): Promise<ReturnType<typeof vi.fn>> {
+  vi.stubGlobal("EventSource", SilentEventSource);
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
     if (path === "/models") {
