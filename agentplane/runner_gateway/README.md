@@ -8,7 +8,7 @@ replicas, apart from the Sandbox Service and its RBAC. It reads Sandboxes
 (`agentplane.sandbox_service.reader`), and does not create or delete them.
 
 It does not call the History Service, so Sessions, commands and lifecycle requests keep working
-while that service is down or rolling. A deleting Sandbox gets no `SessionsSealed` condition until the runner reports every seal acknowledged by its ingress
+while that service is down or rolling. A deleting Sandbox gets no `Quiesced` condition until the runner reports every seal acknowledged by its ingress
 (`deletion_seals.py`), so it is not deleted until the History Service is back. A Sandbox no runner ever connected to (no connection Lease) has nothing to seal and is marked at once.
 
 - `runner_control.py`, `lifecycle_control.py`, `connection_records.py`: the runner connection, and
@@ -21,5 +21,5 @@ while that service is down or rolling. A deleting Sandbox gets no `SessionsSeale
 - `destinations.py`: checking that a request's Sandbox incarnation has a ready runner Pod.
 - `sealing.py`: sealing a Sandbox's runner for teardown.
 - `deletion_seals.py`: running that seal for a deleting Sandbox on the replica holding its runner
-  connection, which then sets the Sandbox's `SessionsSealed` condition for the Sandbox Controller.
+  connection, which then sets the Sandbox's `Quiesced` condition for the Sandbox Controller.
 - `grpc_api.py`, `settings.py`, `main.py`: the server.

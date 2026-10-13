@@ -7,10 +7,10 @@ Reconciles `Sandbox` into a state PVC that outlives every incarnation, its own S
 egress sidecar's platform routes. `spec.sessionDefaults` is the Runner
 Gateway's to read; `spec.bootstrap` and the Sandbox's identity reach its runner through the Sandbox's
 launch ConfigMap (a Pod mounts it, a VM gets it as a disk). Deletion first has the runner seal every
-Session: the controller calls `Runner.Seal` through the [Runner Gateway](../runner_gateway/README.md)'s
+Session: the controller calls `Runner.Quiesce` through the [Runner Gateway](../runner_gateway/README.md)'s
 [runner proxy](../docs/runner_control.md#runner-proxy), at the Sandbox's own control Service, and sets the
-`SessionsSealed` condition. Suspension seals the same way before the Pod stops, recorded as
-`status.sealedIncarnation`. Started without `--runner-gateway-target`, it seals nothing before a
+`Quiesced` condition. Suspension seals the same way before the Pod stops, recorded as
+`status.quiescedIncarnation`. Started without `--runner-gateway-target`, it seals nothing before a
 suspension and leaves the seal for deletion to the gateway, which then sets the condition.
 
 Because that condition is set only once the History Service's ingress has
@@ -55,10 +55,10 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   deletion a blocking reference would remove the state while a sealing runner still writes to it.
 - **The Pod is deleted before the finalizer clears**, in separate reconciles, so the PVC, which
   garbage collection removes afterwards, never goes while a container can still write to it.
-- **The runner seals, the controller asks.** The seal is a unary `Runner.Seal` through the gateway
+- **The runner seals, the controller asks.** The seal is a unary `Runner.Quiesce` through the gateway
   proxy, repeated every few seconds until every seal is flushed; the controller never holds a runner
   connection. A Sandbox with no connection Lease, the Runner Gateway's record that a runner ever
-  connected, has nothing to seal and is deleted without `SessionsSealed`.
+  connected, has nothing to seal and is deleted without `Quiesced`.
 - **`RunnerConnected` watches the Lease.** A new connection or a different runner Pod enqueues the
   Sandbox; renewals do not. Time is not an event, so the moment a live connection would lapse, and a
   lapsed one, are requeued.

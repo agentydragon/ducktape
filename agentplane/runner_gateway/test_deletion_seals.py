@@ -59,15 +59,15 @@ def sealed_condition(cluster: Cluster) -> dict[str, str] | None:
     conditions = (
         cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX].get("status", {}).get("conditions", [])
     )
-    return next((c for c in conditions if c["type"] == sandbox_resource.SESSIONS_SEALED), None)
+    return next((c for c in conditions if c["type"] == sandbox_resource.QUIESCED), None)
 
 
 async def test_a_deleting_sandbox_is_sealed_then_marked(runner: ScriptedRunner, cluster: Cluster) -> None:
     mark_deleting(cluster)
-    seal = await runner.next(runner_pb2.SealRequest)
+    seal = await runner.next(runner_pb2.QuiesceRequest)
     # Not marked before the runner answers.
     assert sealed_condition(cluster) is None
-    seal.outcome.set_result(runner_pb2.SealResponse())
+    seal.outcome.set_result(runner_pb2.QuiesceResponse())
     await cluster.fake.wait_for(lambda: sealed_condition(cluster) is not None)
     condition = sealed_condition(cluster)
     assert condition is not None

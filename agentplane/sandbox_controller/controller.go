@@ -81,10 +81,10 @@ type Reconciler struct {
 	// Sandboxes are unaffected.
 	KubeVirt bool
 	// Seals a deleting Sandbox's Sessions through its runner. Without one, deletion waits for the
-	// Runner Gateway to set SessionsSealed.
+	// Runner Gateway to set Quiesced.
 	//
 	// CLEANUP(added 2026-10-13): Make Sealer and Leases required once the manifests pass the sealer
-	// flags in every environment and the Runner Gateway no longer sets SessionsSealed.
+	// flags in every environment and the Runner Gateway no longer sets Quiesced.
 	Sealer Sealer
 	// Reads the Lease the Runner Gateway writes for each connection, and, set up with a manager, watches
 	// them: a new connection, or a runner reconnecting, enqueues its Sandbox.
@@ -246,12 +246,12 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 			return w, blocked, err
 		}
 		if r.Sealer == nil {
-			return w, &unready{reason: "Sealing", message: "waiting for the Runner Gateway to seal every Session"}, nil
+			return w, &unready{reason: "Quiescing", message: "waiting for the Runner Gateway to seal every Session"}, nil
 		}
 		blocked = r.seal(ctx, sandbox, runner)
 		if blocked.retryAfter == 0 {
 			meta.SetStatusCondition(&sandbox.Status.Conditions, metav1.Condition{
-				Type: SessionsSealed, Status: metav1.ConditionTrue, Reason: "Sealed", Message: blocked.message, ObservedGeneration: sandbox.Generation,
+				Type: Quiesced, Status: metav1.ConditionTrue, Reason: "Quiesced", Message: blocked.message, ObservedGeneration: sandbox.Generation,
 			})
 		}
 		return w, blocked, nil
@@ -317,13 +317,13 @@ func (r *Reconciler) sealBeforeStop(ctx context.Context, sandbox *Sandbox, w wor
 func (r *Reconciler) seal(ctx context.Context, sandbox *Sandbox, runner string) *unready {
 	result, err := r.Sealer.Seal(ctx, sandbox)
 	if err != nil {
-		return &unready{reason: "Sealing", message: err.Error(), retryAfter: sealRetry}
+		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: sealRetry}
 	}
 	if len(result.Unflushed) > 0 {
-		return &unready{reason: "Sealing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: sealRetry}
+		return &unready{reason: "Quiescing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: sealRetry}
 	}
-	sandbox.Status.SealedIncarnation = &runner
-	return &unready{reason: "Sealing", message: fmt.Sprintf("%d Sessions sealed", result.Sessions)}
+	sandbox.Status.QuiescedIncarnation = &runner
+	return &unready{reason: "Quiescing", message: fmt.Sprintf("%d Sessions sealed", result.Sessions)}
 }
 
 // deleteIfLive deletes obj, that very object, unless its deletion has begun.

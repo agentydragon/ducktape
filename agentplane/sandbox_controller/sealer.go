@@ -31,7 +31,7 @@ type Sealer interface {
 	Seal(ctx context.Context, sandbox *Sandbox) (SealResult, error)
 }
 
-// GatewaySealer calls `Runner.Seal` through the Runner Gateway's proxy, at the Sandbox's own
+// GatewaySealer calls `Runner.Quiesce` through the Runner Gateway's proxy, at the Sandbox's own
 // control Service, which names the replica holding its runner connection.
 type GatewaySealer struct {
 	// Target is a template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`.
@@ -61,9 +61,9 @@ func (g GatewaySealer) Seal(ctx context.Context, sandbox *Sandbox) (SealResult, 
 		"authorization", "Bearer "+strings.TrimSpace(string(token)),
 		"x-agentplane-sandbox", sandbox.Name,
 	)
-	response, err := runnercontrolpb.NewRunnerClient(conn).Seal(ctx, &runnerpb.SealRequest{})
+	response, err := runnercontrolpb.NewRunnerClient(conn).Quiesce(ctx, &runnerpb.QuiesceRequest{})
 	if err != nil {
-		return SealResult{}, fmt.Errorf("sealing %s through %s: %w", sandbox.Name, target, err)
+		return SealResult{}, fmt.Errorf("quiescing %s through %s: %w", sandbox.Name, target, err)
 	}
 	result := SealResult{Sessions: len(response.GetSessions())}
 	for _, session := range response.GetSessions() {

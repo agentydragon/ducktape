@@ -24,11 +24,11 @@ class Sealing:
     sessions: SessionRegistry
     control: LifecycleControl
 
-    async def seal(self, *, namespace: str, name: str, sandbox_uid: UUID) -> runner_pb2.SealResponse:
-        """The runner's seal; every Session it seals must be registered in this Sandbox incarnation."""
+    async def seal(self, *, namespace: str, name: str, sandbox_uid: UUID) -> runner_pb2.QuiesceResponse:
+        """The runner's quiesce; every Session it seals must be registered in this Sandbox incarnation."""
         # Without the connection the caller resolves the control Service again and retries until it
         # reaches the holder.
-        sealed = await self.control.runner(sandbox_uid).Seal(runner_pb2.SealRequest(), timeout=SEAL_S)
+        sealed = await self.control.runner(sandbox_uid).Quiesce(runner_pb2.QuiesceRequest(), timeout=SEAL_S)
         for session in sealed.sessions:
             if (
                 await self.sessions.public_id(

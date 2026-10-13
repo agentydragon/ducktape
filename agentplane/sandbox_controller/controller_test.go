@@ -518,7 +518,7 @@ func TestDeletionOfASandboxNoRunnerConnectedToSealsNothing(t *testing.T) {
 	if calls := r.Sealer.(*fakeSealer).calls; calls != 0 {
 		t.Errorf("asked a runner that never connected to seal %d times", calls)
 	}
-	if meta.IsStatusConditionTrue(getSandbox(t, c).Status.Conditions, SessionsSealed) {
+	if meta.IsStatusConditionTrue(getSandbox(t, c).Status.Conditions, Quiesced) {
 		t.Error("a Sandbox no runner connected to was recorded as sealed")
 	}
 }
@@ -541,7 +541,7 @@ func TestDeletionWaitsForTheRunnerToSealAndFlush(t *testing.T) {
 		if err != nil || result.RequeueAfter == 0 {
 			t.Fatalf("a failed or unflushed seal is asked again: %v, %v", result, err)
 		}
-		if getPod(t, c) == nil || meta.IsStatusConditionTrue(getSandbox(t, c).Status.Conditions, SessionsSealed) {
+		if getPod(t, c) == nil || meta.IsStatusConditionTrue(getSandbox(t, c).Status.Conditions, Quiesced) {
 			t.Fatal("the Sandbox counted as sealed before the runner said so")
 		}
 	}
@@ -570,8 +570,8 @@ func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 	if getPod(t, c) == nil || getPVC(t, c) == nil {
 		t.Fatal("deletion removed the Pod or the state PVC before the Sessions were sealed")
 	}
-	if reason := runningReason(t, c); reason != "Sealing" {
-		t.Errorf("Running reason = %s, want Sealing", reason)
+	if reason := runningReason(t, c); reason != "Quiescing" {
+		t.Errorf("Running reason = %s, want Quiescing", reason)
 	}
 
 	sealSessions(t, r)
@@ -662,21 +662,21 @@ func TestSuspensionWaitsForTheRunnerToSeal(t *testing.T) {
 	if err != nil || result.RequeueAfter == 0 {
 		t.Fatalf("a failed seal is asked again: %v, %v", result, err)
 	}
-	if getPod(t, c) == nil || runningReason(t, c) != "Sealing" {
+	if getPod(t, c) == nil || runningReason(t, c) != "Quiescing" {
 		t.Fatal("the Pod stopped before its runner sealed")
 	}
 
 	sealer.err = nil
 	reconcileOnce(t, r)
-	if sealed := getSandbox(t, c).Status.SealedIncarnation; sealed == nil || *sealed != "uid-pod" {
+	if sealed := getSandbox(t, c).Status.QuiescedIncarnation; sealed == nil || *sealed != "uid-pod" {
 		t.Fatalf("sealed incarnation = %v, want uid-pod", sealed)
 	}
 	reconcileOnce(t, r)
 	if getPod(t, c) != nil {
 		t.Fatal("the Pod outlived its seal")
 	}
-	if meta.IsStatusConditionTrue(getSandbox(t, c).Status.Conditions, SessionsSealed) {
-		t.Fatal("suspension recorded the deletion-only SessionsSealed condition")
+	if meta.IsStatusConditionTrue(getSandbox(t, c).Status.Conditions, Quiesced) {
+		t.Fatal("suspension recorded the deletion-only Quiesced condition")
 	}
 }
 

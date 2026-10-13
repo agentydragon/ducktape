@@ -39,7 +39,7 @@ The same service-caller allowlist gates every RPC:
   defaults and bootstrap, its raw status, and a same-name Pod's identity metadata and raw status as
   separate objects. The operating mode is the desired state; the `phase` is derived from what the
   Sandbox Controller records (deletion asked for, `spec.running`, whether an incarnation exists,
-  `SessionsSealed`, the `Running` condition's reason) as Creating, Running, Suspending, Suspended,
+  `Quiesced`, the `Running` condition's reason) as Creating, Running, Suspending, Suspended,
   Quiescing (a stop or deletion held for the runner's seal) or Tearing down.
 - `ListTemplates`: available SandboxTemplates.
 - `CreateSandbox`: concrete template, `policy_sets`, optional session defaults, and bootstrap. The
@@ -69,7 +69,7 @@ retries. Mutations use UID/resourceVersion guards and are safe to replay.
 runner has sealed every Session ([Sandbox Controller](../sandbox_controller/README.md)): it runs the
 Sandbox again (`SANDBOX_PHASE_QUIESCING`), which from then on refuses new Sessions and commands, and
 suspend and resume, while its Sessions can still be listed and read. The Runner Gateway replica
-holding the runner's connection seals it and records `SessionsSealed`, after which the Sandbox and
+holding the runner's connection seals it and records `Quiesced`, after which the Sandbox and
 its volume go.
 
 ## Errors and uncertain outcomes

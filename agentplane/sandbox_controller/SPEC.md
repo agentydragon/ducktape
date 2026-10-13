@@ -22,7 +22,7 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   it, with the template's state volume backed by the PVC. A Pod that goes away or ends while the
   Sandbox is running is replaced by a new incarnation on the same PVC.
 - Clearing `spec.running` deletes the Pod, once the runner that connected from it has sealed every
-  Session (`status.sealedIncarnation` names the sealed Pod). A Pod whose runner never connected has
+  Session (`status.quiescedIncarnation` names the sealed Pod). A Pod whose runner never connected has
   nothing to seal. The Sandbox stays held, with `Running` reason `Sealing`, while the seal fails or
   the ingress has not acknowledged it. Applies only to a controller configured to seal.
 - A resumed Sandbox whose Pod is already sealed gets a new incarnation, as a sealed runner takes no
@@ -72,11 +72,11 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 
 ## Deletion
 
-- A deleted Sandbox with a state PVC of its own keeps its Pod or VM until its `SessionsSealed`
+- A deleted Sandbox with a state PVC of its own keeps its Pod or VM until its `Quiesced`
   condition is True. It is set once the runner has sealed every Session and the ingress has
   acknowledged each seal, so history holds every Session through its seal before its state goes.
   A stopped Sandbox runs once more to seal only if the runner that last connected is not the one
-  recorded in `status.sealedIncarnation`; one sealed when it was suspended is deleted as it is.
+  recorded in `status.quiescedIncarnation`; one sealed when it was suspended is deleted as it is.
   (A controller not configured to seal always runs it once more and waits for the gateway.)
 - Then the Pod or VM is deleted, then, once it and any VMI are gone, the finalizer clears and the
   PVC goes with the Sandbox.

@@ -80,7 +80,7 @@ flowchart TB
     hist_db -.->|staging: WAL archive, on-demand base backups| outside
 
     ss -->|Sandboxes, egress grants| k8s
-    gw -->|control Services, Leases; SessionsSealed on deleting Sandboxes| k8s
+    gw -->|control Services, Leases; Quiesced on deleting Sandboxes| k8s
     hs -->|ingest, fold, read| hist_db
     notif -->|Sandbox lookups| ss
     notif -->|commands| gw

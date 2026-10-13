@@ -1,6 +1,6 @@
 """Teardown's seal for Agentplane's own `Sandbox`: the replica holding a deleting Sandbox's runner
 connection seals every Session and, once the ingress has acknowledged each seal, sets the Sandbox's
-`SessionsSealed` condition, which the Sandbox Controller waits on before deleting its Pod and PVC.
+`Quiesced` condition, which the Sandbox Controller waits on before deleting its Pod and PVC.
 A Sandbox no runner ever connected to has no Session to seal, so any replica marks it."""
 
 import asyncio
@@ -95,7 +95,7 @@ class DeletionSeals:
         return current is not None and current.metadata.uid == sandbox.metadata.uid
 
     async def _report(self, sandbox: Sandbox, message: str) -> None:
-        await sandbox_resource.report_sessions_sealed(
+        await sandbox_resource.report_quiesced(
             self._custom_objects, sandbox, message=message, field_manager=FIELD_MANAGER, now=datetime.now(UTC)
         )
 

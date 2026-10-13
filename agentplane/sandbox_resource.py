@@ -121,15 +121,15 @@ async def read_sandbox(custom_objects: CustomObjectsClient, namespace: str, name
     return Sandbox.model_validate(raw)
 
 
-async def report_sessions_sealed(
+async def report_quiesced(
     custom_objects: CustomObjectsClient, sandbox: Sandbox, *, message: str, field_manager: str, now: datetime
 ) -> None:
-    """Apply `SessionsSealed` server-side under `field_manager`, so the controller's conditions stay."""
+    """Apply `Quiesced` server-side under `field_manager`, so the controller's conditions stay."""
     metadata = sandbox.metadata
     condition = Condition(
-        type=SESSIONS_SEALED,
+        type=QUIESCED,
         status=ConditionStatus.TRUE,
-        reason="Sealed",
+        reason="Quiesced",
         message=message,
         observed_generation=metadata.generation,
         last_transition_time=now,
@@ -143,7 +143,7 @@ async def report_sessions_sealed(
         {
             "apiVersion": SANDBOX_API_VERSION,
             "kind": SANDBOX_KIND,
-            # A precondition: a recreated Sandbox of the name is refused, not marked sealed.
+            # A precondition: a recreated Sandbox of the name is refused, not marked quiesced.
             "metadata": {"name": metadata.name, "namespace": metadata.namespace, "uid": str(metadata.uid)},
             "status": {"conditions": [condition.model_dump(mode="json", by_alias=True, exclude_none=True)]},
         },
