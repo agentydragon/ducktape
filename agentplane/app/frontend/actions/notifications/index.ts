@@ -1,6 +1,7 @@
 import type { ActionRequestView } from "../types";
 import { podsDeleteNotification } from "./kubernetes_admin/pods_delete";
 import { podsExecNotification } from "./kubernetes_admin/pods_exec";
+import { podsGetNotification } from "./kubernetes_admin/pods_get";
 import { podsLogNotification } from "./kubernetes_admin/pods_log";
 import { grocySystemInfoNotification } from "./grocy/get_system_info";
 import { grocyProductsListNotification } from "./grocy/products_list";
@@ -34,6 +35,7 @@ const FORMATTERS: ReadonlyMap<string, ReadonlyMap<string, ActionNotificationForm
       ["pods_delete", podsDeleteNotification],
       ["pods_list_in_namespace", podsInNamespaceNotification],
       ["pods_exec", podsExecNotification],
+      ["pods_get", podsGetNotification],
       ["pods_log", podsLogNotification],
     ]),
   ],

@@ -67,6 +67,7 @@ describe("Action presentation slots", () => {
     ["resources_delete", { apiVersion: "v1", kind: "Pod", name: "web-0", namespace: "apps" }, "Delete Pod apps/web-0"],
     ["pods_delete", { name: "web-0", namespace: "apps" }, "Delete Pod apps/web-0"],
     ["pods_exec", { name: "web-0", namespace: "apps", command: ["true"] }, "Run command in Pod apps/web-0"],
+    ["pods_get", { name: "web-0", namespace: "apps" }, "Get Pod apps/web-0"],
     ["pods_log", { name: "web-0", namespace: "apps" }, "View logs for Pod apps/web-0"],
   ] as const)("uses the concise Kubernetes identity for %s", async (name, args, expected) => {
     const label = await mount(renderActionLabel({ group: "kubernetes_admin", name }, args));
@@ -390,6 +391,12 @@ const cardDecisionButtonCases: Array<{
     name: "resources_list",
     args: { apiVersion: "v1", kind: "Pod", fieldSelector: "status.phase=Running", labelSelector: "app=web" },
     visible: ["API version: v1", "status.phase=Running", "app=web"],
+  },
+  {
+    group: "kubernetes_admin",
+    name: "pods_get",
+    args: { name: "api-0", namespace: "apps" },
+    visible: ["namespace: apps"],
   },
   {
     group: "kubernetes_admin",

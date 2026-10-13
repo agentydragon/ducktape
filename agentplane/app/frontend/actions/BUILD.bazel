@@ -300,6 +300,7 @@ ts_library(
         "notifications/index.ts",
         "notifications/kubernetes_admin/pods_delete.ts",
         "notifications/kubernetes_admin/pods_exec.ts",
+        "notifications/kubernetes_admin/pods_get.ts",
         "notifications/kubernetes_admin/pods_list_in_namespace.ts",
         "notifications/kubernetes_admin/pods_log.ts",
         "notifications/kubernetes_admin/resources_create_or_update.ts",

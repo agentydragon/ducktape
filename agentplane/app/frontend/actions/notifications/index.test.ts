@@ -44,6 +44,7 @@ const kubernetesNotificationCases = [
     { name: "api-0", namespace: "apps", container: "api", command: ["id"] },
     "Run command in Pod apps/api-0",
   ],
+  ["pods_get", { name: "api-0", namespace: "apps" }, "Get Pod apps/api-0"],
   [
     "pods_log",
     { name: "api-0", namespace: "apps", container: "api", previous: false, tail: 50 },
@@ -58,6 +59,7 @@ const malformedKubernetesNotificationCases = [
   ["pods_delete", { name: "api-0", namespace: 7 }],
   ["pods_list_in_namespace", { namespace: "apps", labelSelector: 123 }],
   ["pods_exec", { name: "api-0", namespace: "apps", command: "id" }],
+  ["pods_get", { name: "api-0", namespace: 7 }],
   ["pods_log", { name: "api-0", namespace: "apps", previous: "false" }],
 ] as const;
 
@@ -225,6 +227,7 @@ describe("action notification formatting", () => {
     ["pods_delete", { namespace: "apps" }],
     ["pods_list_in_namespace", { namespace: "" }],
     ["pods_exec", { namespace: "apps" }],
+    ["pods_get", { namespace: "apps" }],
     ["pods_log", { namespace: "apps" }],
   ] as const)("uses the generic identity for %s when its displayed target is missing", (name, args) => {
     const request = actionRequest({

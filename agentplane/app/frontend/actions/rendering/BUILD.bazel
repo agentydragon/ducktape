@@ -87,6 +87,7 @@ ts_library(
     srcs = [
         "kubernetes_admin/events_list.tsx",
         "kubernetes_admin/pods_exec.tsx",
+        "kubernetes_admin/pods_get.tsx",
         "kubernetes_admin/pods_list_in_namespace.tsx",
         "kubernetes_admin/pods_log.tsx",
         "kubernetes_admin/resource_common.tsx",

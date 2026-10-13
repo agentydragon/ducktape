@@ -56,6 +56,7 @@ import {
   podsExecLabel,
   podsExecPane,
 } from "./kubernetes_admin/pods_exec";
+import { offersCardDecisionButtonsPodsGet, podsGetLabel, podsGetPreview } from "./kubernetes_admin/pods_get";
 import { offersCardDecisionButtonsPodsLog, podsLogLabel, podsLogPreview } from "./kubernetes_admin/pods_log";
 import {
   resourcesApplyCollapsed,
@@ -161,6 +162,15 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
           label: resourcesDeleteLabel,
           pane: { opened: resourcesDeletePane },
           details: { arguments: resourcesDeletePane },
+        },
+      ],
+      [
+        "pods_get",
+        {
+          label: podsGetLabel,
+          pane: { opened: podsGetPreview },
+          details: { arguments: podsGetPreview },
+          offersCardDecisionButtons: offersCardDecisionButtonsPodsGet,
         },
       ],
       [
