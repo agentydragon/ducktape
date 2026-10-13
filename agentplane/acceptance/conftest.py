@@ -34,6 +34,9 @@ TESTING_NAMESPACE = "agentplane-testing"
 TESTING_SERVICE_ACCOUNT = "agentplane-agent"
 AUDIENCE = "agentplane"
 
+# The Pod SandboxTemplate every deployment offers; testing also offers a VM one, so the default is named.
+POD_TEMPLATE = "runner"
+
 # A sandbox's first Pod has to be scheduled and pull the runner image.
 SANDBOX_READY_SECONDS = 300.0
 
@@ -146,7 +149,7 @@ async def sandbox(client: Client) -> AsyncIterator[Sandboxes]:
         bootstrap: str = "",
     ) -> SandboxView:
         if template is None:
-            [template] = await client.templates()
+            template = POD_TEMPLATE
         view = await client.create_sandbox(
             NewSandbox(
                 name=name,
