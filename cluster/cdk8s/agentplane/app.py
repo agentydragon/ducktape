@@ -133,9 +133,8 @@ class App(Construct):
                             "egresscredentials",
                             "actionpolicysets",
                             "actionpolicybindings",
-                            # The create form lists the sets; the egress view reads bindings.
+                            # The create form lists them.
                             "policysets",
-                            "policybindings",
                         )
                     ],
                     verbs=["get", "list", "watch"],
