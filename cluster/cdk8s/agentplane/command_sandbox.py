@@ -10,17 +10,8 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 
-from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
-    SandboxTemplateSpecPodTemplateSpecContainers,
-    SandboxTemplateSpecPodTemplateSpecContainersResources,
-    SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits,
-    SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests,
-    SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts,
-    SandboxTemplateSpecPodTemplateSpecVolumes,
-    SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir,
-    SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit,
-)
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
+from cdk8s_plus_34 import k8s
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
@@ -41,37 +32,20 @@ _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox"
 _BUILD_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-build"
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 _LABELS = {"app.kubernetes.io/name": NAME}
-_COMMAND_RESOURCES = SandboxTemplateSpecPodTemplateSpecContainersResources(
-    requests={
-        "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("100m"),
-        "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("256Mi"),
-    },
-    limits={
-        "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("1"),
-        "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("2Gi"),
-    },
+_COMMAND_RESOURCES = k8s.ResourceRequirements(
+    requests={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("256Mi")},
+    limits={"cpu": k8s.Quantity.from_string("1"), "memory": k8s.Quantity.from_string("2Gi")},
 )
 # The most the testing LimitRange lets one container have (testing.py); a Bazel build of the
 # acceptance suite fits in.
-_BUILD_RESOURCES = SandboxTemplateSpecPodTemplateSpecContainersResources(
-    requests={
-        "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("500m"),
-        "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("1Gi"),
-    },
-    limits={
-        "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("2"),
-        "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("4Gi"),
-    },
+_BUILD_RESOURCES = k8s.ResourceRequirements(
+    requests={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("1Gi")},
+    limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
 )
 # The build box's home, on the Pod rather than in the container: running out of memory kills every
 # process in the container, and the container that replaces it still has the checkout and Bazel's
 # cache.
-_BUILD_HOME = SandboxTemplateSpecPodTemplateSpecVolumes(
-    name="home",
-    empty_dir=SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir(
-        size_limit=SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit.from_string("20Gi")
-    ),
-)
+_BUILD_HOME = k8s.Volume(name="home", empty_dir=k8s.EmptyDirVolumeSource(size_limit=k8s.Quantity.from_string("20Gi")))
 
 
 # What a box made from each template holds, for the agent choosing one.
@@ -99,10 +73,7 @@ class CommandSandbox(Construct):
             env,
             name=BUILD_NAME,
             workload=_workload(
-                _BUILD_IMAGE,
-                _BUILD_RESOURCES,
-                env,
-                SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(name=_BUILD_HOME.name, mount_path=HOME),
+                _BUILD_IMAGE, _BUILD_RESOURCES, env, k8s.VolumeMount(name=_BUILD_HOME.name, mount_path=HOME)
             ),
             volumes=[_BUILD_HOME],
         )
@@ -123,8 +94,8 @@ def _pod_template(
     env: Environment,
     *,
     name: str,
-    workload: SandboxTemplateSpecPodTemplateSpecContainers,
-    volumes: Sequence[SandboxTemplateSpecPodTemplateSpecVolumes] = (),
+    workload: k8s.Container,
+    volumes: Sequence[k8s.Volume] = (),
 ) -> None:
     rendered = sandbox_pod.render_pod_template(
         _LABELS,
@@ -139,12 +110,9 @@ def _pod_template(
 
 
 def _workload(
-    image: str,
-    resources: SandboxTemplateSpecPodTemplateSpecContainersResources,
-    env: Environment,
-    *mounts: SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts,
-) -> SandboxTemplateSpecPodTemplateSpecContainers:
-    return SandboxTemplateSpecPodTemplateSpecContainers(
+    image: str, resources: k8s.ResourceRequirements, env: Environment, *mounts: k8s.VolumeMount
+) -> k8s.Container:
+    return k8s.Container(
         name=CONTAINER,
         image=f"{image}:{_PLACEHOLDER_TAG}",
         # The image has no entrypoint of its own: the box idles until something is exec'd into it.

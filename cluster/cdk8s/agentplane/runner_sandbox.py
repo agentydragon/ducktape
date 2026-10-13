@@ -14,19 +14,8 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
-from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
-    SandboxTemplateSpecPodTemplateSpecContainers,
-    SandboxTemplateSpecPodTemplateSpecContainersEnv,
-    SandboxTemplateSpecPodTemplateSpecContainersResources,
-    SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits,
-    SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests,
-    SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts,
-    SandboxTemplateSpecPodTemplateSpecVolumes,
-    SandboxTemplateSpecPodTemplateSpecVolumesConfigMap,
-    SandboxTemplateSpecPodTemplateSpecVolumesSecret,
-)
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
-from cdk8s_plus_34 import ConfigMap, ServiceAccount
+from cdk8s_plus_34 import ConfigMap, ServiceAccount, k8s
 from constructs import Construct
 
 from agentplane.crd_group import GROUP, VERSION
@@ -149,7 +138,7 @@ class RunnerTemplate(Construct):
         # The SandboxTemplate's spec: its `pod`, and the `stateVolume` the VM template shares.
         self.spec = self._add_sandbox_template(name=name, image=image)
 
-    def _runner_container(self, image: str) -> SandboxTemplateSpecPodTemplateSpecContainers:
+    def _runner_container(self, image: str) -> k8s.Container:
         # The environment a harness child starts from: a bare NAME takes the runner's
         # value, NAME=value sets one. The routing vars are named rather than set, so the
         # container env below is where they are written once and everything in the Pod
@@ -192,7 +181,7 @@ class RunnerTemplate(Construct):
             args.extend(["--harness-env", entry])
         for name in self.env.harness_inherited_env:
             args.extend(["--harness-inherit-env", name])
-        return SandboxTemplateSpecPodTemplateSpecContainers(
+        return k8s.Container(
             name="runner",
             image=f"{image}:{_PLACEHOLDER_TAG}",
             args=args,
@@ -203,15 +192,9 @@ class RunnerTemplate(Construct):
             env=sandbox_pod.workload_environment(
                 self.env,
                 [
-                    SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                        name="LITELLM_URL", value=llm_ingress.proxied_url(self.env.namespace)
-                    ),
+                    k8s.EnvVar(name="LITELLM_URL", value=llm_ingress.proxied_url(self.env.namespace)),
                     *(
-                        [
-                            SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                                name="BBR_BUILDBUDDY_API_KEY_FILE", value=f"{_BUILDBUDDY_MOUNT}/api-key"
-                            )
-                        ]
+                        [k8s.EnvVar(name="BBR_BUILDBUDDY_API_KEY_FILE", value=f"{_BUILDBUDDY_MOUNT}/api-key")]
                         if self.buildbuddy_secret
                         else []
                     ),
@@ -222,38 +205,22 @@ class RunnerTemplate(Construct):
                     # substitutes the sidecar-only projected token; the ingress replaces
                     # that with its server-held LiteLLM virtual key after live
                     # WorkloadPrincipal resolution.
-                    SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                        name="ANTHROPIC_AUTH_TOKEN", value="agentplane-credential-agentplane-workload"
-                    ),
-                    SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                        name="OPENAI_API_KEY", value="agentplane-credential-agentplane-workload"
-                    ),
+                    k8s.EnvVar(name="ANTHROPIC_AUTH_TOKEN", value="agentplane-credential-agentplane-workload"),
+                    k8s.EnvVar(name="OPENAI_API_KEY", value="agentplane-credential-agentplane-workload"),
                 ],
             ),
-            resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
-                requests={
-                    "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("500m"),
-                    "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("1Gi"),
-                },
-                limits={
-                    "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("2"),
-                    "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("4Gi"),
-                },
+            resources=k8s.ResourceRequirements(
+                requests={"cpu": k8s.Quantity.from_string("500m"), "memory": k8s.Quantity.from_string("1Gi")},
+                limits={"cpu": k8s.Quantity.from_string("2"), "memory": k8s.Quantity.from_string("4Gi")},
             ),
             volume_mounts=[
-                SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
-                    name=_STATE_VOLUME_NAME, mount_path=_STATE_DIR
-                ),
-                SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+                k8s.VolumeMount(name=_STATE_VOLUME_NAME, mount_path=_STATE_DIR),
+                k8s.VolumeMount(
                     name=_PLATFORM_INSTRUCTIONS_VOLUME, mount_path=_PLATFORM_INSTRUCTIONS_DIR, read_only=True
                 ),
                 *sandbox_pod.egress_mounts(),
                 *(
-                    [
-                        SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
-                            name=_BUILDBUDDY_SECRET, mount_path=_BUILDBUDDY_MOUNT, read_only=True
-                        )
-                    ]
+                    [k8s.VolumeMount(name=_BUILDBUDDY_SECRET, mount_path=_BUILDBUDDY_MOUNT, read_only=True)]
                     if self.buildbuddy_secret
                     else []
                 ),
@@ -268,17 +235,15 @@ class RunnerTemplate(Construct):
                 workload=self._runner_container(image),
                 service_account_name=NAME,
                 workload_volumes=[
-                    SandboxTemplateSpecPodTemplateSpecVolumes(
+                    k8s.Volume(
                         name=_PLATFORM_INSTRUCTIONS_VOLUME,
-                        config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(
-                            name=_PLATFORM_INSTRUCTIONS_CONFIG_MAP
-                        ),
+                        config_map=k8s.ConfigMapVolumeSource(name=_PLATFORM_INSTRUCTIONS_CONFIG_MAP),
                     ),
                     *(
                         [
-                            SandboxTemplateSpecPodTemplateSpecVolumes(
+                            k8s.Volume(
                                 name=_BUILDBUDDY_SECRET,
-                                secret=SandboxTemplateSpecPodTemplateSpecVolumesSecret(
+                                secret=k8s.SecretVolumeSource(
                                     secret_name=_BUILDBUDDY_SECRET,
                                     default_mode=288,  # 0440; readable via fsGroup 1000
                                 ),

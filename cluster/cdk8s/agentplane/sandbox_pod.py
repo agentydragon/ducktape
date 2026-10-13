@@ -6,8 +6,8 @@ the sandbox Actions' box templates (command_sandbox.py) are both built from it, 
 behind the same egress path; only the command box also gets the system bazelrc that points Bazel at
 the trust store.
 
-The recipe speaks agent-sandbox's generated Pod types, which no template here is an object of:
-`render_pod_template` turns them into the Kubernetes JSON a template holds.
+The recipe speaks core Pod types (`cdk8s_plus_34.k8s`); `render_pod_template` turns them into the
+Kubernetes JSON a template holds.
 """
 
 from __future__ import annotations
@@ -16,32 +16,8 @@ import json
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
-    SandboxTemplateSpecPodTemplate,
-    SandboxTemplateSpecPodTemplateMetadata,
-    SandboxTemplateSpecPodTemplateSpec,
-    SandboxTemplateSpecPodTemplateSpecContainers,
-    SandboxTemplateSpecPodTemplateSpecContainersEnv,
-    SandboxTemplateSpecPodTemplateSpecContainersReadinessProbe,
-    SandboxTemplateSpecPodTemplateSpecContainersReadinessProbeHttpGet,
-    SandboxTemplateSpecPodTemplateSpecContainersReadinessProbeHttpGetPort,
-    SandboxTemplateSpecPodTemplateSpecContainersResources,
-    SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits,
-    SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests,
-    SandboxTemplateSpecPodTemplateSpecContainersSecurityContext,
-    SandboxTemplateSpecPodTemplateSpecContainersSecurityContextCapabilities,
-    SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts,
-    SandboxTemplateSpecPodTemplateSpecImagePullSecrets,
-    SandboxTemplateSpecPodTemplateSpecSecurityContext,
-    SandboxTemplateSpecPodTemplateSpecSecurityContextSeccompProfile,
-    SandboxTemplateSpecPodTemplateSpecVolumes,
-    SandboxTemplateSpecPodTemplateSpecVolumesConfigMap,
-    SandboxTemplateSpecPodTemplateSpecVolumesProjected,
-    SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources,
-    SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken,
-)
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ConfigMap, Role, RolePolicyRule
+from cdk8s_plus_34 import ConfigMap, Role, RolePolicyRule, k8s
 from constructs import Construct
 
 from agentplane.egress import sidecar
@@ -55,7 +31,6 @@ from cluster.cdk8s.agentplane import egress, notifications
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME
-from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from util.settings_contract import env_name
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
@@ -102,7 +77,7 @@ def audience_token_file(audience: str) -> str:
     return f"{_EGRESS_TOKEN_DIR}/{_SUBSTITUTABLE_AUDIENCE_FILES[audience]}"
 
 
-def egress_env() -> list[SandboxTemplateSpecPodTemplateSpecContainersEnv]:
+def egress_env() -> list[k8s.EnvVar]:
     """The proxy environment, for the workload container itself.
 
     The box's fence lets it reach DNS and the egress proxy and nothing else, so a process that does
@@ -112,65 +87,48 @@ def egress_env() -> list[SandboxTemplateSpecPodTemplateSpecContainersEnv]:
     names the box's own identity at the API server, through the same proxy.
     """
     return [
-        *(
-            SandboxTemplateSpecPodTemplateSpecContainersEnv(name=name, value=_MITM_PROXY_URL)
-            for name in PROXY_VAR_NAMES
-        ),
-        *(
-            SandboxTemplateSpecPodTemplateSpecContainersEnv(name=name, value=_NO_PROXY_HOSTS)
-            for name in NO_PROXY_VAR_NAMES
-        ),
-        *(
-            SandboxTemplateSpecPodTemplateSpecContainersEnv(name=name, value=_CA_BUNDLE_PATH)
-            for name in CA_BUNDLE_VAR_NAMES
-        ),
-        SandboxTemplateSpecPodTemplateSpecContainersEnv(name="KUBECONFIG", value=_KUBECONFIG_PATH),
+        *(k8s.EnvVar(name=name, value=_MITM_PROXY_URL) for name in PROXY_VAR_NAMES),
+        *(k8s.EnvVar(name=name, value=_NO_PROXY_HOSTS) for name in NO_PROXY_VAR_NAMES),
+        *(k8s.EnvVar(name=name, value=_CA_BUNDLE_PATH) for name in CA_BUNDLE_VAR_NAMES),
+        k8s.EnvVar(name="KUBECONFIG", value=_KUBECONFIG_PATH),
     ]
 
 
-def workload_environment(
-    env: Environment, existing: Sequence[SandboxTemplateSpecPodTemplateSpecContainersEnv]
-) -> list[SandboxTemplateSpecPodTemplateSpecContainersEnv]:
-    """Add the deployment's non-secret defaults to one SandboxTemplate workload container."""
+def workload_environment(env: Environment, existing: Sequence[k8s.EnvVar]) -> list[k8s.EnvVar]:
+    """Add the deployment's non-secret defaults to one workload container."""
     existing_env_names = {item.name for item in existing}
     conflicting_env_names = existing_env_names & env.sandbox_workload_env.keys()
     if conflicting_env_names:
         names = ", ".join(sorted(conflicting_env_names))
         raise ValueError(f"sandbox workload environment defaults conflict with container env: {names}")
-    return [
-        *existing,
-        *(
-            SandboxTemplateSpecPodTemplateSpecContainersEnv(name=name, value=value)
-            for name, value in env.sandbox_workload_env.items()
-        ),
-    ]
+    return [*existing, *(k8s.EnvVar(name=name, value=value) for name, value in env.sandbox_workload_env.items())]
 
 
-def egress_mounts() -> list[SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts]:
+def egress_mounts() -> list[k8s.VolumeMount]:
     """Public roots + cluster root + the proxy's interception root, over the image's own bundle at the
     path every client falls back to and as Java's trust store, plus the kubeconfig. A subPath mount
     does not follow ConfigMap updates: a CA rotation reaches a sandbox at its next Pod."""
     return [
-        SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+        k8s.VolumeMount(
             name=_EGRESS_CA_VOLUME_NAME, mount_path=_CA_BUNDLE_PATH, sub_path=egress.CA_BUNDLE_KEY, read_only=True
         ),
-        SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+        k8s.VolumeMount(
             name=_EGRESS_CA_VOLUME_NAME,
             mount_path=_JAVA_TRUST_STORE_PATH,
             sub_path=egress.JAVA_TRUST_STORE_KEY,
             read_only=True,
         ),
-        SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+        k8s.VolumeMount(
             name=_TOOL_CONFIG_VOLUME_NAME, mount_path=_KUBECONFIG_PATH, sub_path=_KUBECONFIG_KEY, read_only=True
         ),
     ]
 
 
-def bazelrc_mount() -> SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts:
+def bazelrc_mount() -> k8s.VolumeMount:
     """Bazel's system rc, for a box that only runs commands. A runner leaves it out: crossing a
     container's memory limit kills every process in it, and a build that did would take the agent's
     harness down with it."""
-    return SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+    return k8s.VolumeMount(
         name=_TOOL_CONFIG_VOLUME_NAME, mount_path="/etc/bazel.bazelrc", sub_path=_BAZELRC_KEY, read_only=True
     )
 
@@ -225,40 +183,25 @@ def tool_config_grant(namespace: str) -> RoleBindingGrant:
     )
 
 
-def workload_security_context() -> SandboxTemplateSpecPodTemplateSpecContainersSecurityContext:
-    return SandboxTemplateSpecPodTemplateSpecContainersSecurityContext(
-        allow_privilege_escalation=False,
-        capabilities=SandboxTemplateSpecPodTemplateSpecContainersSecurityContextCapabilities(drop=["ALL"]),
-    )
+def workload_security_context() -> k8s.SecurityContext:
+    return k8s.SecurityContext(allow_privilege_escalation=False, capabilities=k8s.Capabilities(drop=["ALL"]))
 
 
-def _egress_sidecar(
-    env: Environment, extra_env: Sequence[SandboxTemplateSpecPodTemplateSpecContainersEnv]
-) -> SandboxTemplateSpecPodTemplateSpecContainers:
-    return SandboxTemplateSpecPodTemplateSpecContainers(
+def _egress_sidecar(env: Environment, extra_env: Sequence[k8s.EnvVar]) -> k8s.Container:
+    return k8s.Container(
         name=sidecar.CONTAINER_NAME,
         image=f"{_EGRESS_SIDECAR_IMAGE}:{_PLACEHOLDER_TAG}",
         env=[
-            SandboxTemplateSpecPodTemplateSpecContainersEnv(
+            k8s.EnvVar(
                 name=env_name(sidecar.Settings, "proxy_host"),
                 value=f"agentplane-egress.{env.namespace}.svc.cluster.local",
             ),
-            SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                name=env_name(sidecar.Settings, "proxy_port"), value=str(egress.PROXY_PORT)
-            ),
-            SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                name=env_name(sidecar.Settings, "listen_port"), value=str(SIDECAR_LISTEN_PORT)
-            ),
-            SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                name=env_name(sidecar.Settings, "readiness_host"), value=sidecar.READINESS_HOST
-            ),
-            SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                name=env_name(sidecar.Settings, "readiness_port"), value=str(sidecar.READINESS_PORT)
-            ),
-            SandboxTemplateSpecPodTemplateSpecContainersEnv(
-                name=env_name(sidecar.Settings, "token_file"), value=f"{_EGRESS_TOKEN_DIR}/token"
-            ),
-            SandboxTemplateSpecPodTemplateSpecContainersEnv(
+            k8s.EnvVar(name=env_name(sidecar.Settings, "proxy_port"), value=str(egress.PROXY_PORT)),
+            k8s.EnvVar(name=env_name(sidecar.Settings, "listen_port"), value=str(SIDECAR_LISTEN_PORT)),
+            k8s.EnvVar(name=env_name(sidecar.Settings, "readiness_host"), value=sidecar.READINESS_HOST),
+            k8s.EnvVar(name=env_name(sidecar.Settings, "readiness_port"), value=str(sidecar.READINESS_PORT)),
+            k8s.EnvVar(name=env_name(sidecar.Settings, "token_file"), value=f"{_EGRESS_TOKEN_DIR}/token"),
+            k8s.EnvVar(
                 name=env_name(sidecar.Settings, "audience_token_files"),
                 value=json.dumps(
                     {audience: audience_token_file(audience) for audience in _SUBSTITUTABLE_AUDIENCE_FILES}
@@ -267,63 +210,44 @@ def _egress_sidecar(
             *extra_env,
         ],
         security_context=workload_security_context(),
-        readiness_probe=SandboxTemplateSpecPodTemplateSpecContainersReadinessProbe(
-            http_get=SandboxTemplateSpecPodTemplateSpecContainersReadinessProbeHttpGet(
-                path=sidecar.READINESS_PATH,
-                port=SandboxTemplateSpecPodTemplateSpecContainersReadinessProbeHttpGetPort.from_number(
-                    sidecar.READINESS_PORT
-                ),
+        readiness_probe=k8s.Probe(
+            http_get=k8s.HttpGetAction(
+                path=sidecar.READINESS_PATH, port=k8s.IntOrString.from_number(sidecar.READINESS_PORT)
             ),
             failure_threshold=1,
             period_seconds=2,
             timeout_seconds=1,
         ),
-        resources=SandboxTemplateSpecPodTemplateSpecContainersResources(
-            requests={
-                "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("10m"),
-                "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests.from_string("32Mi"),
-            },
-            limits={
-                "cpu": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("100m"),
-                "memory": SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits.from_string("128Mi"),
-            },
+        resources=k8s.ResourceRequirements(
+            requests={"cpu": k8s.Quantity.from_string("10m"), "memory": k8s.Quantity.from_string("32Mi")},
+            limits={"cpu": k8s.Quantity.from_string("100m"), "memory": k8s.Quantity.from_string("128Mi")},
         ),
-        volume_mounts=[
-            SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
-                name="egress-token", mount_path=_EGRESS_TOKEN_DIR, read_only=True
-            )
-        ],
+        volume_mounts=[k8s.VolumeMount(name="egress-token", mount_path=_EGRESS_TOKEN_DIR, read_only=True)],
     )
 
 
-def _egress_volumes(env: Environment) -> list[SandboxTemplateSpecPodTemplateSpecVolumes]:
+def _egress_volumes(env: Environment) -> list[k8s.Volume]:
     return [
-        SandboxTemplateSpecPodTemplateSpecVolumes(
-            name=_EGRESS_CA_VOLUME_NAME,
-            config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(name=env.egress.ca_secret_name),
-        ),
-        SandboxTemplateSpecPodTemplateSpecVolumes(
-            name=_TOOL_CONFIG_VOLUME_NAME,
-            config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(name=TOOL_CONFIG_MAP_NAME),
-        ),
+        k8s.Volume(name=_EGRESS_CA_VOLUME_NAME, config_map=k8s.ConfigMapVolumeSource(name=env.egress.ca_secret_name)),
+        k8s.Volume(name=_TOOL_CONFIG_VOLUME_NAME, config_map=k8s.ConfigMapVolumeSource(name=TOOL_CONFIG_MAP_NAME)),
         # The Pod's identity, and to nobody else: this volume is mounted by the egress sidecar
         # alone, so no token here is readable from the container an agent runs commands in.
         # `token` proves the Pod to the central proxy; each of the rest is the same account minted
         # for a destination's own audience, which the proxy substitutes where a rule names that
         # audience and which is useless at the proxy itself. All are bound to this Pod and rotated
         # by kubelet.
-        SandboxTemplateSpecPodTemplateSpecVolumes(
+        k8s.Volume(
             name="egress-token",
-            projected=SandboxTemplateSpecPodTemplateSpecVolumesProjected(
+            projected=k8s.ProjectedVolumeSource(
                 sources=[
-                    SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources(
-                        service_account_token=SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken(
+                    k8s.VolumeProjection(
+                        service_account_token=k8s.ServiceAccountTokenProjection(
                             audience=WORKLOAD_TOKEN_AUDIENCE, expiration_seconds=600, path="token"
                         )
                     ),
                     *(
-                        SandboxTemplateSpecPodTemplateSpecVolumesProjectedSources(
-                            service_account_token=SandboxTemplateSpecPodTemplateSpecVolumesProjectedSourcesServiceAccountToken(
+                        k8s.VolumeProjection(
+                            service_account_token=k8s.ServiceAccountTokenProjection(
                                 audience=audience, expiration_seconds=600, path=file
                             )
                         )
@@ -338,48 +262,44 @@ def _egress_volumes(env: Environment) -> list[SandboxTemplateSpecPodTemplateSpec
 def pod_spec(
     env: Environment,
     *,
-    workload: SandboxTemplateSpecPodTemplateSpecContainers,
+    workload: k8s.Container,
     service_account_name: str | None,
-    workload_volumes: Sequence[SandboxTemplateSpecPodTemplateSpecVolumes] = (),
-    sidecar_env: Sequence[SandboxTemplateSpecPodTemplateSpecContainersEnv] = (),
-) -> SandboxTemplateSpecPodTemplateSpec:
+    workload_volumes: Sequence[k8s.Volume] = (),
+    sidecar_env: Sequence[k8s.EnvVar] = (),
+) -> k8s.PodSpec:
     """`workload` beside the egress sidecar, as uid 1000, with no ServiceAccount token in the Pod: the
     projected tokens are mounted by the sidecar alone, which is what keeps an account shared by
     several boxes out of the container a command runs in (agentplane/action_service/sandbox/README.md).
     `service_account_name` is the template's own; whoever creates a box from it may replace it.
     `workload_volumes` are Pod volumes the workload mounts beyond the egress path's own, and
     `sidecar_env` is the sidecar's environment beyond the egress path's own."""
-    return SandboxTemplateSpecPodTemplateSpec(
+    return k8s.PodSpec(
         # The workload first: with no default-container annotation, the first container is the one
         # `kubectl exec` and the sandbox Actions run a command in.
         containers=[workload, _egress_sidecar(env, sidecar_env)],
         automount_service_account_token=False,
-        image_pull_secrets=[SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=SECRET_NAME)],
+        image_pull_secrets=[k8s.LocalObjectReference(name=SECRET_NAME)],
         # With the rest of the namespace and with LiteLLM: a box's traffic through the egress proxy
         # and a runner's model calls both stay inside the zone.
         node_selector=({node_scheduling.ZONE_LABEL: env.app.runner_zone} if env.app.runner_zone is not None else None),
         service_account_name=service_account_name,
         termination_grace_period_seconds=60,
-        security_context=SandboxTemplateSpecPodTemplateSpecSecurityContext(
+        security_context=k8s.PodSecurityContext(
             run_as_non_root=True,
             run_as_user=1000,
             run_as_group=1000,
             fs_group=1000,
-            seccomp_profile=SandboxTemplateSpecPodTemplateSpecSecurityContextSeccompProfile(type="RuntimeDefault"),
+            seccomp_profile=k8s.SeccompProfile(type="RuntimeDefault"),
         ),
         volumes=[*_egress_volumes(env), *workload_volumes],
     )
 
 
-def render_pod_template(labels: Mapping[str, str], spec: SandboxTemplateSpecPodTemplateSpec) -> dict[str, Any]:
-    """`spec` under `labels`, as a PodTemplateSpec's Kubernetes JSON: an agent-sandbox SandboxTemplate in
-    a chart of its own renders the generated types, and only its Pod template is kept."""
-    rendered: dict[str, Any] = SandboxTemplate(
+def render_pod_template(labels: Mapping[str, str], spec: k8s.PodSpec) -> dict[str, Any]:
+    """`spec` under `labels`, as a PodTemplateSpec's Kubernetes JSON."""
+    rendered: dict[str, Any] = k8s.KubePodTemplate(
         Chart(App(), "pod-template"),
-        "sandboxtemplate",
-        metadata=ApiObjectMetadata(name="pod-template"),
-        pod_template=SandboxTemplateSpecPodTemplate(
-            metadata=SandboxTemplateSpecPodTemplateMetadata(labels=dict(labels)), spec=spec
-        ),
-    ).to_json()["spec"]["podTemplate"]
+        "podtemplate",
+        template=k8s.PodTemplateSpec(metadata=k8s.ObjectMeta(labels=dict(labels)), spec=spec),
+    ).to_json()["template"]
     return rendered

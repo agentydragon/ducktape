@@ -13,10 +13,8 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
-from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
-    SandboxTemplateSpecPodTemplateSpecContainersEnv,
-)
 from cdk8s import ApiObjectMetadata
+from cdk8s_plus_34 import k8s
 from constructs import Construct
 
 from agentplane.egress import sidecar
@@ -58,7 +56,7 @@ def routes(namespace: str) -> tuple[Route, ...]:
     return control(namespace), ingress(namespace)
 
 
-def sidecar_env(namespace: str) -> SandboxTemplateSpecPodTemplateSpecContainersEnv:
+def sidecar_env(namespace: str) -> k8s.EnvVar:
     """The sidecar's `platform_routes` setting, as its environment variable."""
     value = {
         route.name: PlatformRoute(
@@ -68,9 +66,7 @@ def sidecar_env(namespace: str) -> SandboxTemplateSpecPodTemplateSpecContainersE
         ).model_dump(mode="json")
         for route in routes(namespace)
     }
-    return SandboxTemplateSpecPodTemplateSpecContainersEnv(
-        name=env_name(sidecar.Settings, "platform_routes"), value=json.dumps(value)
-    )
+    return k8s.EnvVar(name=env_name(sidecar.Settings, "platform_routes"), value=json.dumps(value))
 
 
 def runner_args(namespace: str) -> list[str]:
