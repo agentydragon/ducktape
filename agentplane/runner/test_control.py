@@ -285,7 +285,7 @@ async def test_a_resume_the_runner_cannot_serve_is_refused(
     assert started == []
 
 
-async def test_a_seal_waits_for_the_admission_under_way_and_a_delivery_after_it_waits_for_the_seal(
+async def test_a_seal_waits_for_the_admission_under_way_and_a_delivery_after_it_is_refused(
     runner: Runner, dial: Callable[[], Awaitable[Service]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Holds the earlier command's admission until the Seal has arrived behind it.
@@ -319,7 +319,7 @@ async def test_a_seal_waits_for_the_admission_under_way_and_a_delivery_after_it_
         unblocked.set()
         admitted, sealed, refused = await asyncio.gather(before, sealing, after)
     assert admitted.admission.cursor <= {row.session_id: row.cursor for row in sealed.sessions}[RUNNING]
-    assert refused == grpc.StatusCode.FAILED_PRECONDITION
+    assert refused == grpc.StatusCode.ABORTED
 
 
 async def test_sealing_again_returns_the_same_cursors_and_opening_is_refused(
@@ -329,7 +329,10 @@ async def test_sealing_again_returns_the_same_cursors_and_opening_is_refused(
     first, second = await service.Seal(runner_pb2.SealRequest()), await service.Seal(runner_pb2.SealRequest())
     assert first == second
     assert {row.session_id for row in first.sessions} == {RUNNING, STOPPED, FAILED_SETUP}
-    assert await refusal(service.OpenSession(open_session("test-new-session"))) == grpc.StatusCode.FAILED_PRECONDITION
+    assert await refusal(service.OpenSession(open_session("test-new-session"))) == grpc.StatusCode.ABORTED
+    assert await refusal(service.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id=STOPPED))) == (
+        grpc.StatusCode.ABORTED
+    )
     assert not runner.sessions[RUNNING].running
     assert started == []
 

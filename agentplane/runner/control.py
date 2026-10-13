@@ -37,7 +37,7 @@ from agentplane.runner.runner import (
     build_attached,
     finish_command,
 )
-from agentplane.runner.session import Session
+from agentplane.runner.session import DRAINING_OPERATIONS, Session
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -58,10 +58,9 @@ _REFUSALS: tuple[tuple[type[Exception] | tuple[type[Exception], ...], grpc.Statu
     (SessionUnknownError, grpc.StatusCode.NOT_FOUND),
     ((SpecConflictError, InitializationConflictError, CommandConflictError), grpc.StatusCode.ALREADY_EXISTS),
     (InvalidRequestError, grpc.StatusCode.INVALID_ARGUMENT),
-    (
-        (SandboxSealedError, JournalSealedError, SetupFailedError, HarnessStoppedError, OpenError),
-        grpc.StatusCode.FAILED_PRECONDITION,
-    ),
+    # The Sandbox is tearing down: the same call succeeds once it resumes.
+    (SandboxSealedError, grpc.StatusCode.ABORTED),
+    ((JournalSealedError, SetupFailedError, HarnessStoppedError, OpenError), grpc.StatusCode.FAILED_PRECONDITION),
     # The state volume failed; a retry may find it working.
     ((OSError, SQLAlchemyError), grpc.StatusCode.UNAVAILABLE),
 )
@@ -88,6 +87,8 @@ async def _admit(runner: Runner, request: runner_control_pb2.DeliverCommandReque
     """Admit a delivered command and return the journal's entry for it. A command already journaled
     with the same payload is answered with its existing entry, so redelivery is safe."""
     command = request.command
+    # A delivery under way when the Seal arrived is admitted; the Seal waits for it.
+    in_lameduck = runner.lameduck
     if not command.command_id or command.WhichOneof("operation") is None:
         raise InvalidRequestError("command_id and operation required")
     session = await runner.stored_session(request.session_id)
@@ -95,6 +96,8 @@ async def _admit(runner: Runner, request: runner_control_pb2.DeliverCommandReque
         raise SessionUnknownError("no such session")
     stored = await session.journal.get(command.command_id)
     if stored is None:
+        if in_lameduck and command.WhichOneof("operation") not in DRAINING_OPERATIONS:
+            runner.refuse_work()
         if not session.running:
             raise HarnessStoppedError("the harness is not running")
         await finish_command(session.command(command))
@@ -129,7 +132,7 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
         self, request: runner_control_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.OpenSessionResponse:
         async with _refusals(context):
-            await self._after_seal()
+            self.runner.refuse_work()
             if not request.HasField("spec"):
                 raise InvalidRequestError("spec is required")
             setup_script = request.setup_script if request.HasField("setup_script") else None
@@ -141,7 +144,7 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
         self, request: runner_control_pb2.ResumeSessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.ResumeSessionResponse:
         async with _refusals(context):
-            await self._after_seal()
+            self.runner.refuse_work()
             session = await finish_command(self.runner.resume(request.session_id))
             return runner_control_pb2.ResumeSessionResponse(attached=_attached(session))
 
@@ -153,6 +156,7 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
             return await self.runner.seal()
 
         async with _refusals(context):
+            self.runner.enter_lameduck()
             self._sealing = sealing = asyncio.ensure_future(seal(set(self._admissions)))
             return await finish_command(sealing)
 
@@ -171,7 +175,6 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
         self, request: runner_control_pb2.DeliverCommandRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.DeliverCommandResponse:
         async with _refusals(context):
-            await self._after_seal()
             admission = asyncio.ensure_future(_admit(self.runner, request))
             self._admissions.add(admission)
             admission.add_done_callback(self._admissions.discard)

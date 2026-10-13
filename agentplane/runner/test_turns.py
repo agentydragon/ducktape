@@ -11,7 +11,7 @@ import pytest_bazel
 from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
 from agentplane.runner.testing import events
 from agentplane.runner.testing.commands import change_model, change_reasoning_effort, interrupt_turn, submit_input
-from agentplane.runner.testing.driver import RunnerDriver, SessionFollow
+from agentplane.runner.testing.driver import RunnerDriver, SessionFollow, SessionSealedError
 from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -390,6 +390,7 @@ async def test_interrupt_ends_the_turn_as_interrupted(
     done = await session.until(events.turn_completed)
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
     assert done.event.turn_completed.interrupted_by_command_id == "interrupt-1"
+    assert not done.event.turn_completed.ended_by_teardown
     assert not events.of_kind(session.seen, "item_completed")
 
     await submit_input(session, "input-2", "Reply with exactly: AFTER_INTERRUPT_OK")
@@ -398,6 +399,25 @@ async def test_interrupt_ends_the_turn_as_interrupted(
     await model.reply(request, Text("AFTER_INTERRUPT_OK"))
     done = await session.until(events.turn_completed)
     assert done.event.turn_completed.status == event_pb2.TURN_STATUS_COMPLETED
+
+
+async def test_a_seal_interrupts_the_active_turn_and_records_that_teardown_ended_it(
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
+) -> None:
+    session = await driver.attach("seal-interrupt-1", spec=spec)
+    await submit_input(session, "input-1", "Wait; do not answer early.")
+    await model.hold(await model.request())
+    await session.until(events.is_kind("harness_user_message_confirmed"))
+
+    await driver.seal()
+    with pytest.raises(SessionSealedError):
+        await session.until(lambda _: False)
+
+    (done,) = events.of_kind(session.seen, "turn_completed")
+    assert done.event.turn_completed.status == event_pb2.TURN_STATUS_INTERRUPTED
+    assert done.event.turn_completed.ended_by_teardown
+    assert not done.event.turn_completed.interrupted_by_command_id
+    assert events.of_kind(session.seen, "harness_exited")[-1].cursor > done.cursor
 
 
 async def _interrupt_and_reconcile(session: SessionFollow) -> event_pb2.ConversationReconciled:

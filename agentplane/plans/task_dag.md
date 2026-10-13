@@ -709,7 +709,6 @@ flowchart TD
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
     INCARNATION_UID_REQUIRED[Blocked: the runner rejects a Welcome without the incarnation UID]
-    QUIESCE_INTERRUPT[Candidate: refuse at entry and interrupt turns before sealing]
     RUNNER_FACTS_ON_LEASE[Candidate: the runner publishes stage, busy and boot facts on the connection Lease]
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
@@ -753,8 +752,6 @@ flowchart TD
     RUNNER_FACTS_ON_LEASE --> SANDBOX_IDLE_EXPIRY
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
     SEAL_RENAME -. rename before the next sealing node lands .-> QUIESCE_WITHOUT_POLLING
-    QUIESCE_INTERRUPT -. interrupt precedes the seal .-> QUIESCE_WITHOUT_POLLING
-    QUIESCE_INTERRUPT --> DISPATCHER_WAKE_ON_SEND
     RUNNER_FACTS_ON_LEASE -. carries the boot result .-> BOOTSTRAP_PROGRESS_CONTRACT
     DISPATCHER_CORE --> DISPATCHER_SESSION_CREATE
     BOOTSTRAP_PROGRESS_CONTRACT -. Ready may then include the bootstrap .-> DISPATCHER_SESSION_CREATE
@@ -774,7 +771,6 @@ flowchart TD
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
     K3S_LIFECYCLE_SUITE[Candidate: k3s lifecycle integration suite]
     SEAL_RENAME -. quiesce assertions .-> K3S_LIFECYCLE_SUITE
-    QUIESCE_INTERRUPT -. quiesce assertions .-> K3S_LIFECYCLE_SUITE
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: the Sandbox bootstrap runs when the runner starts, section 6] -. Ready implies bootstrapped .-> K3S_LIFECYCLE_SUITE
 ```
 
@@ -797,7 +793,7 @@ connects. A command held only while the sender waits is lost if the sender goes 
 shared k3s environment fixture on a BuildBuddy action (`agentplane/x/k3s_rbe_spike`), one test per
 flow, no LLM: create, bootstrap, suspend, resume, quiesce and delete, about 15 minutes on RBE. The
 flows that work today (create, suspend, resume, delete, bootstrap) can land first. The quiesce
-assertions wait for `SEAL_RENAME` and `QUIESCE_INTERRUPT`, and the assertion that `Ready` implies a
+assertions wait for `SEAL_RENAME`, and the assertion that `Ready` implies a
 finished bootstrap for `BOOTSTRAP_PROGRESS_CONTRACT`. The disposable-environment lane owns the
 fixture. Tests that need ClusterIP Services, KubeVirt or Cilium stay elsewhere
 (`ISOLATED_ACCEPTANCE_CI`).
@@ -966,16 +962,6 @@ every environment, and in the VM guest's runner wheel pin.** Removes the missing
 adoption (marked by its `CLEANUP` tombstone) goes. Pin ordering is not relied on before this; afterwards a
 runner too old to know the field cannot meet a gateway that no longer sends it.
 
-### `QUIESCE_INTERRUPT` — refuse at entry and interrupt turns before sealing
-
-**Candidate.** The runner refuses new and resumed Sessions at once but still admits commands to a
-Session whose journal is not yet sealed, and it stops a turn rather than interrupting it. Inside
-the one seal operation: refuse everything but draining operations from the start, with a distinct
-code a sender reads as "retry after resume"; interrupt active turns through the command protocol,
-wait up to a deadline, then stop the harnesses; record in history that teardown ended the turn, so
-it reads differently from a user's interrupt. Nothing is live, since the sealer flags are not in
-the manifests. Readers of the new code (the Session Dispatcher) land after it.
-
 ### `RUNNER_FACTS_ON_LEASE` — the runner publishes stage, busy and boot facts on the connection Lease
 
 **Candidate; the Lease already carries the incarnation UID.** The one
@@ -1066,10 +1052,10 @@ its own record is authoritative.
 
 ### `DISPATCHER_WAKE_ON_SEND` — a send wakes a suspended Sandbox
 
-**Blocked on `DISPATCHER_CORE`, `SESSION_REVIVE` and `QUIESCE_INTERRUPT`.** A message for a suspended Sandbox's
+**Blocked on `DISPATCHER_CORE` and `SESSION_REVIVE`.** A message for a suspended Sandbox's
 Session resumes the Sandbox through the Sandbox Service, then delivers once `Ready` holds for the new
 incarnation, keying every attempt to the incarnation UID; a delivery refused by a sealing runner
-with the retryable code is redelivered after the resume. Which senders may wake: a user message and
+with `ABORTED` (the gateway flattens runner codes it does not list to `FAILED_PRECONDITION`, so it forwards this one) is redelivered after the resume. Which senders may wake: a user message and
 a notification, not an agent's message unless `AGENT_MESSAGE_RECEPTION` decides so. `InterruptTurn` and
 `StopRunnerSession` never wake a Sandbox; they are no-ops on a suspended one. Also here:
 rate limits and per-sender quotas, since a resume starts a Pod or VM and every harness; resuming

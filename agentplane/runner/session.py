@@ -33,6 +33,9 @@ logger = logging.getLogger(__name__)
 # Shutdown interrupts an active turn and gives the harness this long to report its end.
 _INTERRUPT_GRACE_S = 15
 
+# Commands a sealing Session still admits and runs: they end work rather than start it.
+DRAINING_OPERATIONS = frozenset({"interrupt_turn", "stop_runner_session"})
+
 
 class HarnessGoneError(RuntimeError):
     """The harness ended before a frame could be written to it, or while its response was awaited."""
@@ -88,6 +91,7 @@ class Session:
         self._stopping = False
         # Set under the session lock, so no harness starts once sealing has begun.
         self._sealing = journal.sealed_cursor is not None
+        self._tearing_down = False
         self._lock = asyncio.Lock()
         self._shutdown_lock = asyncio.Lock()
         self.setup_state = (
@@ -317,7 +321,7 @@ class Session:
             return
         self._scheduled_commands.add(command_id)
         operation = command.WhichOneof("operation")
-        if operation in {"interrupt_turn", "stop_runner_session"}:
+        if operation in DRAINING_OPERATIONS:
             self._track_dispatch(
                 asyncio.create_task(self._dispatch(command), name=f"{self.session_id}-{command_id}-control")
             )
@@ -350,6 +354,9 @@ class Session:
         if self.adapter is None or not self.running:
             return
         operation = command.WhichOneof("operation")
+        if self._sealing and operation not in DRAINING_OPERATIONS:
+            # Left pending: a resumed Sandbox's runner dispatches it.
+            return
         if operation == "submit_input":
             text = command.submit_input.text
             if not text:
@@ -532,11 +539,13 @@ class Session:
         self, turn_id: str, status: event_pb2.TurnStatus, error: str = "", *, sources: Sequence[int]
     ) -> None:
         interrupt_command_id = self._interrupt_commands.pop(turn_id, "")
+        interrupted = status == event_pb2.TURN_STATUS_INTERRUPTED
         observation = event_pb2.TurnCompleted(
             turn_id=turn_id,
             status=status,
             error=error,
-            interrupted_by_command_id=(interrupt_command_id if status == event_pb2.TURN_STATUS_INTERRUPTED else ""),
+            interrupted_by_command_id=interrupt_command_id if interrupted else "",
+            ended_by_teardown=interrupted and self._tearing_down and not interrupt_command_id,
         )
         await self.emit(
             observation,
@@ -710,9 +719,12 @@ class Session:
             raise
 
     async def seal(self) -> int:
-        """Sandbox teardown: stop setup and the harness, then make the journal final at its cursor."""
+        """Sandbox teardown: interrupt the active turn, stop setup and the harness, then make the journal
+        final at its cursor."""
         async with self._lock:
             self._sealing = True
+            self._tearing_down = True
+        await self._shutdown()
         await self.stop()
         return await self.journal.seal()
 
