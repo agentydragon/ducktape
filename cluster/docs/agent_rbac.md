@@ -152,6 +152,8 @@ every sandbox it stamps through the sandbox Action group runs as it
   and public-coder VolSync status Roles used by public coder and Haku.
 - `agentplane-testing-operator` in **agentplane-testing**, including Sandbox lifecycle, read-only KubeVirt VM/VMI/DataVolume views,
   pod exec, ActionPolicy writes, and testing app-token minting.
+- `get`/`list` on Agentplane `sandboxes` in **agentplane-staging** (`claude-ai-sandbox-reader`),
+  so a read-only check needs no approval.
 - `get` on two explicitly named Secrets: `agentplane-staging/coinbase-api-credentials`
   (the view-only Coinbase CDP key) and
   `public-coder-agent/agentplane-testing-acceptance-operator` (the testing login).

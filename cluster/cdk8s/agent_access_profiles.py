@@ -117,6 +117,11 @@ def catalog() -> dict[str, KubernetesGrant]:
             namespace="agentplane-staging",
             role_ref=RoleRef(kind="Role", name="claude-ai-coinbase-reader"),
         ),
+        "agentplane-sandbox-read": RoleBindingGrant(
+            kind="RoleBinding",
+            namespace="agentplane-staging",
+            role_ref=RoleRef(kind="Role", name="claude-ai-sandbox-reader"),
+        ),
         "haku-console-metadata": RoleBindingGrant(
             kind="RoleBinding",
             namespace="haku-console",
@@ -191,6 +196,7 @@ STATIC_GRANTS = {
     # fails cluster/validation's test_legacy_agentplane_accounts_are_not_haku_profile_aliases.
     "claude-ai": (
         *TESTING_ACCESS,
+        "agentplane-sandbox-read",
         "haku-console-metadata",
         "clickhouse-diagnostics",
         "public-coder-agent-reader",

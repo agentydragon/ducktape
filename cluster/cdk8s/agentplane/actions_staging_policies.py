@@ -27,6 +27,7 @@ from external_secrets_crds.io.external_secrets import (
 
 from agentplane.action_service.policies.resources import CALLER_LABEL, PolicySetSpec, parse_action_rule
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
+from agentplane.crd_group import GROUP
 from cluster.cdk8s import agent_access_profiles as access, external_creds
 from cluster.cdk8s.agentplane import app as app_component, dex, egress, testing
 from cluster.cdk8s.agentplane.egress import (
@@ -49,6 +50,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     HOME_ASSISTANT_READONLY_POLICY,
     PLAID_PGWEB_POLICY,
 )
+from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.providers.agentplane import policy_set
 from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
@@ -590,6 +592,23 @@ def add_staging_action_policies(scope: Construct) -> None:
             subject.imported(scope, f"coinbase-subject-{index}")
             for index, subject in enumerate(access.profile_subjects("coinbase-credentials"))
         ),
+    )
+    sandbox_reader = Role(
+        scope,
+        "role-claude-ai-sandbox-reader",
+        metadata=ApiObjectMetadata(name="claude-ai-sandbox-reader", namespace=_NAMESPACE),
+        rules=[RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"])],
+    )
+    RoleBinding(
+        scope,
+        "rolebinding-claude-ai-sandbox-reader",
+        metadata=ApiObjectMetadata(name="claude-ai-sandbox-reader", namespace=_NAMESPACE),
+        role=sandbox_reader,
+    ).add_subjects(
+        *(
+            subject.imported(scope, f"sandbox-reader-subject-{index}")
+            for index, subject in enumerate(access.profile_subjects("agentplane-sandbox-read"))
+        )
     )
     add_egress_policy(
         scope,

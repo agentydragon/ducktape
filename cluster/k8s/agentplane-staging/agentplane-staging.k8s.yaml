@@ -4056,6 +4056,12 @@ data:
         role_ref:
           kind: Role
           name: claude-ai-coinbase-reader
+      agentplane-sandbox-read:
+        kind: RoleBinding
+        namespace: agentplane-staging
+        role_ref:
+          kind: Role
+          name: claude-ai-sandbox-reader
       haku-console-metadata:
         kind: RoleBinding
         namespace: haku-console
@@ -8750,6 +8756,35 @@ subjects:
     kind: ServiceAccount
     name: haku
     namespace: haku-sandbox
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: claude-ai-sandbox-reader
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: claude-ai-sandbox-reader
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: claude-ai-sandbox-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: claude-ai
+    namespace: agentplane-staging
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: EgressPolicy

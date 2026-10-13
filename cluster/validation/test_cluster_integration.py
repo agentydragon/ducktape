@@ -502,6 +502,7 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
                 "coinbase-credentials",
                 "agentplane-testing-operator",
                 "agentplane-testing-login",
+                "agentplane-sandbox-read",
                 "haku-console-metadata",
                 "clickhouse-diagnostics",
                 "public-coder-agent-reader",
