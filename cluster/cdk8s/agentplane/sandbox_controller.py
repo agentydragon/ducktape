@@ -93,9 +93,10 @@ class SandboxController(Construct):
                     resources=[custom_resource(_GROUP, "policybindings")],
                     verbs=["get", "list", "watch", "create", "update", "delete"],
                 ),
-                # Leader election.
+                # Leader election, and reading the Runner Gateway's runner connection Leases.
                 RolePolicyRule(
-                    resources=[custom_resource("coordination.k8s.io", "leases")], verbs=["get", "create", "update"]
+                    resources=[custom_resource("coordination.k8s.io", "leases")],
+                    verbs=["get", "list", "watch", "create", "update"],
                 ),
                 RolePolicyRule(resources=[custom_resource("", "events")], verbs=["create", "patch"]),
             ],

@@ -39,7 +39,9 @@ bb run //agentplane/sandbox_controller/cmd:sandbox-controller -- --namespace=<na
 ```
 
 Where the cluster serves KubeVirt's API it watches VirtualMachines and VMIs; where not, VM Sandboxes
-stay unready (`KubeVirtMissing`) and Pod Sandboxes are unaffected. It uses the
+stay unready (`KubeVirtMissing`) and Pod Sandboxes are unaffected. It reads the Runner Gateway's
+runner connection Leases (`<sandbox>-runner`) to tell an incarnation whose runner connected from one
+that cannot. It uses the
 in-cluster config or `KUBECONFIG`, serves metrics on `:8080` and `/healthz`/`/readyz`
 on `:8081`, and replicas elect a leader by a Lease in the namespace.
 

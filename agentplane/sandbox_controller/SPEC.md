@@ -22,9 +22,11 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   Sandbox is running is replaced by a new incarnation on the same PVC.
 - Clearing `spec.running` deletes the Pod.
 - Each incarnation reads `spec.template` and the template as they are when it starts. Editing
-  either never changes a running Pod or VM, its kind included. One exception: a Pod whose
-  container is in `CrashLoopBackOff` is deleted, and so replaced, once the template renders a
-  different spec from the one it was created with.
+  either never changes a running Pod or VM, its kind included. One exception: an incarnation
+  whose runner has not connected, because it was created from a template since replaced, is
+  restarted from the current one: at once for a Pod in `CrashLoopBackOff`, otherwise after its
+  containers have run for five minutes. It is restarted, not marked sealed; the new runner seals
+  as usual.
 - A template that does not exist, sets neither or both kinds, or defines the state volume itself,
   starts nothing.
 

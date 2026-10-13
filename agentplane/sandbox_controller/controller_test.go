@@ -3,6 +3,7 @@ package sandboxcontroller
 import (
 	"context"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -79,7 +80,7 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 	tracker := clienttesting.NewObjectTracker(scheme, serializer.NewCodecFactory(scheme).UniversalDecoder())
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjectTracker(tracker).WithObjects(append(objects, sandbox)...).
 		WithStatusSubresource(&Sandbox{}, &kubevirtv1.VirtualMachineInstance{}).Build()
-	return &Reconciler{Client: c, KubeVirt: true}, c
+	return &Reconciler{Client: c, KubeVirt: true, Now: time.Now}, c
 }
 
 func reconcileOnce(t *testing.T, r *Reconciler) {

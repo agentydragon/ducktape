@@ -78,7 +78,7 @@ func (r *Reconciler) startVM(ctx context.Context, sandbox *Sandbox, w workload, 
 		return w, blocked, nil
 	}
 	if w.vm != nil {
-		w.vm.Labels, w.vm.Spec = vm.Labels, vm.Spec
+		w.vm.Labels, w.vm.Annotations, w.vm.Spec = vm.Labels, vm.Annotations, vm.Spec
 		return w, nil, r.Update(ctx, w.vm)
 	}
 	if err := controllerutil.SetControllerReference(sandbox, vm, r.Scheme()); err != nil {
@@ -140,7 +140,9 @@ func renderVM(sandbox *Sandbox, template *SandboxTemplate) (*kubevirtv1.VirtualM
 	spec.Template.ObjectMeta.Labels = withSandboxLabel(spec.Template.ObjectMeta.Labels, sandbox)
 	always := kubevirtv1.RunStrategyAlways
 	spec.Running, spec.RunStrategy = nil, &always
-	return &kubevirtv1.VirtualMachine{ObjectMeta: owned(sandbox), Spec: *spec}, nil
+	meta := owned(sandbox)
+	meta.Annotations = map[string]string{SpecHashAnnotation: specHash(spec)}
+	return &kubevirtv1.VirtualMachine{ObjectMeta: meta, Spec: *spec}, nil
 }
 
 func vmCondition(condition *metav1.Condition, sandbox *Sandbox, w workload) {

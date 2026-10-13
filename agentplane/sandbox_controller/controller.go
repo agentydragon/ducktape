@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
@@ -38,9 +39,9 @@ const (
 	SandboxUIDAnnotation = "agentplane.allegedly.works/sandbox-uid"
 	// Seals a deleted Sandbox's Sessions, then deletes its Pod and, once that is gone, its state PVC.
 	StateVolumeFinalizer = "agentplane.allegedly.works/state-volume"
-	// On the Pod: a hash of the spec rendered from the template, so a crash-looping Pod can be told
-	// from the current template's.
-	PodSpecHashAnnotation = "agentplane.allegedly.works/pod-spec-hash"
+	// On the Pod or the VirtualMachine: a hash of the spec rendered from the template, so an
+	// incarnation of a template since replaced can be told from the current one's.
+	SpecHashAnnotation = "agentplane.allegedly.works/spec-hash"
 
 	templateIndex = "spec.template"
 )
@@ -54,6 +55,7 @@ type Reconciler struct {
 	// Whether the cluster serves KubeVirt's API. Without it VM Sandboxes stay unready and Pod
 	// Sandboxes are unaffected.
 	KubeVirt bool
+	Now      func() time.Time
 }
 
 // StateVolumeName is the Sandbox's state PVC.
@@ -74,6 +76,8 @@ type workload struct {
 	vm       *kubevirtv1.VirtualMachine
 	vmi      *kubevirtv1.VirtualMachineInstance
 	launcher *corev1.Pod
+	// When to look at the incarnation again, though no event may come by then; zero for never.
+	recheck time.Duration
 }
 
 // incarnation is the Pod the runner runs in, if any.
@@ -101,7 +105,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		if err != nil || blocked == nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{}, r.updateStatus(ctx, &sandbox, w, blocked)
+		return ctrl.Result{RequeueAfter: w.recheck}, r.updateStatus(ctx, &sandbox, w, blocked)
 	}
 	if controllerutil.AddFinalizer(&sandbox, StateVolumeFinalizer) {
 		if err := r.Update(ctx, &sandbox); err != nil {
@@ -126,7 +130,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 			return ctrl.Result{}, err
 		}
 	}
-	return ctrl.Result{}, r.updateStatus(ctx, &sandbox, w, blocked)
+	return ctrl.Result{RequeueAfter: w.recheck}, r.updateStatus(ctx, &sandbox, w, blocked)
 }
 
 func (r *Reconciler) workload(ctx context.Context, sandbox *Sandbox) (workload, error) {
@@ -296,22 +300,12 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 			}
 			return w, nil, nil
 		}
-		// A template change otherwise applies at the next start, but a Pod whose container keeps
-		// crashing serves nothing and nothing restarts it, so one rendered from a template since
-		// replaced is deleted to start from the current one.
-		if crashLooping(w.pod) {
-			stale, err := r.renderedFromOtherSpec(ctx, sandbox, w.pod)
-			if err != nil || !stale {
-				return w, nil, err
-			}
-			return w, nil, r.deleteIfLive(ctx, w.pod)
-		}
-		return w, nil, nil
+		return r.replaceIfStale(ctx, sandbox, w)
 	}
 	// KubeVirt replaces a running VM's VMI that ends. A stopped VM's last VMI still stopping, or a VM
 	// being deleted, holds the next start until its deletion event.
 	if (w.vm != nil && (vmRunning(w.vm) || !w.vm.DeletionTimestamp.IsZero())) || w.vmi != nil {
-		return w, nil, nil
+		return r.replaceIfStale(ctx, sandbox, w)
 	}
 	if gate != nil {
 		return w, gate, nil
@@ -352,27 +346,10 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 	return w, nil, nil
 }
 
-func crashLooping(pod *corev1.Pod) bool {
-	return slices.ContainsFunc(pod.Status.ContainerStatuses, func(status corev1.ContainerStatus) bool {
-		return status.State.Waiting != nil && status.State.Waiting.Reason == "CrashLoopBackOff"
-	})
-}
-
-// renderedFromOtherSpec is whether the Pod's spec differs from what the Sandbox's template renders
-// now. A missing or invalid template is not a difference: the Pod stays until one can replace it.
-func (r *Reconciler) renderedFromOtherSpec(ctx context.Context, sandbox *Sandbox, pod *corev1.Pod) (bool, error) {
-	template, _, err := r.template(ctx, sandbox)
-	if template == nil || template.Spec.Pod == nil {
-		return false, err
-	}
-	current, blocked := render(sandbox, template)
-	return blocked == nil && pod.Annotations[PodSpecHashAnnotation] != current.Annotations[PodSpecHashAnnotation], nil
-}
-
-func specHash(spec *corev1.PodSpec) string {
+func specHash(spec any) string {
 	encoded, err := json.Marshal(spec)
 	if err != nil {
-		panic(err) // A PodSpec always marshals.
+		panic(err) // A rendered spec always marshals.
 	}
 	sum := sha256.Sum256(encoded)
 	return hex.EncodeToString(sum[:8])
@@ -400,7 +377,7 @@ func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready)
 	if annotations == nil {
 		annotations = map[string]string{}
 	}
-	annotations[PodSpecHashAnnotation] = specHash(spec)
+	annotations[SpecHashAnnotation] = specHash(spec)
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        sandbox.Name,

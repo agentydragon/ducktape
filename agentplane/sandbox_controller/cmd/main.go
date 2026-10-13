@@ -5,7 +5,9 @@ import (
 	"errors"
 	"flag"
 	"os"
+	"time"
 
+	coordinationv1 "k8s.io/api/coordination/v1"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/labels"
@@ -61,6 +63,11 @@ func run(namespace, metricsAddress, probeAddress string) error {
 		return err
 	}
 	ours := labels.NewSelector().Add(*labelled)
+	connection, err := labels.NewRequirement(sandboxcontroller.RunnerConnectionLabel, selection.Equals, []string{"true"})
+	if err != nil {
+		return err
+	}
+	connections := labels.NewSelector().Add(*connection)
 	config := ctrl.GetConfigOrDie()
 	kubeVirt, err := servesKubeVirt(config)
 	if err != nil {
@@ -73,6 +80,8 @@ func run(namespace, metricsAddress, probeAddress string) error {
 		&corev1.PersistentVolumeClaim{}:   {Label: ours},
 		&corev1.ServiceAccount{}:          {Label: ours},
 		&policycontroller.PolicyBinding{}: {Label: ours},
+		// Only the Runner Gateway's connection Leases, not the leader election's.
+		&coordinationv1.Lease{}: {Label: connections},
 	}
 	if kubeVirt {
 		byObject[&kubevirtv1.VirtualMachine{}] = cache.ByObject{Label: ours}
@@ -96,7 +105,7 @@ func run(namespace, metricsAddress, probeAddress string) error {
 	if err != nil {
 		return err
 	}
-	if err := (&sandboxcontroller.Reconciler{Client: mgr.GetClient(), KubeVirt: kubeVirt}).SetupWithManager(mgr); err != nil {
+	if err := (&sandboxcontroller.Reconciler{Client: mgr.GetClient(), KubeVirt: kubeVirt, Now: time.Now}).SetupWithManager(mgr); err != nil {
 		return err
 	}
 	if err := mgr.AddHealthzCheck("ping", healthz.Ping); err != nil {
