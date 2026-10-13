@@ -209,8 +209,8 @@ func TestSandboxWhoseRunnerNeverConnectedIsNotReady(t *testing.T) {
 	if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "NeverConnected" {
 		t.Errorf("Ready = %s/%s, want False/NeverConnected", got.Status, got.Reason)
 	}
-	if result.RequeueAfter != runnerConnectPoll {
-		t.Errorf("requeue = %s, want %s to look for the runner again", result.RequeueAfter, runnerConnectPoll)
+	if result.RequeueAfter != 0 {
+		t.Errorf("requeue = %s, want none: the Lease watch enqueues when the runner connects", result.RequeueAfter)
 	}
 }
 

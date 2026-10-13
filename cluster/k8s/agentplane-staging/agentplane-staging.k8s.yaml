@@ -5346,6 +5346,8 @@ rules:
       - leases
     verbs:
       - get
+      - list
+      - watch
       - create
       - update
   - apiGroups:

@@ -59,9 +59,9 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   proxy, repeated every few seconds until every seal is flushed; the controller never holds a runner
   connection. A Sandbox with no connection Lease, the Runner Gateway's record that a runner ever
   connected, has nothing to seal and is deleted without `SessionsSealed`.
-- **`RunnerConnected` polls the Lease.** The Lease is read uncached and not watched, so a runner that
-  has not connected is looked for every few seconds and a live connection is rechecked when it
-  would lapse. Watching it needs list and watch on Leases, which the Role lacks.
+- **`RunnerConnected` watches the Lease.** A new connection or a different runner Pod enqueues the
+  Sandbox; renewals do not. Time is not an event, so the moment a live connection would lapse, and a
+  lapsed one, are requeued.
 - **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Sealing`. To give up on the seal,
   remove the finalizer by hand: the PVC is owned, so it goes with the Sandbox, and the Pod or VM
   with it.

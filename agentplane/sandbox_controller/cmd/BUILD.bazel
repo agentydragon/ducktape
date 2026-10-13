@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//agentplane/policy_controller",
         "//agentplane/sandbox_controller",
+        "@io_k8s_api//coordination/v1:coordination",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/labels",

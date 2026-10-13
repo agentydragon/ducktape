@@ -17,9 +17,12 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/event"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
@@ -43,6 +46,8 @@ const (
 	// On the Pod or the VirtualMachine and its VMI and virt-launcher Pod, the state PVC, the
 	// ServiceAccount and the PolicyBinding: the Sandbox they belong to.
 	SandboxLabel = "agentplane.allegedly.works/sandbox"
+	// On the Runner Gateway's Lease for each Sandbox: selects the connection Leases among the namespace's.
+	ConnectionLabel = "agentplane.allegedly.works/runner-connection"
 	// On the Runner Gateway's Lease for a Sandbox: the Pod UID of the runner that last connected.
 	PodUIDAnnotation = "agentplane.allegedly.works/pod-uid"
 	// Seals a deleted Sandbox's Sessions, then deletes its Pod or VM; the state PVC goes by garbage
@@ -56,8 +61,9 @@ const (
 	templateIndex = "spec.template"
 	// How soon a seal that failed or is not yet acknowledged is asked again.
 	sealRetry = 2 * time.Second
-	// How soon a runner that has not connected yet is looked for again; the Lease is not watched.
-	runnerConnectPoll = 5 * time.Second
+	// How soon a connection whose Lease has lapsed is looked at again: a renewal changes nothing the
+	// Lease watch enqueues on.
+	runnerLapsedPoll = 5 * time.Second
 	// How long past its Lease's expiry a runner still counts as connected. A Runner Gateway rollout
 	// drops every connection at once and the runners reconnect to the new replicas.
 	runnerDisconnectGrace = time.Minute
@@ -78,7 +84,8 @@ type Reconciler struct {
 	// CLEANUP(added 2026-10-13): Make Sealer and Leases required once the manifests pass the sealer
 	// flags in every environment and the Runner Gateway no longer sets SessionsSealed.
 	Sealer Sealer
-	// Reads the Lease the Runner Gateway writes for each connection, uncached.
+	// Reads the Lease the Runner Gateway writes for each connection, and, set up with a manager, watches
+	// them: a new connection, or a runner reconnecting, enqueues its Sandbox.
 	Leases client.Reader
 	// The current time, for the liveness of a connection Lease.
 	Now func() time.Time
@@ -584,8 +591,8 @@ func workloadReadyCondition(sandbox *Sandbox, running metav1.Condition, incarnat
 
 // runnerConnectedCondition is True while the Runner Gateway's Lease names this incarnation's Pod and
 // was renewed within its duration plus the grace, so a connection from an earlier incarnation never
-// counts and a brief drop does not. It also says when to look again, since no watch event ends the
-// wait: while the runner has not connected, and at the moment a live connection would lapse.
+// counts and a brief drop does not. It also says when to look again, since no watch event marks time:
+// the moment a live connection would lapse, and a lapsed one, which a renewal revives silently.
 func (r *Reconciler) runnerConnectedCondition(ctx context.Context, sandbox *Sandbox, workload metav1.Condition, incarnation *corev1.Pod) (metav1.Condition, time.Duration, error) {
 	condition := metav1.Condition{Type: RunnerConnected, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	if workload.Status != metav1.ConditionTrue {
@@ -598,15 +605,15 @@ func (r *Reconciler) runnerConnectedCondition(ctx context.Context, sandbox *Sand
 			return condition, 0, err
 		}
 		condition.Reason, condition.Message = "NeverConnected", "no runner has connected"
-		return condition, runnerConnectPoll, nil
+		return condition, 0, nil
 	}
 	if runner := lease.Annotations[PodUIDAnnotation]; runner == "" || runner != string(incarnation.UID) {
 		condition.Reason, condition.Message = "AwaitingRunner", fmt.Sprintf("the runner that connected last is not Pod %s's", incarnation.Name)
-		return condition, runnerConnectPoll, nil
+		return condition, 0, nil
 	}
 	if lease.Spec.RenewTime == nil || lease.Spec.LeaseDurationSeconds == nil {
 		condition.Reason, condition.Message = "ConnectionLost", "the connection Lease records no renewal"
-		return condition, runnerConnectPoll, nil
+		return condition, runnerLapsedPoll, nil
 	}
 	lapse := lease.Spec.RenewTime.Add(time.Duration(*lease.Spec.LeaseDurationSeconds)*time.Second + runnerDisconnectGrace)
 	if remaining := lapse.Sub(r.Now()); remaining > 0 {
@@ -615,7 +622,7 @@ func (r *Reconciler) runnerConnectedCondition(ctx context.Context, sandbox *Sand
 		return condition, remaining, nil
 	}
 	condition.Reason, condition.Message = "ConnectionLost", fmt.Sprintf("Pod %s's runner has not renewed its connection since %s", incarnation.Name, lease.Spec.RenewTime.Format(time.RFC3339))
-	return condition, runnerConnectPoll, nil
+	return condition, runnerLapsedPoll, nil
 }
 
 func podReady(pod *corev1.Pod) bool {
@@ -665,7 +672,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		}
 		return []reconcile.Request{{NamespacedName: types.NamespacedName{Namespace: obj.GetNamespace(), Name: name}}}
 	})
-	builder := ctrl.NewControllerManagedBy(mgr).
+	setup := ctrl.NewControllerManagedBy(mgr).
 		For(&Sandbox{}).
 		Owns(&corev1.ServiceAccount{}).
 		Owns(&corev1.ConfigMap{}).
@@ -674,8 +681,27 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.Pod{}, bySandboxLabel).
 		Watches(&corev1.PersistentVolumeClaim{}, bySandboxLabel).
 		Watches(&SandboxTemplate{}, byTemplate)
-	if r.KubeVirt {
-		builder = builder.Owns(&kubevirtv1.VirtualMachine{}).Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel)
+	if r.Leases != nil {
+		// A connection's Lease is the Sandbox's by owner reference. Renewals only move the renew time,
+		// so only a different runner Pod or a new connection enqueues.
+		setup = setup.Watches(&coordinationv1.Lease{},
+			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &Sandbox{}),
+			builder.WithPredicates(predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+				previous, current := e.ObjectOld.(*coordinationv1.Lease), e.ObjectNew.(*coordinationv1.Lease)
+				return previous.Annotations[PodUIDAnnotation] != current.Annotations[PodUIDAnnotation] ||
+					leaseTransitions(previous) != leaseTransitions(current)
+			}}))
 	}
-	return builder.Complete(r)
+	if r.KubeVirt {
+		setup = setup.Owns(&kubevirtv1.VirtualMachine{}).Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel)
+	}
+	return setup.Complete(r)
+}
+
+// leaseTransitions is how many connections the Runner Gateway has accepted for the Sandbox.
+func leaseTransitions(lease *coordinationv1.Lease) int32 {
+	if lease.Spec.LeaseTransitions == nil {
+		return 0
+	}
+	return *lease.Spec.LeaseTransitions
 }
