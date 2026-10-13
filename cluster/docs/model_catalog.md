@@ -84,6 +84,9 @@ still resume, receive commands, and show history. Explicit low-level session lau
 the native Claude adapter, credentials, and shared Anthropic/LiteLLM ingress remain.
 Direct local clients and Claude Code Web are unaffected.
 
+Testing is the exception: `TESTING_APP_MODELS.claude` offers the native Qwen 128K route so the
+Claude harness's acceptance cases run there.
+
 To restore the offerings, repopulate `STAGING_APP_MODELS.claude` and
 `TESTING_APP_MODELS.claude` in `cluster/cdk8s/model_selections.py`. Restoring Haku's
 Claude default is optional and separate: Haku's preset is defined in `staging_config.py`,

@@ -611,6 +611,8 @@ data:
         total_context_budget_tokens: 131072
       - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
         total_context_budget_tokens: 262144
+      - model: ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+        total_context_budget_tokens: 131072
 immutable: false
 ---
 apiVersion: apps/v1
@@ -3198,6 +3200,9 @@ data:
   config.yaml: |
     models:
       models:
+        - model: ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
+          reasoning_efforts: []
         - model: chatgpt/oai-responses/gpt-6-luna
           display_name: GPT-6 Luna
           reasoning_efforts:
@@ -3228,7 +3233,8 @@ data:
           display_name: Gemma 4 31B (128K)
           reasoning_efforts: []
       harnesses:
-        HARNESS_CLAUDE: []
+        HARNESS_CLAUDE:
+          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
         HARNESS_CODEX:
           - chatgpt/oai-responses/gpt-6-luna
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
