@@ -102,6 +102,21 @@ def plaid_spend_policy(chart: Chart) -> Kustomization:
     )
 
 
+def public_coder_agent_access(chart: Chart, directory: RenderedDirectory) -> Kustomization:
+    name = "public-coder-agent-access"
+    return flux_kustomization(
+        chart,
+        name,
+        directory,
+        wait=None,
+        deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
+        description=(
+            "The public-coder-agent namespace, which holds the parked OpenClaw instance's PVCs, and the Roles "
+            "and bindings that Haku and Agentplane Sandboxes still use against it."
+        ),
+    )
+
+
 def public_coder_agent_app(
     chart: Chart,
     artifact: ArtifactGeneratorSpecArtifacts,
@@ -117,6 +132,10 @@ def public_coder_agent_app(
         name,
         artifact,
         wait=None,
+        annotations={"ducktape.org/parked": "true"},
+        # The OpenClaw instance is parked; its PVCs and their data stay in the namespace that
+        # public-coder-agent-access owns. Unsuspend to revive it.
+        suspend=True,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
         decryption=SOPS_DECRYPTION,
         timeout="5m",

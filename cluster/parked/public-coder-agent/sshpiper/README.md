@@ -3,7 +3,7 @@
 A terminating SSH bastion between the OpenClaw Agent Pod and its devbox VM
 (<../devbox/>), running [sshpiper](https://github.com/tg123/sshpiper) with the `kubernetes`
 plugin. Routes are `Pipe` resources; the `sshpiper-crds` Kustomization applies the CRD
-(<../../../../cdk8s/sshpiper_crds/flux_kustomizations.py>).
+(<../../../cdk8s/sshpiper_crds/flux_kustomizations.py>).
 
 Same credential split as <../proxy/>, applied to SSH: the Agent authenticates here with a key
 that is worthless anywhere else, and this Pod holds the key that opens `coder@public-coder-devbox`.

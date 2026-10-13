@@ -1,7 +1,7 @@
 """Kubernetes resources for the public-coder-agent workload and its surrounding resources.
 
 The image tag is the placeholder "unset"; the hand-written
-cluster/k8s/agents/public-coder-agent/app/image-pins/kustomization.yaml overrides it at
+cluster/parked/public-coder-agent/app/image-pins/kustomization.yaml overrides it at
 `kustomize build` time via Flux's image-automation marker. The `ssh devbox` ConfigMap comes
 from the kustomization.yaml's configMapGenerator.
 """
@@ -28,7 +28,7 @@ from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.public_coder import (
@@ -878,11 +878,19 @@ def app_chart(app: App) -> Chart:
     _deployment(workload)
     _service(workload)
     _network_policies(workload)
-    _rbac(workload)
     return workload
 
 
+def rbac_chart(app: App) -> Chart:
+    """The Roles and bindings that Haku and Agentplane Sandboxes still read, and the kube-api-proxy ceiling."""
+    access = Chart(app, "rbac", disable_resource_name_hashes=True)
+    _rbac(access)
+    return access
+
+
+ACCESS_DIR = f"{GENERATED_ROOT}/agents/public-coder-agent/access"
+APP_DIR = f"{PARKED_ROOT}/public-coder-agent/app"
+
+
 def write_manifests(root: Path) -> None:
-    write_charts(
-        root, f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app", namespace_chart, chart, kubeconfig_chart, app_chart
-    )
+    write_charts(root, APP_DIR, chart, kubeconfig_chart, app_chart)

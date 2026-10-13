@@ -116,7 +116,7 @@ in
   virtualisation.diskSize = 50 * 1024;
 
   # The host key is persisted rather than regenerated per boot because sshpiper
-  # (cluster/k8s/agents/public-coder-agent/sshpiper) is the party that verifies this upstream, and
+  # (cluster/parked/public-coder-agent/sshpiper) is the party that verifies this upstream, and
   # its Pipe pins the key in `known_hosts_data`. A key that changes on every image update would
   # leave that pin permanently stale, and sshpiper's only alternative -- an empty known_hosts_data
   # -- means no upstream verification at all. Delivered as a guest disk, same as the two secrets
@@ -198,7 +198,7 @@ in
     shell = pkgs.bash;
     openssh.authorizedKeys.keys = [
       keys.publicCoderDevbox
-      # sshpiper's mapping key (cluster/k8s/agents/public-coder-agent/sshpiper). Authorized here
+      # sshpiper's mapping key (cluster/parked/public-coder-agent/sshpiper). Authorized here
       # and not for root: the piper re-originates the Agent's session as this account. Nothing
       # about the Pipe's own configuration is load-bearing for that.
       keys.publicCoderAgentSshpiper

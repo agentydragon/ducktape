@@ -8,7 +8,7 @@ because Flux had already rolled it onto an image carrying the (2) fix and its
 state had no legacy session store.
 
 Remaining public-coder cleanup:
-<../../../cluster/k8s/agents/public-coder-agent/TODO.md>.
+<../../../cluster/parked/public-coder-agent/TODO.md>.
 
 ## The shape of the trap
 

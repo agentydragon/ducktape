@@ -2475,7 +2475,7 @@ spec:
     - name: volsync
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/public-coder-agent/backup
+  path: ./cluster/parked/public-coder-agent/backup
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4055,7 +4055,26 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: The public-coder-agent namespace, which holds the parked OpenClaw instance's PVCs, and the Roles and bindings that Haku and Agentplane Sandboxes still use against it.
+  name: public-coder-agent-access
+  namespace: ducktape-flux
+spec:
+  deletionPolicy: Orphan
+  interval: 10m
+  path: ./cluster/generated/agents/public-coder-agent/access
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: ExternalArtifact
+    name: public-coder-agent-access
+    namespace: ducktape-flux
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: OpenClaw coder agent namespace, application, Iron proxy and SSH bastion; devbox and backups reconcile separately.
+    ducktape.org/parked: "true"
   name: public-coder-agent-app
   namespace: ducktape-flux
 spec:
@@ -4097,13 +4116,14 @@ spec:
       name: brave-search-api-key
       namespace: public-coder-agent
   interval: 10m
-  path: ./cluster/k8s/agents/public-coder-agent/app
+  path: ./cluster/parked/public-coder-agent/app
   prune: true
   retryInterval: 1m
   sourceRef:
     kind: ExternalArtifact
     name: public-coder-agent-app
     namespace: ducktape-flux
+  suspend: true
   timeout: 5m
 ---
 apiVersion: kustomize.toolkit.fluxcd.io/v1
@@ -4126,7 +4146,7 @@ spec:
     - name: external-secrets-operator
       namespace: ducktape-flux
   interval: 10m
-  path: ./cluster/k8s/agents/public-coder-agent/devbox
+  path: ./cluster/parked/public-coder-agent/devbox
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4749,7 +4769,7 @@ metadata:
   namespace: ducktape-flux
 spec:
   dependsOn:
-    - name: public-coder-agent-app
+    - name: public-coder-agent-access
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/public-coder-agent

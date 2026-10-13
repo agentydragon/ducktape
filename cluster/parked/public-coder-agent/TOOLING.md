@@ -180,7 +180,7 @@ direct-reader diagnostics.
 ### SSH to the devbox
 
 `ssh devbox` reaches the dedicated devbox VM as the unprivileged `coder` account through a
-terminating bastion (`cluster/k8s/agents/public-coder-agent/sshpiper`). It is a separate route from
+terminating bastion (`cluster/parked/public-coder-agent/sshpiper`). It is a separate route from
 the Haku Kubernetes authorization proxy.
 
 Use it for watching a long build as it runs, interactive sessions, and `scp` (`rsync` is in neither

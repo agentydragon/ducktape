@@ -349,6 +349,10 @@ Non-ducktape-owned manifests stay under `cluster/parked/<name>/`; ducktape-owned
 manifests stay with their project under `deploy/` (see <../AGENTS.md> § "Parked
 (non-ducktape-owned) application manifests").
 
+- **OpenClaw (public-coder-agent)**: `cluster/parked/public-coder-agent/` — the instance
+  is off with its PVCs and data kept; the app, devbox and backup Kustomizations stay
+  suspended. `public-coder-agent-access` stays active for the Namespace and the Roles
+  Haku and Agentplane Sandboxes read.
 - **postscanmail-mcp**: `cluster/parked/postscanmail-mcp/` — decommissioned; its
   ducktape-owned source (`x/postscanmail_mcp_server/`) stays live and unparked, only
   the k8s manifests moved. Its Flux Kustomization is removed from the active bundle;

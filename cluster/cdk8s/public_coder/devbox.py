@@ -36,7 +36,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 from cluster.cdk8s import external_creds, node_scheduling, service_ref
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
 
@@ -49,7 +49,7 @@ SSH = service_ref.ServiceRef(
     port=service_ref.Port(name="ssh", number=22),
     pods=service_ref.Pods(namespace=NAMESPACE, labels=tuple(domain_labels(VM_NAME).items())),
 )
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/devbox"
+OUTPUT_DIR = f"{PARKED_ROOT}/public-coder-agent/devbox"
 _SERVICE_LABELS = {"app.kubernetes.io/name": VM_NAME}
 _BAZEL_CACHE_CLAIM = "public-coder-devbox-bazel-cache"
 _BUILDBUDDY_API_KEY = "buildbuddy-api-key"
@@ -214,7 +214,7 @@ def public_coder_agent_devbox(
         name,
         directory,
         annotations={"ducktape.org/parked": "true"},
-        # Parked: OpenClaw is off; PVCs and data stay (cluster/k8s/agents/public-coder-agent/README.md).
+        # Parked: OpenClaw is off; PVCs and data stay (cluster/parked/public-coder-agent/README.md).
         suspend=True,
         # A deliberately halted VM is not Ready. Do not block Flux on guest readiness.
         wait=False,

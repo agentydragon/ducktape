@@ -42,7 +42,7 @@ automation, on that same process — see
 <../../docs/personal_agents/README.md> § "Rough edges". Defensible because
 the build is ours, but it should be a decision rather than a side effect of how the
 temporary fork was packaged. Fold it into the return to the official image that
-<../../cluster/k8s/agents/public-coder-agent/README.md> already schedules for
+<../../cluster/parked/public-coder-agent/README.md> already schedules for
 iron-proxy v0.50.0.
 
 ## Cost a Kubernetes `WorkerProvider` — the live candidate for W2

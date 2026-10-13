@@ -17,7 +17,7 @@ Evidence for every choice here, including a real agent opening a pull request fr
 configuration: docs/personal_agents/findings/egress_and_tls.md F15-F18.
 
 The image tag is the placeholder "unset"; the hand-written
-cluster/k8s/agents/public-coder-agent/proxy/image-pins/kustomization.yaml overrides it at
+cluster/parked/public-coder-agent/proxy/image-pins/kustomization.yaml overrides it at
 `kustomize build` time via Flux's image-automation marker.
 """
 
@@ -40,7 +40,7 @@ from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import write_charts
 from cluster.cdk8s.haku import kube_api_proxy
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.public_coder import devbox as public_coder_devbox
@@ -48,7 +48,7 @@ from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "public-coder-agent-proxy"  # the chart's id and the Pods' `app.kubernetes.io/name` value
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/proxy"
+OUTPUT_DIR = f"{PARKED_ROOT}/public-coder-agent/proxy"
 NAMESPACE = "public-coder-agent"
 _CONFIG_DIR = "/etc/iron-proxy"
 _CONFIG_FILE = "iron.yaml"

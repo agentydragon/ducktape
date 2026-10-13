@@ -13,7 +13,7 @@ both:
   preload and tooling.
 - `public_coder_agent/devbox/` — the public-coder agent's separate NixOS
   build/test VM and containerDisk recipe; its Kubernetes manifests stay under
-  `cluster/k8s/agents/public-coder-agent/devbox/`.
+  `cluster/parked/public-coder-agent/devbox/`.
 
 Build either directly:
 

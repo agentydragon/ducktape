@@ -1,7 +1,7 @@
 """public-coder's access boundaries, across the charts that grant or carry them.
 
 The profile's RBAC is spread over the rbac-base, Haku console, ClickHouse diagnostics,
-ducktape-flux and public-coder app charts; its traffic over the app and its credential proxy.
+ducktape-flux and public-coder rbac charts; its traffic over the app and its credential proxy.
 The ClickHouse reader's hand-written Secret is checked in
 `//cluster/validation:test_public_coder_clickhouse_reader_contract`.
 """
@@ -65,6 +65,11 @@ def app_objects() -> list[dict[str, Any]]:
 
 
 @pytest.fixture(scope="module")
+def rbac_objects() -> list[dict[str, Any]]:
+    return _synth(public_coder_app.rbac_chart)
+
+
+@pytest.fixture(scope="module")
 def proxy_objects() -> list[dict[str, Any]]:
     return _synth(lambda app: public_coder_proxy.chart(app, aiquota_bearer=aiquota.PUBLIC_CODER_BEARER.secret_key))
 
@@ -81,7 +86,7 @@ def clickhouse_diagnostics_objects() -> list[dict[str, Any]]:
 
 def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
     console_objects: list[dict[str, Any]],
-    app_objects: list[dict[str, Any]],
+    rbac_objects: list[dict[str, Any]],
     clickhouse_diagnostics_objects: list[dict[str, Any]],
 ) -> None:
     """Configured public diagnostics do not widen secret or exec access."""
@@ -103,7 +108,7 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
     sources = {
         "clickhouse agent-diagnostics-rbac chart": clickhouse_diagnostics_objects,
         "haku-console chart": _named(console_objects, "agent-haku-console-metadata-reader"),
-        "public-coder-agent chart": _named(app_objects, "agent-public-coder-extended-diagnostics-reader"),
+        "public-coder-agent chart": _named(rbac_objects, "agent-public-coder-extended-diagnostics-reader"),
     }
     for source, objects in sources.items():
         role = _one(objects, "Role")
@@ -118,13 +123,13 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
     assert _subjects(haku_cluster_binding) >= _HAKU_SUBJECTS
 
 
-def test_agents_no_longer_restart_the_devbox(app_objects: list[dict[str, Any]]) -> None:
-    reader = _one(_named(app_objects, "public-coder-agent-reader"), "Role")
+def test_agents_no_longer_restart_the_devbox(rbac_objects: list[dict[str, Any]]) -> None:
+    reader = _one(_named(rbac_objects, "public-coder-agent-reader"), "Role")
     reader_vmi_rule = one(rule for rule in reader["rules"] if "virtualmachineinstances" in rule["resources"])
     assert reader_vmi_rule["verbs"] == _READ
     assert "delete" not in {verb for rule in reader["rules"] for verb in rule["verbs"]}
 
-    retired = _named(app_objects, "public-coder-agent-devbox-vmi-restart")
+    retired = _named(rbac_objects, "public-coder-agent-devbox-vmi-restart")
     # Existing managed Sandboxes retain a resolved reference to this Role. Keep
     # the reference readable, but revoke every permission and every static binding.
     assert not _one(retired, "Role").get("rules")
@@ -132,9 +137,9 @@ def test_agents_no_longer_restart_the_devbox(app_objects: list[dict[str, Any]]) 
 
 
 def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credential(
-    app_objects: list[dict[str, Any]], proxy_objects: list[dict[str, Any]]
+    app_objects: list[dict[str, Any]], rbac_objects: list[dict[str, Any]], proxy_objects: list[dict[str, Any]]
 ) -> None:
-    objects = _named(app_objects, "agentplane-testing-login-reader")
+    objects = _named(rbac_objects, "agentplane-testing-login-reader")
     role = _one(objects, "Role")
     binding = _one(objects, "RoleBinding")
     assert binding["roleRef"]["name"] == role["metadata"]["name"]

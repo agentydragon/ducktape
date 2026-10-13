@@ -11,15 +11,16 @@ The UI and dedicated devbox SSH endpoints are unavailable while paused.
 Keep the namespace and the existing Flux owners: state, diagnostics, SSH recordings,
 and devbox cache PVCs remain declared with unchanged names/specs. The VolSync backup's
 ReplicationSource is paused (`spec.paused`); its Restic repository and controller-owned
-cache PVC are kept. The `public-coder-agent-devbox` and `-backup` Flux owners are suspended
-and annotated `ducktape.org/parked`; their live objects stay as they are (VM halted, claims
-retained). `public-coder-agent-app` stays active: it owns the Namespace, whose labels the
-agent diagnostics RBAC reads, and its workloads are already at zero replicas. Do not delete
-any of them: the claims have reclaim policy Delete.
+cache PVC are kept. The `public-coder-agent-{app,devbox,backup}` Flux owners are suspended
+and annotated `ducktape.org/parked`, and their manifests live in this directory; their live
+objects stay as they are (workloads at zero replicas, VM halted, claims retained). The
+`public-coder-agent-access` owner (`cluster/generated/agents/public-coder-agent/access/`) stays
+active: it owns the Namespace and the Roles that Haku and Agentplane Sandboxes still read.
+Do not delete any of them: the claims have reclaim policy Delete.
 Halting the devbox discards its ephemeral root disk, as a normal VM restart does;
 the separate cache PVC is retained.
 
-To resume, unsuspend the devbox and backup Flux owners, restore the three replica counts, unpause the backup, restore the devbox run strategy, restore its
+To resume, unsuspend the app, devbox and backup Flux owners (move the directory back under `cluster/k8s` and drop the parked annotation, per `cluster/AGENTS.md`), restore the three replica counts, unpause the backup, restore the devbox run strategy, restore its
 image-restart opt-in/controller if desired, and restore Flux guest-readiness checks.
 The OpenClaw and devbox image workflows and their smoke script are parked in
 `cluster/parked/public-coder-agent/ci/`; move them back and let them publish fresh images
@@ -171,15 +172,15 @@ proxy environment handling.
   subtracted, and an operator-managed instance cannot be egress-confined. The
   cost is losing `autoUpdate` and the CRD ergonomics.
 - **Blueprint-managed SSO provider**, against the stated preference for
-  Terraform in <../../../docs/sso.md>. Every proxy provider is a blueprint and
+  Terraform in <../../docs/sso.md>. Every proxy provider is a blueprint and
   `embedded-outpost.yaml` owns outpost membership; a Terraform provider would
   split one object graph across two owners. Moves with the rest under issue #987.
-- **Temporary commit-built iron-proxy image.** <../../../images/iron-proxy/>
+- **Temporary commit-built iron-proxy image.** <../../images/iron-proxy/>
   and `.github/workflows/iron-proxy-image.yml` build upstream `v0.50.0`
   (`5bd11ab`), the first stable release with the HTTP/2/gRPC MITM support
   BuildBuddy needs, into the private Forgejo registry. Flux rolls the proxy to
   that image after it is published. Whether to return to the official image is
-  the pinning decision in <../../../../plans/personal_agents/TODO.md>. The image
+  the pinning decision in <../../../plans/personal_agents/TODO.md>. The image
   is shared with `haku-openclaw-spike-proxy`, so it is not owned
   here — it was first named for public-coder because this was its first consumer.
 - **`gateway.bind: lan`**, unlike the loopback-bound lab rig, because the outpost
@@ -201,7 +202,7 @@ proxy environment handling.
   agent runs as the harness and can inspect its process environment. For
   GitHub, that environment contains only the proxy placeholder; the real token
   remains in iron-proxy. That is the accepted cost of not using OpenShell — see
-  <../../../../docs/personal_agents/findings/openshell.md> F1 for why OpenShell was not
+  <../../../docs/personal_agents/findings/openshell.md> F1 for why OpenShell was not
   used.
 - **PVC capacity enforcement.** `local-path-ovh-hdd` does not enforce requested
   PVC sizes, so workspace growth can consume the worker disk beyond its claim.

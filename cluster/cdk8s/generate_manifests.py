@@ -1659,13 +1659,20 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
     )
+    public_coder_agent_access_artifact = artifact("public-coder-agent-access", public_coder_app.ACCESS_DIR)
+    public_coder_agent_access_kustomization = agents_flux_kustomizations.public_coder_agent_access(
+        flux_chart,
+        write_directory(
+            root, public_coder_agent_access_artifact, public_coder_app.namespace_chart, public_coder_app.rbac_chart
+        ),
+    )
     public_coder_agent_app_artifact = artifact(
         "public-coder-agent-app",
-        f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app",
+        public_coder_app.APP_DIR,
         public_coder_proxy.OUTPUT_DIR,
         public_coder_sshpiper.OUTPUT_DIR,
     )
-    public_coder_agent_app_kustomization = agents_flux_kustomizations.public_coder_agent_app(
+    agents_flux_kustomizations.public_coder_agent_app(
         flux_chart,
         public_coder_agent_app_artifact,
         cert_manager_kustomization,
@@ -1718,7 +1725,7 @@ def generate_manifests(root: Path) -> None:
         "openebs": openebs_lvm_kustomization,
         "plaid-mcp": plaid_mcp_kustomization,
         "proxmox-proxy": proxmox_proxy_kustomization,
-        "public-coder-agent": public_coder_agent_app_kustomization,
+        "public-coder-agent": public_coder_agent_access_kustomization,
         "study-casino": study_casino_kustomization,
         "tana-mcp": tana_mcp_kustomization,
         "vm-images-publisher": vm_images_publisher_kustomization,
@@ -1793,13 +1800,11 @@ def generate_manifests(root: Path) -> None:
             kubectl_passthrough_mcp_artifact,
             loki_read_proxy_artifact,
             plaid_mcp_artifact,
-            public_coder_agent_app_artifact,
-            public_coder_agent_backup_artifact,
+            public_coder_agent_access_artifact,
             activitywatch_artifact,
             agent_workspaces_app_artifact,
             airlock_artifact,
             alloy_otlp_bearer_artifact,
-            public_coder_agent_devbox_artifact,
             agent_shared_rbac_artifact,
             agent_shared_secrets_artifact,
             aiquota_artifact,

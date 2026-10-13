@@ -171,13 +171,13 @@ def test_haku_spike_stays_unwired(generated: Path, parsed_yaml_documents: dict[P
     for source in tenant_grant["spec"]["from"]:
         for expression in source["namespaceSelector"]["matchExpressions"]:
             assert spike not in expression.get("values", [])
-    # Keep Haku sandbox/CI's shared proxy and public coder alive.
-    assert {"haku-egress-proxy", "haku-namespace", "public-coder-agent-app"} <= owners.keys()
+    # Keep Haku sandbox/CI's shared proxy and the public coder's namespace and access Roles alive.
+    assert {"haku-egress-proxy", "haku-namespace", "public-coder-agent-access"} <= owners.keys()
     deployments = {
         (doc["metadata"].get("namespace"), doc["metadata"]["name"]) for doc in active if doc["kind"] == "Deployment"
     }
     assert ("haku-egress-proxy", "haku-egress-proxy") in deployments
-    assert ("public-coder-agent", "proxy") in deployments
+    assert any(doc["kind"] == "Namespace" and doc["metadata"]["name"] == "public-coder-agent" for doc in active)
     # Preserved snapshots remain reproducible outside the live manifest roots.
     archived = generated / "cluster/parked/haku-openclaw-spike"
     app = parsed_yaml_documents[archived / "app/app.k8s.yaml"]
@@ -222,7 +222,7 @@ def test_legacy_sandboxes_stay_unwired(generated: Path, parsed_yaml_documents: d
     assert {
         "agent-sandbox-controller",
         "haku-egress-proxy",
-        "public-coder-agent-app",
+        "public-coder-agent-access",
         "claude-sandbox-secrets",
     } <= owners.keys()
     for directory, kind in (("agents-mitmproxy", "Deployment"), ("agent-workspaces", "SandboxWarmPool")):
@@ -260,11 +260,11 @@ def test_openclaw_cutover_waits_for_agentplane_credentials(
 def test_public_coder_pause_retains_storage_without_running_agents(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
-    root = generated / "cluster/k8s/agents/public-coder-agent"
+    roots = (generated / "cluster/parked/public-coder-agent", generated / "cluster/generated/agents/public-coder-agent")
     objects = [
         doc
         for path, docs in parsed_yaml_documents.items()
-        if path.is_relative_to(root)
+        if path.name.endswith(".k8s.yaml") and any(path.is_relative_to(root) for root in roots)
         for doc in docs
         if isinstance(doc, dict)
     ]
@@ -290,8 +290,9 @@ def test_public_coder_pause_retains_storage_without_running_agents(
         for doc in docs
         if isinstance(doc, dict) and doc.get("kind") == "Kustomization" and "spec" in doc
     }
-    for name in ("public-coder-agent-app", "public-coder-agent-devbox"):
+    for name in ("public-coder-agent-access", "public-coder-agent-app", "public-coder-agent-devbox"):
         assert owners[name]["deletionPolicy"] == "Orphan"
+    assert all(owners[f"public-coder-agent-{part}"]["suspend"] for part in ("app", "backup", "devbox"))
     assert owners["public-coder-agent-devbox"]["wait"] is False
 
 

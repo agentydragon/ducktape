@@ -10,7 +10,7 @@ build/test VM:
 The `public-coder-devbox` NixOS configuration is registered in `flake.nix`, and
 its `.#public-coder-devbox-container-disk` output is indexed in
 `nix/flake/packages.nix`. The deployment resources stay with their owner under
-`cluster/k8s/agents/public-coder-agent/devbox/`.
+`cluster/parked/public-coder-agent/devbox/`.
 
 No workflow builds this output while Public Coder is parked. Resuming moves
 `public-coder-devbox-image.yml` back from `cluster/parked/public-coder-agent/ci/`; it published

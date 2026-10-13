@@ -78,7 +78,7 @@ containment.
 Production issues it with cert-manager, plants it into confdir with an
 initContainer, and distributes the same certificate via trust-manager — so the CA
 is externally owned and cannot drift. That design was already in
-`cluster/k8s/agents/public-coder-agent/proxy/`, which is why production verifies
+`cluster/parked/public-coder-agent/proxy/`, which is why production verifies
 cleanly (200 and `git ls-remote` OK with verification **on**) even after three
 proxy restarts. The bug was only in the lab manifest, which has been changed to
 mirror production.
