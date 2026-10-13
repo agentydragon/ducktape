@@ -55,7 +55,7 @@ Details: [command admission](../runner_gateway/API.md#sessions-and-commands); la
 far a command or message got: `NOTIFICATION_COMMAND_OUTCOME_DESIGN` (did the harness run it, did it
 reach the model's context), `AGENT_MESSAGING_DESIGN` (accepted, delivered, handled and acknowledged
 as separate states), `THREAD_SUCCESSOR_DELIVERY` (ambiguous across an incarnation) and
-`SESSION_QUEUE_DESIGN` (queued, delivered once the runner is up). Decide the states once, from
+`QUEUE_SERVICE_CORE` (queued, delivered once the runner is up). Decide the states once, from
 submission to the model's context: what each means, which component records it, and which survive an
 incarnation ending. Today `CommandAdmitted` and `harness_user_message_confirmed` are the recorded
 points. The four nodes then cite it, instead of each defining its own.
@@ -296,7 +296,7 @@ acceptance receipts in the chosen authority. Test denied pairs, spoofing and ret
 **Blocked on ingress contract/implementation.** Implement selected recipient read/delivery/ack
 operations, batching and recovery of unread work. Test revoked/deleted recipients, ordinary offline
 catch-up and duplicate delivery without leaking payloads. Do not start/resume a harness implicitly
-unless `SESSION_QUEUE_DESIGN` decides that a sender may.
+unless `QUEUE_WAKE_ON_SEND` lets that kind of sender wake a Sandbox.
 
 ### `AGENT_MESSAGING` — integrated messaging capstone
 
@@ -311,7 +311,7 @@ creator visibility and revocation. Use the service-reserved Session identity, no
 public UUID. Opening in an existing Sandbox grants no isolation from its other Sessions; require a
 separate Sandbox when incompatible trust or credentials are needed. Decide whether launch-and-open
 is a composition of separate grants, never an implicit read/send/launch permission. This contract
-need not choose a durable offline command queue; `SESSION_QUEUE_DESIGN` owns that.
+need not choose a durable offline command queue; `QUEUE_SERVICE_CORE` owns that.
 
 ### `THREAD_CREATE_AUTHORIZATION` — implement session-create grants
 
@@ -453,7 +453,8 @@ memory dump or a snapshot with memory) and whether it works with the state volum
 [VM Sandboxes design](../docs/vm_sandboxes.md#guest-and-storage) records that a VM supports neither
 RAM suspension nor live migration today. Check what a resumed guest must redo: the runner's control stream and
 projected tokens (the relay reopens them per request, so rotation alone needs no restart), and the
-clock. Where storage or the guest cannot carry it, stop/start from the state PVC stays the
+clock. Settle first what "seal before suspend" means when the harness keeps running across the suspend
+(`QUIESCE_WITHOUT_POLLING` assumes the Pod sequence). Where storage or the guest cannot carry it, stop/start from the state PVC stays the
 lifecycle.
 
 ### `LOCAL_BAZEL` — bounded local client in a VM
@@ -668,7 +669,8 @@ Sandbox bootstrap is not. The runner runs it once and keeps its output in a dura
 runner runs it inside the first `OpenSession`, which the Runner Gateway's `open_session`
 (`runner_gateway/session_lifecycle.py`) holds until the script exits, and nothing shows its output or progress. Start it when the
 Sandbox comes up and expose its progress and result, keeping successful bootstrap as the Open
-precondition unless the operator reviews a change.
+precondition unless the operator reviews a change. The result reaches the Sandbox's
+conditions as a runner fact on the connection Lease (`RUNNER_FACTS_ON_LEASE`).
 
 ## 7. Our own Sandbox resource: Sessions that outlive their Pod
 
@@ -697,11 +699,22 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE[In progress: our own Sandbox resource]
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
-    SANDBOX_SESSION_CONTROL_DESIGN[In progress: one design for Sandbox and Session control]
-    RUNNER_CONNECTED_READY[Unscheduled: the Sandbox's Ready condition includes the runner connection]
-    SESSION_QUEUE_DESIGN[Decision: where the Session message queue sits and what it owns]
-    SESSION_ACTIVITY_STREAM[Decision: one derivation of Session activity, streamed to listeners]
-    SESSION_MESSAGE_QUEUE[Blocked: a durable queue that revives a Sandbox and delivers the message]
+    SANDBOX_SESSION_CONTROL_DESIGN[Decision: the open choices in the Sandbox and Session control design]
+    QUIESCE_INCARNATION_KEY[In progress: the sealed marker belongs to one incarnation]
+    QUIESCE_INTERRUPT[Candidate: refuse at entry and interrupt turns before sealing]
+    RUNNER_FACTS_ON_LEASE[Blocked: the runner publishes stage, busy and boot facts on the connection Lease]
+    SEAL_RENAME[Blocked: Seal, Sealed and Sealing get names that say which fact they mean]
+    QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
+    CONTROL_SERVICE_OWNER[Blocked: the controller creates the Sandbox's control Service]
+    RUNNER_CONNECTED_READY[Blocked: the Sandbox's Ready condition includes the runner connection]
+    SESSION_ACTIVITY_STREAM[Decision: one derivation of folded Session activity for listeners]
+    QUEUE_SERVICE_CORE[Blocked: a durable queue service delivers to running Sandboxes]
+    QUEUE_SESSION_CREATE[Blocked: queued Session creation]
+    QUEUE_WAKE_ON_SEND[Blocked: a send wakes a suspended Sandbox]
+    APP_SENDS_VIA_QUEUE[Blocked: the app sends through the queue service]
+    NOTIFICATIONS_VIA_QUEUE[Blocked: notifications send through the queue service]
+    RUNNER_PROXY_SENDER_RESTRICT[Blocked: only system callers send to the runner directly]
+    RESUME_CREDENTIALS_VALID[Blocked: grants and tokens still valid after a long suspension]
     SUSPENDED_COMPOSER[Blocked: the composer stays enabled while a Session is suspended]
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
     HOSTED_THREAD_SURFACES[Blocked: show and revive stopped Sessions]
@@ -721,25 +734,47 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
-    SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes suspend]
+    SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Blocked: idle runner Sandboxes suspend]
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
-    SESSION_QUEUE_DESIGN --> SESSION_MESSAGE_QUEUE
-    SESSION_REVIVE --> SESSION_MESSAGE_QUEUE
-    SESSION_MESSAGE_QUEUE --> SUSPENDED_COMPOSER
     HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
-    COMMAND_DELIVERY_STATES[Decision: one vocabulary of delivery states, section 2] --> SESSION_QUEUE_DESIGN
+    COMMAND_DELIVERY_STATES[Decision: one vocabulary of delivery states, section 2] --> QUEUE_SERVICE_CORE
     COMMAND_DELIVERY_STATES --> THREAD_SUCCESSOR_DELIVERY
-    MULTIAGENT_MODEL[Decision: identities and authority vocabulary, section 3] -. shares who-may vocabulary .-> SESSION_QUEUE_DESIGN
-    AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. shares offline behavior .-> SESSION_QUEUE_DESIGN
-    SESSION_QUEUE_DESIGN -. may own .-> SANDBOX_IDLE_EXPIRY
-    SESSION_ACTIVITY_STREAM -. decides what idle means for .-> SANDBOX_IDLE_EXPIRY
-    SESSION_ACTIVITY_STREAM -. decides whether the queue owns it .-> SESSION_QUEUE_DESIGN
-    SANDBOX_SESSION_CONTROL_DESIGN --> SESSION_QUEUE_DESIGN
+    MULTIAGENT_MODEL[Decision: identities and authority vocabulary, section 3] -. who may send and wake .-> QUEUE_SERVICE_CORE
+    AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. offline behavior .-> QUEUE_SERVICE_CORE
+    SESSION_ACTIVITY_STREAM -. must not define a second idleness .-> SANDBOX_IDLE_EXPIRY
     SANDBOX_SESSION_CONTROL_DESIGN --> SESSION_ACTIVITY_STREAM
-    SANDBOX_SESSION_CONTROL_DESIGN -. may move where it lives .-> RUNNER_CONNECTED_READY
-    BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap, section 6] -. boot state is the same question .-> RUNNER_CONNECTED_READY
+    SANDBOX_SESSION_CONTROL_DESIGN --> SEAL_RENAME
+    SANDBOX_SESSION_CONTROL_DESIGN --> RUNNER_CONNECTED_READY
+    SANDBOX_SESSION_CONTROL_DESIGN --> CONTROL_SERVICE_OWNER
+    SANDBOX_SESSION_CONTROL_DESIGN --> QUEUE_WAKE_ON_SEND
+    SANDBOX_SESSION_CONTROL_DESIGN -. the service's name may change .-> QUEUE_SERVICE_CORE
     SANDBOX_SESSION_CONTROL_DESIGN -. decides the level of sealing .-> CONTROLLER_SEALS[Candidate: the Sandbox controller seals, section 12]
-    SESSION_QUEUE_DESIGN -. shares delivery semantics .-> THREAD_SUCCESSOR_DELIVERY
+    QUIESCE_INCARNATION_KEY --> CONTROLLER_SEALS
+    QUIESCE_INCARNATION_KEY --> RUNNER_FACTS_ON_LEASE
+    QUIESCE_INCARNATION_KEY --> QUIESCE_WITHOUT_POLLING
+    RUNNER_FACTS_ON_LEASE --> QUIESCE_WITHOUT_POLLING
+    RUNNER_FACTS_ON_LEASE --> SANDBOX_IDLE_EXPIRY
+    QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
+    SEAL_RENAME -. rename before the next sealing node lands .-> QUIESCE_WITHOUT_POLLING
+    QUIESCE_INTERRUPT -. interrupt precedes the seal .-> QUIESCE_WITHOUT_POLLING
+    QUIESCE_INTERRUPT --> QUEUE_WAKE_ON_SEND
+    RUNNER_FACTS_ON_LEASE -. carries the boot result .-> BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap, section 6]
+    RUNNER_FACTS_ON_LEASE -. busyness is its input .-> SESSION_ACTIVITY_STREAM
+    CONTROL_SERVICE_OWNER -. same Service and Lease .-> RUNNER_CONNECTED_READY
+    RUNNER_CONNECTED_READY --> QUEUE_WAKE_ON_SEND
+    QUEUE_SERVICE_CORE --> QUEUE_SESSION_CREATE
+    QUEUE_SERVICE_CORE --> QUEUE_WAKE_ON_SEND
+    QUEUE_SERVICE_CORE --> APP_SENDS_VIA_QUEUE
+    QUEUE_SERVICE_CORE --> NOTIFICATIONS_VIA_QUEUE
+    SESSION_REVIVE --> QUEUE_WAKE_ON_SEND
+    APP_SENDS_VIA_QUEUE --> RUNNER_PROXY_SENDER_RESTRICT
+    NOTIFICATIONS_VIA_QUEUE --> RUNNER_PROXY_SENDER_RESTRICT
+    QUEUE_WAKE_ON_SEND --> SUSPENDED_COMPOSER
+    APP_SENDS_VIA_QUEUE --> SUSPENDED_COMPOSER
+    QUEUE_WAKE_ON_SEND -. pending mark the controller reads .-> SANDBOX_IDLE_EXPIRY
+    QUEUE_SERVICE_CORE -. shares delivery semantics .-> THREAD_SUCCESSOR_DELIVERY
+    SESSION_REVIVE --> RESUME_CREDENTIALS_VALID
+    QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
 ```
@@ -755,7 +790,7 @@ notification resumes a stopped Sandbox, never a read. Both reach the Runner Gate
 one hook covers them: the gateway finds the Sandbox in its Session registry, sets the Sandbox
 resource's desired state to running and holds the command until the new incarnation's runner
 connects. A command held only while the sender waits is lost if the sender goes away;
-`SESSION_MESSAGE_QUEUE` is the durable version. Resuming by Session ID works while the Sandbox exists, stopped or not. Open: what the user sees while it starts.
+`QUEUE_WAKE_ON_SEND` is the durable version, and it wakes the Sandbox through the Sandbox Service rather than the gateway. Resuming by Session ID works while the Sandbox exists, stopped or not. Open: what the user sees while it starts.
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
 
@@ -879,8 +914,9 @@ together. One is what Agent Sandbox did, plus VM support: a template, a Pod or V
 and a state volume that stays. The other is specific to our runner running inside: sealing a
 Session's journal before the incarnation goes (`SANDBOX_LIFECYCLE`, `CONTROLLER_SEALS`). Separated,
 the first could be reused without the runner. Decide where the line falls (resource, controller or package) and what each side owns. A
-layered pair, a Sandbox and a runner that runs inside one, is the direction `SESSION_QUEUE_DESIGN`
-points to, if the queue also owns suspension.
+layered pair, a Sandbox and a runner that runs inside one, is the direction the control design
+(`docs/adr_sandbox_session_control.md`) points to: seal, runner connectivity and idle suspension
+are the runner-aware layer, and the queue service sits outside both.
 
 ### `SANDBOX_RUNNER_LAYERING` — add the runner and harnesses to a platform user's image
 
@@ -895,14 +931,21 @@ Firecracker with the runner as init.
 
 ### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes suspend
 
-**Unscheduled; needs design; operator, 2026-10-11 and 2026-10-13 PDT.** An idle runner Sandbox
-suspends: it is sealed (`SANDBOX_LIFECYCLE`), then the Pod or VM goes, freeing memory and compute,
-and the Sandbox, its ServiceAccount, bindings and state PVC stay, so `SESSION_REVIVE` resumes it on
-the same PVC. Nothing deletes a Sandbox on idleness or any timer (operator, 2026-10-13 PDT): only
-the operator deletes one, through [teardown](../sandbox_service/API.md#teardown) and the seal. What
-a resume gets back of the workspace depends on `WORKSPACE_VOLUME`. Decide what counts as idle (no
-turns or commands for a configured time, and nothing attached). Action Service boxes are
-`ACTION_BOX_IDLE_REAPER`'s, which only ever deletes.
+**Blocked on `SESSION_INCARNATIONS`, `RUNNER_FACTS_ON_LEASE` and `QUIESCE_WITHOUT_POLLING`; operator,
+2026-10-11 and 2026-10-13 PDT.** An idle runner Sandbox suspends: it is sealed (`SANDBOX_LIFECYCLE`),
+then the Pod or VM goes, freeing memory and compute, and the Sandbox, its ServiceAccount, bindings
+and state PVC stay, so `SESSION_REVIVE` resumes it on the same PVC. Nothing deletes a Sandbox on
+idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one, through
+[teardown](../sandbox_service/API.md#teardown) and the seal. What a resume gets back of the
+workspace depends on `WORKSPACE_VOLUME`. Idle is a Sandbox-level fact: every Session in the Sandbox
+is idle. The control design (`docs/adr_sandbox_session_control.md`) puts the policy in the Sandbox
+controller: `spec.idleSuspendAfter`, a timer the controller measures from the busy and idle
+transitions the runner publishes (`RUNNER_FACTS_ON_LEASE`), so it needs no History Service and
+survives a controller restart. Busy covers a turn, a command, a background or durable process and an
+attached terminal or console, or a Sandbox is suspended under a running job. The suspend request can
+carry an "only if idle since" precondition; a Sandbox the queue service holds pending messages for
+(`QUEUE_WAKE_ON_SEND`) is not suspended. Action Service boxes are `ACTION_BOX_IDLE_REAPER`'s, which
+only ever deletes.
 
 ### `SESSION_INCARNATIONS` — a Session records its incarnations
 
@@ -920,85 +963,196 @@ template as it is now, possibly on a new image, and resume each harness as
 a new incarnation of the same Session and history. Test
 revival after a long stop, a refused incompatible state PVC, and concurrent revive requests.
 
-### `SESSION_QUEUE_DESIGN` — where the Session message queue sits and what it owns
+### `SANDBOX_SESSION_CONTROL_DESIGN` — the open choices in the Sandbox and Session control design
 
-**Decision; operator, 2026-10-13 PDT.** Now that Sandboxes are durable, sending a message to a
-Session in a specific Sandbox should restore the Sandbox if it is suspended and deliver the message
-once the runner is available. That needs a durable queue between the end user and the harness, which
-the operator accepts: "write a message, press Enter, close the window, come back three hours later
-and the agent has resumed and finished" is not possible without a controller and a queue. Working
-name "session egress controller", inside or above the Runner Gateway. Decide: where it sits and
-whether it is a new service or part of the gateway; what is durable and where, with the ordering,
-deduplication and acknowledgement `THREAD_SUCCESSOR_DELIVERY` needs, and the offline behavior
-`AGENT_MESSAGING_DESIGN` decides for agent messages; what happens to a message whose
-Session is deleted or whose revival fails; which senders may revive, since a notification or a user
-message resumes a Sandbox but an agent's message does not (`AGENT_MESSAGE_RECEPTION`) unless decided
-otherwise; and whether it also owns other lifecycle, for example deciding that nothing happened for
-an hour and suspending (`SANDBOX_IDLE_EXPIRY`), then streaming Session activity to listeners (`SESSION_ACTIVITY_STREAM`); notifications are to send through this queue. Delivery waits on the runner's bootstrap, which
-`BOOTSTRAP_PROGRESS_CONTRACT` makes visible. The delivery states are `COMMAND_DELIVERY_STATES`'s. Owning suspension points toward layered resources,
-a Sandbox and a runner that runs inside one (`SANDBOX_GENERIC_SPLIT`).
+**Decision; operator, 2026-10-13 PDT: mostly agrees with the proposal, the names are open.** The
+proposal is `docs/adr_sandbox_session_control.md` (#10332): lifecycle and idle policy stay in the
+Sandbox controller; a new service holds only the durable queue, required for senders and not for
+the platform; the runner gateway stays stateless and never wakes a Sandbox. The nodes below
+implement it, and the ones marked blocked on this node wait for one of these answers, each small:
 
-### `SANDBOX_SESSION_CONTROL_DESIGN` — one design for Sandbox and Session control
+- **Names:** the queue service (the doc's placeholder collides with the notification inbox, so a
+  new one is being chosen) and the renames of the seal operation (`SEAL_RENAME`). Code starts under
+  placeholders; a rename touches identifiers only.
+- **Transport for runner facts:** the connection Lease's annotations, which the doc recommends,
+  against the gateway's gRPC health that the readiness node was first approved with
+  (`RUNNER_CONNECTED_READY`).
+- **Control Service owner:** the controller creates it, the gateway writes the Lease and
+  EndpointSlice (`CONTROL_SERVICE_OWNER`).
+- **Hold against wake-on-send:** whether an operator can keep a Sandbox suspended when a message or
+  notification arrives (`QUEUE_WAKE_ON_SEND`).
+- **Idleness:** suspension reads the runner's busy state, so `SESSION_ACTIVITY_STREAM` shrinks to
+  the folded activity notifications and the UI read.
 
-**In progress; operator, 2026-10-13 PDT.** A design document that draws the boundaries the next
-nodes assume, with alternatives and why the choice wins, planned so the nodes below can be adopted
-into it. It may rename and redraw services; the working term "session controller" is not a premise.
-Questions the operator raised: which of the Runner Gateway and the Sandbox controller owns a
-Sandbox's control Service (the gateway today); where the health of the runner connection and the
-boot state show in the Sandbox's conditions (`RUNNER_CONNECTED_READY`,
-`BOOTSTRAP_PROGRESS_CONTRACT`); whether the queue and lifecycle component is required or optional,
-whether anything may still send directly to the gateway or runner, and if it is required whether it
-and the gateway merge (`SESSION_QUEUE_DESIGN`); how it starts a Session that does not exist yet
-(a client-chosen ID, which Sandbox it addresses); whether it depends on the History Service for
-last activity and stays restartable (`SESSION_ACTIVITY_STREAM`); per-Session data stays out of
-Kubernetes, with only transitional sealed and unsealed conditions there; and whether sealing
-operates on the Sandbox and requires interrupting its Sessions' turns and refusing new ones
-(`CONTROLLER_SEALS`). `SESSION_QUEUE_DESIGN` and `SESSION_ACTIVITY_STREAM` are decided in it and
-fold into it when it lands.
+Parallel with all of it: `QUIESCE_INCARNATION_KEY`, `QUIESCE_INTERRUPT`. The doc leaves this node when
+its choices are made and `docs/` describes the result.
+
+### `QUIESCE_INCARNATION_KEY` — the sealed marker belongs to one incarnation
+
+**In progress; its own PR, found by the control design.** The runner records "sealed" as an empty
+marker file under its state directory, which is the state volume and outlives the incarnation, so a
+resumed Sandbox's runner would refuse every new and resumed Session. The gateway's `Welcome` carries
+the incarnation's UID (the Pod, or a VM's virt-launcher Pod); the runner writes the marker with the UID
+it last saw and removes it on a `Welcome` with a different one, before it accepts any call. A runner
+restart inside an incarnation stays sealed; a new incarnation starts unsealed. The Lease's stage
+annotation carries the same UID. Order: the gateway image that sends the UID is pinned before the
+runner image that reads it. The sealer flags in the manifests (`CONTROLLER_SEALS`) wait for this,
+or a resumed Sandbox would refuse work. How a sealed journal is reopened is `SESSION_INCARNATIONS`'s.
+
+### `QUIESCE_INTERRUPT` — refuse at entry and interrupt turns before sealing
+
+**Candidate.** The runner refuses new and resumed Sessions at once but still admits commands to a
+Session whose journal is not yet sealed, and it stops a turn rather than interrupting it. Inside
+the one seal operation: refuse everything but draining operations from the start, with a distinct
+code a sender reads as "retry after resume"; interrupt active turns through the command protocol,
+wait up to a deadline, then stop the harnesses; record in history that teardown ended the turn, so
+it reads differently from a user's interrupt. Nothing is live, since the sealer flags are not in
+the manifests. It edits the same runner store code as `QUIESCE_INCARNATION_KEY`; whichever lands
+second rebases. Readers of the new code (the queue service) land after it.
+
+### `RUNNER_FACTS_ON_LEASE` — the runner publishes stage, busy and boot facts on the connection Lease
+
+**Blocked on `QUIESCE_INCARNATION_KEY`, which gives the Lease the incarnation UID.** The one
+transport several nodes share: the runner reports facts on the control stream, and the gateway
+replica holding the connection writes them as annotations on the Sandbox-owned connection Lease,
+on transitions only and stamped with the incarnation UID, clearing them when a different
+incarnation connects. Facts: the seal stage (draining, flushing, sealed), busy with the time it
+became idle (`SANDBOX_IDLE_EXPIRY`), and the bootstrap result (`BOOTSTRAP_PROGRESS_CONTRACT`). The
+runner republishes its stage on reconnect so a gateway rollout loses nothing. Order: the
+controller reads the annotations before the gateway starts writing them.
+
+### `SEAL_RENAME` — Seal, Sealed and Sealing get names that say which fact they mean
+
+**Blocked on `SANDBOX_SESSION_CONTROL_DESIGN`.** "Sealed" now means three facts: the runner refuses
+new work, its journals are final, and the ingress has acknowledged them. The doc proposes
+`Runner.Quiesce`, a `Quiesced` condition that is True only when every final cursor is acknowledged
+(False with reasons `Draining` then `Flushing`), `status.quiescedIncarnation`, the phase
+`Quiescing`, and `Ready` False with reason `Draining`; a journal is still "sealed" at its final
+cursor. This is a wire and stored-field change across the runner, gateway, controller, Sandbox
+Service, app and docs: readers accept both names before any writer emits the new one, and the
+Sandbox status field is added beside the old, switched, then removed. Land it before
+`QUIESCE_WITHOUT_POLLING` and the rest of the sealing nodes, so they are written once; it
+conflicts with nearly all of them, which is fine, but the order saves work.
+
+### `QUIESCE_WITHOUT_POLLING` — the controller is told when a seal finishes
+
+**Blocked on `QUIESCE_INCARNATION_KEY` and `RUNNER_FACTS_ON_LEASE`.** The controller repeats the
+seal call every few seconds until every Session reports flushed. Instead it calls once; the call
+returns when the runner has entered lameduck; the controller reacts to the Lease stage events. It
+re-issues the idempotent call when a Sandbox should be sealing but its Lease shows no stage, and a
+runner that never progresses is caught by a deadline the controller requeues for, ending as a stuck
+Sandbox whose finalizer an operator removes by hand. While the ingress is down the controller backs
+off instead of retrying per Sandbox. Test a gateway rollout mid-seal, a runner restart mid-seal and
+a lost event.
+
+### `CONTROL_SERVICE_OWNER` — the controller creates the Sandbox's control Service
+
+**Blocked on `SANDBOX_SESSION_CONTROL_DESIGN`; low stakes.** The gateway creates the Service, Lease
+and EndpointSlice on the first connection, so the Service name resolves only after a runner
+connects. The doc recommends the controller create the Service with the Sandbox, owned by it, so a
+caller sees no endpoints and not a DNS failure, and the gateway writes only the Lease and slice,
+with less Kubernetes access. One shared constant fixes the name and port. Order: the controller image
+that creates it is pinned, then the gateway stops creating it, then its permission goes.
 
 ### `RUNNER_CONNECTED_READY` — the Sandbox's Ready condition includes the runner connection
 
-**Unscheduled; operator, 2026-10-13 PDT.** The Sandbox's `Ready` condition covers its Pod or VM,
-not whether the runner has connected, so a VM whose guest runner never reaches the gateway reads
-ready. The Runner Gateway reports per-Sandbox runner connectivity over gRPC health, and the
-Sandbox controller folds that into `Ready` beside the Pod or VM readiness, so the app reads one
-condition; `Ready` means "can take work" only, and the lifecycle phase stays a separate condition.
-The controller probes the gateway rather than the gateway writing a condition, since layers that
-act on Sandboxes do not edit them. Order: the gateway's health RPC, then the controller change; the
-app reads `Ready` instead of inspecting the incarnation only once the controller image that
-publishes it is pinned. Which component reports and folds may move with
-`SANDBOX_SESSION_CONTROL_DESIGN`, which decides who owns the control Service the connection is
-announced through. Test a runner that
-connects late, one that never connects, and a connection that drops while the Pod keeps running.
+**Blocked on `SANDBOX_SESSION_CONTROL_DESIGN`, which settles the transport; operator-approved
+2026-10-13 PDT.** `Ready` covers the Pod or VM, not whether the runner has connected, so a VM
+whose guest runner never reaches the gateway reads ready. The controller writes the conditions from
+facts others publish: `WorkloadReady` (today's `Ready`), `RunnerConnected` (the connection Lease's
+liveness for the current incarnation), and `Ready` as their AND, keyed to the incarnation UID so a
+connection from the last incarnation is never read as this one's. `Ready` means "can take work"
+only; the lifecycle phase stays separate. A gateway rollout drops every connection at once, so the
+controller debounces `RunnerConnected` and replaces or restarts nothing because of it. The doc
+recommends the Lease, which needs no new runner fact; the first approval named the gateway's gRPC
+health. The app reads `Ready` instead of inspecting the incarnation only once the controller image
+that publishes it is pinned. Test a runner that connects late, one that never connects, and a
+connection that drops while the Pod keeps running.
 
-### `SESSION_ACTIVITY_STREAM` — one derivation of Session activity, streamed to listeners
+### `SESSION_ACTIVITY_STREAM` — one derivation of folded Session activity for listeners
 
-**Decision; operator, 2026-10-13 PDT.** Several parts want to know when a Session was last active
-and each derives it alone: the History Service folds `last_model_activity_at` for the app, the
-notification service waits a quiet window after the newest inbox entry before it prepares a notice
-(`NoticeDebounceSettings`), and `SANDBOX_IDLE_EXPIRY` needs its own idleness. The operator's
-direction: the component that already follows a Session's events (the controller that handles
-idleness, if `SESSION_QUEUE_DESIGN` makes one) derives activity once and streams Session state
-updates to listeners, and each listener picks its own moment, so the notification service decides
-when to deliver ("after a minute of quiet, at most ten minutes") and a notification reaches a
-Session through the queue. The alternative, where a sender hands the queue a delivery window
-and the queue schedules it, is not the direction. Decide: who derives activity and from which
-events; the update stream's shape and who may subscribe; whether the History Service's
-`last_model_activity_at` becomes a listener of it or stays the source; and that `SANDBOX_IDLE_EXPIRY`
-and the notification debounce read the same definition. Parallel with `SESSION_QUEUE_DESIGN`; the
-queue's design says whether the queue's owner is also the deriver.
+**Decision; operator, 2026-10-13 PDT.** Suspension no longer waits on it: the Sandbox controller
+reads the runner's busy facts (`RUNNER_FACTS_ON_LEASE`). What is left is the folded
+`last_model_activity_at` that the app and the notification service's quiet window
+(`NoticeDebounceSettings`) both derive in different ways. The operator's direction: one component
+derives it and streams Session state updates to listeners, and each listener picks its own moment,
+so the notification service decides when to deliver ("after a minute of quiet, at most ten
+minutes") and sends through `NOTIFICATIONS_VIA_QUEUE`. The alternative, where a sender hands the
+queue a delivery window and the queue schedules it, is not the direction. Decide: who derives it
+and from which events; the stream's shape and who may subscribe; whether the History Service's
+field becomes a listener or stays the source; and that busyness, if it is an input, is the runner's
+fact and not a second definition of idle.
 
-### `SESSION_MESSAGE_QUEUE` — a durable queue that revives a Sandbox and delivers the message
+### `QUEUE_SERVICE_CORE` — a durable queue service delivers to running Sandboxes
 
-**Blocked on `SESSION_QUEUE_DESIGN` and `SESSION_REVIVE`.** Implement what the design chooses: accept
-a message for a Session whose Sandbox is suspended, set the Sandbox running, and deliver the message
-to the runner once it connects, surviving the sender going away. Test a message sent while
-suspended, the sender gone before the runner is up, a failed revival, and duplicate sends.
+**Blocked on `COMMAND_DELIVERY_STATES`; name still open.** A new service with its own database and
+the one job of delivery, proposed in `docs/adr_sandbox_session_control.md`. It accepts a message,
+persists it before it acknowledges the sender, delivers it through the gateway's runner proxy to a
+running Sandbox, and reports a delivery state the sender can read: the runner deduplicates on the
+command ID, a reply lost across an incarnation boundary is unknown and not replayed
+(`THREAD_SUCCESSOR_DELIVERY`), and a message for a deleted Session or a failed delivery ends in a
+terminal state with a reason and a time to live. Replicas shard Sandboxes by a per-Sandbox Lease
+so each has one active owner. Authorization names which senders may send, and the sender kinds
+that may wake are `QUEUE_WAKE_ON_SEND`'s. It does not depend on the History Service to deliver. This
+node moves no sender and wakes nothing, so it can land beside the direct path with no change for
+anyone. Test duplicate sends, a sender that leaves, a deleted target and a refused delivery.
+
+### `QUEUE_SESSION_CREATE` — queued Session creation
+
+**Blocked on `QUEUE_SERVICE_CORE`.** `OpenSession` with a client-minted Session ID is stored
+durably and made idempotent by the ID: a retry returns the same record, and the same ID in another
+Sandbox is refused. The service waits for the Sandbox to be ready and calls the runner's
+idempotent `OpenSession`. It needs the Sandbox's name, never an address; when a caller omits the
+Sandbox it looks the Session up in the History Service, and until the runner has pushed anything
+its own record is authoritative.
+
+### `QUEUE_WAKE_ON_SEND` — a send wakes a suspended Sandbox
+
+**Blocked on `QUEUE_SERVICE_CORE`, `SESSION_REVIVE`, `RUNNER_CONNECTED_READY`, `QUIESCE_INTERRUPT`
+and `SANDBOX_SESSION_CONTROL_DESIGN` (the hold choice).** A message for a suspended Sandbox's
+Session resumes the Sandbox through the Sandbox Service, then delivers once `Ready` holds for the new
+incarnation, keying every attempt to the incarnation UID; a delivery refused by a sealing runner
+with the retryable code is redelivered after the resume. Which senders may wake: a user message and
+a notification, not an agent's message unless `AGENT_MESSAGE_RECEPTION` decides so. Also here:
+rate limits and per-sender quotas, since a resume starts a Pod or VM and every harness; resuming
+only the Sessions that have pending work; a bounded wait with a visible reason when the volume's
+node is down or full; a mark on the Sandbox while messages are pending so the controller does not
+suspend it (`SANDBOX_IDLE_EXPIRY`); and a way for an operator to hold a Sandbox suspended against
+wake-on-send, so the next notification does not undo it. Deletion beats everything. Test a message
+to a suspended Sandbox, one arriving while it seals, a failed revival and a resume storm.
+
+### `APP_SENDS_VIA_QUEUE` — the app sends through the queue service
+
+**Blocked on `QUEUE_SERVICE_CORE`.** The composer and the app's other command sends call the queue
+service instead of `SubmitCommand`, showing its delivery states. Parallel with
+`NOTIFICATIONS_VIA_QUEUE`; reader before writer, so the queue service lands and is read before any
+sender moves.
+
+### `NOTIFICATIONS_VIA_QUEUE` — notifications send through the queue service
+
+**Blocked on `QUEUE_SERVICE_CORE`; operator, 2026-10-13 PDT.** The Notification Service sends its
+notices through the queue service, and keeps choosing when to deliver from its own quiet window or
+from `SESSION_ACTIVITY_STREAM` if that is decided. Parallel with `APP_SENDS_VIA_QUEUE`.
+
+### `RUNNER_PROXY_SENDER_RESTRICT` — only system callers send to the runner directly
+
+**Blocked on `APP_SENDS_VIA_QUEUE` and `NOTIFICATIONS_VIA_QUEUE`.** A policy edit at the gateway's
+per-method authorization: command delivery and `OpenSession` are open to the queue service, the
+controller's seal call, operator diagnostics and acceptance tests, and to no other caller.
+`ListSessions` stays open to readers. Agent-to-agent messaging joins through its own nodes.
+
+### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
+
+**Blocked on `SESSION_REVIVE`.** A Sandbox that resumes hours or days later must come up with egress
+grants, `PolicyBinding`s and projected tokens still valid, or it looks broken. Check each
+expiring thing the Sandbox holds, and make a resume refresh or refuse with a reason, never come up
+half-granted. Related to `POLICY_RUNTIME_GRANTS`, which makes grants expire.
 
 ### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
 
-**Blocked on `SESSION_MESSAGE_QUEUE`.** A suspended Session in the app has an enabled composer;
-sending queues the message and shows that the Sandbox is starting and the message waits.
+**Blocked on `QUEUE_WAKE_ON_SEND`, `APP_SENDS_VIA_QUEUE` and `HOSTED_THREAD_SURFACES`.** A suspended
+Session in the app has an enabled composer; sending queues the message and shows that the Sandbox
+is starting and the message waits.
 
 ### `THREAD_SUCCESSOR_DELIVERY` — commands unsettled across incarnations
 
@@ -1157,7 +1311,8 @@ and `CreateSessionRequest` loses its field mask.
 one's image is pinned in every environment. First, cdk8s passes the controller `--runner-gateway-target`
 and `--runner-gateway-token-file` (a projected token for audience `token_audience`), admits the
 controller to the gateway, and sets `sandbox_controller_account` on the gateway; the controller's
-`Sealer` and `Leases` become required. Then `runner_gateway/deletion_seals.py`, `sealing.py` and the
+`Sealer` and `Leases` become required. This step waits for `QUIESCE_INCARNATION_KEY`: with the
+sealer on, a resumed Sandbox's runner would otherwise find the old incarnation's marker. Then `runner_gateway/deletion_seals.py`, `sealing.py` and the
 gateway's write to Sandboxes go.
 
 ### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
