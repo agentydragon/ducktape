@@ -86,6 +86,9 @@ in
   virtualisation.diskSize = 8 * 1024;
   boot.kernelModules = [ "virtiofs" ];
   boot.kernelParams = [ "console=ttyS0,115200n8" ];
+  # The runner's journal (a start failure's traceback included) reaches the serial console, which
+  # the VMI serial log and `virtctl console` read, without a guest exec.
+  services.journald.console = "/dev/ttyS0";
 
   users.groups.${agentUser}.gid = agentId;
   users.users.${agentUser} = {
