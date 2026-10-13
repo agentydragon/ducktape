@@ -9,11 +9,12 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 
 - Every Sandbox gets one PVC, `<sandbox>-state`, created from its `SandboxTemplate`'s claim when
   the Sandbox is created, whether or not it is running.
-- The PVC has no owner reference, so neither garbage collection nor the Pod going away removes it.
-  It carries the Sandbox's UID; a Sandbox never uses or deletes a PVC another Sandbox created, and
-  reports `StateVolumeConflict` instead.
-- Deleting the Sandbox deletes its PVC once its Sessions are sealed and its Pod or VM is gone
-  (below). Stopping never does.
+- The Sandbox is the PVC's controller owner, without `blockOwnerDeletion`, so the Pod going away or
+  stopping never removes it, and foreground propagation or namespace deletion cannot remove it
+  before the seal completes. A Sandbox never uses a PVC another Sandbox controls, and reports
+  `StateVolumeConflict` instead.
+- Deleting the Sandbox removes its PVC by garbage collection once its Sessions are sealed, its Pod or
+  VM is gone and the finalizer clears (below). Stopping never does.
 
 ## Incarnations
 
@@ -70,7 +71,8 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   until its `SessionsSealed` condition is True. The Runner Gateway sets it once the runner has
   sealed every Session and the ingress has acknowledged each seal, so history holds every Session
   through its seal before its state goes.
-- Then the Pod or VM is deleted, then, once it and any VMI are gone, the PVC, then the Sandbox.
+- Then the Pod or VM is deleted, then, once it and any VMI are gone, the finalizer clears and the
+  PVC goes with the Sandbox.
 - A Sandbox without a state PVC of its own never had a runner, so nothing is sealed.
 - The Pod or VM and the Sandbox's ServiceAccount are owned by the Sandbox with `blockOwnerDeletion`, so
   foreground propagation and namespace deletion remove them before the seal completes and the

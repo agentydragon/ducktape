@@ -5308,7 +5308,7 @@ rules:
       - list
       - watch
       - create
-      - delete
+      - update
   - apiGroups:
       - kubevirt.io
     resources:

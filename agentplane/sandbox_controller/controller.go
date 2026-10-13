@@ -33,10 +33,13 @@ const (
 	// On the Pod or the VirtualMachine and its VMI and virt-launcher Pod, the state PVC, the
 	// ServiceAccount and the PolicyBinding: the Sandbox they belong to.
 	SandboxLabel = "agentplane.allegedly.works/sandbox"
-	// On the state PVC, which has no owner reference: the Sandbox incarnation that created it, so a
-	// recreated Sandbox of the same name never takes over a previous one's state.
+	// On a state PVC created before the Sandbox owned it: the Sandbox that created it, so the
+	// controller can adopt it. CLEANUP(added 2026-10-13): delete this and the adoption in
+	// stateVolume once no state PVC lacks an owner reference (check `kubectl get pvc -l
+	// agentplane.allegedly.works/sandbox` on each cluster).
 	SandboxUIDAnnotation = "agentplane.allegedly.works/sandbox-uid"
-	// Seals a deleted Sandbox's Sessions, then deletes its Pod and, once that is gone, its state PVC.
+	// Seals a deleted Sandbox's Sessions, then deletes its Pod or VM; the state PVC goes by garbage
+	// collection once the Sandbox does.
 	StateVolumeFinalizer = "agentplane.allegedly.works/state-volume"
 	// On the Pod: a hash of the spec rendered from the template, so a crash-looping Pod can be told
 	// from the current template's.
@@ -170,7 +173,7 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 	if err != nil {
 		return w, nil, err
 	}
-	own := pvc != nil && pvc.Annotations[SandboxUIDAnnotation] == string(sandbox.UID)
+	own := pvc != nil && metav1.IsControlledBy(pvc, sandbox)
 	// Without a state PVC of its own the Sandbox never had a runner, so it has no Session to seal.
 	if own && !meta.IsStatusConditionTrue(sandbox.Status.Conditions, SessionsSealed) {
 		// Only a running runner seals, so a stopped Sandbox runs once more; the Runner Gateway
@@ -199,12 +202,6 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 		// the state PVC after this.
 		return w, &unready{"Deleting", fmt.Sprintf("VMI %s is being deleted", w.vmi.Name)}, nil
 	}
-	if own {
-		if err := r.deleteIfLive(ctx, pvc); err != nil {
-			return w, nil, err
-		}
-		return w, &unready{"Deleting", fmt.Sprintf("PVC %s is being deleted", pvc.Name)}, nil
-	}
 	controllerutil.RemoveFinalizer(sandbox, StateVolumeFinalizer)
 	return w, nil, r.Update(ctx, sandbox)
 }
@@ -224,18 +221,33 @@ func (r *Reconciler) stateVolume(ctx context.Context, sandbox *Sandbox) (*corev1
 	if err := r.Get(ctx, key, &pvc); err != nil {
 		return nil, client.IgnoreNotFound(err)
 	}
+	if metav1.GetControllerOf(&pvc) == nil && pvc.Annotations[SandboxUIDAnnotation] == string(sandbox.UID) {
+		if err := r.adopt(ctx, sandbox, &pvc); err != nil {
+			return nil, err
+		}
+	}
 	return &pvc, nil
 }
 
-// ensureStateVolume creates the state PVC from the template if it does not exist yet. It has no
-// owner reference: nothing but the Sandbox's own deletion may garbage-collect it.
+// adopt makes the Sandbox the PVC's controller. The reference does not block the owner's deletion,
+// so foreground propagation and namespace deletion cannot remove the state before the seal
+// completes; garbage collection takes the PVC once the finalizer clears.
+func (r *Reconciler) adopt(ctx context.Context, sandbox *Sandbox, pvc *corev1.PersistentVolumeClaim) error {
+	if err := controllerutil.SetControllerReference(sandbox, pvc, r.Scheme(), controllerutil.WithBlockOwnerDeletion(false)); err != nil {
+		return err
+	}
+	return r.Update(ctx, pvc)
+}
+
+// ensureStateVolume creates the state PVC from the template if it does not exist yet, owned by the
+// Sandbox, so nothing but the Sandbox's own deletion garbage-collects it.
 func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *Sandbox) (*unready, error) {
 	pvc, err := r.stateVolume(ctx, sandbox)
 	if err != nil {
 		return nil, err
 	}
 	if pvc != nil {
-		if pvc.Annotations[SandboxUIDAnnotation] != string(sandbox.UID) || !pvc.DeletionTimestamp.IsZero() {
+		if !metav1.IsControlledBy(pvc, sandbox) || !pvc.DeletionTimestamp.IsZero() {
 			return &unready{"StateVolumeConflict", fmt.Sprintf("PVC %s belongs to another Sandbox or is being deleted", pvc.Name)}, nil
 		}
 		return nil, nil
@@ -246,12 +258,14 @@ func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *Sandbox) (*
 	}
 	pvc = &corev1.PersistentVolumeClaim{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:        StateVolumeName(sandbox.Name),
-			Namespace:   sandbox.Namespace,
-			Labels:      map[string]string{SandboxLabel: sandbox.Name},
-			Annotations: map[string]string{SandboxUIDAnnotation: string(sandbox.UID)},
+			Name:      StateVolumeName(sandbox.Name),
+			Namespace: sandbox.Namespace,
+			Labels:    map[string]string{SandboxLabel: sandbox.Name},
 		},
 		Spec: *template.Spec.StateVolume.Claim.DeepCopy(),
+	}
+	if err := controllerutil.SetControllerReference(sandbox, pvc, r.Scheme(), controllerutil.WithBlockOwnerDeletion(false)); err != nil {
+		return nil, err
 	}
 	if err := r.Create(ctx, pvc); err != nil && !apierrors.IsAlreadyExists(err) {
 		return nil, err

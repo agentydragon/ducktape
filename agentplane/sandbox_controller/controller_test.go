@@ -148,11 +148,12 @@ func TestRunningSandboxGetsStateVolumeAndPod(t *testing.T) {
 	if pvc == nil {
 		t.Fatal("no state PVC")
 	}
-	if len(pvc.OwnerReferences) != 0 {
-		t.Errorf("state PVC has owner references %v; it must outlive the Pod and survive garbage collection", pvc.OwnerReferences)
+	owner := metav1.GetControllerOf(pvc)
+	if owner == nil || owner.UID != "uid-sandbox" || (owner.BlockOwnerDeletion != nil && *owner.BlockOwnerDeletion) {
+		t.Errorf("state PVC owner = %v; want the Sandbox, without blocking its deletion so foreground deletion cannot remove the state before the seal", owner)
 	}
-	if pvc.Annotations[SandboxUIDAnnotation] != "uid-sandbox" || pvc.Labels[SandboxLabel] != sandboxName {
-		t.Errorf("state PVC metadata = %v / %v", pvc.Labels, pvc.Annotations)
+	if pvc.Labels[SandboxLabel] != sandboxName {
+		t.Errorf("state PVC labels = %v", pvc.Labels)
 	}
 	if got := pvc.Spec.Resources.Requests[corev1.ResourceStorage]; got.String() != "1Gi" {
 		t.Errorf("state PVC request = %s, want the template's 1Gi", got.String())
@@ -253,7 +254,7 @@ func TestPodGoneOnItsOwnIsReplaced(t *testing.T) {
 	if getPod(t, c) == nil {
 		t.Fatal("a running Sandbox whose Pod went away got no new one")
 	}
-	if pvc := getPVC(t, c); pvc == nil || pvc.Annotations[SandboxUIDAnnotation] != "uid-sandbox" {
+	if pvc := getPVC(t, c); pvc == nil || !metav1.IsControlledBy(pvc, getSandbox(t, c)) {
 		t.Fatal("the state PVC did not survive the Pod")
 	}
 }
@@ -399,13 +400,24 @@ func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 		t.Fatal("the state PVC went in the same step as the Pod, while the Pod could still be writing")
 	}
 	reconcileOnce(t, r)
-	if getPVC(t, c) != nil {
-		t.Fatal("deletion left the state PVC")
-	}
-	reconcileOnce(t, r)
 	var sandbox Sandbox
 	if err := c.Get(context.Background(), sandboxKey, &sandbox); !apierrors.IsNotFound(err) {
 		t.Fatalf("Sandbox still present after its finalizer's work: %v", err)
+	}
+}
+
+func TestStateVolumeCreatedBeforeOwnershipIsAdopted(t *testing.T) {
+	legacy := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
+		Namespace: namespace, Name: StateVolumeName(sandboxName),
+		Annotations: map[string]string{SandboxUIDAnnotation: "uid-sandbox"},
+	}}
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"), legacy)
+	reconcileOnce(t, r)
+	if pvc := getPVC(t, c); pvc == nil || !metav1.IsControlledBy(pvc, getSandbox(t, c)) {
+		t.Fatal("the Sandbox's own state PVC was not adopted")
+	}
+	if getPod(t, c) == nil {
+		t.Fatal("adopting the state PVC blocked the Pod")
 	}
 }
 

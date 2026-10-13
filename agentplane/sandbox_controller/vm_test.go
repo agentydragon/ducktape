@@ -242,8 +242,9 @@ func TestVMDeletionWaitsForTheVMIBeforeTheStateVolume(t *testing.T) {
 		t.Fatal(err)
 	}
 	reconcileOnce(t, r)
-	if getPVC(t, c) != nil {
-		t.Fatal("deletion left the state PVC once the VMI was gone")
+	var sandbox Sandbox
+	if err := c.Get(context.Background(), sandboxKey, &sandbox); !apierrors.IsNotFound(err) {
+		t.Fatalf("Sandbox still present once the VMI was gone: %v", err)
 	}
 }
 

@@ -45,17 +45,18 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
 
 ## Design notes
 
-- **A finalizer on every Sandbox**, unlike the Policy Controller: the state PVC has no owner
-  reference by design, so only the controller can delete it, and a Sandbox deleted while the
-  controller is down has to wait for it.
-- **The Pod is deleted before the PVC**, in separate reconciles, so the PVC never goes while a
-  container can still write to it.
+- **A finalizer on every Sandbox**, unlike the Policy Controller: the seal and the Pod or VM
+  must be done before the Sandbox, and with it the owned state PVC, can go.
+- **The PVC's owner reference does not block deletion.** Under foreground propagation or namespace
+  deletion a blocking reference would remove the state while a sealing runner still writes to it.
+- **The Pod is deleted before the finalizer clears**, in separate reconciles, so the PVC, which
+  garbage collection removes afterwards, never goes while a container can still write to it.
 - **The gateway seals, the controller deletes.** The Runner Gateway holds the runner's control
   stream, so it seals and reports through the `SessionsSealed` condition; the controller makes no
   gRPC call.
-- **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Sealing`. Removing the finalizer
-  by hand orphans the PVC, which has no owner reference; to give up on the seal, set
-  `SessionsSealed` True on the Sandbox's status instead, and the controller deletes the rest.
+- **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Sealing`. To give up on the seal,
+  remove the finalizer by hand: the PVC is owned, so it goes with the Sandbox, and the Pod or VM
+  with it.
 - **No Pod waits on its `PolicyBinding`'s readers.** Every reader fails closed, so a grant applied
   after the Pod starts only refuses its first requests, as for a running Pod whose PolicySets
   change; a gate would make every Sandbox depend on every reader, optional ones included.
