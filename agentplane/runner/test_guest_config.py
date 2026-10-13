@@ -60,10 +60,14 @@ def test_guest_proxy_and_ca_are_installed_in_the_runner_process(monkeypatch: pyt
     runner_environment: dict[str, str] = {}
     monkeypatch.setattr(guest_config.os, "environ", runner_environment)
 
-    guest_config.configure_runner_network_environment(make_runner_config(_config()).harness_environment)
+    guest_config.configure_runner_network_environment(
+        make_runner_config(_config()).harness_environment, direct_targets=["10.0.2.1:3130", "10.0.2.1:3131"]
+    )
 
     assert runner_environment["HTTP_PROXY"] == "http://10.0.2.2:3128"
     assert runner_environment["HTTPS_PROXY"] == "http://10.0.2.2:3128"
+    # The platform routes are dialed directly, not through the proxy; `127.0.0.1,localhost` stays.
+    assert runner_environment["NO_PROXY"] == runner_environment["no_proxy"] == "127.0.0.1,localhost,10.0.2.1"
     assert runner_environment["SSL_CERT_FILE"] == "/run/agentplane/ca-certificates.crt"
 
 

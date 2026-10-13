@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -90,10 +90,17 @@ _RUNNER_NETWORK_ENVIRONMENT = (
 )
 
 
-def configure_runner_network_environment(environment: Mapping[str, str]) -> None:
-    """Give the runner process the egress proxy and CA used by its HTTP clients."""
+def configure_runner_network_environment(environment: Mapping[str, str], *, direct_targets: Iterable[str]) -> None:
+    """Give the runner process the egress proxy and CA used by its HTTP clients.
+
+    The control and ingress targets are the launcher relay's platform routes, which are the
+    proxy's own sibling listeners and swap the bearer themselves; the runner reaches them directly.
+    """
     for name in _RUNNER_NETWORK_ENVIRONMENT:
         os.environ[name] = environment[name]
+    direct_hosts = dict.fromkeys(urlsplit(f"//{target}").hostname for target in direct_targets)
+    no_proxy = ",".join([environment["NO_PROXY"], *filter(None, direct_hosts)])
+    os.environ["NO_PROXY"] = os.environ["no_proxy"] = no_proxy
 
 
 def make_runner_config(config: GuestConfig) -> RunnerConfig:
@@ -153,7 +160,9 @@ def main() -> None:
     """Entry point used by the dedicated NixOS guest's systemd unit."""
     config = read_guest_config()
     runner_config = make_runner_config(config)
-    configure_runner_network_environment(runner_config.harness_environment)
+    configure_runner_network_environment(
+        runner_config.harness_environment, direct_targets=[config.control.target, config.ingress.target]
+    )
     asyncio.run(
         async_main(
             runner_config,
