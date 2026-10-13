@@ -60,7 +60,7 @@ from agentplane.egress.identity import ProjectedTokenVerifier, WorkloadIdentityV
 from agentplane.egress.listener import serve
 from agentplane.egress.policy import DenyReason, Index
 from agentplane.egress.proxy import EgressProxyServer, write_interception_ca
-from agentplane.egress.resources import TargetMethod, placeholder_of
+from agentplane.egress.resources import Rule, TargetMethod, placeholder_of
 from agentplane.egress.rules_api import RulesProjection, create_rules_app
 from agentplane.egress.settings import Settings
 from agentplane.egress.sidecar import SidecarRelay
@@ -75,23 +75,22 @@ from agentplane.egress.testing.tls import (
 )
 from agentplane.egress.upstream import Address, Network, Pin, UpstreamResolver
 from agentplane.kubernetes_watch import Freshness
+from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL, PolicySet
 from agentplane.testing.fake_apiserver import (
-    BINDINGS_PLURAL,
     CREDENTIALS_NAMESPACE,
     CREDENTIALS_PLURAL,
     NAMESPACE,
-    POLICIES_PLURAL,
     SANDBOX_NAMESPACE,
     SANDBOXES_PLURAL,
     SECRETS_PLURAL,
     FakeApiServer,
     TokenVerdict,
     authenticated_workload_credential,
-    binding,
     credential,
+    egress_policy_set,
     fake_apiserver,
     pod_for,
-    policy,
+    policy_binding,
     projected_workload_credential,
     sandbox,
     secret,
@@ -205,7 +204,7 @@ class ProxyUnderTest:
             return Response(status=response.status, headers=dict(response.headers), body=await response.read())
 
     async def install_rules_route(self) -> None:
-        if BASIC_POLICY in self.index.policies:
+        if BASIC_POLICY in self.index.policy_sets:
             return
         self.fake.put(
             CREDENTIALS_PLURAL,
@@ -215,8 +214,8 @@ class ProxyUnderTest:
             ),
         )
         self.fake.put(
-            POLICIES_PLURAL,
-            policy(
+            POLICY_SETS_PLURAL,
+            egress_policy_set(
                 BASIC_POLICY,
                 [
                     {
@@ -229,16 +228,18 @@ class ProxyUnderTest:
                 ],
             ),
         )
-        current = self.fake.objects[BINDINGS_PLURAL][BINDING]
-        policies = [*current["spec"]["policies"]]
-        if BASIC_POLICY not in policies:
-            policies.append(BASIC_POLICY)
-        self.fake.put(BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=policies))
+        current = self.fake.objects[POLICY_BINDINGS_PLURAL][BINDING]
+        policy_sets = [*current["spec"]["policySets"]]
+        if BASIC_POLICY not in policy_sets:
+            policy_sets.append(BASIC_POLICY)
+        self.fake.put(
+            POLICY_BINDINGS_PLURAL, policy_binding(BINDING, subject=SUBJECT_A.model_dump(), policy_sets=policy_sets)
+        )
         await self.index.wait_for(
             lambda: (
                 WORKLOAD_CREDENTIAL in self.index.credentials
-                and BASIC_POLICY in self.index.policies
-                and BASIC_POLICY in self.index.bindings[BINDING].spec.policies
+                and BASIC_POLICY in self.index.policy_sets
+                and BASIC_POLICY in self.index.policy_bindings[BINDING].spec.policy_sets
             )
         )
 
@@ -353,6 +354,12 @@ WORKLOAD_POLICY = "first-party-workload"
 BASIC_POLICY = "basic"
 
 
+def first_rule(index: Index, policy_name: str) -> Rule:
+    policy_set = index.policy_sets[policy_name]
+    assert isinstance(policy_set, PolicySet)
+    return policy_set.rules[0].rule
+
+
 def denial(response: Response, reason: DenyReason) -> bool:
     return response.status == 403 and response.headers[DENIED_HEADER] == f"denied; reason={reason}"
 
@@ -408,13 +415,14 @@ async def bind_to_a(proxy: ProxyUnderTest, policy_name: str, credential_name: st
     """Bind A to `policy_name` beside its GitHub policy, and wait until the index holds the policy,
     its credential and the binding."""
     proxy.fake.put(
-        BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY, policy_name])
+        POLICY_BINDINGS_PLURAL,
+        policy_binding(BINDING, subject=SUBJECT_A.model_dump(), policy_sets=[GITHUB_POLICY, policy_name]),
     )
     await proxy.index.wait_for(
         lambda: (
             credential_name in proxy.index.credentials
-            and policy_name in proxy.index.policies
-            and policy_name in proxy.index.bindings[BINDING].spec.policies
+            and policy_name in proxy.index.policy_sets
+            and policy_name in proxy.index.policy_bindings[BINDING].spec.policy_sets
         )
     )
 
@@ -428,8 +436,8 @@ async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest
         ),
     )
     fake.put(
-        POLICIES_PLURAL,
-        policy(
+        POLICY_SETS_PLURAL,
+        egress_policy_set(
             WORKLOAD_POLICY,
             [
                 {
@@ -447,10 +455,12 @@ async def install_workload_credential(fake: FakeApiServer, proxy: ProxyUnderTest
         # address. Its distinct Pod UID and token still go through TokenReview and live ownership.
         fake.pods[SANDBOX_B] = pod_for(fake, SANDBOX_B, pod_uid=POD_B_UID, ip=POD_A_IP)
         fake.put(
-            BINDINGS_PLURAL,
-            binding(f"{SANDBOX_B}-{WORKLOAD_POLICY}", subjects=[SUBJECT_B.model_dump()], policies=[WORKLOAD_POLICY]),
+            POLICY_BINDINGS_PLURAL,
+            policy_binding(
+                f"{SANDBOX_B}-{WORKLOAD_POLICY}", subject=SUBJECT_B.model_dump(), policy_sets=[WORKLOAD_POLICY]
+            ),
         )
-        await proxy.index.wait_for(lambda: f"{SANDBOX_B}-{WORKLOAD_POLICY}" in proxy.index.bindings)
+        await proxy.index.wait_for(lambda: f"{SANDBOX_B}-{WORKLOAD_POLICY}" in proxy.index.policy_bindings)
 
 
 async def test_allowed_request_has_its_placeholder_substituted(proxy: ProxyUnderTest) -> None:
@@ -626,8 +636,8 @@ async def test_buildbuddy_http_and_grpc_metadata_placeholder_is_substituted(
         ),
     )
     fake.put(
-        POLICIES_PLURAL,
-        policy(
+        POLICY_SETS_PLURAL,
+        egress_policy_set(
             policy_name,
             [
                 {
@@ -728,8 +738,8 @@ async def test_plaintext_grpc_stream_metadata_placeholder_is_substituted(
         ),
     )
     fake.put(
-        POLICIES_PLURAL,
-        policy(
+        POLICY_SETS_PLURAL,
+        egress_policy_set(
             policy_name,
             [
                 {
@@ -822,8 +832,8 @@ class TestUpstreamAddress:
     ) -> None:
         """Exact and blanket policies both leave the address gate enforced at CONNECT."""
         if blanket:
-            fake.put(POLICIES_PLURAL, policy(GITHUB_POLICY, [{"hosts": ["*"]}]))
-            await proxy.index.wait_for(lambda: proxy.index.policies[GITHUB_POLICY].spec.rules[0].hosts == ["*"])
+            fake.put(POLICY_SETS_PLURAL, egress_policy_set(GITHUB_POLICY, [{"hosts": ["*"]}]))
+            await proxy.index.wait_for(lambda: first_rule(proxy.index, GITHUB_POLICY).hosts == ["*"])
         with pytest.raises(aiohttp.ClientHttpProxyError) as refused:
             await proxy.get("/repos/o/r")
         assert refused.value.status == 403
@@ -932,13 +942,13 @@ async def test_rules_destination_auth_is_required_after_the_authenticated_hop(
 async def test_rules_unbound_placeholder_is_not_forwarded(proxy: ProxyUnderTest) -> None:
     await proxy.install_rules_route()
     proxy.fake.put(
-        POLICIES_PLURAL,
-        policy(
+        POLICY_SETS_PLURAL,
+        egress_policy_set(
             BASIC_POLICY,
             [{"hosts": [RULES_HOST], "methods": ["GET"], "paths": [rules_api.PATH], "clusterInternal": True}],
         ),
     )
-    await proxy.index.wait_for(lambda: proxy.index.policies[BASIC_POLICY].spec.rules[0].credential_ref is None)
+    await proxy.index.wait_for(lambda: first_rule(proxy.index, BASIC_POLICY).credential_ref is None)
 
     response = await proxy.get_rules(rules_api.PATH)
 
@@ -1015,7 +1025,7 @@ async def test_existing_tls_connection_rechecks_every_admission(
             case "stale":
                 proxy.index.freshness.at[CREDENTIALS_PLURAL] -= timedelta(seconds=181)
             case "revoked":
-                proxy.index.bindings.clear()
+                proxy.index.policy_bindings.clear()
             case "draining":
                 proxy.addon.begin_drain()
         assert await get("/public/after") == (403 if state == "revoked" else 502)
@@ -1125,7 +1135,7 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             await get(first.proxy_port, "first", 200)
             await get(second.proxy_port, "second", 200)
             # Only one watch source observes revocation. No replica can acknowledge the other.
-            first_api.delete(BINDINGS_PLURAL, BINDING)
+            first_api.delete(POLICY_BINDINGS_PLURAL, BINDING)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
                 with attempt:
                     await get(first.proxy_port, "revoked", 403)
@@ -1137,7 +1147,7 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
             await get(second.proxy_port, "stale-existing-connection", 502)
             assert len(upstream.requests) == before
             second_api.watch_available = True
-            second_api.delete(BINDINGS_PLURAL, BINDING)
+            second_api.delete(POLICY_BINDINGS_PLURAL, BINDING)
             await second.health(200)
             await get(second.proxy_port, "recovered-revocation", 403)
             async for attempt in AsyncRetrying(stop=stop_after_delay(10), wait=wait_fixed(0.05), reraise=True):
@@ -1149,7 +1159,6 @@ async def test_two_process_replicas_diverge_fail_closed_and_share_decisions(
                         for producer in {row.producer_id for row in rows}
                     )
                     assert any(row.reason is DenyReason.UNAVAILABLE for row in rows)
-            assert first_api.status_patches == second_api.status_patches == []
 
 
 async def test_drain_closes_listener_but_completes_admitted_request(proxy: ProxyUnderTest) -> None:
@@ -1190,8 +1199,8 @@ async def install_projected_credential(fake: FakeApiServer, proxy: ProxyUnderTes
         ),
     )
     fake.put(
-        POLICIES_PLURAL,
-        policy(
+        POLICY_SETS_PLURAL,
+        egress_policy_set(
             PROJECTED_POLICY,
             [
                 {
@@ -1263,8 +1272,8 @@ async def test_matrix_json_login_through_real_proxy(
         ),
     )
     fake.put(
-        POLICIES_PLURAL,
-        policy(
+        POLICY_SETS_PLURAL,
+        egress_policy_set(
             name,
             [
                 {"hosts": [UPSTREAM_HOST], "methods": ["POST"], "paths": [login_path], "credentialRef": {"name": name}},
@@ -1272,12 +1281,12 @@ async def test_matrix_json_login_through_real_proxy(
             ],
         ),
     )
-    fake.put(BINDINGS_PLURAL, binding(BINDING, subjects=[SUBJECT_A.model_dump()], policies=[name]))
+    fake.put(POLICY_BINDINGS_PLURAL, policy_binding(BINDING, subject=SUBJECT_A.model_dump(), policy_sets=[name]))
     await proxy.index.wait_for(
         lambda: (
             name in proxy.index.credentials
-            and name in proxy.index.policies
-            and proxy.index.bindings[BINDING].spec.policies == [name]
+            and name in proxy.index.policy_sets
+            and proxy.index.policy_bindings[BINDING].spec.policy_sets == [name]
             and "matrix-password" in proxy.index.secrets
         )
     )

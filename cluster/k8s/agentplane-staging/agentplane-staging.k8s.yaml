@@ -1118,22 +1118,6 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - egresspolicies
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - egressbindings
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
       - egresscredentials
     verbs:
       - get

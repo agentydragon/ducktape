@@ -2,7 +2,7 @@
 
 The central proxy of Agentplane's credentialless egress: a mitmproxy addon that proves each
 caller's Pod-bound token, decides the request from the `egress` rules of `PolicySet`s a
-`PolicyBinding` grants it and from `EgressPolicy` and `EgressBinding` resources, and substitutes the real credential. What it guarantees is in <SPEC.md>. How the two kinds compose into
+`PolicyBinding` grants it, and substitutes the real credential. What it guarantees is in <SPEC.md>. How the kinds compose into
 one decision is in <../docs/egress_composition.md>.
 
 ```sh
@@ -11,7 +11,7 @@ bbr test //agentplane/egress/...
 
 ## Layout
 
-- `resources.py`: the boundary models of `EgressPolicy`, `EgressBinding`, `EgressCredential`
+- `resources.py`: the boundary models of `Rule`, `EgressCredential`
   and Secrets as read off the API server; the derivation of a credential's placeholder from its name.
 - `presentation.py`: one parse per declared target, shared by detection and substitution — where a
   credential's placeholder sits in a request, and how to put the real value there.
@@ -158,8 +158,7 @@ an informational snapshot of the answering replica, not a global acknowledgement
 
 ## ServiceAccount permissions
 
-In the rules namespace (`--rules-namespace`): `get`, `list`, `watch` on `egresspolicies`,
-`egressbindings`, `egresscredentials`, `policysets` and `policybindings`, and `patch` on
+In the rules namespace (`--rules-namespace`): `get`, `list`, `watch` on `egresscredentials`, `policysets` and `policybindings`, and `patch` on
 `policybindings/status`. **Nothing at all in an `allowed_service_account_namespaces` entry**: the
 TokenReview names the ServiceAccount a bearer's Pod runs as, and that is the subject, so naming a
 second workload namespace needs no Role there. In the credentials namespace
@@ -241,12 +240,6 @@ There is no transparent TCP/HTTP2 migration, request replay, or promise to finis
 Staging runs two replicas with `RollingUpdate` (`maxUnavailable: 0`, `maxSurge: 1`) and a
 PodDisruptionBudget of one available, so an image roll never takes a ready endpoint away before its
 replacement is ready, and a voluntary eviction keeps one.
-
-The admin-only `/bindings` endpoint reports `scope: replica-local`, observation time, readiness,
-and derived binding name/UID/generation, resolution reason, and present/missing egress-policy names.
-It neither persists conditions nor claims other replicas observed that generation. The app shows
-Kubernetes desired bindings as “configured”, not an enforcement acknowledgement. Expiry is
-computed on every observation, with no timer-owned status or transition timestamps.
 
 Both replicas are pinned to the `hil-ovh` zone by node selector with no anti-affinity or topology
 spread, so they may share a node; the PDB limits voluntary evictions, not involuntary failures.

@@ -12,17 +12,7 @@ from kubernetes_asyncio.client import CoreV1Api
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.policy import Index
-from agentplane.egress.resources import (
-    BINDINGS_PLURAL,
-    CREDENTIALS_PLURAL,
-    EGRESS_RULE_TYPE,
-    POLICIES_PLURAL,
-    EgressBinding,
-    EgressCredential,
-    EgressPolicy,
-    Rule,
-    Secret,
-)
+from agentplane.egress.resources import CREDENTIALS_PLURAL, EGRESS_RULE_TYPE, EgressCredential, Rule, Secret
 from agentplane.policy_sets import (
     POLICY_BINDINGS_PLURAL,
     POLICY_SET_UNAVAILABLE,
@@ -42,7 +32,7 @@ EGRESS_READY = "EgressReady"
 FIELD_MANAGER = "agentplane-egress"
 
 
-def _name(obj: EgressPolicy | EgressBinding | EgressCredential | PolicyBinding) -> str:
+def _name(obj: EgressCredential | PolicyBinding) -> str:
     return obj.metadata.name
 
 
@@ -85,24 +75,6 @@ class Informer:
         self._reporter = ConditionReporter(custom_objects, field_manager=FIELD_MANAGER)
         self._watch = ListWatch(
             kinds=(
-                WatchedKind(
-                    name=POLICIES_PLURAL,
-                    list=custom_objects.list_namespaced_custom_object,
-                    args=(GROUP, VERSION, namespace, POLICIES_PLURAL),
-                    parse=EgressPolicy.model_validate,
-                    key=_name,
-                    names=lambda: set(index.policies),
-                    apply=lambda name, obj: apply_to(index.policies, name, obj),
-                ),
-                WatchedKind(
-                    name=BINDINGS_PLURAL,
-                    list=custom_objects.list_namespaced_custom_object,
-                    args=(GROUP, VERSION, namespace, BINDINGS_PLURAL),
-                    parse=EgressBinding.model_validate,
-                    key=_name,
-                    names=lambda: set(index.bindings),
-                    apply=lambda name, obj: apply_to(index.bindings, name, obj),
-                ),
                 WatchedKind(
                     name=POLICY_SETS_PLURAL,
                     list=custom_objects.list_namespaced_custom_object,

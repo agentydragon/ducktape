@@ -19,8 +19,8 @@ class Settings(YamlFileSettings):
     model_config = SettingsConfigDict(env_prefix="AGENTPLANE_EGRESS_", cli_parse_args=True, cli_kebab_case=True)
 
     rules_namespace: str = Field(
-        description="The one namespace holding the EgressPolicy, EgressBinding and EgressCredential objects this "
-        "proxy enforces. One deployment serves one egress-policy set; a caller's own namespace is unrelated to it."
+        description="The one namespace holding the PolicySet, PolicyBinding and EgressCredential objects this "
+        "proxy enforces. One deployment serves one set of egress policies; a caller's own namespace is unrelated to it."
     )
     credentials_namespace: str = Field(description="Namespace the rules' Secrets are read from.")
     allowed_service_account_namespaces: frozenset[str] = Field(

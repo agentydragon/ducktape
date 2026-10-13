@@ -1,9 +1,8 @@
-"""The decision: bindings to egress policies to the rule the request's placeholder picks, over an in-memory index. No I/O.
+"""The decision: bindings to policy sets to the rule the request's placeholder picks, over an in-memory index. No I/O.
 
 `Index` is the proxy's picture of the namespace, kept equal to the API server's by the informer.
-A subject's rules come from two kinds of binding: an `EgressBinding` of `EgressPolicy`s, whose
-`expiresAt` the proxy checks against the caller's clock, and a `PolicyBinding` of `PolicySet`s,
-whose egress rules grant while the binding exists (the Policy Controller deletes it at expiry).
+A subject's rules come from `PolicyBinding`s of `PolicySet`s: their egress rules grant while the
+binding exists (the Policy Controller deletes it at expiry).
 
 Where a credential sits in a request, and what the forwarded headers become, is `presentation.py`:
 one parse per declared target, read by detection and substitution alike.
@@ -29,23 +28,11 @@ from agentplane.egress.presentation import (
     parse_json_body,
     present,
 )
-from agentplane.egress.resources import (
-    BINDINGS_PLURAL,
-    CREDENTIALS_PLURAL,
-    POLICIES_PLURAL,
-    ActiveReason,
-    EgressBinding,
-    EgressCredential,
-    EgressPolicy,
-    JsonFieldTarget,
-    Rule,
-    Secret,
-)
+from agentplane.egress.resources import CREDENTIALS_PLURAL, EgressCredential, JsonFieldTarget, Rule, Secret
 from agentplane.kubernetes_watch import Freshness
 from agentplane.policy_sets import (
     POLICY_BINDINGS_PLURAL,
     POLICY_SETS_PLURAL,
-    NumberedRule,
     PolicyBinding,
     PolicySet,
     RefusedPolicySet,
@@ -54,9 +41,7 @@ from agentplane.policy_sets import (
 from agentplane.subjects import ServiceAccountRef
 
 CONNECT = "CONNECT"
-WATCHED_KINDS = frozenset(
-    {POLICIES_PLURAL, BINDINGS_PLURAL, CREDENTIALS_PLURAL, POLICY_SETS_PLURAL, POLICY_BINDINGS_PLURAL, "secrets"}
-)
+WATCHED_KINDS = frozenset({CREDENTIALS_PLURAL, POLICY_SETS_PLURAL, POLICY_BINDINGS_PLURAL, "secrets"})
 
 
 class DenyReason(StrEnum):
@@ -86,8 +71,6 @@ class Index:
     # watch that never returns, or one the server keeps refusing leaves the index frozen while
     # every answer it gives stays plausible and `synced` stays true.
     freshness: Freshness
-    policies: dict[str, EgressPolicy] = field(default_factory=dict)
-    bindings: dict[str, EgressBinding] = field(default_factory=dict)
     policy_sets: dict[str, PolicySet[Rule] | RefusedPolicySet] = field(default_factory=dict)
     policy_bindings: dict[str, PolicyBinding] = field(default_factory=dict)
     credentials: dict[str, EgressCredential] = field(default_factory=dict)
@@ -166,33 +149,6 @@ type Decision = Allowed | Denied
 
 
 @dataclass(frozen=True)
-class BindingResolution:
-    """A binding as it stands right now: which of its egress policies exist, and why it may grant nothing."""
-
-    binding: EgressBinding
-    policies: tuple[EgressPolicy, ...]
-    missing: tuple[str, ...]
-    reason: ActiveReason
-
-    @property
-    def active(self) -> bool:
-        return self.reason is ActiveReason.RESOLVED
-
-
-def resolve_binding(index: Index, binding: EgressBinding, now: datetime) -> BindingResolution:
-    policies = tuple(index.policies[name] for name in binding.spec.policies if name in index.policies)
-    missing = tuple(name for name in binding.spec.policies if name not in index.policies)
-    spec = binding.spec
-    if spec.expires_at is not None and spec.expires_at <= now:
-        reason = ActiveReason.EXPIRED
-    elif not policies:
-        reason = ActiveReason.MISSING_POLICY
-    else:
-        reason = ActiveReason.RESOLVED
-    return BindingResolution(binding=binding, policies=policies, missing=missing, reason=reason)
-
-
-@dataclass(frozen=True)
 class Grant:
     """One binding naming the caller, and the egress rules it grants by policy."""
 
@@ -200,28 +156,14 @@ class Grant:
     policies: tuple[PolicySet[Rule], ...]
 
 
-def _as_policy_set(policy: EgressPolicy) -> PolicySet[Rule]:
-    return PolicySet(
-        name=policy.metadata.name,
-        rules=tuple(NumberedRule(number=number, rule=rule) for number, rule in enumerate(policy.spec.rules)),
-    )
-
-
 def subject_grants(index: Index, caller: ServiceAccountRef, now: datetime) -> list[Grant]:
     """The bindings of either kind that give this caller egress rules, in name order."""
-    egress_bindings = [
-        Grant(binding=resolution.binding.metadata.name, policies=tuple(map(_as_policy_set, resolution.policies)))
-        for name in sorted(index.bindings)
-        if (resolution := resolve_binding(index, index.bindings[name], now)).active
-        and caller in resolution.binding.spec.subjects
-    ]
-    policy_bindings = [
+    return [
         Grant(binding=resolution.binding.metadata.name, policies=sets)
         for resolution in subject_bindings(index.policy_sets, index.policy_bindings, caller)
         # A set with no egress rules is another reader's, and grants this proxy nothing.
         if (sets := tuple(policy_set for policy_set in resolution.sets if policy_set.rules))
     ]
-    return sorted([*egress_bindings, *policy_bindings], key=lambda grant: grant.binding)
 
 
 def host_matches(pattern: str, host: str) -> bool:

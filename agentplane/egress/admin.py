@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
-from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Response, status
 from fastapi.responses import StreamingResponse
@@ -15,8 +14,7 @@ from pydantic.alias_generators import to_camel
 from agentplane.egress.decision_changes import DecisionChanges
 from agentplane.egress.decision_log import DB_ERRORS, DecisionLog
 from agentplane.egress.decisions import DecisionRecord
-from agentplane.egress.policy import Index, resolve_binding
-from agentplane.egress.resources import ActiveReason
+from agentplane.egress.policy import Index
 from agentplane.sse import frame, sse_response
 from agentplane.subjects import ServiceAccountRef
 
@@ -37,22 +35,6 @@ class Health(_CamelModel):
     decision_history: dict[str, int | bool | None]
     stale_after_seconds: float
     refreshed_seconds_ago: dict[str, float]
-
-
-class BindingObservation(_CamelModel):
-    name: str
-    uid: str | None
-    generation: int | None
-    reason: ActiveReason
-    policies: list[str]
-    missing_policies: list[str]
-
-
-class Bindings(_CamelModel):
-    scope: Literal["replica-local"] = "replica-local"
-    observed_at: datetime
-    available: bool
-    bindings: list[BindingObservation]
 
 
 class Liveness(BaseModel):
@@ -106,28 +88,6 @@ def create_admin_app(
             decision_history=decision_log.health(),
             stale_after_seconds=index.freshness.stale_after_seconds,
             refreshed_seconds_ago={plural: round(age, 1) for plural, age in index.freshness.ages(now).items()},
-        )
-
-    @app.get("/bindings")
-    async def bindings() -> Bindings:
-        now = clock()
-        return Bindings(
-            observed_at=now,
-            available=index.available(now),
-            bindings=[
-                BindingObservation(
-                    name=resolution.binding.metadata.name,
-                    uid=resolution.binding.metadata.uid,
-                    generation=resolution.binding.metadata.generation,
-                    reason=resolution.reason,
-                    policies=[policy.metadata.name for policy in resolution.policies],
-                    missing_policies=list(resolution.missing),
-                )
-                for resolution in (
-                    resolve_binding(index, binding, now)
-                    for binding in sorted(index.bindings.values(), key=lambda binding: binding.metadata.name)
-                )
-            ],
         )
 
     @app.get("/livez")

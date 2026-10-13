@@ -19,22 +19,21 @@ from agentplane.egress.informer import Informer
 from agentplane.egress.policy import Index
 from agentplane.egress.resources import CREDENTIALS_PLURAL, TargetMethod, placeholder_of
 from agentplane.egress.upstream import PinnedDialEventLoop
+from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import (
-    BINDINGS_PLURAL,
     CREDENTIALS_NAMESPACE,
     NAMESPACE,
-    POLICIES_PLURAL,
     SANDBOX_NAMESPACE,
     SANDBOXES_PLURAL,
     SECRETS_PLURAL,
     FakeApiServer,
     TokenVerdict,
-    binding,
     credential,
+    egress_policy_set,
     fake_apiserver,
     pod_for,
-    policy,
+    policy_binding,
     sandbox,
     secret,
 )
@@ -117,8 +116,8 @@ def seed(fake: FakeApiServer) -> None:
         ),
     )
     fake.put(
-        POLICIES_PLURAL,
-        policy(
+        POLICY_SETS_PLURAL,
+        egress_policy_set(
             GITHUB_POLICY,
             [
                 {
@@ -132,8 +131,8 @@ def seed(fake: FakeApiServer) -> None:
         ),
     )
     fake.put(
-        BINDINGS_PLURAL,
-        binding(f"{SANDBOX_A}-{GITHUB_POLICY}", subjects=[SUBJECT_A.model_dump()], policies=[GITHUB_POLICY]),
+        POLICY_BINDINGS_PLURAL,
+        policy_binding(f"{SANDBOX_A}-{GITHUB_POLICY}", subject=SUBJECT_A.model_dump(), policy_sets=[GITHUB_POLICY]),
     )
 
 

@@ -633,7 +633,7 @@ class Egress(Construct):
             service_account_name=NAME,
             namespace=self.env.namespace,
         )
-        # What the proxy reads to decide a request: policies, bindings, credentials.
+        # What the proxy reads to decide a request: policy sets, bindings, credentials.
         # No Pods (TokenReview already names the subject) and no Secrets (an
         # EgressCredential names one, but the values live in a separate namespace
         # this Role doesn't grant). Its one write is its own EgressReady condition.
@@ -645,13 +645,7 @@ class Egress(Construct):
                 RolePolicyRule(
                     resources=[
                         custom_resource(GROUP, resource)
-                        for resource in [
-                            "egresspolicies",
-                            "egressbindings",
-                            "egresscredentials",
-                            "policysets",
-                            "policybindings",
-                        ]
+                        for resource in ["egresscredentials", "policysets", "policybindings"]
                     ],
                     verbs=["get", "list", "watch"],
                 ),

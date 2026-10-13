@@ -19,9 +19,7 @@ from agentplane.egress.admin import create_admin_app
 from agentplane.egress.decision_log import DecisionLog
 from agentplane.egress.decision_store import DecisionStore, make_engine
 from agentplane.egress.policy import WATCHED_KINDS, Index
-from agentplane.egress.resources import EgressBinding, EgressPolicy
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
-from agentplane.testing.fake_apiserver import binding, policy
 
 RESYNC_SECONDS = 300
 STARTED = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
@@ -111,27 +109,6 @@ async def test_missing_freshness_and_drain_refuse_readiness_but_not_liveness(
     index.draining = True
     assert (await _get(session))[0] == 503
     assert (await session.get("/livez")).status_code == 200
-
-
-async def test_binding_observations_are_local_and_derived_at_read_time(
-    session: httpx.AsyncClient, index: Index, clock: Clock
-) -> None:
-    index.bindings["test-binding"] = EgressBinding.model_validate(
-        binding(
-            "test-binding",
-            subjects=[{"namespace": "test-namespace", "name": "test-workload"}],
-            policies=["test-policy", "test-absent"],
-            expires_at=(STARTED + timedelta(seconds=10)).isoformat(),
-        )
-    )
-    index.policies["test-policy"] = EgressPolicy.model_validate(policy("test-policy", [{"hosts": ["example.test"]}]))
-    body = (await session.get("/bindings")).json()
-    assert body["scope"] == "replica-local"
-    assert body["available"]
-    assert body["bindings"][0]["reason"] == "Resolved"
-    assert body["bindings"][0]["missingPolicies"] == ["test-absent"]
-    clock.now += timedelta(seconds=10)
-    assert (await session.get("/bindings")).json()["bindings"][0]["reason"] == "Expired"
 
 
 if __name__ == "__main__":

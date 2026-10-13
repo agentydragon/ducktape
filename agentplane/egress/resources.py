@@ -1,9 +1,8 @@
 """The resources the proxy reads off the API server, parsed once at the boundary.
 
-`EgressPolicy`, `EgressBinding` and `EgressCredential` are Agentplane's own kinds (group
-`agentplane.allegedly.works`, `v1alpha1`; the CRDs live in `agentplane/crds`), and a `Rule` is also
-the shape of a `PolicySet`'s `egress` rules (`agentplane/policy_sets.py` reads those sets and their
-bindings). A binding names its subjects as ServiceAccounts, and `Secret` holds the credentials the rules
+`EgressCredential` is Agentplane's own kind (group `agentplane.allegedly.works`, `v1alpha1`; the
+CRD lives in `agentplane/crds`), and a `Rule` is the shape of a `PolicySet`'s `egress` rules
+(`agentplane/policy_sets.py` reads those sets and their bindings). `Secret` holds the credentials the rules
 substitute, in the credentials namespace. Only the fields the proxy reads are modelled; everything
 else on the wire is ignored.
 """
@@ -15,13 +14,9 @@ from enum import StrEnum
 from typing import Annotated, Literal
 
 from kubernetes_asyncio import client as k8s_client
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from pydantic.alias_generators import to_camel
 
-from agentplane.subjects import ServiceAccountRef
-
-POLICIES_PLURAL = "egresspolicies"
-BINDINGS_PLURAL = "egressbindings"
 CREDENTIALS_PLURAL = "egresscredentials"
 # The `PolicySet` rule type this proxy enforces.
 EGRESS_RULE_TYPE = "egress"
@@ -235,37 +230,6 @@ class Rule(_Wire):
         if "*" in self.hosts and (self.cluster_internal or self.credential_ref is not None):
             raise ValueError("A blanket host rule cannot set clusterInternal or credentialRef")
         return self
-
-
-class PolicySpec(_Wire):
-    rules: list[Rule] = Field(max_length=256)
-
-
-class EgressPolicy(_Wire):
-    metadata: ObjectMeta
-    spec: PolicySpec
-
-
-class BindingSpec(_Wire):
-    subjects: list[ServiceAccountRef]
-    policies: list[str] = Field(
-        description="EgressPolicy names in the same namespace; the order only breaks ties between rules "
-        "that would decide alike."
-    )
-    expires_at: AwareDatetime | None = None
-
-
-class ActiveReason(StrEnum):
-    """Why a binding currently contributes rules in one replica's snapshot."""
-
-    RESOLVED = "Resolved"
-    EXPIRED = "Expired"
-    MISSING_POLICY = "MissingPolicy"
-
-
-class EgressBinding(_Wire):
-    metadata: ObjectMeta
-    spec: BindingSpec
 
 
 class Secret(BaseModel):

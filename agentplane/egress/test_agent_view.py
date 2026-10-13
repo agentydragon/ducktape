@@ -2,26 +2,23 @@
 
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 import pytest_bazel
 from pydantic import TypeAdapter
 
+from agentplane import policy_sets
 from agentplane.egress.agent_view import CredentialView, agent_view
 from agentplane.egress.policy import Index
 from agentplane.egress.resources import (
     BasicPasswordTarget,
-    BindingSpec,
     CredentialRef,
     CredentialSource,
     CredentialSpec,
-    EgressBinding,
     EgressCredential,
-    EgressPolicy,
     JsonFieldTarget,
     ObjectMeta,
-    PolicySpec,
     Rule,
     SchemeTokenTarget,
     Secret,
@@ -30,6 +27,7 @@ from agentplane.egress.resources import (
     TargetMethod,
 )
 from agentplane.kubernetes_watch import Freshness
+from agentplane.policy_sets import NumberedRule, PolicyBinding, PolicySet
 from agentplane.subjects import ServiceAccountRef
 
 NOW = datetime(2026, 9, 4, 12, 0, tzinfo=UTC)
@@ -58,20 +56,19 @@ GITHUB_RULE = Rule(
 OPEN_RULE = Rule(hosts=["*.example.com"])
 
 
-def _index(*, expires_at: datetime | None = None, policies: list[str] | None = None) -> Index:
-    policy = EgressPolicy(
-        metadata=ObjectMeta(name="github", generation=1), spec=PolicySpec(rules=[GITHUB_RULE, OPEN_RULE])
+def _index(*, policies: list[str] | None = None) -> Index:
+    policy = PolicySet(
+        name="github",
+        rules=tuple(NumberedRule(number=number, rule=rule) for number, rule in enumerate([GITHUB_RULE, OPEN_RULE])),
     )
-    bound = EgressBinding(
-        metadata=ObjectMeta(name="b", generation=1),
-        spec=BindingSpec(
-            subjects=[CALLER], policies=policies if policies is not None else ["github"], expires_at=expires_at
-        ),
+    bound = PolicyBinding(
+        metadata=policy_sets.ObjectMeta(name="b", namespace=NAMESPACE, uid="uid-b", generation=1, resource_version="1"),
+        spec=policy_sets.BindingSpec(subject=CALLER, policy_sets=policies if policies is not None else ["github"]),
     )
     return Index(
         freshness=Freshness(stale_after_seconds=180),
-        policies={"github": policy},
-        bindings={"b": bound},
+        policy_sets={"github": policy},
+        policy_bindings={"b": bound},
         credentials={CREDENTIAL.metadata.name: CREDENTIAL},
         secrets={"vault-entry": Secret(name="vault-entry", data={"credential-key": SECRET_VALUE})},
     )
@@ -113,13 +110,6 @@ def test_the_secret_and_its_whereabouts_are_absent_from_the_whole_document() -> 
     assert PLACEHOLDER in document, "anchor: the projection is populated, so the absences below mean something"
     for forbidden in (SECRET_VALUE, "vault-entry", "credential-key", "secretRef", "secret_ref"):
         assert forbidden not in document, f"{forbidden!r} reached a sandbox-readable view"
-
-
-def test_an_expired_binding_grants_nothing_and_says_nothing() -> None:
-    """The view reads the same bindings the decision does, so it cannot advertise what is refused."""
-    view = agent_view(_index(expires_at=NOW - timedelta(seconds=1)), CALLER, NOW)
-
-    assert view.policies == []
 
 
 def test_a_policy_that_does_not_exist_contributes_nothing_and_voids_nothing() -> None:

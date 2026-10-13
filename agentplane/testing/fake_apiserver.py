@@ -23,7 +23,7 @@ from aiohttp import web
 from more_itertools import one
 
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.egress.resources import BINDINGS_PLURAL, CREDENTIALS_PLURAL, POLICIES_PLURAL
+from agentplane.egress.resources import CREDENTIALS_PLURAL
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND, SANDBOXES_PLURAL
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM
@@ -38,8 +38,6 @@ SECRETS_PLURAL = "secrets"
 _NAMESPACE_OF = {
     SECRETS_PLURAL: CREDENTIALS_NAMESPACE,
     SANDBOXES_PLURAL: SANDBOX_NAMESPACE,
-    POLICIES_PLURAL: NAMESPACE,
-    BINDINGS_PLURAL: NAMESPACE,
     CREDENTIALS_PLURAL: NAMESPACE,
     POLICY_SETS_PLURAL: NAMESPACE,
     POLICY_BINDINGS_PLURAL: NAMESPACE,
@@ -386,15 +384,6 @@ def secret(name: str, data: dict[str, str]) -> dict[str, Any]:
     }
 
 
-def policy(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
-    return {
-        "apiVersion": f"{GROUP}/{VERSION}",
-        "kind": "EgressPolicy",
-        "metadata": {"name": name},
-        "spec": {"rules": rules},
-    }
-
-
 def credential(
     name: str, *, secret_name: str, key: str, targets: list[dict[str, Any]], description: str = "a test credential"
 ) -> dict[str, Any]:
@@ -440,15 +429,6 @@ def projected_workload_credential(
     }
 
 
-def binding(
-    name: str, *, subjects: list[dict[str, Any]], policies: list[str], expires_at: str | None = None
-) -> dict[str, Any]:
-    spec: dict[str, Any] = {"subjects": subjects, "policies": policies}
-    if expires_at is not None:
-        spec["expiresAt"] = expires_at
-    return {"apiVersion": f"{GROUP}/{VERSION}", "kind": "EgressBinding", "metadata": {"name": name}, "spec": spec}
-
-
 def policy_set(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "apiVersion": f"{GROUP}/{VERSION}",
@@ -465,6 +445,10 @@ def policy_binding(name: str, *, subject: dict[str, str], policy_sets: list[str]
         "metadata": {"name": name},
         "spec": {"subject": subject, "policySets": policy_sets},
     }
+
+
+def egress_policy_set(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
+    return policy_set(name, [{"type": "egress", **rule} for rule in rules])
 
 
 @asynccontextmanager

@@ -16,12 +16,10 @@ from agentplane.egress.policy import Index
 from agentplane.kubernetes_watch import Freshness
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL, ConditionStatus
 from agentplane.testing.fake_apiserver import (
-    BINDINGS_PLURAL,
     CREDENTIALS_PLURAL,
-    POLICIES_PLURAL,
     SECRETS_PLURAL,
     FakeApiServer,
-    policy,
+    egress_policy_set,
     policy_binding,
     policy_set,
     secret,
@@ -43,17 +41,16 @@ async def index(api_client: ApiClient) -> AsyncIterator[Index]:
 
 
 async def test_initial_sync_loads_every_kind(index: Index) -> None:
-    assert set(index.policies) == {GITHUB_POLICY}
-    assert set(index.bindings) == {BINDING}
+    assert set(index.policy_sets) == {GITHUB_POLICY}
+    assert set(index.policy_bindings) == {BINDING}
     assert index.secrets[SECRET_NAME].data == {"token": "real-secret-v1"}
 
 
-async def test_policy_events_are_read_only(fake: FakeApiServer, index: Index) -> None:
-    fake.put(POLICIES_PLURAL, policy("extra", [{"hosts": ["example.com"]}]))
-    await index.wait_for(lambda: "extra" in index.policies)
-    fake.delete(POLICIES_PLURAL, GITHUB_POLICY)
-    await index.wait_for(lambda: GITHUB_POLICY not in index.policies)
-    assert fake.status_patches == []
+async def test_policy_set_events_reach_the_index(fake: FakeApiServer, index: Index) -> None:
+    fake.put(POLICY_SETS_PLURAL, egress_policy_set("extra", [{"hosts": ["example.com"]}]))
+    await index.wait_for(lambda: "extra" in index.policy_sets)
+    fake.delete(POLICY_SETS_PLURAL, GITHUB_POLICY)
+    await index.wait_for(lambda: GITHUB_POLICY not in index.policy_sets)
 
 
 async def test_secret_rotation_reaches_the_index(fake: FakeApiServer, index: Index) -> None:
@@ -64,8 +61,8 @@ async def test_secret_rotation_reaches_the_index(fake: FakeApiServer, index: Ind
 async def test_watch_end_relists(fake: FakeApiServer, index: Index) -> None:
     """Changes made while no watch is open are picked up by the relist that follows."""
     fake.close_watches()
-    fake.put(POLICIES_PLURAL, policy("late", [{"hosts": ["example.com"]}]))
-    await index.wait_for(lambda: "late" in index.policies)
+    fake.put(POLICY_SETS_PLURAL, egress_policy_set("late", [{"hosts": ["example.com"]}]))
+    await index.wait_for(lambda: "late" in index.policy_sets)
 
 
 async def test_a_completed_cycle_is_what_advances_freshness(fake: FakeApiServer, index: Index) -> None:
@@ -74,22 +71,15 @@ async def test_a_completed_cycle_is_what_advances_freshness(fake: FakeApiServer,
     /healthz reads these to tell a wedged informer from a quiet one; a timestamp set anywhere but
     the end of a cycle would keep advancing through exactly the failure it has to catch.
     """
-    assert set(index.freshness.at) == {
-        POLICIES_PLURAL,
-        BINDINGS_PLURAL,
-        CREDENTIALS_PLURAL,
-        POLICY_SETS_PLURAL,
-        POLICY_BINDINGS_PLURAL,
-        SECRETS_PLURAL,
-    }
-    seeded = index.freshness.at[POLICIES_PLURAL]
+    assert set(index.freshness.at) == {CREDENTIALS_PLURAL, POLICY_SETS_PLURAL, POLICY_BINDINGS_PLURAL, SECRETS_PLURAL}
+    seeded = index.freshness.at[POLICY_SETS_PLURAL]
 
     async def end_watches_until_the_policies_cycle_completes() -> None:
         # `close_watches` ends only the watches open at that instant, and the informer is synced as
         # soon as every kind has listed — before their watches register. A policies watch that
         # registers just after the close then runs its full `resync_seconds`, which is the whole
         # budget of this test. So re-arm rather than close once; the sleep only paces the retries.
-        while index.freshness.at[POLICIES_PLURAL] <= seeded:
+        while index.freshness.at[POLICY_SETS_PLURAL] <= seeded:
             fake.close_watches()
             await asyncio.sleep(0.01)
 

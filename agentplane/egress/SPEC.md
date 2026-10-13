@@ -22,13 +22,11 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 
 ## Decision
 
-- A subject's egress rules come from two kinds of binding. A `PolicyBinding` names one namespaced
+- A subject's egress rules come from `PolicyBinding`s. A `PolicyBinding` names one namespaced
   ServiceAccount and `PolicySet` names, and grants the sets' `egress` rules by existing: creating one
   is the whole act of allowing, deleting it the whole act of taking that back, and the Policy
   Controller deletes it at its `expiresAt` (`agentplane/policy_controller/SPEC.md`). A set that is
-  missing takes nothing from the binding's other sets. An `EgressBinding` grants by existing and
-  unexpired: it names its subjects as namespaced ServiceAccounts and lists `EgressPolicy` names,
-  and the proxy itself stops honouring it at its `expiresAt`. The same name in two namespaces is two subjects. A
+  missing takes nothing from the binding's other sets. The same name in two namespaces is two subjects. A
   subject is every Pod running as that account, so bind only an account dedicated to one workload;
   the integration app gives each sandbox an account of its own, owned by it, so deleting the sandbox
   collects the account and the bindings naming it alike.
@@ -166,9 +164,7 @@ substitutes. The design it implements is [the ADR](../docs/adr_sandbox_proxy_gat
 - Each `PolicyBinding` carries an `EgressReady` condition, applied under the proxy's own field
   manager so other readers' conditions stay: `Enforced`, or `False` with reason
   `PolicySetUnavailable` naming the missing sets. Every replica writes it from its own picture, so
-  it says what a replica resolved, never that every proxy has. `EgressBinding`s have no Kubernetes
-  `status`; the admin binding observations describe the answering replica's current resolution of
-  them and its freshness.
+  it says what a replica resolved, never that every proxy has.
 - Admission and readiness fail closed until all watched kinds are initially synced and remain
   within the configured freshness bound. Existing CONNECT/HTTP2 connections do not bypass this
   check. API/watch changes are independently observed; this is not linearizable revocation.

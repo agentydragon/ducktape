@@ -5,7 +5,7 @@ from __future__ import annotations
 import base64
 import json
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 
 import pytest
 import pytest_bazel
@@ -23,24 +23,18 @@ from agentplane.egress.policy import (
     evaluate,
     host_matches,
     path_matches,
-    resolve_binding,
 )
 from agentplane.egress.presentation import HeaderRewrite
 from agentplane.egress.resources import (
-    ActiveReason,
     AuthenticatedWorkloadTokenSource,
     BasicPasswordTarget,
     BasicUsernameTarget,
-    BindingSpec,
     CredentialRef,
     CredentialSource,
     CredentialSpec,
-    EgressBinding,
     EgressCredential,
-    EgressPolicy,
     JsonFieldTarget,
     ObjectMeta,
-    PolicySpec,
     ProjectedWorkloadTokenSource,
     Rule,
     SchemeTokenTarget,
@@ -120,37 +114,33 @@ APP_RULE = Rule(
 OPEN_RULE = Rule(hosts=["*"])
 
 
-def policy(name: str, *rules: Rule) -> EgressPolicy:
-    return EgressPolicy(metadata=ObjectMeta(name=name, generation=1), spec=PolicySpec(rules=list(rules)))
+def policy(name: str, *rules: Rule) -> PolicySet[Rule]:
+    return PolicySet(
+        name=name, rules=tuple(NumberedRule(number=number, rule=rule) for number, rule in enumerate(rules))
+    )
 
 
-def binding(
-    name: str,
-    *,
-    policies: list[str],
-    subjects: list[ServiceAccountRef] | None = None,
-    expires_at: datetime | None = None,
-) -> EgressBinding:
-    return EgressBinding(
-        metadata=ObjectMeta(name=name, generation=3),
-        spec=BindingSpec(
-            subjects=subjects if subjects is not None else [CALLER], policies=policies, expires_at=expires_at
+def binding(name: str, *, policies: list[str], subject: ServiceAccountRef = CALLER) -> policy_sets.PolicyBinding:
+    return policy_sets.PolicyBinding(
+        metadata=policy_sets.ObjectMeta(
+            name=name, namespace=NAMESPACE, uid=f"uid-{name}", generation=3, resource_version="1"
         ),
+        spec=policy_sets.BindingSpec(subject=subject, policy_sets=policies),
     )
 
 
 def index(
     *,
-    policies: list[EgressPolicy],
-    bindings: list[EgressBinding],
+    policies: list[PolicySet[Rule]],
+    bindings: list[policy_sets.PolicyBinding],
     credentials: list[EgressCredential] | None = None,
     secret_value: str | None = SECRET_VALUE,
 ) -> Index:
     resolved = [GITHUB_CREDENTIAL, APP_CREDENTIAL] if credentials is None else credentials
     return Index(
         freshness=Freshness(stale_after_seconds=180),
-        policies={p.metadata.name: p for p in policies},
-        bindings={b.metadata.name: b for b in bindings},
+        policy_sets={p.name: p for p in policies},
+        policy_bindings={b.metadata.name: b for b in bindings},
         credentials={c.metadata.name: c for c in resolved},
         secrets=(
             {"pat": Secret(name="pat", data={"token": secret_value, "app": APP_SECRET_VALUE})}
@@ -180,7 +170,7 @@ TWO_CREDENTIALS = index(
 )
 
 
-def broad_and_credentialed(*bindings: EgressBinding) -> Index:
+def broad_and_credentialed(*bindings: policy_sets.PolicyBinding) -> Index:
     """One host reachable two ways: a rule that carries the credential, and one that carries nothing."""
     return index(policies=[policy("open", OPEN_RULE), policy("github", GITHUB_RULE)], bindings=list(bindings))
 
@@ -269,30 +259,10 @@ CASES = [
         "binding for another sandbox",
         index(
             policies=[policy("github", GITHUB_RULE)],
-            bindings=[
-                binding("b", policies=["github"], subjects=[ServiceAccountRef(namespace=NAMESPACE, name="other")])
-            ],
+            bindings=[binding("b", policies=["github"], subject=ServiceAccountRef(namespace=NAMESPACE, name="other"))],
         ),
         request(),
         Denied(DenyReason.NO_BINDING),
-    ),
-    Case(
-        "expired binding",
-        index(
-            policies=[policy("github", GITHUB_RULE)],
-            bindings=[binding("b", policies=["github"], expires_at=NOW - timedelta(seconds=1))],
-        ),
-        request(),
-        Denied(DenyReason.NO_BINDING),
-    ),
-    Case(
-        "unexpired binding",
-        index(
-            policies=[policy("github", GITHUB_RULE)],
-            bindings=[binding("b", policies=["github"], expires_at=NOW + timedelta(hours=1))],
-        ),
-        request(),
-        Allowed("b", "github", 0),
     ),
     Case(
         "missing policy",
@@ -371,9 +341,7 @@ CASES = [
 def test_the_same_name_in_another_namespace_is_a_different_subject() -> None:
     """A subject is a namespace and a name together. The proxy serves workloads from more than one
     namespace, so a binding that matched on the name alone would reach across them."""
-    bound = index(
-        policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"], subjects=[CALLER])]
-    )
+    bound = index(policies=[policy("github", GITHUB_RULE)], bindings=[binding("b", policies=["github"])])
     elsewhere = ServiceAccountRef(namespace="somewhere-else", name=CALLER.name)
 
     assert evaluate(bound, CALLER, request(), NOW) == Allowed("b", "github", 0)
@@ -575,28 +543,6 @@ def test_path_matches(pattern: str, path: str, expected: bool) -> None:
     assert path_matches(pattern, path) is expected
 
 
-@pytest.mark.parametrize(
-    ("binding_", "policies", "status", "reason", "resolved"),
-    [
-        (binding("b", policies=["github"]), [policy("github", GITHUB_RULE)], True, ActiveReason.RESOLVED, 1),
-        (binding("b", policies=["github", "absent"]), [policy("github", GITHUB_RULE)], True, ActiveReason.RESOLVED, 1),
-        (binding("b", policies=["absent"]), [], False, ActiveReason.MISSING_POLICY, 0),
-        (
-            binding("b", policies=["github"], expires_at=NOW),
-            [policy("github", GITHUB_RULE)],
-            False,
-            ActiveReason.EXPIRED,
-            1,
-        ),
-    ],
-)
-def test_binding_resolution(
-    binding_: EgressBinding, policies: list[EgressPolicy], status: bool, reason: ActiveReason, resolved: int
-) -> None:
-    result = resolve_binding(index(policies=policies, bindings=[binding_]), binding_, NOW)
-    assert (result.active, result.reason, len(result.policies)) == (status, reason, resolved)
-
-
 @pytest.mark.parametrize("hosts", [["*"], ["api.github.com", "*"]])
 def test_blanket_cannot_authorize_credentials_or_private_addresses(hosts: list[str]) -> None:
     with pytest.raises(ValidationError, match="blanket host rule"):
@@ -605,12 +551,12 @@ def test_blanket_cannot_authorize_credentials_or_private_addresses(hosts: list[s
         Rule(hosts=hosts, cluster_internal=True)
 
 
-def test_blanket_requires_a_live_binding_and_respects_method_and_path() -> None:
+def test_blanket_requires_a_binding_and_respects_method_and_path() -> None:
     limited = policy("public", Rule(hosts=["*"], methods=["GET"], paths=["/public/*"]))
     rules = index(policies=[limited], bindings=[])
     allowed_request = request(host="arbitrary.example.org", path="/public/file")
     assert evaluate(rules, CALLER, allowed_request, NOW) == Denied(DenyReason.NO_BINDING)
-    rules.bindings["b"] = binding("b", policies=["public"], expires_at=NOW + timedelta(seconds=1))
+    rules.policy_bindings["b"] = binding("b", policies=["public"])
     allowed = evaluate(rules, CALLER, allowed_request, NOW)
     assert allowed == Allowed("b", "public", 0)
     assert not allowed.cluster_internal
@@ -620,7 +566,6 @@ def test_blanket_requires_a_live_binding_and_respects_method_and_path() -> None:
     assert evaluate(
         rules, CALLER, request(method="POST", host="arbitrary.example.org", path="/public/file"), NOW
     ) == Denied(DenyReason.NO_RULE)
-    assert evaluate(rules, CALLER, allowed_request, NOW + timedelta(seconds=1)) == Denied(DenyReason.NO_BINDING)
 
 
 def test_blanket_does_not_send_a_known_credential_to_another_host_or_path() -> None:
@@ -690,7 +635,7 @@ def test_json_route_fails_closed_for_invalid_body_missing_secret_or_revoked_bind
     assert evaluate(rules, CALLER, matrix_request(body=b"{broken"), NOW) == Denied(DenyReason.INVALID_BODY)
     rules.secrets.clear()
     assert evaluate(rules, CALLER, matrix_request(), NOW) == Denied(DenyReason.CREDENTIAL_UNAVAILABLE)
-    rules.bindings.clear()
+    rules.policy_bindings.clear()
     assert evaluate(rules, CALLER, matrix_request(), NOW) == Denied(DenyReason.NO_BINDING)
 
 
@@ -702,7 +647,7 @@ def test_nonjson_uploads_to_unrelated_routes_are_unchanged() -> None:
 
 def test_body_credential_is_known_even_without_a_binding_naming_it() -> None:
     rules = matrix_index()
-    rules.policies["matrix"] = policy("matrix", Rule(hosts=["matrix.test"]))
+    rules.policy_sets["matrix"] = policy("matrix", Rule(hosts=["matrix.test"]))
     assert evaluate(rules, CALLER, matrix_request(), NOW) == Denied(DenyReason.PLACEHOLDER_UNRESOLVED)
 
 
@@ -710,14 +655,7 @@ def policy_binding_index(*sets: PolicySet[Rule], subject: ServiceAccountRef = CA
     """`sets` bound to `subject` by one PolicyBinding, `pb`, which also names a set that does not exist."""
     rules = index(policies=[], bindings=[])
     rules.policy_sets = {policy_set.name: policy_set for policy_set in sets}
-    rules.policy_bindings = {
-        "pb": policy_sets.PolicyBinding(
-            metadata=policy_sets.ObjectMeta(
-                name="pb", namespace=NAMESPACE, uid="uid-pb", generation=1, resource_version="1"
-            ),
-            spec=policy_sets.BindingSpec(subject=subject, policy_sets=["absent", *rules.policy_sets]),
-        )
-    }
+    rules.policy_bindings = {"pb": binding("pb", policies=["absent", *rules.policy_sets], subject=subject)}
     return rules
 
 
