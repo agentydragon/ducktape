@@ -255,6 +255,8 @@ class TestingNamespaceResourceLimits(Construct):
 
 TESTING_OPERATOR_ROLE_NAME = "agentplane-testing-operator"
 
+# Deliberately no `create` on pods: Cilium policies here select Pods by label, so an unlabeled Pod
+# a Sandbox creates has unrestricted egress, and the creator picks the labels.
 _SANDBOX_RULES = [
     RolePolicyRule(resources=[custom_resource(GROUP, "sandboxtemplates")], verbs=["get", "list", "watch"]),
     RolePolicyRule(
