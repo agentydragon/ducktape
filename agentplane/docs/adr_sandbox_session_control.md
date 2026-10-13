@@ -124,7 +124,7 @@ Service is static (name, port); the slice and Lease are the dynamic connection f
 | **B. Controller creates the Service; gateway writes the Lease and slice** | The Service exists, Sandbox-owned, from creation; before a runner connects the caller sees no endpoints, not a DNS failure; gateway RBAC shrinks | The controller and gateway must agree on name and port (one shared constant)                                         |
 | C. No per-Sandbox Service; any gateway replica forwards to the holder     | No Kubernetes object per connection; one address for callers                                                                                     | Adds a replica-to-replica hop and trust; reverses the operator's 2026-10-12 choice of a dialed-hostname Sandbox name |
 
-Recommend **B**. The Service is part of the Sandbox's identity, like its ServiceAccount; only the
+**Decided (operator, 2026-10-13): B.** The Service is part of the Sandbox's identity, like its ServiceAccount; only the
 connection is the gateway's to assert. The cost is small either way, so this is the least
 consequential fork. C is the option to revisit if the per-connection writes ever become a load
 problem.
@@ -493,7 +493,7 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
 4. ~~Lease annotations rather than gRPC health as the runner-fact transport?~~ **Decided
    (operator, 2026-10-13): Lease annotations** (D2). This replaces the mechanism of the earlier
    gateway-health connectivity node, not its goal.
-5. **Controller creates the control Service?** Recommend yes; low stakes (D1).
+5. ~~Controller creates the control Service?~~ **Decided (operator, 2026-10-13): yes** (D1).
 6. **Interrupt inside the one `Quiesce` operation, and the renames in D3 (`Quiesced`, `Draining`, `Flushing`, `quiescedIncarnation`)?** Recommend yes (D3).
 7. **A way for an operator to hold a Sandbox suspended against wake-on-send?** Needs a decision
    before the Dispatcher lands.
