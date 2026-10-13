@@ -9,8 +9,9 @@ from __future__ import annotations
 import pytest_bazel
 
 from agentplane.harness_tests.claude import anthropic_sse, frames
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
+from agentplane.harness_tests.claude.harness import ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
+from agentplane.harness_tests.claude.model import MODEL
 from agentplane.native.claude import scenarios
 
 PROBE = "printf 'PROBE_OK\\n'"

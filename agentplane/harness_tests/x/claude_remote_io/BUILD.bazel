@@ -53,6 +53,7 @@ py_test(
         "//agentplane/harness_tests/claude:anthropic_sse",
         "//agentplane/harness_tests/claude:harness",
         "//agentplane/harness_tests/claude:messages",
+        "//agentplane/harness_tests/claude:model",
         "//agentplane/native/claude:wire",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",

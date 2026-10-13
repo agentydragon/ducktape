@@ -8,6 +8,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
+from agentplane.background_task import background
 from agentplane.grpc_serving import add_health, serving
 from agentplane.history_service import ingress
 from agentplane.history_service.channels import Channel, create_wakeups
@@ -18,7 +19,7 @@ from agentplane.history_service.settings import Settings
 from agentplane.history_service.storage.store import Store
 from agentplane.history_service.summaries import SummaryReader
 from agentplane.history_service.thread_reads import ThreadReader
-from agentplane.service_process import background, configure_logging, kubernetes_configuration, until_terminated
+from agentplane.service_process import configure_logging, kubernetes_configuration, until_terminated
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # The asyncpg dialect is loaded by SQLAlchemy from the configured driver name.

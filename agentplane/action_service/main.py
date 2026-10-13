@@ -31,8 +31,9 @@ from agentplane.action_service.service import ActionService
 from agentplane.action_service.settings import Settings
 from agentplane.action_service.store import ActionStore
 from agentplane.action_service.updates import ActionUpdateBroker
+from agentplane.background_task import background
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
-from agentplane.service_process import background, configure_logging, kubernetes_configuration
+from agentplane.service_process import configure_logging, kubernetes_configuration
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from mcp_infra.exec.kubernetes import KubernetesWebSocketExecRunner
 from util.kubernetes import CustomObjectsClient

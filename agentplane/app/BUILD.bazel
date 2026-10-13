@@ -134,6 +134,7 @@ py_library(
         ":settings",
         ":shutdown",
         ":system_status",
+        "//agentplane:background_task",
         "//agentplane:grpc_calls",
         "//agentplane:kubernetes_watch",
         "//agentplane:service_process",

@@ -308,6 +308,7 @@ py_library(
         ":settings",
         ":summaries",
         ":thread_reads",
+        "//agentplane:background_task",
         "//agentplane:grpc_serving",
         "//agentplane:service_process",
         "//agentplane/history_service/storage:store",

@@ -4,7 +4,7 @@ import logging
 import pytest
 import pytest_bazel
 
-from agentplane.service_process import background
+from agentplane.background_task import background
 
 
 async def test_background_failure_is_logged_and_the_block_continues(caplog: pytest.LogCaptureFixture) -> None:

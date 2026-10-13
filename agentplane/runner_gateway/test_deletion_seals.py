@@ -9,6 +9,7 @@ import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
+from agentplane.background_task import background
 from agentplane.proto import runner_pb2
 from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.deletion_seals import DeletionSeals
@@ -18,7 +19,6 @@ from agentplane.runner_gateway.sealing import Sealing
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.runner_gateway.testing.runner_control import REPLICA, ScriptedRunner, connected, serve_replica_control
 from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster
-from agentplane.service_process import background
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.kubernetes import CustomObjectsClient
 

@@ -8,8 +8,9 @@ import pytest
 import pytest_bazel
 
 from agentplane.harness_tests.claude import anthropic_sse, frames
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
+from agentplane.harness_tests.claude.harness import ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
+from agentplane.harness_tests.claude.model import MODEL
 
 PROBE_FAILURE = (
     'sh -c \'printf "probe stdout before failure\\n"; printf "probe stderr before failure\\n" >&2; exit 23\''

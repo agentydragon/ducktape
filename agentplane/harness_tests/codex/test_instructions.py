@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest_bazel
 
 from agentplane.harness_tests.codex import responses_sse
-from agentplane.harness_tests.codex.harness import MODEL, CodexHarness
+from agentplane.harness_tests.codex.harness import CodexHarness
+from agentplane.harness_tests.codex.model import MODEL
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.native.codex import wire
 

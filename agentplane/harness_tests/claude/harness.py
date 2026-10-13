@@ -8,12 +8,9 @@ from pathlib import Path
 from typing import Any
 
 from agentplane.harness_tests.claude.messages import AnthropicMessages
+from agentplane.harness_tests.claude.model import MODEL
 from agentplane.native.claude import driver, scenarios, wire
 from agentplane.native.claude.testing import async_run, mcp
-
-# A routed name in the shape a LiteLLM deployment gives Claude Code; the family suffix lets it
-# resolve the model's context window. The scripted upstream never dispatches on it.
-MODEL = "agentplane-test/claude-haiku-4-5-20251001"
 
 
 @dataclass(frozen=True)

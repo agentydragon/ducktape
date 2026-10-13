@@ -40,6 +40,7 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
+from agentplane.background_task import background
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
@@ -48,7 +49,7 @@ from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import EgressReader
-from agentplane.service_process import background, configure_logging, kubernetes_configuration
+from agentplane.service_process import configure_logging, kubernetes_configuration
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 

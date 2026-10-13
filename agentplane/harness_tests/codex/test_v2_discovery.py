@@ -14,7 +14,8 @@ import pytest_bazel
 from pydantic import BaseModel
 
 from agentplane.harness_tests.codex import responses_sse
-from agentplane.harness_tests.codex.harness import EFFORT, MODEL, CodexHarness
+from agentplane.harness_tests.codex.harness import CodexHarness
+from agentplane.harness_tests.codex.model import EFFORT, MODEL
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.native.codex import driver, scenarios
 from agentplane.native.testing.async_process import AsyncNativeProcess

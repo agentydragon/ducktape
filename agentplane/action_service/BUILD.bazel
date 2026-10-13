@@ -218,6 +218,7 @@ py_library(
         ":settings",
         ":store",
         ":updates",
+        "//agentplane:background_task",
         "//agentplane:kubernetes_watch",
         "//agentplane:service_process",
         "//agentplane/action_service/github_policy:visibility",

@@ -128,6 +128,7 @@ py_library(
         ":rules_api",
         ":settings",
         ":upstream",
+        "//agentplane:background_task",
         "//agentplane:kubernetes_watch",
         "//agentplane:service_process",
         "//agentplane/workload_auth:http",

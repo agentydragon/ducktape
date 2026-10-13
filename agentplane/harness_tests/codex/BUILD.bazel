@@ -42,6 +42,7 @@ py_library(
     name = "harness",
     srcs = ["harness.py"],
     deps = [
+        ":model",
         ":responses",
         "//agentplane/native/codex:scenarios",
         "//agentplane/native/codex/testing:async_run",
@@ -71,6 +72,7 @@ py_test(
         ":conftest",
         ":frames",
         ":harness",
+        ":model",
         ":responses",
         ":responses_sse",
         "//:conftest",
@@ -94,6 +96,7 @@ py_test(
         ":conftest",
         ":frames",
         ":harness",
+        ":model",
         ":responses",
         ":responses_sse",
         "//:conftest",
@@ -119,6 +122,7 @@ py_test(
         ":conftest",
         ":frames",
         ":harness",
+        ":model",
         ":responses",
         ":responses_sse",
         "//:conftest",
@@ -143,6 +147,7 @@ py_test(
         ":conftest",
         ":frames",
         ":harness",
+        ":model",
         ":responses",
         ":responses_sse",
         "//:conftest",
@@ -167,6 +172,7 @@ py_test(
     deps = [
         ":conftest",
         ":harness",
+        ":model",
         ":responses",
         ":responses_sse",
         "//:conftest",
@@ -190,6 +196,7 @@ py_test(
         ":conftest",
         ":frames",
         ":harness",
+        ":model",
         ":responses",
         ":responses_sse",
         "//:conftest",
@@ -215,6 +222,7 @@ py_test(
         ":conftest",
         ":frames",
         ":harness",
+        ":model",
         ":responses",
         ":responses_sse",
         "//:conftest",
@@ -237,6 +245,7 @@ py_test(
     deps = [
         ":conftest",
         ":harness",
+        ":model",
         ":responses",
         ":responses_sse",
         "//:conftest",
@@ -258,6 +267,7 @@ py_test(
     deps = [
         ":conftest",
         ":harness",
+        ":model",
         ":responses",
         ":responses_sse",
         "//:conftest",
@@ -269,4 +279,9 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "model",
+    srcs = ["model.py"],
 )

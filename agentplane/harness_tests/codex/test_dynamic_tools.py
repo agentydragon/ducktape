@@ -9,7 +9,8 @@ from typing import Any
 import pytest_bazel
 
 from agentplane.harness_tests.codex import frames, responses_sse
-from agentplane.harness_tests.codex.harness import MODEL, CodexHarness
+from agentplane.harness_tests.codex.harness import CodexHarness
+from agentplane.harness_tests.codex.model import MODEL
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.native.codex import wire
 from agentplane.native.codex.testing.dynamic_tools import DynamicTool, DynamicToolServer

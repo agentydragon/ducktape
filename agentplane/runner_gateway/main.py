@@ -11,6 +11,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
+from agentplane.background_task import background
 from agentplane.grpc_serving import add_health, serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner_gateway import runner_proxy
@@ -23,7 +24,7 @@ from agentplane.runner_gateway.runner_control import ControlTiming, RunnerContro
 from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.runner_gateway.settings import Settings
 from agentplane.sandbox_service.reader import SandboxReader
-from agentplane.service_process import background, configure_logging, kubernetes_configuration, until_terminated
+from agentplane.service_process import configure_logging, kubernetes_configuration, until_terminated
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 

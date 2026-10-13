@@ -5,8 +5,8 @@ from __future__ import annotations
 import itertools
 
 from agentplane.harness_tests.claude import anthropic_sse
-from agentplane.harness_tests.claude.harness import MODEL
 from agentplane.harness_tests.claude.messages import AnthropicMessages
+from agentplane.harness_tests.claude.model import MODEL
 from agentplane.harness_tests.claude.requests import MessagesRequest
 from agentplane.harness_tests.model_endpoint import ModelExchange, SseEvent
 from agentplane.native.claude.blocks import ToolResultBlock

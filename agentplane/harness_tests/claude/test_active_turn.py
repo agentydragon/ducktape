@@ -7,8 +7,9 @@ import asyncio
 import pytest_bazel
 
 from agentplane.harness_tests.claude import anthropic_sse, frames
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
+from agentplane.harness_tests.claude.harness import ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
+from agentplane.harness_tests.claude.model import MODEL
 from agentplane.native.claude import wire
 
 WAIT_COMMAND = 'sh -c \'printf "wait_started\\n"; sleep 3; printf "wait_finished\\n"\''

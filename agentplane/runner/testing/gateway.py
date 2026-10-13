@@ -12,6 +12,7 @@ from typing import override
 
 import grpc
 
+from agentplane.background_task import background
 from agentplane.grpc_serving import serving
 from agentplane.grpc_tunnel import TunnelCaller
 from agentplane.proto import (
@@ -27,7 +28,6 @@ from agentplane.runner.control import RunnerControlClient, RunnerService
 from agentplane.runner.ingress import IngressPusher
 from agentplane.runner.reconnect import StreamTiming
 from agentplane.runner.runner import Runner
-from agentplane.service_process import background
 
 # gazelle:include_dep @pypi//protobuf
 

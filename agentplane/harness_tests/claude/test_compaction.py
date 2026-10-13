@@ -7,8 +7,9 @@ import asyncio
 import pytest_bazel
 
 from agentplane.harness_tests.claude import anthropic_sse
-from agentplane.harness_tests.claude.harness import MODEL, ClaudeLauncher
+from agentplane.harness_tests.claude.harness import ClaudeLauncher
 from agentplane.harness_tests.claude.messages import AnthropicMessages
+from agentplane.harness_tests.claude.model import MODEL
 from agentplane.native.claude.scenarios import SYSTEM_PROMPT
 
 

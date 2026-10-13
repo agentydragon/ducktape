@@ -18,7 +18,8 @@ import pytest_bazel
 
 from agentplane.capture import codex_hook
 from agentplane.harness_tests.codex import frames, responses_sse
-from agentplane.harness_tests.codex.harness import MODEL, CodexHarness
+from agentplane.harness_tests.codex.harness import CodexHarness
+from agentplane.harness_tests.codex.model import MODEL
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.native.codex import scenarios, wire
 

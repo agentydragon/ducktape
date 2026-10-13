@@ -9,6 +9,7 @@ from typing import cast
 
 from kubernetes_asyncio.client import ApiClient, AuthenticationV1Api, CoreV1Api, CustomObjectsApi
 
+from agentplane.background_task import background
 from agentplane.egress.addon import EgressAddon
 from agentplane.egress.admin import create_admin_app
 from agentplane.egress.decision_log import DecisionLog
@@ -22,7 +23,7 @@ from agentplane.egress.rules_api import RulesProjection, create_rules_app
 from agentplane.egress.settings import Settings
 from agentplane.egress.upstream import PinnedDialEventLoop, UpstreamResolver
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
-from agentplane.service_process import background, configure_logging, kubernetes_configuration, until_terminated
+from agentplane.service_process import configure_logging, kubernetes_configuration, until_terminated
 from agentplane.workload_auth.http import WorkloadPrincipalAuthenticator
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient

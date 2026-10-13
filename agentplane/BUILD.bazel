@@ -102,17 +102,6 @@ py_library(
     deps = ["@pypi//kubernetes_asyncio"],
 )
 
-py_test(
-    name = "test_service_process",
-    srcs = ["test_service_process.py"],
-    deps = [
-        ":service_process",
-        "//:conftest",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
-    ],
-)
-
 py_library(
     name = "policy_sets",
     srcs = ["policy_sets.py"],
@@ -159,5 +148,21 @@ py_library(
         "//agentplane/workload_auth:principal",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "background_task",
+    srcs = ["background_task.py"],
+)
+
+py_test(
+    name = "test_background_task",
+    srcs = ["test_background_task.py"],
+    deps = [
+        ":background_task",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

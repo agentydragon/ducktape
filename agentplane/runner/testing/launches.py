@@ -8,8 +8,8 @@ from pathlib import Path
 
 import httpx
 
-from agentplane.harness_tests.claude import harness as claude_harness
-from agentplane.harness_tests.codex import harness as codex_harness
+from agentplane.harness_tests.claude import model as claude_model
+from agentplane.harness_tests.codex import model as codex_model
 from agentplane.proto import runner_pb2
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig, ServiceEndpoint
 from agentplane.runner.model_config import HttpModelConfigResolver
@@ -30,12 +30,12 @@ SANDBOX_LAUNCH = SandboxLaunch(sandbox=SANDBOX, bootstrap=None, platform_instruc
 
 def spec(harness: runner_pb2.Harness, cwd: Path) -> runner_pb2.SessionSpec:
     if harness == runner_pb2.HARNESS_CLAUDE:
-        model = claude_harness.MODEL
+        model = claude_model.MODEL
     elif harness == runner_pb2.HARNESS_CODEX:
-        model = codex_harness.MODEL
+        model = codex_model.MODEL
     else:
         raise ValueError(f"unsupported {harness=}")
-    return runner_pb2.SessionSpec(harness=harness, cwd=str(cwd), model=model, reasoning_effort=codex_harness.EFFORT)
+    return runner_pb2.SessionSpec(harness=harness, cwd=str(cwd), model=model, reasoning_effort=codex_model.EFFORT)
 
 
 def environment(home: Path) -> dict[str, str]:

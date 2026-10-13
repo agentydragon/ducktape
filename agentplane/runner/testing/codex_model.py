@@ -5,7 +5,7 @@ from __future__ import annotations
 import itertools
 
 from agentplane.harness_tests.codex import responses_sse
-from agentplane.harness_tests.codex.harness import MODEL
+from agentplane.harness_tests.codex.model import MODEL
 from agentplane.harness_tests.codex.requests import ResponsesRequest
 from agentplane.harness_tests.codex.responses import OpenAIResponses
 from agentplane.harness_tests.model_endpoint import ModelExchange, SseEvent
