@@ -139,7 +139,7 @@ outage/refresh exercises; test the specific recovery contract with controlled mi
 flowchart LR
     GITHUB_NOTICE_RELIABILITY_DESIGN[Decision: eventual-state recovery vs agent fallback]
     GITHUB_NOTIFICATION_RECOVERY[Blocked: selected reconciliation or reminder mechanism]
-    GITHUB_SHEPHERD_GUIDANCE[Blocked: fallback and reminder wording]
+    GITHUB_SHEPHERD_GUIDANCE[Blocked: after CRON_NOTIFICATIONS; fallback-check wording]
     GITHUB_NOTICE_RELIABILITY_DESIGN --> GITHUB_NOTIFICATION_RECOVERY
     GITHUB_NOTICE_RELIABILITY_DESIGN -. chosen guarantee wording .-> GITHUB_SHEPHERD_GUIDANCE
 ```
@@ -173,11 +173,14 @@ outage or exhaustive historical event matrix is required.
 
 ### `GITHUB_SHEPHERD_GUIDANCE` — explain monitoring limits and completion checks
 
-**Baseline landed in the platform instructions** (notices are prompts to check current PR state, not
-proof the head passed; silence is no evidence). Remaining, once the decision is made: document the chosen fallback deadline/ownership and
-how an agent notices unreliable monitoring. If reminders are chosen, state who runs them and that
-notices do not start a stopped harness. Guidance accompanies the selected reliability behavior;
-it must not advertise a polling/reminder guarantee before that mechanism exists.
+**Sequenced after `CRON_NOTIFICATIONS`; final wording also follows the decision.** Agents are
+asked not just to subscribe to GitHub while waiting (e.g. for CI) but to back the subscription with
+a fallback check after N minutes, in case the webhook never delivers. Treat notifications as prompts
+to inspect authoritative current PR state, not evidence that the latest head passed or that silence
+means no progress. Document the chosen fallback deadline/ownership and how an agent notices
+unreliable monitoring. State who runs reminders and that notices do not start a stopped harness.
+Guidance accompanies the selected reliability behavior; it must not advertise a polling/reminder
+guarantee before that mechanism exists.
 
 ## 3. Multiagent decisions before implementations
 
