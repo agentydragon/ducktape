@@ -354,8 +354,9 @@ export function NotificationStatus({
                         )}
                         {sub.error && (
                           <Text c="red" size="xs">
-                            Source: {sub.error} · since {timestamp(sub.error_since!)} · last observed{" "}
-                            {timestamp(sub.error_observed_at!)}
+                            Source: {sub.error}
+                            {sub.error_since ? ` · since ${timestamp(sub.error_since)}` : ""}
+                            {sub.error_observed_at ? ` · last observed ${timestamp(sub.error_observed_at)}` : ""}
                           </Text>
                         )}
                       </Stack>

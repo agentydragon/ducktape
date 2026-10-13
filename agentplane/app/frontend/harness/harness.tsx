@@ -2254,8 +2254,6 @@ routes.push(
                           cancelled: false,
                           expires_at: ago(HOUR),
                           error: "source unavailable",
-                          error_since: ago(30000),
-                          error_observed_at: ago(5000),
                           next_source_check_at: new Date(NOW + 60000).toISOString(),
                         },
                       ],
