@@ -83,7 +83,7 @@ component that "keeps Sandboxes and their messages", D4 shows what would move.
 
 ```mermaid
 flowchart LR
-    Sender[App, Notification Service, agents] -- OpenSession, Dispatch --> K[Session Dispatcher]
+    Sender[App, Notification Service, agents] -- OpenSession, SubmitInput and the other command RPCs --> K[Session Dispatcher]
     K --> KDB[(keeper database)]
     K -- ResumeSandbox on send --> SS[Sandbox Service]
     K -- Runner calls through proxy --> GW[Runner Gateway]
@@ -285,7 +285,7 @@ Sandbox's name, the gateway and the Sandbox Service. Idle policy is the controll
 
 **Required or optional.** Recommended: _required for senders, not for the platform._ Everything
 that sends work to a Session (app composer, Notification Service, agent messaging) goes through the
-Dispatcher's `Dispatch`, so there is one set of delivery semantics: accepted, then delivered, or failed
+Dispatcher's command RPCs, so there is one set of delivery semantics: accepted, then delivered, or failed
 with a reason. A second direct path for the same senders means "sometimes queued, sometimes an
 immediate error", which the suspended composer story cannot present. The runner proxy at the
 gateway stays the only runner surface, and system callers still use it directly: the Dispatcher itself,
@@ -295,13 +295,13 @@ not a new path.
 
 What remains of the runner surface for direct use once the Dispatcher exists:
 
-| `Runner` method  | After the Dispatcher                                                       |
-| ---------------- | -------------------------------------------------------------------------- |
-| `DeliverCommand` | Dispatcher (senders); direct for system callers and tests                  |
-| `OpenSession`    | Dispatcher (its own `OpenSession`); direct for system callers              |
-| `ResumeSession`  | Dispatcher, as an internal step of `Dispatch` (the harness half of waking) |
-| `Quiesce`        | Sandbox Controller only                                                    |
-| `ListSessions`   | direct; reads need no wake                                                 |
+| `Runner` method  | After the Dispatcher                                                             |
+| ---------------- | -------------------------------------------------------------------------------- |
+| `DeliverCommand` | Dispatcher (senders); direct for system callers and tests                        |
+| `OpenSession`    | Dispatcher (its own `OpenSession`); direct for system callers                    |
+| `ResumeSession`  | Dispatcher, as an internal step of each command RPC (the harness half of waking) |
+| `Quiesce`        | Sandbox Controller only                                                          |
+| `ListSessions`   | direct; reads need no wake                                                       |
 
 A deployment with no Dispatcher is a valid reduced configuration (a Sandbox that is started by hand
 and never suspended), because the runner, gateway and controller do not depend on the Dispatcher. It
@@ -317,11 +317,18 @@ callers.
   (resuming it where the sender may wake it) and calls the runner's `OpenSession`, which is itself
   idempotent. The Dispatcher's `OpenSession` is a different RPC from the runner's of the same name: it
   queues, the runner's executes.
-- `Dispatch(dispatch_id, session_id, command)`: stores the command durably and returns `QUEUED`; it does
-  not wait for delivery. `dispatch_id` is the `command_id`. The Dispatcher resolves the Session's Sandbox
-  from its own record or the History Service's Session directory, resumes the Sandbox if suspended, waits
-  for `Ready`, resumes a stopped harness, and calls `DeliverCommand`. An unknown Session fails
-  `NOT_FOUND`; a command queued behind its Session's `OpenSession` waits for it.
+- One RPC per command, mirroring the runner's: `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`,
+  `InterruptTurn` and `StopRunnerSession`, each taking `(command_id, session_id, <that command's fields>)`.
+  Each stores the command durably and returns `QUEUED`; none waits for delivery. `command_id` is the
+  idempotency key across all of them: a retry of the same operation and payload returns the same record, and
+  the same ID under another operation or payload fails `ALREADY_EXISTS`, as the runner's own admission
+  does. The Dispatcher resolves the Session's Sandbox from its own record or the History Service's Session
+  directory, resumes the Sandbox if suspended (where the sender may wake it), waits for `Ready`, resumes a
+  stopped harness, and calls the runner's RPC of the same name. An unknown Session fails `NOT_FOUND`; a
+  command queued behind its Session's `OpenSession` waits for it. A notification is a `SubmitInput` from a
+  different caller, authorized by caller identity, so it has no RPC of its own. Open point: whether
+  `InterruptTurn` and `StopRunnerSession` wake a suspended Sandbox at all; with nothing running, there is
+  nothing to interrupt or stop.
 - `GetDispatch`, `WatchDispatches` (stream, by Session or Sandbox), `ListDispatches`, `CancelDispatch`
   (not once delivery is ambiguous). A Session's open is a dispatch like a command, with the same states.
 
@@ -424,7 +431,7 @@ sequenceDiagram
     participant SS as Sandbox Service
     participant C as Controller
     participant R as Runner
-    S->>K: Dispatch(session, command_id, command)
+    S->>K: SubmitInput(command_id, session, input)
     K->>K: persist, ack sender (accepted)
     K->>SS: ResumeSandbox
     SS->>C: spec.running = true
@@ -451,7 +458,7 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
 | `STATE_VOLUME_BLOCK`, `WORKSPACE_VOLUME`, `SANDBOX_ARCHIVE` | Controller; the Dispatcher only waits for `Ready`                                                                         |
 | `VM_RAM_SUSPEND`                                            | Needs its own answer to "seal before suspend": see below                                                                  |
 | `THREAD_SUCCESSOR_DELIVERY`, `COMMAND_DELIVERY_STATES`      | The Dispatcher's delivery states are the vocabulary; the ambiguous-admission case is its `unknown`                        |
-| `AGENT_MESSAGING`, `SUSPENDED_COMPOSER`                     | Senders of `Dispatch`                                                                                                     |
+| `AGENT_MESSAGING`, `SUSPENDED_COMPOSER`                     | Senders of the command RPCs                                                                                               |
 
 ## Complexities not yet named
 
@@ -518,8 +525,7 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
    before the Dispatcher lands.
 8. **Name.** Session Dispatcher, `Quiesce`, `Quiesced`, `Draining` and `Flushing` are confirmed
    (operator, 2026-10-13). The Dispatcher has an explicit `OpenSession` (the spec and setup script are
-   real input) and a `Dispatch` that takes only a Session ID and a command; waking and resuming are
-   internal (D4). The queue service is "Session Dispatcher" and a dispatch is one queued command or
+   real input) and one RPC per command, each taking a Session ID; waking and resuming are internal (D4). The queue service is "Session Dispatcher" and a dispatch is one queued command or
    Session creation. The names to avoid are taken:
    `inbox` is the Notification Service's (`inbox_id`, `InboxView`), `outbox` is the Action
    Service's (`action_outbox`), "mailbox" is already the task DAG's word for an agent's receiving
