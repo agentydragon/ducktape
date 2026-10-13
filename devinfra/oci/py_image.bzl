@@ -77,3 +77,31 @@ def py_python3_symlink(name, binary_name, binary_package = None):
         name = name,
         symlinks = {"/usr/local/bin/python3": venv_python},
     )
+
+def py_image_bytecode_layer(name, layers, owner = "1000", group = "1000"):
+    """A layer of precompiled `.pyc` files for the `py_image_layer` tars in `layers`.
+
+    The images set `PYTHONDONTWRITEBYTECODE` and run as a user that cannot write the layers, so
+    without this every start compiles every module. The files are compiled by the interpreter
+    the layers ship, with `unchecked-hash` invalidation: the layers are immutable, so Python need
+    not stat or hash the source. `co_filename` is rewritten to the in-image path.
+
+    Args:
+        name: Target name; the output is `<name>.tar.gz`.
+        layers: The `py_image_layer` tar targets, interpreter layer included.
+        owner: uid owning the files.
+        group: gid owning the files.
+    """
+    native.genrule(
+        name = name,
+        srcs = layers,
+        outs = [name + ".tar.gz"],
+        cmd = """
+set -eu
+root=$$(mktemp -d)
+for layer in $(SRCS); do tar -xzf $$layer -C $$root; done
+python=$$(find $$root -path '*/bin/python3.[0-9]*' -type f | head -n1)
+$$python -m compileall -q -j0 --invalidation-mode unchecked-hash -s $$root -p / $$root
+(cd $$root && find . -path '*/__pycache__/*.pyc' -print0 | tar --null -T - --owner={owner} --group={group} -czf - ) > $@
+""".format(owner = owner, group = group),
+    )

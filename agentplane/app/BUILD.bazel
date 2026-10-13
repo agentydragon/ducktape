@@ -1,6 +1,6 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
-load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
+load("//devinfra/oci:py_image.bzl", "py_image_bytecode_layer", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 
 package(default_visibility = [
@@ -467,6 +467,15 @@ py_image_layer(
     owner = "1000",
 )
 
+py_image_bytecode_layer(
+    name = "app_bytecode",
+    layers = [
+        ":app_layers_default",
+        ":app_layers_interpreter",
+        ":app_layers_packages",
+    ],
+)
+
 oci_image(
     name = "image",
     base = "@debian_trixie_slim_linux_amd64",
@@ -478,6 +487,7 @@ oci_image(
     labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
     tars = [
         ":app_layers",
+        ":app_bytecode",
         "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",
