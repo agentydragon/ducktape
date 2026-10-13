@@ -505,6 +505,8 @@ flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     POLICY_RUNTIME_GRANTS[Candidate: web app affordances for bindings and sets]
+    AGENT_PERMISSION_REQUESTS[Unscheduled: agents ask the operator for time-limited permissions]
+    POLICY_RUNTIME_GRANTS -. related .-> AGENT_PERMISSION_REQUESTS
     OLD_POLICY_KINDS_DROP[Candidate: drop the old policy kinds]
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
@@ -554,6 +556,18 @@ app takes over what they enforce (refusing a Flux-applied or Sandbox-controlled 
 reference on the Sandbox) and gets the `policybindings` create/delete permission the Sandbox Service
 has today. One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry,
 so no reader handles expiry itself.
+
+### `AGENT_PERMISSION_REQUESTS` — agents ask the operator for time-limited permissions
+
+**Unscheduled; operator, 2026-10-13 PDT: eventually.** An agent running in Agentplane asks the
+operator in natural terms ("can I have permission X for two hours?") and the operator approves or
+denies. The operator says an agent can already do this by applying a custom resource through the
+Kubernetes admin Action. Two things are missing. First, instructions telling agents how and when to
+ask, so that asking is the normal route and not a surprise. Second, possibly a better experience: a
+specific Action type for the request instead of the Kubernetes MCP escape hatch, and an approval
+view that shows the operator the account, the sets and the duration rather than a blob of Kubernetes
+YAML. Related to `POLICY_RUNTIME_GRANTS`, which gives the operator the web app for creating the same
+bindings by hand; an approved request would create the same kind of `PolicyBinding`.
 
 ### `OLD_POLICY_KINDS_DROP` — drop the old policy kinds
 
