@@ -65,7 +65,7 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 ## Deletion
 
 - A deleted Sandbox with a state PVC of its own keeps its Pod or VM, and a stopped one runs once more,
-  until its `SessionsSealed` condition is True. The controller sets it once the runner has
+  until its `SessionsSealed` condition is True. It is set once the runner has
   sealed every Session and the ingress has acknowledged each seal, so history holds every Session
   through its seal before its state goes.
 - Then the Pod or VM is deleted, then, once it and any VMI are gone, the PVC, then the Sandbox.

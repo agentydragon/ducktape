@@ -41,40 +41,32 @@ class ServiceWorkload:
     deployment: Deployment
     container: Container
 
-    def project_tokens(
-        self, volume: str, mount_path: str, audiences: Mapping[str, str], *, first_volume: bool = False
-    ) -> None:
+    def project_tokens(self, volume: str, mount_path: str, audiences: Mapping[str, str]) -> None:
         """Mounts a rotating workload token for each `{file: audience}` under `mount_path`, apart
-        from the API-server token. cdk8s-plus has no projected ServiceAccount token volume.
-        `first_volume` is for a workload with no other volume or mount, which has no list to append to;
-        it may then call this once."""
+        from the API-server token. cdk8s-plus has no projected ServiceAccount token volume."""
         deployment = ApiObject.of(self.deployment)
-        token_volume = k8s.Volume(
-            name=volume,
-            projected=k8s.ProjectedVolumeSource(
-                sources=[
-                    k8s.VolumeProjection(
-                        service_account_token=k8s.ServiceAccountTokenProjection(
-                            audience=audience, expiration_seconds=3600, path=path
-                        )
-                    )
-                    for path, audience in audiences.items()
-                ]
-            ),
-        )
-        mount = k8s.VolumeMount(name=volume, mount_path=mount_path, read_only=True)
         deployment.add_json_patch(
             JsonPatch.add(
-                "/spec/template/spec/volumes" if first_volume else "/spec/template/spec/volumes/-",
-                [token_volume] if first_volume else token_volume,
+                "/spec/template/spec/volumes/-",
+                k8s.Volume(
+                    name=volume,
+                    projected=k8s.ProjectedVolumeSource(
+                        sources=[
+                            k8s.VolumeProjection(
+                                service_account_token=k8s.ServiceAccountTokenProjection(
+                                    audience=audience, expiration_seconds=3600, path=path
+                                )
+                            )
+                            for path, audience in audiences.items()
+                        ]
+                    ),
+                ),
             )
         )
         deployment.add_json_patch(
             JsonPatch.add(
-                "/spec/template/spec/containers/0/volumeMounts"
-                if first_volume
-                else "/spec/template/spec/containers/0/volumeMounts/-",
-                [mount] if first_volume else mount,
+                "/spec/template/spec/containers/0/volumeMounts/-",
+                k8s.VolumeMount(name=volume, mount_path=mount_path, read_only=True),
             )
         )
 

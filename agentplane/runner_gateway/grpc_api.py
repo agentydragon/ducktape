@@ -25,6 +25,7 @@ from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestinat
 from agentplane.runner_gateway import session_lifecycle, wire
 from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
+from agentplane.runner_gateway.sealing import Sealing
 from agentplane.runner_gateway.session_registry import SessionConflictError, SessionNotFoundError, SessionRegistry
 from agentplane.sandbox_service.errors import InventoryError, SandboxNotFoundError
 
@@ -44,6 +45,10 @@ class Resources(ServicerResources):
     control: LifecycleControl
     admission_timeout_s: float
     lifecycle_timeout_s: float
+
+    @property
+    def sealing(self) -> Sealing:
+        return Sealing(self.sessions, control=self.control)
 
 
 def _runner_status(error: grpc.aio.AioRpcError) -> Status:

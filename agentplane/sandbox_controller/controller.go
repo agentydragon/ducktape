@@ -26,8 +26,9 @@ import (
 
 const (
 	Running = "Running"
-	// Set True on a deleting Sandbox once its runner has sealed every Session and the ingress has
-	// acknowledged each seal, or once no runner ever connected; nothing of the Sandbox is deleted before.
+	// Set True on a deleting Sandbox, by this controller or the Runner Gateway, once its runner has
+	// sealed every Session and the ingress has acknowledged each seal, or once no runner ever
+	// connected; nothing of the Sandbox is deleted before.
 	SessionsSealed = "SessionsSealed"
 	// On the Pod or the VirtualMachine and its VMI and virt-launcher Pod, the state PVC, the
 	// ServiceAccount and the PolicyBinding: the Sandbox they belong to.
@@ -52,7 +53,11 @@ type Reconciler struct {
 	// Whether the cluster serves KubeVirt's API. Without it VM Sandboxes stay unready and Pod
 	// Sandboxes are unaffected.
 	KubeVirt bool
-	// Seals a deleting Sandbox's Sessions through its runner.
+	// Seals a deleting Sandbox's Sessions through its runner. Without one, deletion waits for the
+	// Runner Gateway to set SessionsSealed.
+	//
+	// CLEANUP(added 2026-10-13): Make Sealer and Leases required once the manifests pass the sealer
+	// flags in every environment and the Runner Gateway no longer sets SessionsSealed.
 	Sealer Sealer
 	// Reads the Lease the Runner Gateway writes for each connection, uncached.
 	Leases client.Reader
@@ -184,6 +189,9 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 		w, blocked, err := r.converge(ctx, sandbox, w, true, nil)
 		if err != nil || blocked != nil {
 			return w, blocked, err
+		}
+		if r.Sealer == nil {
+			return w, &unready{reason: "Sealing", message: "waiting for the Runner Gateway to seal every Session"}, nil
 		}
 		blocked, err = r.seal(ctx, sandbox)
 		return w, blocked, err

@@ -66,8 +66,8 @@ retries. Mutations use UID/resourceVersion guards and are safe to replay.
 phase, and repeating the call changes nothing. The Sandbox Controller holds the deletion until the
 runner has sealed every Session ([Sandbox Controller](../sandbox_controller/README.md)): it runs the
 Sandbox again (`TEARDOWN_PHASE_SEALING`), which from then on refuses new Sessions and commands, and
-suspend and resume, while its Sessions can still be listed and read. The Sandbox Controller
-has it sealed through the Runner Gateway and records `SessionsSealed`, after which the Sandbox and
+suspend and resume, while its Sessions can still be listed and read. The Runner Gateway replica
+holding the runner's connection seals it and records `SessionsSealed`, after which the Sandbox and
 its volume go.
 
 ## Errors and uncertain outcomes

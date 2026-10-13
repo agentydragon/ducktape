@@ -68,16 +68,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
     }
     sandbox_service.SandboxService(chart, "sandbox-service", env, callers=app_caller | notifications_caller)
-    runner_gateway.RunnerGateway(
-        chart,
-        "runner-gateway",
-        env,
-        callers=app_caller | notifications_caller,
-        sandbox_controller=(
-            ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME),
-            sandbox_controller.metrics(env.namespace).pods,
-        ),
-    )
+    runner_gateway.RunnerGateway(chart, "runner-gateway", env, callers=app_caller | notifications_caller)
     history_service.HistoryService(
         chart,
         "history-service",

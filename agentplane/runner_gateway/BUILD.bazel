@@ -192,6 +192,7 @@ py_library(
     deps = [
         ":destinations",
         ":lifecycle_control",
+        ":sealing",
         ":session_lifecycle",
         ":session_registry",
         ":wire",
@@ -213,6 +214,7 @@ py_library(
     srcs = ["main.py"],
     deps = [
         ":connection_records",
+        ":deletion_seals",
         ":destinations",
         ":grpc_api",
         ":lifecycle_control",
@@ -232,6 +234,20 @@ py_library(
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "sealing",
+    srcs = ["sealing.py"],
+    deps = [
+        ":lifecycle_control",
+        ":session_registry",
+        "//agentplane/proto:runner_control_pb2",
+        "//agentplane/proto:runner_control_pb2_grpc",
+        "//agentplane/proto:runner_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
     ],
 )
 
@@ -434,6 +450,48 @@ py_test(
         ":wire",
         "//:conftest",
         "//agentplane/sandbox_service/testing:kubernetes",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "deletion_seals",
+    srcs = ["deletion_seals.py"],
+    deps = [
+        ":destinations",
+        ":sealing",
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//util:kubernetes",
+        "//util:kubernetes_watch",
+        "@pypi//tenacity",
+    ],
+)
+
+py_test(
+    name = "test_deletion_seals",
+    size = "medium",
+    srcs = ["test_deletion_seals.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":connection_records",
+        ":deletion_seals",
+        ":lifecycle_control",
+        ":runner_control",
+        ":sealing",
+        ":session_registry",
+        "//:conftest",
+        "//agentplane:sandbox_resource",
+        "//agentplane:service_process",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/runner_gateway/testing:runner_control",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
