@@ -663,7 +663,7 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 ```mermaid
 flowchart TD
     DURABLE_SESSION_LIFECYCLE[Decision: Session lifetime and revival]
-    SESSION_STATE_VOLUME_DESIGN[Decision: should the state volume stay virtiofs]
+    STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
     WORKSPACE_VOLUME[Blocked: a workspace volume tracked apart from the state PVC]
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
@@ -676,9 +676,8 @@ flowchart TD
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
     HOSTED_THREAD_SURFACES[Blocked: show and revive stopped Sessions]
     VM_PROVIDER[VM provider, section 4]
-    DURABLE_SESSION_LIFECYCLE --> SESSION_STATE_VOLUME_DESIGN
     DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
-    SESSION_STATE_VOLUME_DESIGN --> AGENTPLANE_SANDBOX_RESOURCE
+    NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     NODE_LOCAL_BLOCK_STORAGE --> WORKSPACE_VOLUME
     AGENTPLANE_SANDBOX_RESOURCE --> WORKSPACE_VOLUME
     WORKSPACE_VOLUME --> WORKSPACE_CONVERSION
@@ -686,7 +685,7 @@ flowchart TD
     WORKSPACE_VOLUME --> SANDBOX_ARCHIVE
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
     SANDBOX_SPEC_EDIT -. related .-> WORKSPACE_VOLUME
-    SESSION_STATE_VOLUME_DESIGN -. related .-> WORKSPACE_VOLUME
+    STATE_VOLUME_BLOCK -. related .-> WORKSPACE_VOLUME
     AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
@@ -708,19 +707,19 @@ one hook covers them: the gateway finds the Sandbox in its Session registry, set
 resource's desired state to running and holds the command until the new incarnation's runner
 connects. Resuming by Session ID works while the Sandbox exists, stopped or not. Open: what the user sees while it starts.
 
-### `SESSION_STATE_VOLUME_DESIGN` — should the state volume stay virtiofs
+### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
 
-**Decision; direction set by the operator, 2026-10-10, 2026-10-12 and 2026-10-13 PDT.** One
-filesystem PVC per Sandbox holds the runner's state and the harness's native files, not the
-workspace; each incarnation's runner continues the same journal on it. The Sandbox Controller creates
-it from the template's `stateVolume`, mounted as a volume in pods and through virtiofs in VMs
-(`agentplane/runner/vm.nix`), in separate `/state/runner` and `/state/harness` directories
-(`VM_PROCESS_ISOLATION`). Files a VM writes are `107:107`, so pods run the runner and harness as
-`107:107` and a Session moves between kinds with no `chown` (checked live). The runner versions and
-migrates the contents, and the controller has no version gate (`SANDBOX_IMAGE_REPLACE`). Decide
-whether both kinds should instead use block storage for it: virtiofs's speed is the operator's
-recollection and not measured here, and it may lack operations such as `mmap`. Measure both first.
-The workspace is `WORKSPACE_VOLUME`'s.
+**Blocked on `NODE_LOCAL_BLOCK_STORAGE`; operator, 2026-10-13 PDT: the state volume need not be
+virtiofs, so switch both kinds to block storage once the cluster has it.** One PVC per Sandbox holds
+the runner's state and the harness's native files, not the workspace; each incarnation's runner
+continues the same journal on it. Today the Sandbox Controller creates it from the template's
+`stateVolume`, mounted as a volume in pods and through virtiofs in VMs (`agentplane/runner/vm.nix`),
+in separate `/state/runner` and `/state/harness` directories (`VM_PROCESS_ISOLATION`). Block storage
+would let a VM mount it as a disk with its own filesystem instead, which would end the virtiofs
+`107:107` constraint on who can write it (the uid choice in `vm.nix` and the pods' `107:107` exist
+for it; check what else relies on it before changing). Check that a Session can still move between
+kinds on it. The runner versions and migrates the contents and the controller has no version gate
+(`SANDBOX_IMAGE_REPLACE`). The workspace is `WORKSPACE_VOLUME`'s.
 
 ### `NODE_LOCAL_BLOCK_STORAGE` — node-local block volumes on every node
 
