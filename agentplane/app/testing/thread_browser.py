@@ -46,7 +46,7 @@ from agentplane.history_service.testing.history import History
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from util.bazel.runfiles import get_required_path
-from util.testing.frontend_visual import CONTAINER_BASE_BROWSER_ARGS, chromium_executable
+from util.testing.frontend_visual import deterministic_browser_context, disable_animations_script
 from util.testing.postgres import DatabaseNames
 from util.testing.undeclared_outputs import undeclared_outputs_dir
 from util.testing.viewports import DESKTOP, Viewport
@@ -70,41 +70,41 @@ async def page(
 ) -> AsyncIterator[Page]:
     # Route.fetch runs in Playwright's Node driver, outside Chromium's SPKI trust setting.
     monkeypatch.setenv("NODE_EXTRA_CA_CERTS", str(certificate.directory / "certificate.pem"))
-    async with async_playwright() as playwright:
-        browser = await playwright.chromium.launch(
-            headless=True,
-            executable_path=chromium_executable(),
-            args=[*CONTAINER_BASE_BROWSER_ARGS, f"--ignore-certificate-errors-spki-list={certificate.spki}"],
-        )
+    async with (
+        async_playwright() as playwright,
+        # Font-pinned profile and raster flags: the screenshots here are review assets, and unpinned
+        # hinting, LCD text and Skia opts render differently from one executor to the next.
+        deterministic_browser_context(
+            playwright,
+            viewport=viewport.size,
+            # Live clock: replication and scroll behavior run on real time.
+            frozen_now_ms=None,
+            extra_args=[f"--ignore-certificate-errors-spki-list={certificate.spki}"],
+        ) as context,
+    ):
+        await context.add_init_script(disable_animations_script())
+        capture_geometry = history_probe.enabled()
+        await context.add_init_script(path=thread_view_marks.script_path())
+        if capture_geometry:
+            await context.add_init_script(path=history_probe.script_path())
+        await context.add_init_script(path=get_required_path("_main/agentplane/app/testing/thread_page.js"))
+        await context.tracing.start(screenshots=True, snapshots=True, sources=True)
+        opened = await context.new_page()
+        await history_probe.throttle_cpu(context, opened)
+        errors: list[str] = []
+        opened.on("pageerror", lambda error: errors.append(str(error)))
         try:
-            # The real app honors reduced motion for running-state chevrons,
-            # streaming cursors and breathing labels. Keep those out of image diffs
-            # without freezing the live clock or changing replication/scroll behavior.
-            async with await browser.new_context(viewport=viewport.size, reduced_motion="reduce") as context:
-                capture_geometry = history_probe.enabled()
-                await context.add_init_script(path=thread_view_marks.script_path())
-                if capture_geometry:
-                    await context.add_init_script(path=history_probe.script_path())
-                await context.add_init_script(path=get_required_path("_main/agentplane/app/testing/thread_page.js"))
-                await context.tracing.start(screenshots=True, snapshots=True, sources=True)
-                opened = await context.new_page()
-                await history_probe.throttle_cpu(context, opened)
-                errors: list[str] = []
-                opened.on("pageerror", lambda error: errors.append(str(error)))
-                try:
-                    yield opened
-                    assert not errors, errors
-                finally:
-                    if capture_geometry:
-                        await history_probe.write_results(
-                            opened, undeclared_outputs_dir() / f"{request.node.name}-history-probe.json"
-                        )
-                    await thread_view_marks.write(
-                        opened, undeclared_outputs_dir() / f"{request.node.name}-thread-view-marks.jsonl"
-                    )
-                    await context.tracing.stop(path=undeclared_outputs_dir() / f"{request.node.name}-trace.zip")
+            yield opened
+            assert not errors, errors
         finally:
-            await browser.close()
+            if capture_geometry:
+                await history_probe.write_results(
+                    opened, undeclared_outputs_dir() / f"{request.node.name}-history-probe.json"
+                )
+            await thread_view_marks.write(
+                opened, undeclared_outputs_dir() / f"{request.node.name}-thread-view-marks.jsonl"
+            )
+            await context.tracing.stop(path=undeclared_outputs_dir() / f"{request.node.name}-trace.zip")
 
 
 async def expect_projected_cursor(page: Page, cursor: int) -> None:

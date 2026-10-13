@@ -74,13 +74,16 @@ async def deterministic_browser_context(
     playwright: Playwright,
     *,
     viewport: ViewportSize,
-    frozen_now_ms: int,
+    frozen_now_ms: int | None,
     color_scheme: Literal["dark", "light", "no-preference", "null"] = "light",
     device_scale_factor: float = 1,
     has_touch: bool = False,
     extra_args: Sequence[str] = (),
 ) -> AsyncIterator[BrowserContext]:
-    """Own the browser and its font-pinned profile, including failed setup."""
+    """Own the browser and its font-pinned profile, including failed setup.
+
+    `frozen_now_ms=None` leaves the page clock live, for a page whose server-driven behavior runs on real time.
+    """
     profile = await asyncio.to_thread(_font_pinned_profile)
     try:
         async with await playwright.chromium.launch_persistent_context(
@@ -96,10 +99,23 @@ async def deterministic_browser_context(
             locale="en-US",
             timezone_id="UTC",
         ) as context:
-            await context.add_init_script(frozen_clock_script(frozen_now_ms))
+            if frozen_now_ms is not None:
+                await context.add_init_script(frozen_clock_script(frozen_now_ms))
             yield context
     finally:
         await asyncio.to_thread(profile.cleanup)
+
+
+def disable_animations_script() -> str:
+    """Init script putting `DISABLE_ANIMATIONS_CSS` in effect before the page's own elements mount.
+
+    For a page served by a real server, which cannot inline the stylesheet the way the inline harness does.
+    An adopted stylesheet rather than a `<style>` element, because the document has no `<head>` yet.
+    """
+    return (
+        f"(() => {{ const sheet = new CSSStyleSheet(); sheet.replaceSync({json.dumps(DISABLE_ANIMATIONS_CSS)}); "
+        "document.adoptedStyleSheets = [...document.adoptedStyleSheets, sheet]; })();"
+    )
 
 
 def frozen_clock_script(now_ms: int) -> str:

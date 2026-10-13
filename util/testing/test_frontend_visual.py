@@ -6,7 +6,11 @@ import pytest
 import pytest_bazel
 from playwright.async_api import Page, Playwright
 
-from util.testing.frontend_visual import DISABLE_ANIMATIONS_CSS, deterministic_browser_context
+from util.testing.frontend_visual import (
+    DISABLE_ANIMATIONS_CSS,
+    deterministic_browser_context,
+    disable_animations_script,
+)
 
 # gazelle:include_dep //util:playwright
 
@@ -105,6 +109,24 @@ async def test_animations_and_transitions_are_pinned_by_the_css(playwright: Play
         )
 
     assert styles == {"playState": "paused", "transition": "none"}
+
+
+async def test_animations_script_pins_a_page_that_mounts_after_it(playwright: Playwright) -> None:
+    async with deterministic_browser_context(
+        playwright, viewport={"width": 800, "height": 600}, frozen_now_ms=None
+    ) as context:
+        await context.add_init_script(disable_animations_script())
+        page = await context.new_page()
+        await page.set_content(
+            """
+            <style>@keyframes spin { to { transform: rotate(360deg); } }</style>
+            <div style="animation: spin 1s linear infinite">spinner</div>
+            """
+        )
+
+        play_states = await page.evaluate("document.getAnimations().map(animation => animation.playState)")
+
+    assert play_states == ["paused"]
 
 
 if __name__ == "__main__":
