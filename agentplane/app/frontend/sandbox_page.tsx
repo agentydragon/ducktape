@@ -47,6 +47,7 @@ import { TimeAgo } from "./time_ago";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, useLive, type SandboxSnapshot } from "./live";
 import { RawSwitch } from "./raw_switch";
+import { SandboxConsole } from "./sandbox_console";
 import {
   containerStatuses,
   podIp,

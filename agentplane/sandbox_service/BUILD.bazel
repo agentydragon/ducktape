@@ -33,6 +33,7 @@ py_library(
     srcs = ["inventory.py"],
     deps = [
         ":action_policy_views",
+        ":console",
         ":errors",
         ":kubernetes_views",
         ":reader",
@@ -355,5 +356,30 @@ py_library(
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "console",
+    srcs = ["console.py"],
+    deps = [
+        ":errors",
+        "@pypi//aiohttp",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_console",
+    srcs = ["test_console.py"],
+    deps = [
+        ":conftest",
+        ":console",
+        ":errors",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
     ],
 )

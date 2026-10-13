@@ -113,6 +113,11 @@ class SandboxService(Construct):
                     resources=[custom_resource(GROUP, "sandboxes")], verbs=["create", "get", "list", "patch", "delete"]
                 ),
                 RolePolicyRule(resources=[custom_resource(GROUP, "policysets")], verbs=["get", "list"]),
+                # StreamConsole attaches a VM's serial console.
+                RolePolicyRule(
+                    resources=[custom_resource("subresources.kubevirt.io", "virtualmachineinstances/console")],
+                    verbs=["get"],
+                ),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list"]),
                 # GrantEgress and RevokeEgress.
                 RolePolicyRule(

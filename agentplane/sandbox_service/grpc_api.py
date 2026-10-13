@@ -145,7 +145,6 @@ class SandboxService(sandbox_service_pb2_grpc.SandboxServiceServicer):
             await provisioning.egress.revoke(request.binding_name)
             return Empty()
 
-
     @override
     async def StreamConsole(
         self, request: sandbox_service_pb2.StreamConsoleRequest, context: grpc.aio.ServicerContext

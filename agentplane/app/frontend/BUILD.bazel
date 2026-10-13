@@ -794,6 +794,34 @@ ts_library(
 )
 
 ts_library(
+    name = "sandbox_console",
+    srcs = ["sandbox_console.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":console_text",
+        ":live_stream",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
+    name = "console_text",
+    srcs = ["console_text.ts"],
+    tsconfig = TSCONFIG,
+)
+
+agentplane_vitest_test(
+    name = "console_text_test",
+    srcs = ["console_text.test.ts"],
+    deps = [
+        ":console_text",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "sandbox_page",
     srcs = [
         "sandbox_page.tsx",
@@ -813,6 +841,7 @@ ts_library(
         ":mark_glyph",
         ":notification_status",
         ":raw_switch",
+        ":sandbox_console",
         ":sandbox_status",
         ":status_mark",
         ":time_ago",
