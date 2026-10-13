@@ -149,7 +149,7 @@ async def test_suspend_resume_and_delete_are_pinned_to_the_incarnation(api: Sand
     await api.delete("test")
     await api.delete("test")
     # The controller runs it again to seal its Sessions, then deletes the rest.
-    assert (await api.get("test")).phase == SandboxPhase.SANDBOX_PHASE_SEALING
+    assert (await api.get("test")).phase == SandboxPhase.SANDBOX_PHASE_QUIESCING
     assert case.custom.deleted == [(SANDBOXES_PLURAL, "test")]
     with pytest.raises(RefusedError):
         await api.resume("test")

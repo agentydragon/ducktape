@@ -334,5 +334,12 @@ async def test_sealing_again_returns_the_same_cursors_and_opening_is_refused(
     assert started == []
 
 
+async def test_quiescing_returns_what_sealing_does(runner: Runner, dial: Callable[[], Awaitable[Service]]) -> None:
+    service = await dial()
+    quiesced = await service.Quiesce(runner_pb2.QuiesceRequest())
+    assert quiesced.sessions == (await service.Seal(runner_pb2.SealRequest())).sessions
+    assert {row.session_id for row in quiesced.sessions} == {RUNNING, STOPPED, FAILED_SETUP}
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

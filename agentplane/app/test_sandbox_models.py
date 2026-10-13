@@ -17,7 +17,7 @@ from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxPhase, ServiceA
         (SandboxPhase.SANDBOX_PHASE_RUNNING, ViewPhase.RUNNING),
         (SandboxPhase.SANDBOX_PHASE_SUSPENDING, ViewPhase.SUSPENDING),
         (SandboxPhase.SANDBOX_PHASE_SUSPENDED, ViewPhase.SUSPENDED),
-        (SandboxPhase.SANDBOX_PHASE_SEALING, ViewPhase.SEALING),
+        (SandboxPhase.SANDBOX_PHASE_QUIESCING, ViewPhase.QUIESCING),
         (SandboxPhase.SANDBOX_PHASE_TEARING_DOWN, ViewPhase.TEARING_DOWN),
     ],
 )

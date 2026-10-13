@@ -145,8 +145,7 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
             session = await finish_command(self.runner.resume(request.session_id))
             return runner_control_pb2.ResumeSessionResponse(attached=_attached(session))
 
-    @override
-    async def Seal(self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
+    async def _seal(self, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
         async def seal(preceding: set[asyncio.Task[event_log_pb2.EventEntry]]) -> runner_pb2.SealResponse:
             # Ordering only: an admission's outcome is its own call's to report.
             if preceding:
@@ -156,6 +155,16 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
         async with _refusals(context):
             self._sealing = sealing = asyncio.ensure_future(seal(set(self._admissions)))
             return await finish_command(sealing)
+
+    @override
+    async def Seal(self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
+        return await self._seal(context)
+
+    @override
+    async def Quiesce(
+        self, request: runner_pb2.QuiesceRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.QuiesceResponse:
+        return runner_pb2.QuiesceResponse(sessions=(await self._seal(context)).sessions)
 
     @override
     async def DeliverCommand(

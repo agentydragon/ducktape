@@ -113,7 +113,7 @@ message Sandbox {
 
 // Where the Sandbox is in its lifecycle, derived from what the Sandbox Controller records: whether
 // deletion was asked for, whether it is to run, whether an incarnation exists, and whether its
-// Sessions are sealed. A Sandbox in SEALING or TEARING_DOWN takes no new Sessions or commands and
+// Sessions are sealed. A Sandbox in QUIESCING or TEARING_DOWN takes no new Sessions or commands and
 // cannot be suspended or resumed; its Sessions can still be read until it is deleted.
 enum SandboxPhase {
   SANDBOX_PHASE_UNSPECIFIED = 0;
@@ -127,7 +127,7 @@ enum SandboxPhase {
   SANDBOX_PHASE_SUSPENDED = 4;
   // Being deleted, waiting for its runner to seal every Session and its ingress to acknowledge each
   // seal. Stays here while the runner is unreachable, for the operator to decide.
-  SANDBOX_PHASE_SEALING = 5;
+  SANDBOX_PHASE_QUIESCING = 5;
   // Being deleted, every Session sealed: its Pod or VM and its state volume are being removed.
   SANDBOX_PHASE_TEARING_DOWN = 6;
 }

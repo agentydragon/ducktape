@@ -21,7 +21,7 @@ export function deletable(sandbox: SandboxView): boolean {
 
 /** Deletion was asked for: it takes no new work and cannot be suspended or resumed. */
 function deleting(sandbox: SandboxView): boolean {
-  return sandbox.phase === "Sealing" || sandbox.phase === "Tearing down";
+  return sandbox.phase === "Quiescing" || sandbox.phase === "Tearing down";
 }
 
 export function SuspendResume({

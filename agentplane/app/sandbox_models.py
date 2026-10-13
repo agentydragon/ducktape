@@ -27,7 +27,7 @@ class SandboxPhase(StrEnum):
     RUNNING = "Running"
     SUSPENDING = "Suspending"
     SUSPENDED = "Suspended"
-    SEALING = "Sealing"
+    QUIESCING = "Quiescing"
     TEARING_DOWN = "Tearing down"
 
 
@@ -114,7 +114,7 @@ class SandboxView(BaseModel):
         default=None, description="The stored concrete session defaults and bootstrap selected for this Sandbox."
     )
     phase: SandboxPhase = Field(
-        description="Sealing and Tearing down mean deletion was asked for: it seals and waits for its ingress, "
+        description="Quiescing and Tearing down mean deletion was asked for: it seals and waits for its ingress, "
         "then is removed. A Sandbox in either takes no new work and cannot be suspended or resumed."
     )
     pod: PodView | None = None

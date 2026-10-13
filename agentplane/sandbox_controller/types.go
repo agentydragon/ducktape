@@ -8,6 +8,7 @@ package sandboxcontroller
 
 import (
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -85,8 +86,22 @@ type Incarnation struct {
 type SandboxStatus struct {
 	Incarnation *Incarnation `json:"incarnation,omitempty"`
 	// The UID of the last incarnation whose runner sealed every Session, kept after it stops.
-	SealedIncarnation *string            `json:"sealedIncarnation,omitempty"`
-	Conditions        []metav1.Condition `json:"conditions,omitempty"`
+	SealedIncarnation *string `json:"sealedIncarnation,omitempty"`
+	// The settled name of SealedIncarnation; readers accept either until writers emit this one.
+	QuiescedIncarnation *string            `json:"quiescedIncarnation,omitempty"`
+	Conditions          []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// sessionsQuiesced reports whether every Session was sealed, under either condition name.
+func (s *Sandbox) sessionsQuiesced() bool {
+	return meta.IsStatusConditionTrue(s.Status.Conditions, SessionsSealed) || meta.IsStatusConditionTrue(s.Status.Conditions, Quiesced)
+}
+
+// quiescedIncarnation reports whether uid is the incarnation whose runner sealed every Session,
+// under either field name.
+func (s *Sandbox) quiescedIncarnation(uid string) bool {
+	return (s.Status.SealedIncarnation != nil && *s.Status.SealedIncarnation == uid) ||
+		(s.Status.QuiescedIncarnation != nil && *s.Status.QuiescedIncarnation == uid)
 }
 
 // +kubebuilder:object:root=true

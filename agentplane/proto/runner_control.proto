@@ -16,8 +16,8 @@ service RunnerControl {
 }
 
 // Served by the runner, and called by the Runner Gateway through the runner's `Connect` stream. Only
-// `OpenSession` and `ResumeSession` start a harness. A `Seal` waits for every command admission
-// already under way, and every call the runner receives after it waits for the `Seal`.
+// `OpenSession` and `ResumeSession` start a harness. A `Seal` or `Quiesce` waits for every command admission
+// already under way, and every call the runner receives after it waits for it.
 service Runner {
   rpc ListSessions(agentplane.proto.runner.ListSessionsRequest)
       returns (agentplane.proto.runner.ListSessionsResponse);
@@ -35,6 +35,8 @@ service Runner {
   // and seal every journal at its final cursor. Idempotent: a repeat returns the same cursors with
   // each Session's current `flushed`, so teardown repeats it until every Session is flushed.
   rpc Seal(agentplane.proto.runner.SealRequest) returns (agentplane.proto.runner.SealResponse);
+  // `Seal` under its settled name: the same operation, with the same ordering against admissions.
+  rpc Quiesce(agentplane.proto.runner.QuiesceRequest) returns (agentplane.proto.runner.QuiesceResponse);
   // Admit a command, or return its admission if it is already journaled with the same payload, even
   // after its harness stopped or its journal was sealed; redelivery is therefore safe. The same
   // `command_id` with another payload fails with `ALREADY_EXISTS`.

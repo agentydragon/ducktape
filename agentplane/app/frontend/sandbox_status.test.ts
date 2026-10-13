@@ -43,7 +43,7 @@ describe("a Sandbox whose running Pod is Ready", () => {
 
 describe("a Sandbox's summary follows its phase over its Pod", () => {
   it.each([
-    ["Sealing", { label: "Sealing", kind: "pending" }],
+    ["Quiescing", { label: "Quiescing", kind: "pending" }],
     ["Tearing down", { label: "Deleting", kind: "gone" }],
     ["Suspending", { label: "Suspending", kind: "pending" }],
     ["Suspended", { label: "Suspended", kind: "suspended" }],

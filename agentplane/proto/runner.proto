@@ -129,6 +129,14 @@ message SealResponse {
   reserved "pushes";
 }
 
+// The same operation as `SealRequest`, under its settled name. `Seal` stays served until every caller
+// calls `Quiesce`.
+message QuiesceRequest {}
+
+message QuiesceResponse {
+  repeated SessionSeal sessions = 1;
+}
+
 // The session's journal is final: every entry through `cursor` precedes this message.
 message Sealed {
   uint64 cursor = 1;

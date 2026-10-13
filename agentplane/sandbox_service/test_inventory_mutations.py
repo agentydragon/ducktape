@@ -172,7 +172,7 @@ async def test_teardown_deletes_a_suspended_sandbox_fenced_until_sealed(
         await inventory.begin_teardown("live", uid=live.uid)
     for _ in range(2):
         await inventory.begin_teardown("paused", uid=paused.uid)
-        assert (await inventory.get("paused")).phase == SandboxPhase.SANDBOX_PHASE_SEALING
+        assert (await inventory.get("paused")).phase == SandboxPhase.SANDBOX_PHASE_QUIESCING
     assert custom_objects.deleted == [(SANDBOXES_PLURAL, "paused")]
     for operation in (inventory.suspend, inventory.resume):
         with pytest.raises(SandboxTearingDownError):

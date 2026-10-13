@@ -23,8 +23,8 @@ class Settings(YamlFileSettings):
     token_audience: str = Field(min_length=1, description="Audience of the callers' projected tokens.")
     sandbox_controller_account: ServiceAccountRef | None = Field(
         default=None,
-        description="The Sandbox controller's account, the one caller of the proxied `Runner.Seal`; "
-        "its tokens carry `token_audience`. Without it nobody may seal through the proxy.",
+        description="The Sandbox controller's account, the one caller of the proxied `Runner.Seal` and `Runner.Quiesce`; "
+        "its tokens carry `token_audience`. Without it nobody may seal or quiesce through the proxy.",
     )
     admission_timeout_s: float = Field(default=15, gt=0, le=60)
     lifecycle_timeout_s: float = Field(default=300, gt=0)

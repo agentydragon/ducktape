@@ -173,6 +173,12 @@ class ScriptedRunner(runner_control_pb2_grpc.RunnerServicer):
         return await self._queue(request, runner_pb2.SealResponse, context)
 
     @override
+    async def Quiesce(
+        self, request: runner_pb2.QuiesceRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.QuiesceResponse:
+        return await self._queue(request, runner_pb2.QuiesceResponse, context)
+
+    @override
     async def DeliverCommand(
         self, request: runner_control_pb2.DeliverCommandRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.DeliverCommandResponse:

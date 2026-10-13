@@ -114,6 +114,10 @@ spec:
                     stops. A runner that connected and is not this one has Sessions still to seal
                     before the Sandbox stops or is deleted.
                   type: string
+                quiescedIncarnation:
+                  description: >-
+                    The settled name of `sealedIncarnation`; readers accept either.
+                  type: string
                 conditions:
                   type: array
                   x-kubernetes-list-type: map

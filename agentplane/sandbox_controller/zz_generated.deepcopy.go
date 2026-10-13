@@ -123,6 +123,11 @@ func (in *SandboxStatus) DeepCopyInto(out *SandboxStatus) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.QuiescedIncarnation != nil {
+		in, out := &in.QuiescedIncarnation, &out.QuiescedIncarnation
+		*out = new(string)
+		**out = **in
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]metav1.Condition, len(*in))

@@ -66,19 +66,19 @@ def sandbox_view(
 
 
 def _phase(sandbox: sandbox_resource.Sandbox) -> SandboxPhase:
-    """The `Running` reasons `Sealing` and `Deleting` are the Sandbox Controller's: it holds a stop or a
-    deletion for the seal, whoever seals, then deletes the workload."""
+    """The `Running` reasons `Sealing` (or its settled name `Quiescing`) and `Deleting` are the Sandbox
+    Controller's: it holds a stop or a deletion for the seal, whoever seals, then deletes the workload."""
     if sandbox.metadata.deletion_timestamp is not None:
         sealed = sandbox.sessions_sealed or sandbox.running_reason() == "Deleting"
-        return SandboxPhase.SANDBOX_PHASE_TEARING_DOWN if sealed else SandboxPhase.SANDBOX_PHASE_SEALING
+        return SandboxPhase.SANDBOX_PHASE_TEARING_DOWN if sealed else SandboxPhase.SANDBOX_PHASE_QUIESCING
     incarnated = sandbox.status.incarnation is not None
     if sandbox.spec.running:
         return SandboxPhase.SANDBOX_PHASE_RUNNING if incarnated else SandboxPhase.SANDBOX_PHASE_CREATING
     if not incarnated:
         return SandboxPhase.SANDBOX_PHASE_SUSPENDED
     return (
-        SandboxPhase.SANDBOX_PHASE_SEALING
-        if sandbox.running_reason() == "Sealing"
+        SandboxPhase.SANDBOX_PHASE_QUIESCING
+        if sandbox.running_reason() in {"Sealing", "Quiescing"}
         else SandboxPhase.SANDBOX_PHASE_SUSPENDING
     )
 

@@ -40,7 +40,7 @@ The same service-caller allowlist gates every RPC:
   separate objects. The operating mode is the desired state; the `phase` is derived from what the
   Sandbox Controller records (deletion asked for, `spec.running`, whether an incarnation exists,
   `SessionsSealed`, the `Running` condition's reason) as Creating, Running, Suspending, Suspended,
-  Sealing (a stop or deletion held for the runner's seal) or Tearing down.
+  Quiescing (a stop or deletion held for the runner's seal) or Tearing down.
 - `ListTemplates`: available SandboxTemplates.
 - `CreateSandbox`: concrete template, `policy_sets`, optional session defaults, and bootstrap. The
   requested `name` is the Sandbox's. It runs from the start, bound to `policy_sets` plus the
@@ -65,9 +65,9 @@ retries. Mutations use UID/resourceVersion guards and are safe to replay.
 ## Teardown
 
 `DeleteSandbox` on a suspended Sandbox deletes it and returns; `GetSandbox` reports its `phase`
-(Sealing, then Tearing down), and repeating the call changes nothing. The Sandbox Controller holds the deletion until the
+(Quiescing, then Tearing down), and repeating the call changes nothing. The Sandbox Controller holds the deletion until the
 runner has sealed every Session ([Sandbox Controller](../sandbox_controller/README.md)): it runs the
-Sandbox again (`SANDBOX_PHASE_SEALING`), which from then on refuses new Sessions and commands, and
+Sandbox again (`SANDBOX_PHASE_QUIESCING`), which from then on refuses new Sessions and commands, and
 suspend and resume, while its Sessions can still be listed and read. The Runner Gateway replica
 holding the runner's connection seals it and records `SessionsSealed`, after which the Sandbox and
 its volume go.

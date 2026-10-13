@@ -2,7 +2,7 @@
 
 A call is forwarded as a tunnel `Call` without decoding its messages, so the proxy serves every
 method of the service and answers with the runner's own status and bytes. The callers' accounts may
-call every method but `Seal`, which only the Sandbox controller may. Contract:
+call every method but `Seal` and `Quiesce`, which only the Sandbox controller may. Contract:
 `agentplane/docs/runner_control.md` § Tunnelled calls.
 """
 
@@ -29,12 +29,12 @@ from agentplane.workload_auth.grpc_caller import authenticate
 SANDBOX_HEADER = "x-agentplane-sandbox"
 
 _RUNNER = runner_control_pb2.DESCRIPTOR.services_by_name["Runner"]
-_SEAL = f"/{_RUNNER.full_name}/Seal"
+_CONTROLLER_ONLY = {f"/{_RUNNER.full_name}/Seal", f"/{_RUNNER.full_name}/Quiesce"}
 
 
 @dataclass(frozen=True)
 class Resources(ServicerResources):
-    """What the proxy serves from; `caller_accounts` may call every method but `Seal`."""
+    """What the proxy serves from; `caller_accounts` may call every method but `Seal` and `Quiesce`."""
 
     sandboxes: SandboxReader
     control: LifecycleControl
@@ -77,7 +77,7 @@ class RunnerProxy(grpc.GenericRpcHandler):
         return grpc.unary_unary_rpc_method_handler(forward)
 
     def callers(self, method: str) -> frozenset[ServiceAccountRef]:
-        if method != _SEAL:
+        if method not in _CONTROLLER_ONLY:
             return self.resources.caller_accounts
         controller = self.resources.sandbox_controller_account
         return frozenset() if controller is None else frozenset({controller})

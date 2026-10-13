@@ -34,6 +34,8 @@ const (
 	// sealed every Session and the ingress has acknowledged each seal; nothing of the Sandbox is
 	// deleted before, unless no runner ever connected.
 	SessionsSealed = "SessionsSealed"
+	// The settled name of SessionsSealed; readers accept either until writers emit this one.
+	Quiesced = "Quiesced"
 	// On the Pod or the VirtualMachine and its VMI and virt-launcher Pod, the state PVC, the
 	// ServiceAccount and the PolicyBinding: the Sandbox they belong to.
 	SandboxLabel = "agentplane.allegedly.works/sandbox"
@@ -204,7 +206,7 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 	own := pvc != nil && metav1.IsControlledBy(pvc, sandbox)
 	// Without a state PVC of its own the Sandbox never had a runner, so it has no Session to seal;
 	// nor has one whose runner never connected, which is not sealed, only has nothing to seal.
-	needsSeal := own && !meta.IsStatusConditionTrue(sandbox.Status.Conditions, SessionsSealed)
+	needsSeal := own && !sandbox.sessionsQuiesced()
 	var runner string
 	if needsSeal && r.Sealer != nil {
 		var err error
@@ -265,7 +267,7 @@ func (r *Reconciler) connectedRunner(ctx context.Context, sandbox *Sandbox) (str
 // "": none connected, or it is the one already sealed.
 func (r *Reconciler) unsealedRunner(ctx context.Context, sandbox *Sandbox) (string, error) {
 	runner, err := r.connectedRunner(ctx, sandbox)
-	if err != nil || (sandbox.Status.SealedIncarnation != nil && *sandbox.Status.SealedIncarnation == runner) {
+	if err != nil || sandbox.quiescedIncarnation(runner) {
 		return "", err
 	}
 	return runner, nil
@@ -382,7 +384,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 		return w, nil, r.haltVM(ctx, w.vm)
 	}
 	// A runner that sealed its Sessions takes no new ones, so a Sandbox resumed meanwhile starts anew.
-	if pod := w.incarnation(); pod != nil && sandbox.Status.SealedIncarnation != nil && *sandbox.Status.SealedIncarnation == string(pod.UID) {
+	if pod := w.incarnation(); pod != nil && sandbox.quiescedIncarnation(string(pod.UID)) {
 		if err := r.deleteIfLive(ctx, pod); err != nil {
 			return w, nil, err
 		}
