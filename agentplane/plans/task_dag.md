@@ -924,9 +924,7 @@ survives a controller restart. Busy covers a turn, a command, a background or du
 attached terminal or console, or a Sandbox is suspended under a running job. The suspend request can
 carry an "only if idle since" precondition; a Sandbox the Session Dispatcher holds pending messages for
 (`DISPATCHER_WAKE_ON_SEND`) is not suspended. Suspension waits for the Sandbox bootstrap and every
-Session's setup; deletion does not wait. The controller records `status.suspendedBy: Idle`, and the
-Sandbox Service wakes by bumping `spec.wakeGeneration`, so nobody edits `spec.running`; a Sandbox
-that is quiescing refuses resume. Action Service boxes are `ACTION_BOX_IDLE_REAPER`'s, which
+Session's setup; deletion does not wait. A Sandbox that is quiescing refuses resume. Action Service boxes are `ACTION_BOX_IDLE_REAPER`'s, which
 only ever deletes.
 
 ### `SESSION_INCARNATIONS` — a Session records its incarnations
@@ -1074,7 +1072,7 @@ its own record is authoritative.
 ### `DISPATCHER_WAKE_ON_SEND` — a send wakes a suspended Sandbox
 
 **Blocked on `DISPATCHER_CORE`, `SESSION_REVIVE` and `QUIESCE_INTERRUPT`.** A message for a suspended Sandbox's
-Session resumes the Sandbox through the Sandbox Service (it bumps `spec.wakeGeneration`), then delivers once `Ready` holds for the new
+Session resumes the Sandbox through the Sandbox Service, then delivers once `Ready` holds for the new
 incarnation, keying every attempt to the incarnation UID; a delivery refused by a sealing runner
 with the retryable code is redelivered after the resume. Which senders may wake: a user message and
 a notification, not an agent's message unless `AGENT_MESSAGE_RECEPTION` decides so. `InterruptTurn` and
