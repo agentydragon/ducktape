@@ -63,12 +63,14 @@ FORGEJO_HAKU_POLICY = "forgejo-haku"
 FORGEJO_FINANCE_AGENT_POLICY = "forgejo-finance-agent"
 HAKU_MAILBOX_POLICY = "haku-mailbox"
 GOOGLE_READONLY_POLICY = "google-readonly"
-GROCY_SF_READONLY_POLICY = "grocy-sf-readonly"
-HOME_ASSISTANT_READONLY_POLICY = "home-assistant-readonly"
 ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
 AIQUOTA_READ_POLICY = "aiquota-read"
 FINANCE_AIQUOTA_HISTORY_POLICY = "finance-aiquota-history"
 PLAID_PGWEB_POLICY = "plaid-pgweb"
+# Credentials whose egress rules ride in the Action PolicySets that approve the same system's
+# reads (actions_staging_policies.py), so a binding to one set grants both.
+GROCY_SF_READONLY_CREDENTIAL = "grocy-sf-readonly"
+HOME_ASSISTANT_READONLY_CREDENTIAL = "home-assistant-readonly"
 
 
 def add_staging_egress_credentials(scope: Construct, *, namespace: str, credentials_namespace: str) -> None:
@@ -169,6 +171,27 @@ def _rule(
     )
 
 
+def _credential(
+    scope: Construct,
+    id: str,
+    *,
+    namespace: str,
+    credential: str,
+    description: str,
+    secret: str,
+    key: str,
+    target: EgressCredentialSpecTargets,
+) -> None:
+    EgressCredential(
+        scope,
+        f"egresscredential-{id}",
+        metadata=ApiObjectMetadata(name=credential, namespace=namespace),
+        description=description,
+        source=Source.secret_ref(name=secret, key=key),
+        targets=[target],
+    )
+
+
 def _present(
     scope: Construct,
     policy: str,
@@ -183,13 +206,15 @@ def _present(
 ) -> None:
     """The EgressCredential `credential`, read from `secret`/`key`, and the egress PolicySet `policy`
     that scopes where the proxy presents it."""
-    EgressCredential(
+    _credential(
         scope,
-        f"egresscredential-{policy}",
-        metadata=ApiObjectMetadata(name=credential, namespace=namespace),
+        policy,
+        namespace=namespace,
+        credential=credential,
         description=description,
-        source=Source.secret_ref(name=secret, key=key),
-        targets=[target],
+        secret=secret,
+        key=key,
+        target=target,
     )
     add_egress_policy(
         scope, f"egresspolicy-{policy}", metadata=ApiObjectMetadata(name=policy, namespace=namespace), rules=rules
@@ -336,7 +361,7 @@ def _google_readonly(scope: Construct, *, namespace: str) -> None:
 
 
 def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
-    credential = "grocy-sf-readonly"
+    credential = GROCY_SF_READONLY_CREDENTIAL
     _copy_secret(
         scope,
         "grocy-sf",
@@ -347,17 +372,16 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
         key="password",
         target=credential,
     )
-    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    _present(
+    _credential(
         scope,
-        GROCY_SF_READONLY_POLICY,
+        credential,
         namespace=namespace,
         credential=credential,
         description=(
             f"The app password of `{_GROCY_SF_ACCOUNT}`, an Authentik service account admitted to "
             "the grocy-sf application (tf/gitops/agent-machine-access/grocy-sf.tf), copied into "
             "this namespace by ESO. Send it as HTTP Basic under that username. Grocy knows the "
-            "account as a user with no permissions, and `grocy-sf-readonly`'s rule presents the "
+            "account as a user with no permissions, and the `grocy-sf-reads` PolicySet presents the "
             "password only on GETs to Grocy's read routes."
         ),
         secret=credential,
@@ -366,39 +390,43 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
         # against its own proxy provider, so the placeholder travels as the password half. A
         # client sends the username itself; only the password is substituted here.
         target=_BASIC_PASSWORD,
-        rules=[
-            # Talks to Grocy's own REST API (grocy-sf.allegedly.works/api/...) rather than
-            # the grocy-mcp-sf MCP server: the MCP server's whole tool surface, reads and
-            # writes alike, sits behind one POST /mcp JSON-RPC endpoint, which a host/method/
-            # path rule cannot see inside to scope to reads only. Grocy's REST verbs express
-            # that distinction directly, so GET-only admits exactly the read routes
-            # (entities/stock/user/system/file); PUT, POST and DELETE -- every write -- are
-            # refused by the proxy regardless of path.
-            _rule(
-                credential,
-                "grocy-sf.allegedly.works",
-                method=PolicySetSpecRulesMethods.GET,
-                paths=[
-                    # keep-sorted start
-                    "/api/files/**",
-                    "/api/objects/**",
-                    # `/api/stock/**` does not match `/api/stock` itself.
-                    "/api/stock",
-                    "/api/stock/**",
-                    "/api/system/db-changed-time",
-                    "/api/system/info",
-                    "/api/user",
-                    # keep-sorted end
-                ],
-            )
-        ],
     )
+
+
+def grocy_sf_read_egress_rules() -> list[PolicySetSpecRules]:
+    """Where the proxy presents `grocy-sf-readonly`; part of the `grocy-sf-reads` PolicySet."""
+    return [
+        # Talks to Grocy's own REST API (grocy-sf.allegedly.works/api/...) rather than
+        # the grocy-mcp-sf MCP server: the MCP server's whole tool surface, reads and
+        # writes alike, sits behind one POST /mcp JSON-RPC endpoint, which a host/method/
+        # path rule cannot see inside to scope to reads only. Grocy's REST verbs express
+        # that distinction directly, so GET-only admits exactly the read routes
+        # (entities/stock/user/system/file); PUT, POST and DELETE -- every write -- are
+        # refused by the proxy regardless of path.
+        _rule(
+            GROCY_SF_READONLY_CREDENTIAL,
+            "grocy-sf.allegedly.works",
+            method=PolicySetSpecRulesMethods.GET,
+            paths=[
+                # keep-sorted start
+                "/api/files/**",
+                "/api/objects/**",
+                # `/api/stock/**` does not match `/api/stock` itself.
+                "/api/stock",
+                "/api/stock/**",
+                "/api/system/db-changed-time",
+                "/api/system/info",
+                "/api/user",
+                # keep-sorted end
+            ],
+        )
+    ]
 
 
 def _home_assistant_readonly(
     scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str
 ) -> None:
-    credential = "home-assistant-readonly"
+    credential = HOME_ASSISTANT_READONLY_CREDENTIAL
     _copy_secret(
         scope,
         "home-assistant",
@@ -409,34 +437,38 @@ def _home_assistant_readonly(
         key="token",
         target=credential,
     )
-    _present(
+    _credential(
         scope,
-        HOME_ASSISTANT_READONLY_POLICY,
+        credential,
         namespace=namespace,
         credential=credential,
         description=(
             "A long-lived token of `agentplane-reader`, a Home Assistant user in the read-only "
             "group, which the Home Assistant provisioner (homeassistant/provisioner) creates and "
             "keeps valid; ESO copies it into this namespace. Home Assistant refuses that user every service "
-            "call, and `home-assistant-readonly`'s rule presents the token only on GETs of "
+            "call, and the `home-assistant-reads` PolicySet presents the token only on GETs of "
             "entity states and their history."
         ),
         secret=credential,
         key="token",
         target=_BEARER,
-        rules=[
-            # A path rule sees no query string, so `/api/history/period/*` admits every entity's
-            # history, not only the one a `filter_entity_id` names: the same reach as the
-            # read-only group's, which covers every entity.
-            _rule(
-                credential,
-                HOME_ASSISTANT_HOST,
-                cluster_internal=True,
-                method=PolicySetSpecRulesMethods.GET,
-                paths=["/api/states", "/api/states/*", "/api/history/period/*"],
-            )
-        ],
     )
+
+
+def home_assistant_read_egress_rules() -> list[PolicySetSpecRules]:
+    """Where the proxy presents `home-assistant-readonly`; part of the `home-assistant-reads` PolicySet."""
+    return [
+        # A path rule sees no query string, so `/api/history/period/*` admits every entity's
+        # history, not only the one a `filter_entity_id` names: the same reach as the
+        # read-only group's, which covers every entity.
+        _rule(
+            HOME_ASSISTANT_READONLY_CREDENTIAL,
+            HOME_ASSISTANT_HOST,
+            cluster_internal=True,
+            method=PolicySetSpecRulesMethods.GET,
+            paths=["/api/states", "/api/states/*", "/api/history/period/*"],
+        )
+    ]
 
 
 def _activitywatch_read(

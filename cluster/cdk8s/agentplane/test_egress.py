@@ -31,9 +31,9 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     FORGEJO_FINANCE_AGENT_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
-    GROCY_SF_READONLY_POLICY,
+    GROCY_SF_READONLY_CREDENTIAL,
     HAKU_MAILBOX_POLICY,
-    HOME_ASSISTANT_READONLY_POLICY,
+    HOME_ASSISTANT_READONLY_CREDENTIAL,
     PLAID_PGWEB_POLICY,
 )
 from cluster.cdk8s.clickhouse import client
@@ -177,8 +177,8 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             FORGEJO_HAKU_POLICY,
             FORGEJO_FINANCE_AGENT_POLICY,
             GOOGLE_READONLY_POLICY,
-            GROCY_SF_READONLY_POLICY,
-            HOME_ASSISTANT_READONLY_POLICY,
+            GROCY_SF_READONLY_CREDENTIAL,
+            HOME_ASSISTANT_READONLY_CREDENTIAL,
             ACTIVITYWATCH_READ_POLICY,
             AGENTPLANE_TESTING_POLICY,
             AIQUOTA_READ_POLICY,

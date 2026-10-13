@@ -39,10 +39,10 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     AIQUOTA_READ_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
-    GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
-    HOME_ASSISTANT_READONLY_POLICY,
     PLAID_PGWEB_POLICY,
+    grocy_sf_read_egress_rules,
+    home_assistant_read_egress_rules,
 )
 from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.providers.agentplane import policy_set
@@ -86,13 +86,11 @@ DUCKTAPE_PR_FAILED_JOBS_SET = "ducktape-pr-failed-jobs"
 GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET = "gaffer-private-branch-and-pr-creation"
 
 
-def _policy_set(
-    scope: Construct, id: str, *, metadata: ApiObjectMetadata, auto_approve_if: Sequence[PolicySetSpecRules]
-) -> None:
+def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, rules: Sequence[PolicySetSpecRules]) -> None:
     # The Action Service parses a rule more strictly than the CRD schema (an unknown policy
     # kind or key, an invalid JSON Schema); a set it refuses grants nothing on the cluster, so
     # it fails here instead.
-    policy_set_object = policy_set.PolicySet(scope, id, metadata=metadata, rules=auto_approve_if)
+    policy_set_object = policy_set.PolicySet(scope, id, metadata=metadata, rules=rules)
     for rule in policy_set_object.to_json()["spec"]["rules"]:
         parse_action_rule(rule)
 
@@ -309,7 +307,7 @@ def _repository_reads(scope: Construct, id: str, *, name: str, description: str,
         scope,
         id,
         metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE, annotations={"description": description}),
-        auto_approve_if=[
+        rules=[
             AutoApproveIf.github_repository(
                 owner=owner, repository=repository, actions={"github": _REPOSITORY_SCOPED_ACTIONS}
             )
@@ -370,7 +368,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of GitHub MCP's default catalog; every other GitHub Action stays on the human path."
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={"github": _GITHUB_READS_ACTIONS})],
+        rules=[AutoApproveIf.exact_actions(actions={"github": _GITHUB_READS_ACTIONS})],
     )
     # `get_me` returns only the authenticated caller's own GitHub identity and has no
     # repository or mutation surface. Kept separate so a caller can be granted the
@@ -385,7 +383,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The caller's own GitHub identity read, with no repository or mutation surface."
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={"github": ["get_me"]})],
+        rules=[AutoApproveIf.exact_actions(actions={"github": ["get_me"]})],
     )
     # The coder Agent's own fork, used to stage branches before opening PRs into
     # agentydragon/ducktape. It already has write access here (that's how it opens
@@ -429,7 +427,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public."
             },
         ),
-        auto_approve_if=[AutoApproveIf.github_public_repository(actions={"github": _REPOSITORY_SCOPED_ACTIONS})],
+        rules=[AutoApproveIf.github_public_repository(actions={"github": _REPOSITORY_SCOPED_ACTIONS})],
     )
 
     # GitHub MCP combines workflow dispatch, whole-run reruns, failed-job reruns, cancellation,
@@ -449,7 +447,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 )
             },
         ),
-        auto_approve_if=[
+        rules=[
             AutoApproveIf.argument_schema(
                 actions={"github": ["actions_run_trigger"]},
                 schema={
@@ -486,7 +484,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 )
             },
         ),
-        auto_approve_if=[
+        rules=[
             AutoApproveIf.argument_schema(
                 actions={"github": ["create_branch"]},
                 schema={
@@ -714,8 +712,6 @@ def add_staging_action_policies(scope: Construct) -> None:
             FORGEJO_HAKU_POLICY,
             PACKAGES_POLICY,
             GOOGLE_READONLY_POLICY,
-            GROCY_SF_READONLY_POLICY,
-            HOME_ASSISTANT_READONLY_POLICY,
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
@@ -741,8 +737,6 @@ def add_staging_action_policies(scope: Construct) -> None:
             FORGEJO_HAKU_POLICY,
             PACKAGES_POLICY,
             GOOGLE_READONLY_POLICY,
-            GROCY_SF_READONLY_POLICY,
-            HOME_ASSISTANT_READONLY_POLICY,
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
@@ -773,7 +767,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 )
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={SANDBOX_GROUP: sorted(SandboxAction)})],
+        rules=[AutoApproveIf.exact_actions(actions={SANDBOX_GROUP: sorted(SandboxAction)})],
     )
 
     # Home Assistant's read-only surface (see _HOME_ASSISTANT_READS_ACTIONS above for the
@@ -785,10 +779,13 @@ def add_staging_action_policies(scope: Construct) -> None:
             name=HOME_ASSISTANT_READS_SET,
             namespace=_NAMESPACE,
             annotations={
-                "description": "The reviewed read-only subset of Home Assistant MCP's default catalog; every other Home Assistant Action stays on the human path."
+                "description": "The reviewed read-only subset of Home Assistant MCP's default catalog, and the read-only REST routes the egress proxy presents Home Assistant's reader token on; every other Home Assistant Action stays on the human path."
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={"home_assistant": _HOME_ASSISTANT_READS_ACTIONS})],
+        rules=[
+            AutoApproveIf.exact_actions(actions={"home_assistant": _HOME_ASSISTANT_READS_ACTIONS}),
+            *home_assistant_read_egress_rules(),
+        ],
     )
 
     # Gmail's and Google Calendar's read-only surfaces (see the _GMAIL_READS_ACTIONS /
@@ -803,7 +800,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of the Gmail MCP backend's catalog; every write stays on the human path."
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={"gmail": _GMAIL_READS_ACTIONS})],
+        rules=[AutoApproveIf.exact_actions(actions={"gmail": _GMAIL_READS_ACTIONS})],
     )
     _policy_set(
         scope,
@@ -815,7 +812,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of the Google Calendar MCP backend's catalog; create_event stays on the human path."
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={"google_calendar": _GOOGLE_CALENDAR_READS_ACTIONS})],
+        rules=[AutoApproveIf.exact_actions(actions={"google_calendar": _GOOGLE_CALENDAR_READS_ACTIONS})],
     )
 
     _policy_set(
@@ -828,7 +825,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "The reviewed read-only subset of the Tana MCP backend's catalog, plus get_or_create_calendar_node; every other write and open_node stay on the human path."
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={"tana": _TANA_READS_ACTIONS})],
+        rules=[AutoApproveIf.exact_actions(actions={"tana": _TANA_READS_ACTIONS})],
     )
     _policy_set(
         scope,
@@ -837,10 +834,13 @@ def add_staging_action_policies(scope: Construct) -> None:
             name=GROCY_SF_READS_SET,
             namespace=_NAMESPACE,
             annotations={
-                "description": "The reviewed read-only subset of the Grocy SF MCP backend's catalog; every write, open_product_stock included, stays on the human path."
+                "description": "The reviewed read-only subset of the Grocy SF MCP backend's catalog, and the GET-only REST routes the egress proxy presents Grocy's service-account password on; every write, open_product_stock included, stays on the human path."
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={"grocy_sf": _GROCY_SF_READS_ACTIONS})],
+        rules=[
+            AutoApproveIf.exact_actions(actions={"grocy_sf": _GROCY_SF_READS_ACTIONS}),
+            *grocy_sf_read_egress_rules(),
+        ],
     )
 
     # SSH MCP's `list_targets`: it names which machine/user targets are configured and whether
@@ -857,7 +857,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                 "description": "Auto-approves the SSH MCP backend's list_targets, which only names configured targets and key availability; every other SSH Action stays on the human path."
             },
         ),
-        auto_approve_if=[AutoApproveIf.exact_actions(actions={"ssh": ["list_targets"]})],
+        rules=[AutoApproveIf.exact_actions(actions={"ssh": ["list_targets"]})],
     )
 
     # The reviewed read sets for GitHub (github-reads and github-identity-reads), Home

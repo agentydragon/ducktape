@@ -3311,8 +3311,6 @@ data:
           - forgejo-haku
           - packages
           - google-readonly
-          - grocy-sf-readonly
-          - home-assistant-readonly
           - activitywatch-read
           - aiquota-read
           - coinbase
@@ -8288,8 +8286,6 @@ spec:
     - forgejo-haku
     - packages
     - google-readonly
-    - grocy-sf-readonly
-    - home-assistant-readonly
     - activitywatch-read
     - aiquota-read
     - haku-mailbox
@@ -8319,8 +8315,6 @@ spec:
     - forgejo-haku
     - packages
     - google-readonly
-    - grocy-sf-readonly
-    - home-assistant-readonly
     - activitywatch-read
     - aiquota-read
     - haku-mailbox
@@ -8356,7 +8350,7 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
-    description: The reviewed read-only subset of Home Assistant MCP's default catalog; every other Home Assistant Action stays on the human path.
+    description: The reviewed read-only subset of Home Assistant MCP's default catalog, and the read-only REST routes the egress proxy presents Home Assistant's reader token on; every other Home Assistant Action stays on the human path.
   name: home-assistant-reads
   namespace: agentplane-staging
 spec:
@@ -8396,6 +8390,18 @@ spec:
             - ha_list_floors_areas
             - ha_list_services
             - ha_search
+    - type: egress
+      hosts:
+        - home-assistant.home-assistant.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /api/states
+        - /api/states/*
+        - /api/history/period/*
+      clusterInternal: true
+      credentialRef:
+        name: home-assistant-readonly
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -8465,7 +8471,7 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
-    description: The reviewed read-only subset of the Grocy SF MCP backend's catalog; every write, open_product_stock included, stays on the human path.
+    description: The reviewed read-only subset of the Grocy SF MCP backend's catalog, and the GET-only REST routes the egress proxy presents Grocy's service-account password on; every write, open_product_stock included, stays on the human path.
   name: grocy-sf-reads
   namespace: agentplane-staging
 spec:
@@ -8494,6 +8500,21 @@ spec:
             - shopping_lists_list
             - stock_entries_list
             - stock_get
+    - type: egress
+      hosts:
+        - grocy-sf.allegedly.works
+      methods:
+        - GET
+      paths:
+        - /api/files/**
+        - /api/objects/**
+        - /api/stock
+        - /api/stock/**
+        - /api/system/db-changed-time
+        - /api/system/info
+        - /api/user
+      credentialRef:
+        name: grocy-sf-readonly
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -8987,7 +9008,7 @@ metadata:
   name: grocy-sf-readonly
   namespace: agentplane-staging
 spec:
-  description: The app password of `agentplane-grocy-sf-readonly`, an Authentik service account admitted to the grocy-sf application (tf/gitops/agent-machine-access/grocy-sf.tf), copied into this namespace by ESO. Send it as HTTP Basic under that username. Grocy knows the account as a user with no permissions, and `grocy-sf-readonly`'s rule presents the password only on GETs to Grocy's read routes.
+  description: The app password of `agentplane-grocy-sf-readonly`, an Authentik service account admitted to the grocy-sf application (tf/gitops/agent-machine-access/grocy-sf.tf), copied into this namespace by ESO. Send it as HTTP Basic under that username. Grocy knows the account as a user with no permissions, and the `grocy-sf-reads` PolicySet presents the password only on GETs to Grocy's read routes.
   source:
     secretRef:
       name: grocy-sf-readonly
@@ -8995,29 +9016,6 @@ spec:
   targets:
     - header: Authorization
       method: basicPassword
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  name: grocy-sf-readonly
-  namespace: agentplane-staging
-spec:
-  rules:
-    - type: egress
-      hosts:
-        - grocy-sf.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /api/files/**
-        - /api/objects/**
-        - /api/stock
-        - /api/stock/**
-        - /api/system/db-changed-time
-        - /api/system/info
-        - /api/user
-      credentialRef:
-        name: grocy-sf-readonly
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
@@ -9096,7 +9094,7 @@ metadata:
   name: home-assistant-readonly
   namespace: agentplane-staging
 spec:
-  description: A long-lived token of `agentplane-reader`, a Home Assistant user in the read-only group, which the Home Assistant provisioner (homeassistant/provisioner) creates and keeps valid; ESO copies it into this namespace. Home Assistant refuses that user every service call, and `home-assistant-readonly`'s rule presents the token only on GETs of entity states and their history.
+  description: A long-lived token of `agentplane-reader`, a Home Assistant user in the read-only group, which the Home Assistant provisioner (homeassistant/provisioner) creates and keeps valid; ESO copies it into this namespace. Home Assistant refuses that user every service call, and the `home-assistant-reads` PolicySet presents the token only on GETs of entity states and their history.
   source:
     secretRef:
       name: home-assistant-readonly
@@ -9105,26 +9103,6 @@ spec:
     - header: Authorization
       method: schemeToken
       scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  name: home-assistant-readonly
-  namespace: agentplane-staging
-spec:
-  rules:
-    - type: egress
-      hosts:
-        - home-assistant.home-assistant.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /api/states
-        - /api/states/*
-        - /api/history/period/*
-      clusterInternal: true
-      credentialRef:
-        name: home-assistant-readonly
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

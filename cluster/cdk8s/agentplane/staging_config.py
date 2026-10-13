@@ -47,9 +47,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     FORGEJO_FINANCE_AGENT_POLICY,
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
-    GROCY_SF_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
-    HOME_ASSISTANT_READONLY_POLICY,
     PLAID_PGWEB_POLICY,
 )
 from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_GRANT, tool_config_grant
@@ -158,8 +156,6 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
             FORGEJO_HAKU_POLICY,
             PACKAGES_POLICY,
             GOOGLE_READONLY_POLICY,
-            GROCY_SF_READONLY_POLICY,
-            HOME_ASSISTANT_READONLY_POLICY,
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
             COINBASE_POLICY,
