@@ -26,8 +26,9 @@ binding at its `expiresAt`, so the proxy never handles expiry itself.
 
 ### The app writes only 1×N
 
-The Sandbox Service writes each runtime grant as a `PolicyBinding` naming the account the Sandbox
-runs as, with an `ownerReference` on the Sandbox so deleting the sandbox garbage-collects the grant.
+The app writes each runtime grant as a `PolicyBinding` naming the account the Sandbox runs as, for
+the operator who asked and for PolicySets of any rule type, with an `ownerReference` on the Sandbox
+so deleting the sandbox garbage-collects the grant.
 
 The object's name comes from `metadata.generateName` with the prefix `{sandbox}-`, so the API
 server assigns it and a sandbox can be granted any number of times; a name derived from the

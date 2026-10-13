@@ -52,7 +52,6 @@ from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 
@@ -245,8 +244,8 @@ async def _serve(
             history_watch = HistoryWatch(
                 watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
             )
-            egress = EgressAccess(EgressReader(namespace=NAMESPACE, custom_objects=custom), inventory)
             action_policy = ActionPolicyInventory(namespace=NAMESPACE, custom_objects=custom)
+            egress = EgressAccess(namespace=NAMESPACE, custom_objects=custom, action_policy=action_policy)
             app = create_app(
                 inventory,
                 bridge,

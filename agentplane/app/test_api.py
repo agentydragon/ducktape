@@ -17,7 +17,7 @@ import pytest_bazel
 from fastapi import FastAPI
 
 from agentplane.app.action_policy import ActionPolicyInventory
-from agentplane.app.api import create_app, upstream_http_error
+from agentplane.app.api import _require_operator_login, create_app, upstream_http_error
 from agentplane.app.conftest import AGENT_AUTH
 from agentplane.app.egress_access import EgressAccess
 from agentplane.app.electric import ElectricProxy
@@ -640,17 +640,41 @@ async def test_egress_lists_the_bindings_naming_the_sandbox(client: httpx.AsyncC
     assert (await client.get("/sandboxes/nope/egress")).status_code == 404
 
 
+@pytest.fixture
+def operator_login(app: FastAPI) -> None:
+    """Requests count as an operator's login session, which the routes that write bindings require."""
+    app.dependency_overrides[_require_operator_login] = lambda: None
+
+
+async def test_binding_writes_need_an_operator_login_not_a_workload_token(client: httpx.AsyncClient) -> None:
+    for response in (
+        await client.post("/sandboxes/live/policy-bindings", json={"policy_sets": ["github"]}),
+        await client.delete("/policy-bindings/live-granted"),
+    ):
+        assert response.status_code == 403
+        assert response.json() == {"detail": "operator login required"}
+
+
+@pytest.mark.usefixtures("operator_login")
 async def test_granting_a_running_sandbox_adds_a_binding_and_leaves_the_others(
     client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
     """A sandbox's egress is not frozen at creation: the grant is one more binding naming it, and
     revoking that one leaves the rest of its egress standing."""
-    granted = await client.post("/sandboxes/live/egress", json={"policies": ["pypi", "github"]})
+    granted = await client.post(
+        "/sandboxes/live/policy-bindings",
+        json={"policy_sets": ["pypi", "github", "github-reads"], "expires_at": "2099-01-01T00:00:00Z"},
+    )
 
     assert granted.status_code == 201, granted.text
     binding = granted.json()
     assert (binding["subjects"], binding["from_git"]) == ([{"namespace": NAMESPACE, "name": "live"}], False)
+    # Every named set is the binding's, of any rule type; only egress rules make a policy here.
+    assert binding["policy_sets"] == ["pypi", "github", "github-reads"]
     assert [policy["name"] for policy in binding["policies"]] == ["pypi", "github"]
+    assert custom_objects.objects[(POLICY_BINDINGS_PLURAL, binding["name"])]["spec"]["expiresAt"].startswith(
+        "2099-01-01"
+    )
     # Owned by the Sandbox, so deleting the sandbox takes the grant with it.
     (owner,) = custom_objects.objects[(POLICY_BINDINGS_PLURAL, binding["name"])]["metadata"]["ownerReferences"]
     assert (owner["kind"], owner["name"], owner["uid"]) == (
@@ -662,21 +686,24 @@ async def test_granting_a_running_sandbox_adds_a_binding_and_leaves_the_others(
         ["live-granted", "live-seeded", binding["name"]]
     )
 
-    assert (await client.delete(f"/egress/bindings/{binding['name']}")).status_code == 204
+    assert (await client.delete(f"/policy-bindings/{binding['name']}")).status_code == 204
     assert [b["name"] for b in (await client.get("/sandboxes/live/egress")).json()] == ["live-granted", "live-seeded"]
 
 
+@pytest.mark.usefixtures("operator_login")
 async def test_a_grant_naming_a_policy_that_does_not_exist_is_refused(
     client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
     """422 and not 404: the sandbox in the path is there, and 404 on this route already says it is
     not. The CRD would admit the dangling name and the proxy would report `MissingPolicy`, so what
     the operator would otherwise get is a grant that grants nothing."""
-    assert (await client.post("/sandboxes/live/egress", json={"policies": ["github", "vanished"]})).status_code == 422
+    assert (
+        await client.post("/sandboxes/live/policy-bindings", json={"policy_sets": ["github", "vanished"]})
+    ).status_code == 422
     assert [b["name"] for b in (await client.get("/sandboxes/live/egress")).json()] == ["live-granted", "live-seeded"]
-    assert (await client.post("/sandboxes/nope/egress", json={"policies": ["github"]})).status_code == 404
+    assert (await client.post("/sandboxes/nope/policy-bindings", json={"policy_sets": ["github"]})).status_code == 404
     # The CRD's policies are minItems: 1, so an empty grant is refused here rather than at admission.
-    assert (await client.post("/sandboxes/live/egress", json={"policies": []})).status_code == 422
+    assert (await client.post("/sandboxes/live/policy-bindings", json={"policy_sets": []})).status_code == 422
     # And at launch the policy sets resolve before the Sandbox exists, so a typo leaves none behind.
     assert (
         await client.post("/sandboxes", json={"name": "demo", "template": TEMPLATE, "policy_sets": ["vanished"]})
@@ -708,16 +735,22 @@ async def test_thread_sync_routes_authenticate_before_dispatch(client: httpx.Asy
     assert (await client.get(path, headers={"Authorization": ""})).status_code == 401
 
 
-async def test_binding_revocation(client: httpx.AsyncClient) -> None:
-    """A runtime binding is revoked by deleting it; one the manifest declares would be re-applied."""
-    assert (await client.delete("/egress/bindings/live-seeded")).status_code == 409
-    assert (await client.delete("/egress/bindings/live-granted")).status_code == 204
-    assert (await client.delete("/egress/bindings/live-granted")).status_code == 404
+@pytest.mark.usefixtures("operator_login")
+async def test_binding_revocation(client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi) -> None:
+    """A runtime binding is revoked by deleting it; one the manifest declares would be re-applied, and
+    so would the Sandbox's own."""
+    custom_objects.objects[(POLICY_BINDINGS_PLURAL, "live")] = policy_binding(
+        "live",
+        subject={"namespace": NAMESPACE, "name": "live"},
+        policy_sets=["pypi"],
+        from_git=False,
+        sandbox_controlled="live",
+    )
+    assert (await client.delete("/policy-bindings/live")).status_code == 409
+    assert (await client.delete("/policy-bindings/live-seeded")).status_code == 409
+    assert (await client.delete("/policy-bindings/live-granted")).status_code == 204
+    assert (await client.delete("/policy-bindings/live-granted")).status_code == 404
     assert [b["name"] for b in (await client.get("/sandboxes/live/egress")).json()] == ["live-seeded"]
-
-
-async def test_policies_lists_the_namespace_for_the_create_form(client: httpx.AsyncClient) -> None:
-    assert {policy["name"] for policy in (await client.get("/egress/policies")).json()} == {"github", "pypi"}
 
 
 async def test_presets_publish_editable_sandbox_and_session_defaults(client: httpx.AsyncClient) -> None:

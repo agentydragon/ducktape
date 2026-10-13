@@ -74,12 +74,12 @@ flowchart TB
     app -->|HTTP: operator decisions| actions
     app -->|HTTP admin port: egress decisions and a stream of when they change| proxy
     app -->|Thread shapes for the browser| electric
-    app -->|SandboxTemplates, Sandbox and policy reads| k8s
+    app -->|SandboxTemplates, Sandbox and policy reads; PolicyBinding create and delete for the operator| k8s
     app -->|OIDC| authentik
     electric -->|logical replication| hist_db
     hist_db -.->|staging: WAL archive, on-demand base backups| outside
 
-    ss -->|Sandboxes, egress grants| k8s
+    ss -->|Sandboxes| k8s
     gw -->|control EndpointSlices, Leases; Quiesced on deleting Sandboxes| k8s
     hs -->|ingest, fold, read| hist_db
     notif -->|Sandbox lookups| ss

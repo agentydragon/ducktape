@@ -198,6 +198,7 @@ const BINDINGS: BindingView[] = [
     from_git: false,
     subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
     expires_at: ago(2 * HOUR),
+    policy_sets: [POLICIES[1].name],
     policies: [POLICIES[1]],
     missing_policies: [],
   },
@@ -206,6 +207,7 @@ const BINDINGS: BindingView[] = [
     from_git: true,
     subjects: [{ namespace: "agentplane-visual", name: "ready-sandbox" }],
     expires_at: null,
+    policy_sets: [POLICIES[0].name],
     policies: [POLICIES[0]],
     missing_policies: [],
   },
@@ -2285,7 +2287,6 @@ routes.push(
   ],
   ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
   ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: ["github-public", "public-coder", "pypi"] })],
-  ["GET", /^\/egress\/policies$/, () => POLICIES],
   ["GET", /^\/action-policy\/sets$/, () => ACTION_POLICY.bindings.flatMap((binding) => binding.policy_sets)],
   ["GET", /^\/actions$/, () => ACTIONS],
   [

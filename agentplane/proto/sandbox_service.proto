@@ -23,6 +23,9 @@ service SandboxService {
   rpc DeleteSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ListTemplates(google.protobuf.Empty) returns (ListTemplatesResponse);
 
+  // CLEANUP(added 2026-10-13): Remove GrantEgress and RevokeEgress (with their messages, the
+  //   servicer, client methods, `egress.py` and the Role rules in sandbox_service.py) once the app
+  //   image that writes PolicyBindings itself is pinned; the app no longer calls them.
   rpc GrantEgress(GrantEgressRequest) returns (GrantEgressResponse);
   rpc RevokeEgress(RevokeEgressRequest) returns (google.protobuf.Empty);
 

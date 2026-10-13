@@ -53,7 +53,6 @@ from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.sandbox_service.testing.backend import Endpoint, backend
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -324,8 +323,8 @@ def live_index(core_v1: FakeCoreV1Api) -> LiveIndex:
 
 
 @pytest.fixture
-def egress(custom_objects: FakeCustomObjectsApi, inventory: SandboxServiceClient) -> EgressAccess:
-    return EgressAccess(EgressReader(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects)), inventory)
+def egress(custom_objects: FakeCustomObjectsApi, action_policy: ActionPolicyInventory) -> EgressAccess:
+    return EgressAccess(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), action_policy=action_policy)
 
 
 @pytest.fixture

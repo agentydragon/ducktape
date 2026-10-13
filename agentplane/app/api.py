@@ -20,7 +20,7 @@ from authlib.integrations.starlette_client import OAuth
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, Path, Query, Request, status
 from fastapi.responses import JSONResponse, RedirectResponse, StreamingResponse
 from google.protobuf.json_format import MessageToDict
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, AwareDatetime, BaseModel, ConfigDict, Field, field_validator
 
 from agentplane.action_service.catalog import ActionGroupView
 from agentplane.action_service.client import OperatorActionServiceClient
@@ -95,8 +95,7 @@ from agentplane.sandbox_service.egress_views import (
     BindingNotFoundError,
     BindingView,
     FluxOwnedBindingError,
-    PolicyView,
-    UnknownPolicyError,
+    SandboxOwnedBindingError,
 )
 from agentplane.sandbox_service.errors import SandboxNotFoundError, SandboxRunningError
 from agentplane.sse import frame, sse_response
@@ -345,11 +344,14 @@ async def delete_sandbox(inventory: Inventory, name: str) -> None:
     await inventory.delete(name)
 
 
-class EgressGrant(BaseModel):
+class PolicyGrant(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    policies: list[str] = Field(
-        min_length=1, description="PolicySet names to grant, as one new binding naming this sandbox."
+    policy_sets: list[str] = Field(
+        min_length=1, description="PolicySet names of any rule type to grant, as one new binding naming this sandbox."
+    )
+    expires_at: AwareDatetime | None = Field(
+        default=None, description="When the Policy Controller deletes the binding; absent grants until revoked."
     )
 
 
@@ -360,11 +362,12 @@ async def sandbox_egress(inventory: Inventory, egress: Egress, name: str) -> lis
     return await egress.bindings_for(sandbox_view(await inventory.get(name)).service_account)
 
 
-@router.post("/{name}/egress", status_code=status.HTTP_201_CREATED)
-async def grant_sandbox_egress(inventory: Inventory, egress: Egress, name: str, body: EgressGrant) -> BindingView:
-    """Grant egress policies to a sandbox already running: a new binding naming it, never an edit of
-    one it has, so this grant's expiry and revocation are its own."""
-    return await egress.grant(await inventory.get(name), body.policies)
+@router.post("/{name}/policy-bindings", status_code=status.HTTP_201_CREATED, dependencies=[OperatorLogin])
+async def grant_sandbox_policy_sets(inventory: Inventory, egress: Egress, name: str, body: PolicyGrant) -> BindingView:
+    """Grant policy sets of any rule type to a sandbox already running: a new binding naming it,
+    never an edit of one it has, so this grant's expiry and revocation are its own. Operator login
+    only: a workload token must not be able to widen anyone's authority through the app."""
+    return await egress.grant(await inventory.get(name), body.policy_sets, expires_at=body.expires_at)
 
 
 system_router = APIRouter(prefix="/system", tags=["system"])
@@ -375,18 +378,12 @@ async def read_system_status(services: Services) -> list[ComponentStatus]:
     return await services.system_status.check_all()
 
 
-egress_router = APIRouter(prefix="/egress", tags=["egress"])
+policy_binding_router = APIRouter(prefix="/policy-bindings", tags=["policy-bindings"])
 
 
-@egress_router.get("/policies")
-async def list_policies(egress: Egress) -> list[PolicyView]:
-    """The namespace's egress policies: what the create form offers to pick from."""
-    return await egress.list_policies()
-
-
-@egress_router.delete("/bindings/{name}", status_code=status.HTTP_204_NO_CONTENT)
+@policy_binding_router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[OperatorLogin])
 async def revoke_binding(egress: Egress, name: str) -> None:
-    """Revoke a runtime binding by deleting the rule; one from git is refused with 409."""
+    """Revoke a runtime binding by deleting it; one from git or the Sandbox's own is refused with 409."""
     await egress.revoke(name)
 
 
@@ -996,9 +993,9 @@ _ERROR_STATUS: dict[type[Exception], int] = {
     SandboxRunningError: status.HTTP_409_CONFLICT,
     BindingNotFoundError: status.HTTP_404_NOT_FOUND,
     FluxOwnedBindingError: status.HTTP_409_CONFLICT,
+    SandboxOwnedBindingError: status.HTTP_409_CONFLICT,
     # 422 rather than 404: the sandbox in the path is there, and 404 on these routes already
     # says it is not. The body parsed and named something that does not resolve.
-    UnknownPolicyError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     UnknownPolicySetError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     SandboxNotReachableError: status.HTTP_409_CONFLICT,
     runner_bridge.RunnerAdmissionTimeoutError: status.HTTP_504_GATEWAY_TIMEOUT,
@@ -1117,7 +1114,7 @@ def create_app(
         push_router,
         consent_router,
         connections_router,
-        egress_router,
+        policy_binding_router,
         action_policy_router,
         live_router,
         electric_router,

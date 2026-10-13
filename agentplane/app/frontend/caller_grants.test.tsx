@@ -47,7 +47,7 @@ it("reads by account and renders honest empty policy without mutation controls",
   expect(container.textContent).toContain("No egress binding names this ServiceAccount");
   expect(container.textContent).toContain("every Action from this ServiceAccount waits for the operator");
   expect(container.textContent).not.toContain("Revoke");
-  expect(container.textContent).not.toContain("Grant egress policies");
+  expect(container.textContent).not.toContain("Grant policy sets");
 });
 it("preserves expired and missing egress references even when Action policy is unavailable", async () => {
   await render(async () => ({
@@ -56,6 +56,7 @@ it("preserves expired and missing egress references even when Action policy is u
         name: "external-grants",
         from_git: true,
         subjects: [ACCOUNT],
+        policy_sets: ["removed-policy"],
         policies: [],
         missing_policies: ["removed-policy"],
         expires_at: "2000-01-01T00:00:00Z",

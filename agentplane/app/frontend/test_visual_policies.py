@@ -699,7 +699,7 @@ async def test_sandbox_egress_pick_updates_options(view: VisualPage, app: Agentp
     await app.mount_app("/sandboxes/ready-sandbox?tab=egress&rules=ready-sandbox-github-public")
     await view.check(context="fixture ready")
     page = view.page
-    await _open_select(page, label="Grant egress policies", available="pypi")
+    await _open_select(page, label="Grant policy sets", available="pypi")
     await page.get_by_role("option", name=re.compile("pypi")).click()
     await expect(page.locator(".mantine-Pill-root", has_text="pypi")).to_be_visible()
     await expect(page.get_by_role("option", name=re.compile("github-public"))).to_be_visible()

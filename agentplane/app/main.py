@@ -48,7 +48,6 @@ from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.egress_views import EgressReader
 from agentplane.service_process import configure_logging, kubernetes_configuration
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
@@ -146,12 +145,12 @@ async def async_main(settings: Settings) -> None:
         )
         # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
-        egress = EgressAccess(
-            EgressReader(namespace=settings.sandbox_namespace, custom_objects=custom_objects), inventory
-        )
         # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
         # binding to the authenticated Sandbox, and where the owner reference cascades.
         action_policy = ActionPolicyInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects)
+        egress = EgressAccess(
+            namespace=settings.sandbox_namespace, custom_objects=custom_objects, action_policy=action_policy
+        )
         core_v1 = CoreV1Api(api)
         live = LiveIndex(
             freshness=Freshness(stale_after_seconds=settings.resync_seconds * STALE_AFTER_CYCLES), core_v1=core_v1

@@ -125,8 +125,8 @@ async function render(
         Response.json(testModelCatalog(claudePaused ? [] : models, claudePaused ? models : codexModels))
       );
     }
-    if (path === "/egress/policies") {
-      return Promise.resolve(Response.json([]));
+    if (path === "/sandboxes/form") {
+      return Promise.resolve(Response.json({ policy_sets: [] }));
     }
     const threadPath = /^\/threads\/([^/]+)$/.exec(path);
     if (threadPath && request.method === "GET") {

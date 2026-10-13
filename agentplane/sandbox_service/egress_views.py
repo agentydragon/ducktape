@@ -129,6 +129,7 @@ class BindingView(BaseModel):
     from_git: bool = Field(description="Flux applied it; removing it is git's.")
     subjects: list[ServiceAccountRef] = Field(description="The ServiceAccounts this binding names.")
     expires_at: datetime | None = None
+    policy_sets: list[str] = Field(description="Every PolicySet the binding names, of any rule type, in its order.")
     policies: list[PolicyView] = Field(
         description="The named PolicySets that hold egress rules, in the binding's order."
     )
@@ -263,6 +264,7 @@ def binding_view(
         from_git=FLUX_KUSTOMIZATION_LABEL in binding.metadata.labels,
         subjects=[binding.spec.subject],
         expires_at=binding.spec.expires_at,
+        policy_sets=binding.spec.policy_sets,
         policies=[_policy_view(policy_set, credentials) for policy_set in resolution.sets if policy_set.rules],
         missing_policies=[*resolution.missing, *(refused.name for refused in resolution.refused)],
     )

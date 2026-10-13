@@ -22,7 +22,9 @@ empty history behind a green unit suite -- was caught by a person noticing.
 
 from __future__ import annotations
 
+import json
 import os
+import subprocess
 import textwrap
 from datetime import UTC, datetime
 
@@ -31,10 +33,13 @@ from pydantic import BaseModel, ConfigDict, Field
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.acceptance.agent import Agent
-from agentplane.acceptance.conftest import Sandboxes
+from agentplane.acceptance.conftest import NAMESPACE, TESTING_NAMESPACE, Sandboxes
+from agentplane.app.sandbox_models import SandboxView
 from agentplane.app.testing.client import Client
+from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.decisions import Decision, Outcome
 from agentplane.proto import runner_pb2
+from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -187,6 +192,22 @@ async def test_the_model_call_itself_goes_through_the_proxy(
     )
 
 
+def _kubectl_create_binding(sandbox: SandboxView, policy_set: str) -> None:
+    body = {
+        "apiVersion": f"{GROUP}/{VERSION}",
+        "kind": "PolicyBinding",
+        "metadata": {
+            "generateName": f"{sandbox.name}-",
+            "ownerReferences": [
+                {"apiVersion": SANDBOX_API_VERSION, "kind": SANDBOX_KIND, "name": sandbox.name, "uid": str(sandbox.uid)}
+            ],
+        },
+        "spec": {"subject": sandbox.service_account.model_dump(), "policySets": [policy_set]},
+    }
+    namespace = os.environ.get(NAMESPACE, TESTING_NAMESPACE)
+    subprocess.run(["kubectl", "-n", namespace, "create", "-f", "-"], input=json.dumps(body), text=True, check=True)
+
+
 async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
     client: Client, sandbox: Sandboxes, harness: runner_pb2.Harness, model: str
 ) -> None:
@@ -199,7 +220,9 @@ async def test_a_policy_granted_after_the_sandbox_is_running_takes_effect(
     refused = await _decision_for(client, view.name, GITHUB_HOST)
     assert refused.outcome is Outcome.DENY, f"an unbound sandbox reached GitHub: {refused!r}"
 
-    await client.grant_egress(view.name, [GITHUB_AGENTYDRAGON_AGENT])
+    # The app's grant route needs an operator login, which this agent-token suite does not hold, so
+    # the binding is written as an operator would with kubectl, owned by the Sandbox.
+    _kubectl_create_binding(view, GITHUB_AGENTYDRAGON_AGENT)
     # Observe the read-only request, not one replica's acknowledgement of the binding.
     async for attempt in AsyncRetrying(stop=stop_after_delay(BINDING_SECONDS), wait=wait_fixed(1), reraise=True):
         with attempt:

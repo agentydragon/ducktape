@@ -80,6 +80,7 @@ class EgressInventory(EgressReader):
             from_git=False,
             subjects=[binding.spec.subject],
             expires_at=binding.spec.expires_at,
+            policy_sets=policies,
             policies=[known[name] for name in policies],
             missing_policies=[],
         )

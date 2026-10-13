@@ -136,6 +136,8 @@ class App(Construct):
                     ],
                     verbs=["get", "list", "watch"],
                 ),
+                # The operator's grants from the sandbox page, created and revoked by the app itself.
+                RolePolicyRule(resources=[custom_resource(GROUP, "policybindings")], verbs=["create", "delete"]),
             ],
         )
         RoleBinding(

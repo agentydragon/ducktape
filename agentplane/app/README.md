@@ -51,12 +51,13 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 - Sandbox provisioning and grants are owned by `../sandbox_service/`, Sessions and commands by
   `../runner_gateway/`, reached through their authenticated clients, `SandboxServiceClient` and
   `RunnerGatewayClient`. The app retains read-only Kubernetes projections for UI updates.
-- `egress.py`: read-only egress-policy/binding projections for the UI, with mutations delegated to Sandbox
-  Service. Bindings remain desired-state grants, with expiry/revocation per binding and Flux-owned
-  bindings protected from app revocation ([composition](../docs/egress_composition.md)).
+- `egress_access.py`: egress-policy/binding projections for the UI, and the operator's grants and
+  revocations of `PolicyBinding`s, written through the Kubernetes API by the app itself. Bindings remain
+  desired-state grants, with expiry/revocation per binding; Flux-owned and Sandbox-controlled bindings
+  are refused ([composition](../docs/egress_composition.md)).
   The egress decision stream is in `live.py`; an unreachable proxy leaves egress-policy views readable.
 - `action_policy.py`: read-only binding views composed with Action Service's effective-policy answer.
-  Launch grants and binding mutations belong to Sandbox Service, not this app or its preset catalog.
+  Launch grants belong to Sandbox Service, not this app or its preset catalog.
 - `threads/`: Threads over the History Service. The app's database holds each Thread's identity
   and the name and archive state an operator sets (`Thread`, `models.py`). Everything folded from a Session's events (summaries, entities,
   payload chunks, evidence) is the History Service's, read over its gRPC API (`summaries.py`,

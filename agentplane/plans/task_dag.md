@@ -552,12 +552,10 @@ observations. New database work follows the task-specific review and rollout req
 flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
-    POLICY_RUNTIME_GRANTS[Candidate: web app affordances for bindings and sets]
+    SANDBOX_SERVICE_GRANT_RPC_DROP[Blocked: remove GrantEgress and RevokeEgress after the app image is pinned]
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
-    POLICY_RUNTIME_GRANTS --> AGENT_PERMISSION_REQUESTS
     ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
-    POLICY_RUNTIME_GRANTS -. verify afterwards .-> SANDBOX_RBAC
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: the Sandbox bootstrap runs when the runner starts]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
@@ -594,26 +592,20 @@ subjects or those grants move to the agent's ServiceAccount.
 Kubernetes scope and egress/Action grants. Record intended authority in generated configuration,
 not ad hoc grants. Test an allowed and denied operation; do not add privileges as part of this review.
 
-### `POLICY_RUNTIME_GRANTS` — web app affordances for bindings and sets
+### `SANDBOX_SERVICE_GRANT_RPC_DROP` — remove the Sandbox Service's grant RPCs
 
-**Candidate; operator, 2026-10-13 PDT: a friendlier UI for what the operator can already do with
-`kubectl`.** The web app lets the operator create a `PolicyBinding` of a ServiceAccount to existing
-PolicySets of any rule type, optionally with an `expiresAt`, delete one, and see each binding's set,
-expiry and ready conditions; possibly also create a new PolicySet. The app makes the Kubernetes call
-for the operator who asked, since the layers that execute on these CRs act on them without editing
-them, so the Sandbox Service's egress-only `GrantEgress`/`RevokeEgress` go with their callers. The
-app takes over what they enforce (refusing a Flux-applied or Sandbox-controlled binding, the owner
-reference on the Sandbox) and gets the `policybindings` create/delete permission the Sandbox Service
-has today. One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry,
-so no reader handles expiry itself.
+**Blocked until the app image that writes `PolicyBinding`s itself is pinned on staging.** Remove
+`GrantEgress`, `RevokeEgress`, their messages, servicer, client methods, `sandbox_service/egress.py`
+and the `egresscredentials`/`policybindings` rules of the Sandbox Service Role (`CLEANUP` tombstones
+mark each). Code and manifests go together here, after the pin.
 
 ### `AGENT_PERMISSION_REQUESTS` — an Action type and approval view for permission requests
 
-**Blocked on `POLICY_RUNTIME_GRANTS` and `ACTION_SURFACES_DESIGN`; operator, 2026-10-13 PDT:
+**Blocked on `ACTION_SURFACES_DESIGN`; operator, 2026-10-13 PDT:
 eventually.** A specific Action type for the request instead of the Kubernetes MCP escape hatch, and
 an approval view that shows the operator the account, the sets and the duration rather than a blob of
-Kubernetes YAML. It shares with `POLICY_RUNTIME_GRANTS` the one path that writes a `PolicyBinding` for
-the operator, so that node lands first and an approved request creates the same kind of binding. How
+Kubernetes YAML. It shares with the app's sandbox-page grants the one path that writes a `PolicyBinding` for
+the operator (`EgressAccess.grant`), so an approved request creates the same kind of binding. How
 the request renders is the Action surfaces' decision: the approval view is one Action type described
 once there.
 
@@ -626,7 +618,7 @@ public-coder until `PC_KUBERNETES_POLICY_SET`) stay Flux bindings. Test an allow
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
 
-**Candidate; security-relevant; best after `POLICY_RUNTIME_GRANTS`, which moves who writes bindings.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
+**Candidate; security-relevant.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
 and verify intended versus unrelated scope, including Role edits and credential-use boundaries,
 without recording credentials. Use [agent RBAC](../../cluster/docs/agent_rbac.md) and existing tests;
 only unresolved deployed wiring needs a live check, not a repeat of every already-covered operation.
@@ -1109,7 +1101,7 @@ controller's seal call, operator diagnostics and acceptance tests, and to no oth
 **Blocked on `SESSION_REVIVE`.** A Sandbox that resumes hours or days later must come up with egress
 grants, `PolicyBinding`s and projected tokens still valid, or it looks broken. Check each
 expiring thing the Sandbox holds, and make a resume refresh or refuse with a reason, never come up
-half-granted. Related to `POLICY_RUNTIME_GRANTS`, which makes grants expire.
+half-granted. Grants made from the app can carry an `expiresAt`.
 
 ### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
 

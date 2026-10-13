@@ -1,6 +1,6 @@
 """A Python client for the integration app's HTTP surface, beside the runner's own client.
 
-The app's request and response models are what it speaks: `NewSandbox`, `EgressGrant` and
+The app's request and response models are what it speaks: `NewSandbox` and
 `NewSession` go out, `SandboxView`, `BindingView` and `Decision` come back, and a session's events
 arrive as shared `EventEntry` messages rather than as dictionaries to pick apart. A caller
 dispatches on `entry.event.WhichOneof("observation")`, the same way the app and the runner do.
@@ -18,7 +18,6 @@ from uuid import UUID
 import httpx
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 
-from agentplane.app.api import EgressGrant
 from agentplane.app.live import DecisionsSnapshot, DecisionsUnavailable
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPresetView
@@ -27,7 +26,7 @@ from agentplane.app.threads.bridge import NewSession
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.egress.decisions import Decision
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
-from agentplane.sandbox_service.egress_views import BindingView, PolicyView
+from agentplane.sandbox_service.egress_views import BindingView
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -82,9 +81,6 @@ class Client:
     async def presets(self) -> list[SandboxPresetView]:
         return [SandboxPresetView.model_validate(row) for row in await self._json("GET", "/presets")]
 
-    async def policies(self) -> list[PolicyView]:
-        return [PolicyView.model_validate(row) for row in await self._json("GET", "/egress/policies")]
-
     async def create_sandbox(self, spec: NewSandbox) -> SandboxView:
         return SandboxView.model_validate(
             await self._json("POST", "/sandboxes", json=spec.model_dump(exclude_unset=True))
@@ -101,10 +97,6 @@ class Client:
 
     async def delete_sandbox(self, name: str) -> None:
         await self._json("DELETE", f"/sandboxes/{name}")
-
-    async def grant_egress(self, name: str, policies: list[str]) -> BindingView:
-        body = EgressGrant(policies=policies)
-        return BindingView.model_validate(await self._json("POST", f"/sandboxes/{name}/egress", json=body.model_dump()))
 
     async def bindings(self, name: str) -> list[BindingView]:
         return [BindingView.model_validate(row) for row in await self._json("GET", f"/sandboxes/{name}/egress")]

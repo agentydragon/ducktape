@@ -119,7 +119,8 @@ class SandboxService(Construct):
                     verbs=["get"],
                 ),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list"]),
-                # GrantEgress and RevokeEgress.
+                # CLEANUP(added 2026-10-13): Drop these rules with GrantEgress and RevokeEgress, once the pinned
+                # app image writes PolicyBindings itself.
                 RolePolicyRule(
                     resources=[
                         custom_resource(GROUP, resource) for resource in ("egresscredentials", "policybindings")

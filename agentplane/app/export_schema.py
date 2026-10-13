@@ -42,7 +42,6 @@ from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.egress_views import EgressReader
 
 
 def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channel) -> dict[str, Any]:
@@ -73,6 +72,7 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
         ContentStore(engine, history_reader=history),
     )
     live = LiveIndex(freshness=Freshness(stale_after_seconds=900), core_v1=CoreV1Api(api_client))
+    action_policy = ActionPolicyInventory(namespace="schema", custom_objects=cast(Any, None))
     document: dict[str, Any] = create_app(
         inventory,
         RunnerBridge(runners=RunnerDirectory(live, gateway), event_logs=event_logs, content=content),
@@ -85,10 +85,10 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
             ],
             harnesses={harness: ["schema-model"] for harness in Harness},
         ),
-        EgressAccess(EgressReader(namespace="schema", custom_objects=cast(Any, None)), inventory),
+        EgressAccess(namespace="schema", custom_objects=cast(Any, None), action_policy=action_policy),
         DecisionsClient(httpx.AsyncClient(base_url="http://schema.invalid")),
         live,
-        ActionPolicyInventory(namespace="schema", custom_objects=cast(Any, None)),
+        action_policy,
         electric=ElectricProxy(
             httpx.AsyncClient(base_url="http://schema.invalid"),
             content,

@@ -67,7 +67,6 @@ py_library(
         "//agentplane/runner:harness",
         "//agentplane/runner_gateway:client",
         "//agentplane/sandbox_service:client",
-        "//agentplane/sandbox_service:egress_views",
         "//agentplane/sandbox_service/testing:backend",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "@pypi//asyncpg",
@@ -196,7 +195,6 @@ py_library(
     srcs = ["client.py"],
     visibility = ["//agentplane/acceptance:__pkg__"],
     deps = [
-        "//agentplane/app:api",
         "//agentplane/app:live",
         "//agentplane/app:model_catalog",
         "//agentplane/app:presets",

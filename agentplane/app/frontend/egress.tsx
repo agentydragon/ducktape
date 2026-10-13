@@ -1,4 +1,16 @@
-import { Badge, Button, Group, MultiSelect, SegmentedControl, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
+import {
+  Badge,
+  Button,
+  Group,
+  MultiSelect,
+  SegmentedControl,
+  Select,
+  Stack,
+  Table,
+  Text,
+  Title,
+  Tooltip,
+} from "@mantine/core";
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
@@ -131,7 +143,7 @@ export function EgressBindings({
           <Table.Th>Binding</Table.Th>
           <Table.Th visibleFrom="sm">Provenance</Table.Th>
           <Table.Th visibleFrom="sm">Expires</Table.Th>
-          <Table.Th visibleFrom="sm">Egress policies</Table.Th>
+          <Table.Th visibleFrom="sm">Policy sets</Table.Th>
           <Table.Th visibleFrom="sm">Active</Table.Th>
           {onRevoke !== null && <Table.Th />}
         </Table.Tr>
@@ -149,16 +161,17 @@ export function EgressBindings({
         {bindings.flatMap((binding) => {
           const policyNames = (
             <Group gap={4}>
-              {binding.policies.map((policy) => (
-                <Badge key={policy.name} variant="light">
-                  {policy.name}
-                </Badge>
-              ))}
-              {binding.missing_policies.map((name) => (
-                <Badge key={name} color="red" variant="light">
-                  {name}?
-                </Badge>
-              ))}
+              {binding.policy_sets.map((name) =>
+                binding.missing_policies.includes(name) ? (
+                  <Badge key={name} color="red" variant="light">
+                    {name}?
+                  </Badge>
+                ) : (
+                  <Badge key={name} variant="light">
+                    {name}
+                  </Badge>
+                )
+              )}
               <Button size="compact-xs" variant="subtle" onClick={() => toggle(binding.name)}>
                 {expanded.has(binding.name) ? "Hide rules" : "Rules"}
               </Button>
@@ -220,35 +233,56 @@ export function EgressBindings({
         })}
       </Table.Tbody>
       <Table.Caption>
-        An unexpired egress binding grants its configured rules; revoking deletes it. One from the repository is removed
-        there.
+        An unexpired binding grants the rules of its policy sets; revoking deletes it. One from the repository is
+        removed there. Only egress rules are listed here.
       </Table.Caption>
     </Table>
   );
 }
 
+/** How long a grant lasts; the Policy Controller deletes the binding when it ends. */
+const GRANT_DURATIONS = [
+  { value: "1", label: "1 hour" },
+  { value: "4", label: "4 hours" },
+  { value: "24", label: "1 day" },
+  { value: "168", label: "7 days" },
+  { value: "forever", label: "Until revoked" },
+];
+
 /** Grants to a sandbox that is already running; each grant is its own binding, revoked on its own. */
-function GrantEgressPolicies({
-  egressPolicies,
+function GrantPolicySets({
+  policySets,
   picked,
   onPick,
+  duration,
+  onDuration,
   onGrant,
 }: {
-  egressPolicies: string[];
+  policySets: string[];
   picked: string[];
   onPick: (names: string[]) => void;
+  duration: string;
+  onDuration: (value: string) => void;
   onGrant: () => void;
 }): JSX.Element {
   return (
     <Group align="flex-end">
       <MultiSelect
-        label="Grant egress policies"
+        label="Grant policy sets"
         description="Added as a binding of its own; what this sandbox already has is untouched"
         hidePickedOptions
-        data={egressPolicies}
+        data={policySets}
         value={picked}
         onChange={onPick}
         style={{ flex: "1 1 12rem" }}
+      />
+      <Select
+        label="For"
+        allowDeselect={false}
+        data={GRANT_DURATIONS}
+        value={duration}
+        onChange={(value) => onDuration(value ?? "forever")}
+        w="8rem"
       />
       <Button onClick={onGrant} disabled={picked.length === 0}>
         Grant
@@ -466,31 +500,35 @@ function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null 
 export function EgressSection({ name, bindings }: { name: string; bindings: BindingView[] | null }): JSX.Element {
   const decisions = useEgressDecisions(name);
   const [error, setError] = useState<string | null>(null);
-  // The namespace's egress policies, and the ones picked to grant this sandbox next.
-  const [egressPolicies, setEgressPolicies] = useState<string[]>([]);
+  // The namespace's policy sets of any rule type, the ones picked to grant this sandbox next, and for how long.
+  const [policySets, setPolicySets] = useState<string[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
+  const [duration, setDuration] = useState("forever");
 
   useEffect(() => {
     void (async () => {
-      const { data, error: failure } = await api.GET("/egress/policies");
+      const { data, error: failure } = await api.GET("/sandboxes/form");
       setError(failure ? displayableError(failure) : null);
-      if (!failure) setEgressPolicies(data.map((policy) => policy.name));
+      if (!failure) setPolicySets(data.policy_sets);
     })();
   }, []);
 
   // What the API server now holds, granted or revoked, arrives on the page's stream; nothing to
   // re-read here.
   async function revoke(binding: string): Promise<void> {
-    const { error: failure } = await api.DELETE("/egress/bindings/{name}", {
+    const { error: failure } = await api.DELETE("/policy-bindings/{name}", {
       params: { path: { name: binding } },
     });
     setError(failure ? displayableError(failure) : null);
   }
 
   async function grant(): Promise<void> {
-    const { error: failure } = await api.POST("/sandboxes/{name}/egress", {
+    const { error: failure } = await api.POST("/sandboxes/{name}/policy-bindings", {
       params: { path: { name } },
-      body: { policies: picked },
+      body: {
+        policy_sets: picked,
+        expires_at: duration === "forever" ? null : new Date(Date.now() + Number(duration) * 3_600_000).toISOString(),
+      },
     });
     setError(failure ? displayableError(failure) : null);
     if (!failure) setPicked([]);
@@ -499,10 +537,12 @@ export function EgressSection({ name, bindings }: { name: string; bindings: Bind
   return (
     <Stack gap="xs">
       {error && <Text c="red">{error}</Text>}
-      <GrantEgressPolicies
-        egressPolicies={egressPolicies}
+      <GrantPolicySets
+        policySets={policySets}
         picked={picked}
         onPick={setPicked}
+        duration={duration}
+        onDuration={setDuration}
         onGrant={() => void grant()}
       />
       {bindings && <EgressBindings bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}

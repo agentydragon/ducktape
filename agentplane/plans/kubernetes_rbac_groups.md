@@ -7,25 +7,6 @@ runs on staging and `agentplane-testing`; the Sandbox Controller writes each San
 catalog entry as a set. The [task DAG](task_dag.md) tracks the remaining nodes below.
 [Agent RBAC](../../cluster/docs/agent_rbac.md) describes deployed scope.
 
-## Runtime grants (`POLICY_RUNTIME_GRANTS`)
-
-The operator can already create and delete `PolicyBinding`s and `PolicySet`s with `kubectl`; this
-is a friendlier web app for it. From the app the operator can bind one existing ServiceAccount to
-existing sets, with an optional `expiresAt`, without changing shared sets or other accounts, and
-possibly create a new set. A grant is a second `PolicyBinding` for the account, so overlapping
-grants combine additively and revoking one leaves the other. The Sandbox Service writes such
-bindings today, for egress only, owned by the Sandbox. The direction (operator, 2026-10-13 PDT): the
-app makes the Kubernetes call for the operator who asked, for sets of any rule type; the layers that
-execute on the CRs act on them and do not edit them, so the Sandbox Service's grant and revoke RPCs
-go.
-
-- An account cannot grant itself access by naming a powerful set: only the operator-facing app
-  writes bindings, and no agent holds write access to `PolicyBinding`s. Who is recorded for each grant or revoke is
-  still to be defined.
-- The operator can inspect each binding's sets, origin, expiry and readiness conditions. Expanded
-  per-namespace scope stays out of the status payload; native bindings carry the binding's name as
-  an annotation.
-
 ## Accounts without a Sandbox (`MANAGED_SA_RBAC`)
 
 Static callers such as `claude-ai` get a Flux-owned `PolicyBinding` of the sets `CLAUDE_AI_SA`

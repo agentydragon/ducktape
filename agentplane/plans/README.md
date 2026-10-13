@@ -29,7 +29,7 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [Agent access to external systems](external_access.md) — deferred delegated-versus-brokered access choices
 - [Scoped Session reads](scoped_session_reads.md) — proposed ServiceAccount read policy for
   retained Session history
-- [Kubernetes grants through PolicySets](kubernetes_rbac_groups.md) — runtime grants, accounts without a
+- [Kubernetes grants through PolicySets](kubernetes_rbac_groups.md) — accounts without a
   Sandbox, dropping the old policy kinds, and the verification still owed on a deployed environment
 - [KubeVirt execution environments](kubevirt_environments.md) — the live gates for VM Sandboxes that no
   DAG node names; the design is [VM Sandboxes](../docs/vm_sandboxes.md)

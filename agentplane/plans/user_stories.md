@@ -37,9 +37,8 @@ Standing under it:
   (<../egress/SPEC.md>). Two halves of the ask are already there — a refused call comes back as
   `403` with a machine-readable reason, and an agent can read which rules it is bound to, so it can
   tell what it lacks from what it was never given.
-- A standing grant already has an object to be: a `PolicyBinding` the Sandbox Service creates and
-  revokes while a Sandbox runs (`GrantEgress`/`RevokeEgress`), each grant its own binding with its own
-  expiry ([`../docs/egress_composition.md`](../docs/egress_composition.md#a-grant-after-launch-is-a-new-binding)).
+- A standing grant already has an object to be: a `PolicyBinding` the app creates and revokes
+  for the operator while a Sandbox runs, each grant its own binding with its own expiry ([`../docs/egress_composition.md`](../docs/egress_composition.md#a-grant-after-launch-is-a-new-binding)).
 - Host commands: Haku's node daemons (`hostexec`) already run an approved command on a named
   machine.
 - Delivery to Rai: the Action Service sends one batched approval Web Push for the pending requests
@@ -53,8 +52,7 @@ Standing under it:
 Missing:
 
 - **Standing grants as a separate product.** A `PolicyBinding` represents reusable authority, for
-  egress today and for every rule type once
-  [`POLICY_RUNTIME_GRANTS`](task_dag.md#policy_runtime_grants--web-app-affordances-for-bindings-and-sets) lands; it is not
+  any rule type, written by the operator in the app; it is not
   another outcome or repeated Execution of one ActionRequest.
 
 ## 2. Trusted orchestrator, untrusted fleet
