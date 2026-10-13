@@ -39,7 +39,6 @@ from kubernetes_asyncio.client import CoreV1Api
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane import sandbox_resource
-from agentplane.action_service.policies import resources
 from agentplane.app.action_federation import OperatorFederationError, operator_actions, upstream_failure_detail
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
 from agentplane.app.bound_policy import BoundPolicyView, bound_policy_view
@@ -58,7 +57,6 @@ from agentplane.kubernetes_watch import Freshness
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandbox_resource import Sandbox
-from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API
 from agentplane.sandbox_service.egress_views import CREDENTIALS_PLURAL, EGRESS_API, BindingView, matching_bindings
 from agentplane.sandbox_service.kubernetes_views import incarnation_pod, sandbox_view, sandbox_views
 from agentplane.sse import frame, sse_response
@@ -171,12 +169,9 @@ class LiveIndex:
     bindings: dict[str, object] = field(default_factory=dict)
     credentials: dict[str, object] = field(default_factory=dict)
     rule_sets: dict[str, object] = field(default_factory=dict)
-    # The action policy kinds are a trigger, not a copy: the Action Service's informer holds the
-    # objects, and the sandbox stream asks it again whenever this moves. Only the names stay, for a
-    # relist to reconcile against.
-    action_policy_sets: set[str] = field(default_factory=set)
-    action_policy_bindings: set[str] = field(default_factory=set)
-    action_policy_changes: int = 0
+    # Moves on every PolicySet or PolicyBinding change: the Action Service's informer holds the
+    # objects its answer is built from, and the sandbox stream asks it again whenever this moves.
+    policy_changes: int = 0
     changes: ChangeSignal = field(default_factory=ChangeSignal)
 
     def sandbox_views(self) -> list[SandboxView]:
@@ -207,13 +202,10 @@ class LiveIndex:
             self.bindings.values(), self.rule_sets.values(), self.credentials.values(), subject=subject
         )
 
-    def action_policy_seen(self, names: set[str], name: str, obj: object | None) -> None:
-        """`apply` for the two policy kinds: keep the name, bump the trigger."""
-        if obj is None:
-            names.discard(name)
-        else:
-            names.add(name)
-        self.action_policy_changes += 1
+    def policy_seen(self, store: dict[str, object], name: str, obj: object | None) -> None:
+        """`apply` for the two policy kinds: keep the object, bump the trigger."""
+        apply_to(store, name, obj)
+        self.policy_changes += 1
 
     def health(self, now: datetime) -> WatchHealth:
         return WatchHealth(
@@ -279,7 +271,7 @@ def watch_for(
                 args=(GROUP, VERSION, sandbox_namespace, POLICY_BINDINGS_PLURAL),
                 key=_name,
                 names=lambda: set(index.bindings),
-                apply=lambda name, obj: apply_to(index.bindings, name, obj),
+                apply=lambda name, obj: index.policy_seen(index.bindings, name, obj),
             ),
             WatchedKind(
                 name=CREDENTIALS_PLURAL,
@@ -295,23 +287,7 @@ def watch_for(
                 args=(GROUP, VERSION, sandbox_namespace, POLICY_SETS_PLURAL),
                 key=_name,
                 names=lambda: set(index.rule_sets),
-                apply=lambda name, obj: apply_to(index.rule_sets, name, obj),
-            ),
-            WatchedKind(
-                name=resources.POLICY_SETS_PLURAL,
-                list=custom_objects.list_namespaced_custom_object,
-                args=(*ACTION_POLICY_API, sandbox_namespace, resources.POLICY_SETS_PLURAL),
-                key=_name,
-                names=lambda: set(index.action_policy_sets),
-                apply=lambda name, obj: index.action_policy_seen(index.action_policy_sets, name, obj),
-            ),
-            WatchedKind(
-                name=resources.BINDINGS_PLURAL,
-                list=custom_objects.list_namespaced_custom_object,
-                args=(*ACTION_POLICY_API, sandbox_namespace, resources.BINDINGS_PLURAL),
-                key=_name,
-                names=lambda: set(index.action_policy_bindings),
-                apply=lambda name, obj: index.action_policy_seen(index.action_policy_bindings, name, obj),
+                apply=lambda name, obj: index.policy_seen(index.rule_sets, name, obj),
             ),
         ),
         resync_seconds=resync_seconds,
@@ -389,7 +365,7 @@ class ActionPolicyFrames:
         self._kept: tuple[ServiceAccountRef, int, ActionPolicyView] | None = None
 
     async def for_subject(self, subject: ServiceAccountRef) -> ActionPolicyView | ActionPolicyUnavailable:
-        seen = self._index.action_policy_changes
+        seen = self._index.policy_changes
         if self._kept is not None and self._kept[:2] == (subject, seen):
             return self._kept[2]
         frame = await self._fetch(subject)

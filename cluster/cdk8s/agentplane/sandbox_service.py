@@ -117,13 +117,12 @@ class SandboxService(Construct):
                 # GrantEgress and RevokeEgress.
                 RolePolicyRule(
                     resources=[
-                        custom_resource(GROUP, resource)
-                        for resource in ("egresspolicies", "egressbindings", "egresscredentials", "policybindings")
+                        custom_resource(GROUP, resource) for resource in ("egresscredentials", "policybindings")
                     ],
                     verbs=["get", "list"],
                 ),
                 RolePolicyRule(
-                    resources=[custom_resource(GROUP, resource) for resource in ("egressbindings", "policybindings")],
+                    resources=[custom_resource(GROUP, resource) for resource in ("policybindings",)],
                     verbs=["create", "delete"],
                 ),
             ],

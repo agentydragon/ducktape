@@ -182,13 +182,14 @@ def app(bare_app: FastAPI, custom_objects: FakeCustomObjectsApi, core_v1: FakeCo
     )
     for name in ("packages", "basic"):
         custom_objects.objects[(POLICY_SETS_PLURAL, name)] = egress_policy_set(name, [])
-    custom_objects.objects[("actionpolicysets", "github-reads")] = action_policy_set(
-        "github-reads",
-        auto_approve_if=[{"type": "exact_actions", "actions": {"github": ["search_code"]}}],
-        ready=("True", "Valid", "spec accepted"),
+    custom_objects.objects[(POLICY_SETS_PLURAL, "github-reads")] = action_policy_set(
+        "github-reads", [{"type": "exact_actions", "actions": {"github": ["search_code"]}}]
     )
-    custom_objects.objects[("actionpolicysets", "github-writes")] = action_policy_set(
-        "github-writes", auto_approve_if=[{"type": "exact_actions", "actions": {"github": ["push_files"]}}]
+    custom_objects.objects[(POLICY_SETS_PLURAL, "github-writes")] = action_policy_set(
+        "github-writes", [{"type": "exact_actions", "actions": {"github": ["push_files"]}}]
+    )
+    custom_objects.objects[(POLICY_SETS_PLURAL, "broken-reads")] = action_policy_set(
+        "broken-reads", [{"type": "no_such_policy_type"}]
     )
     return bare_app
 
@@ -243,7 +244,9 @@ async def test_templates_list_the_concrete_choices_for_the_create_form(client: h
 
 
 async def test_the_form_offers_the_namespace_policy_sets(client: httpx.AsyncClient) -> None:
-    assert (await client.get("/sandboxes/form")).json() == {"policy_sets": ["basic", "github", "packages", "pypi"]}
+    assert (await client.get("/sandboxes/form")).json() == {
+        "policy_sets": ["basic", "broken-reads", "github", "github-reads", "github-writes", "packages", "pypi"]
+    }
 
 
 async def test_create_records_the_concrete_session_defaults_and_bootstrap(
@@ -284,9 +287,9 @@ async def test_create_records_the_concrete_session_defaults_and_bootstrap(
 
 async def test_policy_sets_list_the_namespace_for_the_create_form(client: httpx.AsyncClient) -> None:
     sets = {policy_set["name"]: policy_set for policy_set in (await client.get("/action-policy/sets")).json()}
-    assert set(sets) == {"github-reads", "github-writes"}
-    assert sets["github-reads"]["ready"]["status"] == "True"
-    assert (sets["github-writes"]["ready"], sets["github-writes"]["refused"]) == (None, None)
+    assert {"github-reads", "github-writes", "broken-reads", "github"} <= set(sets)
+    assert (sets["github-reads"]["refused"], sets["github"]["refused"]) == (None, None)
+    assert sets["broken-reads"]["refused"] is not None
 
 
 @pytest.mark.parametrize(

@@ -128,11 +128,7 @@ class App(Construct):
                     resources=[
                         custom_resource(GROUP, resource)
                         for resource in (
-                            "egresspolicies",
-                            "egressbindings",
                             "egresscredentials",
-                            "actionpolicysets",
-                            "actionpolicybindings",
                             # The create form lists the sets; the live views watch both.
                             "policysets",
                             "policybindings",

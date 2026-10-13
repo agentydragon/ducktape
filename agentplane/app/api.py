@@ -323,7 +323,7 @@ class EgressGrant(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     policies: list[str] = Field(
-        min_length=1, description="EgressPolicy names to grant, as one new binding naming this sandbox."
+        min_length=1, description="PolicySet names to grant, as one new binding naming this sandbox."
     )
 
 

@@ -131,7 +131,7 @@ message ListTemplatesResponse { repeated string templates = 1; }
 
 message GrantEgressRequest {
   SandboxDestination destination = 1;
-  // EgressPolicy names to grant in the new binding.
+  // PolicySet names to grant in the new binding.
   repeated string egress_policies = 2;
 }
 message GrantEgressResponse { string binding_name = 1; }

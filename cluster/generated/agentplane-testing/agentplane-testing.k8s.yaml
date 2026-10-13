@@ -1900,20 +1900,6 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - egresspolicies
-    verbs:
-      - get
-      - list
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - egressbindings
-    verbs:
-      - get
-      - list
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
       - egresscredentials
     verbs:
       - get
@@ -1925,13 +1911,6 @@ rules:
     verbs:
       - get
       - list
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - egressbindings
-    verbs:
-      - create
-      - delete
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -3160,39 +3139,7 @@ rules:
   - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - egresspolicies
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - egressbindings
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
       - egresscredentials
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicysets
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicybindings
     verbs:
       - get
       - list

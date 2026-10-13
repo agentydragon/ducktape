@@ -51,7 +51,7 @@ class ActionPolicyBindingView(BaseModel):
         default=None, description="Absent until the Action Service has judged the binding at all."
     )
     policy_sets: list[ActionPolicySetView] = Field(description="The named sets that exist, in the binding's order.")
-    missing_policy_sets: list[str] = Field(description="Names in the binding that no ActionPolicySet answers to.")
+    missing_policy_sets: list[str] = Field(description="Names in the binding that no PolicySet answers to.")
 
 
 class ActionPolicyView(BaseModel):

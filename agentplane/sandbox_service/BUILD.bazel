@@ -258,7 +258,9 @@ py_library(
     deps = [
         ":errors",
         "//agentplane:crd_group",
+        "//agentplane:policy_sets",
         "//agentplane/action_service:policy_view",
+        "//agentplane/action_service/policies:registry",
         "//agentplane/action_service/policies:resources",
         "//util:kubernetes",
         "@pypi//pydantic",

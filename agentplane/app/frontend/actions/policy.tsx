@@ -14,11 +14,6 @@ import type {
   ReadyConditionView,
 } from "./client";
 
-const SET_KIND: Record<ActionPolicyBindingView["kind"], string> = {
-  ActionPolicyBinding: "ActionPolicySet",
-  PolicyBinding: "PolicySet",
-};
-
 const PROVENANCE: Record<ActionPolicyBindingView["provenance"], string> = {
   git: "from git",
   app: "app, at launch",
@@ -93,7 +88,7 @@ function PolicySets({ binding }: { binding: ActionPolicyBindingView }): JSX.Elem
         )
       )}
       {binding.missing_policy_sets.map((name) => (
-        <Tooltip key={name} label={`No such ${SET_KIND[binding.kind]} in the namespace`} withArrow>
+        <Tooltip key={name} label={"No such PolicySet in the namespace"} withArrow>
           <Badge color="red" variant="light">
             {name}?
           </Badge>
@@ -127,7 +122,7 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
           </Table.Tr>
         )}
         {bindings.map((binding) => (
-          <Table.Tr key={`${binding.kind}/${binding.name}`}>
+          <Table.Tr key={binding.name}>
             <Table.Td>
               <Text size="sm" fw={600} style={{ overflowWrap: "anywhere" }}>
                 {binding.name}
@@ -135,7 +130,7 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
               {/* On a phone the other columns fold under the name. */}
               <Stack gap="xs" hiddenFrom="sm" mt="xs">
                 <Group gap="xs">
-                  <Ready ready={binding.ready} />
+                  <Ready ready={binding.ready} generation={binding.generation} />
                   <Text size="xs" c="dimmed">
                     {PROVENANCE[binding.provenance]} · expires{" "}
                     {binding.expires_at ? <TimeAgo value={binding.expires_at} /> : "never"}
@@ -150,7 +145,7 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
             <Table.Td visibleFrom="sm">{binding.generation}</Table.Td>
             <Table.Td visibleFrom="sm">{expiry(binding.expires_at)}</Table.Td>
             <Table.Td visibleFrom="sm">
-              <Ready ready={binding.ready} />
+              <Ready ready={binding.ready} generation={binding.generation} />
             </Table.Td>
             <Table.Td visibleFrom="sm">
               <PolicySets binding={binding} />
@@ -166,13 +161,10 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
   );
 }
 
-/** Every set a binding names, once each, with the verdict the Action Service wrote on it. */
+/** Every set a binding names, once each, with whether its rules parse. */
 function SetsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): JSX.Element | null {
-  // An ActionPolicySet and a PolicySet may share a name; each is its own row.
-  const sets = new Map<string, { kind: ActionPolicyBindingView["kind"]; policySet: ActionPolicySetView }>();
-  for (const binding of bindings)
-    for (const policySet of binding.policy_sets)
-      sets.set(`${binding.kind}/${policySet.name}`, { kind: binding.kind, policySet });
+  const sets = new Map<string, ActionPolicySetView>();
+  for (const binding of bindings) for (const policySet of binding.policy_sets) sets.set(policySet.name, policySet);
   if (sets.size === 0) return null;
   return (
     <Table>
@@ -180,12 +172,12 @@ function SetsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): JSX.E
         <Table.Tr>
           <Table.Th>Policy set</Table.Th>
           <Table.Th>Generation</Table.Th>
-          <Table.Th>Ready</Table.Th>
+          <Table.Th>Parses</Table.Th>
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
-        {[...sets].map(([key, { kind, policySet }]) => (
-          <Table.Tr key={key}>
+        {[...sets.values()].map((policySet) => (
+          <Table.Tr key={policySet.name}>
             <Table.Td>
               <Text size="sm" fw={600}>
                 {policySet.name}
@@ -200,14 +192,10 @@ function SetsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): JSX.E
               <Text size="sm">{policySet.generation}</Text>
             </Table.Td>
             <Table.Td>
-              {kind === "PolicyBinding" ? (
-                // A PolicySet has no status object to judge: parsing is its whole verdict.
-                <Badge color={policySet.refused ? "red" : "green"} style={WHOLE_BADGE}>
-                  {policySet.refused ? "refused" : "Valid"}
-                </Badge>
-              ) : (
-                <Ready ready={policySet.ready} generation={policySet.generation} />
-              )}
+              {/* A PolicySet has no status object to judge: parsing is its whole verdict. */}
+              <Badge color={policySet.refused ? "red" : "green"} style={WHOLE_BADGE}>
+                {policySet.refused ? "refused" : "Valid"}
+              </Badge>
             </Table.Td>
           </Table.Tr>
         ))}

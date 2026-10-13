@@ -4,14 +4,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from agentplane.action_service.policies.resources import (
-    POLICY_SETS_PLURAL,
-    ActionPolicySet,
-    InvalidResource,
-    parse_policy_set,
-)
+from agentplane.action_service.policies.registry import Policy
+from agentplane.action_service.policies.resources import parse_action_rule
 from agentplane.action_service.policy_view import ActionPolicySetView, set_view
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.policy_sets import POLICY_SETS_PLURAL, PolicySet, RefusedPolicySet, parse_policy_set
 from agentplane.sandbox_service.errors import InventoryError
 from util.kubernetes import CustomObjectsClient
 
@@ -50,12 +47,10 @@ class ActionPolicyReader:
 
     async def list_policy_sets(self) -> list[ActionPolicySetView]:
         """Every set in the namespace, refused ones included, in name order."""
-        return [set_view(policy_set) for name, policy_set in sorted((await self._policy_sets_by_name()).items())]
-
-    async def _policy_sets_by_name(self) -> dict[str, ActionPolicySet | InvalidResource]:
         listed = await self._custom_objects.list_namespaced_custom_object(
             *ACTION_POLICY_API, self._namespace, POLICY_SETS_PLURAL
         )
-        return {
-            parsed.metadata.name: parsed for parsed in map(parse_policy_set, _ResourceList.model_validate(listed).items)
-        }
+        parsed: list[PolicySet[Policy] | RefusedPolicySet] = [
+            parse_policy_set(item, parse_rule=parse_action_rule) for item in _ResourceList.model_validate(listed).items
+        ]
+        return [set_view(policy_set) for policy_set in sorted(parsed, key=lambda policy_set: policy_set.name)]

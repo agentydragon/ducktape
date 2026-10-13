@@ -78,8 +78,6 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
-    action_policy_binding,
-    action_policy_set,
     egress_policy_set,
     policy_binding,
     sandbox,
@@ -109,14 +107,6 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
     custom_objects.objects[("policybindings", "elsewhere")] = policy_binding(
         "elsewhere", subject={"namespace": NAMESPACE, "name": "shelved"}, policy_sets=["github"]
     )
-    custom_objects.objects[("actionpolicysets", "reads")] = action_policy_set(
-        "reads",
-        auto_approve_if=[{"type": "exact_actions", "actions": {"github": ["search_code"]}}],
-        ready=("True", "Valid", "spec accepted"),
-    )
-    custom_objects.objects[("actionpolicybindings", "runner-1-reads")] = action_policy_binding(
-        "runner-1-reads", subject={"namespace": NAMESPACE, "name": "runner-1"}, policy_sets=["reads"]
-    )
     for (kind, name), obj in custom_objects.objects.items():
         match kind:
             case "sandboxes":
@@ -125,10 +115,6 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
                 live_index.bindings[name] = obj
             case "policysets":
                 live_index.rule_sets[name] = obj
-            case "actionpolicysets":
-                live_index.action_policy_seen(live_index.action_policy_sets, name, obj)
-            case "actionpolicybindings":
-                live_index.action_policy_seen(live_index.action_policy_bindings, name, obj)
     live_index.pods.update(core_v1.pods)
     return live_index
 
@@ -172,7 +158,7 @@ async def test_the_sandbox_stream_asks_the_service_again_only_when_a_policy_obje
     assert await policy.for_subject(runner) == ActionPolicyUnavailable(code="test-first-attempt-failed")
     assert await policy.for_subject(runner) == EMPTY_POLICY  # retried: the failure was not kept
     assert await policy.for_subject(runner) == EMPTY_POLICY  # nothing changed: repeated, not asked
-    seeded.action_policy_seen(seeded.action_policy_bindings, "runner-1-reads", None)
+    seeded.policy_seen(seeded.bindings, "elsewhere", None)
     assert await policy.for_subject(runner) == EMPTY_POLICY.model_copy(update={"synced": False})
     assert await policy.for_subject(other) == EMPTY_POLICY
     assert asked == [runner, runner, runner, other]

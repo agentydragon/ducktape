@@ -253,12 +253,12 @@ def _subject_binding(index: PolicyIndex, resolved: ResolvedBinding) -> SubjectBi
         labels=binding.metadata.labels,
         expires_at=binding.spec.expires_at,
         ready=_ready_view(binding.condition(ACTIONS_READY_CONDITION)),
-        policy_sets=[_set_view(policy_set) for _, policy_set in found if policy_set is not None],
+        policy_sets=[set_view(policy_set) for _, policy_set in found if policy_set is not None],
         missing_policy_sets=[name for name, policy_set in found if policy_set is None],
     )
 
 
-def _set_view(policy_set: PolicySet[Policy] | RefusedPolicySet) -> ActionPolicySetView:
+def set_view(policy_set: PolicySet[Policy] | RefusedPolicySet) -> ActionPolicySetView:
     assert policy_set.generation is not None, "the informer's sets are read off the API server"
     return ActionPolicySetView(
         name=policy_set.name,

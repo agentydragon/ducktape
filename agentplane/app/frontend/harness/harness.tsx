@@ -213,14 +213,13 @@ const BINDINGS: BindingView[] = [
 
 /**
  * What the Action Service auto-decides for ready-sandbox: the binding the app wrote at launch, one the
- * operator added for the afternoon, and every state a set can be in -- parsed and judged, edited
- * since it was judged, refused, and missing.
+ * operator added for the afternoon, and every state a set can be in -- parsed, refused, and missing.
  */
 const ACTION_POLICY: ActionPolicyView = {
   synced: true,
   bindings: [
     {
-      kind: "ActionPolicyBinding",
+      kind: "PolicyBinding",
       name: "ready-sandbox-k2m9x",
       provenance: "app",
       generation: 1,
@@ -231,20 +230,18 @@ const ACTION_POLICY: ActionPolicyView = {
         {
           name: "public-coder",
           generation: 2,
-          ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 2 },
           refused: null,
         },
         {
           name: "harness-reviews",
           generation: 1,
-          ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
           refused: null,
         },
       ],
       missing_policy_sets: [],
     },
     {
-      kind: "ActionPolicyBinding",
+      kind: "PolicyBinding",
       name: "ready-sandbox-push-afternoon",
       provenance: "operator",
       generation: 2,
@@ -254,19 +251,12 @@ const ACTION_POLICY: ActionPolicyView = {
         {
           name: "harness-push",
           generation: 3,
-          ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 2 },
           refused: null,
         },
         {
           name: "harness-edited",
           generation: 1,
-          ready: {
-            status: "False",
-            reason: "Invalid",
-            message: "spec.autoApproveIf.0.type: Input should be 'exact_actions' or 'argument_schema'",
-            observed_generation: 1,
-          },
-          refused: "spec.autoApproveIf.0.type: Input should be 'exact_actions' or 'argument_schema'",
+          refused: "rules[0]: Input should be 'exact_actions' or 'argument_schema'",
         },
       ],
       missing_policy_sets: ["harness-release"],
@@ -276,14 +266,14 @@ const ACTION_POLICY: ActionPolicyView = {
     {
       binding: "ready-sandbox-k2m9x",
       policy_set: "public-coder",
-      source: "autoApproveIf",
+      source: "rules",
       index: 0,
       policy: { type: "exact_actions", actions: { github: ["get_file_contents", "list_commits", "search_code"] } },
     },
     {
       binding: "ready-sandbox-k2m9x",
       policy_set: "public-coder",
-      source: "autoApproveIf",
+      source: "rules",
       index: 1,
       policy: {
         type: "argument_schema",
@@ -297,14 +287,14 @@ const ACTION_POLICY: ActionPolicyView = {
     {
       binding: "ready-sandbox-k2m9x",
       policy_set: "harness-reviews",
-      source: "autoApproveIf",
+      source: "rules",
       index: 0,
       policy: { type: "exact_actions", actions: { github: ["pull_request_read", "list_pull_requests"] } },
     },
     {
       binding: "ready-sandbox-push-afternoon",
       policy_set: "harness-push",
-      source: "autoApproveIf",
+      source: "rules",
       index: 0,
       policy: {
         type: "argument_schema",
@@ -848,7 +838,7 @@ const ACTIONS: ActionRequestView[] = [
         matched: {
           namespace: "agentplane-visual",
           policy_set: "fixture_auto_allow",
-          source: "autoApproveIf",
+          source: "rules",
           index: 0,
           type: "exact_actions",
         },
@@ -2643,10 +2633,8 @@ const FRESH: WatchHealth = {
   refreshed_seconds_ago: {
     sandboxes: 4.2,
     pods: 3.1,
-    egressbindings: 11.7,
-    egresspolicies: 11.7,
-    actionpolicysets: 8.3,
-    actionpolicybindings: 8.3,
+    "policybindings.agentplane.allegedly.works": 11.7,
+    "policysets.agentplane.allegedly.works": 8.3,
   },
 };
 
@@ -2657,10 +2645,8 @@ const WEDGED: WatchHealth = {
   refreshed_seconds_ago: {
     sandboxes: 2417.4,
     pods: 2417.4,
-    egressbindings: 11.7,
-    egresspolicies: 11.7,
-    actionpolicysets: 8.3,
-    actionpolicybindings: 8.3,
+    "policybindings.agentplane.allegedly.works": 11.7,
+    "policysets.agentplane.allegedly.works": 8.3,
   },
 };
 

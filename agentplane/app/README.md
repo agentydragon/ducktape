@@ -364,7 +364,7 @@ authority; no client or browser-provided URL is accepted. Deny grants nothing an
 terminal page. Completing consent alone does not activate a grant: the OAuth adapter still
 verifies the same upstream operator and completes issuance. Operator credentials never
 reach the external client. An external-client Action is auto-approved only by an
-ActionPolicyBinding naming its ServiceAccount, otherwise by the operator; clients sharing a
+PolicyBinding naming its ServiceAccount, otherwise by the operator; clients sharing a
 ServiceAccount share receipts while submitted Actions preserve exact connection provenance.
 
 ## Action review
@@ -485,10 +485,10 @@ pushed the Session to the History Service. Until then the page offers only to di
 The Sandbox page's "Action policy" tab, carried in the live snapshot frame, shows the Action
 Service's own answer for the ServiceAccount the Sandbox runs as, read through the operator
 federation (`/v1/operator/action-policy/service-accounts/{namespace}/{name}`, so an operator session
-is required as for the Actions page): the unexpired `ActionPolicyBinding`s naming that account, each
+is required as for the Actions page): the unexpired `PolicyBinding`s naming that account, each
 with expiry
-and the service's `Ready` verdict; every `ActionPolicySet` those name, as present, edited since the
-service judged it, refused with the validation report, or missing; the resulting `autoApproveIf` list in the order the service walks it, each entry naming the binding,
+and the service's `ActionsReady` verdict; every `PolicySet` those name, as present, refused with the
+parse report, or missing; the resulting list of `action_auto_approve` policies in the order the service walks it, each entry naming the binding,
 set and index a Decision's evidence names; and `synced`, false while the service's watch
 has not synced and nothing auto-decides. It is the resolution an admission would use now, from the
 service that would use it, and says nothing about past Decisions; the Actions page holds those. The

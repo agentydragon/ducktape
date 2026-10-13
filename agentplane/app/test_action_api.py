@@ -36,11 +36,11 @@ from agentplane.action_service.mcp_executor import McpActionGroupExecutor
 from agentplane.action_service.models import ActionRequestInput, ActionState, CallerPrincipal, OperatorPrincipal
 from agentplane.action_service.operator_oidc import OidcOperatorAuthenticator
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
-from agentplane.action_service.policies.resources import parse_binding, parse_policy_set
 from agentplane.action_service.policy_informer import PolicyIndex
 from agentplane.action_service.service import ActionService
 from agentplane.action_service.testing.callers import PERSONAL, admitted_callers
 from agentplane.action_service.testing.lifecycle import wait_available
+from agentplane.action_service.testing.policies import add_policy_binding, add_policy_set
 from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.app.action_federation import FederatedOperatorActions
@@ -500,25 +500,19 @@ async def test_connection_management_preserves_federation_csrf_versions_and_hist
 def _bind_live_sandbox(policies: PolicyIndex) -> None:
     """What the Action Service's informer would hold: a set and a binding naming the ServiceAccount
     the sandbox runs as, plus one naming a like-named account elsewhere that must not show."""
-    metadata = {"namespace": NAMESPACE, "uid": "test-uid", "generation": 1, "resourceVersion": "1"}
-    policy_set = parse_policy_set(
-        {
-            "metadata": {"name": "test-reads", **metadata},
-            "spec": {"autoApproveIf": [{"type": "exact_actions", "actions": {"test_review": ["record"]}}]},
-        }
-    )
-    policies.policy_sets[policy_set.namespaced_name] = policy_set
+    add_policy_set(policies, "test-reads", [{"type": "exact_actions", "actions": {"test_review": ["record"]}}])
     for name, namespace, labels in (
         ("live-launch", NAMESPACE, {MANAGED_BY_LABEL: MANAGED_BY_APP}),
         ("live-elsewhere", "agentplane-elsewhere", {}),
     ):
-        binding = parse_binding(
-            {
-                "metadata": {"name": name, "labels": labels, **metadata},
-                "spec": {"subject": {"namespace": namespace, "name": "live"}, "policySets": ["test-reads", "gone"]},
-            }
+        add_policy_binding(
+            policies,
+            name,
+            ServiceAccountRef(namespace=namespace, name="live"),
+            ["test-reads", "gone"],
+            labels=labels,
+            namespace=NAMESPACE,
         )
-        policies.bindings[binding.namespaced_name] = binding
 
 
 @asynccontextmanager

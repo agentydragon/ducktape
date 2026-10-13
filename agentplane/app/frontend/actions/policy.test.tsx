@@ -70,34 +70,27 @@ it("renders nothing until the stream has delivered a snapshot", async () => {
   expect(container.querySelector("table, h5")).toBeNull();
 });
 
-it("shows each set's state, the missing one, and the effective lists in evaluation order", async () => {
+it("shows each set's parse state, the missing one, and the effective lists in evaluation order", async () => {
   await render({
     synced: true,
     bindings: [
       {
-        kind: "ActionPolicyBinding",
+        kind: "PolicyBinding",
         name: "test-sandbox-launch",
         provenance: "app",
-        generation: 1,
+        generation: 2,
         expires_at: null,
         ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
         policy_sets: [
           {
             name: "test-reads",
             generation: 3,
-            ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 2 },
             refused: null,
           },
           {
             name: "test-broken",
             generation: 1,
-            ready: {
-              status: "False",
-              reason: "Invalid",
-              message: "spec.autoApproveIf.0: unknown",
-              observed_generation: 1,
-            },
-            refused: "spec.autoApproveIf.0: unknown",
+            refused: "rules[0]: unknown",
           },
         ],
         missing_policy_sets: ["test-vanished"],
@@ -107,7 +100,7 @@ it("shows each set's state, the missing one, and the effective lists in evaluati
       {
         binding: "test-sandbox-launch",
         policy_set: "test-reads",
-        source: "autoApproveIf",
+        source: "rules",
         index: 1,
         policy: {
           type: "argument_schema",
@@ -122,7 +115,7 @@ it("shows each set's state, the missing one, and the effective lists in evaluati
   expect(text).toContain("app, at launch");
   expect(text).toContain("test-broken: invalid");
   expect(text).toContain("test-vanished?");
-  // The set's spec moved on from the generation the service judged.
+  // The binding's spec moved on from the generation the service judged.
   expect(text).toContain("edited");
   expect(text).toContain("test-sandbox-launch · test-reads[1]");
   expect(text).toContain("github: create_issue");

@@ -165,7 +165,7 @@ describe("ActionHistory", () => {
           matched: {
             namespace: "agentplane-visual",
             policy_set: "fixture-auto-allow",
-            source: "autoApproveIf",
+            source: "rules",
             index: 0,
             type: "exact_actions",
           },
