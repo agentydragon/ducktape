@@ -9,7 +9,7 @@ import { type CallToolResult, CallToolResultView, toolValue } from "../call_tool
 import type { ActionRequestView } from "../client";
 import { renderPreview, type ArgumentsPreview, type CallPreview } from "./entry";
 import {
-  canApprovePullRequestInline,
+  canDecideOnCompactCardPullRequest,
   createPullRequestLabel,
   createPullRequestPane,
 } from "./github/create_pull_request";
@@ -36,9 +36,9 @@ import {
   systemInfoArguments,
   systemInfoResult,
 } from "./grocy";
-import { canQuickApproveEventsList, eventsListLabel, eventsListPane } from "./kubernetes_admin/events_list";
+import { canDecideOnCompactCardEventsList, eventsListLabel, eventsListPane } from "./kubernetes_admin/events_list";
 import {
-  canQuickApprovePodsInNamespace,
+  canDecideOnCompactCardPodsInNamespace,
   podsInNamespaceCollapsed,
   podsInNamespaceDetails,
   podsInNamespaceLabel,
@@ -52,19 +52,27 @@ import {
   podsExecLabel,
   podsExecPane,
 } from "./kubernetes_admin/pods_exec";
-import { canQuickApprovePodsLog, podsLogLabel, podsLogPreview } from "./kubernetes_admin/pods_log";
+import { canDecideOnCompactCardPodsLog, podsLogLabel, podsLogPreview } from "./kubernetes_admin/pods_log";
 import {
   resourcesApplyCollapsed,
   resourcesApplyLabel,
   resourcesApplyManifest,
 } from "./kubernetes_admin/resources_apply";
 import {
-  canQuickApproveResourcesDelete,
+  canDecideOnCompactCardResourcesDelete,
   resourcesDeleteLabel,
   resourcesDeletePane,
 } from "./kubernetes_admin/resources_delete";
-import { canQuickApproveResourcesGet, resourcesGetLabel, resourcesGetPane } from "./kubernetes_admin/resources_get";
-import { canQuickApproveResourcesList, resourcesListLabel, resourcesListPane } from "./kubernetes_admin/resources_list";
+import {
+  canDecideOnCompactCardResourcesGet,
+  resourcesGetLabel,
+  resourcesGetPane,
+} from "./kubernetes_admin/resources_get";
+import {
+  canDecideOnCompactCardResourcesList,
+  resourcesListLabel,
+  resourcesListPane,
+} from "./kubernetes_admin/resources_list";
 import { renderResultPreview, type ResultPreview } from "./result_entry";
 import { execArgumentsPreview, execCollapsedPreview, execLabel, execResultPreview } from "./ssh/exec";
 import { calendarNodeArgumentsPreview, calendarNodeLabel } from "./tana";
@@ -245,21 +253,21 @@ const ACTION_RENDERERS: ReadonlyMap<string, ReadonlyMap<string, ActionPresentati
   ],
 ]);
 
-// Quick approval is deliberately a separate capability: a custom pane renderer does not grant an
-// inline decision. Each entry validates the complete Action arguments independently of its views.
-const QUICK_APPROVALS: ReadonlyMap<string, ReadonlyMap<string, (args: unknown) => boolean>> = new Map([
+// Deciding on the compact card is deliberately a separate capability: a custom pane renderer does not grant a
+// decision there. Each entry validates the complete Action arguments independently of its views.
+const COMPACT_CARD_DECISIONS: ReadonlyMap<string, ReadonlyMap<string, (args: unknown) => boolean>> = new Map([
   [
     "kubernetes_admin",
     new Map([
-      ["pods_list_in_namespace", canQuickApprovePodsInNamespace],
-      ["resources_get", canQuickApproveResourcesGet],
-      ["resources_list", canQuickApproveResourcesList],
-      ["resources_delete", canQuickApproveResourcesDelete],
-      ["pods_log", canQuickApprovePodsLog],
-      ["events_list", canQuickApproveEventsList],
+      ["pods_list_in_namespace", canDecideOnCompactCardPodsInNamespace],
+      ["resources_get", canDecideOnCompactCardResourcesGet],
+      ["resources_list", canDecideOnCompactCardResourcesList],
+      ["resources_delete", canDecideOnCompactCardResourcesDelete],
+      ["pods_log", canDecideOnCompactCardPodsLog],
+      ["events_list", canDecideOnCompactCardEventsList],
     ]),
   ],
-  ["github", new Map([["create_pull_request", canApprovePullRequestInline]])],
+  ["github", new Map([["create_pull_request", canDecideOnCompactCardPullRequest]])],
 ]);
 
 function presentation(action: ActionIdentity): ActionPresentation | undefined {
@@ -332,7 +340,7 @@ export function renderDetailsResult(action: ActionIdentity, result: CallToolResu
   return drawn ?? <CallToolResultView result={result} />;
 }
 
-/** Inline approval is an explicit action capability, independent of the presentation chosen. */
-export function canApproveInline(action: ActionIdentity, args: unknown): boolean {
-  return QUICK_APPROVALS.get(action.group)?.get(action.name)?.(args) ?? false;
+/** Whether this invocation may be decided from the compact card; independent of the presentation chosen. */
+export function canDecideOnCompactCard(action: ActionIdentity, args: unknown): boolean {
+  return COMPACT_CARD_DECISIONS.get(action.group)?.get(action.name)?.(args) ?? false;
 }

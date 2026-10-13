@@ -8,7 +8,7 @@ import { Link, useLocation } from "react-router";
 import { JsonView } from "../json_view";
 import { ResizeHandle, usePaneSize } from "../resize_handle";
 import {
-  canApproveInline,
+  canDecideOnCompactCard,
   renderActionLabel,
   renderPaneCollapsed,
   renderPaneOpened,
@@ -49,7 +49,7 @@ function usePendingRequests(): ActionRequestView[] {
   );
 }
 
-/** One row per pending request: expandable preview, inline decision where eligible, details link. */
+/** One row per pending request: expandable preview, decision buttons where eligible, details link. */
 function PendingActionList({
   pending,
   onNavigate,
@@ -69,7 +69,7 @@ function PendingActionList({
         const collapsedPreview = renderPaneCollapsed(request.action, request.arguments);
         const openedPreview = renderPaneOpened(request.action, request.arguments);
         const showRequestTitle = shouldRenderPaneRequestTitle(request.action, request.arguments, request.title);
-        const decision = canApproveInline(request.action, request.arguments) ? (
+        const decision = canDecideOnCompactCard(request.action, request.arguments) ? (
           <ActionDecisionButtons
             size="xs"
             deciding={actions.deciding === request.id}

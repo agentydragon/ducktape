@@ -14,7 +14,7 @@ const podsLogArguments = z.strictObject({
   tail: z.int().optional(),
 });
 
-export function canQuickApprovePodsLog(args: unknown): boolean {
+export function canDecideOnCompactCardPodsLog(args: unknown): boolean {
   return podsLogArguments.safeParse(args).success;
 }
 

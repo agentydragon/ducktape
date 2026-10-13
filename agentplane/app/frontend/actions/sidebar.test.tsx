@@ -98,7 +98,7 @@ it("keeps the Actions section available and suppresses auto-open until the pendi
   expect(container.querySelector('[data-testid="current-path"]')?.textContent).toBe("/threads/test-thread");
 });
 
-it("expands a compact action preview and only offers inline approval to eligible actions", async () => {
+it("expands a compact action preview and only offers a decision on the compact card to eligible actions", async () => {
   vi.stubGlobal("EventSource", ActionStream);
   const container = await mount(
     <MemoryRouter initialEntries={["/threads/test-thread"]}>

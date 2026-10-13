@@ -58,6 +58,6 @@ function CreatePullRequestLabel({ args }: { args: z.infer<typeof createPullReque
 
 export const createPullRequestLabel: ArgumentsPreview = definePreview(createPullRequest, CreatePullRequestLabel);
 export const createPullRequestPane: ArgumentsPreview = definePreview(createPullRequest, CreatePullRequest);
-export function canApprovePullRequestInline(args: unknown): boolean {
+export function canDecideOnCompactCardPullRequest(args: unknown): boolean {
   return approvablePullRequest.safeParse(args).success;
 }

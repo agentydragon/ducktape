@@ -18,7 +18,7 @@ const resourcesListArguments = z.strictObject({
   ...listSelectors,
 });
 
-export function canQuickApproveResourcesList(args: unknown): boolean {
+export function canDecideOnCompactCardResourcesList(args: unknown): boolean {
   return resourcesListArguments.safeParse(args).success;
 }
 

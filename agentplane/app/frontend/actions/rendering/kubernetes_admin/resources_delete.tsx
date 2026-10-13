@@ -12,7 +12,7 @@ const resourcesDeleteArguments = z.strictObject({
   gracePeriodSeconds: z.int().nonnegative().optional(),
 });
 
-export function canQuickApproveResourcesDelete(args: unknown): boolean {
+export function canDecideOnCompactCardResourcesDelete(args: unknown): boolean {
   return resourcesDeleteArguments.safeParse(args).success;
 }
 
