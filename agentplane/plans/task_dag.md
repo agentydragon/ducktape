@@ -675,7 +675,9 @@ bootstrap still running is refused with a retryable code, and one that meets a f
 interrupted bootstrap is refused for good (use a new Sandbox). A failed or interrupted bootstrap
 is a Sandbox state of its own, `BootstrapFailed` (operator, 2026-10-13 PDT): terminal, never retried,
 shown as the reason on `Bootstrapped` and `Ready`. A Sandbox is not suspendable until its bootstrap has either succeeded or failed (operator,
-2026-10-13 PDT), so a suspend never interrupts it; deletion is still always allowed. The result reaches the Sandbox's
+2026-10-13 PDT), so a suspend never interrupts it; likewise a suspend waits for every Session's setup to
+complete (operator, 2026-10-13 PDT). Deletion is still always allowed. While a Sandbox is quiescing
+it accepts no resume command (operator, 2026-10-13 PDT). The result reaches the Sandbox's
 conditions as a runner fact on the connection Lease (`RUNNER_FACTS_ON_LEASE`), is republished at each
 connect because it lasts the Sandbox's lifetime, and is part of `Ready`. `BootstrapFailed` is
 terminal.
