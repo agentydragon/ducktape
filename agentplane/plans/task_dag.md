@@ -706,7 +706,7 @@ flowchart TD
     RUNNER_FACTS_ON_LEASE[Blocked: the runner publishes stage, busy and boot facts on the connection Lease]
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
-    CONTROL_SERVICE_OWNER[Blocked: the controller creates the Sandbox's control Service]
+    CONTROL_SERVICE_OWNER[Candidate: the controller creates the Sandbox's control Service]
     RUNNER_CONNECTED_READY[Candidate: the Sandbox's Ready condition includes the runner connection]
     SESSION_ACTIVITY_STREAM[Decision: one derivation of folded Session activity for listeners]
     DISPATCHER_CORE[Blocked: the Session Dispatcher delivers to running Sandboxes]
@@ -744,7 +744,6 @@ flowchart TD
     AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. offline behavior .-> DISPATCHER_CORE
     SESSION_ACTIVITY_STREAM -. must not define a second idleness .-> SANDBOX_IDLE_EXPIRY
     SANDBOX_SESSION_CONTROL_DESIGN --> SESSION_ACTIVITY_STREAM
-    SANDBOX_SESSION_CONTROL_DESIGN --> CONTROL_SERVICE_OWNER
     SANDBOX_SESSION_CONTROL_DESIGN --> DISPATCHER_WAKE_ON_SEND
     SANDBOX_SESSION_CONTROL_DESIGN -. decides the level of sealing .-> CONTROLLER_SEALS[Candidate: the Sandbox controller seals, section 12]
     QUIESCE_INCARNATION_KEY --> CONTROLLER_SEALS
@@ -955,8 +954,6 @@ implement it, and the ones marked blocked on this node wait for one of these ans
 
 - **RPC names** of the Session Dispatcher. The service is the Session Dispatcher and the seal
   renames are settled (operator, 2026-10-13 PDT; `SEAL_RENAME`).
-- **Control Service owner:** the controller creates it, the gateway writes the Lease and
-  EndpointSlice (`CONTROL_SERVICE_OWNER`).
 - **Hold against wake-on-send:** whether an operator can keep a Sandbox suspended when a message or
   notification arrives (`DISPATCHER_WAKE_ON_SEND`).
 - **Idleness:** suspension reads the runner's busy state, so `SESSION_ACTIVITY_STREAM` shrinks to
@@ -1033,9 +1030,9 @@ a lost event.
 
 ### `CONTROL_SERVICE_OWNER` — the controller creates the Sandbox's control Service
 
-**Blocked on `SANDBOX_SESSION_CONTROL_DESIGN`; low stakes.** The gateway creates the Service, Lease
+**Candidate; operator, 2026-10-13 PDT: the controller creates it.** The gateway creates the Service, Lease
 and EndpointSlice on the first connection, so the Service name resolves only after a runner
-connects. The doc recommends the controller create the Service with the Sandbox, owned by it, so a
+connects. The controller creates the Service with the Sandbox, owned by it, so a
 caller sees no endpoints and not a DNS failure, and the gateway writes only the Lease and slice,
 with less Kubernetes access. One shared constant fixes the name and port. Order: the controller image
 that creates it is pinned, then the gateway stops creating it, then its permission goes.
