@@ -67,7 +67,7 @@ func (r *Reconciler) ensureLaunch(ctx context.Context, sandbox *Sandbox) (*unrea
 		return nil, r.createOwned(ctx, sandbox, configMap)
 	}
 	if !metav1.IsControlledBy(configMap, sandbox) {
-		return &unready{"ConfigMapConflict", fmt.Sprintf("ConfigMap %s exists and is not this Sandbox's", configMap.Name)}, nil
+		return &unready{reason: "ConfigMapConflict", message: fmt.Sprintf("ConfigMap %s exists and is not this Sandbox's", configMap.Name)}, nil
 	}
 	if maps.Equal(configMap.Data, desired) {
 		return nil, nil
@@ -80,10 +80,10 @@ func (r *Reconciler) ensureLaunch(ctx context.Context, sandbox *Sandbox) (*unrea
 func withLaunch(sandbox *Sandbox, template *SandboxTemplate, spec *corev1.PodSpec) *unready {
 	i := slices.IndexFunc(spec.Containers, func(c corev1.Container) bool { return c.Name == RunnerContainer })
 	if i < 0 {
-		return &unready{"TemplateInvalid", fmt.Sprintf("SandboxTemplate %s has no %s container", template.Name, RunnerContainer)}
+		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s has no %s container", template.Name, RunnerContainer)}
 	}
 	if slices.ContainsFunc(spec.Volumes, func(v corev1.Volume) bool { return v.Name == launchVolume }) {
-		return &unready{"TemplateInvalid", fmt.Sprintf("SandboxTemplate %s defines the launch volume %s itself", template.Name, launchVolume)}
+		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the launch volume %s itself", template.Name, launchVolume)}
 	}
 	spec.Volumes = append(spec.Volumes, corev1.Volume{
 		Name: launchVolume,
@@ -102,7 +102,7 @@ func withLaunch(sandbox *Sandbox, template *SandboxTemplate, spec *corev1.PodSpe
 func withLaunchDisk(sandbox *Sandbox, template *SandboxTemplate, instance *kubevirtv1.VirtualMachineInstanceSpec) *unready {
 	if slices.ContainsFunc(instance.Volumes, func(v kubevirtv1.Volume) bool { return v.Name == launchVolume }) ||
 		slices.ContainsFunc(instance.Domain.Devices.Disks, func(d kubevirtv1.Disk) bool { return d.Name == launchVolume || d.Serial == LaunchDiskSerial }) {
-		return &unready{"TemplateInvalid", fmt.Sprintf("SandboxTemplate %s defines the launch volume %s itself", template.Name, launchVolume)}
+		return &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s defines the launch volume %s itself", template.Name, launchVolume)}
 	}
 	instance.Volumes = append(instance.Volumes, kubevirtv1.Volume{
 		Name: launchVolume,

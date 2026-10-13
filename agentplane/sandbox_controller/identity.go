@@ -35,7 +35,7 @@ func (r *Reconciler) ensureIdentity(ctx context.Context, sandbox *Sandbox) (*unr
 			return nil, err
 		}
 	} else if !metav1.IsControlledBy(account, sandbox) {
-		return &unready{"ServiceAccountConflict", fmt.Sprintf("ServiceAccount %s exists and is not this Sandbox's", account.Name)}, nil
+		return &unready{reason: "ServiceAccountConflict", message: fmt.Sprintf("ServiceAccount %s exists and is not this Sandbox's", account.Name)}, nil
 	} else if account.Labels[ActionCallerLabel] != "true" {
 		// An account created before the label was set.
 		if account.Labels == nil {
@@ -64,7 +64,7 @@ func (r *Reconciler) ensureBinding(ctx context.Context, sandbox *Sandbox) (*unre
 		return nil, r.createOwned(ctx, sandbox, binding)
 	}
 	if !metav1.IsControlledBy(binding, sandbox) {
-		return &unready{"PolicyBindingConflict", fmt.Sprintf("PolicyBinding %s exists and is not this Sandbox's", binding.Name)}, nil
+		return &unready{reason: "PolicyBindingConflict", message: fmt.Sprintf("PolicyBinding %s exists and is not this Sandbox's", binding.Name)}, nil
 	}
 	if len(sets) == 0 {
 		return nil, client.IgnoreNotFound(r.Delete(ctx, binding, client.Preconditions{UID: &binding.UID}))

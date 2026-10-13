@@ -8,6 +8,7 @@ go_library(
         "controller.go",
         "identity.go",
         "launch.go",
+        "sealer.go",
         "types.go",
         "vm.go",
         "zz_generated.deepcopy.go",
@@ -16,6 +17,9 @@ go_library(
     visibility = ["//agentplane/sandbox_controller:__subpackages__"],
     deps = [
         "//agentplane/policy_controller",
+        "//agentplane/proto:runner_control_go_proto",
+        "//agentplane/proto:runner_go_proto",
+        "@io_k8s_api//coordination/v1:coordination",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/equality",
         "@io_k8s_apimachinery//pkg/api/errors",
@@ -31,6 +35,9 @@ go_library(
         "@io_k8s_sigs_controller_runtime//pkg/reconcile",
         "@io_k8s_sigs_controller_runtime//pkg/scheme",
         "@io_kubevirt_api//core/v1:core",
+        "@org_golang_google_grpc//:grpc",
+        "@org_golang_google_grpc//credentials/insecure",
+        "@org_golang_google_grpc//metadata",
     ],
 )
 
@@ -45,6 +52,7 @@ go_test(
     embed = [":sandbox_controller"],
     deps = [
         "//agentplane/policy_controller",
+        "@io_k8s_api//coordination/v1:coordination",
         "@io_k8s_api//core/v1:core",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/api/meta",
