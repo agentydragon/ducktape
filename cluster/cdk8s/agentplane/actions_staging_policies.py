@@ -78,10 +78,7 @@ SSH_READS_SET = "ssh-reads"
 # preset refers to them by name. They live here rather than in the preset's own module so the
 # name and the object that answers to it are declared in one place: staging's presets import
 # these, never the other way round.
-PUBLIC_GITHUB_READS_SET = "public-github-reads"
-PUBLIC_DUCKTAPE_READS_SET = "public-ducktape-reads"
-PUBLIC_DUCKTAPE_FORK_READS_SET = "public-ducktape-fork-reads"
-PUBLIC_GAFFER_PRIVATE_READS_SET = "public-gaffer-private-reads"
+COMMON_GITHUB_READ_SET = "common-github-read"
 DUCKTAPE_PR_FAILED_JOBS_SET = "ducktape-pr-failed-jobs"
 GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET = "gaffer-private-branch-and-pr-creation"
 
@@ -178,7 +175,7 @@ _GITHUB_READS_ACTIONS = [
 ]
 
 # The tool list every repository-scoped read set shares -- only the trusted owner/repo
-# (or, for public-github-reads, a live visibility check) differs.
+# (or a live visibility check) differs.
 _REPOSITORY_SCOPED_ACTIONS = [
     # keep-sorted start
     "actions_get",
@@ -319,19 +316,6 @@ _GROCY_SF_READS_ACTIONS = [
 ]
 
 
-def _repository_reads(scope: Construct, id: str, *, name: str, description: str, owner: str, repository: str) -> None:
-    _policy_set(
-        scope,
-        id,
-        metadata=ApiObjectMetadata(name=name, namespace=_NAMESPACE, annotations={"description": description}),
-        rules=[
-            AutoApproveIf.github_repository(
-                owner=owner, repository=repository, actions={"github": _REPOSITORY_SCOPED_ACTIONS}
-            )
-        ],
-    )
-
-
 def add_staging_action_policies(scope: Construct) -> None:
     # The principal a Connection enrolled from the Claude.ai MCP connector acts as, picked by
     # the operator at OAuth consent, and the identity its sandboxes run as. The label is what
@@ -402,49 +386,34 @@ def add_staging_action_policies(scope: Construct) -> None:
         ),
         rules=[AutoApproveIf.exact_actions(actions={"github": ["get_me"]})],
     )
-    # The coder Agent's own fork, used to stage branches before opening PRs into
-    # agentydragon/ducktape. It already has write access here (that's how it opens
-    # PRs), so a read grant on its own fork's content adds no exposure beyond what it
-    # can already write.
-    _repository_reads(
-        scope,
-        "public-ducktape-fork-reads",
-        name=PUBLIC_DUCKTAPE_FORK_READS_SET,
-        description="Reviewed GitHub reads scoped to agentydragon-agent/ducktape, the coder Agent's fork.",
-        owner="agentydragon-agent",
-        repository="ducktape",
-    )
-    _repository_reads(
-        scope,
-        "public-ducktape-reads",
-        name=PUBLIC_DUCKTAPE_READS_SET,
-        description="Reviewed GitHub reads scoped to agentydragon/ducktape.",
-        owner="agentydragon",
-        repository="ducktape",
-    )
-    _repository_reads(
-        scope,
-        "public-gaffer-private-reads",
-        name=PUBLIC_GAFFER_PRIVATE_READS_SET,
-        description="Reviewed GitHub reads scoped to the private agentydragon/gaffer-private.",
-        owner="agentydragon",
-        repository="gaffer-private",
-    )
-    # Any repository confirmed genuinely public -- not bounded to a fixed owner/repo
-    # allowlist. `github_public_repository` positively confirms the target
-    # repository's visibility with a live, unauthenticated GitHub API call before
-    # approving, rather than inferring "public" from the absence of a restriction.
+    # The GitHub reads every coder-like agent gets: any repository a live, unauthenticated lookup
+    # confirms public (`github_public_repository` positively confirms visibility rather than
+    # inferring it from the absence of a restriction), plus three named repositories: ducktape,
+    # the coder Agent's own fork of it (which it can already write, so reading it adds no exposure),
+    # and the private gaffer-private.
     _policy_set(
         scope,
-        "public-github-reads",
+        "common-github-read",
         metadata=ApiObjectMetadata(
-            name=PUBLIC_GITHUB_READS_SET,
+            name=COMMON_GITHUB_READ_SET,
             namespace=_NAMESPACE,
             annotations={
-                "description": "Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public."
+                "description": "Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public, and of agentydragon/ducktape, its fork agentydragon-agent/ducktape and the private agentydragon/gaffer-private."
             },
         ),
-        rules=[AutoApproveIf.github_public_repository(actions={"github": _REPOSITORY_SCOPED_ACTIONS})],
+        rules=[
+            AutoApproveIf.github_public_repository(actions={"github": _REPOSITORY_SCOPED_ACTIONS}),
+            *(
+                AutoApproveIf.github_repository(
+                    owner=owner, repository=repository, actions={"github": _REPOSITORY_SCOPED_ACTIONS}
+                )
+                for owner, repository in (
+                    ("agentydragon", "ducktape"),
+                    ("agentydragon-agent", "ducktape"),
+                    ("agentydragon", "gaffer-private"),
+                )
+            ),
+        ],
     )
 
     # GitHub MCP combines workflow dispatch, whole-run reruns, failed-job reruns, cancellation,
@@ -888,14 +857,9 @@ def add_staging_action_policies(scope: Construct) -> None:
             name="public-coder-openclaw-actions",
             namespace=_NAMESPACE,
             annotations={
-                "description": "Auto-approves the reviewed public-coder repository reads for the OpenClaw ServiceAccount."
+                "description": "Auto-approves the reviewed common GitHub reads for the OpenClaw ServiceAccount."
             },
         ),
         subject=PolicyBindingSpecSubject(namespace=NAMESPACE, name=SERVICE_ACCOUNT),
-        policy_sets=[
-            PUBLIC_GITHUB_READS_SET,
-            PUBLIC_DUCKTAPE_READS_SET,
-            PUBLIC_DUCKTAPE_FORK_READS_SET,
-            PUBLIC_GAFFER_PRIVATE_READS_SET,
-        ],
+        policy_sets=[COMMON_GITHUB_READ_SET],
     )

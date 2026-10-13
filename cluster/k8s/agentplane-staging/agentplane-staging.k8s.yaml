@@ -3301,10 +3301,7 @@ data:
           - buildbuddy
           - public-coder-pr-visuals
           - agentplane-testing
-          - public-github-reads
-          - public-ducktape-reads
-          - public-ducktape-fork-reads
-          - public-gaffer-private-reads
+          - common-github-read
           - github-identity-reads
           - ssh-reads
           - ducktape-pr-failed-jobs
@@ -3367,10 +3364,7 @@ data:
           - github-actions-logs
           - buildbuddy
           - agentplane-testing
-          - public-github-reads
-          - public-ducktape-reads
-          - public-ducktape-fork-reads
-          - public-gaffer-private-reads
+          - common-github-read
           - github-identity-reads
           - ssh-reads
           - gaffer-private-branch-and-pr-creation
@@ -3393,10 +3387,7 @@ data:
           - buildbuddy
           - public-coder-pr-visuals
           - agentplane-testing
-          - public-github-reads
-          - public-ducktape-reads
-          - public-ducktape-fork-reads
-          - public-gaffer-private-reads
+          - common-github-read
           - github-identity-reads
           - ssh-reads
           - ducktape-pr-failed-jobs
@@ -8231,137 +8222,8 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
-    description: Reviewed GitHub reads scoped to agentydragon-agent/ducktape, the coder Agent's fork.
-  name: public-ducktape-fork-reads
-  namespace: agentplane-staging
-spec:
-  rules:
-    - type: action_auto_approve
-      policy:
-        type: github_repository
-        actions:
-          github:
-            - actions_get
-            - actions_list
-            - find_duplicate
-            - get_commit
-            - get_file_blame
-            - get_file_contents
-            - get_job_logs
-            - get_label
-            - get_latest_release
-            - get_release_by_tag
-            - get_tag
-            - issue_dependency_read
-            - issue_read
-            - list_branches
-            - list_commits
-            - list_issue_fields
-            - list_issue_types
-            - list_issues
-            - list_pull_requests
-            - list_releases
-            - list_repository_collaborators
-            - list_tags
-            - pull_request_read
-            - search_code
-            - search_issues
-            - search_pull_requests
-        owner: agentydragon-agent
-        repository: ducktape
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  annotations:
-    description: Reviewed GitHub reads scoped to agentydragon/ducktape.
-  name: public-ducktape-reads
-  namespace: agentplane-staging
-spec:
-  rules:
-    - type: action_auto_approve
-      policy:
-        type: github_repository
-        actions:
-          github:
-            - actions_get
-            - actions_list
-            - find_duplicate
-            - get_commit
-            - get_file_blame
-            - get_file_contents
-            - get_job_logs
-            - get_label
-            - get_latest_release
-            - get_release_by_tag
-            - get_tag
-            - issue_dependency_read
-            - issue_read
-            - list_branches
-            - list_commits
-            - list_issue_fields
-            - list_issue_types
-            - list_issues
-            - list_pull_requests
-            - list_releases
-            - list_repository_collaborators
-            - list_tags
-            - pull_request_read
-            - search_code
-            - search_issues
-            - search_pull_requests
-        owner: agentydragon
-        repository: ducktape
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  annotations:
-    description: Reviewed GitHub reads scoped to the private agentydragon/gaffer-private.
-  name: public-gaffer-private-reads
-  namespace: agentplane-staging
-spec:
-  rules:
-    - type: action_auto_approve
-      policy:
-        type: github_repository
-        actions:
-          github:
-            - actions_get
-            - actions_list
-            - find_duplicate
-            - get_commit
-            - get_file_blame
-            - get_file_contents
-            - get_job_logs
-            - get_label
-            - get_latest_release
-            - get_release_by_tag
-            - get_tag
-            - issue_dependency_read
-            - issue_read
-            - list_branches
-            - list_commits
-            - list_issue_fields
-            - list_issue_types
-            - list_issues
-            - list_pull_requests
-            - list_releases
-            - list_repository_collaborators
-            - list_tags
-            - pull_request_read
-            - search_code
-            - search_issues
-            - search_pull_requests
-        owner: agentydragon
-        repository: gaffer-private
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  annotations:
-    description: Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public.
-  name: public-github-reads
+    description: Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public, and of agentydragon/ducktape, its fork agentydragon-agent/ducktape and the private agentydragon/gaffer-private.
+  name: common-github-read
   namespace: agentplane-staging
 spec:
   rules:
@@ -8396,6 +8258,105 @@ spec:
             - search_code
             - search_issues
             - search_pull_requests
+    - type: action_auto_approve
+      policy:
+        type: github_repository
+        actions:
+          github:
+            - actions_get
+            - actions_list
+            - find_duplicate
+            - get_commit
+            - get_file_blame
+            - get_file_contents
+            - get_job_logs
+            - get_label
+            - get_latest_release
+            - get_release_by_tag
+            - get_tag
+            - issue_dependency_read
+            - issue_read
+            - list_branches
+            - list_commits
+            - list_issue_fields
+            - list_issue_types
+            - list_issues
+            - list_pull_requests
+            - list_releases
+            - list_repository_collaborators
+            - list_tags
+            - pull_request_read
+            - search_code
+            - search_issues
+            - search_pull_requests
+        owner: agentydragon
+        repository: ducktape
+    - type: action_auto_approve
+      policy:
+        type: github_repository
+        actions:
+          github:
+            - actions_get
+            - actions_list
+            - find_duplicate
+            - get_commit
+            - get_file_blame
+            - get_file_contents
+            - get_job_logs
+            - get_label
+            - get_latest_release
+            - get_release_by_tag
+            - get_tag
+            - issue_dependency_read
+            - issue_read
+            - list_branches
+            - list_commits
+            - list_issue_fields
+            - list_issue_types
+            - list_issues
+            - list_pull_requests
+            - list_releases
+            - list_repository_collaborators
+            - list_tags
+            - pull_request_read
+            - search_code
+            - search_issues
+            - search_pull_requests
+        owner: agentydragon-agent
+        repository: ducktape
+    - type: action_auto_approve
+      policy:
+        type: github_repository
+        actions:
+          github:
+            - actions_get
+            - actions_list
+            - find_duplicate
+            - get_commit
+            - get_file_blame
+            - get_file_contents
+            - get_job_logs
+            - get_label
+            - get_latest_release
+            - get_release_by_tag
+            - get_tag
+            - issue_dependency_read
+            - issue_read
+            - list_branches
+            - list_commits
+            - list_issue_fields
+            - list_issue_types
+            - list_issues
+            - list_pull_requests
+            - list_releases
+            - list_repository_collaborators
+            - list_tags
+            - pull_request_read
+            - search_code
+            - search_issues
+            - search_pull_requests
+        owner: agentydragon
+        repository: gaffer-private
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -8956,7 +8917,7 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
 metadata:
   annotations:
-    description: Auto-approves the reviewed public-coder repository reads for the OpenClaw ServiceAccount.
+    description: Auto-approves the reviewed common GitHub reads for the OpenClaw ServiceAccount.
   name: public-coder-openclaw-actions
   namespace: agentplane-staging
 spec:
@@ -8964,10 +8925,7 @@ spec:
     namespace: public-coder-agent
     name: openclaw
   policySets:
-    - public-github-reads
-    - public-ducktape-reads
-    - public-ducktape-fork-reads
-    - public-gaffer-private-reads
+    - common-github-read
 ---
 apiVersion: v1
 kind: Namespace

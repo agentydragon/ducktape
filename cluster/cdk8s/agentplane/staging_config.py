@@ -15,6 +15,7 @@ from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane.actions_staging_policies import (
     AGENTPLANE_TESTING_POLICY,
     COINBASE_POLICY,
+    COMMON_GITHUB_READ_SET,
     DUCKTAPE_PR_FAILED_JOBS_SET,
     GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
     GITHUB_IDENTITY_READS_SET,
@@ -23,10 +24,6 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     GOOGLE_CALENDAR_READS_SET,
     GROCY_SF_READS_SET,
     HOME_ASSISTANT_READS_SET,
-    PUBLIC_DUCKTAPE_FORK_READS_SET,
-    PUBLIC_DUCKTAPE_READS_SET,
-    PUBLIC_GAFFER_PRIVATE_READS_SET,
-    PUBLIC_GITHUB_READS_SET,
     SANDBOX_SELF_SET,
     SSH_READS_SET,
     TANA_READS_SET,
@@ -65,18 +62,6 @@ _FINANCE_AGENT_INSTRUCTIONS = "\n\n".join(
     ]
 )
 _FINANCE_AGENT_THREAD_SETUP = Path(__file__).with_name("finance_agent_thread_setup.sh").read_text(encoding="utf-8")
-# What the public-coder preset binds: reads of confirmed-public repositories, of ducktape and
-# its fork, and of the private Gaffer repository. The names come from
-# actions_staging_policies, which creates each Action PolicySet this refers to; grouping them
-# into a preset is this module's business, naming them is not.
-PUBLIC_CODER_ACTION_POLICY_SETS = (
-    PUBLIC_GITHUB_READS_SET,
-    PUBLIC_DUCKTAPE_READS_SET,
-    PUBLIC_DUCKTAPE_FORK_READS_SET,
-    PUBLIC_GAFFER_PRIVATE_READS_SET,
-)
-
-
 # What the Haku preset binds: the reviewed read-only bundle the haku-agent and claude-ai
 # bindings name (GitHub, Home Assistant, Gmail, Google Calendar, Tana, Grocy SF, SSH) plus sandbox
 # use and the GitHub identity read, and Haku's one write: rerunning failed jobs on a ducktape CI
@@ -102,7 +87,7 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
         models=models,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
-        action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
+        action_policy_sets=[COMMON_GITHUB_READ_SET, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
         kubernetes_grants={TOOL_CONFIG_GRANT: tool_config_grant(namespace), **agent_access_profiles.catalog()},
     )
     cfg.sandbox_presets["public-coder"].kubernetes_grants = list(agent_access_profiles.MANAGED_GRANTS["public-coder"])
@@ -204,7 +189,7 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
         # through the same agentydragon-agent account. Gaffer branch and PR creation are the only
         # additional auto-approved writes for this preset; pushes and other changes remain gated.
         action_policy_sets=[
-            *PUBLIC_CODER_ACTION_POLICY_SETS,
+            COMMON_GITHUB_READ_SET,
             GITHUB_IDENTITY_READS_SET,
             SSH_READS_SET,
             GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
