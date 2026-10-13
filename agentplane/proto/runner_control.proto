@@ -39,6 +39,14 @@ service Runner {
   // after its harness stopped or its journal was sealed; redelivery is therefore safe. The same
   // `command_id` with another payload fails with `ALREADY_EXISTS`.
   rpc DeliverCommand(DeliverCommandRequest) returns (DeliverCommandResponse);
+  // One RPC per command, each admitting exactly as `DeliverCommand` does: the same `command_id`
+  // with the same payload returns the existing admission, and under another operation or payload
+  // it fails with `ALREADY_EXISTS`, so a `command_id` is unique across all of them.
+  rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
+  rpc ChangeModel(ChangeModelRequest) returns (ChangeModelResponse);
+  rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse);
+  rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse);
+  rpc StopRunnerSession(StopRunnerSessionRequest) returns (StopRunnerSessionResponse);
 }
 
 message RunnerFrame {
@@ -100,5 +108,55 @@ message DeliverCommandRequest {
 
 message DeliverCommandResponse {
   // The runner journal's CommandAdmitted entry for the command.
+  agentplane.proto.event_log.EventEntry admission = 1;
+}
+
+// The command RPCs' responses each carry the runner journal's CommandAdmitted entry for the command.
+message SubmitInputRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string text = 3;
+}
+
+message SubmitInputResponse {
+  agentplane.proto.event_log.EventEntry admission = 1;
+}
+
+message ChangeModelRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string model = 3;
+}
+
+message ChangeModelResponse {
+  agentplane.proto.event_log.EventEntry admission = 1;
+}
+
+message ChangeReasoningEffortRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string effort = 3;
+}
+
+message ChangeReasoningEffortResponse {
+  agentplane.proto.event_log.EventEntry admission = 1;
+}
+
+message InterruptTurnRequest {
+  string session_id = 1;
+  string command_id = 2;
+  string turn_id = 3;
+}
+
+message InterruptTurnResponse {
+  agentplane.proto.event_log.EventEntry admission = 1;
+}
+
+message StopRunnerSessionRequest {
+  string session_id = 1;
+  string command_id = 2;
+}
+
+message StopRunnerSessionResponse {
   agentplane.proto.event_log.EventEntry admission = 1;
 }

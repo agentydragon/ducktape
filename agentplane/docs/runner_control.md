@@ -35,6 +35,11 @@ service Runner {
   rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
   rpc Seal(runner.SealRequest) returns (runner.SealResponse);
   rpc DeliverCommand(DeliverCommandRequest) returns (DeliverCommandResponse);
+  rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
+  rpc ChangeModel(ChangeModelRequest) returns (ChangeModelResponse);
+  rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse);
+  rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse);
+  rpc StopRunnerSession(StopRunnerSessionRequest) returns (StopRunnerSessionResponse);
 }
 
 message RunnerFrame {
@@ -71,6 +76,11 @@ message DeliverCommandResponse {
   // The runner journal's CommandAdmitted entry, with its cursor. Fresh or already journaled.
   agentplane.proto.event_log.EventEntry admission = 1;
 }
+
+// One RPC per command beside `DeliverCommand`, each taking `session_id`, `command_id` and its own
+// fields (`text`, `model`, `effort`, `turn_id`; none for a stop) and answering with `admission` as
+// above. A `command_id` is unique across all of them and `DeliverCommand`: the same id under
+// another operation or payload fails `ALREADY_EXISTS`.
 
 message Heartbeat {}
 ```
