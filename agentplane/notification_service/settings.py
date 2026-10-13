@@ -2,9 +2,9 @@
 
 from datetime import date
 from pathlib import Path
-from typing import Annotated, Any, ClassVar
+from typing import Annotated, ClassVar
 
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr
 from pydantic_settings import SettingsConfigDict
 
 from util.urls import HttpEndpointUrl
@@ -12,14 +12,6 @@ from util.yaml_file_settings import YamlFileSettings
 
 TOKEN_AUDIENCE = "agentplane-notifications"
 PositiveSeconds = Annotated[float, Field(gt=0, allow_inf_nan=False)]
-# The `sandbox_service` keys a config file may still carry for the Runner Gateway, by their
-# `runner_gateway` names.
-_RUNNER_GATEWAY_KEYS_IN_SANDBOX_SERVICE = {
-    "gateway_target": "target",
-    "control_target": "control_target",
-    "command_admission_timeout_s": "command_admission_timeout_s",
-    "gateway_token_file": "token_file",
-}
 
 
 class ActionsSettings(BaseModel):
@@ -72,13 +64,6 @@ class SandboxServiceSettings(BaseModel):
     token_file: Path = Field(
         description="Path to the rotating projected ServiceAccount token used to authenticate to Sandbox Service."
     )
-    # CLEANUP(added 2026-10-12): Remove with `Settings._move_runner_gateway_out_of_sandbox_service`.
-    #   Declared only so a config file of the old shape still checks against this model; `Settings`
-    #   moves them to `runner_gateway` before validating, so they are always None.
-    gateway_target: str | None = None
-    control_target: str | None = None
-    command_admission_timeout_s: float | None = None
-    gateway_token_file: Path | None = None
 
 
 class RunnerGatewaySettings(BaseModel):
@@ -175,22 +160,3 @@ class Settings(YamlFileSettings):
     github: GitHubSettings | None = Field(
         default=None, description="GitHub source configuration. Disabled when absent from both YAML and environment."
     )
-
-    @model_validator(mode="before")
-    @classmethod
-    def _move_runner_gateway_out_of_sandbox_service(cls, data: Any) -> Any:
-        # CLEANUP(added 2026-10-12): Remove, with `_RUNNER_GATEWAY_KEYS_IN_SANDBOX_SERVICE`, once
-        #   every deployed notifications config sets `runner_gateway` instead.
-        if not isinstance(data, dict) or not isinstance(sandbox := data.get("sandbox_service"), dict):
-            return data
-        moved = {new: sandbox[old] for old, new in _RUNNER_GATEWAY_KEYS_IN_SANDBOX_SERVICE.items() if old in sandbox}
-        if not moved:
-            return data
-        if "runner_gateway" in data:
-            raise ValueError("set the Runner Gateway in runner_gateway or in sandbox_service, not both")
-        shared = {key: sandbox[key] for key in ("request_timeout_s", "lifecycle_timeout_s") if key in sandbox}
-        return {
-            **data,
-            "sandbox_service": {k: v for k, v in sandbox.items() if k not in _RUNNER_GATEWAY_KEYS_IN_SANDBOX_SERVICE},
-            "runner_gateway": shared | moved,
-        }

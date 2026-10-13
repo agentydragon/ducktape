@@ -7,14 +7,7 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from agentplane.notification_service.settings import (
-    GitHubSettings,
-    NoticeDebounceSettings,
-    QuotaSettings,
-    RunnerGatewaySettings,
-    SandboxServiceSettings,
-    Settings,
-)
+from agentplane.notification_service.settings import GitHubSettings, NoticeDebounceSettings, QuotaSettings, Settings
 
 BLOCKS: dict[str, object] = {
     "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
@@ -140,37 +133,6 @@ def test_github_transport_yaml_and_environment(settings_file: Path, monkeypatch:
     assert str(overridden.github.api_url) == "http://localhost:9999/mock/"
     assert overridden.github.request_timeout_s == 2.5
     assert overridden.github.api_version == date(2022, 11, 28)
-
-
-# CLEANUP(added 2026-10-12): Delete with `Settings._move_runner_gateway_out_of_sandbox_service`.
-def test_runner_gateway_keys_in_sandbox_service_move_to_runner_gateway() -> None:
-    legacy = {
-        "target": "sandboxes:8080",
-        "gateway_target": "gateway:8080",
-        "control_target": "{sandbox}-control.{namespace}.test:8080",
-        "token_file": "/tokens/sandboxes",
-        "gateway_token_file": "/tokens/gateway",
-        "request_timeout_s": 7,
-        "command_admission_timeout_s": 22,
-    }
-    blocks = {key: value for key, value in BLOCKS.items() if key != "runner_gateway"}
-    settings = Settings.model_validate(
-        {**blocks, "database_url": "postgresql://unused", "namespace": "test", "sandbox_service": legacy}
-    )
-    assert settings.sandbox_service == SandboxServiceSettings(
-        target="sandboxes:8080", token_file=Path("/tokens/sandboxes"), request_timeout_s=7
-    )
-    assert settings.runner_gateway == RunnerGatewaySettings(
-        target="gateway:8080",
-        control_target="{sandbox}-control.{namespace}.test:8080",
-        token_file=Path("/tokens/gateway"),
-        request_timeout_s=7,
-        command_admission_timeout_s=22,
-    )
-    with pytest.raises(ValidationError, match="not both"):
-        Settings.model_validate(
-            {**BLOCKS, "database_url": "postgresql://unused", "namespace": "test", "sandbox_service": legacy}
-        )
 
 
 def test_github_presence_and_secret_separation(settings_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:

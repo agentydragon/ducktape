@@ -1022,10 +1022,8 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 ```mermaid
 flowchart TD
     ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
-    APP_NAMESPACE_SETTING_DROP[Candidate: delete Settings.namespace]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
     COHERENCE_REFACTORS[Section 11 coherence refactors] --> REFACTOR_COHERENCE_AUDIT
-    APP_NAMESPACE_SETTING_DROP --> REFACTOR_COHERENCE_AUDIT
 ```
 
 ### `ACTION_EXECUTION_AUDIT_TRIM` — execution reconciliation columns
@@ -1034,13 +1032,6 @@ flowchart TD
 `reconciliation_source` in `action_service/db.py` are written but read only by a test, and
 `ReconciliationSource` has one member. Either expose `reconciled_by` in the execution view, or
 drop both columns and the enum.
-
-### `APP_NAMESPACE_SETTING_DROP` — delete `Settings.namespace`
-
-**Candidate.** The `agentplane-app` image pinned on both agentplane-staging and agentplane-testing
-is built after the manifests stopped passing `--namespace` to it (the pins and manifests on devel
-say so; the running Pods were not checked). Delete the optional `namespace` field and its `CLEANUP`
-in `agentplane/app/settings.py`.
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 
@@ -1091,7 +1082,6 @@ Refactors found by reading devel (2026-10-11 PDT) against the quality bar and
 flowchart TD
     subgraph COHERENCE_REFACTORS[Coherence refactors]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
-        NOTIFICATION_GATEWAY_SETTINGS[Candidate: the notification config sets runner_gateway]
     end
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
 ```
@@ -1101,15 +1091,6 @@ flowchart TD
 **Unscheduled; operator, 2026-10-11 PDT: keep the flag for debugging for now, may retire it later.**
 Settlement is on by default; `ingress.settle_deltas` turns it off. Retiring the flag makes
 settlement unconditional: delete the setting, `Environment.settle_deltas` and the `Store` flag.
-
-### `NOTIFICATION_GATEWAY_SETTINGS` — the notification config sets `runner_gateway`
-
-**Candidate.** The `agentplane-notification-service` image pinned on both agentplane-staging and
-agentplane-testing is built after the one that reads a `runner_gateway` block (the pins on devel say
-so; the running Pods were not checked). The config still keeps the Runner Gateway's keys in
-`sandbox_service`, which `Settings` moves to `runner_gateway` as it loads. Now cdk8s
-(`cluster/cdk8s/agentplane/notifications.py`) renders a `runner_gateway` block, regenerate, and
-delete the `CLEANUP` move in `notification_service/settings.py` with its test.
 
 ## 12. The Runner Gateway serves the runner's own service
 

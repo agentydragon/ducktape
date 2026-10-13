@@ -86,10 +86,12 @@ class Notifications(Construct):
                 },
                 "sandbox_service": {
                     "target": f"{sandboxes.fqdn}:{sandboxes.port.number}",
-                    "gateway_target": f"{gateway.fqdn}:{gateway.port.number}",
-                    "control_target": gateway_control_target,
                     "token_file": "/var/run/secrets/notifications/sandboxes",
-                    "gateway_token_file": "/var/run/secrets/notifications/gateway",
+                },
+                "runner_gateway": {
+                    "target": f"{gateway.fqdn}:{gateway.port.number}",
+                    "control_target": gateway_control_target,
+                    "token_file": "/var/run/secrets/notifications/gateway",
                 },
                 "history_service": {
                     "target": f"{history.fqdn}:{history.pod_port}",
