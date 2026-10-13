@@ -192,10 +192,18 @@ def sandbox(name: str, *, running: bool = True, conditions: list[dict[str, Any]]
     }
 
 
-def egress_policy(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
+def egress_policy_set(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
+    """A PolicySet holding only `egress` rules, given without their `type`."""
     return {
-        "metadata": {"name": name, "uid": str(uuid4()), "creationTimestamp": "2026-09-01T11:30:00Z"},
-        "spec": {"rules": rules},
+        "metadata": {
+            "name": name,
+            "namespace": NAMESPACE,
+            "uid": str(uuid4()),
+            "generation": 1,
+            "resourceVersion": "1",
+            "creationTimestamp": "2026-09-01T11:30:00Z",
+        },
+        "spec": {"rules": [{"type": "egress", **rule} for rule in rules]},
     }
 
 
@@ -208,46 +216,47 @@ def egress_credential(
     }
 
 
-def egress_binding(
+def policy_binding(
     name: str,
     *,
-    subjects: list[dict[str, Any]],
-    policies: list[str],
+    subject: dict[str, Any],
+    policy_sets: list[str],
     from_git: bool = True,
     expires_at: str | None = None,
-    active: tuple[str, str, str] | None = None,
+    sandbox_controlled: str | None = None,
 ) -> dict[str, Any]:
-    """A binding as the API server holds it; `from_git` stamps Flux's inventory label, and `active`
-    is (status, reason, message) of the proxy's condition."""
+    """A PolicyBinding as the API server holds it; `from_git` stamps Flux's inventory label, and
+    `sandbox_controlled` names the Sandbox whose controller owns it."""
     return {
         "metadata": {
             "name": name,
+            "namespace": NAMESPACE,
             "uid": str(uuid4()),
+            "generation": 1,
+            "resourceVersion": "1",
             "labels": {FLUX_KUSTOMIZATION_LABEL: "agentplane-test-egress"} if from_git else {},
             "creationTimestamp": "2026-09-01T11:45:00Z",
-        },
-        "spec": {
-            "subjects": subjects,
-            "policies": policies,
-            **({"expiresAt": expires_at} if expires_at is not None else {}),
-        },
-        **(
-            {
-                "status": {
-                    "conditions": [
+            **(
+                {
+                    "ownerReferences": [
                         {
-                            "type": "Active",
-                            "status": active[0],
-                            "reason": active[1],
-                            "message": active[2],
-                            "lastTransitionTime": "2026-09-01T11:46:00Z",
+                            "apiVersion": sandbox_resource.SANDBOX_API_VERSION,
+                            "kind": sandbox_resource.SANDBOX_KIND,
+                            "name": sandbox_controlled,
+                            "uid": f"test-{sandbox_controlled}-uid",
+                            "controller": True,
                         }
                     ]
                 }
-            }
-            if active is not None
-            else {}
-        ),
+                if sandbox_controlled is not None
+                else {}
+            ),
+        },
+        "spec": {
+            "subject": subject,
+            "policySets": policy_sets,
+            **({"expiresAt": expires_at} if expires_at is not None else {}),
+        },
     }
 
 

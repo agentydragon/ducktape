@@ -79,8 +79,8 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     FakeCustomObjectsApi,
     action_policy_binding,
     action_policy_set,
-    egress_binding,
-    egress_policy,
+    egress_policy_set,
+    policy_binding,
     sandbox,
 )
 from agentplane.subjects import ServiceAccountRef
@@ -99,14 +99,14 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
     """The same objects in the fake API server and in the index, so the two paths can be compared."""
     seed_runner(custom_objects, core_v1, "runner-1")
     custom_objects.objects[(SANDBOXES_PLURAL, "shelved")] = sandbox("shelved", running=False)
-    custom_objects.objects[("egresspolicies", "github")] = egress_policy(
+    custom_objects.objects[("policysets", "github")] = egress_policy_set(
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
     )
-    custom_objects.objects[("egressbindings", "runner-1-picked")] = egress_binding(
-        "runner-1-picked", subjects=[{"namespace": NAMESPACE, "name": "runner-1"}], policies=["github"]
+    custom_objects.objects[("policybindings", "runner-1-picked")] = policy_binding(
+        "runner-1-picked", subject={"namespace": NAMESPACE, "name": "runner-1"}, policy_sets=["github"]
     )
-    custom_objects.objects[("egressbindings", "elsewhere")] = egress_binding(
-        "elsewhere", subjects=[{"namespace": NAMESPACE, "name": "shelved"}], policies=["github"]
+    custom_objects.objects[("policybindings", "elsewhere")] = policy_binding(
+        "elsewhere", subject={"namespace": NAMESPACE, "name": "shelved"}, policy_sets=["github"]
     )
     custom_objects.objects[("actionpolicysets", "reads")] = action_policy_set(
         "reads",
@@ -120,10 +120,10 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
         match kind:
             case "sandboxes":
                 live_index.sandboxes[name] = obj
-            case "egressbindings":
+            case "policybindings":
                 live_index.bindings[name] = obj
-            case "egresspolicies":
-                live_index.policies[name] = obj
+            case "policysets":
+                live_index.rule_sets[name] = obj
             case "actionpolicysets":
                 live_index.action_policy_seen(live_index.action_policy_sets, name, obj)
             case "actionpolicybindings":

@@ -76,7 +76,7 @@ from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, egress_binding, sandbox
+from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, policy_binding, sandbox
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     WorkloadPrincipal,
@@ -577,10 +577,10 @@ async def test_caller_grants_without_a_sandbox(
 ) -> None:
     _bind_live_sandbox(review.policies)
     for namespace, name in ((NAMESPACE, "external"), ("other-namespace", "unrelated")):
-        custom_objects.objects[("egressbindings", name)] = egress_binding(
+        custom_objects.objects[("policybindings", name)] = policy_binding(
             name,
-            subjects=[{"namespace": namespace, "name": "live"}],
-            policies=["missing-policy"],
+            subject={"namespace": namespace, "name": "live"},
+            policy_sets=["missing-policy"],
             expires_at="2000-01-01T00:00:00Z",
         )
     # No Sandbox, OAuth Connection or caller-admission label is needed to inspect bindings.

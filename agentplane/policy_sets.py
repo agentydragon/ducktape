@@ -37,6 +37,11 @@ class _Wire(BaseModel):
     model_config = ConfigDict(extra="ignore", populate_by_name=True, frozen=True, alias_generator=to_camel)
 
 
+class OwnerReference(_Wire):
+    kind: str
+    controller: bool = False
+
+
 class ObjectMeta(_Wire):
     name: str
     namespace: str
@@ -44,6 +49,7 @@ class ObjectMeta(_Wire):
     generation: int
     resource_version: str
     labels: dict[str, str] = Field(default_factory=dict)
+    owner_references: list[OwnerReference] = Field(default_factory=list)
 
 
 class ConditionStatus(StrEnum):

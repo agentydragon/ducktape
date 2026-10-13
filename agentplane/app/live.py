@@ -55,18 +55,11 @@ from agentplane.egress.decisions import Decision
 from agentplane.egress.decisions_client import DecisionsClient, DecisionsUnavailableError
 from agentplane.grpc_calls import ServiceError
 from agentplane.kubernetes_watch import Freshness
-from agentplane.policy_sets import POLICY_SETS_PLURAL
+from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandbox_resource import Sandbox
 from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API
-from agentplane.sandbox_service.egress_views import (
-    BINDINGS_PLURAL,
-    CREDENTIALS_PLURAL,
-    EGRESS_API,
-    POLICIES_PLURAL,
-    BindingView,
-    matching_bindings,
-)
+from agentplane.sandbox_service.egress_views import CREDENTIALS_PLURAL, EGRESS_API, BindingView, matching_bindings
 from agentplane.sandbox_service.kubernetes_views import incarnation_pod, sandbox_view, sandbox_views
 from agentplane.sse import frame, sse_response
 from agentplane.subjects import ServiceAccountRef
@@ -176,7 +169,6 @@ class LiveIndex:
     sandboxes: dict[str, object] = field(default_factory=dict)
     pods: dict[str, k8s_client.V1Pod] = field(default_factory=dict, repr=False)
     bindings: dict[str, object] = field(default_factory=dict)
-    policies: dict[str, object] = field(default_factory=dict)
     credentials: dict[str, object] = field(default_factory=dict)
     rule_sets: dict[str, object] = field(default_factory=dict)
     # The action policy kinds are a trigger, not a copy: the Action Service's informer holds the
@@ -212,7 +204,7 @@ class LiveIndex:
 
     def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
         return matching_bindings(
-            self.bindings.values(), self.policies.values(), self.credentials.values(), subject=subject
+            self.bindings.values(), self.rule_sets.values(), self.credentials.values(), subject=subject
         )
 
     def action_policy_seen(self, names: set[str], name: str, obj: object | None) -> None:
@@ -246,16 +238,14 @@ def watch_for(
     *,
     custom_objects: CustomObjectsClient,
     core_v1: CoreV1Api,
-    namespace: str,
     sandbox_namespace: str,
     resync_seconds: int,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> ListWatch:
     """The kinds the app's views are built from, folded into `index` as they change.
 
-    Sandboxes, their Pods and the action policy objects come from the namespace the sandboxes run
-    in; the egress objects from the app's own, which is the same split `main.py` gives the
-    inventory, the egress reader and the action policy reader.
+    Everything comes from the namespace the sandboxes run in: a PolicyBinding names PolicySets in its
+    own namespace, and the Sandbox's own binding lives beside the Sandbox.
     """
 
     async def changed(_kind: WatchedKind) -> None:
@@ -284,25 +274,17 @@ def watch_for(
                 apply=lambda name, obj: apply_to(index.pods, name, obj),
             ),
             WatchedKind(
-                name=BINDINGS_PLURAL,
+                name=f"{POLICY_BINDINGS_PLURAL}.{GROUP}",
                 list=custom_objects.list_namespaced_custom_object,
-                args=(*EGRESS_API, namespace, BINDINGS_PLURAL),
+                args=(GROUP, VERSION, sandbox_namespace, POLICY_BINDINGS_PLURAL),
                 key=_name,
                 names=lambda: set(index.bindings),
                 apply=lambda name, obj: apply_to(index.bindings, name, obj),
             ),
             WatchedKind(
-                name=POLICIES_PLURAL,
-                list=custom_objects.list_namespaced_custom_object,
-                args=(*EGRESS_API, namespace, POLICIES_PLURAL),
-                key=_name,
-                names=lambda: set(index.policies),
-                apply=lambda name, obj: apply_to(index.policies, name, obj),
-            ),
-            WatchedKind(
                 name=CREDENTIALS_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
-                args=(*EGRESS_API, namespace, CREDENTIALS_PLURAL),
+                args=(*EGRESS_API, sandbox_namespace, CREDENTIALS_PLURAL),
                 key=_name,
                 names=lambda: set(index.credentials),
                 apply=lambda name, obj: apply_to(index.credentials, name, obj),

@@ -35,7 +35,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc_calls import dial
 from agentplane.grpc_serving import serving
-from agentplane.policy_sets import POLICY_SETS_PLURAL
+from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2
 from agentplane.runner.harness import Harness
@@ -49,9 +49,9 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     FakeCoreV1Api,
     FakeCustomObjectsApi,
     action_policy_set,
-    egress_binding,
-    egress_policy,
+    egress_policy_set,
     pod,
+    policy_binding,
     sandbox,
 )
 
@@ -168,21 +168,18 @@ def app(bare_app: FastAPI, custom_objects: FakeCustomObjectsApi, core_v1: FakeCo
     custom_objects.objects[(SANDBOXES_PLURAL, "live")] = sandbox("live")
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
     custom_objects.objects[(SANDBOXES_PLURAL, "fresh")] = sandbox("fresh")
-    custom_objects.objects[("egresspolicies", "github")] = egress_policy(
+    custom_objects.objects[(POLICY_SETS_PLURAL, "github")] = egress_policy_set(
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
     )
-    custom_objects.objects[("egresspolicies", "pypi")] = egress_policy("pypi", [{"hosts": ["pypi.org"]}])
-    custom_objects.objects[("egressbindings", "live-seeded")] = egress_binding(
-        "live-seeded",
-        subjects=[{"namespace": NAMESPACE, "name": "live"}],
-        policies=["github"],
-        active=("True", "Resolved", ""),
+    custom_objects.objects[(POLICY_SETS_PLURAL, "pypi")] = egress_policy_set("pypi", [{"hosts": ["pypi.org"]}])
+    custom_objects.objects[(POLICY_BINDINGS_PLURAL, "live-seeded")] = policy_binding(
+        "live-seeded", subject={"namespace": NAMESPACE, "name": "live"}, policy_sets=["github"]
     )
-    custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
-        "live-granted", subjects=[{"namespace": NAMESPACE, "name": "live"}], policies=["pypi"], from_git=False
+    custom_objects.objects[(POLICY_BINDINGS_PLURAL, "live-granted")] = policy_binding(
+        "live-granted", subject={"namespace": NAMESPACE, "name": "live"}, policy_sets=["pypi"], from_git=False
     )
     for name in ("packages", "basic"):
-        custom_objects.objects[(POLICY_SETS_PLURAL, name)] = {"metadata": {"name": name}, "spec": {"rules": []}}
+        custom_objects.objects[(POLICY_SETS_PLURAL, name)] = egress_policy_set(name, [])
     custom_objects.objects[("actionpolicysets", "github-reads")] = action_policy_set(
         "github-reads",
         auto_approve_if=[{"type": "exact_actions", "actions": {"github": ["search_code"]}}],
@@ -244,7 +241,7 @@ async def test_templates_list_the_concrete_choices_for_the_create_form(client: h
 
 
 async def test_the_form_offers_the_namespace_policy_sets(client: httpx.AsyncClient) -> None:
-    assert (await client.get("/sandboxes/form")).json() == {"policy_sets": ["basic", "packages"]}
+    assert (await client.get("/sandboxes/form")).json() == {"policy_sets": ["basic", "github", "packages", "pypi"]}
 
 
 async def test_create_records_the_concrete_session_defaults_and_bootstrap(
@@ -648,7 +645,7 @@ async def test_granting_a_running_sandbox_adds_a_binding_and_leaves_the_others(
     assert (binding["subjects"], binding["from_git"]) == ([{"namespace": NAMESPACE, "name": "live"}], False)
     assert [policy["name"] for policy in binding["policies"]] == ["pypi", "github"]
     # Owned by the Sandbox, so deleting the sandbox takes the grant with it.
-    (owner,) = custom_objects.objects[("egressbindings", binding["name"])]["metadata"]["ownerReferences"]
+    (owner,) = custom_objects.objects[(POLICY_BINDINGS_PLURAL, binding["name"])]["metadata"]["ownerReferences"]
     assert (owner["kind"], owner["name"], owner["uid"]) == (
         "Sandbox",
         "live",

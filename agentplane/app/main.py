@@ -140,7 +140,9 @@ async def async_main(settings: Settings) -> None:
         )
         # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
-        egress = EgressAccess(EgressReader(namespace=settings.namespace, custom_objects=custom_objects), inventory)
+        egress = EgressAccess(
+            EgressReader(namespace=settings.sandbox_namespace, custom_objects=custom_objects), inventory
+        )
         # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
         # binding to the authenticated Sandbox, and where the owner reference cascades.
         action_policy = ActionPolicyInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects)
@@ -152,7 +154,6 @@ async def async_main(settings: Settings) -> None:
             live,
             custom_objects=custom_objects,
             core_v1=core_v1,
-            namespace=settings.namespace,
             sandbox_namespace=settings.sandbox_namespace,
             resync_seconds=settings.resync_seconds,
         )

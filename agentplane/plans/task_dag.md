@@ -528,8 +528,7 @@ handles expiry itself.
 `ActionPolicySet`/`ActionPolicyBinding` and `EgressPolicy`/`EgressBinding` CRDs, their readers in
 the Action Service and egress proxy (with the proxy's admin `/bindings` observations), the
 `EgressPolicy` that cdk8s's `add_egress_policy` renders beside each egress `PolicySet` (and the `ActionPolicySet`
-`actions_staging_policies._policy_set` renders beside each Action one), the Sandbox Service's per-type binding writer
-(`egress.py` and `owned_binding.py`), and the presets' separate `egress_policies`, `action_policy_sets`
+`actions_staging_policies._policy_set` renders beside each Action one), and the presets' separate `egress_policies`, `action_policy_sets`
 and `kubernetes_grants` fields (`app/presets.py`, once the manifest generator stops setting them).
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox

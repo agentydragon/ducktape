@@ -29,8 +29,8 @@ A policy on its own grants nothing; a binding grants by existing and being unexp
 The generic kinds have the same shape with one subject per binding: a `PolicySet` of the same
 name carries each policy's rules as `egress` rules (cdk8s renders both from one definition), and a
 `PolicyBinding` names one ServiceAccount and N sets, so a multi-subject binding is one
-`PolicyBinding` per subject. The proxy reads both kinds into one decision; Flux-owned bindings are
-`PolicyBinding`s, and Sandboxes still get `EgressBinding`s.
+`PolicyBinding` per subject. The proxy reads both kinds into one decision; Flux-owned bindings and runtime
+grants are `PolicyBinding`s.
 
 ### The app writes only 1×N
 

@@ -110,23 +110,11 @@ py_library(
     visibility = ["//agentplane/sandbox_service:__subpackages__"],
     deps = [
         ":egress_views",
-        ":owned_binding",
+        "//agentplane:policy_sets",
         "//agentplane:sandbox_resource",
-        "//agentplane/egress:resources",
         "//agentplane/proto:sandbox_service_pb2",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "owned_binding",
-    srcs = ["owned_binding.py"],
-    visibility = ["//agentplane/sandbox_service:__subpackages__"],
-    deps = [
-        ":errors",
-        "//util:kubernetes",
-        "@pypi//kubernetes_asyncio",
     ],
 )
 
@@ -284,6 +272,8 @@ py_library(
     deps = [
         ":errors",
         "//agentplane:crd_group",
+        "//agentplane:policy_sets",
+        "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/egress:resources",
         "//util:kubernetes",

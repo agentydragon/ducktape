@@ -27,7 +27,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     TEMPLATE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
-    egress_policy,
+    egress_policy_set,
 )
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, service_client
 from agentplane.sandbox_service.testing.kubernetes import Cluster
@@ -56,9 +56,9 @@ def case() -> Case:
         custom_objects=cast(CustomObjectsClient, custom),
         core_v1=cast(k8s_client.CoreV1Api, FakeCoreV1Api()),
     )
-    custom.objects[("egresspolicies", "test-basic")] = egress_policy("test-basic", [{"hosts": ["example.test"]}])
+    custom.objects[(POLICY_SETS_PLURAL, "test-basic")] = egress_policy_set("test-basic", [{"hosts": ["example.test"]}])
     for name in ("test-default-set", "test-chosen-set"):
-        custom.objects[(POLICY_SETS_PLURAL, name)] = {"metadata": {"name": name}, "spec": {"rules": []}}
+        custom.objects[(POLICY_SETS_PLURAL, name)] = egress_policy_set(name, [])
     return Case(
         Provisioning(
             inventory,
