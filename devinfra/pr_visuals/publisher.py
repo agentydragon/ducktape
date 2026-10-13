@@ -712,12 +712,12 @@ def stale_baseline_note(test: ReviewTest) -> str:
     """Where a stale baseline came from relative to the merge base, in one phrase."""
     baseline = f"`{test.base_sha[:8]}`" if test.base_sha else "an unavailable commit"
     merge_base = f"`{test.merge_base_sha[:8]}`" if test.merge_base_sha else "the merge base"
-    return f"baseline from {baseline}, not merge base {merge_base}"
+    return f"{baseline}, not merge base {merge_base}"
 
 
 def _asset_comment_lines(asset: ReviewAsset, *, asset_base: str, test: ReviewTest) -> list[str]:
     label = html.escape(asset.label)
-    stale = f" · ⚠️ stale baseline: {stale_baseline_note(test)}" if asset.baseline_stale else ""
+    stale = f" · ⚠️ stale baseline ({stale_baseline_note(test)})" if asset.baseline_stale else ""
     if asset.classification == "modified":
         fraction = asset.changed_fraction or 0.0
         diff = (
@@ -847,8 +847,8 @@ def _with_target_sections(head: list[str], review_tests: list[ReviewTest], url: 
     if omitted:
         lines += [
             "",
-            f"{omitted} changed test section{'' if omitted == 1 else 's'} omitted to keep this comment within its character budget. "
-            f"[Open the full gallery]({url}index.html) for the rest.",
+            f"{omitted} changed test section{'' if omitted == 1 else 's'} omitted for length. "
+            f"[Full gallery]({url}index.html).",
         ]
     return "\n".join(lines)
 
@@ -867,7 +867,7 @@ def _format_test_counts(counts: ClassificationCounts) -> str:
 def _ci_failure_notice(ci_conclusion: str, ci_failures: list[str]) -> list[str]:
     if ci_conclusion == "success":
         return []
-    lines = ["> [!WARNING]", f"> Bazel CI concluded `{ci_conclusion}`; visual artifacts that arrived are shown below."]
+    lines = ["> [!WARNING]", f"> Bazel CI concluded `{ci_conclusion}`; showing the visual artifacts that arrived."]
     if ci_failures:
         lines += [">", "> Failed Bazel targets:"]
         displayed = ci_failures[:20]
@@ -875,7 +875,7 @@ def _ci_failure_notice(ci_conclusion: str, ci_failures: list[str]) -> list[str]:
         if len(ci_failures) > len(displayed):
             lines.append(f"> - … and {len(ci_failures) - len(displayed)} more")
     else:
-        lines.append("> Individual failed target labels were not available from BuildBuddy.")
+        lines.append("> Failed target labels unavailable from BuildBuddy.")
     return lines
 
 
@@ -904,9 +904,8 @@ def _fallback_baseline_notice(review_tests: list[ReviewTest]) -> list[str]:
     baseline_list = ", ".join(f"`{baseline}`" for baseline in baselines) or "an unavailable commit"
     return [
         "> [!WARNING]",
-        "> The exact PR-base visual baseline was unavailable. "
-        f"{target_count} {target_word} used the latest published devel {baseline_word} ({baseline_list}) instead.",
-        "> These differences may include visual changes already present on devel and are not attributable solely to this PR.",
+        f"> {target_count} {target_word} used the latest devel {baseline_word} ({baseline_list}) because the "
+        "PR base published none. Diffs there may include devel drift, not just this PR's changes.",
     ]
 
 

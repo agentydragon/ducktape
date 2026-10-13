@@ -1097,7 +1097,7 @@ def test_success_comment_body_labels_each_stale_screenshot() -> None:
     )
 
     assert body.count("stale baseline") == 1
-    assert "baseline from `fedcba98`, not merge base `11111111`" in body
+    assert "`fedcba98`, not merge base `11111111`" in body
 
 
 def test_success_comment_body_hides_zero_count_buckets_per_test() -> None:
