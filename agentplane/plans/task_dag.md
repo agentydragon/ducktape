@@ -707,6 +707,8 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE[In progress: our own Sandbox resource]
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
+    SANDBOX_SESSION_CONTROL_DESIGN[In progress: one design for Sandbox and Session control]
+    RUNNER_CONNECTED_READY[Unscheduled: the Sandbox's Ready condition includes the runner connection]
     SESSION_QUEUE_DESIGN[Decision: where the Session message queue sits and what it owns]
     SESSION_ACTIVITY_STREAM[Decision: one derivation of Session activity, streamed to listeners]
     SESSION_MESSAGE_QUEUE[Blocked: a durable queue that revives a Sandbox and delivers the message]
@@ -742,6 +744,11 @@ flowchart TD
     SESSION_QUEUE_DESIGN -. may own .-> SANDBOX_IDLE_EXPIRY
     SESSION_ACTIVITY_STREAM -. decides what idle means for .-> SANDBOX_IDLE_EXPIRY
     SESSION_ACTIVITY_STREAM -. decides whether the queue owns it .-> SESSION_QUEUE_DESIGN
+    SANDBOX_SESSION_CONTROL_DESIGN --> SESSION_QUEUE_DESIGN
+    SANDBOX_SESSION_CONTROL_DESIGN --> SESSION_ACTIVITY_STREAM
+    SANDBOX_SESSION_CONTROL_DESIGN -. may move where it lives .-> RUNNER_CONNECTED_READY
+    BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap, section 6] -. boot state is the same question .-> RUNNER_CONNECTED_READY
+    SANDBOX_SESSION_CONTROL_DESIGN -. decides the level of sealing .-> CONTROLLER_SEALS[Candidate: the Sandbox controller seals, section 12]
     SESSION_QUEUE_DESIGN -. shares delivery semantics .-> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
@@ -940,6 +947,34 @@ otherwise; and whether it also owns other lifecycle, for example deciding that n
 an hour and suspending (`SANDBOX_IDLE_EXPIRY`), then streaming Session activity to listeners (`SESSION_ACTIVITY_STREAM`); notifications are to send through this queue. Delivery waits on the runner's bootstrap, which
 `BOOTSTRAP_PROGRESS_CONTRACT` makes visible. The delivery states are `COMMAND_DELIVERY_STATES`'s. Owning suspension points toward layered resources,
 a Sandbox and a runner that runs inside one (`SANDBOX_GENERIC_SPLIT`).
+
+### `SANDBOX_SESSION_CONTROL_DESIGN` — one design for Sandbox and Session control
+
+**In progress; operator, 2026-10-13 PDT.** A design document that draws the boundaries the next
+nodes assume, with alternatives and why the choice wins, planned so the nodes below can be adopted
+into it. It may rename and redraw services; the working term "session controller" is not a premise.
+Questions the operator raised: which of the Runner Gateway and the Sandbox controller owns a
+Sandbox's control Service (the gateway today); where the health of the runner connection and the
+boot state show in the Sandbox's conditions (`RUNNER_CONNECTED_READY`,
+`BOOTSTRAP_PROGRESS_CONTRACT`); whether the queue and lifecycle component is required or optional,
+whether anything may still send directly to the gateway or runner, and if it is required whether it
+and the gateway merge (`SESSION_QUEUE_DESIGN`); how it starts a Session that does not exist yet
+(a client-chosen ID, which Sandbox it addresses); whether it depends on the History Service for
+last activity and stays restartable (`SESSION_ACTIVITY_STREAM`); per-Session data stays out of
+Kubernetes, with only transitional sealed and unsealed conditions there; and whether sealing
+operates on the Sandbox and requires interrupting its Sessions' turns and refusing new ones
+(`CONTROLLER_SEALS`). `SESSION_QUEUE_DESIGN` and `SESSION_ACTIVITY_STREAM` are decided in it and
+fold into it when it lands.
+
+### `RUNNER_CONNECTED_READY` — the Sandbox's Ready condition includes the runner connection
+
+**Unscheduled; operator, 2026-10-13 PDT.** The Sandbox's `Ready` condition covers its Pod or VM,
+not whether the runner has connected, so a VM whose guest runner never reaches the gateway reads
+ready. The Runner Gateway reports per-Sandbox runner connectivity over gRPC health, and the
+Sandbox controller folds that into `Ready` beside the Pod or VM readiness, so the app reads one
+condition. Which component reports and folds may move with `SANDBOX_SESSION_CONTROL_DESIGN`, which
+decides who owns the control Service the connection is announced through. Test a runner that
+connects late, one that never connects, and a connection that drops while the Pod keeps running.
 
 ### `SESSION_ACTIVITY_STREAM` — one derivation of Session activity, streamed to listeners
 
