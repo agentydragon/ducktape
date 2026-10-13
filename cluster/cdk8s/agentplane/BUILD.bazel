@@ -875,6 +875,7 @@ py_test(
         ":history_service",
         ":notifications",
         ":runner_gateway",
+        ":testing",
         "//:conftest",
         "//agentplane:crd_group",
         "//cluster/cdk8s:pod_policy",

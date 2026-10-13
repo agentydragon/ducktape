@@ -37,7 +37,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     PLAID_PGWEB_POLICY,
 )
 from cluster.cdk8s.clickhouse import client
-from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_256K
+from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_128K, OLLAMA_QWEN_IQ4XS_256K
 
 # What a workload token may reach on the Actions service: the MCP endpoint, its schema and
 # the action-group/request API. The operator API (/v1/operator/*) and the OAuth endpoints
@@ -196,7 +196,10 @@ def test_claude_pause_omits_launch_offerings_but_keeps_ingress(
 ) -> None:
     docs = agentplane_manifests[namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
-    assert config["models"]["harnesses"]["HARNESS_CLAUDE"] == []
+    # Testing alone offers the Claude harness a local model.
+    assert config["models"]["harnesses"]["HARNESS_CLAUDE"] == (
+        [OLLAMA_QWEN_IQ4XS_128K.native.id] if namespace == testing.ENV.namespace else []
+    )
     assert config["models"]["harnesses"]["HARNESS_CODEX"]
     assert all(preset["harness"] == "HARNESS_CODEX" for preset in config["thread_presets"].values())
     # Existing sessions retain the Anthropic ingress endpoint and proxy policy.
