@@ -676,6 +676,8 @@ flowchart TD
     VM_PROVIDER[VM provider, section 4] --> SANDBOX_IMAGE_REPLACE[Blocked: replace a VM's runner image between incarnations]
     SANDBOX_LIFECYCLE[In progress: seal before suspend, PVC owned by the Sandbox]
     SANDBOX_GENERIC_SPLIT[Unscheduled: split the generic Sandbox from the runner's sealing]
+    SANDBOX_RUNNER_LAYERING[Unscheduled: add the runner and harnesses to a platform user's image]
+    SANDBOX_GENERIC_SPLIT -. related .-> SANDBOX_RUNNER_LAYERING
 ```
 
 ### `SANDBOX_IMAGE_REPLACE` — replace a VM's runner image between incarnations
@@ -718,6 +720,17 @@ together. One is what Agent Sandbox did, plus VM support: a template, a Pod or V
 and a state volume that stays. The other is specific to our runner running inside: sealing a
 Session's journal before the incarnation goes (`SANDBOX_LIFECYCLE`, `CONTROLLER_SEALS`). Separated,
 the first could be reused without the runner. Decide where the line falls (resource, controller or package) and what each side owns.
+
+### `SANDBOX_RUNNER_LAYERING` — add the runner and harnesses to a platform user's image
+
+**Unscheduled; operator, 2026-10-13 PDT: very low priority unless easy.** Separate the runner's
+concerns (its version and binary, and the harness binaries) from the tools in the image, so a
+platform user supplies a Pod image or VM image or definition with no runner or harnesses and the
+runner side layers them in. Then they need not bump build versions or layer the runner themselves.
+Related to `SANDBOX_GENERIC_SPLIT`: that node separates the resource, this one separates the image.
+Options the operator named, none chosen: mount a separate volume that carries the runner, Claude and
+Codex into a Pod image that has none of them; or take a user root filesystem and run it under
+Firecracker with the runner as init.
 
 ### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes stop
 
