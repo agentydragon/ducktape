@@ -1093,8 +1093,9 @@ with the retryable code is redelivered after the resume. Which senders may wake:
 a notification, not an agent's message unless `AGENT_MESSAGE_RECEPTION` decides so. Also here:
 rate limits and per-sender quotas, since a resume starts a Pod or VM and every harness; resuming
 only the Sessions that have pending work; a bounded wait with a visible reason when the volume's
-node is down or full; a mark on the Sandbox while messages are pending so the controller does not
-suspend it (`SANDBOX_IDLE_EXPIRY`); and a way for an operator to hold a Sandbox suspended against
+node is down or full; a pending mark, a Dispatcher-owned Lease per Sandbox that the controller reads (the Dispatcher
+never edits the Sandbox), while messages are pending so the controller does not suspend it
+(`SANDBOX_IDLE_EXPIRY`); and a way for an operator to hold a Sandbox suspended against
 wake-on-send, so the next notification does not undo it. Deletion beats everything. Test a message
 to a suspended Sandbox, one arriving while it seals, a failed revival and a resume storm.
 
