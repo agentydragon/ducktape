@@ -687,7 +687,7 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
-    SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes stop]
+    SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes suspend]
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
@@ -837,15 +837,15 @@ Options the operator named, none chosen: mount a separate volume that carries th
 Codex into a Pod image that has none of them; or take a user root filesystem and run it under
 Firecracker with the runner as init.
 
-### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes stop
+### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes suspend
 
-**Unscheduled; needs design; operator, 2026-10-11 PDT.** An idle runner Sandbox stops its
-current incarnation: it is sealed (`SANDBOX_LIFECYCLE`), then the Pod or VM goes, and the Sandbox,
-its ServiceAccount, bindings and state PVC stay, so nothing is lost and `SESSION_REVIVE` resumes it
-on the same PVC. Decide what
-counts as idle (no turns or commands for a configured time, and nothing attached), and whether a
-stopped Sandbox is ever deleted outright, and when; deleting goes through
-[teardown](../sandbox_service/API.md#teardown) and the seal. Action Service boxes are
+**Unscheduled; needs design; operator, 2026-10-11 and 2026-10-13 PDT.** An idle runner Sandbox
+suspends: it is sealed (`SANDBOX_LIFECYCLE`), then the Pod or VM goes, freeing memory and compute,
+and the Sandbox, its ServiceAccount, bindings and state PVC stay, so `SESSION_REVIVE` resumes it on
+the same PVC. Nothing deletes a Sandbox on idleness or any timer (operator, 2026-10-13 PDT): only
+the operator deletes one, through [teardown](../sandbox_service/API.md#teardown) and the seal. What
+a resume gets back of the workspace depends on `WORKSPACE_VOLUME`. Decide what counts as idle (no
+turns or commands for a configured time, and nothing attached). Action Service boxes are
 `ACTION_BOX_IDLE_REAPER`'s, which only ever deletes.
 
 ### `SESSION_INCARNATIONS` — a Session records its incarnations
