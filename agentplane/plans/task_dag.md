@@ -544,8 +544,9 @@ not ad hoc grants. Test an allowed and denied operation; do not add privileges a
 
 ### `POLICY_RUNTIME_GRANTS` — time-limited grants
 
-**Candidate.** An operator-only grant/revoke RPC with optional `expiresAt`
-for sets of any rule type, and UI chips showing each binding's set, expiry and ready conditions.
+**Candidate.** Extend the Sandbox Service's `GrantEgress`/`RevokeEgress` pair, which already
+creates and deletes a `PolicyBinding`, to take an optional `expiresAt` and sets of any rule type,
+and add UI chips showing each binding's set, expiry and ready conditions.
 One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry, so no reader
 handles expiry itself.
 
