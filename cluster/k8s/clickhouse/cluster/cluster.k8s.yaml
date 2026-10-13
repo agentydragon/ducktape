@@ -86,9 +86,6 @@ subjects:
   - kind: ServiceAccount
     name: haku
     namespace: haku-sandbox
-  - apiGroup: rbac.authorization.k8s.io
-    kind: Group
-    name: haku:access-profile:public-coder
   - kind: ServiceAccount
     name: claude-ai
     namespace: agentplane-staging

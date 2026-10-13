@@ -53,16 +53,15 @@ class Subject:
 HAKU_OIDC = Subject("Group", "oidc-ksbx-groups:haku")
 HAKU_CONSOLE = Subject("Group", "haku:access-profile:haku")
 HAKU_SERVICE_ACCOUNT = Subject("ServiceAccount", "haku", "haku-sandbox")
-PUBLIC_CODER = Subject("Group", "haku:access-profile:public-coder")
 CLAUDE_AI = Subject("ServiceAccount", "claude-ai", "agentplane-staging")
 KUBECTL_USERS = Subject("Group", "oidc-ksbx-groups:kubectl-sandbox-users")
 AGENT_BOX = Subject("Group", "oidc-ksbx-groups:agent-box-codex")
 HAKU_IDENTITIES = (HAKU_OIDC, HAKU_CONSOLE, HAKU_SERVICE_ACCOUNT)
-STATIC_IDENTITIES = {"haku": HAKU_IDENTITIES, "public-coder": (PUBLIC_CODER,), "claude-ai": (CLAUDE_AI,)}
+STATIC_IDENTITIES = {"haku": HAKU_IDENTITIES, "claude-ai": (CLAUDE_AI,)}
 # These legacy subjects are deliberately not aliases for the Haku profile.
-NAMESPACE_READER_SUBJECTS = (*HAKU_IDENTITIES, KUBECTL_USERS, PUBLIC_CODER, CLAUDE_AI)
+NAMESPACE_READER_SUBJECTS = (*HAKU_IDENTITIES, KUBECTL_USERS, CLAUDE_AI)
 CLUSTER_DIAGNOSTIC_SUBJECTS = (KUBECTL_USERS, *HAKU_IDENTITIES, AGENT_BOX, CLAUDE_AI)
-TESTING_OPERATOR_SUBJECTS = (HAKU_OIDC, HAKU_CONSOLE, PUBLIC_CODER, HAKU_SERVICE_ACCOUNT, KUBECTL_USERS, CLAUDE_AI)
+TESTING_OPERATOR_SUBJECTS = (HAKU_OIDC, HAKU_CONSOLE, HAKU_SERVICE_ACCOUNT, KUBECTL_USERS, CLAUDE_AI)
 
 
 def _namespace_read_grants() -> dict[str, RoleBindingGrant]:
@@ -197,7 +196,6 @@ STATIC_GRANTS = {
         "public-coder-agent-reader",
         "public-coder-volsync-status",
     ),
-    "public-coder": PUBLIC_GRANTS,
     # Preserve redundant narrow inventory bindings; Coinbase access is explicitly approved.
     "haku": (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *PUBLIC_INVENTORY, *HAKU_EXTRAS, "coinbase-credentials"),
 }

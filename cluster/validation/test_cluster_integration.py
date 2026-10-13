@@ -438,7 +438,6 @@ def agent_permissions(
 @pytest.mark.parametrize(
     ("kind", "name", "namespace", "preset"),
     [
-        ("Group", "haku:access-profile:public-coder", "", "public-coder"),
         ("Group", "oidc-ksbx-groups:haku", "", "haku"),
         ("Group", "haku:access-profile:haku", "", "haku"),
         ("ServiceAccount", "haku", "haku-sandbox", "haku"),
@@ -482,13 +481,6 @@ def test_agent_permission_superset_and_finance_parity(
         Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials"),
         Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy"),
     }
-    static_public = rbac.identity("Group", "haku:access-profile:public-coder")
-    for kind, name, namespace in (
-        ("Group", "oidc-ksbx-groups:haku", ""),
-        ("Group", "haku:access-profile:haku", ""),
-        ("ServiceAccount", "haku", "haku-sandbox"),
-    ):
-        assert not uncovered(static_public, rbac.identity(kind, name, namespace)), (kind, name, namespace)
 
 
 @pytest.mark.parametrize("account", ["claude-ai", "haku-agent"])
@@ -552,7 +544,6 @@ def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict, dict[str,
     profiles.update(
         {
             "claude-ai": rbac.identity("ServiceAccount", "claude-ai", "agentplane-staging"),
-            "public-static": rbac.identity("Group", "haku:access-profile:public-coder"),
             "haku-console": rbac.identity("Group", "haku:access-profile:haku"),
             "haku-oidc": rbac.identity("Group", "oidc-ksbx-groups:haku"),
             "haku-sa": rbac.identity("ServiceAccount", "haku", "haku-sandbox"),
@@ -582,7 +573,7 @@ def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict, dict[str,
         for verb in ("get", "list", "watch", "create", "update", "patch", "delete")
     }
     for name, permissions in profiles.items():
-        assert bool(uncovered({coinbase}, permissions)) == (name in {"public-coder", "public-static"}), name
+        assert bool(uncovered({coinbase}, permissions)) == (name == "public-coder"), name
         assert uncovered(denied, permissions) == denied, name
         assert not uncovered({testing_login}, permissions), name
         if name == "claude-ai":
@@ -592,7 +583,7 @@ def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict, dict[str,
                 for verb in ("create", "update", "patch", "delete")
             }
             assert uncovered(sandbox_writes, permissions) == sandbox_writes
-        if name in {"public-coder", "finance-agent", "public-static"}:
+        if name in {"public-coder", "finance-agent"}:
             node_proxy = Permission(None, "", "nodes/proxy", "get")
             assert uncovered({node_proxy}, permissions), name
 

@@ -21,9 +21,8 @@ from cdk8s import (
 )
 from more_itertools import one
 
-from cluster.cdk8s import agent_rbac_base, agent_shared_rbac, aiquota, ducktape_flux
+from cluster.cdk8s import agent_rbac_base, agent_shared_rbac, aiquota
 from cluster.cdk8s.clickhouse import client, installation
-from cluster.cdk8s.haku import console_config
 from cluster.cdk8s.haku.charts import console_chart
 from cluster.cdk8s.public_coder import (
     app as public_coder_app,
@@ -32,11 +31,6 @@ from cluster.cdk8s.public_coder import (
     proxy as public_coder_proxy,
 )
 
-_PUBLIC_CODER_SUBJECT = {
-    "kind": "Group",
-    "name": console_config.PUBLIC_CODER_GROUP,
-    "apiGroup": "rbac.authorization.k8s.io",
-}
 _HAKU_SUBJECTS = {
     ("Group", "oidc-ksbx-groups:haku", None),
     ("Group", "haku:access-profile:haku", None),
@@ -115,7 +109,6 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
         role = _one(objects, "Role")
         binding = _one(objects, "RoleBinding")
         assert binding["roleRef"]["name"] == role["metadata"]["name"], source
-        assert _PUBLIC_CODER_SUBJECT in binding["subjects"], source
         assert all(rule["verbs"] == _READ for rule in role["rules"]), source
         assert not {"secrets", "pods/log", "pods/exec"} & _resources(role), source
 
@@ -123,7 +116,6 @@ def test_public_coder_and_haku_configured_diagnostics_are_secret_free(
     # much broader cluster-diagnostics-reader Haku is bound to.
     haku_cluster_binding = one(_synth(agent_shared_rbac.chart))
     assert _subjects(haku_cluster_binding) >= _HAKU_SUBJECTS
-    assert _PUBLIC_CODER_SUBJECT not in haku_cluster_binding["subjects"]
 
 
 def test_agents_no_longer_restart_the_devbox(app_objects: list[dict[str, Any]]) -> None:
@@ -146,10 +138,7 @@ def test_acceptance_secret_is_named_get_for_existing_profile_not_a_pod_credentia
     role = _one(objects, "Role")
     binding = _one(objects, "RoleBinding")
     assert binding["roleRef"]["name"] == role["metadata"]["name"]
-    assert _subjects(binding) == _HAKU_SUBJECTS | {
-        ("Group", console_config.PUBLIC_CODER_GROUP, None),
-        ("ServiceAccount", "claude-ai", "agentplane-staging"),
-    }
+    assert _subjects(binding) == _HAKU_SUBJECTS | {("ServiceAccount", "claude-ai", "agentplane-staging")}
     rule = one(role["rules"])
     assert rule["resources"] == ["secrets"]
     assert rule["verbs"] == ["get"]
@@ -185,28 +174,6 @@ def test_app_reaches_clickhouse_only_through_the_proxy(app_objects: list[dict[st
     )
     no_proxy = one(entry["value"] for entry in container["env"] if entry["name"] == "NO_PROXY").split(",")
     assert not {client.HTTP.fqdn, client.HTTP.host} & set(no_proxy)
-
-
-def test_public_coder_never_exceeds_haku(
-    console_objects: list[dict[str, Any]],
-    app_objects: list[dict[str, Any]],
-    clickhouse_diagnostics_objects: list[dict[str, Any]],
-) -> None:
-    """Every role public-coder is bound to, Haku is bound to as well: the profile never exceeds
-    the orchestrator that dispatches to it."""
-    subjects_by_role_ref: dict[tuple[str | None, str, str], set[tuple[str, str, str | None]]] = {}
-    binding_sources = (clickhouse_diagnostics_objects, _synth(ducktape_flux.chart), console_objects, app_objects)
-    for objects in binding_sources:
-        for binding in objects:
-            if binding["kind"] not in {"RoleBinding", "ClusterRoleBinding"}:
-                continue
-            role_ref = (binding["metadata"].get("namespace"), binding["roleRef"]["kind"], binding["roleRef"]["name"])
-            subjects_by_role_ref.setdefault(role_ref, set()).update(_subjects(binding))
-    public_coder_subject = (_PUBLIC_CODER_SUBJECT["kind"], _PUBLIC_CODER_SUBJECT["name"], None)
-    public_coder_role_refs = {ref for ref, subjects in subjects_by_role_ref.items() if public_coder_subject in subjects}
-    assert public_coder_role_refs
-    for role_ref in public_coder_role_refs:
-        assert subjects_by_role_ref[role_ref] >= _HAKU_SUBJECTS, role_ref
 
 
 def test_openclaw_uses_relay_without_receiving_its_token(app_objects: list[dict[str, Any]]) -> None:

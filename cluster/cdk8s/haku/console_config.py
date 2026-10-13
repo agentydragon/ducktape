@@ -8,10 +8,6 @@ from __future__ import annotations
 
 from typing import Any
 
-# The synthetic identity Console evaluates the public-coder access profile's Kubernetes
-# requests as; RBAC bindings grant this group.
-PUBLIC_CODER_GROUP = "haku:access-profile:public-coder"
-
 
 def _exact_tools(policy_id: str, server: str, tools: list[str]) -> dict[str, Any]:
     return {"id": policy_id, "type": "exact_tools", "tools": {server: tools}}
@@ -58,7 +54,6 @@ def _auto_approval_policies() -> list[dict[str, Any]]:
         # `owner_agent_id` is operator-only and rejected for an Agent. A narrowing
         # self-service operation, so click-free, while `create_grant` (widening) stays manual.
         _exact_tools("grants_own_revoke", "grants", ["revoke_grants"]),
-        _any_of("public_coder_v1", "kubernetes_reads", "grants_self_introspection", "grants_own_revoke"),
         _any_of("haku_v1", "kubernetes_reads", "grants_self_introspection", "grants_own_revoke"),
         {"id": "manual_review", "type": "never"},
     ]
@@ -87,7 +82,6 @@ def config() -> dict[str, Any]:
         # auto-approvable (operator ruling on #4986).
         "access_profiles": [
             {"id": "haku", "auto_approval_policy": "haku_v1", "in_process_server_ids": ["grants"]},
-            {"id": "public-coder", "auto_approval_policy": "public_coder_v1", "in_process_server_ids": ["grants"]},
             {"id": "manual-review", "auto_approval_policy": "manual_review", "in_process_server_ids": ["grants"]},
         ],
         "default_access_profile_id": "manual-review",
@@ -102,11 +96,7 @@ def config() -> dict[str, Any]:
                 "haku": {
                     "username": "haku:access-profile:haku",
                     "groups": ["haku:access-profile:haku", "system:authenticated"],
-                },
-                "public-coder": {
-                    "username": PUBLIC_CODER_GROUP,
-                    "groups": [PUBLIC_CODER_GROUP, "system:authenticated"],
-                },
+                }
             }
         },
         # One or more temporary grants begin only when an approved create_grant call executes.
@@ -125,14 +115,7 @@ def config() -> dict[str, Any]:
                 "agent_id": "8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2",
                 "display_name": "Haku",
                 "access_profile_id": "haku",
-            },
-            # Everything outside `public_coder_v1` remains approval-wrapped, and Coder cannot
-            # approve its own requests.
-            "public_coder": {
-                "agent_id": "43a833f3-2b1c-4a04-9b8c-1df0cedfb79e",
-                "display_name": "public-coder-agent",
-                "access_profile_id": "public-coder",
-            },
+            }
         },
         "mcp": {"servers": _mcp_servers()},
     }

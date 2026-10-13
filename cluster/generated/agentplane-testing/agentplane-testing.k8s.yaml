@@ -5805,9 +5805,6 @@ subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
     name: haku:access-profile:haku
-  - apiGroup: rbac.authorization.k8s.io
-    kind: Group
-    name: haku:access-profile:public-coder
   - apiGroup: ""
     kind: ServiceAccount
     name: haku

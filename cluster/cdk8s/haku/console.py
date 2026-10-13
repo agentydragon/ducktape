@@ -284,19 +284,10 @@ class Console(Construct):
                     "haku",
                     "token",
                 ),
-                # public-coder-agent's bearer reaches only its iron-proxy; the OpenClaw
-                # container sees a non-secret placeholder.
-                self._from_secret(
-                    SecretRef(namespace=NAMESPACE, name="haku-console-public-coder-agent").key("token"),
-                    "static_agents",
-                    "public_coder",
-                    "token",
-                ),
                 # The Operator each static Agent acts as: the controller-fed Authentik user id,
                 # resolved through the identity trust domain to a canonical Operator UUID and never
                 # live request authority.
                 self._from_secret(oidc.key("operator_subject"), "static_agents", "haku", "operator_subject"),
-                self._from_secret(oidc.key("operator_subject"), "static_agents", "public_coder", "operator_subject"),
                 # Operator browser login: the console authenticates the operator itself
                 # (authorization-code -> signed session cookie) with the provider tf/gitops/
                 # agent-machine-access mints under application slug haku-console. Required.

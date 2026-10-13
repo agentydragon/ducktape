@@ -161,12 +161,6 @@ def chart(app: App) -> Chart:
     )
     _reader_binding(
         chart,
-        "public-coder-agent-ducktape-flux-reader",
-        description="Binds the public-coder access profile to public Ducktape Flux diagnostics.",
-        subjects=[access.PUBLIC_CODER.k8s()],
-    )
-    _reader_binding(
-        chart,
         "haku-ducktape-flux-reader",
         description="Binds the Haku OIDC group to public Ducktape Flux diagnostics.",
         subjects=[subject.k8s() for subject in access.HAKU_IDENTITIES],
