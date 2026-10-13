@@ -133,14 +133,15 @@ problem.
 
 Facts have different truth sources, so each gets its own condition and `Ready` is their AND:
 
-| Condition         | Source of truth                                            | Meaning                                              |
-| ----------------- | ---------------------------------------------------------- | ---------------------------------------------------- |
-| `Running`         | controller (Pod or VMI)                                    | an incarnation exists and runs                       |
-| `WorkloadReady`   | controller (Pod Ready)                                     | what `Ready` reports today (#10326)                  |
-| `RunnerConnected` | gateway (connection Lease)                                 | a runner of this incarnation holds a live connection |
-| `Bootstrapped`    | runner (bootstrap result)                                  | the Sandbox's bootstrap ran to success               |
-| `Ready`           | controller                                                 | all of the above for the current incarnation         |
-| `Sealed`          | controller, from the runner's seal result and ingress acks | the last incarnation's Sessions are flushed          |
+| Condition         | Source of truth                                                  | Meaning                                              |
+| ----------------- | ---------------------------------------------------------------- | ---------------------------------------------------- |
+| `Running`         | controller (Pod or VMI)                                          | an incarnation exists and runs                       |
+| `WorkloadReady`   | controller (Pod Ready)                                           | what `Ready` reports today (#10326)                  |
+| `RunnerConnected` | gateway (connection Lease)                                       | a runner of this incarnation holds a live connection |
+| `Bootstrapped`    | runner (bootstrap result)                                        | the Sandbox's bootstrap ran to success               |
+| `Ready`           | controller                                                       | all of the above for the current incarnation         |
+| `Sealed`          | controller, from the runner's `Seal` response                    | the incarnation's runner is in lameduck              |
+| `Flushed`         | controller, from the ingress acknowledgements the runner reports | every final cursor is acknowledged                   |
 
 Two rules make this safe. Conditions are keyed to the incarnation UID, so a connection or boot
 fact from incarnation N is never read as incarnation N+1's. And a condition is written by exactly
@@ -161,15 +162,28 @@ here is only the transport. A gateway rollout drops every connection at once; th
 treat the reconnect window as connectivity lost, not as a Sandbox failure, and must not replace or
 restart anything because of it (no automatic spec replacement, operator 2026-10-13).
 
-### D3. Sealing is per Sandbox, and quiescing precedes it
+### D3. Sealed is the runner's lameduck state, and quiescing precedes it
 
-Sealing already operates on the Sandbox: one `Runner.Seal` covers every Session in the runner, and
-`Sealed` is a Sandbox condition. What stays per Session is bookkeeping inside the seal response
-(cursor, flushed) and the ingress acks. That is the right level and this proposal keeps it.
+**Sealed is a property of the whole runner, not of its Sessions** (operator, 2026-10-13): a
+lameduck state in which the runner accepts only quiescing operations. Entering it is durable and
+survives a runner restart, as the runner records it today. What stays per Session is only the
+bookkeeping the lameduck runner then finishes: each journal's final cursor and whether the ingress
+has acknowledged it.
 
-Quiesce is the missing step. Today `Seal` refuses new Sessions and stops harnesses, but a running
-turn is stopped, not interrupted through the command protocol, and nothing stops new commands from
-being admitted between the decision to seal and the seal.
+| While sealed, the runner                                                             |
+| ------------------------------------------------------------------------------------ |
+| refuses `OpenSession`, `ResumeSession` and any command that starts or continues work |
+| accepts interrupts and reads (`ListSessions`), and repeated `Seal`                   |
+| interrupts active turns, stops harnesses, finalizes journals, pushes through cursors |
+
+So `Sealed` on the Sandbox means "this incarnation's runner is in lameduck", set at entry, and is
+separate from "everything is flushed", which is the ingress's acknowledgement of every final
+cursor. The conditions are `Sealed` (lameduck entered) and `Flushed` (every cursor acknowledged);
+the Pod or VM may go only when both hold. Per-Session cursors never appear in Kubernetes.
+
+Today the runner enters lameduck inside `Seal` but refuses commands only once each journal is
+sealed, so commands to a Session whose journal is not yet final are still admitted. A turn is
+stopped, not interrupted through the command protocol.
 
 Sequence for suspend and delete:
 
@@ -179,7 +193,7 @@ sequenceDiagram
     participant R as Runner (through gateway proxy)
     participant I as Ingress (History Service)
     C->>R: Seal (first call)
-    R->>R: refuse new commands and Sessions
+    R->>R: enter lameduck (durable): refuse everything but quiescing operations
     R->>R: interrupt active turns (InterruptTurn), wait up to a deadline
     R->>R: stop harnesses, seal journals
     R->>I: push to the seal cursor
