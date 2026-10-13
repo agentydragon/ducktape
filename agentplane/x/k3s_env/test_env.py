@@ -10,6 +10,7 @@ import json
 import logging
 import os
 import shutil
+import socket
 import subprocess
 import tarfile
 import tempfile
@@ -76,6 +77,10 @@ class K3s:
         self.binary = work / "k3s"
         self.kubeconfig = work / "kubeconfig"
         self.data_dir = Path("/var/lib/k3s-env")
+        # The address Pods use to reach host-side processes: the apiserver and the cluster DNS.
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("192.0.2.1", 9))
+            self.node_ip: str = probe.getsockname()[0]
 
     def kubectl(self, *args: str, check: bool = True, input_text: str | None = None) -> str:
         return _run(
@@ -106,6 +111,10 @@ class K3s:
                 "--disable-kube-proxy",
                 "--flannel-backend=host-gw",
                 "--disable-network-policy",
+                "--node-ip",
+                self.node_ip,
+                "--kubelet-arg",
+                f"cluster-dns={self.node_ip}",
             ],
             stdout=log,
             stderr=subprocess.STDOUT,
@@ -118,7 +127,29 @@ class K3s:
         ready = self.kubectl("wait", "--for=condition=Ready", "node/env", "--timeout=180s", check=False)
         if "condition met" not in ready:
             raise RuntimeError(f"k3s not ready (exit={process.poll()}): {ready}\n{self.log_path.read_text()[-6000:]}")
+        self._serve_dns_and_api_on_node()
         return process
+
+    def _serve_dns_and_api_on_node(self) -> None:
+        """Without kube-proxy the `kube-dns` ClusterIP is dead: CoreDNS listens on the node IP instead."""
+        for name in ("coredns", "local-path-provisioner"):
+            while "not found" in self.kubectl("-n", "kube-system", "get", f"deploy/{name}", check=False):
+                time.sleep(1)
+            self.kubectl(
+                "-n", "kube-system", "set", "env", f"deploy/{name}",
+                f"KUBERNETES_SERVICE_HOST={self.node_ip}", "KUBERNETES_SERVICE_PORT=6443",
+            )  # fmt: skip
+        corefile = self.kubectl(
+            "-n", "kube-system", "get", "configmap/coredns", "-o", "jsonpath={.data.Corefile}"
+        ).replace(".:53 {", f".:53 {{\n    bind {self.node_ip}", 1)
+        self.kubectl(
+            "-n", "kube-system", "patch", "configmap/coredns", "--type", "merge", "-p",
+            json.dumps({"data": {"Corefile": corefile}}),
+        )  # fmt: skip
+        self.kubectl(
+            "-n", "kube-system", "patch", "deploy/coredns", "-p",
+            json.dumps({"spec": {"template": {"spec": {"hostNetwork": True, "dnsPolicy": "Default"}}}}),
+        )  # fmt: skip
 
     def import_images(self, tarballs: list[Path]) -> None:
         layers: dict[str, int] = {}
@@ -149,12 +180,21 @@ class K3s:
         ]
         pods = self.kubectl("get", "pods", "-n", render.NAMESPACE, "-o", "name", check=False).split()
         for pod in pods:
-            state = self.kubectl("get", pod, "-n", render.NAMESPACE, "-o", "jsonpath={.status.phase}", check=False)
-            if state != "Running":
-                parts.append(
-                    f"--- {pod} ({state})\n"
-                    + self.kubectl("logs", pod, "-n", render.NAMESPACE, "--all-containers", "--tail=40", check=False)
+            ready = self.kubectl(
+                "get",
+                pod,
+                "-n",
+                render.NAMESPACE,
+                "-o",
+                "jsonpath={.status.conditions[?(@.type=='Ready')].status}",
+                check=False,
+            )
+            if ready != "True":
+                logs = self.kubectl("logs", pod, "-n", render.NAMESPACE, "--all-containers", "--tail=40", check=False)
+                previous = self.kubectl(
+                    "logs", pod, "-n", render.NAMESPACE, "--all-containers", "--previous", "--tail=40", check=False
                 )
+                parts.append(f"--- {pod}\n{logs}\n--- previous\n{previous}")
         return "\n".join(parts)
 
 
@@ -193,7 +233,8 @@ def test_stack_comes_up() -> None:
         k3s.import_images(tarballs)
         for crd in crds:
             k3s.kubectl("apply", "-f", str(crd))
-        rewritten = render.rewrite(yaml.safe_load_all(manifest.read_text()), overrides={})
+        k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(render.kubevirt_stub_crds()))
+        rewritten = render.rewrite(yaml.safe_load_all(manifest.read_text()), overrides={}, node_ip=k3s.node_ip)
         roles = {
             secret["stringData"]["username"]: secret["stringData"]["password"]
             for secret in rewritten

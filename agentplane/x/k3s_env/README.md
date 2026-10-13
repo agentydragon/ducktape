@@ -12,22 +12,24 @@ per-Deployment readiness.
 
 ## Result
 
-k3s starts (the `/proc/sys/kernel` shadow needs every sysctl present as a file, not just the keys ones).
+All 13 remaining Deployments become Available on one RBE action (about 5.5 minutes with the images
+already in the cache), with the changes below. Breaks found on the way, in order:
 
-With the default 12 GiB disk the first break is disk: the 16 Bazel-built service images are 3.4 GiB
-compressed across 46 layers, almost none shared (`py_image_layer` puts the interpreter under each
-binary's own `.runfiles` tree, so every image's runtime layer differs), and containerd needs about 1 GiB
-per image. `EstimatedFreeDiskBytes=50GB` on the test fixes that; all 16 import (16 GiB used).
+- **Kernel sysctls:** the kubelet needs every `/proc/sys/kernel` entry present in the shadow copy, not only
+  the keys ones.
+- **Disk:** the 16 Bazel-built service images are 3.4 GiB compressed across 46 layers, almost none shared
+  (`py_image_layer` puts the interpreter under each binary's own `.runfiles` tree), and containerd needs about
+  1 GiB per image. The default 12 GiB disk fails on the 10th image; `EstimatedFreeDiskBytes=50GB` fixes it.
+- **No ClusterIP:** without kube-proxy, Pods reach neither the `kube-dns` Service nor `kubernetes.default`.
+  CoreDNS runs with `hostNetwork` on the node IP, the kubelet's `cluster-dns` points at it, and every
+  container gets `KUBERNETES_SERVICE_HOST`/`PORT` for the node IP.
+- **KubeVirt kinds:** the sandbox controller's cache needs `VirtualMachine`/`VirtualMachineInstance` to exist, so
+  schemaless stub CRDs are applied. It should instead start without KubeVirt when the kinds are absent.
+- **Dex dropped:** its config reaches the Pod through an ExternalSecret template (`regexReplaceAll`, `htpasswd`
+  are External Secrets functions). `render.py` does not evaluate those, and the image's gomplate rejects them.
+  Dex returns once the emulation renders that template (it needs a bcrypt hash).
 
-The next break is DNS and the API: with no kube-proxy there is no ClusterIP, so Pods cannot reach the
-`kube-dns` Service (every Postgres lookup fails: `failed to resolve host 'postgres-rw.agentplane-testing.svc'`)
-or `kubernetes.default`. CoreDNS, local-path-provisioner and both Go controllers crash-loop, and Dex and
-Electric crash-loop for reasons not yet looked at. Postgres, `llm-ingress`, `sandbox-service`, `oauth-fixture`
-and `mcp-everything` run. Memory is not a problem so far (8 GiB available with 14 Pods).
-
-Likely fix, untried: point the kubelet's `cluster-dns` at a hostNetwork CoreDNS on the node IP and inject
-`KUBERNETES_SERVICE_HOST`/`PORT` (node IP, 6443) into every container.
-
-Not yet reached, so unmeasured: the app, runner, sandbox and runner-vm images (Nix-built or restricted
-visibility, not in the tarball set), Service port≠targetPort under headless Services (egress is 80→8082),
-Dex/OIDC public hostnames, and real credentials for the LLM path.
+Not yet reached: the app, runner, sandbox and runner-vm images (Nix-built or restricted visibility, not in the
+tarball set), Service port≠targetPort under headless Services (egress is 80→8082), Dex/OIDC public hostnames,
+real credentials for the LLM path, and any test traffic: the Deployments are Available but nothing has
+exercised them.

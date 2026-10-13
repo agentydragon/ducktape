@@ -36,8 +36,43 @@ DROPPED_KINDS = frozenset(
 )
 # The app image is not visible to this package yet, and the VM template needs KubeVirt.
 DROPPED_NAMES = frozenset(
-    {("Deployment", "agentplane-app"), ("Service", "agentplane-app"), ("SandboxTemplate", "runner-vm")}
+    {
+        ("Deployment", "agentplane-app"),
+        ("Service", "agentplane-app"),
+        ("SandboxTemplate", "runner-vm"),
+        # Its config template calls `regexReplaceAll`, which the image's gomplate does not define.
+        ("Deployment", "dex"),
+        ("Service", "dex"),
+    }
 )
+
+
+def kubevirt_stub_crds() -> list[dict[str, Any]]:
+    """Schemaless `VirtualMachine`/`VirtualMachineInstance` kinds: the sandbox controller's cache needs them to exist."""
+    return [
+        {
+            "apiVersion": "apiextensions.k8s.io/v1",
+            "kind": "CustomResourceDefinition",
+            "metadata": {"name": f"{plural}.kubevirt.io"},
+            "spec": {
+                "group": "kubevirt.io",
+                "scope": "Namespaced",
+                "names": {"kind": kind, "plural": plural, "singular": kind.lower()},
+                "versions": [
+                    {
+                        "name": "v1",
+                        "served": True,
+                        "storage": True,
+                        "schema": {"openAPIV3Schema": {"type": "object", "x-kubernetes-preserve-unknown-fields": True}},
+                    }
+                ],
+            },
+        }
+        for kind, plural in (
+            ("VirtualMachine", "virtualmachines"),
+            ("VirtualMachineInstance", "virtualmachineinstances"),
+        )
+    ]
 
 
 def _password(length: int = 24) -> str:
@@ -83,7 +118,7 @@ def _headless(service: dict[str, Any]) -> None:
         port["port"] = port["targetPort"] if isinstance(port.get("targetPort"), int) else port["port"]
 
 
-def _pod_spec_fixups(pod: dict[str, Any]) -> None:
+def _pod_spec_fixups(pod: dict[str, Any], node_ip: str) -> None:
     pod.pop("imagePullSecrets", None)
     pod.pop("nodeSelector", None)
     pod.pop("tolerations", None)
@@ -91,9 +126,16 @@ def _pod_spec_fixups(pod: dict[str, Any]) -> None:
     pod.pop("topologySpreadConstraints", None)
     for container in [*pod.get("containers", []), *pod.get("initContainers", [])]:
         container["imagePullPolicy"] = "IfNotPresent"
+        # No kube-proxy means no `kubernetes.default` ClusterIP; in-cluster clients dial the apiserver directly.
+        container.setdefault("env", []).extend(
+            [
+                {"name": "KUBERNETES_SERVICE_HOST", "value": node_ip},
+                {"name": "KUBERNETES_SERVICE_PORT", "value": "6443"},
+            ]
+        )
 
 
-def rewrite(docs: Iterable[Mapping[str, Any]], *, overrides: Mapping[str, str]) -> list[dict[str, Any]]:
+def rewrite(docs: Iterable[Mapping[str, Any]], *, overrides: Mapping[str, str], node_ip: str) -> list[dict[str, Any]]:
     """The manifest `docs` rewritten for k3s; `overrides` maps a Secret name to the one value it holds."""
     out: list[dict[str, Any]] = []
     for original in docs:
@@ -106,9 +148,9 @@ def rewrite(docs: Iterable[Mapping[str, Any]], *, overrides: Mapping[str, str]) 
         elif kind == "Service":
             _headless(doc)
         elif kind == "Deployment":
-            _pod_spec_fixups(doc["spec"]["template"]["spec"])
+            _pod_spec_fixups(doc["spec"]["template"]["spec"], node_ip)
         elif kind == "SandboxTemplate":
-            _pod_spec_fixups(doc["spec"]["pod"]["spec"])
+            _pod_spec_fixups(doc["spec"]["pod"]["spec"], node_ip)
         out.append(doc)
     return out
 
