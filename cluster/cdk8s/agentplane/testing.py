@@ -192,6 +192,7 @@ ENV = Environment(
         ],
     ),
     vm_sandboxes=True,
+    vm_console_autologin=True,
 )
 
 
