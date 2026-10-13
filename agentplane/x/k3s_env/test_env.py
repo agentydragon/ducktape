@@ -334,11 +334,13 @@ def test_stack_comes_up() -> None:
                 "agentplane.allegedly.works/sandbox=smoke",
                 "-n",
                 render.NAMESPACE,
-                "--timeout=300s",
+                "--timeout=240s",
                 check=False,
             )
         print("memory:", _run("free", "-m"))
-        print("sandbox:", sandbox_ready)
+        print(
+            "sandbox:", sandbox_ready, k3s.kubectl("get", "sandbox", "-n", render.NAMESPACE, "-o", "yaml", check=False)
+        )
         print(k3s.report())
         assert not failed, f"Deployments not Available: {failed}"
     finally:
