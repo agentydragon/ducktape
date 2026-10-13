@@ -54,7 +54,7 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 - `egress.py`: read-only egress-policy/binding projections for the UI, with mutations delegated to Sandbox
   Service. Bindings remain desired-state grants, with expiry/revocation per binding and Flux-owned
   bindings protected from app revocation ([composition](../docs/egress_composition.md)).
-  `decisions.py` reads the proxy's recent decisions; an unreachable proxy leaves egress-policy views readable.
+  The egress decision stream is in `live.py`; an unreachable proxy leaves egress-policy views readable.
 - `action_policy.py`: read-only binding views composed with Action Service's effective-policy answer.
   Launch grants and binding mutations belong to Sandbox Service, not this app or its preset catalog.
 - `threads/`: Threads over the History Service. The app's database holds each Thread's identity
@@ -196,10 +196,11 @@ the quiet in between. What is pushed: the sandbox rows, one sandbox's egress bin
 policy, and its threads, the last of these from the store rather than a watch, since the app is the
 only writer of a thread's name.
 
-Two things stay request-shaped, both because their source offers no stream. The proxy's recent
-decisions live in its memory and the egress tab still asks for them on an interval; the runner
-answers `ListSessions` per request, so the sandbox page re-reads the session table when the
-sandbox's Pod comes or goes and when a session opens (which reaches it as a new thread).
+The egress tab's decisions are their own stream, `/live/sandboxes/{name}/egress/decisions`: the
+proxy announces each commit of decisions on its admin port's `/decisions/changes`, and every frame
+re-reads `/decisions` from it. The runner answers `ListSessions` per request, so the sandbox page
+re-reads the session table when the sandbox's Pod comes or goes and when a session opens (which
+reaches it as a new thread).
 An unavailable runner shows a waiting state and retries until it answers, without requiring a
 reload. Session creation displays progress and prevents duplicate clicks while the request runs.
 

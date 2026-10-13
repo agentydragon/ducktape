@@ -1,11 +1,12 @@
-import { Badge, Button, Group, MultiSelect, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
-import { type JSX, useCallback, useEffect, useState } from "react";
+import { Badge, Button, Group, MultiSelect, SegmentedControl, Stack, Table, Text, Title, Tooltip } from "@mantine/core";
+import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { api, displayableError, type BindingView, type Decision, type PolicyView } from "./client";
-
-// Shared diagnostic history has no stream; resource changes are pushed (live.tsx).
-const DECISIONS_REFRESH_MS = 5000;
+import { type DecisionGroup, groupDecisions } from "./decision_groups";
+import { type DecisionsSnapshot, liveEgressDecisionsUrl } from "./live";
+import { followStream, type StreamConnection } from "./live_stream";
+import { StaleNotice, type StreamStatus, useStreamStatus } from "./stream_status";
 
 function provenance(binding: BindingView): string {
   return binding.from_git ? "from git" : "runtime";
@@ -255,100 +256,210 @@ function GrantEgressPolicies({
   );
 }
 
-function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
-  // Newest first: the ring is served oldest first.
-  const rows = [...decisions].reverse();
+/** The groups whose requests are listed, comma-separated; a group key has no comma in it. */
+const GROUPS_PARAM = "decision_groups";
+/** Present while the log is shown as one row per request. */
+const EVERY_REQUEST_PARAM = "every_request";
+/** Requests listed under an open group before "Show all". */
+const MEMBERS_SHOWN = 50;
+
+function reasonOf(decision: Decision): string {
+  return decision.outcome === "allow"
+    ? [decision.policy, decision.substituted ? "credential substituted" : null].filter((part) => part).join(" · ")
+    : (decision.reason ?? "");
+}
+
+function destination(decision: { host: string; port: number }): string {
+  return `${decision.host}${decision.port !== 443 ? `:${decision.port}` : ""}`;
+}
+
+function DecisionRow({ decision, nested }: { decision: Decision; nested: boolean }): JSX.Element {
+  const reason = reasonOf(decision);
   return (
-    <Table>
-      <Table.Thead>
-        <Table.Tr>
-          <Table.Th>Time</Table.Th>
-          <Table.Th>Method</Table.Th>
-          <Table.Th>Host</Table.Th>
-          <Table.Th>Decision</Table.Th>
-          <Table.Th visibleFrom="sm">Reason</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        {rows.length === 0 && (
-          <Table.Tr>
-            <Table.Td colSpan={5}>
-              <Text size="sm" c="dimmed">
-                No decisions yet.
-              </Text>
-            </Table.Td>
-          </Table.Tr>
+    <Table.Tr>
+      <Table.Td pl={nested ? "xl" : undefined}>
+        <Text size="sm" style={{ whiteSpace: "nowrap" }}>
+          {new Date(decision.at).toLocaleTimeString()}
+        </Text>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm">{decision.method}</Text>
+      </Table.Td>
+      <Table.Td>
+        <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+          {destination(decision)}
+        </Text>
+        {decision.address && (
+          <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
+            {decision.address}
+          </Text>
         )}
-        {rows.map((decision, index) => {
-          const reason =
-            decision.outcome === "allow"
-              ? [decision.policy, decision.substituted ? "credential substituted" : null]
-                  .filter((part) => part)
-                  .join(" · ")
-              : (decision.reason ?? "");
-          return (
-            <Table.Tr key={index}>
-              <Table.Td>
-                <Text size="sm" style={{ whiteSpace: "nowrap" }}>
-                  {new Date(decision.at).toLocaleTimeString()}
+        <Text size="xs" c="dimmed" hiddenFrom="sm" style={{ overflowWrap: "anywhere" }}>
+          {reason}
+        </Text>
+      </Table.Td>
+      <Table.Td>
+        <Badge color={decision.outcome === "allow" ? "green" : "red"}>{decision.outcome}</Badge>
+      </Table.Td>
+      <Table.Td visibleFrom="sm">
+        <Text size="sm">{reason || "—"}</Text>
+      </Table.Td>
+    </Table.Tr>
+  );
+}
+
+function DecisionGroupRows({
+  group,
+  open,
+  onToggle,
+}: {
+  group: DecisionGroup;
+  open: boolean;
+  onToggle: () => void;
+}): JSX.Element {
+  const [showAll, setShowAll] = useState(false);
+  if (group.members.length === 1) return <DecisionRow decision={group.members[0]} nested={false} />;
+  const reason = reasonOf({ ...group.members[0], substituted: group.substituted });
+  const listed = showAll ? group.members : group.members.slice(0, MEMBERS_SHOWN);
+  return (
+    <>
+      <Table.Tr>
+        <Table.Td>
+          <Tooltip label={`First ${new Date(group.firstAt).toLocaleTimeString()}`} withArrow>
+            <Text size="sm" style={{ whiteSpace: "nowrap" }}>
+              {new Date(group.lastAt).toLocaleTimeString()}
+            </Text>
+          </Tooltip>
+        </Table.Td>
+        <Table.Td>
+          <Text size="sm">{group.method}</Text>
+        </Table.Td>
+        <Table.Td>
+          <Text size="sm" style={{ overflowWrap: "anywhere" }}>
+            {destination(group)}
+          </Text>
+          <Button size="compact-xs" variant="subtle" onClick={onToggle} aria-expanded={open}>
+            {open ? "Hide" : "Show"} {group.members.length} requests
+          </Button>
+          <Text size="xs" c="dimmed" hiddenFrom="sm" style={{ overflowWrap: "anywhere" }}>
+            {reason}
+          </Text>
+        </Table.Td>
+        <Table.Td>
+          <Badge color={group.outcome === "allow" ? "green" : "red"}>{group.outcome}</Badge>
+        </Table.Td>
+        <Table.Td visibleFrom="sm">
+          <Text size="sm">{reason || "—"}</Text>
+        </Table.Td>
+      </Table.Tr>
+      {open && listed.map((member, index) => <DecisionRow key={index} decision={member} nested />)}
+      {open && listed.length < group.members.length && (
+        <Table.Tr>
+          <Table.Td colSpan={5} pl="xl">
+            <Button size="compact-xs" variant="subtle" onClick={() => setShowAll(true)}>
+              Show all {group.members.length}
+            </Button>
+          </Table.Td>
+        </Table.Tr>
+      )}
+    </>
+  );
+}
+
+function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const everyRequest = searchParams.has(EVERY_REQUEST_PARAM);
+  const open = new Set((searchParams.get(GROUPS_PARAM) ?? "").split(",").filter((key) => key));
+  function update(change: (params: URLSearchParams) => void): void {
+    const params = new URLSearchParams(searchParams);
+    change(params);
+    setSearchParams(params, { replace: true });
+  }
+  function toggle(key: string): void {
+    const next = new Set(open);
+    if (!next.delete(key)) next.add(key);
+    update((params) => (next.size === 0 ? params.delete(GROUPS_PARAM) : params.set(GROUPS_PARAM, [...next].join(","))));
+  }
+  const groups = groupDecisions(decisions);
+  return (
+    <Stack gap="xs">
+      <SegmentedControl
+        size="xs"
+        value={everyRequest ? "every" : "grouped"}
+        onChange={(value) =>
+          update((params) =>
+            value === "every" ? params.set(EVERY_REQUEST_PARAM, "") : params.delete(EVERY_REQUEST_PARAM)
+          )
+        }
+        data={[
+          { value: "grouped", label: "Grouped" },
+          { value: "every", label: "Every request" },
+        ]}
+      />
+      <Table>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>{everyRequest ? "Time" : "Last"}</Table.Th>
+            <Table.Th>Method</Table.Th>
+            <Table.Th>Host</Table.Th>
+            <Table.Th>Decision</Table.Th>
+            <Table.Th visibleFrom="sm">Reason</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {decisions.length === 0 && (
+            <Table.Tr>
+              <Table.Td colSpan={5}>
+                <Text size="sm" c="dimmed">
+                  No decisions yet.
                 </Text>
-              </Table.Td>
-              <Table.Td>
-                <Text size="sm">{decision.method}</Text>
-              </Table.Td>
-              <Table.Td>
-                <Text size="sm" style={{ overflowWrap: "anywhere" }}>
-                  {decision.host}
-                  {decision.port !== 443 ? `:${decision.port}` : ""}
-                </Text>
-                {decision.address && (
-                  <Text size="xs" c="dimmed" style={{ overflowWrap: "anywhere" }}>
-                    {decision.address}
-                  </Text>
-                )}
-                <Text size="xs" c="dimmed" hiddenFrom="sm" style={{ overflowWrap: "anywhere" }}>
-                  {reason}
-                </Text>
-              </Table.Td>
-              <Table.Td>
-                <Badge color={decision.outcome === "allow" ? "green" : "red"}>{decision.outcome}</Badge>
-              </Table.Td>
-              <Table.Td visibleFrom="sm">
-                <Text size="sm">{reason || "—"}</Text>
               </Table.Td>
             </Table.Tr>
-          );
-        })}
-      </Table.Tbody>
-    </Table>
+          )}
+          {everyRequest
+            ? // Newest first: the log is served oldest first.
+              [...decisions]
+                .reverse()
+                .map((decision, index) => <DecisionRow key={index} decision={decision} nested={false} />)
+            : groups.map((group) => (
+                <DecisionGroupRows
+                  key={group.key}
+                  group={group}
+                  open={open.has(group.key)}
+                  onToggle={() => toggle(group.key)}
+                />
+              ))}
+        </Table.Tbody>
+      </Table>
+    </Stack>
   );
+}
+
+/** The sandbox's decisions as the proxy reports them: a snapshot per change, none while it is quiet. */
+function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null; stream: StreamStatus } {
+  const [snapshot, setSnapshot] = useState<DecisionsSnapshot | null>(null);
+  const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
+  useEffect(() => {
+    setSnapshot(null);
+    return followStream(liveEgressDecisionsUrl(name), {
+      events: {
+        snapshot: (message) => setSnapshot(JSON.parse(message.data) as DecisionsSnapshot),
+        health: (message) =>
+          setSnapshot((current) => current && { ...current, ...(JSON.parse(message.data) as { watching: boolean }) }),
+      },
+      onConnection: setConnection,
+    });
+  }, [name]);
+  return { snapshot, stream: useStreamStatus(`Egress decisions of ${name}`, connection) };
 }
 
 /** What may leave the sandbox and what recently did: its pushed bindings and the proxy's decisions. */
 export function EgressSection({ name, bindings }: { name: string; bindings: BindingView[] | null }): JSX.Element {
-  const [decisions, setDecisions] = useState<Decision[] | null>(null);
-  const [decisionsError, setDecisionsError] = useState<string | null>(null);
+  const decisions = useEgressDecisions(name);
   const [error, setError] = useState<string | null>(null);
   // The namespace's egress policies, and the ones picked to grant this sandbox next.
   const [egressPolicies, setEgressPolicies] = useState<string[]>([]);
   const [picked, setPicked] = useState<string[]>([]);
-
-  const refresh = useCallback(async () => {
-    const recent = await api.GET("/sandboxes/{name}/egress/decisions", { params: { path: { name } } });
-    if (recent.error) {
-      setDecisions(null);
-      setDecisionsError(displayableError(recent.error));
-    } else {
-      setDecisions(recent.data);
-      setDecisionsError(null);
-    }
-  }, [name]);
-
-  useEffect(() => {
-    void refresh();
-    const timer = setInterval(() => void refresh(), DECISIONS_REFRESH_MS);
-    return () => clearInterval(timer);
-  }, [refresh]);
 
   useEffect(() => {
     void (async () => {
@@ -387,12 +498,20 @@ export function EgressSection({ name, bindings }: { name: string; bindings: Bind
       />
       {bindings && <EgressBindings bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}
       <Title order={5}>Recent decisions</Title>
-      {decisions && <DecisionsTable decisions={decisions} />}
-      {decisionsError && (
+      <StaleNotice streams={[decisions.stream]} />
+      {decisions.snapshot !== null && !decisions.snapshot.watching && (
         <Text size="sm" c="dimmed">
-          The egress proxy could not be asked; the rules above still apply. ({decisionsError})
+          Not hearing from the egress proxy about new decisions; this log may be behind.
         </Text>
       )}
+      {decisions.snapshot !== null &&
+        (Array.isArray(decisions.snapshot.decisions) ? (
+          <DecisionsTable decisions={decisions.snapshot.decisions} />
+        ) : (
+          <Text size="sm" c="dimmed">
+            The egress proxy could not be asked; the rules above still apply. ({decisions.snapshot.decisions.detail})
+          </Text>
+        ))}
     </Stack>
   );
 }

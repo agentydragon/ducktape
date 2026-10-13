@@ -11,10 +11,11 @@ from alembic.autogenerate import compare_metadata
 from alembic.migration import MigrationContext
 from fastapi import FastAPI
 from sqlalchemy import func, select
-from sqlalchemy.engine import Connection
+from sqlalchemy.engine import Connection, make_url
 
 from agentplane.egress.admin import create_admin_app
 from agentplane.egress.database_migrate import RUNNER
+from agentplane.egress.decision_changes import DecisionChanges
 from agentplane.egress.decision_log import DecisionLog
 from agentplane.egress.decision_store import Base, DecisionRecordRow, DecisionStore, make_engine
 from agentplane.egress.decisions import DecisionRecord, Outcome, Phase
@@ -116,6 +117,19 @@ async def test_retention_and_recent_limit(history_db_url: str) -> None:
             assert await connection.scalar(select(func.count()).select_from(DecisionRecordRow)) == 3
     finally:
         await store.engine.dispose()
+
+
+async def test_changes_follow_wakes_when_a_replica_commits_decisions(history_db_url: str) -> None:
+    # A heartbeat far past the timeout: only the commit can be what wakes the second step.
+    stream = DecisionChanges(make_url(history_db_url), heartbeat_s=600).follow()
+    async with DecisionLog(DecisionStore(make_engine(history_db_url), retention=timedelta(days=7))) as log:
+        try:
+            async with asyncio.timeout(10):
+                await anext(stream)
+                log.record(record())
+                await anext(stream)
+        finally:
+            await stream.aclose()
 
 
 async def test_overflow_outage_nonblocking_and_explicit_read_failure(monkeypatch: pytest.MonkeyPatch) -> None:

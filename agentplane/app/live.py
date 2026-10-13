@@ -46,11 +46,12 @@ from agentplane.app.database_updates import Channel
 from agentplane.app.identity import CallerIdentity, require_caller
 from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sandbox_view
 from agentplane.app.shutdown import Shutdown
-from agentplane.app.sse import frame, sse_response
 from agentplane.app.threads.store import MAX_PAGE, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.changes import ChangeSignal
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.egress.decisions import Decision
+from agentplane.egress.decisions_client import DecisionsClient, DecisionsUnavailableError
 from agentplane.grpc_calls import ServiceError
 from agentplane.kubernetes_watch import Freshness
 from agentplane.postgres.wakeups import WakeupListener
@@ -72,6 +73,7 @@ from agentplane.sandbox_service.kubernetes_views import (
     sandbox_view,
     sandbox_views,
 )
+from agentplane.sse import frame, sse_response
 from agentplane.subjects import ServiceAccountRef
 from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
@@ -123,6 +125,29 @@ class ThreadsUnavailable(BaseModel):
 
     kind: Literal["unavailable"] = "unavailable"
     code: str = Field(description="The gRPC status code the Runner Gateway answered with.")
+
+
+class DecisionsUnavailable(BaseModel):
+    """Why the egress proxy's decisions could not be read; the frame says it rather than ending the stream."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    detail: str
+
+
+class DecisionsWatching(BaseModel):
+    """Whether this replica is following the proxy's change stream. While it is not, what a frame
+    carries is as old as the last change heard of."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    watching: bool
+
+
+class DecisionsSnapshot(DecisionsWatching):
+    """A frame of one sandbox's egress decision stream."""
+
+    decisions: list[Decision] | DecisionsUnavailable = Field(description="Oldest first.")
 
 
 class SandboxSnapshot(BaseModel):
@@ -322,7 +347,7 @@ def watch_for(
 
 async def frames(
     snapshot: Callable[[], Awaitable[BaseModel]],
-    health: Callable[[], WatchHealth],
+    health: Callable[[], BaseModel],
     *watched: ChangeSignal,
     interval_s: float = HEALTH_INTERVAL_S,
 ) -> AsyncIterator[bytes]:
@@ -410,6 +435,13 @@ def _action_policy(request: Request) -> ActionPolicyInventory:
     return inventory
 
 
+def _decisions(request: Request) -> DecisionsClient:
+    decisions = request.app.state.services.decisions
+    if not isinstance(decisions, DecisionsClient):
+        raise TypeError(f"app.state.services.decisions is {type(decisions).__name__}, not DecisionsClient")
+    return decisions
+
+
 def _store(request: Request) -> ThreadStore:
     store = request.app.state.services.store
     if not isinstance(store, ThreadStore):
@@ -426,6 +458,7 @@ def _database_updates(request: Request) -> WakeupListener:
 
 Index = Annotated[LiveIndex, Depends(_index)]
 Store = Annotated[ThreadStore, Depends(_store)]
+Decisions = Annotated[DecisionsClient, Depends(_decisions)]
 Updates = Annotated[WakeupListener, Depends(_database_updates)]
 ActionPolicy = Annotated[ActionPolicyInventory, Depends(_action_policy)]
 Caller = Annotated[CallerIdentity, Depends(require_caller)]
@@ -442,6 +475,9 @@ _THREADS_FRAMES: dict[int | str, dict[str, Any]] = {
 }
 _SANDBOX_FRAMES: dict[int | str, dict[str, Any]] = {
     200: {"model": SandboxSnapshot, "content": {"text/event-stream": {}}}
+}
+_DECISIONS_FRAMES: dict[int | str, dict[str, Any]] = {
+    200: {"model": DecisionsSnapshot, "content": {"text/event-stream": {}}}
 }
 
 
@@ -533,4 +569,29 @@ async def live_sandbox(
 
     return sse_response(
         shutdown.until(frames(snapshot, lambda: _health(index), index.changes, updates.changes[Channel.THREADS]))
+    )
+
+
+@router.get("/sandboxes/{name}/egress/decisions", responses=_DECISIONS_FRAMES)
+async def live_egress_decisions(index: Index, decisions: Decisions, shutdown: Shutdown, name: str) -> StreamingResponse:
+    """What the egress proxy recently admitted or refused for the sandbox's account, pushed.
+
+    The proxy keeps no copy per tab: it says when decisions were committed, and each frame re-reads
+    them from it. A proxy that cannot be asked is carried in the frame, not by ending the stream.
+    """
+
+    async def snapshot() -> DecisionsSnapshot:
+        sandbox = index.sandbox_view(name)
+        if sandbox is None:
+            return DecisionsSnapshot(
+                watching=decisions.watching, decisions=DecisionsUnavailable(detail=f"no sandbox {name}")
+            )
+        try:
+            recent = await decisions.recent(sandbox.service_account)
+        except DecisionsUnavailableError as error:
+            return DecisionsSnapshot(watching=decisions.watching, decisions=DecisionsUnavailable(detail=str(error)))
+        return DecisionsSnapshot(watching=decisions.watching, decisions=recent)
+
+    return sse_response(
+        shutdown.until(frames(snapshot, lambda: DecisionsWatching(watching=decisions.watching), decisions.changes))
     )

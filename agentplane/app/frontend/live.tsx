@@ -23,6 +23,7 @@ export type WatchHealth = components["schemas"]["WatchHealth"];
 export type SandboxesSnapshot = components["schemas"]["SandboxesSnapshot"];
 export type SandboxSnapshot = components["schemas"]["SandboxSnapshot"];
 export type ThreadsSnapshot = components["schemas"]["ThreadsSnapshot"];
+export type DecisionsSnapshot = components["schemas"]["DecisionsSnapshot"];
 
 export interface Live<T> {
   /** The last snapshot, or null until the first frame arrives. */
@@ -58,6 +59,10 @@ export function liveThreadsUrl(listing: ThreadListing, openThreadId: string | nu
 
 export function liveSandboxUrl(name: string, includeArchived: boolean): string {
   return `/live/sandboxes/${encodeURIComponent(name)}?include_archived=${includeArchived}`;
+}
+
+export function liveEgressDecisionsUrl(name: string): string {
+  return `/live/sandboxes/${encodeURIComponent(name)}/egress/decisions`;
 }
 
 /** The stream at `url`, which the connection indicator calls `name`. */

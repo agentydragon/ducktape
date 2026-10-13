@@ -12,10 +12,10 @@ from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict
 
-from agentplane.app.sse import frame
 from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.threads.summaries import FeedEnd, FeedError
 from agentplane.changes import ChangeSignal
+from agentplane.sse import frame
 
 # gazelle:include_dep @pypi//protobuf
 

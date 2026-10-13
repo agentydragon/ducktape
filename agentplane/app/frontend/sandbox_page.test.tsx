@@ -11,6 +11,7 @@ import type * as LiveModule from "./live";
 import type { Live, SandboxSnapshot } from "./live";
 import { SandboxRoute } from "./app";
 import { SandboxPage } from "./sandbox_page";
+import { TestEventSource } from "./actions/testing";
 
 const fetchMock = vi.hoisted(() => {
   const fetch = vi.fn<(request: Request) => Promise<Response>>();
@@ -68,6 +69,8 @@ vi.mock("./live", async (importOriginal) => ({
   useLive: () => live,
 }));
 
+vi.stubGlobal("EventSource", TestEventSource);
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
@@ -117,7 +120,7 @@ async function render(
         Response.json(testModelCatalog(claudePaused ? [] : models, claudePaused ? models : codexModels))
       );
     }
-    if (path === "/egress/policies" || /^\/sandboxes\/(startup-test|other-test)\/egress\/decisions$/.test(path)) {
+    if (path === "/egress/policies") {
       return Promise.resolve(Response.json([]));
     }
     const threadPath = /^\/threads\/([^/]+)$/.exec(path);

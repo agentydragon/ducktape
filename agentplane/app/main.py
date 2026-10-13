@@ -169,13 +169,14 @@ async def async_main(settings: Settings) -> None:
         session_openings = SessionOpenings(session_openings_client, event_logs, retry_interval_s=1)
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content)
 
+        decisions = DecisionsClient(admin_http)
         app = create_app(
             inventory,
             bridge,
             store,
             settings.models,
             egress,
-            DecisionsClient(admin_http),
+            decisions,
             live,
             action_policy,
             oidc,
@@ -205,7 +206,11 @@ async def async_main(settings: Settings) -> None:
 
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
-        async with background(watch.run(), name="live-watch"), background(history_watch.run(), name="history-watch"):
+        async with (
+            background(watch.run(), name="live-watch"),
+            background(history_watch.run(), name="history-watch"),
+            background(decisions.watch(retry_interval_s=1), name="egress-decisions-watch"),
+        ):
             await serve_then_close(
                 AppServer(
                     uvicorn.Config(
