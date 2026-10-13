@@ -704,7 +704,6 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE[In progress: our own Sandbox resource]
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
-    SANDBOX_SESSION_CONTROL_DESIGN[Decision: the open choices in the Sandbox and Session control design]
     QUIESCE_INCARNATION_KEY[In progress: the sealed marker belongs to one incarnation]
     INCARNATION_UID_REQUIRED[Blocked: the runner rejects a Welcome without the incarnation UID]
     QUIESCE_INTERRUPT[Candidate: refuse at entry and interrupt turns before sealing]
@@ -747,8 +746,6 @@ flowchart TD
     RUNNER_COMMAND_RPCS[Candidate: one Runner RPC per command, section 12] --> DISPATCHER_CORE
     MULTIAGENT_MODEL[Decision: identities and authority vocabulary, section 3] -. who may send and wake .-> DISPATCHER_CORE
     AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. offline behavior .-> DISPATCHER_CORE
-    SANDBOX_SESSION_CONTROL_DESIGN --> DISPATCHER_WAKE_ON_SEND
-    SANDBOX_SESSION_CONTROL_DESIGN -. decides the level of sealing .-> CONTROLLER_SEALS[Candidate: the Sandbox controller seals, section 12]
     QUIESCE_INCARNATION_KEY --> CONTROLLER_SEALS
     QUIESCE_INCARNATION_KEY --> RUNNER_FACTS_ON_LEASE
     QUIESCE_INCARNATION_KEY --> INCARNATION_UID_REQUIRED
@@ -946,24 +943,6 @@ template as it is now, possibly on a new image, and resume each harness as
 a new incarnation of the same Session and history. Test
 revival after a long stop, a refused incompatible state PVC, and concurrent revive requests.
 
-### `SANDBOX_SESSION_CONTROL_DESIGN` — the open choices in the Sandbox and Session control design
-
-**Decision; operator, 2026-10-13 PDT: mostly agrees with the proposal, the names are open.** The
-proposal is `docs/adr_sandbox_session_control.md` (#10332): lifecycle and idle policy stay in the
-Sandbox controller; a new service holds only the durable queue, required for senders and not for
-the platform; the runner gateway stays stateless and never wakes a Sandbox. The nodes below
-implement it, and the ones marked blocked on this node wait for one of these answers, each small:
-
-- Settled (operator, 2026-10-13 PDT): the service is the Session Dispatcher, the seal renames
-  (`SEAL_RENAME`), and one RPC per command with no command union (`RUNNER_COMMAND_RPCS`).
-- **Which commands wake:** whether `InterruptTurn` and `StopRunnerSession` wake a suspended Sandbox,
-  or only `SubmitInput` (`DISPATCHER_WAKE_ON_SEND`).
-- **Hold against wake-on-send:** whether an operator can keep a Sandbox suspended when a message or
-  notification arrives (`DISPATCHER_WAKE_ON_SEND`).
-
-Parallel with all of it: `QUIESCE_INCARNATION_KEY`, `QUIESCE_INTERRUPT`. The doc leaves this node when
-its choices are made and `docs/` describes the result.
-
 ### `QUIESCE_INCARNATION_KEY` — the sealed marker belongs to one incarnation
 
 **In progress; its own PR, found by the control design.** The runner records "sealed" as an empty
@@ -1081,18 +1060,18 @@ its own record is authoritative.
 
 ### `DISPATCHER_WAKE_ON_SEND` — a send wakes a suspended Sandbox
 
-**Blocked on `DISPATCHER_CORE`, `SESSION_REVIVE`, `QUIESCE_INTERRUPT`
-and `SANDBOX_SESSION_CONTROL_DESIGN` (the hold choice).** A message for a suspended Sandbox's
+**Blocked on `DISPATCHER_CORE`, `SESSION_REVIVE` and `QUIESCE_INTERRUPT`.** A message for a suspended Sandbox's
 Session resumes the Sandbox through the Sandbox Service, then delivers once `Ready` holds for the new
 incarnation, keying every attempt to the incarnation UID; a delivery refused by a sealing runner
 with the retryable code is redelivered after the resume. Which senders may wake: a user message and
-a notification, not an agent's message unless `AGENT_MESSAGE_RECEPTION` decides so. Also here:
+a notification, not an agent's message unless `AGENT_MESSAGE_RECEPTION` decides so. `InterruptTurn` and
+`StopRunnerSession` never wake a Sandbox; they are no-ops on a suspended one. Also here:
 rate limits and per-sender quotas, since a resume starts a Pod or VM and every harness; resuming
 only the Sessions that have pending work; a bounded wait with a visible reason when the volume's
 node is down or full; a pending mark, a Dispatcher-owned Lease per Sandbox that the controller reads (the Dispatcher
 never edits the Sandbox), while messages are pending so the controller does not suspend it
-(`SANDBOX_IDLE_EXPIRY`); and a way for an operator to hold a Sandbox suspended against
-wake-on-send, so the next notification does not undo it. Deletion beats everything. Test a message
+(`SANDBOX_IDLE_EXPIRY`); and `spec.wakeOnSend: false`, which holds a Sandbox suspended (sends queue
+and do not wake it) and doubles as the feature gate. Deletion beats everything. Test a message
 to a suspended Sandbox, one arriving while it seals, a failed revival and a resume storm.
 
 ### `APP_SENDS_VIA_DISPATCHER` — the app sends through the Session Dispatcher
