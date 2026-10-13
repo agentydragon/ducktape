@@ -40,9 +40,10 @@ already in the cache), with the changes below. Breaks found on the way, in order
   on that template and asserts its Pod becomes Ready (both containers, 10 minutes end to end).
 - **Storage classes:** the manifest's `local-path-ovh-hdd` does not exist on k3s, so every `storageClassName`
   becomes `local-path`; without it the Sandbox's state PVC never binds and the Pod stays Pending.
-- **LiteLLM:** with `LITELLM_QWEN_KEY` set (a BuildBuddy secret holding the Qwen-only key Terraform provisions
-  as `litellm/litellm-key-disposable-env`), the key replaces `litellm-key-cheap-experiments` and llm-ingress and
-  the egress rules dial `https://litellm.allegedly.works` instead of the cluster-internal Service.
+- **LiteLLM:** `LITELLM_QWEN_KEY` (the Qwen-only key Terraform provisions as
+  `litellm/litellm-key-disposable-env`; pass it with `--test_env=LITELLM_QWEN_KEY=...`) is required. It replaces
+  `litellm-key-cheap-experiments`, and llm-ingress and the egress rules dial `https://litellm.allegedly.works`
+  instead of the cluster-internal Service.
 
 Not yet reached: Service port≠targetPort under headless Services (egress is 80→8082; only the agent-facing
 rules URL uses it), Dex/OIDC public hostnames, and any test traffic: the Deployments are Available and the

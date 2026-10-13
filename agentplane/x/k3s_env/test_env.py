@@ -27,7 +27,8 @@ logger = logging.getLogger(__name__)
 
 K3S_VERSION = "v1.33.4+k3s1"
 CNPG_MANIFEST_URL = "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.0/cnpg-1.30.0.yaml"
-DEPLOY_TIMEOUT_SECONDS = 240
+# Electric exits until history-service's migration has created its publication; its restart back-off reaches 5 min.
+DEPLOY_TIMEOUT_SECONDS = 480
 
 
 def _run(*command: str, check: bool = True, input_text: str | None = None) -> str:
@@ -279,15 +280,11 @@ def test_stack_comes_up() -> None:
             k3s.kubectl("apply", "-f", str(crd))
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(render.kubevirt_stub_crds()))
         k3s.install_cnpg_operator()
-        # CLEANUP(added 2026-10-13): Require the key once BuildBuddy is confirmed to forward `LITELLM_QWEN_KEY`.
-        qwen_key = os.environ.get("LITELLM_QWEN_KEY")
-        if qwen_key is None:
-            logger.warning("LITELLM_QWEN_KEY unset; LiteLLM calls in this environment will fail")
         rewritten = render.rewrite(
             yaml.safe_load_all(manifest.read_text()),
-            overrides={} if qwen_key is None else {"litellm-key-cheap-experiments": qwen_key},
+            overrides={"litellm-key-cheap-experiments": os.environ["LITELLM_QWEN_KEY"]},
             node_ip=k3s.node_ip,
-            external_litellm=qwen_key is not None,
+            external_litellm=True,
         )
         cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
         extra = render.egress_ca_objects(
