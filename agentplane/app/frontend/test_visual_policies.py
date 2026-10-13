@@ -147,7 +147,7 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
             section.locator(".agentplane-actions-sidebar-collapsed-preview").get_by_text("test-apps")
         ).to_have_count(0)
         await expect(section.get_by_text("test-apps", exact=True)).to_have_count(1)
-        await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_have_count(0)
+        await expect(section.get_by_role("button", name="Approve inspect running demo pods")).to_be_visible()
     await view.capture()
 
 
