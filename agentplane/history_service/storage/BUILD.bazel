@@ -46,7 +46,9 @@ py_library(
 
 py_test(
     name = "test_store",
+    size = "medium",
     srcs = ["test_store.py"],
+    requires_docker = True,
     deps = [
         ":store",
         "//:conftest",
@@ -130,7 +132,9 @@ py_test(
 
 py_test(
     name = "test_database_migrate",
+    size = "medium",
     srcs = ["test_database_migrate.py"],
+    requires_docker = True,
     deps = [
         ":database_migrate",
         "//:conftest",
