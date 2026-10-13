@@ -34,6 +34,8 @@ Retain the data-preserving rollback procedure. No Action Service or other databa
 ```mermaid
 flowchart LR
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history]
+    COMMAND_DELIVERY_STATES[Decision: one vocabulary of delivery states for a command or message]
+    COMMAND_DELIVERY_STATES -. shares vocabulary .-> NOTIFICATION_COMMAND_OUTCOME_DESIGN
     SESSION_INPUT_METADATA[Typed input annotations and provenance]
     SESSION_INPUT_METADATA_READ[Blocked: metadata reads and message correlation]
     NOTIFICATION_NOTICE_METADATA[Blocked: attach notice metadata to submissions]
@@ -46,6 +48,17 @@ flowchart LR
 
 Details: [command admission](../runner_gateway/API.md#sessions-and-commands); later
 [notification presentation and input metadata](notification_presentation.md).
+
+### `COMMAND_DELIVERY_STATES` — one vocabulary of delivery states for a command or message
+
+**Decision; found by the DAG's own overlap audit, 2026-10-13 PDT.** Four nodes each need to say how
+far a command or message got: `NOTIFICATION_COMMAND_OUTCOME_DESIGN` (did the harness run it, did it
+reach the model's context), `AGENT_MESSAGING_DESIGN` (accepted, delivered, handled and acknowledged
+as separate states), `THREAD_SUCCESSOR_DELIVERY` (ambiguous across an incarnation) and
+`SESSION_QUEUE_DESIGN` (queued, delivered once the runner is up). Decide the states once, from
+submission to the model's context: what each means, which component records it, and which survive an
+incarnation ending. Today `CommandAdmitted` and `harness_user_message_confirmed` are the recorded
+points. The four nodes then cite it, instead of each defining its own.
 
 ### `NOTIFICATION_COMMAND_OUTCOME_DESIGN` — notice delivery without reading conversation history
 
@@ -202,6 +215,7 @@ flowchart TD
     THREAD_CREATE_AUTHORIZATION[Blocked: implement session-create grants]
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
+    COMMAND_DELIVERY_STATES[Decision: one vocabulary of delivery states, section 2] -. shares vocabulary .-> AGENT_MESSAGING_DESIGN
     MULTIAGENT_MODEL --> THREAD_READ_POLICY_DESIGN
     MULTIAGENT_MODEL --> AGENT_MESSAGING_DESIGN
     MULTIAGENT_MODEL --> THREAD_CREATE_POLICY
@@ -281,7 +295,8 @@ acceptance receipts in the chosen authority. Test denied pairs, spoofing and ret
 
 **Blocked on ingress contract/implementation.** Implement selected recipient read/delivery/ack
 operations, batching and recovery of unread work. Test revoked/deleted recipients, ordinary offline
-catch-up and duplicate delivery without leaking payloads. Do not start/resume a harness implicitly.
+catch-up and duplicate delivery without leaking payloads. Do not start/resume a harness implicitly
+unless `SESSION_QUEUE_DESIGN` decides that a sender may.
 
 ### `AGENT_MESSAGING` — integrated messaging capstone
 
@@ -296,7 +311,7 @@ creator visibility and revocation. Use the service-reserved Session identity, no
 public UUID. Opening in an existing Sandbox grants no isolation from its other Sessions; require a
 separate Sandbox when incompatible trust or credentials are needed. Decide whether launch-and-open
 is a composition of separate grants, never an implicit read/send/launch permission. This contract
-need not choose a durable offline command queue.
+need not choose a durable offline command queue; `SESSION_QUEUE_DESIGN` owns that.
 
 ### `THREAD_CREATE_AUTHORIZATION` — implement session-create grants
 
@@ -331,7 +346,8 @@ journal.
 Direction for stateful VMs (operator, 2026-10-12 PDT; not scheduled): our own Sandbox resource
 (`AGENTPLANE_SANDBOX_RESOURCE`, `kind: pod | vm`) carries both kinds, and both keep their
 state on one filesystem PVC per Sandbox that Agentplane owns (section 7). Pods mount it as a volume,
-KubeVirt guests through virtiofs, so a Session can move between kinds.
+KubeVirt guests through virtiofs, so a Session can move between kinds, until `STATE_VOLUME_BLOCK`
+moves both to block storage.
 
 ```mermaid
 flowchart LR
@@ -350,6 +366,8 @@ flowchart LR
     VM_PROVIDER --> VM_LIFECYCLE
     VM_PROVIDER --> VM_EGRESS
     VM_PROVIDER --> VM_RAM_SUSPEND
+    STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage, section 7] -. related .-> VM_PROCESS_ISOLATION
+    STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
     VM_EGRESS --> VM_LIFECYCLE
     VM_PROCESS_ISOLATION --> VM_LIFECYCLE
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
@@ -408,7 +426,8 @@ runner/control state survives and what needs durable recovery. This directly add
 accidentally killing their own harness; guest or container packaging alone is not that guarantee.
 
 Direction (operator, 2026-10-12 PDT): separate the runner and the harness by what each can see,
-not by uid, since every file on the virtiofs state PVC is `107:107` anyway. In VMs the runner runs
+not by uid, since every file on the virtiofs state PVC is `107:107` anyway (`STATE_VOLUME_BLOCK` would
+end that constraint; revisit the uid choice then). In VMs the runner runs
 as guest root under systemd and starts the harness with `systemd-run` as uid 107, in a scope with
 `InaccessiblePaths=/state/runner`, write access only to `/state/harness` and the workspace,
 `ProtectProc=invisible`, `NoNewPrivileges`, no capabilities, `MemoryMax` and `TasksMax`; the
@@ -442,7 +461,7 @@ absence of every imaginable failure, establishes the delivered contract.
 
 **Unscheduled; operator, 2026-10-13 PDT: nice to have.** A stopped VM Sandbox resumes with the memory
 it had, not a cold boot, so a quick resume loses no in-memory state. Find what KubeVirt offers (a
-memory dump or a snapshot with memory) and whether it works with the virtiofs state volume. The
+memory dump or a snapshot with memory) and whether it works with the state volume (virtiofs today, block under `STATE_VOLUME_BLOCK`). The
 [VM Sandboxes design](../docs/vm_sandboxes.md#guest-and-storage) records that a VM supports neither
 RAM suspension nor live migration today. Check what a resumed guest must redo: the runner's control stream and
 projected tokens (the relay reopens them per request, so rotation alone needs no restart), and the
@@ -551,6 +570,7 @@ flowchart LR
     POLICY_RUNTIME_GRANTS --> AGENT_PERMISSION_REQUESTS
     ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
     AGENT_PERMISSION_INSTRUCTIONS -. related .-> AGENT_PERMISSION_REQUESTS
+    POLICY_RUNTIME_GRANTS -. verify afterwards .-> SANDBOX_RBAC
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
@@ -628,7 +648,7 @@ public-coder until `PC_KUBERNETES_POLICY_SET`) stay Flux bindings. Test an allow
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
 
-**Candidate; security-relevant.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
+**Candidate; security-relevant; best after `POLICY_RUNTIME_GRANTS`, which moves who writes bindings.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
 and verify intended versus unrelated scope, including Role edits and credential-use boundaries,
 without recording credentials. Use [agent RBAC](../../cluster/docs/agent_rbac.md) and existing tests;
 only unresolved deployed wiring needs a live check, not a repeat of every already-covered operation.
@@ -700,6 +720,9 @@ flowchart TD
     WORKSPACE_VOLUME --> SANDBOX_ARCHIVE
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
     SANDBOX_SPEC_EDIT -. related .-> WORKSPACE_VOLUME
+    VM_PROVIDER -. related .-> SANDBOX_SPEC_EDIT
+    APP_SESSION_DEFAULTS[Candidate: the app sends complete Session specs, section 12] -. keeps the preset label true .-> SANDBOX_SPEC_EDIT
+    RUNNER_JOURNAL_TRIM[Unscheduled: runners stop keeping what the ingress committed, section 10] -. keeps what a revival reads back .-> SESSION_INCARNATIONS
     STATE_VOLUME_BLOCK -. related .-> WORKSPACE_VOLUME
     AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
@@ -709,9 +732,13 @@ flowchart TD
     SESSION_QUEUE_DESIGN --> SESSION_MESSAGE_QUEUE
     SESSION_REVIVE --> SESSION_MESSAGE_QUEUE
     SESSION_MESSAGE_QUEUE --> SUSPENDED_COMPOSER
+    HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
+    COMMAND_DELIVERY_STATES[Decision: one vocabulary of delivery states, section 2] --> SESSION_QUEUE_DESIGN
+    COMMAND_DELIVERY_STATES --> THREAD_SUCCESSOR_DELIVERY
+    MULTIAGENT_MODEL[Decision: identities and authority vocabulary, section 3] -. shares who-may vocabulary .-> SESSION_QUEUE_DESIGN
+    AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. shares offline behavior .-> SESSION_QUEUE_DESIGN
     SESSION_QUEUE_DESIGN -. may own .-> SANDBOX_IDLE_EXPIRY
     SESSION_QUEUE_DESIGN -. shares delivery semantics .-> THREAD_SUCCESSOR_DELIVERY
-    AGENT_MESSAGE_RECEPTION[Blocked: receiving, recovery and acknowledgement, section 3] -. shares delivery semantics .-> SESSION_QUEUE_DESIGN
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
 ```
@@ -774,7 +801,8 @@ compatibility rules or conversion (operator, 2026-10-13 PDT).
 switch between VM and Pod, from the app, only while the Sandbox is suspended. Each incarnation
 already reads the template as it is then (`SANDBOX_IMAGE_REPLACE`), and no spec is replaced
 automatically (`SANDBOX_LIFECYCLE`); this is the explicit, operator-driven edit. Needs `WORKSPACE_VOLUME`,
-so a kind switch keeps the workspace.
+so a kind switch keeps the workspace, and `VM_PROVIDER` for the VM side. The preset the app records
+on a Sandbox as a label (`APP_SESSION_DEFAULTS`) must stay true after the edit.
 
 ### `WORKSPACE_NODE_PORTABILITY` — move a workspace between nodes
 
@@ -900,11 +928,13 @@ the operator accepts: "write a message, press Enter, close the window, come back
 and the agent has resumed and finished" is not possible without a controller and a queue. Working
 name "session egress controller", inside or above the Runner Gateway. Decide: where it sits and
 whether it is a new service or part of the gateway; what is durable and where, with the ordering,
-deduplication and acknowledgement `THREAD_SUCCESSOR_DELIVERY` needs; what happens to a message whose
+deduplication and acknowledgement `THREAD_SUCCESSOR_DELIVERY` needs, and the offline behavior
+`AGENT_MESSAGING_DESIGN` decides for agent messages; what happens to a message whose
 Session is deleted or whose revival fails; which senders may revive, since a notification or a user
 message resumes a Sandbox but an agent's message does not (`AGENT_MESSAGE_RECEPTION`) unless decided
 otherwise; and whether it also owns other lifecycle, for example deciding that nothing happened for
-an hour and suspending (`SANDBOX_IDLE_EXPIRY`). Owning suspension points toward layered resources,
+an hour and suspending (`SANDBOX_IDLE_EXPIRY`). Delivery waits on the runner's bootstrap, which
+`BOOTSTRAP_PROGRESS_CONTRACT` makes visible. The delivery states are `COMMAND_DELIVERY_STATES`'s. Owning suspension points toward layered resources,
 a Sandbox and a runner that runs inside one (`SANDBOX_GENERIC_SPLIT`).
 
 ### `SESSION_MESSAGE_QUEUE` — a durable queue that revives a Sandbox and delivers the message
@@ -943,6 +973,8 @@ flowchart TD
     SANDBOX_DATABASE_RENAME[Unscheduled: name the sandbox_commands database for the Runner Gateway]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
+    SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes suspend, section 7] -. same idleness question .-> ACTION_BOX_IDLE_REAPER
+    GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] -. makes moot .-> SANDBOX_DATABASE_RENAME
 ```
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
@@ -1045,7 +1077,8 @@ flowchart TD
 journal entries its ingress has already acknowledged, behind a flag, with full persistence kept
 selectable; the freezer's
 [`RUNNER_JOURNAL_SETTLEMENT`](task_freezer.md#runner_journal_settlement--settle-deltas-in-the-runner-journal-too) is the same idea at the delta level. Not designed: what the runner still needs locally (cursors, seal state, entries a
-resumed harness or a lost push reads back) once acknowledged entries are gone.
+resumed harness or a lost push reads back) once acknowledged entries are gone, including what a revived incarnation reads back
+(`SESSION_INCARNATIONS`).
 
 ## 11. Coherence refactors
 
