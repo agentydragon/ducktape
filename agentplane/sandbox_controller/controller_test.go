@@ -275,50 +275,50 @@ func TestEndedPodIsDeleted(t *testing.T) {
 	}
 }
 
-func crashLoop(t *testing.T, c client.Client) {
+func requestReplacement(t *testing.T, c client.Client, uid types.UID) {
 	t.Helper()
-	pod := getPod(t, c)
-	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
-		Name:  "runner",
-		State: corev1.ContainerState{Waiting: &corev1.ContainerStateWaiting{Reason: "CrashLoopBackOff"}},
-	}}
-	if err := c.Status().Update(context.Background(), pod); err != nil {
+	sandbox := getSandbox(t, c)
+	sandbox.Annotations = map[string]string{ReplaceIncarnationAnnotation: string(uid)}
+	if err := c.Update(context.Background(), sandbox); err != nil {
 		t.Fatal(err)
 	}
 }
 
-func TestCrashLoopingPodOfAReplacedTemplateIsRecreatedFromTheCurrentOne(t *testing.T) {
+func TestRequestedPodIsRecreatedFromTheCurrentTemplate(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
-	crashLoop(t, c)
+	pod := getPod(t, c)
+	pod.UID = "uid-pod-v1"
+	if err := c.Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
 	replaceTemplate(t, c, testTemplate("test-image:v2"))
-	reconcileOnce(t, r)
-	if getPod(t, c) != nil {
-		t.Fatal("the crash-looping Pod of the replaced template was kept")
-	}
-	reconcileOnce(t, r)
-	if pod := getPod(t, c); pod == nil || pod.Spec.Containers[0].Image != "test-image:v2" {
-		t.Fatalf("the next Pod does not run the current template's image: %v", pod)
-	}
-}
-
-func TestCrashLoopingPodOfTheCurrentTemplateIsKept(t *testing.T) {
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
-	reconcileOnce(t, r)
-	crashLoop(t, c)
 	reconcileOnce(t, r)
 	if getPod(t, c) == nil {
-		t.Fatal("deleted a crash-looping Pod that the current template would render again")
+		t.Fatal("replaced a Pod before anyone asked")
+	}
+	requestReplacement(t, c, pod.UID)
+	reconcileOnce(t, r)
+	if getPod(t, c) != nil {
+		t.Fatal("the requested Pod was kept")
+	}
+	reconcileOnce(t, r)
+	next := getPod(t, c)
+	if next == nil || next.Spec.Containers[0].Image != "test-image:v2" {
+		t.Fatalf("the next Pod does not run the current template's image: %v", next)
+	}
+	if next.Annotations[RenderedSpecAnnotation] == pod.Annotations[RenderedSpecAnnotation] {
+		t.Error("the rendered spec was not recorded afresh for the new incarnation")
 	}
 }
 
-func TestHealthyPodOfAReplacedTemplateIsKeptUntilItsNextStart(t *testing.T) {
+func TestRequestForAnotherIncarnationIsIgnored(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
-	replaceTemplate(t, c, testTemplate("test-image:v2"))
+	requestReplacement(t, c, "uid-of-an-earlier-pod")
 	reconcileOnce(t, r)
-	if pod := getPod(t, c); pod == nil || pod.Spec.Containers[0].Image != "test-image:v1" {
-		t.Fatal("replaced a Pod that was not crash-looping")
+	if getPod(t, c) == nil {
+		t.Fatal("a request naming an earlier incarnation replaced the current one")
 	}
 }
 

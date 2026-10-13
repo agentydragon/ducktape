@@ -199,6 +199,26 @@ func TestStartRendersAHaltedVMFromTheTemplateAsItIsThen(t *testing.T) {
 	}
 }
 
+func TestRequestedVMIsHaltedAndStartedFromTheCurrentTemplate(t *testing.T) {
+	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
+	reconcileOnce(t, r)
+	vmi, _ := startVMI(t, c, kubevirtv1.Running)
+	replaceTemplate(t, c, testVMTemplate("test-guest:v2"))
+	requestReplacement(t, c, vmi.UID)
+	reconcileOnce(t, r)
+	if vmRunning(getVM(t, c)) {
+		t.Fatal("the requested VM kept running")
+	}
+	if err := c.Delete(context.Background(), vmi); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	vm := getVM(t, c)
+	if !vmRunning(vm) || volume(vm, "root").ContainerDisk.Image != "test-guest:v2" {
+		t.Errorf("restarted VM runs %v with image %s, want Always with the template's new image", vm.Spec.RunStrategy, volume(vm, "root").ContainerDisk.Image)
+	}
+}
+
 func TestSwitchToAPodTemplateDeletesTheVMBeforeThePodStarts(t *testing.T) {
 	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
 	reconcileOnce(t, r)

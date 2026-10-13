@@ -2,8 +2,6 @@ package sandboxcontroller
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -38,9 +36,13 @@ const (
 	SandboxUIDAnnotation = "agentplane.allegedly.works/sandbox-uid"
 	// Seals a deleted Sandbox's Sessions, then deletes its Pod and, once that is gone, its state PVC.
 	StateVolumeFinalizer = "agentplane.allegedly.works/state-volume"
-	// On the Pod: a hash of the spec rendered from the template, so a crash-looping Pod can be told
-	// from the current template's.
-	PodSpecHashAnnotation = "agentplane.allegedly.works/pod-spec-hash"
+	// On the Pod or VirtualMachine: the JSON of the spec rendered from the template when it was
+	// created or last started, so it can be diffed against what the template renders now. The
+	// Sandbox Service's update-spec diff is its reader.
+	RenderedSpecAnnotation = "agentplane.allegedly.works/rendered-spec"
+	// On the Sandbox: the UID of the Pod, or of the VM's VMI, to replace from the template as it is
+	// now. Nothing clears it: the next incarnation has another UID, so it stops matching.
+	ReplaceIncarnationAnnotation = "agentplane.allegedly.works/replace-incarnation"
 
 	templateIndex = "spec.template"
 )
@@ -296,17 +298,17 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 			}
 			return w, nil, nil
 		}
-		// A template change otherwise applies at the next start, but a Pod whose container keeps
-		// crashing serves nothing and nothing restarts it, so one rendered from a template since
-		// replaced is deleted to start from the current one.
-		if crashLooping(w.pod) {
-			stale, err := r.renderedFromOtherSpec(ctx, sandbox, w.pod)
-			if err != nil || !stale {
-				return w, nil, err
-			}
+		// A template change otherwise applies at the next start; an operator's request to replace
+		// this incarnation starts the next one from the current template.
+		if replaceRequested(sandbox, w) {
 			return w, nil, r.deleteIfLive(ctx, w.pod)
 		}
 		return w, nil, nil
+	}
+	// Halting a VM whose VMI is to be replaced lets the start below rewrite its spec once the VMI
+	// is gone.
+	if replaceRequested(sandbox, w) {
+		return w, nil, r.haltVM(ctx, w.vm)
 	}
 	// KubeVirt replaces a running VM's VMI that ends. A stopped VM's last VMI still stopping, or a VM
 	// being deleted, holds the next start until its deletion event.
@@ -352,30 +354,25 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 	return w, nil, nil
 }
 
-func crashLooping(pod *corev1.Pod) bool {
-	return slices.ContainsFunc(pod.Status.ContainerStatuses, func(status corev1.ContainerStatus) bool {
-		return status.State.Waiting != nil && status.State.Waiting.Reason == "CrashLoopBackOff"
-	})
-}
-
-// renderedFromOtherSpec is whether the Pod's spec differs from what the Sandbox's template renders
-// now. A missing or invalid template is not a difference: the Pod stays until one can replace it.
-func (r *Reconciler) renderedFromOtherSpec(ctx context.Context, sandbox *Sandbox, pod *corev1.Pod) (bool, error) {
-	template, _, err := r.template(ctx, sandbox)
-	if template == nil || template.Spec.Pod == nil {
-		return false, err
+// replaceRequested is whether the Sandbox's request names the incarnation that is running now.
+func replaceRequested(sandbox *Sandbox, w workload) bool {
+	uid := sandbox.Annotations[ReplaceIncarnationAnnotation]
+	if uid == "" {
+		return false
 	}
-	current, blocked := render(sandbox, template)
-	return blocked == nil && pod.Annotations[PodSpecHashAnnotation] != current.Annotations[PodSpecHashAnnotation], nil
+	if w.pod != nil {
+		return string(w.pod.UID) == uid
+	}
+	return w.vmi != nil && string(w.vmi.UID) == uid
 }
 
-func specHash(spec *corev1.PodSpec) string {
+// renderedSpec is the annotation value for a rendered Pod or VM spec.
+func renderedSpec(spec any) string {
 	encoded, err := json.Marshal(spec)
 	if err != nil {
-		panic(err) // A PodSpec always marshals.
+		panic(err) // A rendered spec always marshals.
 	}
-	sum := sha256.Sum256(encoded)
-	return hex.EncodeToString(sum[:8])
+	return string(encoded)
 }
 
 // render is the template's Pod for this Sandbox, running as the Sandbox's ServiceAccount, with the
@@ -400,7 +397,7 @@ func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready)
 	if annotations == nil {
 		annotations = map[string]string{}
 	}
-	annotations[PodSpecHashAnnotation] = specHash(spec)
+	annotations[RenderedSpecAnnotation] = renderedSpec(spec)
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        sandbox.Name,
