@@ -165,7 +165,8 @@ restart anything because of it (no automatic spec replacement, operator 2026-10-
 
 **Quiescing is one operation on the whole runner, not on its Sessions** (operator, 2026-10-13). It
 puts the runner in a durable lameduck state, in which it accepts only the operations that drain it,
-and drains it. The state survives a runner restart, as the runner records it today. What stays per
+and drains it. The state survives a runner restart within the incarnation and ends with the incarnation
+(below). What stays per
 Session is only the bookkeeping the drain finishes: each journal's final cursor and whether the
 ingress has acknowledged it.
 
@@ -174,6 +175,34 @@ ingress has acknowledged it.
 | refuses `OpenSession`, `ResumeSession` and any command that starts or continues work |
 | accepts interrupts, reads (`ListSessions`) and repeated `Quiesce`                    |
 | interrupts active turns, stops harnesses, finalizes journals, pushes through cursors |
+
+**Lameduck belongs to an incarnation.** A runner restart inside an incarnation (a crashed runner
+container, a guest reboot in the same VMI) keeps the runner quiesced; a new incarnation on the same
+state volume starts unquiesced. Today the runner records the state as an empty `sealed` marker file
+under `--state-dir`, which is the state volume and therefore outlives the incarnation, so a resumed
+Sandbox's runner would find the marker and refuse every new and resumed Session. The marker must name
+the incarnation it was entered in:
+
+- **Incarnation identity.** The runner does not choose it. The gateway already authenticates the
+  connecting Pod and refuses one that is not the Sandbox's current incarnation
+  (`runner_gateway/runner_control.py`); its `Welcome` carries that incarnation's UID (the Pod, or a
+  VM's virt-launcher Pod, as `status.incarnation` names it). `runner_boot_id` cannot serve: it
+  changes on every runner process start, restarts included.
+- **Keying.** Entering lameduck writes the marker with the incarnation UID the runner last saw in a
+  `Welcome`. The runner serves nothing before it connects, since every call arrives over the control
+  stream, so on each `Welcome` it compares: same UID, the marker stands and the runner stays
+  quiesced across the restart; different UID, the marker belongs to an earlier incarnation and is
+  removed before any call is accepted, and the runner starts unquiesced.
+- **Journals.** Each Session's journal sealed at its final cursor in the earlier incarnation. The
+  new incarnation continues it after that cursor with an entry recording that it resumed; how a
+  sealed journal is reopened and what the ingress does with the next cursor range is
+  `SESSION_INCARNATIONS`'s to define, and the earlier incarnation's acknowledgement stays valid for
+  it.
+- **Outside the runner.** The Lease's stage annotation carries the incarnation UID it describes, and
+  the gateway clears the stage when it accepts a connection for a different incarnation, so a stale
+  `Quiesced` is never read for the new one. The controller's `quiescedIncarnation` is compared with
+  the current `status.incarnation`; after a resume they differ, which is what makes the new
+  incarnation unquiesced there as well.
 
 **Names.** Today one word, "sealed", covers three different facts: the runner refuses new work, its
 journals are final, and the ingress has acknowledged them. A `Sealed` condition that is True while
