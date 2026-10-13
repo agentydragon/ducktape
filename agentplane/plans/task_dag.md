@@ -955,6 +955,10 @@ from which the History Service records it, and its seal ends that incarnation, n
 the kept volume the runner journal and its cursors simply continue; the next incarnation journals
 that it resumed after a seal.
 
+Open piece: `QUIESCE_INCARNATION_KEY` lets a new incarnation's runner accept work, but a journal the earlier
+incarnation sealed stays sealed. This node decides how such a journal is reopened and what the ingress
+does with the next cursor range.
+
 ### `SESSION_REVIVE` — start a stopped Sandbox again
 
 **Blocked on incarnations.** The controller schedules a new Pod or VM
