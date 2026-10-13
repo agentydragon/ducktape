@@ -3007,6 +3007,8 @@ spec:
       namespace: ducktape-flux
     - name: external-secrets-operator
       namespace: ducktape-flux
+    - name: seaweedfs-operator
+      namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/claude-session-sync
   prune: true

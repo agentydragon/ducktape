@@ -13,9 +13,10 @@ from __future__ import annotations
 
 from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
+from cnpg_cluster_crds.io.cnpg.postgresql import ClusterSpecPostgresql
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import cilium, cnpg, namespaces, node_scheduling, pod_policy
+from cluster.cdk8s import cilium, cnpg, cnpg_backup, namespaces, node_scheduling, pod_policy
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
@@ -79,8 +80,12 @@ def _database(chart: Chart) -> None:
         storage_class="local-path-ovh-hdd",
         size="40Gi",
         initdb=cnpg.same_owner_initdb("claude_sessions"),
-        wal_archive=False,
+        wal_archive=True,
+        # Most of this Cluster's WAL is full-page images of the append-only events table.
+        postgresql=ClusterSpecPostgresql(parameters={"wal_compression": "lz4"}),
     )
+    # Every base backup holds the whole session history, so weekly loses nothing; WAL covers the days between.
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d", cadence=cnpg_backup.Cadence.WEEKLY)
 
 
 def _data_claim(chart: Chart) -> None:
@@ -321,6 +326,7 @@ def claude_session_sync(
     directory: RenderedDirectory,
     cnpg_operator: Kustomization,
     external_secrets_operator: Kustomization,
+    seaweedfs_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -330,5 +336,5 @@ def claude_session_sync(
         timeout="10m",
         # Owns the database and the credential volume.
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(cnpg_operator, external_secrets_operator),
+        depends_on=flux_kustomization_depends_on_many(cnpg_operator, external_secrets_operator, seaweedfs_operator),
     )

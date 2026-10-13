@@ -101,6 +101,7 @@ TENANTS = frozenset(
         "agentplane-staging",  # agentplane/db_backups.py
         "atuin",  # atuin/server.py
         "authentik",  # authentik/db_backups.py
+        "claude-session-sync",  # claude_session_sync/app.py
         "flux-system",  # seaweedfs/pr_visuals_bucket.py
         "forgejo",  # forgejo/app.py, forgejo/db.py
         "gatus",  # gatus/app.py

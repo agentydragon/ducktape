@@ -249,6 +249,7 @@ spec:
               - agentplane-staging
               - atuin
               - authentik
+              - claude-session-sync
               - flux-system
               - forgejo
               - gatus
@@ -279,6 +280,7 @@ spec:
               - agentplane-staging
               - atuin
               - authentik
+              - claude-session-sync
               - flux-system
               - forgejo
               - gatus
@@ -309,6 +311,7 @@ spec:
               - agentplane-staging
               - atuin
               - authentik
+              - claude-session-sync
               - flux-system
               - forgejo
               - gatus

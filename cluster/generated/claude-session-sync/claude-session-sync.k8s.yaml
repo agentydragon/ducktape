@@ -47,6 +47,14 @@ spec:
   instances: 2
   monitoring:
     enablePodMonitor: true
+  plugins:
+    - isWALArchiver: true
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: claude-session-sync-db
+  postgresql:
+    parameters:
+      wal_compression: lz4
   probes:
     liveness:
       isolationCheck:
@@ -54,6 +62,96 @@ spec:
   storage:
     size: 40Gi
     storageClass: local-path-ovh-hdd
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for claude-session-sync/claude-session-sync-db.
+  name: claude-session-sync-db-backups
+  namespace: claude-session-sync
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: claude-session-sync-db-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: claude-session-sync-db-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for claude-session-sync/claude-session-sync-db.
+  name: claude-session-sync-db-backups
+  namespace: claude-session-sync
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: claude-session-sync-db-backups
+  namespace: claude-session-sync
+spec:
+  identityRef:
+    name: claude-session-sync-db-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: claude-session-sync-db-backups-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  annotations:
+    description: SeaweedFS S3 destination for claude-session-sync/claude-session-sync-db base backups and WAL.
+  name: claude-session-sync-db
+  namespace: claude-session-sync
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://claude-session-sync-db-backups/
+    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
+    s3Credentials:
+      accessKeyId:
+        key: AWS_ACCESS_KEY_ID
+        name: claude-session-sync-db-backups-s3-credentials
+      secretAccessKey:
+        key: AWS_SECRET_ACCESS_KEY
+        name: claude-session-sync-db-backups-s3-credentials
+    wal:
+      compression: gzip
+  retentionPolicy: 30d
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: claude-session-sync-db
+  namespace: claude-session-sync
+spec:
+  backupOwnerReference: self
+  cluster:
+    name: claude-session-sync-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  schedule: 0 41 3 * * 2
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

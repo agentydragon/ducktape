@@ -374,9 +374,7 @@ Proxmox-only gap.)
       precedent (tofu-state's) was deleted 2026-06-02; see "Set up offsite tofu-state
       backup" in Next Actions.
 - [ ] Extend barman-cloud backups (`cdk8s/cnpg_backup.py`) to the clusters still
-      without them. `claude-session-sync-db` (40Gi) wants a weekly base backup rather
-      than the daily one `CnpgBackup` takes, since every base backup is a full copy.
-      `agentplane-index-db` is disposable and gets none. `seaweedfs-filer-db-ssd` cannot back up into
+      without them. `agentplane-index-db` is disposable and gets none. `seaweedfs-filer-db-ssd` cannot back up into
       the SeaweedFS it is the filer of, so it waits for an off-site store.
 - [ ] Off-site copy of the CNPG backups: every `CnpgBackup` writes to SeaweedFS on the
       same OVH nodes as the databases, so losing SeaweedFS loses the backups too.

@@ -1308,6 +1308,7 @@ def generate_manifests(root: Path) -> None:
         ),
         cnpg_kustomization,
         external_secrets_operator_kustomization,
+        seaweedfs_operator_kustomization,
     )
     flux_image_automation_forgejo_artifact = artifact(
         "flux-image-automation-forgejo", forgejo_image_automation.OUTPUT_DIR
