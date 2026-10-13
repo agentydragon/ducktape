@@ -36,7 +36,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
 from cluster.cdk8s import external_creds, node_scheduling, service_ref
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.kubevirt.virtual_machine import container_disk_vm, domain_labels
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.providers.kubevirt.virtual_machine import VirtualMachine
 
@@ -49,7 +49,7 @@ SSH = service_ref.ServiceRef(
     port=service_ref.Port(name="ssh", number=22),
     pods=service_ref.Pods(namespace=NAMESPACE, labels=tuple(domain_labels(VM_NAME).items())),
 )
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/devbox"
+OUTPUT_DIR = f"{PARKED_ROOT}/public-coder-agent/devbox"
 _SERVICE_LABELS = {"app.kubernetes.io/name": VM_NAME}
 _BAZEL_CACHE_CLAIM = "public-coder-devbox-bazel-cache"
 _BUILDBUDDY_API_KEY = "buildbuddy-api-key"
@@ -88,10 +88,11 @@ def _bazel_cache_claim(scope: Construct) -> None:
             name=_BAZEL_CACHE_CLAIM,
             namespace=NAMESPACE,
             annotations={
+                "kustomize.toolkit.fluxcd.io/prune": "disabled",
                 "description": (
                     "Separately deletable local Bazel output, repository, and action cache for "
                     "public-coder-devbox. Stop the VM before deleting this claim to reset it."
-                )
+                ),
             },
         ),
         spec=k8s.PersistentVolumeClaimSpec(
@@ -129,9 +130,8 @@ def virtual_machine(scope: Construct) -> VirtualMachine:
         run_strategy="Halted",  # Public Coder is paused; retain the VM definition and cache PVC.
         # This is an ephemeral VM disk (accepted tradeoff: no checkout or other local
         # state survives an image update or VM restart). Flux ImageUpdateAutomation
-        # sets the tag in image-pins/ after .github/workflows/public-coder-devbox-image.yml
-        # publishes a new one -- see the public-coder-devbox ImagePolicy in
-        # forgejo_registry/image_automation.py.
+        # sets the tag in image-pins/ when a new one is published -- see the
+        # public-coder-devbox ImagePolicy in forgejo_registry/image_automation.py.
         image=_IMAGE,
         # 4 cores / 8Gi limit, 2 cores / 4Gi request: the two hil, kubevirt.io/schedulable=true
         # nodes (ovh-ns102453, ovh-ns103711) are 8-core/32Gi OVH KS-5 boxes already carrying the
@@ -213,6 +213,9 @@ def public_coder_agent_devbox(
         chart,
         name,
         directory,
+        annotations={"ducktape.org/parked": "true"},
+        # Parked: OpenClaw is off; PVCs and data stay (cluster/parked/public-coder-agent/README.md).
+        suspend=True,
         # A deliberately halted VM is not Ready. Do not block Flux on guest readiness.
         wait=False,
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,

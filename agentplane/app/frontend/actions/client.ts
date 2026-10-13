@@ -4,6 +4,7 @@ import type { ActionRequestView } from "./types";
 
 export type { ActionRequestView } from "./types";
 
+export type BoundPolicyView = components["schemas"]["BoundPolicyView"];
 export type ActionPolicyView = components["schemas"]["ActionPolicyView"];
 export type ActionPolicyUnavailable = components["schemas"]["ActionPolicyUnavailable"];
 export type ActionPolicyBindingView = components["schemas"]["ActionPolicyBindingView"];

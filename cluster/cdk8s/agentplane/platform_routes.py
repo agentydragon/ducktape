@@ -1,6 +1,6 @@
 """The Agentplane services runners call over the egress sidecar's platform routes
 (agentplane/egress/platform_routes.py). From this one list come:
-- the sidecar's routes and the runner's endpoint flags in our runner SandboxTemplate;
+- the sidecar's routes and the runner's endpoint flags in the runner SandboxTemplates;
 - the network rules on both ends.
 
 Each route uses the token the sidecar already projects for its service's audience (sandbox_pod.py).
@@ -13,6 +13,9 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
+    SandboxTemplateSpecPodTemplateSpecContainersEnv,
+)
 from cdk8s import ApiObjectMetadata
 from constructs import Construct
 
@@ -39,6 +42,10 @@ class Route:
         return f"127.0.0.1:{self.listen_port}"
 
 
+# Each route replaces `authorization` with its own token, so a runner presents this placeholder.
+ROUTE_BEARER = "platform-route"
+
+
 def control(namespace: str) -> Route:
     return Route("control", runner_gateway.runner_control(namespace), RUNNER_CONTROL_AUDIENCE, 3130)
 
@@ -51,7 +58,7 @@ def routes(namespace: str) -> tuple[Route, ...]:
     return control(namespace), ingress(namespace)
 
 
-def sidecar_env(namespace: str) -> dict[str, str]:
+def sidecar_env(namespace: str) -> SandboxTemplateSpecPodTemplateSpecContainersEnv:
     """The sidecar's `platform_routes` setting, as its environment variable."""
     value = {
         route.name: PlatformRoute(
@@ -61,21 +68,22 @@ def sidecar_env(namespace: str) -> dict[str, str]:
         ).model_dump(mode="json")
         for route in routes(namespace)
     }
-    return {"name": env_name(sidecar.Settings, "platform_routes"), "value": json.dumps(value)}
+    return SandboxTemplateSpecPodTemplateSpecContainersEnv(
+        name=env_name(sidecar.Settings, "platform_routes"), value=json.dumps(value)
+    )
 
 
 def runner_args(namespace: str) -> list[str]:
-    # The bearers are placeholders: each route replaces `authorization` with its own token.
     control_route, ingress_route = control(namespace), ingress(namespace)
     return [
         "--control-target",
         control_route.local_target,
         "--control-bearer",
-        "platform-route",
+        ROUTE_BEARER,
         "--ingress-target",
         ingress_route.local_target,
         "--ingress-bearer",
-        "platform-route",
+        ROUTE_BEARER,
     ]
 
 

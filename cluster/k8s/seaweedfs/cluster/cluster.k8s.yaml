@@ -247,16 +247,27 @@ spec:
             operator: In
             values:
               - agentplane-staging
+              - atuin
               - authentik
               - flux-system
               - forgejo
+              - gatus
+              - haku-console
+              - haku-mailbox
               - home-assistant
               - langfuse
+              - litellm
               - loki
+              - matrix
+              - mcp-oauth-state
               - monitoring
               - nix-cache
+              - ntfy
               - oci-cache
+              - plaid-mcp
               - public-coder-agent
+              - study-casino
+              - tofu-state
               - vm-images-publisher
     - group: seaweed.seaweedfs.com
       kind: S3Identity
@@ -266,16 +277,27 @@ spec:
             operator: In
             values:
               - agentplane-staging
+              - atuin
               - authentik
               - flux-system
               - forgejo
+              - gatus
+              - haku-console
+              - haku-mailbox
               - home-assistant
               - langfuse
+              - litellm
               - loki
+              - matrix
+              - mcp-oauth-state
               - monitoring
               - nix-cache
+              - ntfy
               - oci-cache
+              - plaid-mcp
               - public-coder-agent
+              - study-casino
+              - tofu-state
               - vm-images-publisher
     - group: seaweed.seaweedfs.com
       kind: S3Credentials
@@ -285,16 +307,27 @@ spec:
             operator: In
             values:
               - agentplane-staging
+              - atuin
               - authentik
               - flux-system
               - forgejo
+              - gatus
+              - haku-console
+              - haku-mailbox
               - home-assistant
               - langfuse
+              - litellm
               - loki
+              - matrix
+              - mcp-oauth-state
               - monitoring
               - nix-cache
+              - ntfy
               - oci-cache
+              - plaid-mcp
               - public-coder-agent
+              - study-casino
+              - tofu-state
               - vm-images-publisher
   to:
     - group: seaweed.seaweedfs.com

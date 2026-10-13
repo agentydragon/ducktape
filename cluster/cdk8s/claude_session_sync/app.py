@@ -17,7 +17,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletion
 
 from cluster.cdk8s import cilium, cnpg, namespaces, node_scheduling, pod_policy
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.forgejo_registry import chart as forgejo_images
+from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -138,7 +138,7 @@ def _deployment(
                 metadata=k8s.ObjectMeta(labels=labels),
                 spec=k8s.PodSpec(
                     automount_service_account_token=False,
-                    image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
+                    image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
                     security_context=k8s.PodSecurityContext(
                         run_as_non_root=True, run_as_user=_UID, run_as_group=_UID, fs_group=_UID
                     ),
@@ -306,7 +306,7 @@ def chart(app: App) -> Chart:
         vpa=Vpa.DISABLED,
         labels={"name": NAMESPACE},
     )
-    forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
+    pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     _database(chart)
     _data_claim(chart)
     _web_deployment(chart)

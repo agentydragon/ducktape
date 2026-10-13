@@ -1,11 +1,11 @@
 # Runner control stream
 
 Status: **accepted design, deployed.** The Runner Gateway's
-control listener (`runner_gateway/runner_control.py`), reachable through the egress proxy,
-authenticates, fences and keeps connections alive, and carries command deliveries and lifecycle
-requests (`runner_gateway/lifecycle_control.py`) for Sandboxes routed to it. The runner dials it at
-`--control-target` (`runner/control.py`), which the Sandbox Service passes to every Sandbox's
-runner (`runner_control`); runner Pods admit no connections. This is the contract it implements. It
+control listener (`runner_gateway/runner_control.py`), reachable over the egress sidecar's platform
+route, authenticates, fences and keeps connections alive, and carries command deliveries and
+lifecycle requests (`runner_gateway/lifecycle_control.py`) for Sandboxes routed to it. The runner
+dials it at `--control-target` (`runner/control.py`), which every runner `SandboxTemplate` passes
+(`cluster/cdk8s/agentplane/platform_routes.py`); runner Pods admit no connections. This is the contract it implements. It
 covers command delivery, authentication, connection ownership, lifecycle
 requests (listing, opening, resuming and sealing Sessions), and the push of Events to the runner's
 ingress.
@@ -138,8 +138,8 @@ them. Only unary calls are carried; nothing here needs a streaming `Runner` meth
 ## Event ingress
 
 Status: **accepted design (operator, 2026-10-10 PDT); deployed.** The runner pushes
-when started with `--ingress-target` (`runner/ingress.py`), which the Sandbox Service passes to new
-runners from its `runner_ingress` setting, and reports `flushed` from what it recorded. The History
+when started with `--ingress-target` (`runner/ingress.py`), which every runner `SandboxTemplate`
+passes, and reports `flushed` from what it recorded. The History
 Service serves the ingress (`history_service/ingress.py`) on a listener of its own, and follows no
 runner.
 
@@ -235,14 +235,13 @@ since only an operator resolves them; a refused Session holds up no other. Unack
 bounded only by the state volume, and a Sandbox cannot finish teardown while any is left.
 
 **Endpoint and authentication.** The runner is started with its ingress and control targets, which
-only the component creating the Sandbox's Kubernetes objects sets, from its own configuration: one
-ingress for every Sandbox it creates (the History Service, or a historyless deployment's own
-sink), and the control target is always the Runner Gateway. A create request cannot choose
-either; an ingress per Sandbox is not built. The runner reaches the ingress through its egress sidecar with a placeholder bearer, like
-the control listener ([Path through the egress proxy](#path-through-the-egress-proxy)). An egress policy
-the Sandbox Service binds at creation, not a launch-selectable one, admits the ingress host and
-substitutes the Pod's projected token for that ingress's own audience: `agentplane-runner-ingress`
-for the History Service, and an audience of its own for a historyless client. No other recipient
+its `SandboxTemplate` sets: one ingress for every Sandbox (the History Service, or a historyless
+deployment's own sink), and the control target is always the Runner Gateway. A create request
+cannot choose either; an ingress per Sandbox is not built. The runner reaches the ingress over its
+egress sidecar's platform route, like the control listener
+([Authentication and incarnation binding](#authentication-and-incarnation-binding)): the sidecar
+attaches the Pod's projected token for that ingress's own audience, `agentplane-runner-ingress` for
+the History Service, and an audience of its own for a historyless client. No other recipient
 can replay a token the ingress saw, and an ingress token opens no control connection.
 
 **Sealing.** `Seal` on the control stream seals every journal and returns each Session's seal cursor
@@ -292,8 +291,7 @@ endpoints: [{ addresses: [<owning replica's Pod IP>] }]
 ports: [{ name: grpc, port: 8080 }]
 ```
 
-No routing record is kept: runners dial out, so nothing is routed inbound. Agent-sandbox already names a Service after the
-Sandbox, hence `-control`.
+No routing record is kept: runners dial out, so nothing is routed inbound.
 
 - **Accepting a connection.** After authenticating `Hello`, the replica updates the Lease with the
   `resourceVersion` it read: holder itself, transitions plus one, fresh renew time and annotations.
@@ -389,13 +387,12 @@ Alternatives for the transport itself:
 
 ## Authentication and incarnation binding
 
-The runner dials the Runner Gateway's control listener through the Pod's egress sidecar, like
-every other destination it reaches; the Sandbox's network fence admits nothing else. It sends a
-placeholder in `authorization: Bearer` metadata on every RPC. The egress proxy authenticates the Pod
-hop and substitutes that Pod's own projected token for the dedicated audience
-`agentplane-runner-control`, the same mechanism and per-destination audience that
-[notifications](../notification_service/README.md) uses. The token is projected only into the
-sidecar, so neither the runner nor the harness ever holds it.
+The runner dials the Runner Gateway's control listener at a loopback port of the Pod's egress
+sidecar, a platform route (`agentplane/egress/platform_routes.py`) that forwards to the listener in
+plaintext in-cluster, past the egress proxy. The route replaces the `authorization` metadata on
+every RPC with that Pod's own projected token for the dedicated audience
+`agentplane-runner-control`. The token is projected only into the sidecar, so neither the runner nor
+the harness ever holds it.
 
 The audience is distinct from the Sandbox Service's and Runner Gateway's (`agentplane-sandbox-service`,
 `agentplane-runner-gateway`) and from
@@ -403,21 +400,23 @@ the shared `agentplane-egress` audience that the LLM ingress and Action Service 
 those recipients can replay a token they saw as a runner connection, and a control token cannot
 call the Sandbox Service or Runner Gateway API.
 
-The rule that admits the control host lives in its own egress policy, which the Sandbox Service
-binds to every Sandbox at creation. It is not one of the launch-selectable
-policies, so choosing a narrow egress set cannot cut a Sandbox off from its own control plane.
+The route is part of every runner template, and its network rules are not policy a launch selects,
+so no Sandbox can be cut off from its own control plane.
 
 When a `Connect` stream opens, the Runner Gateway authenticates the bearer with the shared
 `WorkloadPrincipalAuthenticator` ([workload authentication](workload_authentication.md)) and then
 resolves the principal the way destination resolution does, in reverse:
 
 1. The Pod named by the token exists with the token's UID and is not being deleted.
-2. It has exactly one controller reference, a `Sandbox` of the agent-sandbox API, and that Sandbox
-   is in the service's inventory with the same UID.
-3. The Sandbox runs as the token's ServiceAccount.
+2. It has exactly one controller reference: a `Sandbox` (`agentplane/sandbox_resource.py`) that
+   exists with the same UID; or, for a VM Sandbox, its VMI, in which case the Pod's
+   `agentplane.allegedly.works/sandbox` label names the Sandbox, whose
+   `status.incarnation` (written only by the Sandbox Controller) is this Pod's UID.
+3. The token's ServiceAccount is the Sandbox's, which has its name.
 
-A VM environment's runner reaches the control listener from its `virt-launcher` Pod's egress relay, and that
-Pod resolves to its environment through its own controller chain under the same rules.
+A VM Sandbox's runner reaches the control listener from its `virt-launcher` Pod's egress relay,
+through the egress proxy ([Path through the egress proxy](#path-through-the-egress-proxy)), so its
+token is that Pod's.
 
 Names, IPs, claimed Session IDs and anything in `Hello` are not identity. The connection is bound
 to the Sandbox UID and Pod UID that resolution returned. A Sandbox being deleted is still
@@ -426,7 +425,7 @@ TokenReview.
 
 **Revocation.** Every RPC is authenticated when it opens. With each liveness write (every 15 s) the
 owning replica resolves the connection's Pod and Sandbox again, and ends the connection's streams
-when its Pod is deleted or replaced or its Sandbox's ServiceAccount changes. As a backstop for a
+when its Pod is deleted or replaced or its Sandbox is replaced by another of its name. As a backstop for a
 missed watch event, it ends every `Connect` stream after one hour; the runner reconnects and
 authenticates again.
 
@@ -492,6 +491,10 @@ state, an active turn or whether a command was carried out, and losing the conne
 those either.
 
 ## Path through the egress proxy
+
+The KubeVirt experiment's runner, which has no platform routes, dials both listeners through the
+egress proxy with a placeholder bearer. The `runner-control` and `runner-ingress` egress policies
+admit each host and substitute the Pod's projected token for its audience.
 
 A gRPC client behind an HTTP proxy opens a `CONNECT` tunnel, and the egress proxy intercepts the
 tunnel to read and substitute metadata. It reads the plaintext HTTP/2 the control listener and the ingress

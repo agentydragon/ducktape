@@ -1,5 +1,5 @@
 """Staging-only Action Service policy objects: caller ServiceAccounts, reviewed
-ActionPolicySets, and their bindings; also what its sandboxes may reach (its egress PolicyBinding)
+PolicySets, and their bindings; also what its sandboxes may reach (its egress PolicyBinding)
 and read (the Coinbase key). See cluster/k8s/agentplane-staging/README.md § Action policies --
 Sandbox-subject bindings are written by the integration app at runtime and are never checked in here.
 """
@@ -9,14 +9,8 @@ from __future__ import annotations
 from collections.abc import Sequence
 from urllib.parse import urlsplit
 
-from agentplane_actionpolicyset_crds.works.allegedly.agentplane import ActionPolicySetSpecAutoApproveIf
-from agentplane_egresspolicy_crds.works.allegedly.agentplane import EgressPolicySpecRules, EgressPolicySpecRulesMethods
 from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBindingSpecSubject
-from agentplane_policyset_crds.works.allegedly.agentplane import (
-    PolicySetSpecRules,
-    PolicySetSpecRulesPolicy,
-    PolicySetSpecRulesPolicyType,
-)
+from agentplane_policyset_crds.works.allegedly.agentplane import PolicySetSpecRules, PolicySetSpecRulesMethods
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import Role, RoleBinding, RolePolicyRule, Secret, ServiceAccount
 from constructs import Construct
@@ -25,8 +19,9 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetDeletionPolicy,
 )
 
-from agentplane.action_service.policies.resources import CALLER_LABEL, PolicySetSpec, parse_action_rule
+from agentplane.action_service.policies.resources import CALLER_LABEL, parse_action_rule
 from agentplane.action_service.sandbox.actions import SANDBOX_GROUP, SandboxAction
+from agentplane.crd_group import GROUP
 from cluster.cdk8s import agent_access_profiles as access, external_creds
 from cluster.cdk8s.agentplane import app as app_component, dex, egress, testing
 from cluster.cdk8s.agentplane.egress import (
@@ -49,9 +44,10 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     HOME_ASSISTANT_READONLY_POLICY,
     PLAID_PGWEB_POLICY,
 )
+from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.providers.agentplane import policy_set
-from cluster.cdk8s.providers.agentplane.action_policy_set import ActionPolicySet, AutoApproveIf
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
+from cluster.cdk8s.providers.agentplane.policy_set import AutoApproveIf, Rule
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.public_coder.egress import NAMESPACE, SERVICE_ACCOUNT
@@ -72,13 +68,13 @@ _GITHUB_DOWNLOADS_POLICY = "github-downloads"
 
 # The staging-only policies created below. `agentplane-testing` lets a staging sandbox reach the
 # testing instance and `coinbase` publishes the Coinbase key, so their names belong to this
-# module; so do the two ActionPolicySet reads every preset binds by default.
+# module; so do the two Action PolicySet reads every preset binds by default.
 AGENTPLANE_TESTING_POLICY = "agentplane-testing"
 COINBASE_POLICY = "coinbase"
 GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 SSH_READS_SET = "ssh-reads"
 
-# The ActionPolicySet objects created below that the launch presets bind, named because a
+# The Action PolicySets created below that the launch presets bind, named because a
 # preset refers to them by name. They live here rather than in the preset's own module so the
 # name and the object that answers to it are declared in one place: staging's presets import
 # these, never the other way round.
@@ -87,40 +83,17 @@ PUBLIC_DUCKTAPE_READS_SET = "public-ducktape-reads"
 PUBLIC_DUCKTAPE_FORK_READS_SET = "public-ducktape-fork-reads"
 PUBLIC_GAFFER_PRIVATE_READS_SET = "public-gaffer-private-reads"
 DUCKTAPE_PR_FAILED_JOBS_SET = "ducktape-pr-failed-jobs"
-FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET = "finance-agent-gaffer-branch-creation"
-FINANCE_AGENT_GAFFER_PR_CREATION_SET = "finance-agent-gaffer-pr-creation"
-
-
-def _action_rule(entry: ActionPolicySetSpecAutoApproveIf) -> PolicySetSpecRules:
-    return policy_set.Rule.action_auto_approve(
-        policy=PolicySetSpecRulesPolicy(
-            type=PolicySetSpecRulesPolicyType[entry.type.name],
-            actions=entry.actions,
-            schema=entry.schema,
-            owner=entry.owner,
-            repository=entry.repository,
-        )
-    )
+GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET = "gaffer-private-branch-and-pr-creation"
 
 
 def _policy_set(
-    scope: Construct,
-    id: str,
-    *,
-    metadata: ApiObjectMetadata,
-    auto_approve_if: Sequence[ActionPolicySetSpecAutoApproveIf],
+    scope: Construct, id: str, *, metadata: ApiObjectMetadata, auto_approve_if: Sequence[PolicySetSpecRules]
 ) -> None:
-    # The Action Service parses `spec` more strictly than the CRD schema (an unknown policy
-    # kind or key, an invalid JSON Schema); an object it refuses grants nothing on the cluster,
-    # so it fails here instead.
-    # CLEANUP(added 2026-10-12): Drop the ActionPolicySet, and build `action_auto_approve` rules
-    #   directly, once the Sandbox Service binds Sandboxes through PolicyBindings and no
-    #   ActionPolicyBinding exists.
-    PolicySetSpec.model_validate(
-        ActionPolicySet(scope, id, metadata=metadata, auto_approve_if=auto_approve_if).to_json()["spec"]
-    )
-    twin = policy_set.PolicySet(scope, f"{id}-set", metadata=metadata, rules=[_action_rule(e) for e in auto_approve_if])
-    for rule in twin.to_json()["spec"]["rules"]:
+    # The Action Service parses a rule more strictly than the CRD schema (an unknown policy
+    # kind or key, an invalid JSON Schema); a set it refuses grants nothing on the cluster, so
+    # it fails here instead.
+    policy_set_object = policy_set.PolicySet(scope, id, metadata=metadata, rules=auto_approve_if)
+    for rule in policy_set_object.to_json()["spec"]["rules"]:
         parse_action_rule(rule)
 
 
@@ -493,19 +466,23 @@ def add_staging_action_policies(scope: Construct) -> None:
         ],
     )
 
-    # This grants finance-agent only the additive GitHub create-branch operation in its private
-    # Gaffer repository. GitHub's CreateRef rejects an existing branch name rather than moving
-    # that ref; pushing commits, editing files and creating PRs remain on the human-approval path.
+    # Two additive GitHub writes in the private Gaffer repository, and nothing else; pushing
+    # commits, editing files, merging and reviewer requests remain on the human-approval path.
+    #  - create_branch: GitHub's CreateRef rejects an existing branch name rather than moving that ref.
+    #  - create_pull_request: opening a PR creates a review object but does not merge it or change
+    #    either branch. It may notify reviewers and trigger repository workflows, so approval is
+    #    scoped to this repository and this one Action.
     _policy_set(
         scope,
-        "finance-agent-gaffer-branch-creation",
+        "gaffer-private-branch-and-pr-creation",
         metadata=ApiObjectMetadata(
-            name=FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
+            name=GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
             namespace=_NAMESPACE,
             annotations={
                 "description": (
-                    "Auto-approves only GitHub MCP create_branch calls for agentydragon/gaffer-private; "
-                    "existing branches cannot be overwritten, and other writes remain human-approved."
+                    "Auto-approves only GitHub MCP create_branch and create_pull_request calls targeting "
+                    "agentydragon/gaffer-private; existing branches cannot be overwritten, the PR is not "
+                    "merged, and other writes remain human-approved."
                 )
             },
         ),
@@ -523,27 +500,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                     "required": ["owner", "repo", "branch"],
                     "additionalProperties": False,
                 },
-            )
-        ],
-    )
-
-    # Opening a PR creates a review object but does not merge it or change either branch. It may
-    # notify reviewers and trigger repository workflows, so scope auto-approval to this repository
-    # and the GitHub MCP create_pull_request Action alone. Reviewer requests stay on the human path.
-    _policy_set(
-        scope,
-        "finance-agent-gaffer-pr-creation",
-        metadata=ApiObjectMetadata(
-            name=FINANCE_AGENT_GAFFER_PR_CREATION_SET,
-            namespace=_NAMESPACE,
-            annotations={
-                "description": (
-                    "Auto-approves only GitHub MCP create_pull_request calls targeting "
-                    "agentydragon/gaffer-private; the PR is not merged and other writes remain human-approved."
-                )
-            },
-        ),
-        auto_approve_if=[
+            ),
             AutoApproveIf.argument_schema(
                 actions={"github": ["create_pull_request"]},
                 schema={
@@ -561,7 +518,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                     "required": ["owner", "repo", "title", "head", "base"],
                     "additionalProperties": False,
                 },
-            )
+            ),
         ],
     )
 
@@ -608,11 +565,28 @@ def add_staging_action_policies(scope: Construct) -> None:
             for index, subject in enumerate(access.profile_subjects("coinbase-credentials"))
         ),
     )
+    sandbox_reader = Role(
+        scope,
+        "role-claude-ai-sandbox-reader",
+        metadata=ApiObjectMetadata(name="claude-ai-sandbox-reader", namespace=_NAMESPACE),
+        rules=[RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"])],
+    )
+    RoleBinding(
+        scope,
+        "rolebinding-claude-ai-sandbox-reader",
+        metadata=ApiObjectMetadata(name="claude-ai-sandbox-reader", namespace=_NAMESPACE),
+        role=sandbox_reader,
+    ).add_subjects(
+        *(
+            subject.imported(scope, f"sandbox-reader-subject-{index}")
+            for index, subject in enumerate(access.profile_subjects("agentplane-sandbox-read"))
+        )
+    )
     add_egress_policy(
         scope,
         "egresspolicy-coinbase",
         metadata=ApiObjectMetadata(name=COINBASE_POLICY, namespace=_NAMESPACE),
-        rules=[EgressPolicySpecRules(hosts=["api.coinbase.com"], methods=[EgressPolicySpecRulesMethods.GET])],
+        rules=[Rule.egress(hosts=["api.coinbase.com"], methods=[PolicySetSpecRulesMethods.GET])],
     )
     # The testing deployment's app, for the acceptance suite's harness scenarios run from a box
     # (agentplane/acceptance/README.md): by its Service rather than its public name, which would
@@ -629,8 +603,8 @@ def add_staging_action_policies(scope: Construct) -> None:
         metadata=ApiObjectMetadata(name=AGENTPLANE_TESTING_POLICY, namespace=_NAMESPACE),
         # The proxy matches a request's host on the exact string, and clients spell the full name.
         rules=[
-            EgressPolicySpecRules(hosts=[testing_app.fqdn], cluster_internal=True),
-            EgressPolicySpecRules(hosts=testing_login_hosts, cluster_internal=True),
+            Rule.egress(hosts=[testing_app.fqdn], cluster_internal=True),
+            Rule.egress(hosts=testing_login_hosts, cluster_internal=True),
         ],
     )
     proxy = egress.proxy(_NAMESPACE)
@@ -642,7 +616,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # unreachable from sandboxes for two weeks. `fleet_rules.https_egress_sni_conflicts` refuses it
     # at synth now; the mechanism is cluster/docs/cilium_network_policy.md section "An SNI rule
     # decides port 443 for every policy that selects the same Pod". The proxy fences those names
-    # where it is meant to: in its own `EgressPolicy` objects.
+    # where it is meant to: in its own egress PolicySets.
     NetworkPolicy(
         scope,
         "networkpolicy-egress-to-testing-app",
@@ -667,7 +641,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         "egresspolicy-github-downloads",
         metadata=ApiObjectMetadata(name=_GITHUB_DOWNLOADS_POLICY, namespace=_NAMESPACE),
         rules=[
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[
                     "github.com",
                     # Where `github.com/.../archive/...` redirects.
@@ -678,7 +652,7 @@ def add_staging_action_policies(scope: Construct) -> None:
                     # Raw file content off a ref, e.g. `raw.githubusercontent.com/<owner>/<repo>/<ref>/<path>`.
                     "raw.githubusercontent.com",
                 ],
-                methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.HEAD],
+                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
             )
         ],
     )
@@ -697,7 +671,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # Drive Activity, Tasks, Contacts, Docs, Sheets, Slides and YouTube reads
     # (egress_staging_credentials.py). `grocy-sf-readonly` presents the app password of an Authentik
     # service account with no Grocy permissions, as HTTP Basic, on GETs to Grocy's own REST API (see
-    # that module's `grocy-sf-readonly` EgressPolicy for why that's Grocy's API rather than the
+    # that module's `grocy-sf-readonly` egress PolicySet for why that's Grocy's API rather than the
     # grocy-mcp-sf MCP server). `activitywatch-read` presents the ActivityWatch read route's bearer,
     # which that route itself holds to reads, and `aiquota-read` aiquota's bearer on its read-only
     # API. `haku-mailbox` presents the JWT of Haku's own mailbox: JMAP reads and changes that one

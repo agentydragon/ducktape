@@ -18,7 +18,7 @@ from flux_kustomize.io.fluxcd.toolkit.kustomize import (
 from cluster.cdk8s import namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.forgejo import secret_copy
-from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.haku import console
 from cluster.cdk8s.haku.console import Console
@@ -41,7 +41,6 @@ EXTRA_RESOURCES = (
     # links GitHub with it (cluster/k8s/haku/console/README.md).
     "haku-console-github-mcp-client-credentials.sops.yaml",
     "routine-launch-token.sops.yaml",
-    "web-push-vapid.sops.yaml",
     "static-metadata.yaml",
     "image-metadata.yaml",
 )
@@ -79,6 +78,7 @@ def haku_console(
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
     monitoring_crds: Kustomization,
+    seaweedfs_operator: Kustomization,
 ) -> Kustomization:
     """Build the Flux graph node from its predecessor nodes."""
     return flux_kustomization(
@@ -101,5 +101,6 @@ def haku_console(
             external_secrets_operator,
             # The ServiceMonitor CRD.
             monitoring_crds,
+            seaweedfs_operator,
         ),
     )

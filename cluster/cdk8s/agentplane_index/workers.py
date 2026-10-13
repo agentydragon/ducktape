@@ -33,7 +33,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization_depends_on_many,
 )
 from cluster.cdk8s.forgejo import app as forgejo  # a bare `app.HTTP` would not say whose
-from cluster.cdk8s.forgejo_registry import chart as forgejo_images
+from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.cnpg.database import Database
@@ -97,6 +97,7 @@ def _read_token(chart: Chart) -> None:
 
 
 def _database(chart: Chart) -> None:
+    # No CnpgBackup: the index is disposable and rebuilds from the Git remotes and Ollama.
     cnpg.cluster(
         chart,
         "database-cluster",
@@ -146,7 +147,7 @@ def _worker(
                 metadata=k8s.ObjectMeta(labels=worker.pods.selector),
                 spec=k8s.PodSpec(
                     service_account_name=instance,
-                    image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
+                    image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
                     node_selector={"topology.kubernetes.io/region": "hil"},
                     # The worker reads its repository itself; nothing here talks to the API server.
                     automount_service_account_token=False,
@@ -223,7 +224,7 @@ def chart(app: App) -> Chart:
         annotations={"description": "Single-repository semantic indexes for ducktape and haku-state."},
     )
     _read_token(chart)
-    forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
+    pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAME)
     _database(chart)
     _worker(
         chart,

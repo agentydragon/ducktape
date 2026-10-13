@@ -41,11 +41,14 @@ from agentplane.action_service.models import (
     PolicySource,
     Verdict,
 )
-from agentplane.action_service.policies.resources import BINDINGS_PLURAL, POLICY_SETS_PLURAL, READY_CONDITION
+from agentplane.action_service.policies.resources import ACTION_RULE_TYPE, ACTIONS_READY_CONDITION
 from agentplane.action_service.policy_evaluation import PROVIDER_NAME
+from agentplane.app.action_policy import ActionPolicyView
+from agentplane.app.api import CallerGrantView
 from agentplane.app.sandbox_models import SandboxView
 from agentplane.app.testing.client import Client
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.proto import runner_pb2
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
@@ -103,13 +106,17 @@ class KubectlError(Exception):
 
 
 class PolicyObjectNotReadyError(Exception):
-    """The Action Service has not yet judged the object's current generation."""
+    """The Action Service has not yet judged the binding's current generation."""
+
+
+class PolicyBindingPresentError(Exception):
+    """The binding, or the Action Service's view of it, is still there."""
 
 
 @dataclass
 class PolicyObjects:
-    """ActionPolicySets and ActionPolicyBindings this test writes with the caller's kubeconfig,
-    deleted whatever the test did. RBAC on the two kinds in the namespace is what gates this."""
+    """PolicySets and PolicyBindings this test writes with the caller's kubeconfig, deleted whatever
+    the test did. RBAC on the two kinds in the namespace is what gates this."""
 
     namespace: str
     created: list[tuple[str, str]] = field(default_factory=list)
@@ -127,33 +134,44 @@ class PolicyObjects:
         self.created.append((plural, name))
         return name
 
-    def create_policy_set(self, name: str, auto_approve_if: list[dict[str, Any]]) -> str:
-        return self._create("ActionPolicySet", POLICY_SETS_PLURAL, name, {"autoApproveIf": auto_approve_if})
+    def create_policy_set(self, name: str, auto_approve: list[dict[str, Any]]) -> str:
+        rules = [{"type": ACTION_RULE_TYPE, "policy": policy} for policy in auto_approve]
+        return self._create("PolicySet", POLICY_SETS_PLURAL, name, {"rules": rules})
 
     def create_binding(self, name: str, *, sandbox: SandboxView, policy_sets: list[str]) -> str:
+        subject = {"namespace": sandbox.service_account.namespace, "name": sandbox.service_account.name}
         return self._create(
-            "ActionPolicyBinding",
-            BINDINGS_PLURAL,
-            name,
-            {"subject": {"namespace": self.namespace, "name": sandbox.name}, "policySets": policy_sets},
+            "PolicyBinding", POLICY_BINDINGS_PLURAL, name, {"subject": subject, "policySets": policy_sets}
         )
 
-    def bind(self, sandbox: SandboxView, name: str, auto_approve_if: list[dict[str, Any]]) -> tuple[str, str]:
-        """One policy set bound to `sandbox`, both Ready: the set's and the binding's names."""
+    def bind(self, sandbox: SandboxView, name: str, auto_approve: list[dict[str, Any]]) -> tuple[str, str]:
+        """One set bound to `sandbox`'s ServiceAccount, the binding ActionsReady: the set's and the
+        binding's names."""
         suffix = uuid4().hex[:8]
-        set_name = self.create_policy_set(f"accept-{name}-{suffix}", auto_approve_if)
+        set_name = self.create_policy_set(f"accept-{name}-{suffix}", auto_approve)
         binding_name = self.create_binding(f"{sandbox.name}-{name}-{suffix}", sandbox=sandbox, policy_sets=[set_name])
-        self.wait_ready(POLICY_SETS_PLURAL, set_name)
-        self.wait_ready(BINDINGS_PLURAL, binding_name)
+        self.wait_actions_ready(binding_name)
         return set_name, binding_name
 
     def expire_binding(self, name: str) -> None:
+        """Sets `expiresAt` in the past and waits until the Policy Controller has deleted the binding."""
         past = (datetime.now(UTC) - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
-        self._kubectl("patch", BINDINGS_PLURAL, name, "--type=merge", "-p", json.dumps({"spec": {"expiresAt": past}}))
+        self._kubectl(
+            "patch", POLICY_BINDINGS_PLURAL, name, "--type=merge", "-p", json.dumps({"spec": {"expiresAt": past}})
+        )
+        for attempt in Retrying(
+            stop=stop_after_delay(POLICY_READY_SECONDS),
+            wait=wait_fixed(1),
+            retry=retry_if_exception_type(PolicyBindingPresentError),
+            reraise=True,
+        ):
+            with attempt:
+                if self._kubectl("get", POLICY_BINDINGS_PLURAL, name, "--ignore-not-found", "-o", "name"):
+                    raise PolicyBindingPresentError(f"{POLICY_BINDINGS_PLURAL}/{name}")
 
-    def wait_ready(self, plural: str, name: str) -> None:
-        """Until the object's Ready condition is True for its current generation: the Action
-        Service's own acknowledgement that it holds the spec as written."""
+    def wait_actions_ready(self, name: str) -> None:
+        """Until the binding's ActionsReady condition is True for its current generation: the Action
+        Service's own acknowledgement that it holds the binding and every set it names."""
         for attempt in Retrying(
             stop=stop_after_delay(POLICY_READY_SECONDS),
             wait=wait_fixed(1),
@@ -161,12 +179,13 @@ class PolicyObjects:
             reraise=True,
         ):
             with attempt:
-                obj = json.loads(self._kubectl("get", plural, name, "-o", "json"))
-                ready = [c for c in obj.get("status", {}).get("conditions", []) if c["type"] == READY_CONDITION]
-                if not ready or ready[0].get("observedGeneration") != obj["metadata"]["generation"]:
-                    raise PolicyObjectNotReadyError(f"{plural}/{name} generation {obj['metadata']['generation']}")
-                if ready[0]["status"] != "True":
-                    pytest.fail(f"{plural}/{name} was refused: {ready[0]['message']}", pytrace=False)
+                obj = json.loads(self._kubectl("get", POLICY_BINDINGS_PLURAL, name, "-o", "json"))
+                conditions = obj.get("status", {}).get("conditions", [])
+                ready = [c for c in conditions if c["type"] == ACTIONS_READY_CONDITION]
+                generation = obj["metadata"]["generation"]
+                if not ready or ready[0].get("observedGeneration") != generation or ready[0]["status"] != "True":
+                    # False is also how a set not yet seen reads, so only the deadline makes it final.
+                    raise PolicyObjectNotReadyError(f"{POLICY_BINDINGS_PLURAL}/{name} generation {generation}: {ready}")
 
     def delete_all(self) -> None:
         for plural, name in reversed(self.created):
@@ -191,7 +210,9 @@ async def test_agent_executes_mcp_action(
     marker = f"MCP0-{uuid4()}"
     turn = await agent.run(_execute_echo("everything", marker))
     report = turn.report(McpReport)
-    assert report.output == {"content": [f"Echo: {marker}"]}, turn.transcript
+    assert report.output == {"content": [{"type": "text", "text": f"Echo: {marker}"}], "isError": False}, (
+        turn.transcript
+    )
 
 
 async def test_operator_links_oauth_mcp_server(
@@ -235,7 +256,9 @@ async def test_operator_links_oauth_mcp_server(
     marker = f"MCP-OAUTH-{uuid4()}"
     turn = await agent.run(_execute_echo("example", marker))
     report = turn.report(McpReport)
-    assert report.output == {"content": [f"Echo: {marker}"]}, turn.transcript
+    assert report.output == {"content": [{"type": "text", "text": f"Echo: {marker}"}], "isError": False}, (
+        turn.transcript
+    )
 
 
 @pytest.fixture
@@ -416,7 +439,8 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
 ) -> None:
     """A set and a binding written through the Kubernetes API for the Sandbox this test launches:
     a matching echo is auto-approved and executed with the binding and set on its Decision, an
-    argument miss waits for the operator, and once the binding has expired so does a match."""
+    argument miss waits for the operator, and once the Policy Controller has deleted the expired
+    binding so does a match."""
     view = await sandbox(f"accept-policy-{harness}")
     set_name, binding_name = policy_objects.bind(
         view,
@@ -446,12 +470,13 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
     assert receipt.decision.provider == PROVIDER_NAME
     evidence = receipt.decision.policy_evidence
     assert evidence is not None
-    assert [binding.name for binding in evidence.bindings] == [binding_name]
-    assert [policy_set.name for policy_set in evidence.policy_sets] == [set_name]
+    # Our Sandbox kind brings a PolicyBinding of its own, so the evidence may name more than ours.
+    assert binding_name in {binding.name for binding in evidence.bindings}
+    assert set_name in {policy_set.name for policy_set in evidence.policy_sets}
     assert evidence.matched == MatchedPolicy(
         namespace=policy_objects.namespace,
         policy_set=set_name,
-        source=PolicySource.AUTO_APPROVE_IF,
+        source=PolicySource.RULES,
         index=0,
         type=PolicyKind.ARGUMENT_SCHEMA,
     )
@@ -463,10 +488,30 @@ async def test_policy_binding_auto_approves_the_bound_sandbox(
     await _deny_pending(operator_bff, missed.report(PendingMcpReport).request_id)
 
     policy_objects.expire_binding(binding_name)
-    policy_objects.wait_ready(BINDINGS_PLURAL, binding_name)
+    await _wait_unbound(operator_bff, view, binding_name)
     after_expiry = f"MCP-POLICY-{uuid4()}"
     expired = await agent.run(_queue_echo(after_expiry))
     await _deny_pending(operator_bff, expired.report(PendingMcpReport).request_id)
+
+
+async def _wait_unbound(operator_bff: httpx.AsyncClient, sandbox: SandboxView, binding_name: str) -> None:
+    """Until the Action Service no longer resolves `binding_name` for the Sandbox's ServiceAccount:
+    a deleted binding has no condition left to acknowledge, so ask the service itself."""
+    account = sandbox.service_account
+    for attempt in Retrying(
+        stop=stop_after_delay(POLICY_READY_SECONDS),
+        wait=wait_fixed(1),
+        retry=retry_if_exception_type(PolicyBindingPresentError),
+        reraise=True,
+    ):
+        with attempt:
+            response = await operator_bff.get(f"/caller-grants/{account.namespace}/{account.name}")
+            assert response.status_code == HTTPStatus.OK, response.text
+            policy = CallerGrantView.model_validate(response.json()).action_policy
+            if not isinstance(policy, ActionPolicyView) or not policy.synced:
+                raise PolicyBindingPresentError(f"{account}: Action policy not synced: {policy}")
+            if binding_name in {binding.name for binding in policy.bindings}:
+                raise PolicyBindingPresentError(f"{account} still resolves {binding_name}")
 
 
 if __name__ == "__main__":

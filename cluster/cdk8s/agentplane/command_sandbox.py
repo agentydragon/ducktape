@@ -11,8 +11,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
-    SandboxTemplateSpecPodTemplate,
-    SandboxTemplateSpecPodTemplateMetadata,
     SandboxTemplateSpecPodTemplateSpecContainers,
     SandboxTemplateSpecPodTemplateSpecContainersResources,
     SandboxTemplateSpecPodTemplateSpecContainersResourcesLimits,
@@ -22,14 +20,13 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDir,
     SandboxTemplateSpecPodTemplateSpecVolumesEmptyDirSizeLimit,
 )
-from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, JsonPatch
+from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
 from cilium_crds.io.cilium import CiliumNetworkPolicySpecIngress
 from constructs import Construct
 
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import egress, sandbox_pod
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.providers.agent_sandbox.sandbox_template import SandboxTemplate
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 
 # The command box's PodTemplate, and both boxes' Pod name label and fence. The egress proxy's
@@ -129,18 +126,11 @@ def _pod_template(
     workload: SandboxTemplateSpecPodTemplateSpecContainers,
     volumes: Sequence[SandboxTemplateSpecPodTemplateSpecVolumes] = (),
 ) -> None:
-    # The shared Pod recipe speaks agent-sandbox's types, which the runner templates use; a
-    # SandboxTemplate in a chart of its own renders them to the Kubernetes JSON a PodTemplate holds.
-    rendered = SandboxTemplate(
-        Chart(App(), "box-template"),
-        "sandboxtemplate",
-        metadata=ApiObjectMetadata(name=name),
-        pod_template=SandboxTemplateSpecPodTemplate(
-            metadata=SandboxTemplateSpecPodTemplateMetadata(labels=_LABELS),
-            # No account of its own: the sandbox Actions run every box as its caller.
-            spec=sandbox_pod.pod_spec(env, workload=workload, service_account_name=None, workload_volumes=volumes),
-        ),
-    ).to_json()["spec"]["podTemplate"]
+    rendered = sandbox_pod.render_pod_template(
+        _LABELS,
+        # No account of its own: the sandbox Actions run every box as its caller.
+        sandbox_pod.pod_spec(env, workload=workload, service_account_name=None, workload_volumes=volumes),
+    )
     # A PodTemplate rather than a Pod spec in the Action Service's ConfigMap: the image pins
     # (image-pins/kustomization.yaml) rewrite containers in any object, never inside a string.
     ApiObject(

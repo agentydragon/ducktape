@@ -8,6 +8,7 @@ import type {
   ActionPolicySetView,
   ActionPolicyUnavailable,
   ActionPolicyView,
+  BoundPolicyView,
   EffectivePolicyView,
   ReadyConditionView,
 } from "./client";
@@ -108,6 +109,7 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
         <Table.Tr>
           <Table.Th>Binding</Table.Th>
           <Table.Th visibleFrom="sm">Provenance</Table.Th>
+          <Table.Th visibleFrom="sm">Generation</Table.Th>
           <Table.Th visibleFrom="sm">Expires</Table.Th>
           <Table.Th visibleFrom="sm">Ready</Table.Th>
           <Table.Th visibleFrom="sm">Policy sets</Table.Th>
@@ -116,7 +118,7 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
       <Table.Tbody>
         {bindings.length === 0 && (
           <Table.Tr>
-            <Table.Td colSpan={5}>
+            <Table.Td colSpan={6}>
               <Text size="sm" c="dimmed">
                 No binding names this ServiceAccount: every Action it submits waits for the operator.
               </Text>
@@ -144,6 +146,7 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
             <Table.Td visibleFrom="sm">
               <Text size="sm">{PROVENANCE[binding.provenance]}</Text>
             </Table.Td>
+            <Table.Td visibleFrom="sm">{binding.generation}</Table.Td>
             <Table.Td visibleFrom="sm">{expiry(binding.expires_at)}</Table.Td>
             <Table.Td visibleFrom="sm">
               <Ready ready={binding.ready} />
@@ -165,21 +168,22 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
 /** Every set a binding names, once each, with the verdict the Action Service wrote on it. */
 function SetsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): JSX.Element | null {
   // An ActionPolicySet and a PolicySet may share a name; each is its own row.
-  const sets = new Map<string, ActionPolicySetView>();
+  const sets = new Map<string, { kind: ActionPolicyBindingView["kind"]; policySet: ActionPolicySetView }>();
   for (const binding of bindings)
-    for (const policySet of binding.policy_sets) sets.set(`${binding.kind}/${policySet.name}`, policySet);
+    for (const policySet of binding.policy_sets)
+      sets.set(`${binding.kind}/${policySet.name}`, { kind: binding.kind, policySet });
   if (sets.size === 0) return null;
   return (
     <Table>
       <Table.Thead>
         <Table.Tr>
           <Table.Th>Policy set</Table.Th>
-          <Table.Th visibleFrom="sm">Generation</Table.Th>
+          <Table.Th>Generation</Table.Th>
           <Table.Th>Ready</Table.Th>
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
-        {[...sets].map(([key, policySet]) => (
+        {[...sets].map(([key, { kind, policySet }]) => (
           <Table.Tr key={key}>
             <Table.Td>
               <Text size="sm" fw={600}>
@@ -190,16 +194,19 @@ function SetsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): JSX.E
                   {policySet.refused}
                 </Text>
               )}
-              {/* On a phone the generation folds under the name, leaving the verdict its width. */}
-              <Text size="xs" c="dimmed" hiddenFrom="sm">
-                generation {policySet.generation}
-              </Text>
             </Table.Td>
-            <Table.Td visibleFrom="sm">
+            <Table.Td>
               <Text size="sm">{policySet.generation}</Text>
             </Table.Td>
             <Table.Td>
-              <Ready ready={policySet.ready} generation={policySet.generation} />
+              {kind === "PolicyBinding" ? (
+                // A PolicySet has no status object to judge: parsing is its whole verdict.
+                <Badge color={policySet.refused ? "red" : "green"} style={WHOLE_BADGE}>
+                  {policySet.refused ? "refused" : "Valid"}
+                </Badge>
+              ) : (
+                <Ready ready={policySet.ready} generation={policySet.generation} />
+              )}
             </Table.Td>
           </Table.Tr>
         ))}
@@ -330,6 +337,65 @@ export function ActionPolicySection({
         policies={policy.auto_approve_if}
         empty="Nothing: every Action from this ServiceAccount waits for the operator."
       />
+    </Stack>
+  );
+}
+
+/**
+ * Every rule of the PolicySets a Sandbox names, whichever reader enforces it. The Action Service
+ * view above holds only the action rules, so a set's egress and Kubernetes rules show here.
+ */
+export function BoundPolicySection({ policy }: { policy: BoundPolicyView | null }): JSX.Element {
+  if (!policy) return <></>;
+  return (
+    <Stack gap="xs">
+      <Title order={5}>Policy set rules</Title>
+      {policy.missing_policy_sets.length > 0 && (
+        <Text size="sm" c="red" role="alert">
+          No PolicySet answers to {policy.missing_policy_sets.join(", ")}.
+        </Text>
+      )}
+      {policy.policy_sets.length === 0 && (
+        <Text size="sm" c="dimmed">
+          This Sandbox names no PolicySets.
+        </Text>
+      )}
+      {policy.policy_sets.map((policySet) => (
+        <Stack key={policySet.name} gap={4}>
+          <Text size="sm" fw={600}>
+            {policySet.name}{" "}
+            <Text span size="xs" c="dimmed">
+              generation {policySet.generation}
+            </Text>
+          </Text>
+          <Table.ScrollContainer minWidth={480} type="native">
+            <Table>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>#</Table.Th>
+                  <Table.Th>Type</Table.Th>
+                  <Table.Th>Rule</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {policySet.rules.map((rule) => (
+                  <Table.Tr key={rule.number}>
+                    <Table.Td>{rule.number}</Table.Td>
+                    <Table.Td>
+                      <Badge variant="light" style={WHOLE_BADGE}>
+                        {rule.type}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>
+                      <CodeBlock text={JSON.stringify(rule.fields, null, 1)} language="json" />
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+        </Stack>
+      ))}
     </Stack>
   );
 }

@@ -67,13 +67,12 @@ from cluster.cdk8s.agentplane.environment import (
     LlmIngressProps,
     ReplicaProfile,
 )
-from cluster.cdk8s.agentplane.llm_ingress import model_configs
 from cluster.cdk8s.agentplane.namespaces import TESTING_NAMESPACE
 from cluster.cdk8s.api_resource import custom_resource, named_resource
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
-from cluster.cdk8s.model_selections import TESTING_APP_MODELS
+from cluster.cdk8s.model_selections import TESTING_APP_MODELS, model_configs
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
 
@@ -83,8 +82,6 @@ _DEX_ISSUER = f"https://{_DEX_HOSTNAME}/dex"
 # The Terraform-owned key, replicated into this namespace by `litellm/credentials.py`'s
 # ExternalSecret.
 _LITELLM_KEY_SECRET = "litellm-key-cheap-experiments"
-# Sandboxes here are Agentplane's own kind; the app's form and the deployment both follow it.
-_OWN_SANDBOXES = True
 _OAUTH_FIXTURE_MCP_URL = f"http://{OAUTH_FIXTURE_NAME}.{TESTING_NAMESPACE}.svc.cluster.local:{OAUTH_FIXTURE_PORT}/mcp"
 
 _FEDERATION_TARGET = OperatorOidcSettings(
@@ -165,12 +162,13 @@ ENV = Environment(
     image_pins=f"{HAND_WRITTEN_ROOT}/agentplane-testing-image-pins",
     extra_resources=(),
     replicas=ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None),
-    app_config=app_settings.settings(
-        namespace=TESTING_NAMESPACE,
-        models=TESTING_APP_MODELS,
-        thread_preset_codex_model=GPT6_LUNA_RESPONSES,
-        action_federation=_ACTION_FEDERATION,
-        own_sandboxes=_OWN_SANDBOXES,
+    app_config=app_settings.on_policy_sets(
+        app_settings.settings(
+            namespace=TESTING_NAMESPACE,
+            models=TESTING_APP_MODELS,
+            thread_preset_codex_model=GPT6_LUNA_RESPONSES,
+            action_federation=_ACTION_FEDERATION,
+        )
     ),
     settle_deltas=True,
     db=DbProps(instances=1, wal_archive=False),
@@ -194,7 +192,7 @@ ENV = Environment(
             EgressRule.to_endpoints(cilium.endpoint_labels(TESTING_NAMESPACE, OAUTH_FIXTURE_NAME), OAUTH_FIXTURE_PORT),
         ],
     ),
-    own_sandboxes=_OWN_SANDBOXES,
+    vm_sandboxes=True,
 )
 
 
@@ -257,17 +255,31 @@ class TestingNamespaceResourceLimits(Construct):
 
 TESTING_OPERATOR_ROLE_NAME = "agentplane-testing-operator"
 
+# Deliberately no `create` on pods: Cilium policies here select Pods by label, so an unlabeled Pod
+# a Sandbox creates has unrestricted egress, and the creator picks the labels.
 _SANDBOX_RULES = [
-    RolePolicyRule(resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get"]),
+    RolePolicyRule(resources=[custom_resource(GROUP, "sandboxtemplates")], verbs=["get", "list", "watch"]),
     RolePolicyRule(
-        resources=[custom_resource("agents.x-k8s.io", "sandboxes")],
-        verbs=["create", "get", "list", "watch", "patch", "delete"],
+        resources=[custom_resource(GROUP, "sandboxes")], verbs=["create", "get", "list", "watch", "patch", "delete"]
     ),
     RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
     RolePolicyRule(
         resources=[custom_resource("", "pods/exec"), custom_resource("", "pods/portforward")], verbs=["create"]
     ),
     RolePolicyRule(resources=[custom_resource("", "pods/log")], verbs=["get"]),
+    # Read-only view of a `kind: vm` Sandbox's guest and its disks, to diagnose one that never starts.
+    RolePolicyRule(
+        resources=[
+            custom_resource("kubevirt.io", "virtualmachines"),
+            custom_resource("kubevirt.io", "virtualmachineinstances"),
+            custom_resource("cdi.kubevirt.io", "datavolumes"),
+        ],
+        verbs=["get", "list", "watch"],
+    ),
+    # `virtctl console`: the only way into a guest whose runner never connected.
+    RolePolicyRule(
+        resources=[custom_resource("subresources.kubevirt.io", "virtualmachineinstances/console")], verbs=["get"]
+    ),
 ]
 
 # Mints app-audience tokens for `agentplane-agent`, which has no RoleBindings: an identity for the
@@ -278,11 +290,11 @@ _TOKEN_RULE = RolePolicyRule(
 )
 
 # testing's MCP acceptance scenario additionally creates, expires, and deletes the
-# ActionPolicySet/ActionPolicyBinding its Sandbox is auto-approved under, reading
-# their Ready condition to know the Action Service has seen each edit.
+# PolicySet/PolicyBinding its Sandbox is auto-approved under, reading the binding's
+# ActionsReady condition to know the Action Service has seen it.
 _ACTION_POLICY_RULE = RolePolicyRule(
-    resources=[custom_resource(GROUP, "actionpolicysets"), custom_resource(GROUP, "actionpolicybindings")],
-    verbs=["create", "get", "patch", "delete"],
+    resources=[custom_resource(GROUP, "policysets"), custom_resource(GROUP, "policybindings")],
+    verbs=["create", "get", "list", "watch", "patch", "delete"],
 )
 
 
@@ -396,10 +408,10 @@ def agentplane_testing(
     artifact: ArtifactGeneratorSpecArtifacts,
     health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
-    agent_sandbox_controller: Kustomization,
     cert_manager_trust: Kustomization,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
+    kyverno: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -418,6 +430,6 @@ def agentplane_testing(
             )
         ],
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds, agent_sandbox_controller, cert_manager_trust, cnpg, external_secrets_operator
+            agentplane_crds, cert_manager_trust, cnpg, external_secrets_operator, kyverno
         ),
     )

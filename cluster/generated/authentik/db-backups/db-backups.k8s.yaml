@@ -2,7 +2,7 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: Bucket
 metadata:
   annotations:
-    description: Private CNPG physical backups and WAL archive for Authentik.
+    description: Private CNPG physical backups and WAL archive for authentik/authentik-db-ovh.
   name: authentik-db-backups
   namespace: authentik
 spec:
@@ -24,7 +24,7 @@ apiVersion: seaweed.seaweedfs.com/v1
 kind: S3Identity
 metadata:
   annotations:
-    description: Private CNPG physical backups and WAL archive for Authentik.
+    description: Private CNPG physical backups and WAL archive for authentik/authentik-db-ovh.
   name: authentik-db-backups
   namespace: authentik
 spec:
@@ -54,7 +54,7 @@ apiVersion: barmancloud.cnpg.io/v1
 kind: ObjectStore
 metadata:
   annotations:
-    description: SeaweedFS S3 destination for Authentik CNPG base backups and WAL.
+    description: SeaweedFS S3 destination for authentik/authentik-db-ovh base backups and WAL.
   name: authentik-db-ovh
   namespace: authentik
 spec:
@@ -77,9 +77,7 @@ spec:
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:
-  annotations:
-    description: Daily physical Authentik database backup; WAL archiving provides continuous recovery points.
-  name: authentik-db-ovh-daily
+  name: authentik-db-ovh
   namespace: authentik
 spec:
   backupOwnerReference: self
@@ -88,4 +86,4 @@ spec:
   method: plugin
   pluginConfiguration:
     name: barman-cloud.cloudnative-pg.io
-  schedule: 0 0 2 * * *
+  schedule: 0 37 1 * * *

@@ -38,12 +38,8 @@ class AppSettingsConfig(YamlFileSettings):
         default_factory=dict, description="App-owned Sandbox launch-form presets keyed by displayable name."
     )
     kubernetes_grants: dict[str, KubernetesGrant] = Field(
-        default_factory=dict, description="Enabled Kubernetes binding templates; launch requests select names only."
-    )
-    own_sandboxes: bool = Field(
-        default=False,
-        description="The Sandbox Service creates Agentplane's own Sandbox kind: the launch form and presets "
-        "name policy sets in place of egress policies, Action policy sets and Kubernetes grants.",
+        default_factory=dict,
+        description="The deployment's Kubernetes grant catalog, which the manifest generator expands into PolicySets.",
     )
     egress_admin_url: HttpEndpointUrl = Field(description="The egress proxy's admin port, serving /decisions.")
     action_federation: ActionFederationSettings
@@ -57,7 +53,9 @@ class Settings(AppSettingsConfig):
     catalog in that file.
     """
 
-    namespace: str = Field(description="The app's own namespace, holding the egress policies and bindings.")
+    # CLEANUP(added 2026-10-13): Delete the field once the manifests stop setting it (a settings class
+    #   rejects unknown keys, so the manifest change lands first and the pinned image follows).
+    namespace: str | None = Field(default=None, description="Read by nothing.")
     sandbox_namespace: str = Field(
         description="Namespace whose Sandbox inventory the app observes. Separate from the app's own "
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."

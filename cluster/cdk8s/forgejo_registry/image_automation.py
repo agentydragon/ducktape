@@ -53,6 +53,7 @@ IMAGES = (
     "agentplane-policy-controller",
     "agentplane-runner-gateway",
     "agentplane-runner-gateway-migrate",
+    "agentplane-runner-vm",
     "agentplane-sandbox",
     "agentplane-sandbox-build",
     "agentplane-sandbox-controller",

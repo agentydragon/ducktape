@@ -22,15 +22,12 @@ from agentplane.proto import (
     sandbox_service_pb2,
 )
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination
-from agentplane.runner.errors import RunnerError
 from agentplane.runner_gateway import session_lifecycle, wire
 from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
-from agentplane.runner_gateway.sealing import SEAL_S, Sealing
+from agentplane.runner_gateway.sealing import Sealing
 from agentplane.runner_gateway.session_registry import SessionConflictError, SessionNotFoundError, SessionRegistry
 from agentplane.sandbox_service.errors import InventoryError, SandboxNotFoundError
-from agentplane.subjects import ServiceAccountRef
-from agentplane.workload_auth.grpc_caller import authenticate
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -47,8 +44,6 @@ class Resources(ServicerResources):
     runner_admission_ack_timeout_s: float
     sessions: SessionRegistry
     control: LifecycleControl
-    # The Sandbox Service's account, which alone may seal a Sandbox for teardown.
-    sealer_accounts: frozenset[ServiceAccountRef]
     admission_timeout_s: float
     lifecycle_timeout_s: float
 
@@ -76,7 +71,7 @@ errors = status_mapping(
     Abort(grpc.aio.AioRpcError, _runner_status),
     Abort((ValueError, ParseError), (grpc.StatusCode.INVALID_ARGUMENT, "invalid service request")),
     Abort(
-        (InventoryError, RunnerError),
+        (InventoryError, session_lifecycle.BootstrapError),
         (grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request"),
     ),
     deadline="service deadline expired",
@@ -263,18 +258,6 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 case _:
                     raise ValueError("a Sandbox name match is required")
             return runner_gateway_pb2.FindSessionsResponse(sessions=found)
-
-    @override
-    async def SealSandbox(
-        self, request: runner_gateway_pb2.SealSandboxRequest, context: grpc.aio.ServicerContext
-    ) -> runner_gateway_pb2.SealSandboxResponse:
-        async with errors(context), asyncio.timeout(SEAL_S + self.resources.admission_timeout_s):
-            await authenticate(self.resources.principals, self.resources.sealer_accounts, context)
-            view = await self.resources.destinations.sandboxes.incarnation(request.destination)
-            sealed = await self.resources.sealing.seal(
-                namespace=view.namespace, name=view.name, sandbox_uid=UUID(view.uid)
-            )
-            return runner_gateway_pb2.SealSandboxResponse(sessions=sealed.sessions)
 
 
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:

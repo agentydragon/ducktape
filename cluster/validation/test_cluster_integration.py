@@ -91,7 +91,12 @@ def test_no_dependency_errors(cluster: ParsedCluster, repo_root: Path) -> None:
 def test_plaid_mcp_is_not_gated_by_unrelated_authentik_terraform(cluster: ParsedCluster) -> None:
     """App infrastructure is a prerequisite; unrelated SSO apps are not."""
     spec = cluster.flux_kustomizations["plaid-mcp"]
-    assert {dependency.name for dependency in spec.depends_on} == {"cnpg", "external-secrets-operator", "authentik"}
+    assert {dependency.name for dependency in spec.depends_on} == {
+        "cnpg",
+        "external-secrets-operator",
+        "authentik",
+        "seaweedfs-operator",
+    }
     assert spec.wait
 
 
@@ -203,29 +208,20 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
     )
     config = yaml.safe_load(app_config["data"]["config.yaml"])
     catalog = config["kubernetes_grants"]
-    selected_grants = set(config["sandbox_presets"][preset]["kubernetes_grants"])
+    policy_sets = {doc["metadata"]["name"]: doc["spec"]["rules"] for doc in staging_docs if doc["kind"] == "PolicySet"}
     reader_roles = {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}
     actual = {
-        (grant["namespace"], grant["role_ref"]["name"])
-        for name in selected_grants
-        if (grant := catalog[name])["role_ref"]["name"] in reader_roles
+        (namespace, rule["role"]["name"])
+        for name in config["sandbox_presets"][preset]["policy_sets"]
+        for rule in policy_sets[name]
+        if rule["type"] == "kubernetes_role_binding" and rule["role"]["name"] in reader_roles
+        for namespace in rule["namespaces"]
     }
     assert actual == expected
-    sandbox_service_config = one(
-        doc
-        for doc in staging_docs
-        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-sandbox-service-config"
-    )
-    cleanup_namespaces = set(
-        yaml.safe_load(sandbox_service_config["data"]["config.yaml"])["kubernetes_binding_cleanup_namespaces"]
-    )
     expected_namespaces = {namespace for namespace, _ in expected}
     expected_external_namespaces = expected_namespaces - {"agentplane-staging"}
-    assert expected_external_namespaces <= cleanup_namespaces
-
-    external_grant_namespaces = {grant["namespace"] for grant in catalog.values() if grant["kind"] == "RoleBinding"}
-    expected_external_scopes = (external_grant_namespaces | cleanup_namespaces) - {"agentplane-staging"}
-    assert expected_external_scopes == expected_external_namespaces | {
+    # Delegated: every catalog grant's namespace and every retained cleanup scope.
+    expected_external_scopes = expected_external_namespaces | {
         "ducktape-flux",
         "haku-console",
         "haku-sandbox",
@@ -238,11 +234,10 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         for doc in staging_docs
     )
 
-    for name in selected_grants:
-        grant = catalog[name]
-        if grant["role_ref"]["name"] in reader_roles:
-            assert grant["kind"] == "RoleBinding"
-            assert grant["role_ref"]["kind"] == "ClusterRole"
+    for rule in (rule for name in config["sandbox_presets"][preset]["policy_sets"] for rule in policy_sets[name]):
+        assert rule.get("clusterRole") not in reader_roles, rule
+        if rule.get("role", {}).get("name") in reader_roles:
+            assert rule["role"]["kind"] == "ClusterRole"
 
     flux_objects = list(yaml.safe_load_all((k8s_dir / "flux/kustomizations.k8s.yaml").read_text()))
     delegation_name = "agentplane-staging-binding-delegation-"
@@ -298,8 +293,7 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         assert binding["metadata"] == {"name": delegation_role, "namespace": namespace}
         assert binding["roleRef"] == {"apiGroup": "rbac.authorization.k8s.io", "kind": "Role", "name": delegation_role}
         assert binding["subjects"] == [
-            {"kind": "ServiceAccount", "name": account, "namespace": "agentplane-staging"}
-            for account in ("agentplane-sandbox-service", "agentplane-policy-controller")
+            {"kind": "ServiceAccount", "name": "agentplane-policy-controller", "namespace": "agentplane-staging"}
         ]
 
         flux = flux_by_name[f"{delegation_name}{namespace}"]
@@ -396,7 +390,7 @@ def bootstrap_resources(k8s_dir: Path) -> list[K8sResource]:
 @pytest.fixture(scope="module")
 def agent_permissions(
     cluster: ParsedCluster, bootstrap_resources: list[K8sResource], repo_root: Path, k8s_dir: Path
-) -> tuple[Rbac, dict]:
+) -> tuple[Rbac, dict, dict[str, list[dict]]]:
     # Active, rendered resources only.
     resources = [resource for group in cluster.flux_kust_resources(repo_root).values() for resource in group]
     resources.extend(bootstrap_resources)
@@ -430,37 +424,39 @@ def agent_permissions(
             assert resource.role_ref.kind == "ClusterRole"
             actual.add((resource.namespace, resource.name, resource.role_ref.name))
     assert actual == expected
-    docs = yaml.safe_load_all((k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml").read_text())
+    docs = list(yaml.safe_load_all((k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml").read_text()))
     config = yaml.safe_load(
         one(doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config")[
             "data"
         ]["config.yaml"]
     )
-    return Rbac(resources), config
+    policy_sets = {doc["metadata"]["name"]: doc["spec"]["rules"] for doc in docs if doc["kind"] == "PolicySet"}
+    return Rbac(resources), config, policy_sets
 
 
 # Distinct access paths, not a union that could hide a broken Console or OIDC path.
 @pytest.mark.parametrize(
     ("kind", "name", "namespace", "preset"),
     [
-        ("Group", "haku:access-profile:public-coder", "", "public-coder"),
         ("Group", "oidc-ksbx-groups:haku", "", "haku"),
         ("Group", "haku:access-profile:haku", "", "haku"),
         ("ServiceAccount", "haku", "haku-sandbox", "haku"),
     ],
 )
 def test_static_managed_agent_permission_parity(
-    agent_permissions: tuple[Rbac, dict], kind: str, name: str, namespace: str, preset: str
+    agent_permissions: tuple[Rbac, dict, dict[str, list[dict]]], kind: str, name: str, namespace: str, preset: str
 ) -> None:
-    rbac, config = agent_permissions
+    rbac, config, policy_sets = agent_permissions
     static = rbac.identity(kind, name, namespace)
-    managed = rbac.managed(config, preset, namespace="agentplane-staging")
+    managed = rbac.managed(config, policy_sets, preset, namespace="agentplane-staging")
     assert not uncovered(static, managed)
     assert not uncovered(managed, static)
 
 
-def test_finance_spend_policy_role_is_named_get_only(agent_permissions: tuple[Rbac, dict]) -> None:
-    rbac, config = agent_permissions
+def test_finance_spend_policy_role_is_named_get_only(
+    agent_permissions: tuple[Rbac, dict, dict[str, list[dict]]],
+) -> None:
+    rbac, config, _ = agent_permissions
     role = config["kubernetes_grants"]["spend-policy-config"]
     assert role == {
         "kind": "RoleBinding",
@@ -472,31 +468,26 @@ def test_finance_spend_policy_role_is_named_get_only(agent_permissions: tuple[Rb
     }
 
 
-def test_agent_permission_superset_and_finance_parity(agent_permissions: tuple[Rbac, dict]) -> None:
-    rbac, config = agent_permissions
-    public = rbac.managed(config, "public-coder", namespace="agentplane-staging")
-    haku = rbac.managed(config, "haku", namespace="agentplane-staging")
-    finance = rbac.managed(config, "finance-agent", namespace="agentplane-staging")
+def test_agent_permission_superset_and_finance_parity(
+    agent_permissions: tuple[Rbac, dict, dict[str, list[dict]]],
+) -> None:
+    rbac, config, policy_sets = agent_permissions
+    public = rbac.managed(config, policy_sets, "public-coder", namespace="agentplane-staging")
+    haku = rbac.managed(config, policy_sets, "haku", namespace="agentplane-staging")
+    finance = rbac.managed(config, policy_sets, "finance-agent", namespace="agentplane-staging")
     assert not uncovered(public, haku)
     assert not uncovered(public, finance)
     assert uncovered(finance, public) == {
         Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials"),
         Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy"),
     }
-    static_public = rbac.identity("Group", "haku:access-profile:public-coder")
-    for kind, name, namespace in (
-        ("Group", "oidc-ksbx-groups:haku", ""),
-        ("Group", "haku:access-profile:haku", ""),
-        ("ServiceAccount", "haku", "haku-sandbox"),
-    ):
-        assert not uncovered(static_public, rbac.identity(kind, name, namespace)), (kind, name, namespace)
 
 
 @pytest.mark.parametrize("account", ["claude-ai", "haku-agent"])
 def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
-    agent_permissions: tuple[Rbac, dict], account: str
+    agent_permissions: tuple[Rbac, dict, dict[str, list[dict]]], account: str
 ) -> None:
-    rbac, config = agent_permissions
+    rbac, config, _ = agent_permissions
     # These OAuth/Actions accounts are NOT the Console profile or the managed
     # Haku preset. Preserve their independently scoped existing Kubernetes access.
     expected = rbac.rules(
@@ -511,6 +502,7 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
                 "coinbase-credentials",
                 "agentplane-testing-operator",
                 "agentplane-testing-login",
+                "agentplane-sandbox-read",
                 "haku-console-metadata",
                 "clickhouse-diagnostics",
                 "public-coder-agent-reader",
@@ -526,8 +518,10 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
     assert not uncovered(expected, actual)
 
 
-def test_cluster_diagnostics_kustomizations_are_read_only(agent_permissions: tuple[Rbac, dict]) -> None:
-    rbac, _ = agent_permissions
+def test_cluster_diagnostics_kustomizations_are_read_only(
+    agent_permissions: tuple[Rbac, dict, dict[str, list[dict]]],
+) -> None:
+    rbac, _, _ = agent_permissions
     rules = rbac.rules(
         RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name="cluster-diagnostics-reader"), None
     )
@@ -542,16 +536,15 @@ def test_cluster_diagnostics_kustomizations_are_read_only(agent_permissions: tup
     assert uncovered(writes, rules) == writes
 
 
-def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict]) -> None:
-    rbac, config = agent_permissions
+def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict, dict[str, list[dict]]]) -> None:
+    rbac, config, policy_sets = agent_permissions
     profiles = {
-        name: rbac.managed(config, name, namespace="agentplane-staging")
+        name: rbac.managed(config, policy_sets, name, namespace="agentplane-staging")
         for name in ("public-coder", "finance-agent", "haku")
     }
     profiles.update(
         {
             "claude-ai": rbac.identity("ServiceAccount", "claude-ai", "agentplane-staging"),
-            "public-static": rbac.identity("Group", "haku:access-profile:public-coder"),
             "haku-console": rbac.identity("Group", "haku:access-profile:haku"),
             "haku-oidc": rbac.identity("Group", "oidc-ksbx-groups:haku"),
             "haku-sa": rbac.identity("ServiceAccount", "haku", "haku-sandbox"),
@@ -567,6 +560,10 @@ def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict]) -> None:
         Permission("agentplane-staging", "agents.x-k8s.io", "sandboxes", "delete"),
     }
     denied |= {
+        Permission("agentplane-staging", "agentplane.allegedly.works", "sandboxes", verb)
+        for verb in ("create", "patch", "delete")
+    }
+    denied |= {
         Permission(namespace, "kustomize.toolkit.fluxcd.io", "kustomizations", "patch")
         for namespace in ("flux-system", "ducktape-flux", "agentplane-testing", "agentplane-staging")
     }
@@ -577,7 +574,7 @@ def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict]) -> None:
         for verb in ("get", "list", "watch", "create", "update", "patch", "delete")
     }
     for name, permissions in profiles.items():
-        assert bool(uncovered({coinbase}, permissions)) == (name in {"public-coder", "public-static"}), name
+        assert bool(uncovered({coinbase}, permissions)) == (name == "public-coder"), name
         assert uncovered(denied, permissions) == denied, name
         assert not uncovered({testing_login}, permissions), name
         if name == "claude-ai":
@@ -587,7 +584,7 @@ def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict]) -> None:
                 for verb in ("create", "update", "patch", "delete")
             }
             assert uncovered(sandbox_writes, permissions) == sandbox_writes
-        if name in {"public-coder", "finance-agent", "public-static"}:
+        if name in {"public-coder", "finance-agent"}:
             node_proxy = Permission(None, "", "nodes/proxy", "get")
             assert uncovered({node_proxy}, permissions), name
 

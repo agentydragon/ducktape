@@ -89,6 +89,11 @@
       "target": "//devinfra/pr_visuals:wheel",
       "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/pr_visuals/pr_visuals-0.1.0-py3-none-any.whl",
       "release": "pr-visuals"
+    },
+    "cpap-gateway-health": {
+      "target": "//cpap/gateway:health_wheel",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/cpap/gateway/cpap_gateway_health-0.1.0-py3-none-any.whl",
+      "release": "cpap-gateway-health"
     }
   },
   "releases": {
@@ -157,6 +162,10 @@
     },
     "pr-visuals": {
       "tests": "//devinfra/pr_visuals/...",
+      "nixPackage": true
+    },
+    "cpap-gateway-health": {
+      "tests": "//cpap/gateway/...",
       "nixPackage": true
     }
   }

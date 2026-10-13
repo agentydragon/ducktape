@@ -25,6 +25,11 @@ spec:
   instances: 2
   monitoring:
     enablePodMonitor: true
+  plugins:
+    - isWALArchiver: true
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: forgejo-db-ssd
   probes:
     liveness:
       isolationCheck:
@@ -32,3 +37,93 @@ spec:
   storage:
     size: 10Gi
     storageClass: local-path-ovh-ssd
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for forgejo/forgejo-db-ssd.
+  name: forgejo-db-backups
+  namespace: forgejo
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: forgejo-db-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: forgejo-db-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for forgejo/forgejo-db-ssd.
+  name: forgejo-db-backups
+  namespace: forgejo
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: forgejo-db-backups
+  namespace: forgejo
+spec:
+  identityRef:
+    name: forgejo-db-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: forgejo-db-backups-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  annotations:
+    description: SeaweedFS S3 destination for forgejo/forgejo-db-ssd base backups and WAL.
+  name: forgejo-db-ssd
+  namespace: forgejo
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://forgejo-db-backups/
+    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
+    s3Credentials:
+      accessKeyId:
+        key: AWS_ACCESS_KEY_ID
+        name: forgejo-db-backups-s3-credentials
+      secretAccessKey:
+        key: AWS_SECRET_ACCESS_KEY
+        name: forgejo-db-backups-s3-credentials
+    wal:
+      compression: gzip
+  retentionPolicy: 30d
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: forgejo-db-ssd
+  namespace: forgejo
+spec:
+  backupOwnerReference: self
+  cluster:
+    name: forgejo-db-ssd
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  schedule: 0 16 1 * * *

@@ -1,6 +1,7 @@
 """Teardown's seal for Agentplane's own `Sandbox`: the replica holding a deleting Sandbox's runner
 connection seals every Session and, once the ingress has acknowledged each seal, sets the Sandbox's
-`SessionsSealed` condition, which the Sandbox Controller waits on before deleting its Pod and PVC."""
+`SessionsSealed` condition, which the Sandbox Controller waits on before deleting its Pod and PVC.
+A Sandbox no runner ever connected to has no Session to seal, so any replica marks it."""
 
 import asyncio
 import logging
@@ -40,12 +41,17 @@ class DeletionSeals:
         )
         apply_to(self._unsealed, name, sandbox if unsealed else None)
 
+    def _never_connected(self, sandbox: Sandbox) -> bool:
+        leases = self._sealing.control.leases
+        return leases.synced and leases.read_epoch(sandbox.metadata.uid) is None
+
     def _startable(self) -> list[Sandbox]:
         control = self._sealing.control
         return [
             sandbox
             for name, sandbox in self._unsealed.items()
-            if name not in self._running and control.holder(sandbox.metadata.uid) is not None
+            if name not in self._running
+            and (control.holder(sandbox.metadata.uid) is not None or self._never_connected(sandbox))
         ]
 
     async def _notify(self, *_: object) -> None:
@@ -88,6 +94,11 @@ class DeletionSeals:
         current = self._unsealed.get(sandbox.metadata.name)
         return current is not None and current.metadata.uid == sandbox.metadata.uid
 
+    async def _report(self, sandbox: Sandbox, message: str) -> None:
+        await sandbox_resource.report_sessions_sealed(
+            self._custom_objects, sandbox, message=message, field_manager=FIELD_MANAGER, now=datetime.now(UTC)
+        )
+
     async def _seal(self, sandbox: Sandbox) -> None:
         metadata = sandbox.metadata
         try:
@@ -103,18 +114,15 @@ class DeletionSeals:
                 with attempt:
                     if not self._still_unsealed(sandbox):
                         return
+                    if self._never_connected(sandbox):
+                        await self._report(sandbox, "no runner ever connected")
+                        return
                     sealed = await self._sealing.seal(
                         namespace=metadata.namespace, name=metadata.name, sandbox_uid=metadata.uid
                     )
                     if unflushed := [s.session_id for s in sealed.sessions if not s.flushed]:
                         raise SealNotFlushedError(f"{metadata.name}: ingress has not acknowledged {unflushed=}")
-                    await sandbox_resource.report_sessions_sealed(
-                        self._custom_objects,
-                        sandbox,
-                        message=f"{len(sealed.sessions)} Sessions sealed",
-                        field_manager=FIELD_MANAGER,
-                        now=datetime.now(UTC),
-                    )
+                    await self._report(sandbox, f"{len(sealed.sessions)} Sessions sealed")
         except DestinationUnavailableError as error:
             # Another replica holds the connection now, or none does; whichever holds it next seals.
             logger.info("Stopped sealing deleted Sandbox %s: %s", metadata.name, error)

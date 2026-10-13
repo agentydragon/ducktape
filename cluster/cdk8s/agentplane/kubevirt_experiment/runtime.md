@@ -22,9 +22,10 @@ tag and a digest-pinned containerDisk.
 ## Required VM inputs
 
 Attach the public config disk with serial `agentplane-config`, the trust-manager
-ConfigMap disk with serial `agentplane-trust`, and fresh state/workspace disks.
-The config file names, validation, mount paths, and filesystem labels are defined
-in the guest code linked above.
+ConfigMap disk with serial `agentplane-trust`, a fresh filesystem PVC as the virtiofs
+filesystem `state`, and a fresh blank workspace disk with serial `workspace`. The config
+file names, validation, mount paths, and filesystem label are defined in the guest code
+linked above.
 
 The runner VM wiring is in [`runner_vm`](vm.py#L119); the [runtime acceptance helper](runtime_acceptance.md)
 drives it through direct KubeVirt APIs. The guest runner dials out like a Pod runner and accepts no
@@ -36,8 +37,7 @@ egress gateway. The existing Agentplane egress Bundle emits both. ConfigMap disk
 are boot snapshots: stop/start the VM after a bundle update, including CA rotation.
 
 Use a disposable `agentplane-vm-prototype-*` namespace and fresh disks. Never attach
-an existing environment's state. Retire `format_blank_disks` in the config disk
-once the runner has connected. Normal VM deletion retains the state disks;
+an existing environment's state. Normal VM deletion retains the state and workspace volumes;
 experiment cleanup must explicitly remove its retained PVCs and separately created
 cluster-scoped admission/secret-store resources.
 

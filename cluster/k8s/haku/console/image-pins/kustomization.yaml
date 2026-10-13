@@ -2,8 +2,8 @@ apiVersion: kustomize.config.k8s.io/v1alpha1
 kind: Component
 images:
   - name: git.allegedly.works/ducktape-ci/haku-console
-    newTag: devel-20261012083647-87be9f8 # {"$imagepolicy": "flux-system:haku-console:tag"}
+    newTag: devel-20261013030659-299e4e9 # {"$imagepolicy": "flux-system:haku-console:tag"}
   - name: git.allegedly.works/ducktape-ci/haku-console-static
-    newTag: devel-20261010163416-04143d2 # {"$imagepolicy": "flux-system:haku-console-static:tag"}
+    newTag: devel-20261013011053-9782985 # {"$imagepolicy": "flux-system:haku-console-static:tag"}
   - name: git.allegedly.works/ducktape-ci/haku-kube-api-proxy
     newTag: devel-20260913232156-d3b62d6 # {"$imagepolicy": "flux-system:haku-kube-api-proxy:tag"}

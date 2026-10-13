@@ -47,17 +47,20 @@ def test_public_route_exposes_protocol_paths_only(
     assert paths >= _MCP_PROTOCOL_PATHS
 
 
+def _gaffer_approval(manifests: dict[str, list[dict[str, Any]]], action: str) -> dict[str, Any]:
+    policy = one(
+        doc
+        for doc in manifests["agentplane-staging"]
+        if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == "gaffer-private-branch-and-pr-creation"
+    )
+    return one(rule["policy"] for rule in policy["spec"]["rules"] if rule["policy"]["actions"] == {"github": [action]})
+
+
 def test_gaffer_branch_policy_approves_only_create_branch(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
-    policy = one(
-        doc
-        for doc in agentplane_manifests["agentplane-staging"]
-        if doc["kind"] == "ActionPolicySet" and doc["metadata"]["name"] == "finance-agent-gaffer-branch-creation"
-    )
-    approval = one(policy["spec"]["autoApproveIf"])
+    approval = _gaffer_approval(agentplane_manifests, "create_branch")
     assert approval["type"] == "argument_schema"
-    assert approval["actions"] == {"github": ["create_branch"]}
     assert approval["schema"]["properties"]["owner"] == {"const": "agentydragon"}
     assert approval["schema"]["properties"]["repo"] == {"const": "gaffer-private"}
     assert approval["schema"]["required"] == ["owner", "repo", "branch"]
@@ -67,14 +70,8 @@ def test_gaffer_branch_policy_approves_only_create_branch(
 def test_gaffer_pr_policy_approves_only_create_pull_request(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
-    policy = one(
-        doc
-        for doc in agentplane_manifests["agentplane-staging"]
-        if doc["kind"] == "ActionPolicySet" and doc["metadata"]["name"] == "finance-agent-gaffer-pr-creation"
-    )
-    approval = one(policy["spec"]["autoApproveIf"])
+    approval = _gaffer_approval(agentplane_manifests, "create_pull_request")
     assert approval["type"] == "argument_schema"
-    assert approval["actions"] == {"github": ["create_pull_request"]}
     assert approval["schema"]["properties"]["owner"] == {"const": "agentydragon"}
     assert approval["schema"]["properties"]["repo"] == {"const": "gaffer-private"}
     assert approval["schema"]["required"] == ["owner", "repo", "title", "head", "base"]

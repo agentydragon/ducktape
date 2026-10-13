@@ -21,7 +21,7 @@ from more_itertools import one
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt
 
 from agentplane.crd_group import GROUP
-from util.agent_sandbox import SANDBOX_KIND
+from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
 logger = logging.getLogger(__name__)
@@ -53,8 +53,6 @@ class RecordOwner:
 
     name: str
     uid: UUID
-    # agent-sandbox's `Sandbox` or Agentplane's own; both are kind `Sandbox`.
-    api_version: str
 
     @property
     def lease_name(self) -> str:
@@ -67,7 +65,7 @@ class RecordOwner:
     def reference(self) -> k8s_client.V1OwnerReference:
         # For cascading deletion only; the Sandbox controller owns its Pod.
         return k8s_client.V1OwnerReference(
-            api_version=self.api_version,
+            api_version=SANDBOX_API_VERSION,
             kind=SANDBOX_KIND,
             name=self.name,
             uid=str(self.uid),
@@ -128,7 +126,13 @@ class ConnectionLeases:
 
     def __init__(self) -> None:
         self._leases: dict[UUID, ConnectionLease] = {}
+        self._watch: ListWatch | None = None
         self.changed = asyncio.Condition()
+
+    @property
+    def synced(self) -> bool:
+        """Whether the cache has listed every Lease, so a Sandbox without one has none."""
+        return self._watch is not None and self._watch.synced
 
     def watch(self, coordination: k8s_client.CoordinationV1Api, namespace: str, *, resync_seconds: int) -> ListWatch:
         async def ignore(*_: object) -> None:
@@ -138,7 +142,7 @@ class ConnectionLeases:
             async with self.changed:
                 self.changed.notify_all()
 
-        return ListWatch(
+        self._watch = ListWatch(
             kinds=(
                 WatchedKind(
                     name="leases",
@@ -155,13 +159,15 @@ class ConnectionLeases:
             on_change=notify,
             on_cycle=ignore,
         )
+        return self._watch
 
     async def wait_for(self, predicate: Callable[[], bool]) -> None:
         async with self.changed:
             await self.changed.wait_for(predicate)
 
     def read_epoch(self, sandbox_uid: UUID) -> int | None:
-        """The current connection's epoch, live or not."""
+        """The current connection's epoch, live or not; `None` for a Sandbox no runner ever connected to.
+        The Lease outlives the connection and is written before `Welcome`."""
         lease = self._leases.get(sandbox_uid)
         return None if lease is None else lease.epoch
 

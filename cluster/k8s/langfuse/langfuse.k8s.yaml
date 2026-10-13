@@ -29,6 +29,11 @@ spec:
   instances: 2
   monitoring:
     enablePodMonitor: true
+  plugins:
+    - isWALArchiver: true
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: langfuse-db
   probes:
     liveness:
       isolationCheck:
@@ -36,6 +41,96 @@ spec:
   storage:
     size: 10Gi
     storageClass: local-path-ovh-ssd
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for langfuse/langfuse-db.
+  name: langfuse-db-backups
+  namespace: langfuse
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: langfuse-db-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: langfuse-db-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for langfuse/langfuse-db.
+  name: langfuse-db-backups
+  namespace: langfuse
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: langfuse-db-backups
+  namespace: langfuse
+spec:
+  identityRef:
+    name: langfuse-db-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: langfuse-db-backups-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  annotations:
+    description: SeaweedFS S3 destination for langfuse/langfuse-db base backups and WAL.
+  name: langfuse-db
+  namespace: langfuse
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://langfuse-db-backups/
+    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
+    s3Credentials:
+      accessKeyId:
+        key: AWS_ACCESS_KEY_ID
+        name: langfuse-db-backups-s3-credentials
+      secretAccessKey:
+        key: AWS_SECRET_ACCESS_KEY
+        name: langfuse-db-backups-s3-credentials
+    wal:
+      compression: gzip
+  retentionPolicy: 30d
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: langfuse-db
+  namespace: langfuse
+spec:
+  backupOwnerReference: self
+  cluster:
+    name: langfuse-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  schedule: 0 51 2 * * *
 ---
 apiVersion: v1
 kind: Secret

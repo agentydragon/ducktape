@@ -55,7 +55,7 @@ from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
 from cluster.cdk8s import agent_access_profiles as access, node_scheduling, pod_policy, service_ref
-from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
+from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.haku import console_config, database
 from cluster.cdk8s.probes import http_probe
@@ -261,15 +261,6 @@ class Console(Construct):
                     "launch_routine",
                     "token",
                 ),
-                # Web Push: the VAPID key the console signs approval notifications with. Its
-                # public half is derived at startup and handed to each browser at subscribe
-                # time, so rotating it makes every enrolled device re-subscribe.
-                self._from_secret(
-                    SecretRef(namespace=NAMESPACE, name="haku-console-web-push-vapid").key("private-key-pem"),
-                    "web_push",
-                    "private_key_pem",
-                ),
-                (env_name(Settings, "web_push", "subject"), EnvValue.from_value("mailto:agentydragon@gmail.com")),
                 # The Authentik-gated origin of Haku's own UI, framed as a sandboxed cross-origin
                 # iframe (haku/console/docs/containment.md).
                 (env_name(Settings, "haku_ui_url"), EnvValue.from_value("https://haku-ui.allegedly.works")),
@@ -293,19 +284,10 @@ class Console(Construct):
                     "haku",
                     "token",
                 ),
-                # public-coder-agent's bearer reaches only its iron-proxy; the OpenClaw
-                # container sees a non-secret placeholder.
-                self._from_secret(
-                    SecretRef(namespace=NAMESPACE, name="haku-console-public-coder-agent").key("token"),
-                    "static_agents",
-                    "public_coder",
-                    "token",
-                ),
                 # The Operator each static Agent acts as: the controller-fed Authentik user id,
                 # resolved through the identity trust domain to a canonical Operator UUID and never
                 # live request authority.
                 self._from_secret(oidc.key("operator_subject"), "static_agents", "haku", "operator_subject"),
-                self._from_secret(oidc.key("operator_subject"), "static_agents", "public_coder", "operator_subject"),
                 # Operator browser login: the console authenticates the operator itself
                 # (authorization-code -> signed session cookie) with the provider tf/gitops/
                 # agent-machine-access mints under application slug haku-console. Required.

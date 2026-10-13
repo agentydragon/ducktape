@@ -1,0 +1,54 @@
+load("@rules_python//python:packaging.bzl", "py_package", "py_wheel")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+py_library(
+    name = "health",
+    srcs = ["health.py"],
+    deps = [
+        "@pypi//dbus_fast",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_health",
+    srcs = ["test_health.py"],
+    deps = [
+        ":health",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_binary(
+    name = "health_bin",
+    main_module = "cpap.gateway.health",
+    deps = [":health"],
+)
+
+py_package(
+    name = "health_pkg",
+    packages = ["cpap.gateway"],
+    deps = [":health"],
+)
+
+# Released as `cpap-gateway-health` and installed into the gateway guest
+# (nix/packages/default.nix).
+py_wheel(
+    name = "health_wheel",
+    distribution = "cpap_gateway_health",
+    entry_points = {
+        "console_scripts": [
+            "cpap-gateway-health = cpap.gateway.health:main",
+        ],
+    },
+    python_requires = ">=3.14",
+    # SYNC: must match propagatedBuildInputs of cpap-gateway-health in nix/packages/default.nix.
+    requires = [
+        "dbus-fast",
+        "pydantic>=2.0",
+    ],
+    version = "0.1.0",
+    deps = [":health_pkg"],
+)

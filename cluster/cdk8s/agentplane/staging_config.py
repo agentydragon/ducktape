@@ -16,8 +16,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     AGENTPLANE_TESTING_POLICY,
     COINBASE_POLICY,
     DUCKTAPE_PR_FAILED_JOBS_SET,
-    FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
-    FINANCE_AGENT_GAFFER_PR_CREATION_SET,
+    GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
     GITHUB_IDENTITY_READS_SET,
     GITHUB_READS_SET,
     GMAIL_READS_SET,
@@ -32,7 +31,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import (
     SSH_READS_SET,
     TANA_READS_SET,
 )
-from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, settings
+from cluster.cdk8s.agentplane.app_settings import DUCKTAPE_PR_INSTRUCTIONS, on_policy_sets, settings
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
     BUILDBUDDY_POLICY,
@@ -70,7 +69,7 @@ _FINANCE_AGENT_INSTRUCTIONS = "\n\n".join(
 _FINANCE_AGENT_THREAD_SETUP = Path(__file__).with_name("finance_agent_thread_setup.sh").read_text(encoding="utf-8")
 # What the public-coder preset binds: reads of confirmed-public repositories, of ducktape and
 # its fork, and of the private Gaffer repository. The names come from
-# actions_staging_policies, which creates each ActionPolicySet this refers to; grouping them
+# actions_staging_policies, which creates each Action PolicySet this refers to; grouping them
 # into a preset is this module's business, naming them is not.
 PUBLIC_CODER_ACTION_POLICY_SETS = (
     PUBLIC_GITHUB_READS_SET,
@@ -105,7 +104,6 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
         models=models,
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=action_federation,
-        own_sandboxes=False,
         action_policy_sets=[*PUBLIC_CODER_ACTION_POLICY_SETS, GITHUB_IDENTITY_READS_SET, SSH_READS_SET],
         kubernetes_grants={TOOL_CONFIG_GRANT: tool_config_grant(namespace), **agent_access_profiles.catalog()},
     )
@@ -213,8 +211,7 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
             *PUBLIC_CODER_ACTION_POLICY_SETS,
             GITHUB_IDENTITY_READS_SET,
             SSH_READS_SET,
-            FINANCE_AGENT_GAFFER_BRANCH_CREATION_SET,
-            FINANCE_AGENT_GAFFER_PR_CREATION_SET,
+            GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
         ],
         thread_preset=_THREAD_PRESET_FINANCE_AGENT_CODEX,
         kubernetes_grants=list(agent_access_profiles.MANAGED_GRANTS["finance-agent"]),
@@ -233,4 +230,4 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
     sandbox.template = "runner-ducktape"
     sandbox.thread_preset = "public-coder-ducktape-codex"
     cfg.sandbox_presets["public-coder-ducktape"] = sandbox
-    return cfg
+    return on_policy_sets(cfg)

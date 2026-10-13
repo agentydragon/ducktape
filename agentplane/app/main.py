@@ -140,7 +140,9 @@ async def async_main(settings: Settings) -> None:
         )
         # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
-        egress = EgressAccess(EgressReader(namespace=settings.namespace, custom_objects=custom_objects), inventory)
+        egress = EgressAccess(
+            EgressReader(namespace=settings.sandbox_namespace, custom_objects=custom_objects), inventory
+        )
         # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
         # binding to the authenticated Sandbox, and where the owner reference cascades.
         action_policy = ActionPolicyInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects)
@@ -152,7 +154,6 @@ async def async_main(settings: Settings) -> None:
             live,
             custom_objects=custom_objects,
             core_v1=core_v1,
-            namespace=settings.namespace,
             sandbox_namespace=settings.sandbox_namespace,
             resync_seconds=settings.resync_seconds,
         )
@@ -169,13 +170,14 @@ async def async_main(settings: Settings) -> None:
         session_openings = SessionOpenings(session_openings_client, event_logs, retry_interval_s=1)
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content)
 
+        decisions = DecisionsClient(admin_http)
         app = create_app(
             inventory,
             bridge,
             store,
             settings.models,
             egress,
-            DecisionsClient(admin_http),
+            decisions,
             live,
             action_policy,
             oidc,
@@ -184,12 +186,7 @@ async def async_main(settings: Settings) -> None:
             electric=ElectricProxy(
                 electric_http, content, event_logs=event_logs, thread_changes=database_updates.changes[Channel.THREADS]
             ),
-            presets=PresetCatalog(
-                sandboxes=settings.sandbox_presets,
-                threads=settings.thread_presets,
-                own_sandboxes=settings.own_sandboxes,
-            ),
-            kubernetes_grants=settings.kubernetes_grants,
+            presets=PresetCatalog(sandboxes=settings.sandbox_presets, threads=settings.thread_presets),
             event_logs=event_logs,
             content=content,
             database_updates=database_updates,
@@ -205,7 +202,11 @@ async def async_main(settings: Settings) -> None:
 
         # The SPA, mounted last so the API routes above it win; index.html answers the rest.
         app.mount("/", SpaFiles(directory=get_required_path(FRONTEND_INDEX).parent, html=True), name="frontend")
-        async with background(watch.run(), name="live-watch"), background(history_watch.run(), name="history-watch"):
+        async with (
+            background(watch.run(), name="live-watch"),
+            background(history_watch.run(), name="history-watch"),
+            background(decisions.watch(retry_interval_s=1), name="egress-decisions-watch"),
+        ):
             await serve_then_close(
                 AppServer(
                     uvicorn.Config(

@@ -1,4 +1,4 @@
-"""Which bindings the app shows a sandbox, what it reads off them, and what it writes back."""
+"""Which PolicyBindings the app shows a sandbox, what it reads off them, and what it writes back."""
 
 from __future__ import annotations
 
@@ -9,19 +9,21 @@ import pytest_bazel
 
 from agentplane.egress.resources import TargetMethod
 from agentplane.proto.sandbox_service_pb2 import Sandbox, ServiceAccount
+from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.egress_views import (
     BindingNotFoundError,
     CredentialView,
     FluxOwnedBindingError,
+    SandboxOwnedBindingError,
     UnknownPolicyError,
 )
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
     FakeCustomObjectsApi,
-    egress_binding,
     egress_credential,
-    egress_policy,
+    egress_policy_set,
+    policy_binding,
 )
 from agentplane.subjects import ServiceAccountRef
 
@@ -51,23 +53,23 @@ def seeded(custom_objects: FakeCustomObjectsApi) -> None:
         description=CREDENTIAL_DESCRIPTION,
         targets=[{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}],
     )
-    custom_objects.objects[("egresspolicies", "github")] = egress_policy("github", [GITHUB_RULE])
-    custom_objects.objects[("egresspolicies", "pypi")] = egress_policy("pypi", [{"hosts": ["pypi.org"]}])
-    custom_objects.objects[("egressbindings", "live-seeded")] = egress_binding(
-        "live-seeded", subjects=[LIVE.model_dump()], policies=["github"]
+    custom_objects.objects[("policysets", "github")] = egress_policy_set("github", [GITHUB_RULE])
+    custom_objects.objects[("policysets", "pypi")] = egress_policy_set("pypi", [{"hosts": ["pypi.org"]}])
+    custom_objects.objects[("policybindings", "live-seeded")] = policy_binding(
+        "live-seeded", subject=LIVE.model_dump(), policy_sets=["github"]
     )
-    custom_objects.objects[("egressbindings", "live-expiring")] = egress_binding(
+    custom_objects.objects[("policybindings", "live-expiring")] = policy_binding(
         "live-expiring",
-        subjects=[LIVE.model_dump()],
-        policies=["pypi", "vanished"],
+        subject=LIVE.model_dump(),
+        policy_sets=["pypi", "vanished"],
         from_git=False,
         expires_at="2026-12-01T00:00:00Z",
     )
-    custom_objects.objects[("egressbindings", "live-granted")] = egress_binding(
-        "live-granted", subjects=[LIVE.model_dump()], policies=["pypi"], from_git=False
+    custom_objects.objects[("policybindings", "live-granted")] = policy_binding(
+        "live-granted", subject=LIVE.model_dump(), policy_sets=["pypi"], from_git=False
     )
-    custom_objects.objects[("egressbindings", "other-only")] = egress_binding(
-        "other-only", subjects=[{"namespace": NAMESPACE, "name": "other"}], policies=["pypi"]
+    custom_objects.objects[("policybindings", "other-only")] = policy_binding(
+        "other-only", subject=OTHER.model_dump(), policy_sets=["pypi"]
     )
 
 
@@ -82,22 +84,12 @@ async def test_a_like_named_account_in_another_namespace_is_a_different_subject(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
     """A subject is a namespace and a name together: an account called "live" somewhere else is not
-    this sandbox, and a binding naming both is still this sandbox's."""
-    custom_objects.objects[("egressbindings", "elsewhere-only")] = egress_binding(
-        "elsewhere-only", subjects=[{"namespace": "agentplane-elsewhere", "name": "live"}], policies=["pypi"]
-    )
-    custom_objects.objects[("egressbindings", "live-and-another")] = egress_binding(
-        "live-and-another",
-        subjects=[LIVE.model_dump(), {"namespace": NAMESPACE, "name": "test-workload-sa"}],
-        policies=["pypi"],
+    this sandbox."""
+    custom_objects.objects[("policybindings", "elsewhere-only")] = policy_binding(
+        "elsewhere-only", subject={"namespace": "agentplane-elsewhere", "name": "live"}, policy_sets=["pypi"]
     )
 
-    names = [view.name for view in await egress.bindings_for(LIVE)]
-    assert "elsewhere-only" not in names
-    assert "live-and-another" in names
-
-    both = next(view for view in await egress.bindings_for(LIVE) if view.name == "live-and-another")
-    assert both.subjects == [LIVE, ServiceAccountRef(namespace=NAMESPACE, name="test-workload-sa")]
+    assert "elsewhere-only" not in [view.name for view in await egress.bindings_for(LIVE)]
 
 
 @pytest.mark.usefixtures("seeded")
@@ -132,19 +124,55 @@ async def test_a_binding_view_carries_provenance_expiry_and_policies(egress: Egr
 
 
 @pytest.mark.usefixtures("seeded")
+async def test_only_egress_rules_make_a_policy_and_a_refused_set_reads_as_missing(
+    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """A set another reader's rules fill is not an egress policy, and not a dangling name either; one
+    whose egress rule does not parse grants nothing, which the binding reports rather than hides."""
+    others = egress_policy_set("actions-only", [])
+    others["spec"]["rules"] = [{"type": "action_auto_approve"}]
+    custom_objects.objects[("policysets", "actions-only")] = others
+    custom_objects.objects[("policysets", "broken")] = egress_policy_set("broken", [{"hosts": []}])
+    custom_objects.objects[("policybindings", "live-mixed")] = policy_binding(
+        "live-mixed", subject=LIVE.model_dump(), policy_sets=["pypi", "actions-only", "broken"], from_git=False
+    )
+
+    mixed = next(view for view in await egress.bindings_for(LIVE) if view.name == "live-mixed")
+
+    assert ([policy.name for policy in mixed.policies], mixed.missing_policies) == (["pypi"], ["broken"])
+    assert {policy.name for policy in await egress.list_policies()} == {"github", "pypi"}
+
+
+@pytest.mark.usefixtures("seeded")
 async def test_revoke_deletes_a_runtime_binding_and_refuses_one_from_git(
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    """Deleting the rule is the whole revocation; a Flux-applied one would come straight back, so
+    """Deleting the binding is the whole revocation; a Flux-applied one would come straight back, so
     the app refuses it instead of deleting an object the next reconcile re-creates."""
     await egress.revoke("live-granted")
 
-    assert ("egressbindings", "live-granted") not in custom_objects.objects
+    assert ("policybindings", "live-granted") not in custom_objects.objects
     with pytest.raises(FluxOwnedBindingError):
         await egress.revoke("live-seeded")
-    assert ("egressbindings", "live-seeded") in custom_objects.objects
+    assert ("policybindings", "live-seeded") in custom_objects.objects
     with pytest.raises(BindingNotFoundError):
         await egress.revoke("live-granted")
+
+
+@pytest.mark.usefixtures("seeded")
+async def test_the_sandbox_own_binding_is_not_listed_and_revoke_refuses_it(
+    egress: EgressInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    """The Sandbox controller keeps that binding equal to the Sandbox's spec, so deleting it would
+    be undone at once and look like a revocation that did not hold."""
+    custom_objects.objects[("policybindings", "live")] = policy_binding(
+        "live", subject=LIVE.model_dump(), policy_sets=["pypi"], from_git=False, sandbox_controlled="live"
+    )
+
+    assert "live" not in [view.name for view in await egress.bindings_for(LIVE)]
+    with pytest.raises(SandboxOwnedBindingError):
+        await egress.revoke("live")
+    assert ("policybindings", "live") in custom_objects.objects
 
 
 @pytest.mark.usefixtures("seeded")
@@ -156,17 +184,17 @@ async def test_grant_creates_a_binding_the_sandbox_owns(
     granted = await egress.grant(LIVE_SANDBOX, ["pypi", "github"])
 
     assert granted.name.startswith("live-")
-    created = custom_objects.objects[("egressbindings", granted.name)]
+    created = custom_objects.objects[("policybindings", granted.name)]
     (owner,) = created["metadata"]["ownerReferences"]
     assert owner == {
-        "apiVersion": "agents.x-k8s.io/v1beta1",
-        "kind": "Sandbox",
+        "apiVersion": SANDBOX_API_VERSION,
+        "kind": SANDBOX_KIND,
         "name": "live",
         "uid": str(LIVE_SANDBOX.uid),
         "controller": False,
         "blockOwnerDeletion": False,
     }
-    assert created["spec"] == {"subjects": [LIVE.model_dump()], "policies": ["pypi", "github"]}
+    assert created["spec"] == {"subject": LIVE.model_dump(), "policySets": ["pypi", "github"]}
     # And the app reads its own grant back like any other binding, not from git.
     (read_back,) = [view for view in await egress.bindings_for(LIVE) if view.name == granted.name]
     assert (read_back.from_git, [policy.name for policy in read_back.policies]) == (False, ["pypi", "github"])
@@ -182,8 +210,8 @@ async def test_a_second_grant_is_another_binding_and_not_an_edit_of_the_first(
     second = await egress.grant(LIVE_SANDBOX, ["github"])
 
     assert first.name != second.name
-    assert custom_objects.objects[("egressbindings", first.name)]["spec"]["policies"] == ["pypi"]
-    assert custom_objects.objects[("egressbindings", second.name)]["spec"]["policies"] == ["github"]
+    assert custom_objects.objects[("policybindings", first.name)]["spec"]["policySets"] == ["pypi"]
+    assert custom_objects.objects[("policybindings", second.name)]["spec"]["policySets"] == ["github"]
     # Both name the sandbox, so the proxy's union over its bindings is what composes them.
     assert {first.name, second.name} <= {view.name for view in await egress.bindings_for(LIVE)}
 
@@ -201,8 +229,6 @@ async def test_a_grant_naming_a_policy_the_namespace_lacks_writes_nothing(
 
     assert refused.value.names == ["vanished"]
     assert set(custom_objects.objects) == before
-    with pytest.raises(UnknownPolicyError):
-        await egress.require_policies(["vanished"])
 
 
 @pytest.mark.usefixtures("seeded")
@@ -227,7 +253,7 @@ async def test_authenticated_workload_source_projects_no_token_or_secret_referen
             "targets": [{"header": "Authorization", "method": "schemeToken", "scheme": "Bearer"}],
         },
     }
-    custom_objects.objects[("egresspolicies", "workload")] = egress_policy(
+    custom_objects.objects[("policysets", "workload")] = egress_policy_set(
         "workload", [{"hosts": ["agentplane.internal"], "credentialRef": {"name": "workload"}}]
     )
 
@@ -241,7 +267,7 @@ async def test_a_rule_naming_a_credential_the_namespace_does_not_hold_says_which
     egress: EgressInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
     """The proxy substitutes nothing for it, so the page must not read as a rule that wanted none."""
-    custom_objects.objects[("egresspolicies", "orphan")] = egress_policy(
+    custom_objects.objects[("policysets", "orphan")] = egress_policy_set(
         "orphan", [{"hosts": ["api.github.com"], "credentialRef": {"name": "gone"}}]
     )
 

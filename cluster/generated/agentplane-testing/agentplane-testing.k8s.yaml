@@ -611,6 +611,8 @@ data:
         total_context_budget_tokens: 131072
       - model: ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k
         total_context_budget_tokens: 262144
+      - model: ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+        total_context_budget_tokens: 131072
 immutable: false
 ---
 apiVersion: apps/v1
@@ -1413,69 +1415,6 @@ spec:
       scheme: Bearer
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: inference-experiments
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - ollama.ollama.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /api/tags
-        - /api/ps
-        - /api/version
-        - /v1/models
-      clusterInternal: true
-      credentialRef:
-        name: ollama
-    - hosts:
-        - ollama.ollama.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /api/show
-        - /api/chat
-        - /api/generate
-        - /api/embed
-        - /api/embeddings
-        - /v1/chat/completions
-        - /v1/completions
-        - /v1/responses
-        - /v1/embeddings
-      clusterInternal: true
-      credentialRef:
-        name: ollama
-    - hosts:
-        - litellm.litellm.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /v1/models
-        - /models
-        - /model/info
-      clusterInternal: true
-      credentialRef:
-        name: litellm-cheap-experiments
-    - hosts:
-        - litellm.litellm.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /v1/chat/completions
-        - /v1/completions
-        - /v1/responses
-        - /v1/messages
-        - /v1/messages/count_tokens
-        - /v1/embeddings
-        - /v1/audio/transcriptions
-      clusterInternal: true
-      credentialRef:
-        name: litellm-cheap-experiments
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: inference-experiments
@@ -1543,16 +1482,6 @@ spec:
         name: litellm-cheap-experiments
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: public-internet
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - "*"
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: public-internet
@@ -1562,71 +1491,6 @@ spec:
     - type: egress
       hosts:
         - "*"
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: basic
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - agentplane-llm-ingress.agentplane-testing.svc.cluster.local
-      methods:
-        - GET
-        - POST
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
-    - hosts:
-        - agentplane-notifications.agentplane-testing.svc.cluster.local
-      methods:
-        - GET
-        - POST
-        - PUT
-        - PATCH
-        - DELETE
-      paths:
-        - /openapi.json
-        - /v1/sources
-        - /v1/subscriptions
-        - /v1/subscriptions/**
-        - /v1/inboxes
-        - /v1/inboxes/**
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-notifications-workload
-    - hosts:
-        - agentplane-actions.agentplane-testing.svc.cluster.local
-      methods:
-        - GET
-        - POST
-      paths:
-        - /mcp
-        - /openapi.json
-        - /v1/action-groups
-        - /v1/action-groups/**
-        - /v1/action-policy
-        - /v1/action-requests
-        - /v1/action-requests/**
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
-    - hosts:
-        - agentplane-egress.agentplane-testing.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /openapi.json
-        - /v1/rules
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
-    - hosts:
-        - kubernetes.default.svc.cluster.local
-      clusterInternal: true
-      credentialRef:
-        name: kubernetes-workload
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1699,36 +1563,6 @@ spec:
         name: kubernetes-workload
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: packages
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - bcr.bazel.build
-        - cache.nixos.org
-        - channels.nixos.org
-        - code.forgejo.org
-        - data.forgejo.org
-        - files.pythonhosted.org
-        - ftp.gnu.org
-        - ghcr.io
-        - index.crates.io
-        - nixos.org
-        - nodejs.org
-        - pkg-containers.githubusercontent.com
-        - pypi.org
-        - registry.npmjs.org
-        - releases.bazel.build
-        - snapshot.debian.org
-        - static.crates.io
-        - static.rust-lang.org
-      methods:
-        - GET
-        - HEAD
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: packages
@@ -1760,24 +1594,6 @@ spec:
         - HEAD
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: github-agentydragon-agent
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - api.github.com
-        - github.com
-        - codeload.github.com
-        - "*.githubusercontent.com"
-      methods:
-        - GET
-        - POST
-      credentialRef:
-        name: github-pat
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: github-agentydragon-agent
@@ -1797,18 +1613,6 @@ spec:
         name: github-pat
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: github-actions-logs
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - "*.blob.core.windows.net"
-      methods:
-        - GET
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: github-actions-logs
@@ -1820,20 +1624,6 @@ spec:
         - "*.blob.core.windows.net"
       methods:
         - GET
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: public-coder-pr-visuals
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - s3.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /pr-visuals/**
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1851,19 +1641,6 @@ spec:
         - /pr-visuals/**
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: buildbuddy
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - app.buildbuddy.io
-        - remote.buildbuddy.io
-      credentialRef:
-        name: buildbuddy
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: buildbuddy
@@ -1876,24 +1653,6 @@ spec:
         - remote.buildbuddy.io
       credentialRef:
         name: buildbuddy
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: github-clone
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - github.com
-      methods:
-        - GET
-        - POST
-      paths:
-        - /*/*.git/info/refs
-        - /*/*.git/git-upload-pack
-        - /*/*/info/refs
-        - /*/*/git-upload-pack
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1972,27 +1731,10 @@ data:
       - namespace: agentplane-testing
         name: agentplane-notifications
     token_audience: agentplane-sandbox-service
-    default_egress_policies:
+    default_policy_sets:
       - basic
       - inference-experiments
-    own_sandboxes:
-      default_policy_sets:
-        - basic
-        - inference-experiments
-    kubernetes_grants: {}
-    kubernetes_binding_cleanup_namespaces: []
-    kubernetes_cluster_binding_cleanup: false
     port: 8080
-    control_target: "{sandbox}-control.{namespace}.svc:8080"
-    gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
-    runner_control:
-      target: agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8082
-      bearer: agentplane-credential-agentplane-runner-control
-      egress_policy: runner-control
-    runner_ingress:
-      target: agentplane-history-service.agentplane-testing.svc.cluster.local:8081
-      bearer: agentplane-credential-agentplane-runner-ingress
-      egress_policy: runner-ingress
 immutable: false
 ---
 apiVersion: v1
@@ -2067,9 +1809,6 @@ spec:
             - mountPath: /etc/agentplane-sandbox-service
               name: configmap-agentplane-sandbox-service-config
               readOnly: true
-            - mountPath: /var/run/secrets/agentplane-runner-gateway
-              name: runner-gateway-token
-              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -2093,13 +1832,6 @@ spec:
         - configMap:
             name: agentplane-sandbox-service-config
           name: configmap-agentplane-sandbox-service-config
-        - name: runner-gateway-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-runner-gateway
-                  expirationSeconds: 3600
-                  path: token
 ---
 apiVersion: v1
 kind: Service
@@ -2152,32 +1884,19 @@ metadata:
   namespace: agentplane-testing
 rules:
   - apiGroups:
-      - extensions.agents.x-k8s.io
+      - agentplane.allegedly.works
     resources:
       - sandboxtemplates
     verbs:
-      - get
       - list
-  - apiGroups:
-      - agents.x-k8s.io
-    resources:
-      - sandboxes
-    verbs:
-      - create
-      - get
-      - list
-      - watch
-      - patch
-      - delete
   - apiGroups:
       - agentplane.allegedly.works
     resources:
       - sandboxes
     verbs:
+      - create
       - get
       - list
-      - watch
-      - create
       - patch
       - delete
   - apiGroups:
@@ -2193,16 +1912,6 @@ rules:
     verbs:
       - get
       - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
-    verbs:
-      - create
-      - get
-      - patch
-      - delete
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -2210,7 +1919,6 @@ rules:
     verbs:
       - get
       - list
-      - watch
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -2218,7 +1926,6 @@ rules:
     verbs:
       - get
       - list
-      - watch
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -2226,34 +1933,10 @@ rules:
     verbs:
       - get
       - list
-      - watch
   - apiGroups:
       - agentplane.allegedly.works
     resources:
       - egressbindings
-    verbs:
-      - create
-      - delete
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicysets
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicybindings
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicybindings
     verbs:
       - create
       - delete
@@ -2292,14 +1975,6 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: agentplane-sandbox-service
@@ -2334,9 +2009,6 @@ data:
         name: agentplane-app
       - namespace: agentplane-testing
         name: agentplane-notifications
-    sealer_accounts:
-      - namespace: agentplane-testing
-        name: agentplane-sandbox-service
     token_audience: agentplane-runner-gateway
     platform_instructions: |-
       You are running in a Kubernetes sandbox managed by Agentplane. Agentplane governs outbound network
@@ -2647,11 +2319,6 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-sandbox-commands
-            - name: AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-sandbox-commands
           image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-migrate:unset
           imagePullPolicy: Always
           name: migrate-commands
@@ -2743,14 +2410,6 @@ metadata:
   name: agentplane-runner-gateway
   namespace: agentplane-testing
 rules:
-  - apiGroups:
-      - agents.x-k8s.io
-    resources:
-      - sandboxes
-    verbs:
-      - get
-      - list
-      - watch
   - apiGroups:
       - ""
     resources:
@@ -2864,14 +2523,6 @@ spec:
               protocol: TCP
     - fromEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: agentplane-sandbox-service
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
             app.kubernetes.io/name: agentplane-egress
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
@@ -2893,23 +2544,6 @@ spec:
     - header: Authorization
       method: schemeToken
       scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: runner-control
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - agentplane-runner-gateway.agentplane-testing.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /agentplane.proto.runner_control.RunnerControl/Connect
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-runner-control
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -3087,11 +2721,6 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-sandbox-service
-            - name: AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-sandbox-service
           image: git.allegedly.works/ducktape-ci/agentplane-history-migrate:unset
           imagePullPolicy: Always
           name: migrate
@@ -3223,23 +2852,6 @@ spec:
       scheme: Bearer
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: runner-ingress
-  namespace: agentplane-testing
-spec:
-  rules:
-    - hosts:
-        - agentplane-history-service.agentplane-testing.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /agentplane.proto.runner_ingress.RunnerIngress/Push
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-runner-ingress
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: runner-ingress
@@ -3311,6 +2923,9 @@ data:
   config.yaml: |
     models:
       models:
+        - model: ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
+          display_name: Qwen3.8 Flash Next IQ4_XS (128K)
+          reasoning_efforts: []
         - model: chatgpt/oai-responses/gpt-6-luna
           display_name: GPT-6 Luna
           reasoning_efforts:
@@ -3341,7 +2956,8 @@ data:
           display_name: Gemma 4 31B (128K)
           reasoning_efforts: []
       harnesses:
-        HARNESS_CLAUDE: []
+        HARNESS_CLAUDE:
+          - ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k
         HARNESS_CODEX:
           - chatgpt/oai-responses/gpt-6-luna
           - ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k
@@ -3397,7 +3013,6 @@ data:
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
           fi
     kubernetes_grants: {}
-    own_sandboxes: true
     egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081/
     action_federation:
       service_url: http://agentplane-actions.agentplane-testing.svc:8080/
@@ -3510,8 +3125,6 @@ spec:
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-testing:agentplane-agent"]'
             - name: AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET
-              value: "{sandbox}-control.{namespace}.svc:8080"
-            - name: AGENTPLANE_SANDBOX_SERVICE_CONTROL_TARGET
               value: "{sandbox}-control.{namespace}.svc:8080"
             - name: AGENTPLANE_CONFIG_FILE
               value: /etc/agentplane/config.yaml
@@ -3739,21 +3352,6 @@ metadata:
   name: agentplane-app
   namespace: agentplane-testing
 rules:
-  - apiGroups:
-      - extensions.agents.x-k8s.io
-    resources:
-      - sandboxtemplates
-    verbs:
-      - get
-      - list
-  - apiGroups:
-      - agents.x-k8s.io
-    resources:
-      - sandboxes
-    verbs:
-      - get
-      - list
-      - watch
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -4066,219 +3664,6 @@ spec:
             - port: "8081"
               protocol: TCP
 ---
-apiVersion: extensions.agents.x-k8s.io/v1beta1
-kind: SandboxTemplate
-metadata:
-  name: runner
-  namespace: agentplane-testing
-spec:
-  networkPolicyManagement: Unmanaged
-  podTemplate:
-    metadata:
-      labels:
-        app.kubernetes.io/name: agentplane-runner
-    spec:
-      automountServiceAccountToken: false
-      containers:
-        - args:
-            - --state-dir
-            - /state
-            - --claude-binary
-            - /bin/claude
-            - --anthropic-base-url
-            - $(LITELLM_URL)
-            - --codex-binary
-            - /bin/codex
-            - --openai-base-url
-            - $(LITELLM_URL)/v1
-            - --harness-env
-            - HOME
-            - --harness-env
-            - PATH
-            - --harness-env
-            - TZ
-            - --harness-env
-            - HTTP_PROXY
-            - --harness-env
-            - HTTPS_PROXY
-            - --harness-env
-            - http_proxy
-            - --harness-env
-            - https_proxy
-            - --harness-env
-            - NO_PROXY
-            - --harness-env
-            - no_proxy
-            - --harness-env
-            - SSL_CERT_FILE
-            - --harness-env
-            - NODE_EXTRA_CA_CERTS
-            - --harness-env
-            - CURL_CA_BUNDLE
-            - --harness-env
-            - GIT_SSL_CAINFO
-            - --harness-env
-            - REQUESTS_CA_BUNDLE
-            - --harness-env
-            - KUBECONFIG
-            - --harness-inherit-env
-            - TZDIR
-          env:
-            - name: LITELLM_URL
-              value: http://agentplane-llm-ingress.agentplane-testing.svc.cluster.local:8080
-            - name: HTTP_PROXY
-              value: http://127.0.0.1:3128
-            - name: HTTPS_PROXY
-              value: http://127.0.0.1:3128
-            - name: http_proxy
-              value: http://127.0.0.1:3128
-            - name: https_proxy
-              value: http://127.0.0.1:3128
-            - name: NO_PROXY
-              value: 127.0.0.1,localhost
-            - name: no_proxy
-              value: 127.0.0.1,localhost
-            - name: SSL_CERT_FILE
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: NODE_EXTRA_CA_CERTS
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: CURL_CA_BUNDLE
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: GIT_SSL_CAINFO
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: REQUESTS_CA_BUNDLE
-              value: /etc/ssl/certs/ca-certificates.crt
-            - name: KUBECONFIG
-              value: /etc/kubernetes/kubeconfig
-            - name: ANTHROPIC_AUTH_TOKEN
-              value: agentplane-credential-agentplane-workload
-            - name: OPENAI_API_KEY
-              value: agentplane-credential-agentplane-workload
-            - name: TZ
-              value: America/Los_Angeles
-          image: git.allegedly.works/ducktape-ci/runner:unset
-          name: runner
-          resources:
-            limits:
-              cpu: "2"
-              memory: 4Gi
-            requests:
-              cpu: 500m
-              memory: 1Gi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-          volumeMounts:
-            - mountPath: /state
-              name: state
-            - mountPath: /etc/ssl/certs/ca-certificates.crt
-              name: egress-ca
-              readOnly: true
-              subPath: ca-certificates.crt
-            - mountPath: /etc/ssl/certs/java/cacerts
-              name: egress-ca
-              readOnly: true
-              subPath: ca-certificates.p12
-            - mountPath: /etc/kubernetes/kubeconfig
-              name: tool-config
-              readOnly: true
-              subPath: kubeconfig
-          workingDir: /state
-        - env:
-            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
-              value: agentplane-egress.agentplane-testing.svc.cluster.local
-            - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
-              value: "8888"
-            - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
-              value: "3128"
-            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
-              value: 0.0.0.0
-            - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
-              value: "3129"
-            - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
-              value: /var/run/agentplane-egress/token
-            - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
-              value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
-          image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
-          name: egress-sidecar
-          readinessProbe:
-            failureThreshold: 1
-            httpGet:
-              path: /readyz
-              port: 3129
-            periodSeconds: 2
-            timeoutSeconds: 1
-          resources:
-            limits:
-              cpu: 100m
-              memory: 128Mi
-            requests:
-              cpu: 10m
-              memory: 32Mi
-          securityContext:
-            allowPrivilegeEscalation: false
-            capabilities:
-              drop:
-                - ALL
-          volumeMounts:
-            - mountPath: /var/run/agentplane-egress
-              name: egress-token
-              readOnly: true
-      imagePullSecrets:
-        - name: forgejo-images-creds
-      securityContext:
-        fsGroup: 1000
-        runAsGroup: 1000
-        runAsNonRoot: true
-        runAsUser: 1000
-        seccompProfile:
-          type: RuntimeDefault
-      serviceAccountName: agentplane-runner
-      terminationGracePeriodSeconds: 60
-      volumes:
-        - configMap:
-            name: agentplane-testing-egress-ca
-          name: egress-ca
-        - configMap:
-            name: agentplane-sandbox-tool-config
-          name: tool-config
-        - name: egress-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-egress
-                  expirationSeconds: 600
-                  path: token
-              - serviceAccountToken:
-                  audience: https://localhost:7445
-                  expirationSeconds: 600
-                  path: kubernetes-token
-              - serviceAccountToken:
-                  audience: agentplane-notifications
-                  expirationSeconds: 600
-                  path: notifications-token
-              - serviceAccountToken:
-                  audience: agentplane-runner-control
-                  expirationSeconds: 600
-                  path: runner-control-token
-              - serviceAccountToken:
-                  audience: agentplane-runner-ingress
-                  expirationSeconds: 600
-                  path: runner-ingress-token
-  volumeClaimTemplates:
-    - metadata:
-        name: state
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 10Gi
-        storageClassName: local-path-ovh-hdd
-  volumeClaimTemplatesPolicy: Overrides
----
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: SandboxTemplate
 metadata:
@@ -4303,6 +3688,14 @@ spec:
             - /bin/codex
             - --openai-base-url
             - $(LITELLM_URL)/v1
+            - --control-target
+            - 127.0.0.1:3130
+            - --control-bearer
+            - platform-route
+            - --ingress-target
+            - 127.0.0.1:3131
+            - --ingress-bearer
+            - platform-route
             - --harness-env
             - HOME
             - --harness-env
@@ -4335,14 +3728,6 @@ spec:
             - KUBECONFIG
             - --harness-inherit-env
             - TZDIR
-            - --control-target
-            - 127.0.0.1:3130
-            - --control-bearer
-            - platform-route
-            - --ingress-target
-            - 127.0.0.1:3131
-            - --ingress-bearer
-            - platform-route
           env:
             - name: LITELLM_URL
               value: http://agentplane-llm-ingress.agentplane-testing.svc.cluster.local:8080
@@ -4492,12 +3877,392 @@ spec:
   stateVolume:
     name: state
     claim:
+      storageClassName: local-path-ovh-hdd
       accessModes:
         - ReadWriteOnce
       resources:
         requests:
           storage: 10Gi
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
+  name: agentplane-testing-launcher-relay
+spec:
+  background: false
+  failurePolicy: Fail
+  rules:
+    - match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Pod/ephemeralcontainers
+              namespaces:
+                - agentplane-testing
+              operations:
+                - UPDATE
+      name: protect-token-on-update
+      validate:
+        deny:
+          conditions:
+            any:
+              - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+              - key: "{{ length((request.object.spec.initContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+              - key: "{{ length((request.object.spec.ephemeralContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+        message: Only the launcher relay may mount its projected tokens.
+    - context:
+        - name: vmiOwner
+          variable:
+            default: {}
+            jmesPath: request.object.metadata.ownerReferences[?kind=='VirtualMachineInstance' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachineinstances/{{vmiOwner.name || 'missing'}}
+          name: vmi
+        - name: vmOwner
+          variable:
+            default: {}
+            jmesPath: vmi.metadata.ownerReferences[?kind=='VirtualMachine' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachines/{{vmOwner.name || 'missing'}}
+          name: vm
+        - name: sandbox
+          variable:
+            default: {}
+            jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
+          name: account
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - agentplane-testing
+              operations:
+                - CREATE
+              selector:
+                matchLabels:
+                  kubevirt.io: virt-launcher
+      name: authenticate-launcher
+      validate:
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.userInfo.username }}"
+                operator: NotEquals
+                value: system:serviceaccount:kubevirt:kubevirt-controller
+              - key: "{{ vmiOwner.uid }}"
+                operator: NotEquals
+                value: "{{vmi.metadata.uid}}"
+              - key: "{{ vmOwner.uid }}"
+                operator: NotEquals
+                value: "{{vm.metadata.uid}}"
+              - key: "{{ sandbox.uid || '' }}"
+                operator: NotEquals
+                value: "{{account.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0].uid || 'none'}}"
+              - key: "{{ length(vmi.spec.volumes[?serviceAccount] || `[]`) }}"
+                operator: NotEquals
+                value: 0
+        message: A launcher must be created by KubeVirt for a live VirtualMachine controlled by a Sandbox, which also controls the ServiceAccount of the same name.
+    - context:
+        - name: vmiOwner
+          variable:
+            default: {}
+            jmesPath: request.object.metadata.ownerReferences[?kind=='VirtualMachineInstance' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachineinstances/{{vmiOwner.name || 'missing'}}
+          name: vmi
+        - name: vmOwner
+          variable:
+            default: {}
+            jmesPath: vmi.metadata.ownerReferences[?kind=='VirtualMachine' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachines/{{vmOwner.name || 'missing'}}
+          name: vm
+        - name: sandbox
+          variable:
+            default: {}
+            jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
+          name: account
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - agentplane-testing
+              operations:
+                - CREATE
+              selector:
+                matchLabels:
+                  kubevirt.io: virt-launcher
+      mutate:
+        patchStrategicMerge:
+          spec:
+            automountServiceAccountToken: false
+            containers:
+              - env:
+                  - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_HOST
+                    value: agentplane-egress.agentplane-testing.svc.cluster.local
+                  - name: AGENTPLANE_EGRESS_SIDECAR_PROXY_PORT
+                    value: "8888"
+                  - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_PORT
+                    value: "3128"
+                  - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_HOST
+                    value: 0.0.0.0
+                  - name: AGENTPLANE_EGRESS_SIDECAR_READINESS_PORT
+                    value: "3129"
+                  - name: AGENTPLANE_EGRESS_SIDECAR_TOKEN_FILE
+                    value: /var/run/agentplane-egress/token
+                  - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
+                    value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
+                  - name: AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES
+                    value: '{"control": {"listen_port": 3130, "upstream": "agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8082", "token_file": "/var/run/agentplane-egress/runner-control-token"}, "ingress": {"listen_port": 3131, "upstream": "agentplane-history-service.agentplane-testing.svc.cluster.local:8081", "token_file": "/var/run/agentplane-egress/runner-ingress-token"}}'
+                  - name: AGENTPLANE_EGRESS_SIDECAR_LISTEN_HOST
+                    value: 0.0.0.0
+                image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
+                name: egress-sidecar
+                readinessProbe:
+                  failureThreshold: 1
+                  httpGet:
+                    path: /readyz
+                    port: 3129
+                  periodSeconds: 2
+                  timeoutSeconds: 1
+                resources:
+                  limits:
+                    cpu: 100m
+                    memory: 128Mi
+                  requests:
+                    cpu: 10m
+                    memory: 32Mi
+                securityContext:
+                  allowPrivilegeEscalation: false
+                  capabilities:
+                    drop:
+                      - ALL
+                  runAsGroup: 1000
+                  runAsNonRoot: true
+                  runAsUser: 1000
+                volumeMounts:
+                  - mountPath: /var/run/agentplane-egress
+                    name: egress-token
+                    readOnly: true
+            imagePullSecrets:
+              - name: forgejo-images-creds
+            serviceAccountName: "{{account.metadata.name}}"
+            volumes:
+              - name: egress-token
+                projected:
+                  sources:
+                    - serviceAccountToken:
+                        audience: agentplane-egress
+                        expirationSeconds: 600
+                        path: token
+                    - serviceAccountToken:
+                        audience: https://localhost:7445
+                        expirationSeconds: 600
+                        path: kubernetes-token
+                    - serviceAccountToken:
+                        audience: agentplane-notifications
+                        expirationSeconds: 600
+                        path: notifications-token
+                    - serviceAccountToken:
+                        audience: agentplane-runner-control
+                        expirationSeconds: 600
+                        path: runner-control-token
+                    - serviceAccountToken:
+                        audience: agentplane-runner-ingress
+                        expirationSeconds: 600
+                        path: runner-ingress-token
+      name: inject-relay
+    - context:
+        - name: vmiOwner
+          variable:
+            default: {}
+            jmesPath: request.object.metadata.ownerReferences[?kind=='VirtualMachineInstance' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachineinstances/{{vmiOwner.name || 'missing'}}
+          name: vmi
+        - name: vmOwner
+          variable:
+            default: {}
+            jmesPath: vmi.metadata.ownerReferences[?kind=='VirtualMachine' && apiVersion=='kubevirt.io/v1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /apis/kubevirt.io/v1/namespaces/{{request.namespace}}/virtualmachines/{{vmOwner.name || 'missing'}}
+          name: vm
+        - name: sandbox
+          variable:
+            default: {}
+            jmesPath: vm.metadata.ownerReferences[?kind=='Sandbox' && apiVersion=='agentplane.allegedly.works/v1alpha1' && controller==`true`] | [0]
+        - apiCall:
+            urlPath: /api/v1/namespaces/{{request.namespace}}/serviceaccounts/{{sandbox.name || 'missing'}}
+          name: account
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+              namespaces:
+                - agentplane-testing
+              operations:
+                - CREATE
+              selector:
+                matchLabels:
+                  kubevirt.io: virt-launcher
+      name: validate-relay
+      validate:
+        deny:
+          conditions:
+            any:
+              - key: "{{ request.object.spec.serviceAccountName }}"
+                operator: NotEquals
+                value: "{{account.metadata.name}}"
+              - key: "{{ request.object.spec.automountServiceAccountToken }}"
+                operator: NotEquals
+                value: false
+              - key: "{{ length(request.object.spec.containers[?name=='egress-sidecar']) }}"
+                operator: NotEquals
+                value: 1
+              - key: "{{ length((request.object.spec.containers[?name!='egress-sidecar'] || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+              - key: "{{ length((request.object.spec.initContainers || `[]`)[].volumeMounts[] | [?name=='egress-token']) }}"
+                operator: NotEquals
+                value: 0
+        message: The launcher's relay identity must stay out of the compute and init containers.
+  validationFailureAction: enforce
+  webhookConfiguration:
+    matchConditions:
+      - expression: "request.operation == 'CREATE' ? (has(object.metadata.labels) && 'kubevirt.io' in object.metadata.labels && object.metadata.labels['kubevirt.io'] == 'virt-launcher') : (has(object.spec.volumes) && object.spec.volumes.exists(v, v.name == 'egress-token'))"
+        name: launcher-or-token-volume
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agentplane-runner-vm-config
+  namespace: agentplane-testing
+data:
+  config.json: '{"version":1,"control":{"target":"10.0.2.1:3130","bearer":"platform-route"},"ingress":{"target":"10.0.2.1:3131","bearer":"platform-route"},"llm_base_url":"http://agentplane-llm-ingress.agentplane-testing.svc.cluster.local:8080","proxy_url":"http://10.0.2.1:3128"}'
+  kubeconfig: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: in-cluster
+        cluster:
+          server: https://kubernetes.default.svc.cluster.local
+          certificate-authority: /run/agentplane/ca-certificates.crt
+    users:
+      - name: workload
+        user:
+          token: agentplane-credential-kubernetes-workload
+    contexts:
+      - name: in-cluster
+        context:
+          cluster: in-cluster
+          user: workload
+    current-context: in-cluster
+immutable: false
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: SandboxTemplate
+metadata:
+  name: runner-vm
+  namespace: agentplane-testing
+spec:
+  vm:
+    dataVolumeTemplates:
+      - metadata:
+          name: workspace
+        spec:
+          pvc:
+            accessModes:
+              - ReadWriteOnce
+            resources:
+              requests:
+                storage: 10Gi
+            storageClassName: local-path-ovh-hdd
+          source:
+            blank: {}
+    template:
+      metadata:
+        labels:
+          app.kubernetes.io/name: agentplane-runner
+      spec:
+        domain:
+          cpu:
+            cores: 1
+          devices:
+            autoattachGraphicsDevice: false
+            disks:
+              - bootOrder: 1
+                disk:
+                  bus: virtio
+                name: rootdisk
+              - disk:
+                  bus: virtio
+                name: workspace
+                serial: workspace
+              - disk:
+                  bus: virtio
+                name: config
+                serial: agentplane-config
+              - disk:
+                  bus: virtio
+                name: trust
+                serial: agentplane-trust
+            interfaces:
+              - masquerade: {}
+                name: default
+                ports:
+                  - port: 22
+          firmware:
+            bootloader:
+              efi:
+                secureBoot: false
+          resources:
+            requests:
+              memory: 1536Mi
+        networks:
+          - name: default
+            pod: {}
+        nodeSelector:
+          kubevirt.io/schedulable: "true"
+        volumes:
+          - containerDisk:
+              image: git.allegedly.works/ducktape-ci/agentplane-runner-vm:unset
+              imagePullPolicy: IfNotPresent
+            name: rootdisk
+          - dataVolume:
+              name: workspace
+            name: workspace
+          - configMap:
+              name: agentplane-runner-vm-config
+            name: config
+          - configMap:
+              name: agentplane-testing-egress-ca
+            name: trust
+  stateVolume:
+    name: state
+    claim:
       storageClassName: local-path-ovh-hdd
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -4666,6 +4431,25 @@ rules:
       - watch
       - create
       - delete
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachines
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachineinstances
+    verbs:
+      - get
+      - list
+      - watch
   - apiGroups:
       - ""
     resources:
@@ -5665,13 +5449,15 @@ metadata:
   namespace: agentplane-testing
 rules:
   - apiGroups:
-      - extensions.agents.x-k8s.io
+      - agentplane.allegedly.works
     resources:
       - sandboxtemplates
     verbs:
       - get
+      - list
+      - watch
   - apiGroups:
-      - agents.x-k8s.io
+      - agentplane.allegedly.works
     resources:
       - sandboxes
     verbs:
@@ -5708,21 +5494,55 @@ rules:
     verbs:
       - get
   - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachines
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachineinstances
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - cdi.kubevirt.io
+    resources:
+      - datavolumes
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - subresources.kubevirt.io
+    resources:
+      - virtualmachineinstances/console
+    verbs:
+      - get
+  - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - actionpolicysets
+      - policysets
     verbs:
       - create
       - get
+      - list
+      - watch
       - patch
       - delete
   - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - actionpolicybindings
+      - policybindings
     verbs:
       - create
       - get
+      - list
+      - watch
       - patch
       - delete
   - apiGroups:
@@ -5750,9 +5570,6 @@ subjects:
   - apiGroup: rbac.authorization.k8s.io
     kind: Group
     name: haku:access-profile:haku
-  - apiGroup: rbac.authorization.k8s.io
-    kind: Group
-    name: haku:access-profile:public-coder
   - apiGroup: ""
     kind: ServiceAccount
     name: haku

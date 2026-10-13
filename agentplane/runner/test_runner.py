@@ -42,7 +42,6 @@ def config(harness: runner_pb2.Harness, harness_binary: Path, tmp_path: Path) ->
     return RunnerConfig(
         state_dir=tmp_path / "state",
         model_config_resolver=launches.unconfigured_models(),
-        native_state_dir=tmp_path / "native-state",
         claude=ClaudeLaunch(binary=harness_binary, base_url=TEST_ENDPOINT, auth_token="test-token")
         if harness == runner_pb2.HARNESS_CLAUDE
         else None,
@@ -82,9 +81,8 @@ async def test_a_harness_that_dies_in_its_handshake_names_its_exit_and_stderr(
     assert raised.value.code() == grpc.StatusCode.UNKNOWN
     assert "exit_code=3" in (details := raised.value.details() or "")
     assert REFUSAL in details
-    assert config.native_state_dir is not None
     native_home = "claude" if harness == runner_pb2.HARNESS_CLAUDE else "codex"
-    assert (config.native_state_dir / "launch-failure-1" / native_home).is_dir()
+    assert (config.state_dir / "sessions" / "launch-failure-1" / native_home).is_dir()
 
 
 @pytest.mark.parametrize("harness_binary", [Path("/nonexistent/agentplane-test-harness")])

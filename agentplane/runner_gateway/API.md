@@ -1,12 +1,11 @@
 # Runner Gateway API
 
 The [Runner Gateway](README.md) serves `RunnerGateway`
-([`runner_gateway.proto`](../proto/runner_gateway.proto)) over gRPC: Sessions, commands, Session
-placement and teardown's seal. Its replicas hold the runner connections; a Sandbox's
+([`runner_gateway.proto`](../proto/runner_gateway.proto)) over gRPC: Sessions, commands and Session
+placement. Its replicas hold the runner connections; a Sandbox's
 `<sandbox>-control` Service reaches the replica holding its runner. Callers use
 [`RunnerGatewayClient`](client.py) over a channel to the gateway, and its `SandboxControlClient`,
 which dials the Sandbox's `<sandbox>-control` Service for each call only the holder answers.
-Teardown in the Sandbox Service uses `SandboxControlClient` alone.
 
 Authentication and destinations work as in the
 [Sandbox Service API](../sandbox_service/API.md#authentication-and-destinations), under the gateway's
@@ -89,11 +88,6 @@ one). `BatchGetSessionSandboxes` takes at most 1000 IDs and leaves out any the g
 registered; `FindSessions` returns every Session in a Sandbox with exactly the given name, or whose
 name contains the given text, ignoring case.
 
-## Sealing
-
-`SealSandbox` is teardown's seal ([Sandbox Service teardown](../sandbox_service/API.md#teardown)).
-Only the gateway's `sealer_accounts`, the Sandbox Service's account, may call it.
-
 ## Errors and uncertain outcomes
 
 Status codes are those of the
@@ -108,8 +102,7 @@ is not a queue: nothing delivers it later, and the runner journal stays the rece
 ## Server configuration
 
 `//agentplane/runner_gateway:server` uses `AGENTPLANE_RUNNER_GATEWAY_*` environment variables or
-kebab-case CLI flags (`AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` for its YAML file). It accepts the
-Sandbox Service's account for `SealSandbox` through `sealer_accounts`. Its token audience is
+kebab-case CLI flags (`AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` for its YAML file). Its token audience is
 `agentplane-runner-gateway`, so a token for the Sandbox Service is refused here.
 
 `port` defaults to 8080 for gRPC, which also serves the unauthenticated `grpc.health.v1.Health`.

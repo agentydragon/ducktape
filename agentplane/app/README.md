@@ -54,7 +54,7 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 - `egress.py`: read-only egress-policy/binding projections for the UI, with mutations delegated to Sandbox
   Service. Bindings remain desired-state grants, with expiry/revocation per binding and Flux-owned
   bindings protected from app revocation ([composition](../docs/egress_composition.md)).
-  `decisions.py` reads the proxy's recent decisions; an unreachable proxy leaves egress-policy views readable.
+  The egress decision stream is in `live.py`; an unreachable proxy leaves egress-policy views readable.
 - `action_policy.py`: read-only binding views composed with Action Service's effective-policy answer.
   Launch grants and binding mutations belong to Sandbox Service, not this app or its preset catalog.
 - `threads/`: Threads over the History Service. The app's database holds each Thread's identity
@@ -196,10 +196,11 @@ the quiet in between. What is pushed: the sandbox rows, one sandbox's egress bin
 policy, and its threads, the last of these from the store rather than a watch, since the app is the
 only writer of a thread's name.
 
-Two things stay request-shaped, both because their source offers no stream. The proxy's recent
-decisions live in its memory and the egress tab still asks for them on an interval; the runner
-answers `ListSessions` per request, so the sandbox page re-reads the session table when the
-sandbox's Pod comes or goes and when a session opens (which reaches it as a new thread).
+The egress tab's decisions are their own stream, `/live/sandboxes/{name}/egress/decisions`: the
+proxy announces each commit of decisions on its admin port's `/decisions/changes`, and every frame
+re-reads `/decisions` from it. The runner answers `ListSessions` per request, so the sandbox page
+re-reads the session table when the sandbox's Pod comes or goes and when a session opens (which
+reaches it as a new thread).
 An unavailable runner shows a waiting state and retries until it answers, without requiring a
 reload. Session creation displays progress and prevents duplicate clicks while the request runs.
 
@@ -437,23 +438,15 @@ linked group becomes available is the Action Service's contract
 ## Launch presets
 
 `GET /presets` publishes configured Sandbox presets and their inherited editable Thread defaults.
-`POST /sandboxes` keeps its no-preset shape and additionally accepts an optional preset: omitted
-fields inherit, while explicit egress policy selections and thread fields replace preset values. The Sandbox
-annotation stores the preset name and only explicit thread edits, so later sessions resolve against
-the current configured default instead of freezing a copied form. `action_policy_sets` works like
-the egress policy selection: a preset pre-fills the pick, an explicit list replaces it (an empty one binds
-nothing), and a launch without a preset may pick sets of its own. The launch writes one
-`ActionPolicyBinding` naming the picked sets for the new Sandbox; a set name the namespace does not
-hold is refused with 422 before the Sandbox exists, as an unknown egress policy is. The create form
-offers the namespace's sets from `GET /action-policy/sets`, each with the Action Service's verdict
-on it, and records the picked preset in the URL (`/#/?preset=<name>`) so a launch form can be
-linked to.
+`POST /sandboxes` takes the concrete choices; the create form expands a preset into them and the
+operator edits what it pre-fills. `policy_sets` are the Sandbox's grants beside the deployment's
+defaults, and a set name the namespace does not hold is refused with 422 before the Sandbox exists.
+The form records the picked preset in the URL (`/#/?preset=<name>`) so a launch form can be linked
+to.
 
-Where the Sandbox Service creates Agentplane's own Sandbox kind (the app's `own_sandboxes` setting,
-which must agree with it), that kind takes `policy_sets` alone. `GET /sandboxes/form` then lists the
-namespace's `PolicySet`s and the form offers them in place of the egress, Action policy set and
-Kubernetes grant pickers; a preset fills only the fields its deployment's kind takes, which the app
-checks at startup.
+A Sandbox takes `policy_sets` alone: the Sandbox Service refuses egress policies, Action policy sets
+and Kubernetes grants on a create. `GET /sandboxes/form` lists the namespace's `PolicySet`s, which
+the form offers, and a preset that fills any of the other three fails the app's startup.
 
 Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
 content to the runner under a stable preset identity. The runner executes it idempotently on the

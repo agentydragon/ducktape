@@ -18,7 +18,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from cluster.cdk8s import cilium, cnpg, namespaces, node_scheduling
+from cluster.cdk8s import cilium, cnpg, cnpg_backup, namespaces, node_scheduling
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
     GeneratorOptions,
@@ -69,8 +69,9 @@ def _database(scope: Construct) -> None:
         storage_class="local-path-ovh",
         size="1Gi",
         initdb=cnpg.same_owner_initdb("gatus"),
-        wal_archive=False,
+        wal_archive=True,
     )
+    cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _helm_release(scope: Construct) -> None:
@@ -194,7 +195,11 @@ def chart(app: App) -> Chart:
 
 
 def gatus(
-    flux_chart: Chart, directory: RenderedDirectory, cnpg: Kustomization, monitoring_crds: Kustomization
+    flux_chart: Chart,
+    directory: RenderedDirectory,
+    cnpg: Kustomization,
+    monitoring_crds: Kustomization,
+    seaweedfs_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -202,5 +207,5 @@ def gatus(
         directory,
         timeout="10m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(cnpg, monitoring_crds),
+        depends_on=flux_kustomization_depends_on_many(cnpg, monitoring_crds, seaweedfs_operator),
     )

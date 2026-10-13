@@ -36,6 +36,7 @@ ANSWER = SubjectActionPolicyView(
         SubjectBindingView(
             kind=BindingKind.POLICY_BINDING,
             name="live-afternoon",
+            generation=2,
             labels={},
             expires_at=datetime(2026, 9, 12, 20, tzinfo=UTC),
             ready=None,
@@ -45,6 +46,7 @@ ANSWER = SubjectActionPolicyView(
         SubjectBindingView(
             kind=BindingKind.ACTION_POLICY_BINDING,
             name="live-k2m9x",
+            generation=1,
             labels={MANAGED_BY_LABEL: MANAGED_BY_APP},
             ready=READY,
             policy_sets=[ActionPolicySetView(name="reads", generation=3, ready=READY)],
@@ -53,6 +55,7 @@ ANSWER = SubjectActionPolicyView(
         SubjectBindingView(
             kind=BindingKind.ACTION_POLICY_BINDING,
             name="live-seeded",
+            generation=4,
             labels={FLUX_KUSTOMIZATION_LABEL: "test-actions", MANAGED_BY_LABEL: "someone-else"},
             ready=READY,
             policy_sets=[ActionPolicySetView(name="reads", generation=3, ready=READY)],

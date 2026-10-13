@@ -1,0 +1,5 @@
+# Kustomize transformer configuration, not a Kubernetes manifest: points `images:` at a VM
+# SandboxTemplate's containerDisk, which the transformer does not reach by default.
+images:
+  - path: spec/vm/template/spec/volumes[]/containerDisk/image
+    kind: SandboxTemplate

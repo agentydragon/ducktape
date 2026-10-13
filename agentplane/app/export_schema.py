@@ -53,7 +53,7 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
     gateway = RunnerGatewayClient(
         channel,
         token_file=Path("/schema-unused-token"),
-        command_admission_timeout_s=None,
+        command_admission_timeout_s=1,
         request_timeout_s=1,
         control=SandboxControlClient(
             control_target="schema.invalid:8080",

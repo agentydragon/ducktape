@@ -15,7 +15,6 @@ from enum import StrEnum
 from types import TracebackType
 from typing import Self
 from urllib.parse import urlsplit
-from uuid import UUID
 
 import httpx
 from cryptography.hazmat.primitives import serialization
@@ -34,6 +33,9 @@ from agentplane.action_service.updates import PUSH_CHANNEL, ActionUpdateBroker
 
 logger = logging.getLogger(__name__)
 PUSH_TTL_SECONDS = 600
+# One topic for every message: a push service holding undelivered pushes for an offline device keeps
+# only the newest, so the device wakes once to the current state instead of once per Action.
+PUSH_TOPIC = "agentplane-actions"
 _DEAD_SUBSCRIPTION_STATUSES = {404, 410}
 
 
@@ -149,7 +151,7 @@ class ActionPushNotifier:
     """NOTIFY wakes durable reconciliation; browser-row locks serialize sends across replicas.
 
     Network sends are bounded and run under the subscription lock, never the Action lock.
-    A crash after sending but before commit can resend: stable browser notification tags collapse
+    A crash after sending but before commit can resend: the single stable browser notification tag collapses
     that retry. A send receipt is not proof of browser delivery. No Action is executed here.
     """
 
@@ -209,33 +211,49 @@ class ActionPushNotifier:
                 if subscription is None:
                     continue
                 delivery = PushDeliveryRow
-                request = await session.scalar(
-                    select(ActionRequestRow)
-                    .outerjoin(
-                        delivery,
-                        and_(delivery.request_id == ActionRequestRow.id, delivery.endpoint == subscription.endpoint),
-                    )
-                    .where(
-                        or_(
-                            and_(ActionRequestRow.state == ActionState.DECISION_PENDING, delivery.request_id.is_(None)),
-                            and_(ActionRequestRow.state != ActionState.DECISION_PENDING, delivery.kind == "show"),
+                requests = list(
+                    (
+                        await session.scalars(
+                            select(ActionRequestRow)
+                            .outerjoin(
+                                delivery,
+                                and_(
+                                    delivery.request_id == ActionRequestRow.id,
+                                    delivery.endpoint == subscription.endpoint,
+                                ),
+                            )
+                            .where(
+                                or_(
+                                    and_(
+                                        ActionRequestRow.state == ActionState.DECISION_PENDING,
+                                        delivery.request_id.is_(None),
+                                    ),
+                                    and_(
+                                        ActionRequestRow.state != ActionState.DECISION_PENDING, delivery.kind == "show"
+                                    ),
+                                )
+                            )
+                            .order_by(ActionRequestRow.created_at)
                         )
-                    )
-                    .order_by(ActionRequestRow.created_at)
-                    .limit(1)
+                    ).all()
                 )
-                if request is None:
+                if not requests:
                     continue
-                if request.state == ActionState.DECISION_PENDING:
+                # One push covers every change since the last one: the service worker rebuilds its
+                # single notification from current Action state, so per-request pushes would only
+                # make a phone that was offline replay a burst of notifications on reconnect.
+                shown = [request for request in requests if request.state == ActionState.DECISION_PENDING]
+                latest = shown[-1] if shown else requests[-1]
+                if shown:
                     message: PushShow | PushRetract = PushShow(
-                        action_id=str(request.id),
-                        action_group=request.action.group,
-                        action_name=request.action.name,
-                        version=request.version,
-                        url=f"{self._base_url}/#/actions/{request.id}",
+                        action_id=str(latest.id),
+                        action_group=latest.action.group,
+                        action_name=latest.action.name,
+                        version=latest.version,
+                        url=f"{self._base_url}/#/actions/{latest.id}",
                     )
                 else:
-                    message = PushRetract(action_id=str(request.id), outcome=request.state.replace("_", " "))
+                    message = PushRetract(action_id=str(latest.id), outcome=latest.state.replace("_", " "))
                 result = await self._send_one(subscription, message)
                 if result is DeliveryOutcome.DEAD:
                     delivered = True
@@ -243,11 +261,16 @@ class ActionPushNotifier:
                     await session.execute(select(func.pg_notify(PUSH_CHANNEL, "")))
                 elif result is DeliveryOutcome.SENT:
                     delivered = True
+                    kinds = {request.id: "show" if request in shown else "retract" for request in requests}
+                    rows = insert(delivery).values(
+                        [
+                            {"request_id": request_id, "endpoint": subscription.endpoint, "kind": kind}
+                            for request_id, kind in kinds.items()
+                        ]
+                    )
                     await session.execute(
-                        insert(delivery)
-                        .values(request_id=request.id, endpoint=subscription.endpoint, kind=message.kind)
-                        .on_conflict_do_update(
-                            index_elements=[delivery.request_id, delivery.endpoint], set_={"kind": message.kind}
+                        rows.on_conflict_do_update(
+                            index_elements=[delivery.request_id, delivery.endpoint], set_={"kind": rows.excluded.kind}
                         )
                     )
 
@@ -269,7 +292,7 @@ class ActionPushNotifier:
                         "Content-Type": "application/octet-stream",
                         "TTL": str(PUSH_TTL_SECONDS),
                         "Urgency": "high",
-                        "Topic": UUID(message.action_id).hex,
+                        "Topic": PUSH_TOPIC,
                     },
                 )
             if response.status_code in _DEAD_SUBSCRIPTION_STATUSES:

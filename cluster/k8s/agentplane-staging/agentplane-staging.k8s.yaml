@@ -1437,69 +1437,6 @@ spec:
       scheme: Bearer
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: inference-experiments
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - ollama.ollama.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /api/tags
-        - /api/ps
-        - /api/version
-        - /v1/models
-      clusterInternal: true
-      credentialRef:
-        name: ollama
-    - hosts:
-        - ollama.ollama.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /api/show
-        - /api/chat
-        - /api/generate
-        - /api/embed
-        - /api/embeddings
-        - /v1/chat/completions
-        - /v1/completions
-        - /v1/responses
-        - /v1/embeddings
-      clusterInternal: true
-      credentialRef:
-        name: ollama
-    - hosts:
-        - litellm.litellm.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /v1/models
-        - /models
-        - /model/info
-      clusterInternal: true
-      credentialRef:
-        name: litellm-cheap-experiments
-    - hosts:
-        - litellm.litellm.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /v1/chat/completions
-        - /v1/completions
-        - /v1/responses
-        - /v1/messages
-        - /v1/messages/count_tokens
-        - /v1/embeddings
-        - /v1/audio/transcriptions
-      clusterInternal: true
-      credentialRef:
-        name: litellm-cheap-experiments
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: inference-experiments
@@ -1567,16 +1504,6 @@ spec:
         name: litellm-cheap-experiments
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: public-internet
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - "*"
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: public-internet
@@ -1586,71 +1513,6 @@ spec:
     - type: egress
       hosts:
         - "*"
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: basic
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - agentplane-llm-ingress.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-        - POST
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
-    - hosts:
-        - agentplane-notifications.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-        - POST
-        - PUT
-        - PATCH
-        - DELETE
-      paths:
-        - /openapi.json
-        - /v1/sources
-        - /v1/subscriptions
-        - /v1/subscriptions/**
-        - /v1/inboxes
-        - /v1/inboxes/**
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-notifications-workload
-    - hosts:
-        - agentplane-actions.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-        - POST
-      paths:
-        - /mcp
-        - /openapi.json
-        - /v1/action-groups
-        - /v1/action-groups/**
-        - /v1/action-policy
-        - /v1/action-requests
-        - /v1/action-requests/**
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
-    - hosts:
-        - agentplane-egress.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /openapi.json
-        - /v1/rules
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
-    - hosts:
-        - kubernetes.default.svc.cluster.local
-      clusterInternal: true
-      credentialRef:
-        name: kubernetes-workload
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1723,36 +1585,6 @@ spec:
         name: kubernetes-workload
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: packages
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - bcr.bazel.build
-        - cache.nixos.org
-        - channels.nixos.org
-        - code.forgejo.org
-        - data.forgejo.org
-        - files.pythonhosted.org
-        - ftp.gnu.org
-        - ghcr.io
-        - index.crates.io
-        - nixos.org
-        - nodejs.org
-        - pkg-containers.githubusercontent.com
-        - pypi.org
-        - registry.npmjs.org
-        - releases.bazel.build
-        - snapshot.debian.org
-        - static.crates.io
-        - static.rust-lang.org
-      methods:
-        - GET
-        - HEAD
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: packages
@@ -1784,24 +1616,6 @@ spec:
         - HEAD
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: github-agentydragon-agent
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - api.github.com
-        - github.com
-        - codeload.github.com
-        - "*.githubusercontent.com"
-      methods:
-        - GET
-        - POST
-      credentialRef:
-        name: github-pat
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: github-agentydragon-agent
@@ -1821,18 +1635,6 @@ spec:
         name: github-pat
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: github-actions-logs
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - "*.blob.core.windows.net"
-      methods:
-        - GET
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: github-actions-logs
@@ -1844,20 +1646,6 @@ spec:
         - "*.blob.core.windows.net"
       methods:
         - GET
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: public-coder-pr-visuals
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - s3.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /pr-visuals/**
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1875,19 +1663,6 @@ spec:
         - /pr-visuals/**
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: buildbuddy
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - app.buildbuddy.io
-        - remote.buildbuddy.io
-      credentialRef:
-        name: buildbuddy
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: buildbuddy
@@ -1900,24 +1675,6 @@ spec:
         - remote.buildbuddy.io
       credentialRef:
         name: buildbuddy
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: github-clone
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - github.com
-      methods:
-        - GET
-        - POST
-      paths:
-        - /*/*.git/info/refs
-        - /*/*.git/git-upload-pack
-        - /*/*/info/refs
-        - /*/*/git-upload-pack
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1996,472 +1753,10 @@ data:
       - namespace: agentplane-staging
         name: agentplane-notifications
     token_audience: agentplane-sandbox-service
-    default_egress_policies:
+    default_policy_sets:
       - basic
       - inference-experiments
-    kubernetes_grants:
-      sandbox-tool-config:
-        kind: RoleBinding
-        namespace: agentplane-staging
-        role_ref:
-          kind: Role
-          name: agentplane-sandbox-tool-config-reader
-      public-coder-node-read:
-        kind: ClusterRoleBinding
-        role_ref:
-          kind: ClusterRole
-          name: public-coder-agent-node-reader
-      public-coder-cluster-metadata-read:
-        kind: ClusterRoleBinding
-        role_ref:
-          kind: ClusterRole
-          name: public-coder-agent-cluster-metadata-reader
-      cluster-diagnostics:
-        kind: ClusterRoleBinding
-        role_ref:
-          kind: ClusterRole
-          name: cluster-diagnostics-reader
-      haku-sandbox-write:
-        kind: RoleBinding
-        namespace: haku-sandbox
-        role_ref:
-          kind: Role
-          name: haku-sandbox-admin
-      agentplane-testing-operator:
-        kind: RoleBinding
-        namespace: agentplane-testing
-        role_ref:
-          kind: Role
-          name: agentplane-testing-operator
-      agentplane-staging-metadata:
-        kind: RoleBinding
-        namespace: agentplane-staging
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      agentplane-staging-logs:
-        kind: RoleBinding
-        namespace: agentplane-staging
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      activitywatch-metadata:
-        kind: RoleBinding
-        namespace: activitywatch
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      activitywatch-logs:
-        kind: RoleBinding
-        namespace: activitywatch
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      agent-sandbox-system-metadata:
-        kind: RoleBinding
-        namespace: agent-sandbox-system
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      agentplane-index-metadata:
-        kind: RoleBinding
-        namespace: agentplane-index
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      agentplane-index-logs:
-        kind: RoleBinding
-        namespace: agentplane-index
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      agentplane-testing-metadata:
-        kind: RoleBinding
-        namespace: agentplane-testing
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      agentplane-testing-logs:
-        kind: RoleBinding
-        namespace: agentplane-testing
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      airlock-metadata:
-        kind: RoleBinding
-        namespace: airlock
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      airlock-logs:
-        kind: RoleBinding
-        namespace: airlock
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      authentik-metadata:
-        kind: RoleBinding
-        namespace: authentik
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      authentik-logs:
-        kind: RoleBinding
-        namespace: authentik
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      cert-manager-metadata:
-        kind: RoleBinding
-        namespace: cert-manager
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      cert-manager-logs:
-        kind: RoleBinding
-        namespace: cert-manager
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      cli-proxy-api-metadata:
-        kind: RoleBinding
-        namespace: cli-proxy-api
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      cli-proxy-api-logs:
-        kind: RoleBinding
-        namespace: cli-proxy-api
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      clickhouse-metadata:
-        kind: RoleBinding
-        namespace: clickhouse
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      clickhouse-logs:
-        kind: RoleBinding
-        namespace: clickhouse
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      cnpg-system-metadata:
-        kind: RoleBinding
-        namespace: cnpg-system
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      cnpg-system-logs:
-        kind: RoleBinding
-        namespace: cnpg-system
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      flux-system-metadata:
-        kind: RoleBinding
-        namespace: flux-system
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      flux-system-logs:
-        kind: RoleBinding
-        namespace: flux-system
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      gatus-metadata:
-        kind: RoleBinding
-        namespace: gatus
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      gatus-logs:
-        kind: RoleBinding
-        namespace: gatus
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      grocy-sf-metadata:
-        kind: RoleBinding
-        namespace: grocy-sf
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      grocy-sf-logs:
-        kind: RoleBinding
-        namespace: grocy-sf
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      grocy-vallejo-metadata:
-        kind: RoleBinding
-        namespace: grocy-vallejo
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      grocy-vallejo-logs:
-        kind: RoleBinding
-        namespace: grocy-vallejo
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      haku-ci-metadata:
-        kind: RoleBinding
-        namespace: haku-ci
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      haku-ci-logs:
-        kind: RoleBinding
-        namespace: haku-ci
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      litellm-metadata:
-        kind: RoleBinding
-        namespace: litellm
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      litellm-logs:
-        kind: RoleBinding
-        namespace: litellm
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      local-path-storage-metadata:
-        kind: RoleBinding
-        namespace: local-path-storage
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      local-path-storage-logs:
-        kind: RoleBinding
-        namespace: local-path-storage
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      loki-metadata:
-        kind: RoleBinding
-        namespace: loki
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      loki-logs:
-        kind: RoleBinding
-        namespace: loki
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      monitoring-metadata:
-        kind: RoleBinding
-        namespace: monitoring
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      monitoring-logs:
-        kind: RoleBinding
-        namespace: monitoring
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      nix-cache-metadata:
-        kind: RoleBinding
-        namespace: nix-cache
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      node-feature-discovery-metadata:
-        kind: RoleBinding
-        namespace: node-feature-discovery
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      node-feature-discovery-logs:
-        kind: RoleBinding
-        namespace: node-feature-discovery
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      nvidia-device-plugin-metadata:
-        kind: RoleBinding
-        namespace: nvidia-device-plugin
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      nvidia-device-plugin-logs:
-        kind: RoleBinding
-        namespace: nvidia-device-plugin
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      oci-cache-metadata:
-        kind: RoleBinding
-        namespace: oci-cache
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      oci-cache-logs:
-        kind: RoleBinding
-        namespace: oci-cache
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      openebs-metadata:
-        kind: RoleBinding
-        namespace: openebs
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      openebs-logs:
-        kind: RoleBinding
-        namespace: openebs
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      proxmox-proxy-metadata:
-        kind: RoleBinding
-        namespace: proxmox-proxy
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      proxmox-proxy-logs:
-        kind: RoleBinding
-        namespace: proxmox-proxy
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      public-coder-agent-metadata:
-        kind: RoleBinding
-        namespace: public-coder-agent
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      study-casino-metadata:
-        kind: RoleBinding
-        namespace: study-casino
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      study-casino-logs:
-        kind: RoleBinding
-        namespace: study-casino
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      tana-mcp-metadata:
-        kind: RoleBinding
-        namespace: tana-mcp
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      tana-mcp-logs:
-        kind: RoleBinding
-        namespace: tana-mcp
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-logs
-      vm-images-publisher-metadata:
-        kind: RoleBinding
-        namespace: vm-images-publisher
-        role_ref:
-          kind: ClusterRole
-          name: agent-readable-namespace-metadata
-      spend-policy-config:
-        kind: RoleBinding
-        namespace: plaid-mcp
-        role_ref:
-          kind: Role
-          name: plaid-spend-finance-config-reader
-      coinbase-credentials:
-        kind: RoleBinding
-        namespace: agentplane-staging
-        role_ref:
-          kind: Role
-          name: claude-ai-coinbase-reader
-      haku-console-metadata:
-        kind: RoleBinding
-        namespace: haku-console
-        role_ref:
-          kind: Role
-          name: agent-haku-console-metadata-reader
-      clickhouse-diagnostics:
-        kind: RoleBinding
-        namespace: clickhouse
-        role_ref:
-          kind: Role
-          name: agent-clickhouse-diagnostics-reader
-      ducktape-flux-read:
-        kind: RoleBinding
-        namespace: ducktape-flux
-        role_ref:
-          kind: Role
-          name: ducktape-flux-reader
-      public-coder-volsync-status:
-        kind: RoleBinding
-        namespace: public-coder-agent
-        role_ref:
-          kind: Role
-          name: agent-public-coder-extended-diagnostics-reader
-      public-coder-agent-reader:
-        kind: RoleBinding
-        namespace: public-coder-agent
-        role_ref:
-          kind: Role
-          name: public-coder-agent-reader
-      agentplane-testing-login:
-        kind: RoleBinding
-        namespace: public-coder-agent
-        role_ref:
-          kind: Role
-          name: agentplane-testing-login-reader
-    kubernetes_binding_cleanup_namespaces:
-      - activitywatch
-      - agent-sandbox-system
-      - agentplane-index
-      - agentplane-testing
-      - airlock
-      - authentik
-      - cert-manager
-      - cli-proxy-api
-      - clickhouse
-      - cnpg-system
-      - ducktape-flux
-      - flux-system
-      - gatus
-      - grocy-sf
-      - grocy-vallejo
-      - haku-ci
-      - haku-console
-      - haku-sandbox
-      - litellm
-      - local-path-storage
-      - loki
-      - monitoring
-      - nix-cache
-      - node-feature-discovery
-      - nvidia-device-plugin
-      - oci-cache
-      - openebs
-      - proxmox-proxy
-      - public-coder-agent
-      - study-casino
-      - tana-mcp
-      - vm-images-publisher
-    kubernetes_cluster_binding_cleanup: true
     port: 8080
-    control_target: "{sandbox}-control.{namespace}.svc:8080"
-    gateway_token_file: /var/run/secrets/agentplane-runner-gateway/token
-    runner_control:
-      target: agentplane-runner-gateway.agentplane-staging.svc.cluster.local:8082
-      bearer: agentplane-credential-agentplane-runner-control
-      egress_policy: runner-control
-    runner_ingress:
-      target: agentplane-history-service.agentplane-staging.svc.cluster.local:8081
-      bearer: agentplane-credential-agentplane-runner-ingress
-      egress_policy: runner-ingress
 immutable: false
 ---
 apiVersion: v1
@@ -2539,9 +1834,6 @@ spec:
             - mountPath: /etc/agentplane-sandbox-service
               name: configmap-agentplane-sandbox-service-config
               readOnly: true
-            - mountPath: /var/run/secrets/agentplane-runner-gateway
-              name: runner-gateway-token
-              readOnly: true
       dnsPolicy: ClusterFirst
       hostNetwork: false
       imagePullSecrets:
@@ -2565,13 +1857,6 @@ spec:
         - configMap:
             name: agentplane-sandbox-service-config
           name: configmap-agentplane-sandbox-service-config
-        - name: runner-gateway-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-runner-gateway
-                  expirationSeconds: 3600
-                  path: token
 ---
 apiVersion: v1
 kind: Service
@@ -2601,80 +1886,6 @@ spec:
   selector:
     matchLabels:
       app.kubernetes.io/name: agentplane-sandbox-service
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: agentplane-staging-managed-cluster-bindings
-rules:
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resources:
-      - clusterrolebindings
-    verbs:
-      - create
-      - get
-      - list
-      - delete
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - agent-readable-namespace-logs
-    resources:
-      - clusterroles
-    verbs:
-      - bind
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - agent-readable-namespace-metadata
-    resources:
-      - clusterroles
-    verbs:
-      - bind
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - cluster-diagnostics-reader
-    resources:
-      - clusterroles
-    verbs:
-      - bind
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - public-coder-agent-cluster-metadata-reader
-    resources:
-      - clusterroles
-    verbs:
-      - bind
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - public-coder-agent-node-reader
-    resources:
-      - clusterroles
-    verbs:
-      - bind
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resources:
-      - clusterroles
-    verbs:
-      - get
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  name: agentplane-staging-managed-cluster-bindings
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: agentplane-staging-managed-cluster-bindings
-subjects:
-  - kind: ServiceAccount
-    name: agentplane-sandbox-service
-    namespace: agentplane-staging
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
@@ -2709,31 +1920,27 @@ metadata:
   namespace: agentplane-staging
 rules:
   - apiGroups:
-      - extensions.agents.x-k8s.io
+      - agentplane.allegedly.works
     resources:
       - sandboxtemplates
     verbs:
-      - get
       - list
   - apiGroups:
-      - agents.x-k8s.io
+      - agentplane.allegedly.works
     resources:
       - sandboxes
     verbs:
       - create
       - get
       - list
-      - watch
       - patch
       - delete
   - apiGroups:
       - agentplane.allegedly.works
     resources:
-      - sandboxes
+      - policysets
     verbs:
-      - get
       - list
-      - watch
   - apiGroups:
       - ""
     resources:
@@ -2741,16 +1948,6 @@ rules:
     verbs:
       - get
       - list
-      - watch
-  - apiGroups:
-      - ""
-    resources:
-      - serviceaccounts
-    verbs:
-      - create
-      - get
-      - patch
-      - delete
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -2758,7 +1955,6 @@ rules:
     verbs:
       - get
       - list
-      - watch
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -2766,7 +1962,6 @@ rules:
     verbs:
       - get
       - list
-      - watch
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -2774,7 +1969,6 @@ rules:
     verbs:
       - get
       - list
-      - watch
   - apiGroups:
       - agentplane.allegedly.works
     resources:
@@ -2782,60 +1976,6 @@ rules:
     verbs:
       - create
       - delete
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicysets
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicybindings
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - actionpolicybindings
-    verbs:
-      - create
-      - delete
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resources:
-      - rolebindings
-    verbs:
-      - create
-      - get
-      - list
-      - delete
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resources:
-      - roles
-    verbs:
-      - get
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - agentplane-sandbox-tool-config-reader
-    resources:
-      - roles
-    verbs:
-      - bind
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - claude-ai-coinbase-reader
-    resources:
-      - roles
-    verbs:
-      - bind
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -2871,14 +2011,6 @@ spec:
               protocol: TCP
     - toEntities:
         - kube-apiserver
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-runner-gateway
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: agentplane-sandbox-service
@@ -2913,9 +2045,6 @@ data:
         name: agentplane-app
       - namespace: agentplane-staging
         name: agentplane-notifications
-    sealer_accounts:
-      - namespace: agentplane-staging
-        name: agentplane-sandbox-service
     token_audience: agentplane-runner-gateway
     platform_instructions: |-
       You are running in a Kubernetes sandbox managed by Agentplane. Agentplane governs outbound network
@@ -3229,11 +2358,6 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-sandbox-commands
-            - name: AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-sandbox-commands
           image: git.allegedly.works/ducktape-ci/agentplane-runner-gateway-migrate:unset
           imagePullPolicy: Always
           name: migrate-commands
@@ -3336,14 +2460,6 @@ metadata:
   name: agentplane-runner-gateway
   namespace: agentplane-staging
 rules:
-  - apiGroups:
-      - agents.x-k8s.io
-    resources:
-      - sandboxes
-    verbs:
-      - get
-      - list
-      - watch
   - apiGroups:
       - ""
     resources:
@@ -3457,14 +2573,6 @@ spec:
               protocol: TCP
     - fromEndpoints:
         - matchLabels:
-            app.kubernetes.io/name: agentplane-sandbox-service
-            k8s:io.kubernetes.pod.namespace: agentplane-staging
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - fromEndpoints:
-        - matchLabels:
             app.kubernetes.io/name: agentplane-egress
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
@@ -3486,23 +2594,6 @@ spec:
     - header: Authorization
       method: schemeToken
       scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: runner-control
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - agentplane-runner-gateway.agentplane-staging.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /agentplane.proto.runner_control.RunnerControl/Connect
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-runner-control
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -3683,11 +2774,6 @@ spec:
                 secretKeyRef:
                   key: uri
                   name: postgres-sandbox-service
-            - name: AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL
-              valueFrom:
-                secretKeyRef:
-                  key: uri
-                  name: postgres-sandbox-service
           image: git.allegedly.works/ducktape-ci/agentplane-history-migrate:unset
           imagePullPolicy: Always
           name: migrate
@@ -3828,23 +2914,6 @@ spec:
     - header: Authorization
       method: schemeToken
       scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: runner-ingress
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - agentplane-history-service.agentplane-staging.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /agentplane.proto.runner_ingress.RunnerIngress/Push
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-runner-ingress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -4208,7 +3277,7 @@ data:
       public-coder:
         title: Public coder
         template: runner
-        egress_policies:
+        policy_sets:
           - basic
           - packages
           - github-agentydragon-agent
@@ -4217,7 +3286,6 @@ data:
           - buildbuddy
           - public-coder-pr-visuals
           - agentplane-testing
-        action_policy_sets:
           - public-github-reads
           - public-ducktape-reads
           - public-ducktape-fork-reads
@@ -4225,72 +3293,9 @@ data:
           - github-identity-reads
           - ssh-reads
           - ducktape-pr-failed-jobs
-        kubernetes_grants:
-          - agentplane-staging-metadata
-          - agentplane-staging-logs
-          - activitywatch-metadata
-          - activitywatch-logs
-          - agent-sandbox-system-metadata
-          - agentplane-index-metadata
-          - agentplane-index-logs
-          - agentplane-testing-metadata
-          - agentplane-testing-logs
-          - airlock-metadata
-          - airlock-logs
-          - authentik-metadata
-          - authentik-logs
-          - cert-manager-metadata
-          - cert-manager-logs
-          - cli-proxy-api-metadata
-          - cli-proxy-api-logs
-          - clickhouse-metadata
-          - clickhouse-logs
-          - cnpg-system-metadata
-          - cnpg-system-logs
-          - flux-system-metadata
-          - flux-system-logs
-          - gatus-metadata
-          - gatus-logs
-          - grocy-sf-metadata
-          - grocy-sf-logs
-          - grocy-vallejo-metadata
-          - grocy-vallejo-logs
-          - haku-ci-metadata
-          - haku-ci-logs
-          - litellm-metadata
-          - litellm-logs
-          - local-path-storage-metadata
-          - local-path-storage-logs
-          - loki-metadata
-          - loki-logs
-          - monitoring-metadata
-          - monitoring-logs
-          - nix-cache-metadata
-          - node-feature-discovery-metadata
-          - node-feature-discovery-logs
-          - nvidia-device-plugin-metadata
-          - nvidia-device-plugin-logs
-          - oci-cache-metadata
-          - oci-cache-logs
-          - openebs-metadata
-          - openebs-logs
-          - proxmox-proxy-metadata
-          - proxmox-proxy-logs
-          - public-coder-agent-metadata
-          - study-casino-metadata
-          - study-casino-logs
-          - tana-mcp-metadata
-          - tana-mcp-logs
-          - vm-images-publisher-metadata
-          - haku-console-metadata
-          - clickhouse-diagnostics
-          - ducktape-flux-read
-          - public-coder-volsync-status
-          - public-coder-agent-reader
-          - agentplane-testing-operator
-          - agentplane-testing-login
-          - public-coder-node-read
-          - public-coder-cluster-metadata-read
+          - shared-diagnostics
+          - testing-access
+          - public-inventory
         thread_preset: public-coder-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
@@ -4301,7 +3306,7 @@ data:
       haku:
         title: Haku
         template: runner
-        egress_policies:
+        policy_sets:
           - basic
           - forgejo-haku
           - packages
@@ -4317,7 +3322,6 @@ data:
           - github-agentydragon-agent
           - github-actions-logs
           - agentplane-testing
-        action_policy_sets:
           - github-reads
           - github-identity-reads
           - sandbox-self
@@ -4328,70 +3332,8 @@ data:
           - grocy-sf-reads
           - ssh-reads
           - ducktape-pr-failed-jobs
-        kubernetes_grants:
-          - agentplane-staging-metadata
-          - agentplane-staging-logs
-          - activitywatch-metadata
-          - activitywatch-logs
-          - agent-sandbox-system-metadata
-          - agentplane-index-metadata
-          - agentplane-index-logs
-          - agentplane-testing-metadata
-          - agentplane-testing-logs
-          - airlock-metadata
-          - airlock-logs
-          - authentik-metadata
-          - authentik-logs
-          - cert-manager-metadata
-          - cert-manager-logs
-          - cli-proxy-api-metadata
-          - cli-proxy-api-logs
-          - clickhouse-metadata
-          - clickhouse-logs
-          - cnpg-system-metadata
-          - cnpg-system-logs
-          - flux-system-metadata
-          - flux-system-logs
-          - gatus-metadata
-          - gatus-logs
-          - grocy-sf-metadata
-          - grocy-sf-logs
-          - grocy-vallejo-metadata
-          - grocy-vallejo-logs
-          - haku-ci-metadata
-          - haku-ci-logs
-          - litellm-metadata
-          - litellm-logs
-          - local-path-storage-metadata
-          - local-path-storage-logs
-          - loki-metadata
-          - loki-logs
-          - monitoring-metadata
-          - monitoring-logs
-          - nix-cache-metadata
-          - node-feature-discovery-metadata
-          - node-feature-discovery-logs
-          - nvidia-device-plugin-metadata
-          - nvidia-device-plugin-logs
-          - oci-cache-metadata
-          - oci-cache-logs
-          - openebs-metadata
-          - openebs-logs
-          - proxmox-proxy-metadata
-          - proxmox-proxy-logs
-          - public-coder-agent-metadata
-          - study-casino-metadata
-          - study-casino-logs
-          - tana-mcp-metadata
-          - tana-mcp-logs
-          - vm-images-publisher-metadata
-          - haku-console-metadata
-          - clickhouse-diagnostics
-          - ducktape-flux-read
-          - public-coder-volsync-status
-          - public-coder-agent-reader
-          - agentplane-testing-operator
-          - agentplane-testing-login
+          - shared-diagnostics
+          - testing-access
           - cluster-diagnostics
           - haku-sandbox-write
           - coinbase-credentials
@@ -4399,7 +3341,7 @@ data:
       finance-agent:
         title: Finance agent
         template: runner
-        egress_policies:
+        policy_sets:
           - basic
           - packages
           - aiquota-read
@@ -4412,89 +3354,24 @@ data:
           - github-actions-logs
           - buildbuddy
           - agentplane-testing
-        action_policy_sets:
           - public-github-reads
           - public-ducktape-reads
           - public-ducktape-fork-reads
           - public-gaffer-private-reads
           - github-identity-reads
           - ssh-reads
-          - finance-agent-gaffer-branch-creation
-          - finance-agent-gaffer-pr-creation
+          - gaffer-private-branch-and-pr-creation
           - ducktape-pr-failed-jobs
-        kubernetes_grants:
-          - agentplane-staging-metadata
-          - agentplane-staging-logs
-          - activitywatch-metadata
-          - activitywatch-logs
-          - agent-sandbox-system-metadata
-          - agentplane-index-metadata
-          - agentplane-index-logs
-          - agentplane-testing-metadata
-          - agentplane-testing-logs
-          - airlock-metadata
-          - airlock-logs
-          - authentik-metadata
-          - authentik-logs
-          - cert-manager-metadata
-          - cert-manager-logs
-          - cli-proxy-api-metadata
-          - cli-proxy-api-logs
-          - clickhouse-metadata
-          - clickhouse-logs
-          - cnpg-system-metadata
-          - cnpg-system-logs
-          - flux-system-metadata
-          - flux-system-logs
-          - gatus-metadata
-          - gatus-logs
-          - grocy-sf-metadata
-          - grocy-sf-logs
-          - grocy-vallejo-metadata
-          - grocy-vallejo-logs
-          - haku-ci-metadata
-          - haku-ci-logs
-          - litellm-metadata
-          - litellm-logs
-          - local-path-storage-metadata
-          - local-path-storage-logs
-          - loki-metadata
-          - loki-logs
-          - monitoring-metadata
-          - monitoring-logs
-          - nix-cache-metadata
-          - node-feature-discovery-metadata
-          - node-feature-discovery-logs
-          - nvidia-device-plugin-metadata
-          - nvidia-device-plugin-logs
-          - oci-cache-metadata
-          - oci-cache-logs
-          - openebs-metadata
-          - openebs-logs
-          - proxmox-proxy-metadata
-          - proxmox-proxy-logs
-          - public-coder-agent-metadata
-          - study-casino-metadata
-          - study-casino-logs
-          - tana-mcp-metadata
-          - tana-mcp-logs
-          - vm-images-publisher-metadata
-          - haku-console-metadata
-          - clickhouse-diagnostics
-          - ducktape-flux-read
-          - public-coder-volsync-status
-          - public-coder-agent-reader
-          - agentplane-testing-operator
-          - agentplane-testing-login
-          - public-coder-node-read
-          - public-coder-cluster-metadata-read
+          - shared-diagnostics
+          - testing-access
+          - public-inventory
           - coinbase-credentials
           - spend-policy-config
         thread_preset: finance-agent-codex
       public-coder-ducktape:
         title: Public coder / ducktape
         template: runner-ducktape
-        egress_policies:
+        policy_sets:
           - basic
           - packages
           - github-agentydragon-agent
@@ -4503,7 +3380,6 @@ data:
           - buildbuddy
           - public-coder-pr-visuals
           - agentplane-testing
-        action_policy_sets:
           - public-github-reads
           - public-ducktape-reads
           - public-ducktape-fork-reads
@@ -4511,72 +3387,9 @@ data:
           - github-identity-reads
           - ssh-reads
           - ducktape-pr-failed-jobs
-        kubernetes_grants:
-          - agentplane-staging-metadata
-          - agentplane-staging-logs
-          - activitywatch-metadata
-          - activitywatch-logs
-          - agent-sandbox-system-metadata
-          - agentplane-index-metadata
-          - agentplane-index-logs
-          - agentplane-testing-metadata
-          - agentplane-testing-logs
-          - airlock-metadata
-          - airlock-logs
-          - authentik-metadata
-          - authentik-logs
-          - cert-manager-metadata
-          - cert-manager-logs
-          - cli-proxy-api-metadata
-          - cli-proxy-api-logs
-          - clickhouse-metadata
-          - clickhouse-logs
-          - cnpg-system-metadata
-          - cnpg-system-logs
-          - flux-system-metadata
-          - flux-system-logs
-          - gatus-metadata
-          - gatus-logs
-          - grocy-sf-metadata
-          - grocy-sf-logs
-          - grocy-vallejo-metadata
-          - grocy-vallejo-logs
-          - haku-ci-metadata
-          - haku-ci-logs
-          - litellm-metadata
-          - litellm-logs
-          - local-path-storage-metadata
-          - local-path-storage-logs
-          - loki-metadata
-          - loki-logs
-          - monitoring-metadata
-          - monitoring-logs
-          - nix-cache-metadata
-          - node-feature-discovery-metadata
-          - node-feature-discovery-logs
-          - nvidia-device-plugin-metadata
-          - nvidia-device-plugin-logs
-          - oci-cache-metadata
-          - oci-cache-logs
-          - openebs-metadata
-          - openebs-logs
-          - proxmox-proxy-metadata
-          - proxmox-proxy-logs
-          - public-coder-agent-metadata
-          - study-casino-metadata
-          - study-casino-logs
-          - tana-mcp-metadata
-          - tana-mcp-logs
-          - vm-images-publisher-metadata
-          - haku-console-metadata
-          - clickhouse-diagnostics
-          - ducktape-flux-read
-          - public-coder-volsync-status
-          - public-coder-agent-reader
-          - agentplane-testing-operator
-          - agentplane-testing-login
-          - public-coder-node-read
-          - public-coder-cluster-metadata-read
+          - shared-diagnostics
+          - testing-access
+          - public-inventory
         thread_preset: public-coder-ducktape-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
@@ -4966,6 +3779,12 @@ data:
         role_ref:
           kind: Role
           name: claude-ai-coinbase-reader
+      agentplane-sandbox-read:
+        kind: RoleBinding
+        namespace: agentplane-staging
+        role_ref:
+          kind: Role
+          name: claude-ai-sandbox-reader
       haku-console-metadata:
         kind: RoleBinding
         namespace: haku-console
@@ -5116,8 +3935,6 @@ spec:
             - name: AGENTPLANE_TOKEN_SUBJECTS
               value: '["system:serviceaccount:agentplane-staging:agentplane-agent"]'
             - name: AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET
-              value: "{sandbox}-control.{namespace}.svc:8080"
-            - name: AGENTPLANE_SANDBOX_SERVICE_CONTROL_TARGET
               value: "{sandbox}-control.{namespace}.svc:8080"
             - name: AGENTPLANE_CONFIG_FILE
               value: /etc/agentplane/config.yaml
@@ -5357,21 +4174,6 @@ metadata:
   namespace: agentplane-staging
 rules:
   - apiGroups:
-      - extensions.agents.x-k8s.io
-    resources:
-      - sandboxtemplates
-    verbs:
-      - get
-      - list
-  - apiGroups:
-      - agents.x-k8s.io
-    resources:
-      - sandboxes
-    verbs:
-      - get
-      - list
-      - watch
-  - apiGroups:
       - agentplane.allegedly.works
     resources:
       - sandboxes
@@ -5423,6 +4225,14 @@ rules:
       - agentplane.allegedly.works
     resources:
       - actionpolicybindings
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policysets
     verbs:
       - get
       - list
@@ -5622,14 +4432,78 @@ spec:
   ingress:
     - {}
 ---
-apiVersion: extensions.agents.x-k8s.io/v1beta1
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-platform-route-clients
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner-gateway
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-history-service
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-runner
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-platform-route-control
+  namespace: agentplane-staging
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-runner-gateway
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8082"
+              protocol: TCP
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-platform-route-ingress
+  namespace: agentplane-staging
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-history-service
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8081"
+              protocol: TCP
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: SandboxTemplate
 metadata:
   name: runner
   namespace: agentplane-staging
 spec:
-  networkPolicyManagement: Unmanaged
-  podTemplate:
+  pod:
     metadata:
       labels:
         app.kubernetes.io/name: agentplane-runner
@@ -5647,6 +4521,14 @@ spec:
             - /bin/codex
             - --openai-base-url
             - $(LITELLM_URL)/v1
+            - --control-target
+            - 127.0.0.1:3130
+            - --control-bearer
+            - platform-route
+            - --ingress-target
+            - 127.0.0.1:3131
+            - --ingress-bearer
+            - platform-route
             - --harness-env
             - HOME
             - --harness-env
@@ -5757,6 +4639,8 @@ spec:
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
               value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
+            - name: AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES
+              value: '{"control": {"listen_port": 3130, "upstream": "agentplane-runner-gateway.agentplane-staging.svc.cluster.local:8082", "token_file": "/var/run/agentplane-egress/runner-control-token"}, "ingress": {"listen_port": 3131, "upstream": "agentplane-history-service.agentplane-staging.svc.cluster.local:8081", "token_file": "/var/run/agentplane-egress/runner-ingress-token"}}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -5825,17 +4709,310 @@ spec:
                   audience: agentplane-runner-ingress
                   expirationSeconds: 600
                   path: runner-ingress-token
-  volumeClaimTemplates:
-    - metadata:
-        name: state
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 10Gi
-        storageClassName: local-path-ovh-hdd
-  volumeClaimTemplatesPolicy: Overrides
+  stateVolume:
+    name: state
+    claim:
+      storageClassName: local-path-ovh-hdd
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-sandbox-controller
+  namespace: agentplane-staging
+automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-sandbox-controller
+  name: agentplane-sandbox-controller
+  namespace: agentplane-staging
+spec:
+  minReadySeconds: 5
+  progressDeadlineSeconds: 600
+  replicas: 2
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-sandbox-controller-deployment-c8a54474
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-sandbox-controller
+        cdk8s.io/metadata.addr: agentplane-sandbox-controller-deployment-c8a54474
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - args:
+            - --namespace=agentplane-staging
+          image: git.allegedly.works/ducktape-ci/agentplane-sandbox-controller:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /healthz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 10
+            periodSeconds: 30
+          name: sandbox-controller
+          ports:
+            - containerPort: 8080
+              name: metrics
+              protocol: TCP
+            - containerPort: 8081
+              name: health
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            httpGet:
+              path: /readyz
+              port: 8081
+              scheme: HTTP
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 10m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-sandbox-controller
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-sandbox-controller
+  name: agentplane-sandbox-controller
+  namespace: agentplane-staging
+spec:
+  externalIPs: []
+  ports:
+    - name: metrics
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-sandbox-controller-deployment-c8a54474
+  type: ClusterIP
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: agentplane-sandbox-controller
+  namespace: agentplane-staging
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-sandbox-controller
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-sandbox-controller
+  namespace: agentplane-staging
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+      - watch
+      - update
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxes/status
+    verbs:
+      - update
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxes/finalizers
+    verbs:
+      - update
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - delete
+  - apiGroups:
+      - ""
+    resources:
+      - persistentvolumeclaims
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - delete
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachines
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+  - apiGroups:
+      - kubevirt.io
+    resources:
+      - virtualmachineinstances
+    verbs:
+      - get
+      - list
+      - watch
+  - apiGroups:
+      - ""
+    resources:
+      - serviceaccounts
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings
+    verbs:
+      - get
+      - list
+      - watch
+      - create
+      - update
+      - delete
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - get
+      - create
+      - update
+  - apiGroups:
+      - ""
+    resources:
+      - events
+    verbs:
+      - create
+      - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-sandbox-controller
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-sandbox-controller
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-sandbox-controller
+    namespace: agentplane-staging
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-sandbox-controller
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-sandbox-controller
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: agentplane-sandbox-controller
+  namespace: agentplane-staging
+spec:
+  endpoints:
+    - path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-sandbox-controller
 ---
 apiVersion: v1
 kind: ConfigMap
@@ -7056,14 +6233,13 @@ spec:
     deletionPolicy: Retain
     name: buildbuddy-api-key
 ---
-apiVersion: extensions.agents.x-k8s.io/v1beta1
+apiVersion: agentplane.allegedly.works/v1alpha1
 kind: SandboxTemplate
 metadata:
   name: runner-ducktape
   namespace: agentplane-staging
 spec:
-  networkPolicyManagement: Unmanaged
-  podTemplate:
+  pod:
     metadata:
       labels:
         app.kubernetes.io/name: agentplane-runner
@@ -7081,6 +6257,14 @@ spec:
             - /bin/codex
             - --openai-base-url
             - $(LITELLM_URL)/v1
+            - --control-target
+            - 127.0.0.1:3130
+            - --control-bearer
+            - platform-route
+            - --ingress-target
+            - 127.0.0.1:3131
+            - --ingress-bearer
+            - platform-route
             - --harness-env
             - HOME
             - --harness-env
@@ -7198,6 +6382,8 @@ spec:
               value: /var/run/agentplane-egress/token
             - name: AGENTPLANE_EGRESS_SIDECAR_AUDIENCE_TOKEN_FILES
               value: '{"https://localhost:7445": "/var/run/agentplane-egress/kubernetes-token", "agentplane-notifications": "/var/run/agentplane-egress/notifications-token", "agentplane-runner-control": "/var/run/agentplane-egress/runner-control-token", "agentplane-runner-ingress": "/var/run/agentplane-egress/runner-ingress-token"}'
+            - name: AGENTPLANE_EGRESS_SIDECAR_PLATFORM_ROUTES
+              value: '{"control": {"listen_port": 3130, "upstream": "agentplane-runner-gateway.agentplane-staging.svc.cluster.local:8082", "token_file": "/var/run/agentplane-egress/runner-control-token"}, "ingress": {"listen_port": 3131, "upstream": "agentplane-history-service.agentplane-staging.svc.cluster.local:8081", "token_file": "/var/run/agentplane-egress/runner-ingress-token"}}'
           image: git.allegedly.works/ducktape-ci/agentplane-egress-sidecar:unset
           name: egress-sidecar
           readinessProbe:
@@ -7270,17 +6456,15 @@ spec:
           secret:
             defaultMode: 288
             secretName: buildbuddy-api-key
-  volumeClaimTemplates:
-    - metadata:
-        name: state
-      spec:
-        accessModes:
-          - ReadWriteOnce
-        resources:
-          requests:
-            storage: 10Gi
-        storageClassName: local-path-ovh-hdd
-  volumeClaimTemplatesPolicy: Overrides
+  stateVolume:
+    name: state
+    claim:
+      storageClassName: local-path-ovh-hdd
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
 ---
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
@@ -8583,49 +7767,6 @@ metadata:
 automountServiceAccountToken: false
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: The reviewed read-only subset of GitHub MCP's default catalog; every other GitHub Action stays on the human path.
-  name: github-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        github:
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_label
-          - get_latest_release
-          - get_me
-          - get_release_by_tag
-          - get_tag
-          - get_team_members
-          - get_teams
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_code
-          - search_commits
-          - search_issues
-          - search_pull_requests
-          - search_repositories
-          - search_users
-          - ui_get
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -8671,20 +7812,6 @@ spec:
             - ui_get
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: The caller's own GitHub identity read, with no repository or mutation surface.
-  name: github-identity-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        github:
-          - get_me
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -8699,47 +7826,6 @@ spec:
         actions:
           github:
             - get_me
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Reviewed GitHub reads scoped to agentydragon-agent/ducktape, the coder Agent's fork.
-  name: public-ducktape-fork-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: github_repository
-      actions:
-        github:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_code
-          - search_issues
-          - search_pull_requests
-      owner: agentydragon-agent
-      repository: ducktape
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -8785,47 +7871,6 @@ spec:
         repository: ducktape
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Reviewed GitHub reads scoped to agentydragon/ducktape.
-  name: public-ducktape-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: github_repository
-      actions:
-        github:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_code
-          - search_issues
-          - search_pull_requests
-      owner: agentydragon
-      repository: ducktape
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -8867,47 +7912,6 @@ spec:
             - search_pull_requests
         owner: agentydragon
         repository: ducktape
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Reviewed GitHub reads scoped to the private agentydragon/gaffer-private.
-  name: public-gaffer-private-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: github_repository
-      actions:
-        github:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_code
-          - search_issues
-          - search_pull_requests
-      owner: agentydragon
-      repository: gaffer-private
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -8953,45 +7957,6 @@ spec:
         repository: gaffer-private
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public.
-  name: public-github-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: github_public_repository
-      actions:
-        github:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_code
-          - search_issues
-          - search_pull_requests
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -9033,37 +7998,6 @@ spec:
             - search_pull_requests
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Auto-approves only GitHub MCP rerun_failed_jobs calls for agentydragon/ducktape; dispatch, whole-run rerun, cancellation and log deletion remain on the human path.
-  name: ducktape-pr-failed-jobs
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: argument_schema
-      actions:
-        github:
-          - actions_run_trigger
-      schema:
-        properties:
-          method:
-            const: rerun_failed_jobs
-          owner:
-            const: agentydragon
-          repo:
-            const: ducktape
-          run_id:
-            minimum: 1
-            type: integer
-        required:
-          - method
-          - owner
-          - repo
-          - run_id
-        type: object
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -9097,43 +8031,11 @@ spec:
           type: object
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Auto-approves only GitHub MCP create_branch calls for agentydragon/gaffer-private; existing branches cannot be overwritten, and other writes remain human-approved.
-  name: finance-agent-gaffer-branch-creation
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: argument_schema
-      actions:
-        github:
-          - create_branch
-      schema:
-        additionalProperties: false
-        properties:
-          branch:
-            minLength: 1
-            type: string
-          from_branch:
-            minLength: 1
-            type: string
-          owner:
-            const: agentydragon
-          repo:
-            const: gaffer-private
-        required:
-          - owner
-          - repo
-          - branch
-        type: object
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
-    description: Auto-approves only GitHub MCP create_branch calls for agentydragon/gaffer-private; existing branches cannot be overwritten, and other writes remain human-approved.
-  name: finance-agent-gaffer-branch-creation
+    description: Auto-approves only GitHub MCP create_branch and create_pull_request calls targeting agentydragon/gaffer-private; existing branches cannot be overwritten, the PR is not merged, and other writes remain human-approved.
+  name: gaffer-private-branch-and-pr-creation
   namespace: agentplane-staging
 spec:
   rules:
@@ -9161,59 +8063,6 @@ spec:
             - repo
             - branch
           type: object
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Auto-approves only GitHub MCP create_pull_request calls targeting agentydragon/gaffer-private; the PR is not merged and other writes remain human-approved.
-  name: finance-agent-gaffer-pr-creation
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: argument_schema
-      actions:
-        github:
-          - create_pull_request
-      schema:
-        additionalProperties: false
-        properties:
-          base:
-            minLength: 1
-            type: string
-          body:
-            type: string
-          draft:
-            type: boolean
-          head:
-            minLength: 1
-            type: string
-          maintainer_can_modify:
-            const: false
-          owner:
-            const: agentydragon
-          repo:
-            const: gaffer-private
-          title:
-            minLength: 1
-            type: string
-        required:
-          - owner
-          - repo
-          - title
-          - head
-          - base
-        type: object
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  annotations:
-    description: Auto-approves only GitHub MCP create_pull_request calls targeting agentydragon/gaffer-private; the PR is not merged and other writes remain human-approved.
-  name: finance-agent-gaffer-pr-creation
-  namespace: agentplane-staging
-spec:
-  rules:
     - type: action_auto_approve
       policy:
         type: argument_schema
@@ -9316,17 +8165,34 @@ subjects:
     name: haku
     namespace: haku-sandbox
 ---
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
 metadata:
-  name: coinbase
+  name: claude-ai-sandbox-reader
   namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - api.coinbase.com
-      methods:
-        - GET
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: claude-ai-sandbox-reader
+  namespace: agentplane-staging
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: claude-ai-sandbox-reader
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: claude-ai
+    namespace: agentplane-staging
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9340,21 +8206,6 @@ spec:
         - api.coinbase.com
       methods:
         - GET
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: agentplane-testing
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - agentplane-app.agentplane-testing.svc.cluster.local
-      clusterInternal: true
-    - hosts:
-        - agentplane-testing.allegedly.works
-        - agentplane-dex-testing.allegedly.works
-      clusterInternal: true
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9401,23 +8252,6 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: agentplane-egress
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: github-downloads
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - github.com
-        - codeload.github.com
-        - objects.githubusercontent.com
-        - release-assets.githubusercontent.com
-        - raw.githubusercontent.com
-      methods:
-        - GET
-        - HEAD
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9498,25 +8332,6 @@ spec:
     - github-actions-logs
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: "Auto-approves every sandbox Action: a caller's own boxes, which act only as that caller, and reads of the templates they are made from."
-  name: sandbox-self
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        sandbox:
-          - create
-          - dispose
-          - exec
-          - get
-          - get_template
-          - list
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -9536,49 +8351,6 @@ spec:
             - get
             - get_template
             - list
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: The reviewed read-only subset of Home Assistant MCP's default catalog; every other Home Assistant Action stays on the human path.
-  name: home-assistant-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        home_assistant:
-          - ha_config_get_automation
-          - ha_config_get_calendar_events
-          - ha_config_get_category
-          - ha_config_get_dashboard
-          - ha_config_get_label
-          - ha_config_get_scene
-          - ha_config_get_script
-          - ha_config_list_dashboard_resources
-          - ha_config_list_groups
-          - ha_config_list_helpers
-          - ha_get_app
-          - ha_get_automation_traces
-          - ha_get_blueprint
-          - ha_get_device
-          - ha_get_entity
-          - ha_get_entity_exposure
-          - ha_get_hacs_info
-          - ha_get_history
-          - ha_get_integration
-          - ha_get_logs
-          - ha_get_operation_status
-          - ha_get_overview
-          - ha_get_skill_guide
-          - ha_get_state
-          - ha_get_system_health
-          - ha_get_todo
-          - ha_get_zone
-          - ha_list_floors_areas
-          - ha_list_services
-          - ha_search
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9626,28 +8398,6 @@ spec:
             - ha_search
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: The reviewed read-only subset of the Gmail MCP backend's catalog; every write stays on the human path.
-  name: gmail-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        gmail:
-          - drafts_get
-          - drafts_list
-          - filters_get
-          - filters_list
-          - labels_get
-          - labels_list
-          - messages_get
-          - threads_get
-          - threads_list
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -9672,22 +8422,6 @@ spec:
             - threads_list
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: The reviewed read-only subset of the Google Calendar MCP backend's catalog; create_event stays on the human path.
-  name: google-calendar-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        google_calendar:
-          - get_event
-          - list_event_instances
-          - list_events
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -9704,26 +8438,6 @@ spec:
             - get_event
             - list_event_instances
             - list_events
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: The reviewed read-only subset of the Tana MCP backend's catalog, plus get_or_create_calendar_node; every other write and open_node stay on the human path.
-  name: tana-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        tana:
-          - get_children
-          - get_or_create_calendar_node
-          - get_tag_schema
-          - list_tags
-          - list_workspaces
-          - read_node
-          - search_nodes
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9746,38 +8460,6 @@ spec:
             - list_workspaces
             - read_node
             - search_nodes
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: The reviewed read-only subset of the Grocy SF MCP backend's catalog; every write, open_product_stock included, stays on the human path.
-  name: grocy-sf-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        grocy_sf:
-          - entities_get
-          - entities_list
-          - file_get
-          - get_below_minimum_stock
-          - get_current_user
-          - get_db_changed_time
-          - get_expired_stock
-          - get_expiring_stock
-          - get_product_stock
-          - get_system_info
-          - list_volatile_stock
-          - locations_list
-          - product_groups_list
-          - products_list
-          - quantity_units_list
-          - shopping_list_get
-          - shopping_lists_list
-          - stock_entries_list
-          - stock_get
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9812,20 +8494,6 @@ spec:
             - shopping_lists_list
             - stock_entries_list
             - stock_get
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Auto-approves the SSH MCP backend's list_targets, which only names configured targets and key availability; every other SSH Action stays on the human path.
-  name: ssh-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        ssh:
-          - list_targets
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -10058,25 +8726,6 @@ spec:
       method: basicPassword
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: forgejo-haku
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - forgejo-http.forgejo.svc.cluster.local
-        - forgejo-http.forgejo.svc
-        - forgejo-http.forgejo
-      clusterInternal: true
-      credentialRef:
-        name: forgejo-haku
-    - hosts:
-        - git.allegedly.works
-      credentialRef:
-        name: forgejo-haku
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: forgejo-haku
@@ -10184,25 +8833,6 @@ spec:
       method: basicPassword
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: forgejo-finance-agent
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - forgejo-http.forgejo.svc.cluster.local
-        - forgejo-http.forgejo.svc
-        - forgejo-http.forgejo
-      clusterInternal: true
-      credentialRef:
-        name: forgejo-finance-agent
-    - hosts:
-        - git.allegedly.works
-      credentialRef:
-        name: forgejo-finance-agent
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: forgejo-finance-agent
@@ -10238,44 +8868,6 @@ spec:
     - header: Authorization
       method: schemeToken
       scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: google-readonly
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - docs.googleapis.com
-        - gmail.googleapis.com
-        - people.googleapis.com
-        - sheets.googleapis.com
-        - slides.googleapis.com
-        - tasks.googleapis.com
-        - youtube.googleapis.com
-      methods:
-        - GET
-      credentialRef:
-        name: google-readonly
-    - hosts:
-        - www.googleapis.com
-      methods:
-        - GET
-      paths:
-        - /calendar/v3/**
-        - /drive/v3/**
-        - /youtube/v3/**
-      credentialRef:
-        name: google-readonly
-    - hosts:
-        - driveactivity.googleapis.com
-      methods:
-        - POST
-      paths:
-        - /v2/activity:query
-      credentialRef:
-        name: google-readonly
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -10405,28 +8997,6 @@ spec:
       method: basicPassword
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: grocy-sf-readonly
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - grocy-sf.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /api/files/**
-        - /api/objects/**
-        - /api/stock
-        - /api/stock/**
-        - /api/system/db-changed-time
-        - /api/system/info
-        - /api/user
-      credentialRef:
-        name: grocy-sf-readonly
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: grocy-sf-readonly
@@ -10537,25 +9107,6 @@ spec:
       scheme: Bearer
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: home-assistant-readonly
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - home-assistant.home-assistant.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /api/states
-        - /api/states/*
-        - /api/history/period/*
-      clusterInternal: true
-      credentialRef:
-        name: home-assistant-readonly
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: home-assistant-readonly
@@ -10663,31 +9214,6 @@ spec:
       scheme: Bearer
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: activitywatch-read
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - activitywatch-read.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /api/0/**
-      credentialRef:
-        name: activitywatch-read
-    - hosts:
-        - activitywatch-read.allegedly.works
-      methods:
-        - POST
-      paths:
-        - /api/0/query
-        - /api/0/query/
-      credentialRef:
-        name: activitywatch-read
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: activitywatch-read
@@ -10729,32 +9255,6 @@ spec:
     - header: Authorization
       method: schemeToken
       scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: aiquota-read
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - aiquota.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /v1/**
-      credentialRef:
-        name: aiquota-read
-    - hosts:
-        - aiquota-api.cli-proxy-api.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /v1/quotas
-        - /v1/providers/*/raw
-      clusterInternal: true
-      credentialRef:
-        name: aiquota-read
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -10871,23 +9371,6 @@ spec:
       method: basicPassword
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: finance-aiquota-history
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - clickhouse.clickhouse.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /
-      clusterInternal: true
-      credentialRef:
-        name: clickhouse-finance-agent-credentials
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: finance-aiquota-history
@@ -10991,31 +9474,6 @@ spec:
     - header: Authorization
       method: schemeToken
       scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: haku-mailbox
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - haku-mailbox.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /.well-known/jmap
-        - /jmap/**
-      credentialRef:
-        name: haku-mailbox
-    - hosts:
-        - haku-mailbox.allegedly.works
-      methods:
-        - POST
-      paths:
-        - /jmap/**
-      credentialRef:
-        name: haku-mailbox
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -11149,37 +9607,6 @@ spec:
   targets:
     - header: Authorization
       method: basicPassword
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: plaid-pgweb
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - plaid-pgweb.plaid-mcp.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /api/connection
-        - /api/info
-        - /api/objects
-        - /api/query
-        - /api/schemas
-        - /api/tables/**
-      clusterInternal: true
-      credentialRef:
-        name: plaid-pgweb
-    - hosts:
-        - plaid-pgweb.plaid-mcp.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /api/query
-      clusterInternal: true
-      credentialRef:
-        name: plaid-pgweb
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -11649,76 +10076,6 @@ spec:
   targets:
     - header: X-Subscription-Token
       method: wholeValue
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: public-coder-openclaw
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - github.com
-        - api.github.com
-        - codeload.github.com
-      credentialRef:
-        name: github-pat
-    - hosts:
-        - haku-kubeapi.allegedly.works
-      credentialRef:
-        name: public-coder-haku-console
-    - hosts:
-        - clickhouse.clickhouse.svc.cluster.local
-      clusterInternal: true
-      credentialRef:
-        name: public-coder-clickhouse
-    - hosts:
-        - aiquota.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /v1/quotas
-        - /v1/providers/*/raw
-      credentialRef:
-        name: aiquota-read
-    - hosts:
-        - api.search.brave.com
-      credentialRef:
-        name: brave-search
-    - hosts:
-        - matrix.allegedly.works
-      methods:
-        - POST
-      paths:
-        - /_matrix/client/v3/login
-      credentialRef:
-        name: public-coder-matrix
-    - hosts:
-        - agentplane-egress.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /v1/rules
-        - /openapi.json
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
-    - hosts:
-        - agentplane-actions.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-        - POST
-      paths:
-        - /mcp
-        - /openapi.json
-        - /v1/action-groups
-        - /v1/action-groups/**
-        - /v1/action-policy
-        - /v1/action-requests
-        - /v1/action-requests/**
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet

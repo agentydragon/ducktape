@@ -8,7 +8,7 @@ personal-data agent with network isolation and full traces, and a git-backed
 knowledge garden — are scoped in [requirements.md](requirements.md) but not
 built.
 
-`public-coder-agent` (<../../cluster/k8s/agents/public-coder-agent/>) is
+`public-coder-agent` (<../../cluster/parked/public-coder-agent/>) is
 deployed and meets the four hard requirements: stand up, open a PR end to end
 unaided, remember instructions across sessions, and be confinable to
 domain-level egress. Open work and the personal-data-agent design are tracked in

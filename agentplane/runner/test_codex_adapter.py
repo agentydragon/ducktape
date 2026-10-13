@@ -85,10 +85,10 @@ class RecordedSession:
 class JournaledSession(RecordedSession):
     """The seam `reconcile` reads: the turn's journal and the thread's saved Codex history."""
 
-    def __init__(self, journal: Journal, native_directory: Path) -> None:
+    def __init__(self, journal: Journal, directory: Path) -> None:
         super().__init__()
         self.journal = journal
-        self.native_directory = native_directory
+        self.directory = directory
         self.record.native_session_id = codex_rollout.THREAD_ID
 
 

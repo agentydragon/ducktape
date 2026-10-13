@@ -161,20 +161,6 @@ class ToolCallInvalidationPublisher(Protocol):
     ) -> contextlib.AbstractAsyncContextManager[asyncio.Event]: ...
 
 
-class PendingApprovalNotifier(Protocol):
-    """Out-of-band notice that a call entered or left the approval queue.
-
-    Deliberately narrower than `ToolCallInvalidationPublisher`, which invalidates any view of any
-    change for tabs that are already open. This fires only on the two edges that matter to an
-    operator who is *not* looking at the console, and it is best-effort in the same way: the
-    ledger row stays authoritative and a failed notification never fails the transition.
-    """
-
-    async def tool_call_pending(self, *, operator_id: UUID, record: ToolCallRecord) -> None: ...
-
-    async def tool_call_resolved(self, *, operator_id: UUID, record: ToolCallRecord) -> None: ...
-
-
 class OperatorActorRequiredError(PermissionError):
     """Raised when an AgentActor reaches an operator-only lifecycle operation."""
 
@@ -213,12 +199,10 @@ class ToolCallApplicationService:
         invalidation_publisher: ToolCallInvalidationPublisher,
         executor: ToolExecutor,
         in_process_servers: InProcessServers,
-        approval_notifier: PendingApprovalNotifier,
     ) -> None:
         self._settings = settings
         self._repository = repository
         self._invalidation_publisher = invalidation_publisher
-        self._approval_notifier = approval_notifier
         self._executor = executor
         self._in_process_servers = in_process_servers
         self._auto_approval_policies = AutoApprovalPolicyRegistry(settings)
@@ -309,7 +293,6 @@ class ToolCallApplicationService:
             record = await self._execute_and_publish(record=record, server=server, auth_token=auth_token, actor=actor)
         else:
             await self._publish(actor.operator_id, record.tool_call_id)
-            await self._notify_pending(actor.operator_id, record)
         return await self._wait_terminal(record.tool_call_id, actor, req.wait_for_ms)
 
     async def execute_direct(self, *, req: SubmitToolCallRequest, actor: RuntimeActor) -> dict[str, Any]:
@@ -373,7 +356,6 @@ class ToolCallApplicationService:
         if decision.decision is ApprovalDecision.DENY:
             record = await self._repository.deny(tool_call_id, decision.decision_note, actor=operator)
             await self._publish(operator.operator_id, record.tool_call_id)
-            await self._notify_resolved(operator.operator_id, record)
             logger.info(
                 "tool call %s denied server=%s tool=%s decision_note=%r",
                 record.tool_call_id,
@@ -389,10 +371,6 @@ class ToolCallApplicationService:
         server = _server_entry(self._settings, pending.server_id)
         auth_token = await self._backend_auth(server, operator.operator_id)
         running = await self._repository.mark_running(tool_call_id, decision.decision_note, actor=operator)
-        # The ask is settled the moment it is approved, even though the run has not started. Retract
-        # here rather than at terminal, so a notification on another device stops offering buttons
-        # for a decision that has already been made.
-        await self._notify_resolved(operator.operator_id, running)
         # Deciding is not executing. Dispatch the tool run as a tracked background task and return the
         # RUNNING record immediately, so approving never blocks on a slow or unreachable backend. The
         # terminal state reaches observers the same way an auto-approved call's does: _publish (WS
@@ -420,9 +398,6 @@ class ToolCallApplicationService:
         # The owning operator is `agent.operator_id`: the repository's binding revalidation proves
         # the agent is owned by it, so this is the same verified publication target `submit` uses.
         await self._publish(agent.operator_id, record.tool_call_id)
-        # Only a pending call can be withdrawn, so this always retracts a notification the operator
-        # may be looking at — the requester no longer wants the answer.
-        await self._notify_resolved(agent.operator_id, record)
         return record
 
     async def _execute_and_publish(
@@ -513,28 +488,6 @@ class ToolCallApplicationService:
             raise
         except Exception:
             logger.exception("failed to publish tool-call invalidation for operator %s", operator_id)
-
-    async def _notify_pending(self, operator_id: UUID, record: ToolCallRecord) -> None:
-        try:
-            await self._approval_notifier.tool_call_pending(operator_id=operator_id, record=record)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("failed to notify pending approval %s", record.tool_call_id)
-
-    async def _notify_resolved(self, operator_id: UUID, record: ToolCallRecord) -> None:
-        """Retract the notification for a call that has left the queue.
-
-        Called only where the call was `pending_approval` immediately before the transition, so a
-        never-notified call (auto-approved, born-denied) never produces a spurious retraction —
-        which matters because every push spends the browser's budget for showing them.
-        """
-        try:
-            await self._approval_notifier.tool_call_resolved(operator_id=operator_id, record=record)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("failed to notify resolved approval %s", record.tool_call_id)
 
     async def _wait_terminal(self, tool_call_id: str, actor: RuntimeActor, wait_for_ms: int) -> ToolCallRecord:
         record = await self._repository.get(tool_call_id, actor=actor)

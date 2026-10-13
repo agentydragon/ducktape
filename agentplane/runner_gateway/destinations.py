@@ -1,14 +1,21 @@
-"""Check an explicit, authorized Sandbox incarnation and its current controller-owned runner Pod."""
+"""Check an explicit, authorized Sandbox incarnation and its current runner Pod: one the Sandbox
+controls, or a VM Sandbox's virt-launcher Pod."""
 
 from dataclasses import dataclass
 
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxBinding, SandboxDestination, TeardownPhase
-from agentplane.sandbox_resource import SANDBOX_API_VERSIONS
+from agentplane.sandbox_resource import (
+    SANDBOX_API_VERSION,
+    SANDBOX_KIND,
+    SANDBOX_LABEL,
+    VMI_API_VERSION,
+    VMI_KIND,
+    OperatingMode,
+)
 from agentplane.sandbox_service.errors import SandboxTearingDownError
 from agentplane.sandbox_service.reader import SandboxReader
-from util.agent_sandbox import OperatingMode
 
 
 class DestinationUnavailableError(Exception):
@@ -29,16 +36,10 @@ class DestinationResolver:
     async def _ready(self, view: Sandbox, *, writes: bool) -> SandboxBinding | None:
         if writes and view.teardown != TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED:
             raise SandboxTearingDownError(view.name)
-        if (
-            view.deleting
-            or view.operating_mode != OperatingMode.RUNNING
-            or view.launch_grants_pending
-            or not view.kubernetes_grants_ready
-            or view.HasField("kubernetes_grant_error")
-        ):
+        if view.deleting or view.operating_mode != OperatingMode.RUNNING or not view.HasField("pod"):
             raise DestinationUnavailableError
         try:
-            pod = await self.core.read_namespaced_pod(view.name, self.sandboxes.namespace)
+            pod = await self.core.read_namespaced_pod(view.pod.name, self.sandboxes.namespace)
         except k8s_client.ApiException as error:
             if error.status == 404:
                 raise DestinationUnavailableError from error
@@ -46,7 +47,7 @@ class DestinationResolver:
         metadata, spec, status = pod.metadata, pod.spec, pod.status
         if (
             metadata is None
-            or metadata.name != view.name
+            or metadata.uid != view.pod.uid
             or metadata.namespace != self.sandboxes.namespace
             or not metadata.uid
             or metadata.deletion_timestamp is not None
@@ -61,9 +62,14 @@ class DestinationResolver:
         if len(controllers) != 1:
             raise DestinationUnavailableError
         owner = controllers[0]
-        if (
-            owner.api_version not in SANDBOX_API_VERSIONS
-            or owner.kind != "Sandbox"
+        if (owner.api_version, owner.kind) == (VMI_API_VERSION, VMI_KIND):
+            # The view shows our Sandbox's Pod only while the Sandbox Controller reports it as the
+            # incarnation, which for a VM is its VMI's virt-launcher Pod.
+            if (metadata.labels or {}).get(SANDBOX_LABEL) != view.name:
+                raise DestinationUnavailableError
+        elif (
+            owner.api_version != SANDBOX_API_VERSION
+            or owner.kind != SANDBOX_KIND
             or owner.name != view.name
             or owner.uid != str(view.uid)
         ):

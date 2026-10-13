@@ -38,7 +38,7 @@ from cdk8s_plus_34 import k8s
 
 from cluster.cdk8s import agent_sandbox, namespaces
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.forgejo_registry import chart as forgejo_images
+from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.kyverno.janitor import SANDBOX_KINDS, janitor
 from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -69,7 +69,7 @@ def _codex_template(chart: Chart) -> SandboxTemplate:
             spec=SandboxTemplateSpecPodTemplateSpec(
                 dns_policy="ClusterFirst",
                 image_pull_secrets=[
-                    SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=forgejo_images.SECRET_NAME)
+                    SandboxTemplateSpecPodTemplateSpecImagePullSecrets(name=pull_credentials.SECRET_NAME)
                 ],
                 # No explicit region nodeSelector: the workspace volumeClaimTemplate's
                 # seaweedfs-ovh StorageClass already pins scheduling to
@@ -197,7 +197,7 @@ def chart(app: App) -> Chart:
             ]
         ),
     )
-    forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
+    pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     # One pre-warmed codex-lane workspace.
     agent_sandbox.warm_pool(chart, "codex-warm-pool", template=_codex_template(chart))
     janitor(chart, "janitor", name="workspace-janitor", namespace=NAMESPACE, schedule="40 * * * *", kinds=SANDBOX_KINDS)

@@ -29,7 +29,7 @@ from gateway_api_crds.io.k8s.networking.gateway import (
     HttpRouteSpecRulesFiltersResponseHeaderModifierSet,
 )
 
-from cluster.cdk8s import cnpg, namespaces, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup, namespaces, node_scheduling
 from cluster.cdk8s.external_secrets.minted_secret import mint_db_role_secret
 from cluster.cdk8s.flux import (
     ConfigMapArgs,
@@ -38,7 +38,7 @@ from cluster.cdk8s.flux import (
     flux_kustomization,
     flux_kustomization_depends_on_many,
 )
-from cluster.cdk8s.forgejo_registry.chart import SECRET_NAME, forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo_registry.pull_credentials import SECRET_NAME, forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import cluster_gateway_parent_ref
 from cluster.cdk8s.generation import copy_source_file
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
@@ -124,8 +124,9 @@ def _database(scope: Construct) -> None:
             ]
         ),
         initdb=cnpg.same_owner_initdb(_DATABASE),
-        wal_archive=False,
+        wal_archive=True,
     )
+    cnpg_backup.CnpgBackup(scope, "db-backup", ref=POSTGRES, retention="30d")
 
 
 def _readonly_credentials(scope: Construct) -> None:
@@ -396,6 +397,7 @@ def study_casino(
     directory: RenderedDirectory,
     cnpg_operator: Kustomization,
     external_secrets_operator: Kustomization,
+    seaweedfs_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -404,5 +406,5 @@ def study_casino(
         suspend=False,
         timeout="10m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(cnpg_operator, external_secrets_operator),
+        depends_on=flux_kustomization_depends_on_many(cnpg_operator, external_secrets_operator, seaweedfs_operator),
     )

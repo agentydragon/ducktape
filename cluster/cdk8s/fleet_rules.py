@@ -16,7 +16,7 @@ from cdk8s import ApiObject
 from constructs import Construct, IValidation
 
 from cluster.cdk8s.cilium_rule_sections import enforces_nothing
-from cluster.cdk8s.pod_policy import POD_SPEC_PATHS, pod_spec, workload_kind
+from cluster.cdk8s.pod_policy import embeds_pod, pod_spec
 
 _OUTSIDE_ENTITIES = frozenset({"world", "remote-node", "host"})
 _HTTPS_PORT = "443"
@@ -30,7 +30,7 @@ _CONFIG_MAP_REF_KEYS = frozenset({"configMapKeyRef", "configMapRef"})
 
 def _pod_specs(objects: list[dict[str, Any]]) -> Iterator[tuple[str, dict[str, Any]]]:
     for obj in objects:
-        if workload_kind(obj) in POD_SPEC_PATHS:
+        if embeds_pod(obj):
             yield f"{obj['kind']}/{obj['metadata']['name']}", pod_spec(obj)
 
 
@@ -255,7 +255,7 @@ def unused_waivers(objects: list[dict[str, Any]], *, unhardened: frozenset[str],
     failing_pods = {
         f"{obj['kind']}/{obj['metadata']['name']}"
         for obj in objects
-        if workload_kind(obj) in POD_SPEC_PATHS and pod_hardening([obj], unhardened=frozenset())
+        if embeds_pod(obj) and pod_hardening([obj], unhardened=frozenset())
     }
     failing_policies = {
         obj["metadata"]["name"]

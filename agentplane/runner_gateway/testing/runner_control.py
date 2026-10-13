@@ -5,7 +5,7 @@ import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import cast, override
+from typing import override
 from uuid import UUID
 
 import grpc
@@ -20,9 +20,8 @@ from agentplane.runner_gateway.connection_records import ConnectionHolder, Conne
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
 from agentplane.runner_gateway.testing.control_listener import RUNNER_TIMING, serve_runner_control
-from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, OWN_SANDBOXES, SANDBOX, SANDBOX_UID, Cluster
+from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
-from util.kubernetes import CustomObjectsClient
 
 # The control servicer stub names its messages; mypy reads stubs only from direct deps.
 # gazelle:include_dep //agentplane/proto:runner_control_pb2
@@ -33,49 +32,42 @@ RUNNER_TOKEN = "test-runner-token"
 REPLICA = ConnectionHolder(pod_name="test-replica", pod_ip="192.0.2.1", port=18080)
 OTHER_REPLICA = ConnectionHolder(pod_name="test-other-replica", pod_ip="192.0.2.2", port=18080)
 HELLO = runner_control_pb2.RunnerFrame(hello=runner_control_pb2.Hello(runner_boot_id="test-boot"))
-OWN_SANDBOX = "test-own-sandbox"
-OWN_SANDBOX_UID = "7d6c1f0e-35b4-4c3e-9a51-2f8e0b9d6a10"
-OWN_RUNNER_TOKEN = "test-own-runner-token"
+LAUNCHER_POD = f"virt-launcher-{SANDBOX}-test"
+LAUNCHER_POD_UID = "test-launcher-pod-uid"
 
 
-def add_own_sandbox(cluster: Cluster) -> None:
-    """One of Agentplane's own Sandboxes, its Pod running as the ServiceAccount of its name as the
-    Sandbox Controller runs it, and `OWN_RUNNER_TOKEN` for that Pod's runner."""
-    reference = {
-        "apiVersion": sandbox_resource.SANDBOX_API_VERSION,
-        "kind": sandbox_resource.SANDBOX_KIND,
-        "name": OWN_SANDBOX,
-        "uid": OWN_SANDBOX_UID,
-        "controller": True,
+def run_in_a_vm(cluster: Cluster) -> None:
+    """`SANDBOX` as a VM Sandbox: its incarnation is its VMI's virt-launcher Pod, labelled with the
+    Sandbox and running as its ServiceAccount, and `RUNNER_TOKEN` is that Pod's runner's."""
+    del cluster.fake.pods[SANDBOX]
+    cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]["status"] = {
+        "incarnation": {"name": LAUNCHER_POD, "uid": LAUNCHER_POD_UID}
     }
-    cluster.fake.put(
-        OWN_SANDBOXES,
-        {
-            "apiVersion": reference["apiVersion"],
-            "kind": reference["kind"],
-            "metadata": {"name": OWN_SANDBOX, "uid": OWN_SANDBOX_UID, "creationTimestamp": "2026-09-01T11:00:00Z"},
-            "spec": {"template": "test-template", "running": True},
-        },
-    )
-    cluster.fake.pods[OWN_SANDBOX] = {
+    cluster.fake.pods[LAUNCHER_POD] = {
         "apiVersion": "v1",
         "kind": "Pod",
         "metadata": {
-            "name": OWN_SANDBOX,
+            "name": LAUNCHER_POD,
             "namespace": SANDBOX_NAMESPACE,
-            "uid": "test-own-pod-uid",
-            "ownerReferences": [reference],
+            "uid": LAUNCHER_POD_UID,
+            "labels": {sandbox_resource.SANDBOX_LABEL: SANDBOX},
+            "ownerReferences": [
+                {
+                    "apiVersion": sandbox_resource.VMI_API_VERSION,
+                    "kind": sandbox_resource.VMI_KIND,
+                    "name": SANDBOX,
+                    "uid": "test-vmi-uid",
+                    "controller": True,
+                }
+            ],
         },
-        "spec": {
-            "serviceAccountName": OWN_SANDBOX,
-            "containers": [{"name": "runner", "image": "registry.test/unused"}],
-        },
-        "status": {"phase": "Running"},
+        "spec": {"serviceAccountName": ACCOUNT, "containers": [{"name": "compute", "image": "registry.test/unused"}]},
+        "status": {"phase": "Running", "podIP": "127.0.0.1", "conditions": [{"type": "Ready", "status": "True"}]},
     }
-    cluster.fake.tokens[OWN_RUNNER_TOKEN] = TokenVerdict(
-        username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{OWN_SANDBOX}",
-        pod_name=OWN_SANDBOX,
-        pod_uid="test-own-pod-uid",
+    cluster.fake.tokens[RUNNER_TOKEN] = TokenVerdict(
+        username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{ACCOUNT}",
+        pod_name=LAUNCHER_POD,
+        pod_uid=LAUNCHER_POD_UID,
         audiences=(RUNNER_AUDIENCE,),
     )
 
@@ -101,7 +93,6 @@ async def serve_replica_control(
     async with serve_runner_control(
         principals=cluster.build_principal_resolver(RUNNER_AUDIENCE),
         sandboxes=cluster.inventory,
-        custom_objects=cast(CustomObjectsClient, k8s_client.CustomObjectsApi(cluster.api)),
         core=k8s_client.CoreV1Api(cluster.api),
         records=ConnectionRecords(cluster.api, namespace=SANDBOX_NAMESPACE, holder=holder),
         control=control,

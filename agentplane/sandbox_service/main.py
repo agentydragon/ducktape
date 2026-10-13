@@ -1,70 +1,30 @@
-"""Standalone Sandbox Service entry point: provisions, grants and tears down Sandboxes. Kubernetes
-owns inventory; the Runner Gateway serves their Sessions."""
+"""Standalone Sandbox Service entry point: creates, suspends, resumes and deletes Sandboxes, and grants
+them egress. Kubernetes owns inventory; the Sandbox Controller reconciles them and the Runner Gateway
+serves their Sessions."""
 
 import asyncio
-from collections.abc import AsyncIterator
-from contextlib import AsyncExitStack, asynccontextmanager
+from contextlib import AsyncExitStack
 from typing import cast
 
 import grpc
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.grpc_serving import add_health, serving
-from agentplane.runner_gateway.client import SandboxControlClient
-from agentplane.sandbox_service.action_policy import ActionPolicyBindings
-from agentplane.sandbox_service.controller import SandboxController
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources, add_service
 from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.kubernetes_bindings import KubernetesBindings
-from agentplane.sandbox_service.kubernetes_grants import ClusterRoleBindingGrant, RoleBindingGrant
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.runner_endpoints import RunnerEndpoints
 from agentplane.sandbox_service.settings import Settings
-from agentplane.sandbox_service.teardown import GatewaySealing, Teardown
-from agentplane.service_process import background, configure_logging, kubernetes_configuration, until_terminated
+from agentplane.service_process import configure_logging, kubernetes_configuration, until_terminated
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
 # gazelle:include_dep @pypi//protobuf
 
 
-@asynccontextmanager
-async def sandboxes(
-    settings: Settings, api: k8s_client.ApiClient, server: grpc.aio.Server, *, sealing: GatewaySealing
-) -> AsyncIterator[None]:
-    """Serve `SandboxService` on `server` and reconcile Sandboxes, sealing each teardown with `sealing`."""
+def add_sandboxes(settings: Settings, api: k8s_client.ApiClient, server: grpc.aio.Server) -> None:
+    """Serve `SandboxService` on `server`."""
     custom = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api))
-    inventory = SandboxInventory(
-        namespace=settings.sandbox_namespace, core_v1=k8s_client.CoreV1Api(api), custom_objects=custom
-    )
-    provisioning = Provisioning(
-        inventory,
-        EgressInventory(
-            namespace=settings.sandbox_namespace,
-            custom_objects=custom,
-            default_policies=settings.default_egress_policies,
-        ),
-        ActionPolicyBindings(namespace=settings.sandbox_namespace, custom_objects=custom),
-        settings.kubernetes_grants,
-        KubernetesBindings(
-            inventory,
-            k8s_client.RbacAuthorizationV1Api(api),
-            cleanup_namespaces=(
-                settings.kubernetes_binding_cleanup_namespaces
-                | {
-                    grant.namespace
-                    for grant in settings.kubernetes_grants.values()
-                    if isinstance(grant, RoleBindingGrant)
-                }
-            )
-            - {settings.sandbox_namespace},
-            cleanup_cluster_bindings=settings.kubernetes_cluster_binding_cleanup
-            or any(isinstance(grant, ClusterRoleBindingGrant) for grant in settings.kubernetes_grants.values()),
-        ),
-        RunnerEndpoints(control=settings.runner_control, ingress=settings.runner_ingress),
-        own_sandboxes=settings.own_sandboxes,
-    )
     add_service(
         Resources(
             principals=WorkloadPrincipalResolver(
@@ -72,34 +32,29 @@ async def sandboxes(
                 audience=settings.token_audience,
                 allowed_service_account_namespaces={account.namespace for account in settings.caller_accounts},
             ),
-            provisioning=provisioning,
+            provisioning=Provisioning(
+                SandboxInventory(
+                    namespace=settings.sandbox_namespace, core_v1=k8s_client.CoreV1Api(api), custom_objects=custom
+                ),
+                EgressInventory(namespace=settings.sandbox_namespace, custom_objects=custom),
+                default_policy_sets=settings.default_policy_sets,
+            ),
             caller_accounts=settings.caller_accounts,
             admission_timeout_s=settings.admission_timeout_s,
             lifecycle_timeout_s=settings.lifecycle_timeout_s,
         ),
         server,
     )
-    async with background(
-        SandboxController(provisioning, Teardown(inventory, sealing)).run(), name="sandbox-provisioning"
-    ):
-        yield
 
 
 async def serve(settings: Settings) -> None:
-    # Teardown seals through the replica holding each Sandbox's runner connection.
-    control = SandboxControlClient(
-        control_target=settings.control_target,
-        token_file=settings.gateway_token_file,
-        request_timeout_s=settings.admission_timeout_s,
-        lifecycle_timeout_s=settings.lifecycle_timeout_s,
-    )
     async with (
         k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
         AsyncExitStack() as stack,
     ):
         server = grpc.aio.server()
         add_health(server)
-        await stack.enter_async_context(sandboxes(settings, api, server, sealing=GatewaySealing(control)))
+        add_sandboxes(settings, api, server)
         await stack.enter_async_context(serving(server, f"{settings.host}:{settings.port}", grace_s=5))
         await until_terminated()
 

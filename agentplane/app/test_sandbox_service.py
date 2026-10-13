@@ -21,9 +21,9 @@ from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, runner_pb2
 from agentplane.runner.runner import Runner
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, authenticated_service, kubernetes
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
-from util.agent_sandbox import SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg

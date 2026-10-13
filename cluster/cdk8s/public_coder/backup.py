@@ -14,12 +14,12 @@ from volsync_replicationsource_crds.backube.volsync import (
 )
 
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.restic_backup import ResticBackup
 from cluster.cdk8s.seaweedfs import s3
 
 NAME = "public-coder-agent-backup"
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/backup"
+OUTPUT_DIR = f"{PARKED_ROOT}/public-coder-agent/backup"
 _NAMESPACE = "public-coder-agent"
 _BUCKET_NAME = "public-coder-agent-backups"
 _S3_CREDENTIALS_SECRET_NAME = "public-coder-agent-seaweedfs-credentials"
@@ -65,6 +65,9 @@ def chart(app: App) -> Chart:
                 )
             )
         ),
+        # Parked with the paused app: the state PVC holds 10M files on ovh-ns102453's HDD, and
+        # each run rescans all of them.
+        paused=True,
     )
     return chart
 
@@ -80,6 +83,9 @@ def public_coder_agent_backup(
         chart,
         NAME,
         directory,
+        annotations={"ducktape.org/parked": "true"},
+        # Parked: OpenClaw is off; PVCs and data stay (cluster/parked/public-coder-agent/README.md).
+        suspend=True,
         timeout="5m",
         depends_on=flux_kustomization_depends_on_many(seaweedfs_operator, external_secrets_operator, volsync),
         description=(

@@ -56,8 +56,8 @@ class SandboxControlClient:
                 timeout_s=timeout_s or self.request_timeout_s,
             )
 
-    def runner(self, destination: SandboxDestination) -> Runner:
-        return Runner(self, destination)
+    def runner(self, destination: SandboxDestination) -> SandboxRunner:
+        return SandboxRunner(self, destination)
 
 
 class RunnerGatewayClient:
@@ -66,7 +66,7 @@ class RunnerGatewayClient:
         channel: grpc.aio.Channel,
         *,
         token_file: Path,
-        command_admission_timeout_s: float | None,
+        command_admission_timeout_s: float,
         request_timeout_s: float,
         control: SandboxControlClient,
     ) -> None:
@@ -104,8 +104,6 @@ class RunnerGatewayClient:
 
         A retry with the same command returns the same entry: the runner deduplicates by command ID.
         """
-        if self.command_admission_timeout_s is None:
-            raise ValueError("SubmitCommand requires an explicit client deadline")
         response = await self.control.held_unary(
             destination,
             lambda stub: stub.SubmitCommand,
@@ -120,11 +118,13 @@ class RunnerGatewayClient:
             raise ConnectionError("Runner Gateway did not return the exact command admission")
         return receipt
 
-    def runner(self, destination: SandboxDestination) -> Runner:
+    def runner(self, destination: SandboxDestination) -> SandboxRunner:
         return self.control.runner(destination)
 
 
-class Runner:
+class SandboxRunner:
+    """One Sandbox's runner, reached through the replica holding its connection."""
+
     def __init__(self, control: SandboxControlClient, destination: SandboxDestination) -> None:
         self.control = control
         self.destination = destination
@@ -145,15 +145,6 @@ class Runner:
             self.destination,
             lambda stub: stub.CreateSession,
             wire.create_proto(self.destination, session_id, spec, setup_script),
-            timeout_s=self.control.lifecycle_timeout_s,
-        )
-
-    async def seal(self) -> runner_gateway_pb2.SealSandboxResponse:
-        """Teardown's seal, which only the Sandbox Service may ask for."""
-        return await self.control.held_unary(
-            self.destination,
-            lambda stub: stub.SealSandbox,
-            runner_gateway_pb2.SealSandboxRequest(destination=self.destination),
             timeout_s=self.control.lifecycle_timeout_s,
         )
 

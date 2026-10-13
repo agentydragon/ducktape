@@ -15,7 +15,7 @@ py_library(
         "//cluster/cdk8s:secret_ref",
         "//cluster/cdk8s:service_ref",
         "//cluster/cdk8s/external_secrets:single_secret_store",
-        "//cluster/cdk8s/forgejo_registry:chart",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
@@ -31,6 +31,7 @@ py_library(
     deps = [
         "//cluster/cdk8s:cilium",
         "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",

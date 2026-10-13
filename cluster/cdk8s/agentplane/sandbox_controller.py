@@ -1,5 +1,5 @@
 """The Sandbox Controller (agentplane/sandbox_controller): it keeps each of the environment's own
-Sandboxes' state PVC, ServiceAccount and PolicyBinding and, while running, its Pod."""
+Sandboxes' state PVC, ServiceAccount and PolicyBinding and, while running, its Pod or VM."""
 
 from __future__ import annotations
 
@@ -70,6 +70,15 @@ class SandboxController(Construct):
                 RolePolicyRule(
                     resources=[custom_resource("", "pods"), custom_resource("", "persistentvolumeclaims")],
                     verbs=["get", "list", "watch", "create", "delete"],
+                ),
+                # A VM Sandbox's VM, kept halted while it is stopped, and the VMI it reads status from.
+                RolePolicyRule(
+                    resources=[custom_resource("kubevirt.io", "virtualmachines")],
+                    verbs=["get", "list", "watch", "create", "update", "delete"],
+                ),
+                RolePolicyRule(
+                    resources=[custom_resource("kubevirt.io", "virtualmachineinstances")],
+                    verbs=["get", "list", "watch"],
                 ),
                 # Each Sandbox's own; garbage collection deletes them with the Sandbox.
                 RolePolicyRule(

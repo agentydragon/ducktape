@@ -84,6 +84,13 @@ def test_pod_hardening_covers_init_containers_and_crd_pod_templates() -> None:
         "metadata": {"name": "own"},
         "spec": {"pod": {"spec": {"containers": [{"name": "runner", "resources": _RESOURCES}]}}},
     }
+    # KubeVirt builds a VM template's launcher Pod; the template holds no pod spec to check.
+    own_vm_sandbox = {
+        "apiVersion": "agentplane.allegedly.works/v1alpha1",
+        "kind": "SandboxTemplate",
+        "metadata": {"name": "own-vm"},
+        "spec": {"vm": {"template": {"spec": {"domain": {"devices": {}}}}}},
+    }
     scaled_job = {
         "apiVersion": "keda.sh/v1alpha1",
         "kind": "ScaledJob",
@@ -97,7 +104,9 @@ def test_pod_hardening_covers_init_containers_and_crd_pod_templates() -> None:
     )
     assert [
         error.split(":")[0]
-        for error in pod_hardening([sandbox, own_sandbox, scaled_job, deployment], unhardened=frozenset())
+        for error in pod_hardening(
+            [sandbox, own_sandbox, own_vm_sandbox, scaled_job, deployment], unhardened=frozenset()
+        )
     ] == [
         "SandboxTemplate/runner container runner",
         "SandboxTemplate/runner container runner",

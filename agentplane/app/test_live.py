@@ -32,6 +32,8 @@ from agentplane.app.identity import CallerIdentity, CallerKind, TokenReviewer
 from agentplane.app.live import (
     PODS_PLURAL,
     ActionPolicyFrames,
+    DecisionsSnapshot,
+    DecisionsUnavailable,
     LiveIndex,
     SandboxesSnapshot,
     ThreadsSnapshot,
@@ -39,6 +41,7 @@ from agentplane.app.live import (
     WatchHealth,
     action_policy_frame,
     frames,
+    live_egress_decisions,
     live_threads,
     threads_frame,
 )
@@ -52,6 +55,7 @@ from agentplane.app.operator_sessions import (
 )
 from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.shutdown import Drain
+from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.thread_test_support import Replica
@@ -66,6 +70,7 @@ from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
+from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
@@ -74,12 +79,11 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     FakeCustomObjectsApi,
     action_policy_binding,
     action_policy_set,
-    egress_binding,
-    egress_policy,
+    egress_policy_set,
+    policy_binding,
     sandbox,
 )
 from agentplane.subjects import ServiceAccountRef
-from util.agent_sandbox import SANDBOXES_PLURAL, OperatingMode
 from util.net import pick_free_port
 
 # gazelle:include_dep @pypi//protobuf
@@ -94,15 +98,15 @@ NOW = datetime(2026, 9, 3, 12, 0, tzinfo=UTC)
 def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_index: LiveIndex) -> LiveIndex:
     """The same objects in the fake API server and in the index, so the two paths can be compared."""
     seed_runner(custom_objects, core_v1, "runner-1")
-    custom_objects.objects[(SANDBOXES_PLURAL, "shelved")] = sandbox("shelved", operating_mode="Suspended")
-    custom_objects.objects[("egresspolicies", "github")] = egress_policy(
+    custom_objects.objects[(SANDBOXES_PLURAL, "shelved")] = sandbox("shelved", running=False)
+    custom_objects.objects[("policysets", "github")] = egress_policy_set(
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
     )
-    custom_objects.objects[("egressbindings", "runner-1-picked")] = egress_binding(
-        "runner-1-picked", subjects=[{"namespace": NAMESPACE, "name": "runner-1"}], policies=["github"]
+    custom_objects.objects[("policybindings", "runner-1-picked")] = policy_binding(
+        "runner-1-picked", subject={"namespace": NAMESPACE, "name": "runner-1"}, policy_sets=["github"]
     )
-    custom_objects.objects[("egressbindings", "elsewhere")] = egress_binding(
-        "elsewhere", subjects=[{"namespace": NAMESPACE, "name": "shelved"}], policies=["github"]
+    custom_objects.objects[("policybindings", "elsewhere")] = policy_binding(
+        "elsewhere", subject={"namespace": NAMESPACE, "name": "shelved"}, policy_sets=["github"]
     )
     custom_objects.objects[("actionpolicysets", "reads")] = action_policy_set(
         "reads",
@@ -116,10 +120,10 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
         match kind:
             case "sandboxes":
                 live_index.sandboxes[name] = obj
-            case "egressbindings":
+            case "policybindings":
                 live_index.bindings[name] = obj
-            case "egresspolicies":
-                live_index.policies[name] = obj
+            case "policysets":
+                live_index.rule_sets[name] = obj
             case "actionpolicysets":
                 live_index.action_policy_seen(live_index.action_policy_sets, name, obj)
             case "actionpolicybindings":
@@ -264,7 +268,7 @@ async def test_threads_the_gateway_cannot_list_are_said_so_in_the_frame(
         unreachable = RunnerGatewayClient(
             channel,
             token_file=token,
-            command_admission_timeout_s=None,
+            command_admission_timeout_s=5,
             request_timeout_s=5,
             control=SandboxControlClient(
                 control_target=f"127.0.0.1:{port}", token_file=token, request_timeout_s=5, lifecycle_timeout_s=5
@@ -362,6 +366,7 @@ def app(
 def test_the_streams_need_a_caller(app: FastAPI) -> None:
     with TestClient(app) as unauthenticated:
         assert unauthenticated.get("/live/sandboxes").status_code == 401
+        assert unauthenticated.get("/live/sandboxes/runner-1/egress/decisions").status_code == 401
         assert unauthenticated.get("/live/sandboxes/runner-1").status_code == 401
         assert unauthenticated.get("/live/threads").status_code == 401
 
@@ -401,7 +406,7 @@ async def test_global_thread_stream_combines_replica_commits_and_sandbox_watch_c
             archived = await _next_threads(stream)
             assert (archived.threads[0].archived, archived.archived_count) == (True, 1)
 
-            seeded.sandboxes["runner-1"] = sandbox("runner-1", operating_mode="Suspended")
+            seeded.sandboxes["runner-1"] = sandbox("runner-1", running=False)
             seeded.changes.notify()
             suspended = await _next_threads(stream)
             assert next(view for view in suspended.sandboxes if view.name == "runner-1").operating_mode == (
@@ -485,6 +490,74 @@ async def _next_snapshot(stream: AsyncIterator[bytes]) -> object:
         event, payload = _read(await anext(stream))
         if event == "snapshot":
             return payload
+
+
+async def _next_decisions(stream: AsyncIterator[str | bytes | memoryview]) -> DecisionsSnapshot:
+    while True:
+        frame = await anext(stream)
+        assert isinstance(frame, bytes)
+        if frame.startswith(b"event: snapshot\n"):
+            return DecisionsSnapshot.model_validate_json(frame.partition(b"data: ")[2])
+
+
+async def test_egress_decision_stream_rereads_when_the_proxy_reports_a_change(
+    seeded: LiveIndex, decisions: DecisionsClient, egress_admin: FakeEgressAdmin
+) -> None:
+    subject = (NAMESPACE, "runner-1")
+    egress_admin.decisions[subject] = [decision("2026-09-02T10:00:01Z", "GET", "api.github.com", "allow")]
+    drain = Drain()
+    response = await live_egress_decisions(index=seeded, decisions=decisions, shutdown=drain, name="runner-1")
+    stream = aiter(response.body_iterator)
+    try:
+        async with asyncio.timeout(10):
+            first = await _next_decisions(stream)
+            assert isinstance(first.decisions, list)
+            assert [(d.method, d.host) for d in first.decisions] == [("GET", "api.github.com")]
+            assert not first.watching
+
+            egress_admin.decisions[subject].append(decision("2026-09-02T10:00:02Z", "POST", "pypi.org", "deny"))
+            decisions.changes.notify()
+            second = await _next_decisions(stream)
+            assert isinstance(second.decisions, list)
+            assert [d.host for d in second.decisions] == ["api.github.com", "pypi.org"]
+
+            egress_admin.reachable = False
+            decisions.changes.notify()
+            assert isinstance((await _next_decisions(stream)).decisions, DecisionsUnavailable)
+    finally:
+        drain.begin()
+        async for _ in stream:
+            pass
+
+
+async def test_watching_the_proxy_wakes_readers_whether_it_answers_or_not(
+    decisions: DecisionsClient, egress_admin: FakeEgressAdmin
+) -> None:
+    woken = asyncio.Event()
+    with decisions.changes.subscribe(woken):
+        for reachable in (True, False):
+            egress_admin.reachable = reachable
+            woken.clear()
+            task = asyncio.create_task(decisions.watch(retry_interval_s=0.01))
+            try:
+                async with asyncio.timeout(10):
+                    await woken.wait()
+            finally:
+                task.cancel()
+                await asyncio.wait([task])
+
+
+async def test_egress_decision_stream_says_a_sandbox_is_missing(seeded: LiveIndex, decisions: DecisionsClient) -> None:
+    drain = Drain()
+    response = await live_egress_decisions(index=seeded, decisions=decisions, shutdown=drain, name="nope")
+    stream = aiter(response.body_iterator)
+    try:
+        async with asyncio.timeout(10):
+            assert isinstance((await _next_decisions(stream)).decisions, DecisionsUnavailable)
+    finally:
+        drain.begin()
+        async for _ in stream:
+            pass
 
 
 if __name__ == "__main__":

@@ -1,22 +1,20 @@
 # CPAP ez Share WiFi gateway — a minimal KubeVirt VM pinned to the OptiPlex
 # that owns the physical USB WiFi adapter.
 {
+  cpap-gateway-health,
   lib,
   pkgs,
   ...
 }:
 let
   secretDevice = "/dev/disk/by-id/virtio-cpapsecret";
-  waitForCardRoute = pkgs.writeShellScript "cpap-gateway-wait-for-card-route" ''
-    set -eu
-    for _ in $(seq 1 300); do
-      if ${pkgs.iproute2}/bin/ip route get 192.168.4.1 >/dev/null 2>&1; then
-        exit 0
-      fi
-      sleep 1
-    done
-    echo "CPAP card route did not appear within 5 minutes" >&2
-    exit 1
+  secretMount = "/run/cpap-secret";
+  ssid = "Rai CPAP ez Share";
+  # Present only once the card's DHCP lease is up: KubeVirt's masquerade default route also
+  # answers `ip route get 192.168.4.1`, so that query cannot tell WiFi state.
+  cardSubnet = "192.168.4.0/24";
+  hasCardRoute = pkgs.writeShellScript "cpap-gateway-has-card-route" ''
+    ${pkgs.iproute2}/bin/ip -4 route show ${cardSubnet} | ${pkgs.gnugrep}/bin/grep -q .
   '';
 in
 {
@@ -32,6 +30,11 @@ in
     ACTION=="add", SUBSYSTEM=="usb", ATTR{idVendor}=="0e8d", ATTR{idProduct}=="7961", TEST=="power/control", ATTR{power/control}="on"
   '';
 
+  # KubeVirt's guest-console-log sidecar captures the serial port; without these only the
+  # firmware's output reaches Loki.
+  boot.kernelParams = [ "console=ttyS0,115200" ];
+  services.journald.console = "/dev/ttyS0";
+
   networking.networkmanager.enable = true;
   networking.firewall.allowedTCPPorts = [ 18080 ];
   environment.systemPackages = with pkgs; [
@@ -45,85 +48,24 @@ in
   # surface is the CPAP card proxy below.
   services.openssh.enable = lib.mkForce false;
 
-  # Read the encrypted Kubernetes Secret from the KubeVirt-attached virtio
-  # disk, create the NetworkManager profile, and associate with the card AP.
-  # The disk is mounted only for this bootstrap step; the resulting keyfile is
-  # owned by NetworkManager and is needed for automatic reconnects.
-  systemd.services.cpap-gateway-wifi = {
-    description = "Configure the CPAP ez Share WiFi connection";
-    wantedBy = [ "multi-user.target" ];
-    wants = [ "NetworkManager.service" ];
-    after = [
-      "local-fs.target"
-      "NetworkManager.service"
+  # The Kubernetes Secret, attached by KubeVirt as a read-only disk. cpap-gateway-health
+  # reads the card's passphrase from it into an in-memory NetworkManager profile.
+  fileSystems.${secretMount} = {
+    device = secretDevice;
+    options = [
+      "ro"
+      "nofail"
     ];
-    path = with pkgs; [
-      coreutils
-      networkmanager
-      util-linux
-    ];
-    serviceConfig = {
-      Type = "oneshot";
-      RemainAfterExit = true;
-      Restart = "on-failure";
-      RestartSec = 5;
-    };
-    script = ''
-      set -eu
-      mountpoint=/run/cpap-secret
-      install -d -m 700 "$mountpoint"
-      mounted=0
-      for _ in $(seq 1 60); do
-        if mountpoint -q "$mountpoint"; then
-          mounted=1
-          break
-        fi
-        if mount -o ro ${secretDevice} "$mountpoint" 2>/dev/null; then
-          mounted=1
-          break
-        fi
-        sleep 1
-      done
-      if [ "$mounted" -ne 1 ]; then
-        echo "KubeVirt CPAP secret disk did not appear at ${secretDevice}" >&2
-        exit 1
-      fi
-      trap 'umount "$mountpoint"' EXIT
-
-      password="$(cat "$mountpoint/wifi_password")"
-      test -n "$password"
-      nmcli connection delete cpap-ezshare >/dev/null 2>&1 || true
-      nmcli connection add \
-        type wifi \
-        ifname "*" \
-        con-name cpap-ezshare \
-        ssid "Rai CPAP ez Share" \
-        wifi-sec.key-mgmt wpa-psk \
-        wifi-sec.psk "$password" \
-        ipv4.method auto \
-        ipv4.never-default yes \
-        ipv6.method disabled
-      nmcli connection modify cpap-ezshare connection.autoconnect yes
-      nmcli connection up cpap-ezshare
-    '';
   };
 
   # The cluster Service reaches this listener through KubeVirt's masquerade
-  # port forwarding. Wait for the card-side route so the listener cannot accept
-  # requests that would otherwise fail during WiFi association.
+  # port forwarding. cpap-gateway-health starts it only while the card's WiFi is
+  # connected, so a sync against an unreachable card is refused at once instead
+  # of hanging until its read timeout.
   systemd.services.cpap-card-proxy = {
     description = "Expose the CPAP card HTTP API to the cluster";
-    wantedBy = [ "multi-user.target" ];
-    wants = [
-      "cpap-gateway-wifi.service"
-      "network-online.target"
-    ];
-    after = [
-      "cpap-gateway-wifi.service"
-      "network-online.target"
-    ];
     serviceConfig = {
-      ExecStartPre = waitForCardRoute;
+      ExecStartPre = hasCardRoute;
       ExecStart = "${pkgs.socat}/bin/socat TCP-LISTEN:18080,bind=0.0.0.0,reuseaddr,fork,keepalive TCP:192.168.4.1:80,keepalive";
       Restart = "always";
       RestartSec = 5;
@@ -134,12 +76,42 @@ in
       PrivateTmp = true;
       ProtectHome = true;
       ProtectSystem = "strict";
-      # ExecStartPre's `ip route get` queries the kernel through rtnetlink.
+      # ExecStartPre's `ip route show` queries the kernel through rtnetlink.
       RestrictAddressFamilies = [
         "AF_INET"
         "AF_INET6"
         "AF_NETLINK"
       ];
+    };
+  };
+
+  systemd.services.cpap-gateway-health = {
+    description = "Classify CPAP gateway WiFi health and recover a wedged adapter";
+    after = [ "NetworkManager.service" ];
+    unitConfig.RequiresMountsFor = secretMount;
+    # Every minute: add the card's NetworkManager profile if missing, start the card
+    # bridge while connected, retry association while the card is visible, and reset a
+    # wedged adapter (cpap/gateway/health.py).
+    path = [ pkgs.kmod ];
+    serviceConfig = {
+      Type = "oneshot";
+      ExecStart = lib.escapeShellArgs [
+        (lib.getExe cpap-gateway-health)
+        "--card-ssid=${ssid}"
+        "--psk-file=${secretMount}/wifi_password"
+        "--connection=cpap-ezshare"
+        "--proxy-unit=cpap-card-proxy.service"
+        "--driver=mt7921u"
+        "--usb-id=0e8d:7961"
+        "--state-file=/run/cpap-gateway-health/state.json"
+      ];
+    };
+  };
+  systemd.timers.cpap-gateway-health = {
+    wantedBy = [ "timers.target" ];
+    timerConfig = {
+      OnBootSec = "1min";
+      OnUnitInactiveSec = "1min";
     };
   };
 }

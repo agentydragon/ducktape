@@ -1,5 +1,6 @@
 """What every agentplane servicer shares: admitting its callers and mapping failures to status codes."""
 
+import logging
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
@@ -11,6 +12,8 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.grpc_caller import authenticate
 from agentplane.workload_auth.principal import WorkloadPrincipalRejectedError, WorkloadPrincipalResolver
+
+logger = logging.getLogger(__name__)
 
 type Status = tuple[grpc.StatusCode, str]
 
@@ -42,7 +45,8 @@ def status_mapping(
     *rows: Abort[Any], deadline: str, unavailable: str, also_unavailable: tuple[type[Exception], ...] = ()
 ) -> Callable[[grpc.aio.ServicerContext], AbstractAsyncContextManager[None]]:
     """A servicer's `errors(context)`: the first matching row aborts. A rejected bearer, a deadline and
-    an unreachable backend map the same way everywhere; `rows` go between them."""
+    an unreachable backend map the same way everywhere; `rows` go between them. Every abort logs the
+    exception behind it."""
     table = (
         Abort(WorkloadPrincipalRejectedError, (grpc.StatusCode.UNAUTHENTICATED, "invalid workload bearer")),
         *rows,
@@ -60,6 +64,7 @@ def status_mapping(
             for row in table:
                 if isinstance(error, row.errors):
                     code, details = row.status(error) if callable(row.status) else row.status
+                    logger.warning("answered %s (%s)", code.name, details, exc_info=error)
                     await context.abort(code, details)
             raise
 

@@ -55,7 +55,7 @@ whoever adds a target normally appends to `keys.sops.yaml` with `sops <file>`, w
 the cluster decryption identity; an agent session that can only encrypt (not decrypt) that
 file cannot safely do that without risking the working `wyrm2`/`rugged` keys it already
 holds, so it mints a new Secret instead. Reaching the devbox is a normal in-cluster
-`toEndpoints`/Service DNS path (`cluster/k8s/agents/public-coder-agent/devbox/`), not a
+`toEndpoints`/Service DNS path (`cluster/parked/public-coder-agent/devbox/`), not a
 Nebula hostAlias — it is an ordinary pod (a KubeVirt VM), not a cluster node.
 
 `atlas × {root,agentydragon}` is a third pair of targets, following the same

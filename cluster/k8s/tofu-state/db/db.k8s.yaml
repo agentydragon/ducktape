@@ -24,6 +24,11 @@ spec:
           name: tofu-state-db-credentials
   monitoring:
     enablePodMonitor: true
+  plugins:
+    - isWALArchiver: true
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: tofu-state-db-ovh
   postgresql:
     parameters:
       tcp_keepalives_count: "6"
@@ -36,3 +41,93 @@ spec:
   storage:
     size: 1Gi
     storageClass: local-path-ovh-ssd
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for tofu-state/tofu-state-db-ovh.
+  name: tofu-state-db-backups
+  namespace: tofu-state
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: tofu-state-db-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: tofu-state-db-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for tofu-state/tofu-state-db-ovh.
+  name: tofu-state-db-backups
+  namespace: tofu-state
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: tofu-state-db-backups
+  namespace: tofu-state
+spec:
+  identityRef:
+    name: tofu-state-db-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: tofu-state-db-backups-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  annotations:
+    description: SeaweedFS S3 destination for tofu-state/tofu-state-db-ovh base backups and WAL.
+  name: tofu-state-db-ovh
+  namespace: tofu-state
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://tofu-state-db-backups/
+    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
+    s3Credentials:
+      accessKeyId:
+        key: AWS_ACCESS_KEY_ID
+        name: tofu-state-db-backups-s3-credentials
+      secretAccessKey:
+        key: AWS_SECRET_ACCESS_KEY
+        name: tofu-state-db-backups-s3-credentials
+    wal:
+      compression: gzip
+  retentionPolicy: 30d
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: tofu-state-db-ovh
+  namespace: tofu-state
+spec:
+  backupOwnerReference: self
+  cluster:
+    name: tofu-state-db-ovh
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  schedule: 0 8 4 * * *

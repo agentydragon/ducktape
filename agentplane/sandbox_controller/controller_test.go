@@ -10,7 +10,10 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	clienttesting "k8s.io/client-go/testing"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
@@ -34,7 +37,7 @@ func testTemplate(image string) *SandboxTemplate {
 	return &SandboxTemplate{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: templateName},
 		Spec: SandboxTemplateSpec{
-			Pod: corev1.PodTemplateSpec{
+			Pod: &corev1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{Labels: map[string]string{"app.kubernetes.io/name": "test-runner"}},
 				Spec: corev1.PodSpec{Containers: []corev1.Container{{
 					Name:         "runner",
@@ -64,12 +67,18 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 	if err := policycontroller.AddToScheme(scheme); err != nil {
 		t.Fatal(err)
 	}
+	if err := kubevirtv1.AddToScheme(scheme); err != nil {
+		t.Fatal(err)
+	}
 	sandbox := &Sandbox{
 		ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: sandboxName, UID: "uid-sandbox"},
 		Spec:       SandboxSpec{Template: templateName, Running: running},
 	}
-	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(append(objects, sandbox)...).
-		WithStatusSubresource(&Sandbox{}).Build()
+	// A tracker without managed fields: the fake client's default one cannot convert KubeVirt's
+	// uint64 fields.
+	tracker := clienttesting.NewObjectTracker(scheme, serializer.NewCodecFactory(scheme).UniversalDecoder())
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjectTracker(tracker).WithObjects(append(objects, sandbox)...).
+		WithStatusSubresource(&Sandbox{}, &kubevirtv1.VirtualMachineInstance{}).Build()
 	return &Reconciler{Client: c}, c
 }
 

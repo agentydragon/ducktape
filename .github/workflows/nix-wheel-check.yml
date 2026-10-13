@@ -77,7 +77,10 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     environment: ${{ inputs.environment || null }}
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # A warm run takes ~2 min. After a flake update nothing in the overridden
+    # Python set (nix/packages/default.nix) is cached, and the first run
+    # rebuilds it from source in ~40 min.
+    timeout-minutes: 90
     env:
       BUILDBUDDY_API_KEY: ${{ secrets.BUILDBUDDY_API_KEY }}
     steps:
@@ -147,15 +150,17 @@ jobs:
           echo "bazel_targets=$bazel_targets" >> "$GITHUB_OUTPUT"
           echo "nix_checks=$nix_checks" >> "$GITHUB_OUTPUT"
 
-      # Every one of these artifacts must come back, because "Assemble artifact
-      # overrides" below exits 1 on a missing file — this gate fails closed. It
-      # relies on `bb remote build`'s post-run download, which returns an
-      # arbitrary subset for a large enough request: measured on devel, 50 targets
-      # yielded 12 files. A previous 8-output set yielded all 8; this change brings
-      # the current set to 11. If it starts flaking on
-      # "missing artifact for pin", read the outputs from the build event stream
-      # instead (devinfra/ci/bes.py) rather than raising a retry count.
-      #
+      # `bb remote build`'s post-run download returns an arbitrary subset of a
+      # large request (12 of these 13 outputs), so "Fetch artifacts" below reads
+      # every output from the build event stream instead. Its own role keeps the
+      # id apart from bazel-ci's when trusted-fork-pr-ci.yml calls both in one run.
+      - name: Choose artifact build invocation
+        id: invocation
+        run: |
+          invocation_id="$(python3 devinfra/ci/invocation_ids.py \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --role nix-wheel-build)"
+          echo "id=$invocation_id" >> "$GITHUB_OUTPUT"
+
       # run_from_commit: actions/checkout in PR mode doesn't fetch a local
       # `devel` ref, so bb remote's default base-branch patch sync fails with
       # `git rev-parse devel: exit status 128`. On pull_request events,
@@ -165,11 +170,26 @@ jobs:
       - name: Build artifacts from source
         uses: ./.github/actions/bb-remote
         with:
-          args: build ${{ steps.inputs.outputs.bazel_targets }}
+          args: build --invocation_id=${{ steps.invocation.outputs.id }} ${{ steps.inputs.outputs.bazel_targets }}
+          linkage_roles: nix-wheel-build
+          bazel_invocation_ids: ${{ steps.invocation.outputs.id }}
           # Rotate away from the exhausted workspace while retaining warm
           # runner reuse for subsequent artifact builds.
           runner_recycling_key: ducktape-nix-wheel-v2
           run_from_commit: ${{ steps.source.outputs.sha }}
+
+      - name: Fetch artifacts
+        env:
+          INVOCATIONS: ${{ steps.invocation.outputs.id }}
+        run: |
+          set -euo pipefail
+          mapfile -t outputs < <(jq -r '
+            . as $doc |
+            $doc.pins | to_entries[] |
+            select($doc.releases[.value.release].nixPackage) |
+            .value.output
+          ' devinfra/ci/artifact_targets.json)
+          python3 -m devinfra.ci.fetch_build_outputs --invocations "$INVOCATIONS" "${outputs[@]}"
 
       # Emit the JSON blob flake.nix's artifacts logic consumes. Every pin
       # in an in-gate release gets an override entry (including every asset in
@@ -201,6 +221,17 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
+      # Upload every path this run adds to the store as soon as it lands, so a
+      # cold rebuild that times out or fails still leaves its finished paths in
+      # Attic for the next run. Fork revisions (pull_request_target, via
+      # trusted-fork-pr-ci.yml) never write to the shared cache.
+      - name: Start incremental Attic upload
+        if: github.event_name != 'pull_request_target'
+        run: |
+          nix profile install nixpkgs#attic-client
+          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
+          nohup attic watch-store ducktape:main > "$RUNNER_TEMP/attic-watch-store.log" 2>&1 &
+
       # Each marker depends on the complete source-built package and its checks.
       # Cache hits need only the marker; misses build the package as before.
       # --impure is required for the getEnv artifact override read.
@@ -214,11 +245,11 @@ jobs:
 
       # Publish the source-override results: ordinary pinned-artifact builds can
       # have different store paths even when they contain the same wheel bytes.
+      # The watcher may still be uploading; this push covers the markers' full
+      # closures before the job ends.
       - name: Cache source artifact checks in Attic
-        if: github.event_name == 'push' && (github.ref_name == 'devel' || github.ref_name == 'main')
+        if: github.event_name != 'pull_request_target'
         run: |
-          nix profile install nixpkgs#attic-client
-          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
           mapfile -t checks < "$RUNNER_TEMP/artifact-check-paths"
           test "${#checks[@]}" -gt 0
           attic push ducktape:main "${checks[@]}"

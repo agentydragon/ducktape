@@ -165,6 +165,7 @@ class SubjectBindingView(_View):
     labels: dict[str, str] = Field(
         description="The binding's metadata labels, for a reader that tells writers apart by them."
     )
+    generation: int = Field(description="The binding's metadata generation; a Ready judged at an older one is stale.")
     expires_at: datetime | None = Field(default=None, description="After this instant the binding contributes nothing.")
     ready: ReadyConditionView | None = Field(
         default=None,
@@ -265,6 +266,7 @@ def _subject_binding(index: PolicyIndex, resolved: ResolvedBinding) -> SubjectBi
             return SubjectBindingView(
                 kind=resolved.kind,
                 name=binding.metadata.name,
+                generation=binding.metadata.generation,
                 labels=binding.metadata.labels,
                 expires_at=binding.spec.expires_at,
                 ready=_ready_view(binding.status.ready()),
@@ -277,6 +279,7 @@ def _subject_binding(index: PolicyIndex, resolved: ResolvedBinding) -> SubjectBi
             return SubjectBindingView(
                 kind=resolved.kind,
                 name=generic.metadata.name,
+                generation=generic.metadata.generation,
                 labels=generic.metadata.labels,
                 expires_at=generic.spec.expires_at,
                 ready=_ready_view(generic.condition(ACTIONS_READY_CONDITION)),

@@ -39,6 +39,15 @@ def workload_kind(manifest: dict[str, Any]) -> tuple[str, str]:
     return manifest["apiVersion"].rpartition("/")[0], manifest["kind"]
 
 
+def embeds_pod(manifest: dict[str, Any]) -> bool:
+    """Whether a rendered object carries a pod spec at its `POD_SPEC_PATHS` path. Our SandboxTemplate
+    holds a Pod or a KubeVirt VM, whose launcher Pod KubeVirt builds."""
+    kind = workload_kind(manifest)
+    return kind in POD_SPEC_PATHS and not (
+        kind == ("agentplane.allegedly.works", "SandboxTemplate") and "vm" in manifest["spec"]
+    )
+
+
 def pod_spec(manifest: dict[str, Any]) -> dict[str, Any]:
     """The pod spec inside a rendered workload; `KeyError` for a kind `POD_SPEC_PATHS` lacks."""
     spec = manifest

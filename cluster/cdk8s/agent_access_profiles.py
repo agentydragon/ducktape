@@ -7,6 +7,7 @@ sensitive grants are explicit profile selections rather than diagnostics.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -52,16 +53,15 @@ class Subject:
 HAKU_OIDC = Subject("Group", "oidc-ksbx-groups:haku")
 HAKU_CONSOLE = Subject("Group", "haku:access-profile:haku")
 HAKU_SERVICE_ACCOUNT = Subject("ServiceAccount", "haku", "haku-sandbox")
-PUBLIC_CODER = Subject("Group", "haku:access-profile:public-coder")
 CLAUDE_AI = Subject("ServiceAccount", "claude-ai", "agentplane-staging")
 KUBECTL_USERS = Subject("Group", "oidc-ksbx-groups:kubectl-sandbox-users")
 AGENT_BOX = Subject("Group", "oidc-ksbx-groups:agent-box-codex")
 HAKU_IDENTITIES = (HAKU_OIDC, HAKU_CONSOLE, HAKU_SERVICE_ACCOUNT)
-STATIC_IDENTITIES = {"haku": HAKU_IDENTITIES, "public-coder": (PUBLIC_CODER,), "claude-ai": (CLAUDE_AI,)}
+STATIC_IDENTITIES = {"haku": HAKU_IDENTITIES, "claude-ai": (CLAUDE_AI,)}
 # These legacy subjects are deliberately not aliases for the Haku profile.
-NAMESPACE_READER_SUBJECTS = (*HAKU_IDENTITIES, KUBECTL_USERS, PUBLIC_CODER, CLAUDE_AI)
+NAMESPACE_READER_SUBJECTS = (*HAKU_IDENTITIES, KUBECTL_USERS, CLAUDE_AI)
 CLUSTER_DIAGNOSTIC_SUBJECTS = (KUBECTL_USERS, *HAKU_IDENTITIES, AGENT_BOX, CLAUDE_AI)
-TESTING_OPERATOR_SUBJECTS = (HAKU_OIDC, HAKU_CONSOLE, PUBLIC_CODER, HAKU_SERVICE_ACCOUNT, KUBECTL_USERS, CLAUDE_AI)
+TESTING_OPERATOR_SUBJECTS = (HAKU_OIDC, HAKU_CONSOLE, HAKU_SERVICE_ACCOUNT, KUBECTL_USERS, CLAUDE_AI)
 
 
 def _namespace_read_grants() -> dict[str, RoleBindingGrant]:
@@ -117,6 +117,11 @@ def catalog() -> dict[str, KubernetesGrant]:
             namespace="agentplane-staging",
             role_ref=RoleRef(kind="Role", name="claude-ai-coinbase-reader"),
         ),
+        "agentplane-sandbox-read": RoleBindingGrant(
+            kind="RoleBinding",
+            namespace="agentplane-staging",
+            role_ref=RoleRef(kind="Role", name="claude-ai-sandbox-reader"),
+        ),
         "haku-console-metadata": RoleBindingGrant(
             kind="RoleBinding",
             namespace="haku-console",
@@ -171,6 +176,16 @@ POLICY_SETS = {
     "coinbase-credentials": ("coinbase-credentials",),
     "spend-policy-config": ("spend-policy-config",),
 }
+
+
+def covering_policy_sets(grants: Sequence[str]) -> list[str]:
+    """The POLICY_SETS whose grants together are exactly `grants`, in POLICY_SETS order."""
+    covering = [name for name, members in POLICY_SETS.items() if set(members) <= set(grants)]
+    if uncovered := set(grants) - {grant for name in covering for grant in POLICY_SETS[name]}:
+        raise ValueError(f"no PolicySet holds only launch grants among {sorted(grants)}: {sorted(uncovered)}")
+    return covering
+
+
 MANAGED_GRANTS = {
     "public-coder": PUBLIC_GRANTS,
     "finance-agent": (*PUBLIC_GRANTS, "coinbase-credentials", "spend-policy-config"),
@@ -181,12 +196,12 @@ STATIC_GRANTS = {
     # fails cluster/validation's test_legacy_agentplane_accounts_are_not_haku_profile_aliases.
     "claude-ai": (
         *TESTING_ACCESS,
+        "agentplane-sandbox-read",
         "haku-console-metadata",
         "clickhouse-diagnostics",
         "public-coder-agent-reader",
         "public-coder-volsync-status",
     ),
-    "public-coder": PUBLIC_GRANTS,
     # Preserve redundant narrow inventory bindings; Coinbase access is explicitly approved.
     "haku": (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *PUBLIC_INVENTORY, *HAKU_EXTRAS, "coinbase-credentials"),
 }

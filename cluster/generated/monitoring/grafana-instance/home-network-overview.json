@@ -704,12 +704,120 @@
       }
     },
     {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "description": "Share of pings from optiplex (5/s per target) that got no reply. Loss to the gateway with none to the switch is the uplink fault in debug/home_network_connectivity/2026_10_gateway_uplink_loss.md.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 22
+      },
+      "id": 43,
+      "title": "Ping loss from optiplex",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "1 - sum by (target) (rate(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\"}[5m])) / sum by (target) (rate(smokeping_requests_total{job=\"monitoring/smokeping\"}[5m]))",
+          "legendFormat": "{{target}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "mimir"
+      },
+      "description": "Mean round-trip time of answered pings from optiplex, per target.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 22
+      },
+      "id": 44,
+      "title": "Ping RTT from optiplex",
+      "type": "timeseries",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "mimir"
+          },
+          "editorMode": "code",
+          "expr": "sum by (target) (rate(smokeping_response_duration_seconds_sum{job=\"monitoring/smokeping\"}[5m])) / sum by (target) (rate(smokeping_response_duration_seconds_count{job=\"monitoring/smokeping\"}[5m]))",
+          "legendFormat": "{{target}}",
+          "refId": "A",
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "spanNulls": false,
+            "showPoints": "never"
+          },
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 22
+        "y": 30
       },
       "id": 12,
       "panels": [],
@@ -726,7 +834,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 23
+        "y": 31
       },
       "id": 13,
       "title": "Fiber Rx power",
@@ -814,7 +922,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 23
+        "y": 31
       },
       "id": 14,
       "title": "Fiber Tx power",
@@ -902,7 +1010,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 23
+        "y": 31
       },
       "id": 15,
       "title": "Optics temperature",
@@ -990,7 +1098,7 @@
         "h": 8,
         "w": 6,
         "x": 0,
-        "y": 31
+        "y": 39
       },
       "id": 16,
       "title": "Gateway WAN errors and drops",
@@ -1077,7 +1185,7 @@
         "h": 8,
         "w": 6,
         "x": 6,
-        "y": 31
+        "y": 39
       },
       "id": 17,
       "title": "Gateway LAN port errors and drops",
@@ -1164,7 +1272,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 31
+        "y": 39
       },
       "id": 18,
       "title": "Gateway LAN ports",
@@ -1248,7 +1356,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 31
+        "y": 39
       },
       "id": 19,
       "title": "Gateway DHCP leases",
@@ -1313,7 +1421,7 @@
         "h": 6,
         "w": 12,
         "x": 0,
-        "y": 39
+        "y": 47
       },
       "id": 20,
       "title": "Gateway NAT sessions",
@@ -1378,7 +1486,7 @@
         "h": 6,
         "w": 4,
         "x": 12,
-        "y": 39
+        "y": 47
       },
       "id": 21,
       "title": "Speed test throughput",
@@ -1424,7 +1532,7 @@
         "h": 6,
         "w": 4,
         "x": 16,
-        "y": 39
+        "y": 47
       },
       "id": 22,
       "title": "Speed test latency",
@@ -1470,7 +1578,7 @@
         "h": 6,
         "w": 4,
         "x": 20,
-        "y": 39
+        "y": 47
       },
       "id": 23,
       "title": "Speed test ran",
@@ -1512,7 +1620,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 45
+        "y": 53
       },
       "id": 24,
       "panels": [],
@@ -1529,7 +1637,7 @@
         "h": 4,
         "w": 6,
         "x": 0,
-        "y": 46
+        "y": 54
       },
       "id": 25,
       "title": "Switch reachable",
@@ -1602,7 +1710,7 @@
         "h": 4,
         "w": 6,
         "x": 6,
-        "y": 46
+        "y": 54
       },
       "id": 26,
       "title": "Switch uptime",
@@ -1664,7 +1772,7 @@
         "h": 4,
         "w": 6,
         "x": 12,
-        "y": 46
+        "y": 54
       },
       "id": 27,
       "title": "Switch CPU load",
@@ -1726,7 +1834,7 @@
         "h": 4,
         "w": 6,
         "x": 18,
-        "y": 46
+        "y": 54
       },
       "id": 28,
       "title": "Switch CPU temperature",
@@ -1788,7 +1896,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 50
+        "y": 58
       },
       "id": 29,
       "title": "Switch port traffic",
@@ -1853,7 +1961,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 50
+        "y": 58
       },
       "id": 30,
       "title": "Switch port errors and drops",
@@ -1907,7 +2015,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 50
+        "y": 58
       },
       "id": 31,
       "title": "Switch port link flaps",
@@ -1961,7 +2069,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 58
+        "y": 66
       },
       "id": 32,
       "title": "Switch port links",
@@ -2045,7 +2153,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 58
+        "y": 66
       },
       "id": 33,
       "title": "Switch temperatures",
@@ -2120,7 +2228,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 66
+        "y": 74
       },
       "id": 34,
       "title": "Switch log",
@@ -2154,7 +2262,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 76
+        "y": 84
       },
       "id": 35,
       "panels": [],
@@ -2171,7 +2279,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 77
+        "y": 85
       },
       "id": 36,
       "title": "Home node LAN throughput",
@@ -2236,7 +2344,7 @@
         "h": 8,
         "w": 6,
         "x": 12,
-        "y": 77
+        "y": 85
       },
       "id": 37,
       "title": "Home node NIC errors and drops",
@@ -2290,7 +2398,7 @@
         "h": 8,
         "w": 6,
         "x": 18,
-        "y": 77
+        "y": 85
       },
       "id": 38,
       "title": "Home node NIC link flaps",
@@ -2340,7 +2448,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 85
+        "y": 93
       },
       "id": 39,
       "panels": [],
@@ -2357,7 +2465,7 @@
         "h": 8,
         "w": 8,
         "x": 0,
-        "y": 86
+        "y": 94
       },
       "id": 40,
       "title": "Remote-write delay per home node",
@@ -2411,7 +2519,7 @@
         "h": 8,
         "w": 8,
         "x": 8,
-        "y": 86
+        "y": 94
       },
       "id": 41,
       "title": "Samples waiting to send",
@@ -2465,7 +2573,7 @@
         "h": 8,
         "w": 8,
         "x": 16,
-        "y": 86
+        "y": 94
       },
       "id": 42,
       "title": "Series in WAL",

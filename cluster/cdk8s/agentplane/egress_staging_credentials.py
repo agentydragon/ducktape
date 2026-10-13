@@ -1,12 +1,12 @@
 """agentplane-staging's egress credentials: each real account the staging proxy presents for a
 sandbox, with the Secret plumbing that delivers it and, beyond the GitHub PAT whose EgressCredential
-and policy both environments share (`egress.py`), the EgressPolicy that scopes where it is
+and policy both environments share (`egress.py`), the egress PolicySet that scopes where it is
 presented. Testing shares GitHub, BuildBuddy, and inference credentials (`egress_testing_credentials.py`).
 
-Keep each public Gateway EgressPolicy in sync with the shared Cilium backend grants in
+Keep each public Gateway egress PolicySet in sync with the shared Cilium backend grants in
 add_staging_egress_credentials: a Gateway on the proxy's own node rechecks the proxy's egress
 against the selected backend's identity and target port. Node:443 alone completes TLS but returns HTTP 403 (#9495). Reuse the backend's
-ServiceRef so selector/port changes propagate; the EgressPolicy still fences hosts, paths,
+ServiceRef so selector/port changes propagate; the egress PolicySet still fences hosts, paths,
 methods and credentials. See cluster/docs/cilium_network_policy.md, "Egress through a local Gateway".
 """
 
@@ -16,10 +16,10 @@ from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
 )
-from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
-    EgressPolicySpecRules,
-    EgressPolicySpecRulesCredentialRef,
-    EgressPolicySpecRulesMethods,
+from agentplane_policyset_crds.works.allegedly.agentplane import (
+    PolicySetSpecRules,
+    PolicySetSpecRulesCredentialRef,
+    PolicySetSpecRulesMethods,
 )
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount
@@ -44,6 +44,7 @@ from cluster.cdk8s.haku import mailbox
 from cluster.cdk8s.home_assistant.app import AGENTPLANE_READER_TOKEN
 from cluster.cdk8s.plaid_mcp import pgweb as plaid_pgweb
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
+from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy
 from cluster.cdk8s.public_coder.egress import add_gateway_resources
 
@@ -55,7 +56,7 @@ _GROCY_SF_ACCOUNT = "agentplane-grocy-sf-readonly"
 # haku-sandbox.
 _HAKU_MAIL_TOKEN = "haku-mail-token"
 
-# The staging-only EgressPolicy objects created below, each carrying a credential that exists
+# The staging-only egress PolicySets created below, each carrying a credential that exists
 # only here. Exported because a launch preset or an EgressBinding refers to them by name; as in
 # egress.py, a name lives with the policy that answers to it.
 FORGEJO_HAKU_POLICY = "forgejo-haku"
@@ -155,16 +156,16 @@ def _copy_secret(
 def _rule(
     credential: str,
     *hosts: str,
-    method: EgressPolicySpecRulesMethods | None = None,
+    method: PolicySetSpecRulesMethods | None = None,
     paths: Sequence[str] | None = None,
     cluster_internal: bool | None = None,
-) -> EgressPolicySpecRules:
-    return EgressPolicySpecRules(
+) -> PolicySetSpecRules:
+    return Rule.egress(
         hosts=list(hosts),
         cluster_internal=cluster_internal,
         methods=None if method is None else [method],
         paths=None if paths is None else list(paths),
-        credential_ref=EgressPolicySpecRulesCredentialRef(name=credential),
+        credential_ref=PolicySetSpecRulesCredentialRef(name=credential),
     )
 
 
@@ -178,9 +179,9 @@ def _present(
     secret: str,
     key: str,
     target: EgressCredentialSpecTargets,
-    rules: Sequence[EgressPolicySpecRules],
+    rules: Sequence[PolicySetSpecRules],
 ) -> None:
-    """The EgressCredential `credential`, read from `secret`/`key`, and the EgressPolicy `policy`
+    """The EgressCredential `credential`, read from `secret`/`key`, and the egress PolicySet `policy`
     that scopes where the proxy presents it."""
     EgressCredential(
         scope,
@@ -195,7 +196,7 @@ def _present(
     )
 
 
-def _forgejo_rules(credential: str) -> list[EgressPolicySpecRules]:
+def _forgejo_rules(credential: str) -> list[PolicySetSpecRules]:
     # No method or path list. The credential is a whole Forgejo account, so a verb or path list
     # here would narrow the request without narrowing the authority behind it -- the same reason
     # the Kubernetes rule carries none. What it does admit is the whole Forgejo surface: git
@@ -313,21 +314,21 @@ def _google_readonly(scope: Construct, *, namespace: str) -> None:
                 "tasks.googleapis.com",
                 "youtube.googleapis.com",
                 # keep-sorted end
-                method=EgressPolicySpecRulesMethods.GET,
+                method=PolicySetSpecRulesMethods.GET,
             ),
             # www.googleapis.com serves many Google APIs, so paths pick the ones meant here.
             # YouTube is reachable on both hosts; client libraries differ on which they use.
             _rule(
                 credential,
                 "www.googleapis.com",
-                method=EgressPolicySpecRulesMethods.GET,
+                method=PolicySetSpecRulesMethods.GET,
                 paths=["/calendar/v3/**", "/drive/v3/**", "/youtube/v3/**"],
             ),
             # Drive Activity's only read is a POST query.
             _rule(
                 credential,
                 "driveactivity.googleapis.com",
-                method=EgressPolicySpecRulesMethods.POST,
+                method=PolicySetSpecRulesMethods.POST,
                 paths=["/v2/activity:query"],
             ),
         ],
@@ -376,7 +377,7 @@ def _grocy_sf_readonly(scope: Construct, *, reader: ServiceAccount, namespace: s
             _rule(
                 credential,
                 "grocy-sf.allegedly.works",
-                method=EgressPolicySpecRulesMethods.GET,
+                method=PolicySetSpecRulesMethods.GET,
                 paths=[
                     # keep-sorted start
                     "/api/files/**",
@@ -431,7 +432,7 @@ def _home_assistant_readonly(
                 credential,
                 HOME_ASSISTANT_HOST,
                 cluster_internal=True,
-                method=EgressPolicySpecRulesMethods.GET,
+                method=PolicySetSpecRulesMethods.GET,
                 paths=["/api/states", "/api/states/*", "/api/history/period/*"],
             )
         ],
@@ -471,14 +472,14 @@ def _activitywatch_read(
         target=_BEARER,
         rules=[
             # The API half of what the read route admits; its web UI stays unreachable.
-            _rule(credential, host, method=EgressPolicySpecRulesMethods.GET, paths=["/api/0/**"]),
+            _rule(credential, host, method=PolicySetSpecRulesMethods.GET, paths=["/api/0/**"]),
             # Both spellings of the query endpoint, as the route answers both (its anchored block in
             # cluster/k8s/activitywatch/bearer-proxy.conf.template): a spelling this fence refuses
             # dies with `403 denied; reason=no-rule` before the route could redirect it. Two paths
             # rather than one glob: `*` does not cross a `/` and `/api/0/query/**` does not match the
             # bare `/api/0/query`, so no single pattern covers both without also admitting
             # `/api/0/queryanything`.
-            _rule(credential, host, method=EgressPolicySpecRulesMethods.POST, paths=["/api/0/query", "/api/0/query/"]),
+            _rule(credential, host, method=PolicySetSpecRulesMethods.POST, paths=["/api/0/query", "/api/0/query/"]),
         ],
     )
 
@@ -502,7 +503,7 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
         key=AGENTPLANE_STAGING_BEARER.secret_key.key,
         target=_BEARER,
         rules=[
-            _rule(credential, "aiquota.allegedly.works", method=EgressPolicySpecRulesMethods.GET, paths=["/v1/**"]),
+            _rule(credential, "aiquota.allegedly.works", method=PolicySetSpecRulesMethods.GET, paths=["/v1/**"]),
             # A second route over the cluster Service, beside the public one, because the public
             # Gateway leg intermittently loses connections to this API's pod in the other region -- a
             # flat-5.0 s `503 ... connection timeout`. Bursty, not a steady rate: 3 in its first 40
@@ -516,7 +517,7 @@ def _aiquota_read(scope: Construct, *, namespace: str) -> None:
                 credential,
                 AIQUOTA_SERVICE.fqdn,
                 cluster_internal=True,
-                method=EgressPolicySpecRulesMethods.GET,
+                method=PolicySetSpecRulesMethods.GET,
                 paths=["/v1/quotas", "/v1/providers/*/raw"],
             ),
         ],
@@ -547,9 +548,7 @@ def _finance_aiquota_history(
         key=clickhouse.PASSWORD_KEY,
         target=_BASIC_PASSWORD,
         rules=[
-            _rule(
-                name, clickhouse.HTTP.fqdn, cluster_internal=True, method=EgressPolicySpecRulesMethods.GET, paths=["/"]
-            )
+            _rule(name, clickhouse.HTTP.fqdn, cluster_internal=True, method=PolicySetSpecRulesMethods.GET, paths=["/"])
         ],
     )
 
@@ -586,8 +585,8 @@ def _haku_mailbox(scope: Construct, *, reader: ServiceAccount, namespace: str, c
             # /jmap/. The same host serves Stalwart's management API, which stays unreachable.
             # JMAP's reads and writes share one POST endpoint, so no rule here can narrow it
             # to reads; the account itself is what bounds it.
-            _rule(credential, host, method=EgressPolicySpecRulesMethods.GET, paths=["/.well-known/jmap", "/jmap/**"]),
-            _rule(credential, host, method=EgressPolicySpecRulesMethods.POST, paths=["/jmap/**"]),
+            _rule(credential, host, method=PolicySetSpecRulesMethods.GET, paths=["/.well-known/jmap", "/jmap/**"]),
+            _rule(credential, host, method=PolicySetSpecRulesMethods.POST, paths=["/jmap/**"]),
         ],
     )
 
@@ -647,9 +646,7 @@ def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, cr
         key=plaid_pgweb.AUTH_KEY,
         target=_BASIC_PASSWORD,
         rules=[
-            _rule(credential, host, cluster_internal=True, method=EgressPolicySpecRulesMethods.GET, paths=reads),
-            _rule(
-                credential, host, cluster_internal=True, method=EgressPolicySpecRulesMethods.POST, paths=["/api/query"]
-            ),
+            _rule(credential, host, cluster_internal=True, method=PolicySetSpecRulesMethods.GET, paths=reads),
+            _rule(credential, host, cluster_internal=True, method=PolicySetSpecRulesMethods.POST, paths=["/api/query"]),
         ],
     )

@@ -103,17 +103,14 @@ quick dispatch, follow-ups without re-stating context, and separate threads per 
 channel answered this for a time — a message in Element drove a real turn in a console-hosted
 session, with the console owning the session and the approval gate — but the console's whole
 hosted-session runtime (and the Matrix channel that rode on it) has since been retired, so this is
-open again. The notification half was answered separately and differently:
-Web Push from the console's own origin (`console/notifications/push.py`), with Approve/Deny rendered by
-the OS from console-authored content, because a third-party service with action buttons would
-have to carry a deciding credential outside the trust boundary (`docs/security.md` invariant #4).
+open again. A third-party notification service with action buttons is ruled out: it would have
+to carry a deciding credential outside the trust boundary (`docs/security.md` invariant #4).
 
 What the ask still does not have:
 
 - **Inline action affordances** — clickable prebaked answers/actions inside Haku's chat
   messages, the way `haku-ui`'s markdown affordance widgets (`<signal-toggle>`, `<handoff>`,
-  `<launch>`, `<feedback>`) work in the iframe. The blocker is the same one that made Web Push
-  the answer for approvals: a click-to-action in a room carries the risk shape of
+  `<launch>`, `<feedback>`) work in the iframe. The blocker: a click-to-action in a room carries the risk shape of
   `requestLaunch`, and a Matrix client is not trusted-rendered chrome, so nothing may wire a
   room button to a mutating action without a confirm on a console surface.
 - **Whether a chat-dispatched task can route to a lower-trust agent** rather than running at
@@ -124,9 +121,6 @@ What the ask still does not have:
 
 - **Value scoring**: single curator-owned 0–100 plus deadline is probably enough; resist
   building an expected-utility framework before the queue has real traffic.
-- **Notification thresholds**: the channel is settled (Web Push for a pending tool call, the
-  room for prose); when to ping vs. wait for a dashboard visit is a `memory/` matter, tuned
-  via intake.
 - **Git as item store at scale**: a repo gives auditability, trivial backup, and
   human-editable state, but no queries or concurrent-writer safety. Fine at personal
   volumes with effectively serialized writers. If volume/concurrency ever outgrows it,

@@ -274,6 +274,34 @@ spec:
     kubevirt.io/domain: cpap-gateway
   type: ClusterIP
 ---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cpap-sync
+  namespace: cpap-sync
+spec:
+  groups:
+    - name: cpap-sync
+      rules:
+        - alert: CpapSyncStale
+          annotations:
+            description: |
+              No CPAP data has reached the cpap-data repo in over 21 days. If the CPAP has been home, check the gateway's state in Loki: {namespace="cpap-sync", container="guest-console-log"} |= "cpap-gateway-health".
+            summary: cpap-sync has not succeeded in 3 weeks
+          expr: time() - kube_cronjob_status_last_successful_time{namespace="cpap-sync", cronjob="cpap-sync"} > 21 * 86400
+          for: 1h
+          labels:
+            severity: warning
+        - alert: CpapSyncFailingWhileHome
+          annotations:
+            description: |
+              Rai was home for most of the last 3 days, so the CPAP card should have been in range, yet no sync succeeded. The gateway's WiFi is the likely fault; check {namespace="cpap-sync", container="guest-console-log"} |= "cpap-gateway-health".
+            summary: cpap-sync has failed for 3 days while Rai was home
+          expr: (time() - kube_cronjob_status_last_successful_time{namespace="cpap-sync", cronjob="cpap-sync"} > 3 * 86400) and on () (avg_over_time(max(hass_person_state{entity="person.rai"})[3d:15m]) > 0.5)
+          for: 1h
+          labels:
+            severity: warning
+---
 apiVersion: kubevirt.io/v1
 kind: VirtualMachine
 metadata:

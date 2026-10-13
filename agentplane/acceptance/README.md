@@ -52,12 +52,13 @@ API as below. Run after the PR's images and manifests have rolled out; remote ad
 not evidence that the real-agent deployed test has run.
 
 `test_policy_binding_auto_approves_the_bound_sandbox` writes, with the caller's own kubeconfig,
-an `ActionPolicySet` that auto-approves `everything/echo` with a string `message` of at most 200
-characters and an `ActionPolicyBinding` naming the Sandbox it launched by name and UID, then
-waits for the Action Service's `Ready` condition on both. A matching echo comes back auto-approved
-and executed, and the BFF receipt's Decision names the binding, the set and the matching policy;
-an over-long message waits for the operator; after the binding is patched to an expiry in the past
-and re-acknowledged, so does a match. The objects are deleted at teardown; the pending requests are
+a `PolicySet` whose `action_auto_approve` rule approves `everything/echo` with a string `message`
+of at most 200 characters and a `PolicyBinding` naming the ServiceAccount of the Sandbox it
+launched, then waits for the Action Service's `ActionsReady` condition on the binding. A matching
+echo comes back auto-approved and executed, and the BFF receipt's Decision names the binding, the
+set and the matching rule; an over-long message waits for the operator; after the binding is
+patched to an expiry in the past, the Policy Controller deletes it and the BFF's caller grants stop
+listing it, a match waits too. The objects are deleted at teardown; the pending requests are
 denied through the BFF so nothing lingers. The role in
 `../../cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml`
 grants create/get/patch/delete on the two kinds for this.
@@ -83,8 +84,8 @@ run against a server this repo controls end to end.
 
 These cases read only `public-coder-agent/agentplane-testing-acceptance-operator` via
 `kubectl get --raw=/api/v1/namespaces/public-coder-agent/secrets/agentplane-testing-acceptance-operator`
-using the existing kubeconfig and Haku Console Kubernetes proxy
-(`https://haku-kubeapi.allegedly.works`). No operator environment variables or
+using the existing kubeconfig and either the Haku Console Kubernetes proxy
+(`https://haku-kubeapi.allegedly.works`) or a Sandbox's in-cluster API server. No operator environment variables or
 pre-issued cookie are used. Missing proxy/RBAC/reflection or malformed Secret data
 fails **BLOCKED**, without printing kubectl output or decoded values.
 
@@ -223,7 +224,7 @@ execution/caching or mint substitute credentials to work around that boundary.
 The controlled-host instructions above are operator-only, not an agent-pod fallback.
 See [repository instructions](../../AGENTS.md).
 
-Afterwards, check that nothing leaked: `kubectl -n agentplane-testing get sandboxes.agents.x-k8s.io`
+Afterwards, check that nothing leaked: `kubectl -n agentplane-testing get sandboxes.agentplane.allegedly.works`
 should show no `accept-*`.
 
 ## What it costs

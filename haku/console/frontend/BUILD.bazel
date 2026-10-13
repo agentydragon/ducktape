@@ -1,6 +1,5 @@
 # gazelle:exclude test_visual.py
-load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
-load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary", "js_test")
+load("@aspect_rules_js//js:defs.bzl", "js_binary", "js_run_binary")
 load("@aspect_rules_ts//ts:defs.bzl", "ts_config")
 load("@bazel_skylib//rules:copy_file.bzl", "copy_file")
 load("@npm_ducktape//:@tailwindcss/cli/package_json.bzl", tailwindcss_bin = "bin")
@@ -21,14 +20,6 @@ TSCONFIG = ":tsconfig"
 ts_config(
     name = "tsconfig",
     src = "tsconfig.json",
-)
-
-# The service worker runs in ServiceWorkerGlobalScope, so it is checked against the WebWorker lib
-# rather than the SPA's DOM lib. tsconfig.json excludes sw.ts so exactly one config owns it.
-ts_config(
-    name = "tsconfig_sw",
-    src = "tsconfig.sw.json",
-    deps = [":tsconfig"],
 )
 
 # TypeScript types generated from the backend's OpenAPI schema (reuses the API
@@ -270,79 +261,6 @@ ts_library(
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
-)
-
-ts_library(
-    name = "push_subscription",
-    srcs = ["push_subscription.ts"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":client",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
-    name = "sw_lib",
-    srcs = ["sw.ts"],
-    isolated_typecheck = True,
-    tsconfig = ":tsconfig_sw",
-    deps = ["//haku/console/frontend/tool_rendering:actions"],
-)
-
-haku_vitest_test(
-    name = "sw_test",
-    srcs = ["sw.test.ts"],
-    isolated_typecheck = True,
-    deps = [
-        ":sw_lib",
-        "//:node_modules/vitest",
-    ],
-)
-
-# The service worker is bundled on its own, not as part of :bundle, because its URL must be
-# stable across deploys (a fingerprinted name would read as a different worker every build) and
-# it must be served from the docroot root so its default scope covers the whole origin. The
-# bundle is written to a subdirectory only so it does not collide with :sw_lib's compiled
-# `sw.js`, which it bundles; the image flattens it back to /sw.js — see
-# //haku/console:service_worker_files.
-esbuild(
-    name = "service_worker",
-    entry_point = "sw.js",
-    # A classic worker, not a module worker: push_subscription.ts registers it with a bare
-    # `navigator.serviceWorker.register("/sw.js")`. So the bundle must be self-contained with no
-    # top-level `export`/`import` — `iife` wraps everything in a closure, where `esm` would keep
-    # sw.ts's exports (e.g. the unit-tested `notificationActions`) as bare `export {}`, a syntax
-    # error that fails the whole worker to install. Guarded by :sw_classic_worker_test.
-    format = "iife",
-    minify = True,
-    output = "bundled/sw.js",
-    platform = "browser",
-    sourcemap = "linked",
-    target = ["es2022"],
-    deps = [":sw_lib"],
-)
-
-# Single-file view of the bundle so $(rootpath) resolves to one path (:service_worker also emits
-# the linked sw.js.map).
-filegroup(
-    name = "service_worker_js",
-    srcs = ["bundled/sw.js"],
-)
-
-# Guards the classic-worker contract on :service_worker's emitted bundle: it must parse under the
-# script goal (no top-level export/import), or the worker fails to install with
-# `Uncaught SyntaxError: Unexpected token 'export'`. A pure parse check — no browser — so it stays
-# a small non-RBE test.
-js_test(
-    name = "sw_classic_worker_test",
-    size = "small",
-    data = [":service_worker_js"],
-    entry_point = "sw_classic_worker_check.mjs",
-    env = {"SW_BUNDLE": "$(rootpath :service_worker_js)"},
-    no_copy_to_bin = [":service_worker_js"],
 )
 
 ts_library(
@@ -712,7 +630,6 @@ ts_library(
         ":console_events",
         ":grants_panel",
         ":link",
-        ":push_subscription",
         ":time",
         ":toast",
         "//:node_modules/@mantine/core",
@@ -840,7 +757,6 @@ filegroup(
         "main.tsx",
         "open_external.ts",
         "pending_tool_call_actions.tsx",
-        "push_subscription.ts",
         "routing.ts",
         "settings_panel.tsx",
         "shell_chrome.tsx",

@@ -13,7 +13,6 @@ import {
 import { useConsoleEvents } from "./console_events";
 import { GrantsPanel } from "./grants_panel";
 import { ExternalLink } from "./link";
-import { usePushNotifications, type PushState } from "./push_subscription";
 import { shortDate } from "./time";
 import { toastError, toastSuccess } from "./toast";
 
@@ -201,103 +200,7 @@ function AgentRow({
   );
 }
 
-const PUSH_STATE_DISPLAY: Record<PushState["status"], { label: string; color: string; description: string }> = {
-  on: { label: "On", color: "teal", description: "This browser will be notified about pending tool calls." },
-  off: { label: "Off", color: "gray", description: "This browser will not be notified." },
-  busy: { label: "…", color: "gray", description: "Checking this browser's notification state." },
-  denied: {
-    label: "Blocked",
-    color: "orange",
-    description: "This browser blocked notifications for the console. Re-allow them in its site settings.",
-  },
-  unsupported: {
-    label: "Unsupported",
-    color: "gray",
-    description: "This browser does not support Web Push notifications.",
-  },
-  disabled: {
-    label: "Unavailable",
-    color: "gray",
-    description: "This console has no push key configured, so it cannot send notifications.",
-  },
-  failed: { label: "Error", color: "red", description: "Could not read this browser's notification state." },
-};
-
-function PushNotificationTable() {
-  const { state, devices, enable, disable, forget } = usePushNotifications();
-  const display = PUSH_STATE_DISPLAY[state.status];
-  const actionable = state.status === "on" || state.status === "off" || state.status === "failed";
-  const thisEndpoint = state.status === "on" ? state.endpoint : null;
-  const others = devices.filter((device) => device.endpoint !== thisEndpoint);
-  return (
-    <DenseTable label="Notification devices">
-      <Table.Thead>
-        <Table.Tr>
-          <Table.Th>Device</Table.Th>
-          <Table.Th>Status</Table.Th>
-          <Table.Th>Added</Table.Th>
-          <Table.Th />
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        <Table.Tr>
-          <Table.Td data-slot="primary" className="haku-dense-primary">
-            <Text fw={600} size="sm">
-              This browser
-            </Text>
-            {state.status === "failed" && (
-              <Text size="xs" c="red" title={display.description}>
-                {state.message}
-              </Text>
-            )}
-          </Table.Td>
-          <Table.Td data-slot="status" className="haku-dense-status">
-            <Badge color={display.color} variant="light" title={display.description}>
-              {display.label}
-            </Badge>
-          </Table.Td>
-          <Table.Td data-slot="secondary" className="haku-dense-secondary">
-            —
-          </Table.Td>
-          <Table.Td data-slot="action" className="haku-dense-action">
-            {actionable &&
-              (state.status === "on" ? (
-                <Button size="compact-sm" variant="subtle" color="red" onClick={() => void disable()}>
-                  Turn off
-                </Button>
-              ) : (
-                <Button size="compact-sm" variant="light" onClick={() => void enable()}>
-                  Turn on
-                </Button>
-              ))}
-          </Table.Td>
-        </Table.Tr>
-        {others.map((device) => (
-          <Table.Tr key={device.endpoint}>
-            <Table.Td data-slot="primary" className="haku-dense-primary">
-              <Text size="sm">{device.userAgent ?? "Unidentified browser"}</Text>
-            </Table.Td>
-            <Table.Td data-slot="status" className="haku-dense-status">
-              <Badge color="teal" variant="light">
-                On
-              </Badge>
-            </Table.Td>
-            <Table.Td data-slot="secondary" className="haku-dense-secondary">
-              {shortDate(device.createdAt) ? `added ${shortDate(device.createdAt)}` : "—"}
-            </Table.Td>
-            <Table.Td data-slot="action" className="haku-dense-action">
-              <Button size="compact-sm" variant="subtle" color="red" onClick={() => void forget(device.endpoint)}>
-                Forget
-              </Button>
-            </Table.Td>
-          </Table.Tr>
-        ))}
-      </Table.Tbody>
-    </DenseTable>
-  );
-}
-
-const SETTINGS_TABS = ["agents", "grants", "notifications", "system"] as const;
+const SETTINGS_TABS = ["agents", "grants", "system"] as const;
 type SettingsTab = (typeof SETTINGS_TABS)[number];
 
 export function settingsTabFromSearch(search: string): SettingsTab {
@@ -440,7 +343,7 @@ export function SettingsPanel(): JSX.Element {
       <header className="haku-page-header">
         <div className="haku-page-bar">
           <Text fw={700}>Settings</Text>
-          {activeTab !== "notifications" && activeTab !== "grants" && (
+          {activeTab !== "grants" && (
             <Button size="xs" variant="light" color="gray" loading={loading} onClick={refreshActiveTab}>
               Refresh
             </Button>
@@ -451,10 +354,6 @@ export function SettingsPanel(): JSX.Element {
           <Tabs.Tab value="grants">
             <span className="haku-settings-tab-long">Grants</span>
             <span className="haku-settings-tab-short">Grants</span>
-          </Tabs.Tab>
-          <Tabs.Tab value="notifications">
-            <span className="haku-settings-tab-long">Notifications</span>
-            <span className="haku-settings-tab-short">Alerts</span>
           </Tabs.Tab>
           <Tabs.Tab value="system">System</Tabs.Tab>
         </Tabs.List>
@@ -495,12 +394,6 @@ export function SettingsPanel(): JSX.Element {
         </Tabs.Panel>
         <Tabs.Panel value="grants">
           <GrantsPanel />
-        </Tabs.Panel>
-        <Tabs.Panel value="notifications">
-          <Stack gap="xs" className="haku-page-list">
-            <SectionHeading title="Notifications" />
-            <PushNotificationTable />
-          </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="system">
           <Stack gap="xs" className="haku-page-list">

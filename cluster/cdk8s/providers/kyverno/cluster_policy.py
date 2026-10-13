@@ -19,6 +19,7 @@ from constructs import Construct
 from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicy as _ClusterPolicy,
     ClusterPolicySpec,
+    ClusterPolicySpecFailurePolicy,
     ClusterPolicySpecRules,
     ClusterPolicySpecRulesMatch,
     ClusterPolicySpecRulesMatchAny,
@@ -26,6 +27,7 @@ from kyverno_clusterpolicy_crds.io.kyverno import (
     ClusterPolicySpecRulesValidate,
     ClusterPolicySpecRulesValidateDeny,
     ClusterPolicySpecValidationFailureAction,
+    ClusterPolicySpecWebhookConfiguration,
 )
 
 
@@ -75,6 +77,8 @@ class ClusterPolicy(_ClusterPolicy):
         admission: bool | None = None,
         mutate_existing_on_policy_update: bool | None = None,
         validation_failure_action: ClusterPolicySpecValidationFailureAction | None = None,
+        failure_policy: ClusterPolicySpecFailurePolicy | None = None,
+        webhook_configuration: ClusterPolicySpecWebhookConfiguration | None = None,
     ) -> None:
         super().__init__(
             scope,
@@ -86,5 +90,7 @@ class ClusterPolicy(_ClusterPolicy):
                 admission=admission,
                 mutate_existing_on_policy_update=mutate_existing_on_policy_update,
                 validation_failure_action=validation_failure_action,
+                failure_policy=failure_policy,
+                webhook_configuration=webhook_configuration,
             ),
         )

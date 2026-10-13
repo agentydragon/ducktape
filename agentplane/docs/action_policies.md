@@ -57,8 +57,8 @@ operator with `kubectl`); the split is per object, never per kind.
   Service settings (`cluster/k8s/agentplane-staging/`); one created at runtime is simply
   not Flux-owned.
 - The integration app writes one `ActionPolicyBinding` per Sandbox it launches, naming the
-  ServiceAccount it gave that Sandbox to run as, alongside the `EgressBinding`, with an
-  `ownerReference` to the Sandbox so both are garbage collected with it.
+  ServiceAccount it gave that Sandbox to run as, with an `ownerReference` to the Sandbox so it is
+  garbage collected with it.
   Which sets a preset selects is the app's knowledge, kept in its own labels and annotations; the
   Action Service reads `spec` only and never sees preset language.
 - Widening one Sandbox later is another binding for the same subject, written through the app or

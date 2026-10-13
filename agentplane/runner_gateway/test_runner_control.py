@@ -2,14 +2,14 @@
 
 from collections.abc import AsyncIterator, Callable
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import replace
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import grpc
 import pytest
 import pytest_bazel
 
-from agentplane import sandbox_resource
 from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc
 from agentplane.runner_gateway.connection_records import (
     CONNECTION_EPOCH_ANNOTATION,
@@ -24,20 +24,17 @@ from agentplane.runner_gateway.runner_control import ControlTiming
 from agentplane.runner_gateway.testing.runner_control import (
     HELLO,
     OTHER_REPLICA,
-    OWN_RUNNER_TOKEN,
-    OWN_SANDBOX,
-    OWN_SANDBOX_UID,
     REPLICA,
     RUNNER_TOKEN,
-    add_own_sandbox,
+    run_in_a_vm,
     serve_replica_control,
 )
+from agentplane.sandbox_resource import SANDBOX_KIND, SANDBOXES_PLURAL
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
-from util.agent_sandbox import SANDBOX_API, SANDBOX_KIND, SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
-OWNER = RecordOwner(name=SANDBOX, uid=UUID(SANDBOX_UID), api_version=SANDBOX_API.api_version)
+OWNER = RecordOwner(name=SANDBOX, uid=UUID(SANDBOX_UID))
 
 type Replica = Callable[[ConnectionHolder], AbstractAsyncContextManager[runner_control_pb2_grpc.RunnerControlAsyncStub]]
 
@@ -68,8 +65,12 @@ async def listener(replica: Replica) -> AsyncIterator[runner_control_pb2_grpc.Ru
         yield stub
 
 
-def run_sandbox_as(cluster: Cluster, account: str) -> None:
-    cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["spec"]["podTemplate"]["spec"]["serviceAccountName"] = account
+def present_token_of(cluster: Cluster, account: str) -> None:
+    """The runner token authenticates as `account` from the Sandbox's Pod."""
+    verdict = cluster.fake.tokens[RUNNER_TOKEN]
+    cluster.fake.tokens[RUNNER_TOKEN] = replace(
+        verdict, username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{account}"
+    )
 
 
 @asynccontextmanager
@@ -148,18 +149,23 @@ async def test_accepting_records_the_connection_on_the_sandbox(
     assert [port["name"] for port in endpoints["ports"]] == [port["name"] for port in service["spec"]["ports"]]
 
 
-async def test_a_runner_of_agentplanes_own_sandbox_connects(
+async def test_a_runner_in_a_vm_connects(
     listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
 ) -> None:
-    add_own_sandbox(cluster)
-    async with connect(listener, OWN_RUNNER_TOKEN) as call:
+    run_in_a_vm(cluster)
+    async with connect(listener) as call:
         await call.write(HELLO)
         assert (await read_frame(call)).welcome.connection_epoch == 1
-    # The records go with the Sandbox of Agentplane's own kind, not with agent-sandbox's of the name.
-    lease = cluster.fake.objects["leases"][f"{OWN_SANDBOX}-runner"]
-    assert [(ref["apiVersion"], ref["uid"]) for ref in lease["metadata"]["ownerReferences"]] == [
-        (sandbox_resource.SANDBOX_API_VERSION, OWN_SANDBOX_UID)
-    ]
+
+
+async def test_a_virt_launcher_pod_that_is_not_its_sandboxes_incarnation_is_refused(
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
+) -> None:
+    run_in_a_vm(cluster)
+    cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["status"]["incarnation"]["uid"] = "test-other-launcher-uid"
+    async with connect(listener) as call:
+        await call.write(HELLO)
+        assert await status_of(call) == grpc.StatusCode.PERMISSION_DENIED
 
 
 async def test_a_connection_through_another_replica_supersedes_this_one(replica: Replica, cluster: Cluster) -> None:
@@ -225,7 +231,7 @@ async def test_only_the_sandbox_pod_connects(
     account: str,
     code: grpc.StatusCode,
 ) -> None:
-    run_sandbox_as(cluster, account)
+    present_token_of(cluster, account)
     async with connect(listener, token) as call:
         await call.write(HELLO)
         assert await status_of(call) == code
@@ -244,13 +250,14 @@ async def test_silent_runner_is_dropped(listener: runner_control_pb2_grpc.Runner
         assert await status_of(call) == grpc.StatusCode.UNAVAILABLE
 
 
-async def test_identity_change_ends_the_connection(
+async def test_recreating_the_sandbox_ends_the_connection(
     listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
 ) -> None:
     async with connect(listener) as call:
         await call.write(HELLO)
         assert (await read_frame(call)).HasField("welcome")
-        run_sandbox_as(cluster, "test-other-account")
+        # The Sandbox was deleted and recreated under its name while the old Pod stayed connected.
+        cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"]["uid"] = str(uuid4())
         assert await status_of(call) == grpc.StatusCode.PERMISSION_DENIED
 
 

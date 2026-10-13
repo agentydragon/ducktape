@@ -613,52 +613,13 @@ class OperatorLoginFlow(Base):
     expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class PushSubscription(Base):
-    """One browser Push API subscription an Operator has granted this console.
-
-    The ``endpoint`` a push service issues is both the address and the capability to push to that
-    browser, so it is the identity: re-subscribing the same device overwrites its row rather than
-    accumulating dead ones. ``p256dh`` and ``auth`` are that subscription's own RFC 8291 encryption
-    inputs — the console encrypts each payload to them, so the push service relays ciphertext it
-    cannot read.
-
-    Subscriptions die silently and often. A push service reports that as 404/410, which prunes the
-    row; ``last_failure_at`` records the transient failures that do not.
-    """
-
-    __tablename__ = "push_subscriptions"
-
-    endpoint: Mapped[str] = mapped_column(Text, primary_key=True)
-    operator_id: Mapped[UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("operators.operator_id", ondelete="CASCADE"), nullable=False
-    )
-    p256dh: Mapped[str] = mapped_column(Text, nullable=False)
-    auth: Mapped[str] = mapped_column(Text, nullable=False)
-    # Free-text, operator-facing only: lets the Settings panel say *which* device a row is, so
-    # revoking the right one does not require reading endpoint URLs.
-    user_agent: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
-    last_failure_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-
-    __table_args__ = (Index("idx_push_subscriptions_operator_id", "operator_id"),)
-
-
 metadata = Base.metadata
 
 
-# Tables that exist in the database and in no ORM class. Dropping one takes the release after the
-# one that stopped naming it, because `maxUnavailable: 0` keeps the previous image serving through
-# the roll and that image selects every table it maps. `test_agent_authority_schema` excludes these
-# from its ORM-versus-database comparison, which is otherwise exact.
-UNMAPPED_TABLES_PENDING_DROP: frozenset[str] = frozenset()
-
-# The same for `(table, column)` pairs in tables that stay. A separate set rather than an entry
-# in the one above, which hides a whole table — naming `conversation_item` there would stop the
-# comparison noticing any drift in it.
+# `(table, column)` pairs that exist in the database and in no ORM class. Dropping one takes the
+# release after the one that stopped naming it, because `maxUnavailable: 0` keeps the previous image
+# serving through the roll and that image selects every column it maps. `test_agent_authority_schema`
+# excludes these from its ORM-versus-database comparison, which is otherwise exact.
 UNMAPPED_COLUMNS_PENDING_DROP: frozenset[tuple[str, str]] = frozenset(
     {("agents", "auto_approval_policy"), ("enrollment_interactions", "auto_approval_policy")}
 )
-
-# Indexes the database has and no ORM class declares. Reachable only through a column above: an
-# index over columns that are all still mapped would be drift rather than an unfinished drop.
-UNMAPPED_INDEXES_PENDING_DROP: frozenset[str] = frozenset()

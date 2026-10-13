@@ -206,22 +206,6 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   annotations:
-    description: Binds the public-coder access profile to public Ducktape Flux diagnostics.
-  name: public-coder-agent-ducktape-flux-reader
-  namespace: ducktape-flux
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: Role
-  name: ducktape-flux-reader
-subjects:
-  - apiGroup: rbac.authorization.k8s.io
-    kind: Group
-    name: haku:access-profile:public-coder
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  annotations:
     description: Binds the Haku OIDC group to public Ducktape Flux diagnostics.
   name: haku-ducktape-flux-reader
   namespace: ducktape-flux

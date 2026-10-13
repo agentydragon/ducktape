@@ -7,7 +7,6 @@ import { MemoryRouter } from "react-router";
 import { afterEach, expect, it, vi } from "vitest";
 
 import { api, type SandboxPresetView, type SandboxView } from "./client";
-import type { ActionPolicySetView } from "./actions/client";
 import { SandboxList } from "./sandboxes";
 import { deletable } from "./lifecycle";
 import { sandboxSummary } from "./sandbox_status";
@@ -36,11 +35,6 @@ const CREATED: SandboxView = {
   operating_mode: "Running",
   service_account: { namespace: "agentplane-test", name: "test-created-sandbox" },
   status: null,
-  kubernetes_grants: [],
-  kubernetes_grants_ready: true,
-  kubernetes_grant_error: null,
-  launch_grants_pending: false,
-  initializing: false,
   deleting: false,
   pod: null,
 };
@@ -49,30 +43,17 @@ async function render(
   codexModels: { model: string; display_name: string; reasoning_efforts: string[] }[] = [
     { model: "test-codex-a", display_name: "Test Codex A", reasoning_efforts: TEST_REASONING_EFFORTS },
     { model: "test-codex-b", display_name: "Test Codex B", reasoning_efforts: TEST_REASONING_EFFORTS },
-  ],
-  ownPolicySets: string[] | null = null
+  ]
 ) {
   const onOpen = vi.fn();
   const preset: SandboxPresetView = {
     name: "test-preset",
     title: "Test preset",
     template: "test-template",
-    egress_policies: [],
-    ...(ownPolicySets === null
-      ? { action_policy_sets: ["test-reads"], kubernetes_grants: ["workspace-read"], policy_sets: [] }
-      : { action_policy_sets: [], kubernetes_grants: [], policy_sets: ["test-basic"] }),
+    policy_sets: ["test-basic"],
     session_defaults: { harness: "HARNESS_CODEX", model: "test-codex-b" },
     bootstrap: "mkdir -p /state/workspaces",
   };
-  const policySets: ActionPolicySetView[] = [
-    {
-      name: "test-reads",
-      generation: 1,
-      ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
-      refused: null,
-    },
-    { name: "test-broken", generation: 1, ready: null, refused: "spec.autoApproveIf.0: unknown" },
-  ];
   vi.spyOn(api, "GET").mockImplementation(async (path) => {
     const data =
       path === "/models"
@@ -83,21 +64,10 @@ async function render(
         : path === "/presets"
           ? [preset]
           : path === "/sandboxes/form"
-            ? { policy_sets: ownPolicySets }
+            ? { policy_sets: ["test-basic", "test-packages"] }
             : path === "/sandboxes/templates"
               ? ["test-template", "other-template"]
-              : path === "/action-policy/sets"
-                ? policySets
-                : path === "/kubernetes-grants"
-                  ? [
-                      {
-                        name: "workspace-read",
-                        kind: "RoleBinding",
-                        namespace: "agentplane-test",
-                        role_ref: { kind: "Role", name: "workspace-reader" },
-                      },
-                    ]
-                  : [];
+              : [];
     return { data, response: new Response() } as Awaited<ReturnType<typeof api.GET>>;
   });
   const container = document.createElement("div");
@@ -150,7 +120,7 @@ function options(container: HTMLElement, label: string): HTMLElement[] {
 
 it("inherits the preset model and replaces incompatible choices when the harness changes", async () => {
   const { container } = await render();
-  expect(input(container, "Template").value).toBe("test-template");
+  expect(input(container, "Sandbox template").value).toBe("test-template");
   expect(input(container, "Model").value).toBe("Test Codex B");
   await choose(container, "Model", "Test Codex A");
   expect(input(container, "Model").value).toBe("Test Codex A");
@@ -160,16 +130,13 @@ it("inherits the preset model and replaces incompatible choices when the harness
   expect(options(container, "Model").map((node) => node.textContent)).toEqual(["Test Claude"]);
 });
 
-it("pre-fills the preset's policy sets and Kubernetes grants, hides picked sets, and sends the picks", async () => {
+it("pre-fills the preset's policy sets, hides picked sets, and sends the picks", async () => {
   const { container, onOpen } = await render();
-  expect(input(container, "Action policy sets").value).toBe("");
-  expect(container.textContent).toContain("test-reads");
-  expect(container.textContent).toContain("workspace-read");
-  expect(container.textContent).toContain("Role/workspace-reader");
-  expect(container.textContent).toContain("namespace agentplane-test");
-  await act(async () => input(container, "Action policy sets").click());
-  expect(options(container, "Action policy sets").map((node) => node.textContent)).toEqual(["test-broken · invalid"]);
-  await act(async () => input(container, "Action policy sets").click());
+  expect(container.textContent).toContain("test-basic");
+  await act(async () => input(container, "Policy sets").click());
+  expect(options(container, "Policy sets").map((node) => node.textContent)).toEqual(["test-packages"]);
+  await act(async () => input(container, "Policy sets").click());
+  await choose(container, "Policy sets", "test-packages");
   const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
   await type(input(container, "Name"), "picked");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
@@ -180,8 +147,7 @@ it("pre-fills the preset's policy sets and Kubernetes grants, hides picked sets,
     expect.objectContaining({
       body: expect.objectContaining({
         template: "test-template",
-        action_policy_sets: ["test-reads"],
-        kubernetes_grants: ["workspace-read"],
+        policy_sets: ["test-basic", "test-packages"],
         bootstrap: "mkdir -p /state/workspaces",
         session_defaults: expect.objectContaining({ harness: "HARNESS_CODEX", model: "test-codex-b" }),
       }),
@@ -190,53 +156,30 @@ it("pre-fills the preset's policy sets and Kubernetes grants, hides picked sets,
   expect(onOpen).toHaveBeenCalledExactlyOnceWith(CREATED.name);
 });
 
-it("offers policy sets alone where sandboxes are Agentplane's own kind, and sends the picks", async () => {
-  const { container } = await render(undefined, ["test-basic", "test-packages"]);
-  expect(container.textContent).not.toContain("Action policy sets");
-  expect(container.textContent).toContain("test-basic");
-  await choose(container, "Policy sets", "test-packages");
-  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
-  await type(input(container, "Name"), "own-kind");
-  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
-  if (!button) throw new Error("Missing New sandbox button");
-  await act(async () => button.click());
-  expect(post).toHaveBeenCalledWith(
-    "/sandboxes",
-    expect.objectContaining({
-      body: expect.objectContaining({
-        policy_sets: ["test-basic", "test-packages"],
-        egress_policies: [],
-        action_policy_sets: [],
-        kubernetes_grants: [],
-      }),
-    })
-  );
-});
-
-it("allows an operator to remove the preset grant and sends an explicit empty grant list", async () => {
+it("allows an operator to remove the preset's policy set and sends an explicit empty list", async () => {
   const { container } = await render();
   await act(async () => {
     const pill = [...container.querySelectorAll<HTMLElement>(".mantine-Pill-root")].find((node) =>
-      node.textContent?.includes("workspace-read")
+      node.textContent?.includes("test-basic")
     );
     const remove = pill?.querySelector<HTMLButtonElement>(".mantine-Pill-remove");
-    if (!remove) throw new Error("Missing selected workspace-read grant control");
+    if (!remove) throw new Error("Missing selected test-basic policy set control");
     remove.click();
   });
   const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
-  await type(input(container, "Name"), "without-grant");
+  await type(input(container, "Name"), "without-sets");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
   if (!button) throw new Error("Missing New sandbox button");
   await act(async () => button.click());
   expect(post).toHaveBeenCalledWith(
     "/sandboxes",
-    expect.objectContaining({ body: expect.objectContaining({ kubernetes_grants: [] }) })
+    expect.objectContaining({ body: expect.objectContaining({ policy_sets: [] }) })
   );
 });
 
 it("lets an operator replace the preset template before creating the sandbox", async () => {
   const { container } = await render();
-  await choose(container, "Template", "other-template");
+  await choose(container, "Sandbox template", "other-template");
   const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
   await type(input(container, "Name"), "picked");
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
@@ -275,11 +218,29 @@ it("keeps the creation form and reports rejection without navigating", async () 
   expect(container.textContent).toContain("Test creation refused");
 });
 
-it("distinguishes an initializing CR from a user-suspended sandbox", () => {
-  const initializing: SandboxView = { ...CREATED, operating_mode: "Suspended", initializing: true };
-  expect(sandboxSummary(initializing)).toEqual({ label: "Initializing", kind: "pending" });
-  expect(deletable(initializing)).toBe(false);
-  const suspended: SandboxView = { ...initializing, initializing: false };
+it("lets a suspended sandbox be deleted", () => {
+  const suspended: SandboxView = { ...CREATED, operating_mode: "Suspended" };
   expect(sandboxSummary(suspended)).toEqual({ label: "Suspended", kind: "suspended" });
   expect(deletable(suspended)).toBe(true);
+});
+
+it("creates under the preset-derived placeholder when the name is left empty", async () => {
+  const { container } = await render();
+  expect(input(container, "Name").placeholder).toBe("test-preset-1");
+  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  if (!button) throw new Error("Missing New sandbox button");
+  await act(async () => button.click());
+  expect(post).toHaveBeenCalledWith(
+    "/sandboxes",
+    expect.objectContaining({ body: expect.objectContaining({ name: "test-preset-1" }) })
+  );
+});
+
+it("flags an invalid typed name and refuses to create", async () => {
+  const { container } = await render();
+  await type(input(container, "Name"), "Bad_Name");
+  expect(input(container, "Name").getAttribute("aria-invalid")).toBe("true");
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  expect(button?.hasAttribute("disabled")).toBe(true);
 });

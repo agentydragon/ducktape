@@ -31,7 +31,7 @@ from grafana_grafanadatasource_crds.org.integreatly.grafana import (
     GrafanaDatasourceSpecInstanceSelector,
 )
 
-from cluster.cdk8s import cnpg, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.grafana_dashboards import DashboardFile
@@ -108,8 +108,9 @@ def _database(chart: Chart) -> None:
         # password in sync with the Secret Grafana also authenticates with. Without it CNPG
         # defaults to `app`, which does not exist here.
         initdb=cnpg.same_owner_initdb(_NAME, secret=DATABASE.app_secret),
-        wal_archive=False,
+        wal_archive=True,
     )
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _secret_env(name: str, key: SecretKey) -> GrafanaSpecDeploymentSpecTemplateSpecContainersEnv:
@@ -392,7 +393,11 @@ def chart(app: App) -> Chart:
 
 
 def grafana_instance(
-    flux_chart: Chart, directory: RenderedDirectory, grafana_operator: Kustomization, cnpg: Kustomization
+    flux_chart: Chart,
+    directory: RenderedDirectory,
+    grafana_operator: Kustomization,
+    cnpg: Kustomization,
+    seaweedfs_operator: Kustomization,
 ) -> Kustomization:
     return flux_kustomization(
         flux_chart,
@@ -409,5 +414,5 @@ def grafana_instance(
             ),
         ],
         timeout="5m",
-        depends_on=flux_kustomization_depends_on_many(grafana_operator, cnpg),
+        depends_on=flux_kustomization_depends_on_many(grafana_operator, cnpg, seaweedfs_operator),
     )

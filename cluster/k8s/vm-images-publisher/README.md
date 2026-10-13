@@ -6,7 +6,7 @@ provision KubeVirt VMs (for example `.#bootstrap-image` and
 image updates is usually better served by a KubeVirt `containerDisk` published
 via GitHub Actions + Flux image automation instead — see
 `.github/workflows/cpap-gateway-image.yml` and
-`.github/workflows/public-coder-devbox-image.yml` for that pattern.
+`.github/workflows/agentplane-runner-vm-image.yml` for that pattern.
 
 Why this exists: a GitHub Actions workflow previously did the publish from
 runner side and uploaded through the public S3 gateway at

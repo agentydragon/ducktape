@@ -14,17 +14,6 @@
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 py_library(
-    name = "egress_policy",
-    srcs = ["egress_policy.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//agentplane/crds:egresspolicy",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
-    ],
-)
-
-py_library(
     name = "egress_credential",
     srcs = ["egress_credential.py"],
     visibility = ["//cluster/cdk8s:__subpackages__"],
@@ -46,17 +35,6 @@ py_test(
         "//agentplane/crds:egresscredential",
         "@pypi//cdk8s",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "action_policy_set",
-    srcs = ["action_policy_set.py"],
-    visibility = ["//cluster/cdk8s:__subpackages__"],
-    deps = [
-        "//agentplane/crds:actionpolicyset",
-        "@pypi//cdk8s",
-        "@pypi//constructs",
     ],
 )
 

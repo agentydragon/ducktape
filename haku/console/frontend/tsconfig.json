@@ -15,6 +15,5 @@
     "strict": true,
     "types": []
   },
-  "include": ["**/*.ts", "**/*.tsx"],
-  "exclude": ["sw.ts"]
+  "include": ["**/*.ts", "**/*.tsx"]
 }

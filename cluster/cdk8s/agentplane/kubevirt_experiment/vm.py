@@ -14,6 +14,7 @@ from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachineSpecTemplateSpecDomainDevices,
     VirtualMachineSpecTemplateSpecDomainDevicesDisks,
     VirtualMachineSpecTemplateSpecDomainDevicesDisksDisk,
+    VirtualMachineSpecTemplateSpecDomainDevicesFilesystems,
     VirtualMachineSpecTemplateSpecDomainDevicesInterfaces,
     VirtualMachineSpecTemplateSpecDomainFirmware,
     VirtualMachineSpecTemplateSpecDomainFirmwareBootloader,
@@ -168,7 +169,6 @@ def runner_vm(
                 name=disk, serial=serial, disk=VirtualMachineSpecTemplateSpecDomainDevicesDisksDisk(bus="virtio")
             )
             for disk, serial in (
-                ("state", "state"),
                 ("workspace", "workspace"),
                 ("config", "agentplane-config"),
                 ("trust", "agentplane-trust"),
@@ -203,6 +203,8 @@ def runner_vm(
                     devices=VirtualMachineSpecTemplateSpecDomainDevices(
                         autoattach_graphics_device=False,
                         disks=disks,
+                        # The guest mounts the state PVC by this name (agentplane/runner/vm.nix).
+                        filesystems=[VirtualMachineSpecTemplateSpecDomainDevicesFilesystems(name="state", virtiofs={})],
                         interfaces=[
                             VirtualMachineSpecTemplateSpecDomainDevicesInterfaces(name="default", masquerade={})
                         ],

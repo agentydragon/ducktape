@@ -83,11 +83,10 @@ py_library(
     srcs = ["db_backups.py"],
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
+        ":db",
+        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
-        "//cluster/cdk8s/providers/cnpg:objectstore",
-        "//cluster/cdk8s/providers/cnpg:scheduledbackup",
-        "//cluster/cdk8s/seaweedfs:s3",
         "@pypi//cdk8s",
     ],
 )
@@ -121,7 +120,7 @@ py_library(
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:namespaces",
-        "//cluster/cdk8s/forgejo_registry:chart",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/cdk8s/providers/external_secrets:external_secret",
         "//cluster/cdk8s/providers/external_secrets:externalsecret",
         "//cluster/cdk8s/providers/flux:kustomization",

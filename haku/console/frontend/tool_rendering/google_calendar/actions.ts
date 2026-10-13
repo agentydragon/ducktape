@@ -1,5 +1,4 @@
-// Card and notification action descriptions for Google Calendar's tools. React-free so `../../sw.ts`
-// can bundle them (see ../action_entry.ts).
+// Action descriptions for Google Calendar's tools (see ../action_entry.ts).
 
 import { mcpToolSchema } from "../../mcp_tool_schema";
 import { type ActionEntry, fixed, fromArgs } from "../action_entry";

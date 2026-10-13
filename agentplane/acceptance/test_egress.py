@@ -40,7 +40,7 @@ from agentplane.proto import runner_pb2
 # gazelle:include_dep @pypi//protobuf
 
 # Staging's seeded policy and the credential it substitutes
-# (cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml, EgressPolicy "github-agentydragon-agent").
+# (cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml, PolicySet "github-agentydragon-agent").
 GITHUB_AGENTYDRAGON_AGENT = "github-agentydragon-agent"
 GITHUB_HOST = "github.com"
 GITHUB_API_HOST = "api.github.com"
@@ -57,8 +57,8 @@ BOT_LOGIN = "agentydragon-agent"
 # Named by no policy staging has, so it is refused for want of a rule rather than by one.
 UNLISTED_HOST = "example.com"
 # The authenticated model ingress, on the same egress path as everything else
-# (cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml, EgressPolicy "basic"). It holds
-# the LiteLLM key and is granted by the deployment's `default_egress_policies` rather than by a caller,
+# (cluster/k8s/agentplane-staging/agentplane-staging.k8s.yaml, PolicySet "basic"). It holds
+# the LiteLLM key and is bound by the Sandbox Service's default PolicySets rather than by a caller,
 # because an agent that cannot reach it has nothing to run -- so a sandbox that names no policy
 # still has this one.
 BASIC_POLICY = "basic"
@@ -170,9 +170,8 @@ async def test_the_model_call_itself_goes_through_the_proxy(
     sandbox reaching LiteLLM directly with the key in its own environment, which answers just as well
     and is what routing the model endpoint through the proxy exists to stop.
 
-    The sandbox names no policy. `basic` reaching the ingress anyway is what
-    `default_egress_policies` is
-    for.
+    The sandbox names no policy. `basic` reaching the ingress anyway is what the Sandbox Service's
+    default PolicySets are for.
     """
     view = await sandbox(f"accept-model-{harness}")
     agent = await Agent.open(client, sandbox=view.name, harness=harness, model=model)

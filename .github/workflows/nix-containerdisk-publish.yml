@@ -180,9 +180,24 @@ jobs:
         env:
           PIN_TAG: ${{ steps.meta.outputs.pin_tag }}
         run: |
+          set -euo pipefail
           ref="$IMAGE:$PIN_TAG"
           echo "$FORGEJO_IMAGES_PASSWORD" | skopeo login git.allegedly.works \
             -u "$FORGEJO_IMAGES_USERNAME" --password-stdin
+          # Images labelled with their Nix source (see cpap/gateway/container-disk.nix)
+          # are pushed only when it changed: a new tag restarts the VM.
+          label='works.allegedly.nix-source'
+          source="$(skopeo inspect --config "docker-archive:$(readlink -f result)" |
+            jq -r --arg l "$label" '.config.Labels[$l] // empty')"
+          if [[ -n "$source" ]]; then
+            latest="$(skopeo list-tags "docker://$IMAGE" |
+              jq -r --arg p "${GITHUB_REF_NAME}-" '[.Tags[] | select(startswith($p))] | sort | last // empty')"
+            if [[ -n "$latest" ]] && [[ "$(skopeo inspect --config "docker://$IMAGE:$latest" |
+              jq -r --arg l "$label" '.config.Labels[$l] // empty')" == "$source" ]]; then
+              echo "$IMAGE:$latest already has $source; not pushing" >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+          fi
           skopeo copy --insecure-policy \
             "docker-archive:$(readlink -f result)" \
             "docker://$ref"

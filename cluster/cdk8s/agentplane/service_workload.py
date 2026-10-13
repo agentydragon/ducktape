@@ -31,7 +31,7 @@ from more_itertools import one
 
 from cluster.cdk8s import node_scheduling, pod_policy
 from cluster.cdk8s.agentplane.environment import Environment
-from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_secret_ref
+from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.service_ref import ServiceRef
 
 

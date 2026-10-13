@@ -18,21 +18,6 @@ CONFIG_FILE_ENV = "HAKU_CONSOLE_CONFIG_FILE"
 _FIRE_URL = "https://api.anthropic.com/v1/claude_code/routines/{id}/fire"
 _PAGE_URL = "https://claude.ai/code/routines/{id}"
 
-# The console's reserved SPA namespace (frontend/routing.ts's CONSOLE_ROOT_PATH). Trusted console
-# pages live under it; every other path belongs to the framed haku-ui.
-_CONSOLE_ROOT_PATH = "/_console"
-
-
-def tool_call_console_url(console_base_url: str, tool_call_id: str) -> str:
-    """The console URL that opens one tool call: the approvals drawer, that call expanded.
-
-    One definition, because persisted call links, push notification links, and the SPA route that
-    resolves them must agree. The old advertised link used a second, separately configured origin
-    and pointed at `/tool-calls/<id>`, a path the console mirrors into the haku-ui frame rather than
-    one of its own pages.
-    """
-    return f"{console_base_url.rstrip('/')}{_CONSOLE_ROOT_PATH}/tool-calls/{tool_call_id}"
-
 
 class LaunchRoutineConfig(BaseModel):
     """The `launch-routine` capability: the routine (trigger) id plus the bearer that
@@ -157,35 +142,6 @@ class KubernetesAuthorizationConfig(BaseModel):
         return normalized
 
 
-class WebPushConfig(BaseModel):
-    """VAPID identity for Web Push notifications of pending approvals (RFC 8292).
-
-    The keypair *is* this console's application identity to every browser push service: the SPA
-    hands the public half to the browser at subscribe time and the push service binds it to that
-    subscription, so it verifies the signature on each push against the key recorded then.
-    Rotating the key therefore invalidates every stored subscription and each device must
-    re-subscribe — `POST /api/push/subscriptions` overwrites by endpoint, so re-subscribing is
-    the only recovery.
-
-    Only the private key is configured; the public half is derived from it, because two
-    independently-set values that must agree is a class of outage worth designing out. `subject`
-    is the RFC 8292 `sub` contact a push service uses to reach the operator about abusive
-    traffic; it must be a `mailto:` or `https:` URL.
-
-    Unset → push is disabled: the subscribe endpoints return 503 and nothing is ever sent.
-    """
-
-    private_key_pem: SecretStr
-    subject: str
-
-    @field_validator("subject")
-    @classmethod
-    def _subject_must_be_contactable(cls, value: str) -> str:
-        if not value.startswith(("mailto:", "https://")):
-            raise ValueError("web_push.subject must be a mailto: or https:// contact URL")
-        return value
-
-
 class ConsoleProcessConfig(BaseModel):
     """Process-local fields combined with the deploy catalog by ``settings.Settings``."""
 
@@ -226,10 +182,6 @@ class ConsoleProcessConfig(BaseModel):
     # ledger and the operator OAuth token stores — the console does not run without them. Both
     # stores are always constructed; migrations are applied once at startup (see app.main).
     database_url: SecretStr
-
-    # VAPID identity for Web Push. Reads HAKU_CONSOLE__WEB_PUSH__{PRIVATE_KEY_PEM,SUBJECT}.
-    # Unset → the console never sends push notifications and the subscribe endpoints return 503.
-    web_push: WebPushConfig | None = None
 
     # Maximum synchronous wait an Agent may request for an approval-gated MCP call. Required
     # deployment wiring: it must leave margin below the deployment's own request timeout.

@@ -180,8 +180,6 @@ py_library(
         "//haku/console/mcp:in_process_servers",
         "//haku/console/mcp:tool_call_service",
         "//haku/console/notifications:console_events",
-        "//haku/console/notifications:push",
-        "//haku/console/notifications:push_routes",
         "//haku/console/tools:grants",
         "//haku/console/tools:kubernetes",
         "@pypi//fastapi",
@@ -313,17 +311,6 @@ pkg_files(
     strip_prefix = strip_prefix.files_only(),
 )
 
-# The service worker sits at the docroot root, beside index.html rather than under
-# /_console/assets/: its scope must cover the whole origin, and its URL must stay stable across
-# deploys (a fingerprinted name would register as a new worker every build). `location /` already
-# serves it `no-store`, which is what a worker script wants — see frontend/push_subscription.ts.
-pkg_files(
-    name = "service_worker_files",
-    srcs = ["//haku/console/frontend:service_worker"],
-    prefix = "/usr/share/nginx/html/dist",
-    strip_prefix = strip_prefix.files_only(),
-)
-
 pkg_files(
     name = "nginx_conf_files",
     srcs = ["default.conf.template"],
@@ -335,7 +322,6 @@ pkg_tar(
     name = "static_tar",
     srcs = [
         ":nginx_conf_files",
-        ":service_worker_files",
         ":web_files",
     ],
 )

@@ -1,7 +1,7 @@
 """The ducktape-ci Forgejo registry tenant: the `Terraform` CR provisioning it
-(tf/gitops/forgejo-images), the pull-credentials `ExternalSecret` shared by every
-generated directory that pulls a `git.allegedly.works`-hosted image, and the Receiver
-that Forgejo's `package` webhook hits when CI pushes an image.
+(tf/gitops/forgejo-images) and the Receiver that Forgejo's `package` webhook hits when
+CI pushes an image. The pull-credentials `ExternalSecret` every generated directory shares
+is in `pull_credentials`.
 
 The module creates that webhook on the ducktape-ci user (an owner-level hook fires for
 packages linked to no repository) and reads the token Secret that ESO mints beside the Receiver. The
@@ -16,12 +16,6 @@ canonical registry credential.
 """
 
 from cdk8s import ApiObjectMetadata, App, Chart
-from cdk8s_plus_34 import ISecret, Secret
-from constructs import Construct
-from external_secrets_crds.io.external_secrets import (
-    ExternalSecretSpecTargetTemplate,
-    ExternalSecretSpecTargetTemplateMergePolicy,
-)
 from flux_receiver_crds.io.fluxcd.toolkit.notification import ReceiverSpecSecretRef, ReceiverSpecType
 from pydantic import BaseModel, ConfigDict
 from source_watcher_crds.io.fluxcd.extensions.source import ArtifactGeneratorSpecArtifacts
@@ -32,14 +26,13 @@ from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomizat
 from cluster.cdk8s.flux_image_automation_ghcr.image_automation import AUTOMATION_NAME
 from cluster.cdk8s.flux_webhook.chart import WEBHOOK_HOST
 from cluster.cdk8s.forgejo_registry import image_automation as forgejo_image_automation
+from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
-from cluster.cdk8s.providers.external_secrets.external_secret import DataFrom, ExternalSecret, SecretStoreRef
 from cluster.cdk8s.providers.flux.notification import Receiver, ReceiverResource
 
 NAME = "forgejo-images"
 OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/forgejo-images"
-SECRET_NAME = "forgejo-images-creds"
 # The Receiver that a package webhook on the ducktape-ci user triggers, and the token Secret it
 # reads. ESO mints the Secret in this namespace and the Terraform module reads it from there.
 RECEIVER_NAME = "receiver"
@@ -126,22 +119,3 @@ def forgejo_images(
             "provisions the Forgejo user."
         ),
     )
-
-
-def forgejo_images_creds_external_secret(scope: Construct, id: str, *, namespace: str) -> ExternalSecret:
-    return ExternalSecret(
-        scope,
-        id,
-        metadata=ApiObjectMetadata(name=SECRET_NAME, namespace=namespace),
-        refresh_interval="1h",
-        secret_store_ref=SecretStoreRef.cluster("kubernetes-forgejo-images-secret-store"),
-        data_from=[DataFrom.from_extract(SECRET_NAME)],
-        template=ExternalSecretSpecTargetTemplate(
-            type="kubernetes.io/dockerconfigjson", merge_policy=ExternalSecretSpecTargetTemplateMergePolicy.MERGE
-        ),
-    )
-
-
-def forgejo_images_creds_secret_ref(scope: Construct, id: str) -> ISecret:
-    """Reference the `ExternalSecret` a sibling `forgejo_images_creds_external_secret` call created."""
-    return Secret.from_secret_name(scope, id, SECRET_NAME)

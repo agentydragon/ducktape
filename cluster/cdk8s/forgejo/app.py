@@ -209,6 +209,17 @@ def _values(storage: s3.PrivateBucket) -> dict[str, object]:
                 # Forgejo's PostgreSQL-backed issue index is shared safely by both
                 # replicas and needs no rebuildable filesystem state.
                 "indexer": {"ISSUE_INDEXER_TYPE": "db"},
+                # Nothing else repacks repos here (push-time `gc --auto` does not keep up), and
+                # on the weed mount every loose object a clone reads costs a FUSE→filer→volume
+                # round trip: with haku-state at 40k loose objects and 43 packs, a shallow clone
+                # inside the pod took 20-37s against 4.6s from a single-pack copy on the same
+                # volume. Each replica runs this cron on its own; two overlapping runs at worst
+                # fail one repack. The 60s per-repo default cannot finish a large repo here.
+                "cron.git_gc_repos": {"ENABLED": True, "SCHEDULE": "@every 24h", "TIMEOUT": "1h"},
+                # Keep gc off refs: `weed mount` lock files do not exclude across the two
+                # replicas' mounts (see _git_storage), so pack-refs pruning a loose ref could
+                # race a push on the other replica.
+                "git.config": {"gc.packRefs": False},
                 # In-cluster CI (Forgejo Actions). Enables the server-side feature; a
                 # registered act_runner (cluster/cdk8s/haku_ci) executes workflows. Used so
                 # Haku can build its own UI image from haku-state source entirely

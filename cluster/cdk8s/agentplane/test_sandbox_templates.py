@@ -1,5 +1,5 @@
-"""The runner SandboxTemplates: the shared environment, the egress sidecar's tokens and the runner
-endpoints each Sandbox reaches."""
+"""The runner SandboxTemplates: the shared environment, the egress sidecar's tokens and the platform
+routes each Sandbox's runner reaches its services over."""
 
 from __future__ import annotations
 
@@ -12,17 +12,15 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from agentplane.egress.resources import placeholder_of
-from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
-from cluster.cdk8s.agentplane import history_service, notifications, runner_gateway, sandbox_service
+from agentplane.crd_group import GROUP
+from cluster.cdk8s.agentplane import history_service, notifications, runner_gateway, testing
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.pod_policy import workload_kind
 
 
 def _templates(docs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The agent-sandbox SandboxTemplates, which the Sandbox Service reads; a namespace with
-    its own Sandboxes also carries one of our kind per template, with the same pod."""
-    return [doc for doc in docs if workload_kind(doc) == ("extensions.agents.x-k8s.io", "SandboxTemplate")]
+    """Our SandboxTemplates that start Pods; a VM template has no `pod`."""
+    return [doc for doc in docs if workload_kind(doc) == (GROUP, "SandboxTemplate") and "pod" in doc["spec"]]
 
 
 def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
@@ -36,12 +34,12 @@ def test_all_sandbox_workloads_use_shared_environment_defaults(
     templates = _templates(agentplane_manifests[namespace])
     assert templates
     for template in templates:
-        workload = template["spec"]["podTemplate"]["spec"]["containers"][0]
+        workload = template["spec"]["pod"]["spec"]["containers"][0]
         timezone = next(item for item in workload["env"] if item["name"] == "TZ")
         assert timezone["value"] == "America/Los_Angeles"
 
     runner = next(template for template in templates if template["metadata"]["name"] == "runner")
-    args = runner["spec"]["podTemplate"]["spec"]["containers"][0]["args"]
+    args = runner["spec"]["pod"]["spec"]["containers"][0]["args"]
     assert any(args[index : index + 2] == ["--harness-env", "TZ"] for index in range(len(args) - 1))
     # TZDIR's value belongs to the sandbox image, but a harness child starts from only what the
     # runner declares, so the runner has to name it: left off, the child reads every TZ as UTC.
@@ -55,7 +53,7 @@ def test_sandbox_sidecars_project_the_notifications_audience(
         templates = _templates(manifests)
         assert templates, namespace
         for template in templates:
-            pod = template["spec"]["podTemplate"]["spec"]
+            pod = template["spec"]["pod"]["spec"]
             sidecars = [container for container in pod["containers"] if container["name"] == "egress-sidecar"]
             assert sidecars, (namespace, template["metadata"]["name"])
             token_volume = next(volume for volume in pod["volumes"] if volume["name"] == "egress-token")
@@ -100,10 +98,10 @@ def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner
         assert copy["spec"]["secretStoreRef"]["name"] == "kubernetes-external-creds-secret-store"
         generic = templates["runner"]["spec"]
         specialized = deepcopy(templates["runner-ducktape"]["spec"])
-        container = specialized["podTemplate"]["spec"]["containers"][0]
+        container = specialized["pod"]["spec"]["containers"][0]
         assert container["image"] == "git.allegedly.works/ducktape-ci/runner-ducktape:unset"
-        container["image"] = generic["podTemplate"]["spec"]["containers"][0]["image"]
-        pod = specialized["podTemplate"]["spec"]
+        container["image"] = generic["pod"]["spec"]["containers"][0]["image"]
+        pod = specialized["pod"]["spec"]
         secret = next(volume for volume in pod["volumes"] if volume["name"] == "buildbuddy-api-key")
         assert secret["secret"] == {"secretName": "buildbuddy-api-key", "defaultMode": 288}
         pod["volumes"].remove(secret)
@@ -129,6 +127,11 @@ def test_model_configs_are_generated_into_the_llm_ingress_configmap(
         {"model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k", "total_context_budget_tokens": 128 * 1024},
         {"model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k", "total_context_budget_tokens": 256 * 1024},
     ]
+    # Testing alone offers the Claude harness a local model, served on the native wire.
+    expected_testing = [
+        *expected,
+        {"model": "ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k", "total_context_budget_tokens": 128 * 1024},
+    ]
     for namespace, manifests in agentplane_manifests.items():
         settings = one(
             doc
@@ -144,11 +147,13 @@ def test_model_configs_are_generated_into_the_llm_ingress_configmap(
             deployment["metadata"]["annotations"]["configmap.reloader.stakater.com/reload"]
             == "agentplane-llm-ingress-settings"
         )
-        assert yaml.safe_load(settings["data"]["settings.yaml"])["models"] == expected, namespace
+        assert yaml.safe_load(settings["data"]["settings.yaml"])["models"] == (
+            expected_testing if namespace == testing.ENV.namespace else expected
+        ), namespace
         runners = [
             container
             for template in _templates(manifests)
-            for container in template["spec"]["podTemplate"]["spec"]["containers"]
+            for container in template["spec"]["pod"]["spec"]["containers"]
             if container["name"] == "runner"
         ]
         assert runners
@@ -157,52 +162,62 @@ def test_model_configs_are_generated_into_the_llm_ingress_configmap(
 
 
 @pytest.mark.parametrize(
-    ("setting", "service", "port_name", "flags"),
+    ("route", "flag", "service", "port_name", "config", "audience_key"),
     [
-        ("runner_control", runner_gateway.NAME, "runner-control", {"--control-target", "--control-bearer"}),
-        ("runner_ingress", history_service.NAME, "runner-ingress", {"--ingress-target", "--ingress-bearer"}),
+        (
+            "control",
+            "--control-target",
+            runner_gateway.NAME,
+            "runner-control",
+            f"{runner_gateway.NAME}-config",
+            ("runner_control_audience",),
+        ),
+        (
+            "ingress",
+            "--ingress-target",
+            history_service.NAME,
+            "runner-ingress",
+            f"{history_service.NAME}-config",
+            ("ingress", "token_audience"),
+        ),
     ],
 )
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_runner_endpoint_reaches_its_listener_with_the_pods_token(
+def test_runner_reaches_its_service_over_the_sidecars_platform_route(
     namespace: str,
-    setting: str,
+    route: str,
+    flag: str,
     service: str,
     port_name: str,
-    flags: set[str],
+    config: str,
+    audience_key: tuple[str, ...],
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
     docs = agentplane_manifests[namespace]
-    config = yaml.safe_load(_by_name(docs, "ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
-    endpoint = RunnerEndpoint.model_validate(config[setting])
-    host, port = endpoint.target.rsplit(":", 1)
-    service_ports = _by_name(docs, "Service", service)["spec"]["ports"]
-    assert int(port) == one(entry for entry in service_ports if entry["name"] == port_name)["port"]
-    # The proxy matches the host on the exact string the policy names, and swaps the bearer only
-    # where it is the placeholder of the credential that rule substitutes.
-    rule = one(_by_name(docs, "EgressPolicy", endpoint.egress_policy)["spec"]["rules"])
-    assert host in rule["hosts"], rule
-    assert endpoint.bearer == placeholder_of(rule["credentialRef"]["name"])
-    # The substituted token is one the proxy may use and every Sandbox's sidecar projects.
-    credential = _by_name(docs, "EgressCredential", rule["credentialRef"]["name"])
-    audience = credential["spec"]["source"]["projectedWorkloadToken"]["audience"]
-    proxy_settings = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-egress-settings")["data"]["settings.yaml"])
-    assert audience in proxy_settings["projected_token_audiences"]
+    service_port = one(
+        entry for entry in _by_name(docs, "Service", service)["spec"]["ports"] if entry["name"] == port_name
+    )
+    accepted: Any = yaml.safe_load(_by_name(docs, "ConfigMap", config)["data"]["config.yaml"])
+    for key in audience_key:
+        accepted = accepted[key]
     for template in _templates(docs):
-        pod = template["spec"]["podTemplate"]["spec"]
+        pod = template["spec"]["pod"]["spec"]
+        runner = one(container for container in pod["containers"] if container["name"] == "runner")
         sidecar = one(container for container in pod["containers"] if container["name"] == "egress-sidecar")
-        token_files = json.loads(
-            one(item["value"] for item in sidecar["env"] if item["name"].endswith("AUDIENCE_TOKEN_FILES"))
-        )
+        routes = json.loads(one(item["value"] for item in sidecar["env"] if item["name"].endswith("PLATFORM_ROUTES")))
+        # The runner dials the sidecar's loopback listener for the route.
+        args = runner["args"]
+        assert args[args.index(flag) + 1] == f"127.0.0.1:{routes[route]['listen_port']}", template["metadata"]["name"]
+        host, port = routes[route]["upstream"].rsplit(":", 1)
+        assert (host.split(".")[0], int(port)) == (service, service_port["targetPort"])
+        # The sidecar attaches a token the service accepts, which only it mounts.
         token_volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-token")
         projected = {
-            source["serviceAccountToken"]["audience"]: source["serviceAccountToken"]["path"]
+            source["serviceAccountToken"]["path"]: source["serviceAccountToken"]["audience"]
             for source in token_volume["projected"]["sources"]
         }
-        assert token_files[audience].endswith(f"/{projected[audience]}"), template["metadata"]["name"]
-        # The Sandbox Service refuses a template whose runner already names the endpoint.
-        for container in pod["containers"]:
-            assert not flags & set(container.get("args", [])), template["metadata"]["name"]
+        mount = one(mount for mount in sidecar["volumeMounts"] if mount["name"] == "egress-token")
+        assert projected[routes[route]["token_file"].removeprefix(f"{mount['mountPath']}/")] == accepted
 
 
 if __name__ == "__main__":

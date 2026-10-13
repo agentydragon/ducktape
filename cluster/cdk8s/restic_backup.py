@@ -43,6 +43,7 @@ class ResticBackup(Construct):
     Our policy: keep 7 daily, 4 weekly and 6 monthly snapshots and prune weekly; the mover runs
     as uid and gid 1000 and reaches only DNS and SeaweedFS's S3 port. `mover_affinity=None`
     sets none: the Direct mover mounts the source PVC, so a node-local volume already places it.
+    `paused=True` stops new syncs and the running mover; the repository and cache stay.
     """
 
     def __init__(
@@ -59,6 +60,7 @@ class ResticBackup(Construct):
         schedule: str,
         cache_storage_class_name: str,
         mover_affinity: ReplicationSourceSpecResticMoverAffinity | None = None,
+        paused: bool = False,
     ) -> None:
         super().__init__(scope, id)
         mover_labels = {"app.kubernetes.io/name": f"{namespace}-volsync"}
@@ -166,6 +168,7 @@ class ResticBackup(Construct):
             metadata=ApiObjectMetadata(name=name, namespace=namespace),
             source_pvc=source_pvc,
             trigger=ReplicationSourceSpecTrigger(schedule=schedule),
+            paused=paused,
             mover=ReplicationSourceSpecRestic(
                 repository=repository,
                 copy_method=ReplicationSourceSpecResticCopyMethod.DIRECT,

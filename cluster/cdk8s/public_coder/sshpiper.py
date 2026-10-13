@@ -1,5 +1,5 @@
 """sshpiperd for the public-coder Agent's SSH route to its devbox (design and recordings:
-cluster/k8s/agents/public-coder-agent/sshpiper/README.md).
+cluster/parked/public-coder-agent/sshpiper/README.md).
 
 The same split as the proxy, applied to SSH instead of HTTP: the Agent authenticates to this Pod
 with a key that is worthless anywhere else, and this Pod holds the key that actually opens
@@ -23,14 +23,14 @@ from constructs import Construct
 from cluster.cdk8s import cilium
 from cluster.cdk8s.flux import kustomize_kustomization
 from cluster.cdk8s.generation import write_charts, write_yaml
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import PARKED_ROOT
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.public_coder import devbox as public_coder_devbox
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
 NAME = "public-coder-agent-sshpiper"  # the chart's id and the Pods' `app.kubernetes.io/name` value
 _OBJECT_NAME = "sshpiper"  # the Deployment, its Service and its RBAC identity
-OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/sshpiper"
+OUTPUT_DIR = f"{PARKED_ROOT}/public-coder-agent/sshpiper"
 _NAMESPACE = "public-coder-agent"
 # The Agent's route to the devbox; its hand-written app/ssh_config dials this Service.
 SERVICE = ServiceRef(
@@ -87,12 +87,13 @@ def _recordings_claim(scope: Construct) -> None:
             name=_RECORDINGS_CLAIM_NAME,
             namespace=_NAMESPACE,
             annotations={
+                "kustomize.toolkit.fluxcd.io/prune": "disabled",
                 "description": (
                     "Session recordings. This is the audit trail for the SSH route: unlike an MCP tool call, "
                     "which leaves a structured per-call `mcp_tool_calls` row, a shell session has no equivalent "
                     "structured record, so the recordings are what remains. Local-path is RWO and binds to one "
                     "node, which is why the Deployment stays at one replica."
-                )
+                ),
             },
         ),
         spec=k8s.PersistentVolumeClaimSpec(

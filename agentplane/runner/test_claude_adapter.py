@@ -97,10 +97,10 @@ NATIVE_SESSION = "native-session"
 class JournaledSession(RecordedSession):
     """The seam `reconcile` reads: the journal of the turn and the harness's native directory."""
 
-    def __init__(self, journal: Journal, native_directory: Path) -> None:
+    def __init__(self, journal: Journal, directory: Path) -> None:
         super().__init__()
         self.journal = journal
-        self.native_directory = native_directory
+        self.directory = directory
         self.record.native_session_id = NATIVE_SESSION
 
 

@@ -19,7 +19,7 @@ from flux_helm.io.fluxcd.toolkit.helm import (
 )
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import cnpg, namespaces, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup, namespaces, node_scheduling
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
@@ -63,8 +63,9 @@ def _database(scope: Construct) -> None:
         storage_class="local-path-ovh-ssd",
         size="10Gi",
         initdb=cnpg.same_owner_initdb("langfuse"),
-        wal_archive=False,
+        wal_archive=True,
     )
+    cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _storage(scope: Construct) -> s3.PrivateBucket:

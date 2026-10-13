@@ -115,7 +115,10 @@ class Rbac:
                 )
         return permissions
 
-    def managed(self, config: dict[str, Any], preset: str, *, namespace: str) -> set[Permission]:
+    def managed(
+        self, config: dict[str, Any], policy_sets: dict[str, list[dict[str, Any]]], preset: str, *, namespace: str
+    ) -> set[Permission]:
+        """`preset`'s Kubernetes access: its PolicySets' (name -> spec rules) Kubernetes rules."""
         # Fresh sandbox SAs also inherit standing group bindings. Do not mistake
         # the selectable catalog for their entire declarative authority.
         permissions = self._subjects(
@@ -125,10 +128,14 @@ class Rbac:
                 ("Group", f"system:serviceaccounts:{namespace}", ""),
             }
         )
-        names = config["sandbox_presets"][preset]["kubernetes_grants"]
+        names = config["sandbox_presets"][preset]["policy_sets"]
         assert len(names) == len(set(names)), names
-        for name in names:
-            grant = config["kubernetes_grants"][name]
-            ref = RbacRoleRef(api_group="rbac.authorization.k8s.io", **grant["role_ref"])
-            permissions.update(self.rules(ref, grant.get("namespace")))
+        for rule in (rule for name in names for rule in policy_sets[name]):
+            if rule["type"] == "kubernetes_role_binding":
+                ref = RbacRoleRef(api_group="rbac.authorization.k8s.io", **rule["role"])
+                for rule_namespace in rule["namespaces"]:
+                    permissions.update(self.rules(ref, rule_namespace))
+            elif rule["type"] == "kubernetes_cluster_role_binding":
+                ref = RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name=rule["clusterRole"])
+                permissions.update(self.rules(ref, None))
         return permissions

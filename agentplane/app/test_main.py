@@ -49,7 +49,6 @@ from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, Fak
 from util.net import pick_free_port
 
 APP_ENVIRONMENT = {
-    "AGENTPLANE_NAMESPACE": "test-namespace",
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
     "AGENTPLANE_SANDBOX_SERVICE_TARGET": "sandbox-service.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_TARGET": "runner-gateway.test:8080",
@@ -130,7 +129,7 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
     settings = Settings(_cli_parse_args=[])
     oidc = OIDCSettings()
 
-    assert (settings.namespace, settings.sandbox_namespace) == ("test-namespace", "test-sandbox-namespace")
+    assert settings.sandbox_namespace == "test-sandbox-namespace"
     assert settings.sandbox_service_request_timeout_s == 20
     assert settings.sandbox_service_lifecycle_timeout_s == 310
     assert (settings.port, settings.token_audience) == (8080, "agentplane")

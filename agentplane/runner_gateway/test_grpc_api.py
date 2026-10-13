@@ -2,7 +2,6 @@
 real runner cannot be made to show."""
 
 import asyncio
-import json
 from collections.abc import AsyncIterator
 from dataclasses import replace
 from pathlib import Path
@@ -12,13 +11,12 @@ import grpc
 import pytest
 import pytest_bazel
 from google.protobuf.empty_pb2 import Empty
-from google.protobuf.json_format import MessageToDict, ParseDict
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.grpc_calls import ServiceError, dial
 from agentplane.proto import command_pb2, runner_control_pb2, runner_gateway_pb2, runner_pb2, sandbox_service_pb2
-from agentplane.proto.sandbox_service_pb2 import ResolvedGrant, SandboxDestination
+from agentplane.proto.sandbox_service_pb2 import SandboxDestination
 from agentplane.runner_gateway import wire
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.connection_records import ConnectionLeases
@@ -26,7 +24,6 @@ from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
-from agentplane.runner_gateway.session_registry import SessionRegistry
 from agentplane.runner_gateway.testing.grpc_service import gateway_client, service, service_client
 from agentplane.runner_gateway.testing.journal import admission
 from agentplane.runner_gateway.testing.resources import build_resources
@@ -38,17 +35,11 @@ from agentplane.runner_gateway.testing.runner_control import (
     serve_replica_control,
 )
 from agentplane.runner_gateway.testing.sessions import register_on_fake_sandbox, register_session
-from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
-from agentplane.sandbox_service.kubernetes_views import (
-    KUBERNETES_GRANTS_ANNOTATION,
-    KUBERNETES_GRANTS_READY_ANNOTATION,
-    PROVISIONING_ANNOTATION,
-)
+from agentplane.sandbox_resource import SANDBOXES_PLURAL, SESSIONS_SEALED
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, sandbox_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, DESTINATION, OWNER, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
-from util.agent_sandbox import SANDBOXES_PLURAL
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -237,13 +228,6 @@ async def test_destination_authority_and_incarnation(
     assert rejected.value.code == code
 
 
-async def test_only_the_sandbox_service_may_seal(remote: RunnerGatewayClient) -> None:
-    # An allowed service caller is not the Sandbox Service: sealing a Sandbox is teardown's alone.
-    with pytest.raises(ServiceError) as rejected:
-        await remote.runner(DESTINATION).seal()
-    assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
-
-
 @pytest.mark.parametrize("account_name", [ACCOUNT, "unlisted-service"])
 async def test_unlisted_callers_rejected_before_lookup(
     resources: Resources, token_file: Path, cluster: Cluster, account_name: str
@@ -262,7 +246,7 @@ async def test_unlisted_callers_rejected_before_lookup(
     destination = sandbox_service_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
     async with service(configured, cluster.provisioning) as target, dial(target) as channel:
         sandboxes = sandbox_client(channel, token_file, namespace=SANDBOX_NAMESPACE)
-        remote = gateway_client(channel, token_file, command_admission_timeout_s=None, control_target=target)
+        remote = gateway_client(channel, token_file, command_admission_timeout_s=10, control_target=target)
         for call, request in (
             (sandboxes.stub.ListSandboxes, Empty()),
             (sandboxes.stub.GetSandbox, sandbox_service_pb2.GetSandboxRequest(name=SANDBOX)),
@@ -289,52 +273,6 @@ async def test_unlisted_callers_rejected_before_lookup(
             await remote.runner(DESTINATION).list_sessions()
         assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
     assert cluster.fake.pod_reads == 0
-
-
-@pytest.mark.parametrize("pending_launch", [False, True])
-async def test_open_and_resume_refuse_unready_grants_without_app(
-    resources: Resources,
-    token_file: Path,
-    cluster: Cluster,
-    peer: ScriptedRunner,
-    engine: AsyncEngine,
-    sessions: SessionRegistry,
-    pending_launch: bool,
-) -> None:
-    session_id = uuid4()
-    await register_on_fake_sandbox(engine, session_id)
-    annotations = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"].setdefault("annotations", {})
-    if pending_launch:
-        annotations[PROVISIONING_ANNOTATION] = "{}"
-    else:
-        grant = ResolvedGrant(
-            name="config",
-            grant=ParseDict(
-                RoleBindingGrant(
-                    kind="RoleBinding", namespace=SANDBOX_NAMESPACE, role_ref=RoleRef(kind="Role", name="config-reader")
-                ).model_dump(mode="json"),
-                sandbox_service_pb2.KubernetesGrant(),
-            ),
-        )
-        annotations[KUBERNETES_GRANTS_ANNOTATION] = json.dumps([MessageToDict(grant, preserving_proto_field_name=True)])
-        annotations[KUBERNETES_GRANTS_READY_ANNOTATION] = "false"
-    view = await cluster.inventory.get(SANDBOX)
-    if pending_launch:
-        assert view.launch_grants_pending
-    else:
-        assert not view.kubernetes_grants_ready
-    configured = replace(
-        resources, sessions=sessions, caller_accounts=frozenset({OWNER}), platform_instructions="Test guidance"
-    )
-    async with service_client(configured, token_file, cluster.provisioning) as caller:
-        runner = caller.runner(DESTINATION)
-        with pytest.raises(ServiceError) as opened:
-            await runner.create(session_id=uuid4(), spec={"harness": "HARNESS_CODEX", "cwd": "/w", "model": "test"})
-        assert opened.value.code == grpc.StatusCode.UNAVAILABLE
-        with pytest.raises(ServiceError) as resumed:
-            await runner.resume(str(session_id))
-        assert resumed.value.code == grpc.StatusCode.UNAVAILABLE
-    assert not peer.received
 
 
 @pytest.mark.parametrize(
@@ -367,7 +305,7 @@ async def test_unverified_pod_owner_is_unavailable(
     assert not peer.received
 
 
-@pytest.mark.parametrize("condition", ["different-account", "suspended", "deleting"])
+@pytest.mark.parametrize("condition", ["different-account", "suspended", "sealed-and-deleting"])
 async def test_unavailable_destination_does_not_contact_runner(
     remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: Cluster, condition: str
 ) -> None:
@@ -376,9 +314,18 @@ async def test_unavailable_destination_does_not_contact_runner(
         case "different-account":
             cluster.fake.pods[SANDBOX]["spec"]["serviceAccountName"] = "test-other"
         case "suspended":
-            stored["spec"]["operatingMode"] = "Suspended"
-        case "deleting":
+            stored["spec"]["running"] = False
+        case "sealed-and-deleting":
             stored["metadata"]["deletionTimestamp"] = "2026-09-01T12:00:00Z"
+            stored["status"]["conditions"] = [
+                {
+                    "type": SESSIONS_SEALED,
+                    "status": "True",
+                    "reason": "Sealed",
+                    "message": "",
+                    "lastTransitionTime": "2026-09-01T12:00:00Z",
+                }
+            ]
     with pytest.raises(ServiceError) as rejected:
         await remote.runner(DESTINATION).list_sessions()
     assert rejected.value.code == grpc.StatusCode.UNAVAILABLE

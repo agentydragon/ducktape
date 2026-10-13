@@ -225,8 +225,8 @@
       "sha256": "6yC0MaTqNDzJh7BZ+lx5VH49MTUjhKjF/+Mu2Wt2ggc="
     },
     "agentplane-runner": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-cd4e53484c53/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
-      "sha256": "zU5TSExTeaymalCqCu9goB5Et8W5nmhetilwja1mPT8="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/agentplane-runner-5cda0d2e9e60/agentplane_runner-0.1.0-py3-none-linux_x86_64.whl",
+      "sha256": "XNoNLp5g5iz4X7dL8GyZ8KXcD9RB2DV0Y9HYFeVA7R8="
     },
     "skill-cdk8s_builders": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-cdk8s_builders-7a1104aadfb6/cdk8s_builders.skill",
@@ -241,12 +241,16 @@
       "sha256": "+iaAiereN/dSA57ZwyjY6dgXqfUi1SeWuNfu/D++7+Q="
     },
     "pr-visuals": {
-      "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-b134eb13e179/pr_visuals-0.1.0-py3-none-any.whl",
-      "sha256": "sTTrE+F5mzaigmQXlcrj2/KSVjqN+xgtZENZVq+P3/k="
+      "url": "https://github.com/agentydragon/ducktape/releases/download/pr-visuals-0bf8359da6f2/pr_visuals-0.1.0-py3-none-any.whl",
+      "sha256": "C/g1nabyLnKdGsdcIXMhfxJUCH94BpjpwQt1eRp4L6Y="
     },
     "skill-ci_reliability": {
       "url": "https://github.com/agentydragon/ducktape/releases/download/skill-ci_reliability-c5422d1aa967/ci_reliability.skill",
       "sha256": "xUItGqlnTTF8+qgdA/tqg6ZNnhIxMoP3fHK725YlEGY="
+    },
+    "cpap-gateway-health": {
+      "url": "https://github.com/agentydragon/ducktape/releases/download/cpap-gateway-health-15135a862953/cpap_gateway_health-0.1.0-py3-none-any.whl",
+      "sha256": "FRNahilTWful9uzcU5qrzvRQV7hTiZereAgAe+4s9FM="
     }
   }
 }

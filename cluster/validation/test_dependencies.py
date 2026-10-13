@@ -52,6 +52,31 @@ class TestValidateDependencies:
             else ["test-app uses Certificate resources but doesn't transitively depend on cert-manager"]
         )
 
+    @pytest.mark.parametrize(
+        ("api_version", "provider"),
+        [
+            ("agentplane.allegedly.works/v1alpha1", "agentplane-crds"),
+            ("extensions.agents.x-k8s.io/v1beta1", "agent-sandbox-controller"),
+        ],
+    )
+    def test_a_shared_kind_requires_its_groups_provider(self, tmp_path: Path, api_version: str, provider: str) -> None:
+        cluster = _cluster(
+            {
+                "test-app": FluxKustomizationSpec(
+                    path="./cluster/k8s/test-app", depends_on=[DependsOn(name="agentplane-crds")]
+                ),
+                "agentplane-crds": FluxKustomizationSpec(),
+                "agent-sandbox-controller": FluxKustomizationSpec(),
+            },
+            build_results=[_build_result(tmp_path, "test-app", [("SandboxTemplate", api_version)])],
+        )
+        errors = validate_dependencies(cluster, tmp_path)
+        assert errors == (
+            []
+            if provider == "agentplane-crds"
+            else ["test-app uses SandboxTemplate resources but doesn't transitively depend on agent-sandbox-controller"]
+        )
+
 
 class TestSourceReferences:
     """A bare sourceRef resolves in the consumer's own namespace (the PR #3759 outage class);

@@ -16,7 +16,7 @@ import App from "../app";
 import { sampleConnection } from "../connections_fixture";
 import type { BindingView, Decision, McpLinkageView, PolicyView, SandboxView, ThreadView } from "../client";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
-import type { SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
+import type { DecisionsSnapshot, SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
 import type { InboxNoticeState } from "../thread_notices";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { CommandSchema } from "../../../proto/command_pb";
@@ -56,20 +56,6 @@ const SANDBOXES: SandboxView[] = [
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "ready-sandbox" },
     status: { conditions: [{ type: "Ready", status: "True", reason: "PodReady", lastTransitionTime: ago(HOUR) }] },
-    kubernetes_grants: [
-      {
-        name: "workspace-read",
-        grant: {
-          kind: "RoleBinding",
-          namespace: "agentplane-visual",
-          role_ref: { kind: "Role", name: "workspace-reader" },
-        },
-      },
-    ],
-    kubernetes_grants_ready: true,
-    kubernetes_grant_error: null,
-    launch_grants_pending: false,
-    initializing: false,
     deleting: false,
     pod: {
       name: "ready-sandbox",
@@ -78,7 +64,7 @@ const SANDBOXES: SandboxView[] = [
       deleting: false,
       owner_references: [
         {
-          api_version: "agents.x-k8s.io/v1beta1",
+          api_version: "agentplane.allegedly.works/v1alpha1",
           kind: "Sandbox",
           name: "ready-sandbox",
           uid: "0f9c1d2e-0000-4000-8000-00000000a1b2",
@@ -109,11 +95,6 @@ const SANDBOXES: SandboxView[] = [
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "pending-sandbox" },
     status: { conditions: [{ type: "Ready", status: "False", reason: "PodPending" }] },
-    kubernetes_grants: [],
-    kubernetes_grants_ready: true,
-    kubernetes_grant_error: null,
-    launch_grants_pending: false,
-    initializing: false,
     deleting: false,
     pod: {
       name: "pending-sandbox",
@@ -122,7 +103,7 @@ const SANDBOXES: SandboxView[] = [
       deleting: false,
       owner_references: [
         {
-          api_version: "agents.x-k8s.io/v1beta1",
+          api_version: "agentplane.allegedly.works/v1alpha1",
           kind: "Sandbox",
           name: "pending-sandbox",
           uid: "0f9c1d2e-0000-4000-8000-00000000c3d4",
@@ -157,22 +138,10 @@ const SANDBOXES: SandboxView[] = [
     operating_mode: "Suspended",
     service_account: { namespace: "agentplane-visual", name: "suspended-sandbox" },
     status: { conditions: [{ type: "Ready", status: "False", reason: "Suspended" }] },
-    kubernetes_grants: [],
-    kubernetes_grants_ready: true,
-    kubernetes_grant_error: null,
-    launch_grants_pending: false,
-    initializing: false,
     deleting: false,
     pod: null,
   },
 ];
-
-function failGrantProvisioning(): void {
-  const sandbox = SANDBOXES[0]!;
-  sandbox.launch_grants_pending = true;
-  sandbox.kubernetes_grants_ready = false;
-  sandbox.kubernetes_grant_error = "ApiException (403)";
-}
 
 function addProvisioningSandbox(): void {
   SANDBOXES.push({
@@ -183,11 +152,6 @@ function addProvisioningSandbox(): void {
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "test-provisioning" },
     status: null,
-    kubernetes_grants: [],
-    kubernetes_grants_ready: true,
-    kubernetes_grant_error: null,
-    launch_grants_pending: false,
-    initializing: false,
     deleting: false,
     pod: null,
   });
@@ -259,6 +223,7 @@ const ACTION_POLICY: ActionPolicyView = {
       kind: "ActionPolicyBinding",
       name: "ready-sandbox-k2m9x",
       provenance: "app",
+      generation: 1,
       expires_at: null,
       ready: { status: "True", reason: "Valid", message: "spec accepted", observed_generation: 1 },
       // The preset names public-coder alone; harness-reviews was picked at launch.
@@ -282,6 +247,7 @@ const ACTION_POLICY: ActionPolicyView = {
       kind: "ActionPolicyBinding",
       name: "ready-sandbox-push-afternoon",
       provenance: "operator",
+      generation: 2,
       expires_at: new Date(NOW + 3 * HOUR).toISOString(),
       ready: null,
       policy_sets: [
@@ -377,7 +343,59 @@ const DECISIONS: Decision[] = [
     substituted: true,
   },
   {
+    at: ago(7 * 60_000),
+    method: "GET",
+    host: "api.github.com",
+    port: 443,
+    outcome: "allow",
+    address: "140.82.116.5",
+    reason: null,
+    binding: "ready-sandbox-github-public",
+    policy: "github-public",
+    rule: 0,
+    substituted: true,
+  },
+  {
+    at: ago(6 * 60_000),
+    method: "GET",
+    host: "api.github.com",
+    port: 443,
+    outcome: "allow",
+    address: "140.82.116.5",
+    reason: null,
+    binding: "ready-sandbox-github-public",
+    policy: "github-public",
+    rule: 0,
+    substituted: true,
+  },
+  {
+    at: ago(5 * 60_000),
+    method: "GET",
+    host: "pypi.org",
+    port: 443,
+    outcome: "deny",
+    address: null,
+    reason: "no-rule",
+    binding: null,
+    policy: null,
+    rule: null,
+    substituted: false,
+  },
+  {
     at: ago(4 * 60_000),
+    method: "GET",
+    host: "pypi.org",
+    port: 443,
+    outcome: "deny",
+    address: null,
+    reason: "no-rule",
+    binding: null,
+    policy: null,
+    rule: null,
+    substituted: false,
+  },
+  {
+    at: ago(3 * 60_000),
     method: "GET",
     host: "pypi.org",
     port: 443,
@@ -405,11 +423,11 @@ const DECISIONS: Decision[] = [
 ];
 
 /** The phone fixture shows the proxy unreachable, the desktop one its decisions; both fit on a page. */
-function egressDecisions(): Decision[] | Response {
+function egressDecisions(): DecisionsSnapshot {
   if (window.matchMedia("(max-width: 600px)").matches) {
-    return Response.json({ detail: "the egress proxy did not answer: connection refused" }, { status: 502 });
+    return { watching: true, decisions: { detail: "the egress proxy did not answer: connection refused" } };
   }
-  return DECISIONS;
+  return { watching: true, decisions: DECISIONS };
 }
 
 const SPEC: SessionSpec = create(SessionSpecSchema, {
@@ -1993,10 +2011,7 @@ routes.push(
         name: "public-coder",
         title: "Public coder",
         template: "runner",
-        egress_policies: ["github-public"],
-        action_policy_sets: ["public-coder"],
-        kubernetes_grants: ["workspace-read"],
-        policy_sets: [],
+        policy_sets: ["github-public", "public-coder"],
         session_defaults: {
           harness: "HARNESS_CODEX",
           model: "harness-codex-model",
@@ -2271,25 +2286,7 @@ routes.push(
           },
   ],
   ["GET", /^\/sandboxes\/templates$/, () => ["runner"]],
-  ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: null })],
-  [
-    "GET",
-    /^\/kubernetes-grants$/,
-    () => [
-      {
-        name: "workspace-read",
-        kind: "RoleBinding",
-        namespace: "agentplane-visual",
-        role_ref: { kind: "Role", name: "workspace-reader" },
-      },
-      {
-        name: "config-read",
-        kind: "RoleBinding",
-        namespace: "agentplane-visual",
-        role_ref: { kind: "Role", name: "config-reader" },
-      },
-    ],
-  ],
+  ["GET", /^\/sandboxes\/form$/, () => ({ policy_sets: ["github-public", "public-coder", "pypi"] })],
   ["GET", /^\/egress\/policies$/, () => POLICIES],
   ["GET", /^\/action-policy\/sets$/, () => ACTION_POLICY.bindings.flatMap((binding) => binding.policy_sets)],
   ["GET", /^\/actions$/, () => ACTIONS],
@@ -2343,6 +2340,7 @@ routes.push(
         subjects: [{ namespace: match[1], name: match[2] }],
       })),
       action_policy: ACTION_POLICY,
+      bound_policy: null,
     }),
   ],
   ["GET", /^\/connection-service-accounts$/, () => [{ namespace: "agentplane-visual", name: "operator-assistant" }]],
@@ -2384,7 +2382,6 @@ routes.push(
     /^\/actions\/([^/]+)\/decision$/,
     (match) => ({ ...ACTIONS.find((request) => request.id === match[1]), state: "allowed", version: 2 }),
   ],
-  ["GET", /^\/sandboxes\/([^/]+)\/egress\/decisions$/, () => egressDecisions()],
   ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS.map((session) => toJson(SessionSummarySchema, session))],
   [
     "GET",
@@ -2716,6 +2713,10 @@ class HarnessEventSource extends EventTarget {
       if (flags.has("threadStreamDropped")) this.drop();
       return;
     }
+    if (/^\/live\/sandboxes\/[^/]+\/egress\/decisions$/.test(url.pathname)) {
+      this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(egressDecisions()) }));
+      return;
+    }
     if (url.pathname === "/live/sandboxes") {
       const snapshot: SandboxesSnapshot = { sandboxes: SANDBOXES, watch: watch() };
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
@@ -2849,6 +2850,7 @@ class HarnessEventSource extends EventTarget {
         sandbox: SANDBOXES.find((row) => row.name === decodeURIComponent(sandbox)) ?? null,
         bindings: BINDINGS,
         action_policy: ACTION_POLICY,
+        bound_policy: null,
         threads: THREADS,
         watch: watch(),
       };
@@ -2889,7 +2891,6 @@ const visualHarness = {
   mountDisclosure(props: Parameters<typeof DisclosureVisual>[0]): void {
     mount(<DisclosureVisual {...props} />);
   },
-  failGrantProvisioning,
   addProvisioningSandbox,
   set(flag: Flag, on = true): void {
     if (on) flags.add(flag);

@@ -6,7 +6,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.sandbox_models import sandbox_has_ready_pod
 from agentplane.app.threads.events.event_log import SessionNotRegisteredError
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
-from agentplane.runner_gateway.client import Runner, RunnerGatewayClient
+from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxRunner
 from agentplane.sandbox_service.errors import SandboxNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
@@ -25,7 +25,7 @@ class RunnerDirectory:
     def __init__(self, index: LiveIndex, gateway: RunnerGatewayClient) -> None:
         self._index = index
         self.gateway = gateway
-        self._clients: dict[str, Runner] = {}
+        self._clients: dict[str, SandboxRunner] = {}
 
     async def sandbox_of(self, thread_id: UUID) -> str:
         """The Sandbox the Runner Gateway routes the Thread's Session to."""
@@ -34,7 +34,7 @@ class RunnerDirectory:
             raise SessionNotRegisteredError(thread_id)
         return found[0].sandbox
 
-    def client(self, sandbox: str) -> Runner:
+    def client(self, sandbox: str) -> SandboxRunner:
         view = self._index.sandbox_view(sandbox)
         if view is None:
             raise SandboxNotFoundError(sandbox)

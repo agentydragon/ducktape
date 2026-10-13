@@ -37,6 +37,13 @@ let
           disabledTests = (old.disabledTests or [ ]) ++ [
             "test_single_thread"
           ];
+          # test_nested_task_group_filtering[trio]: racy, the trio nursery sometimes
+          # surfaces its ExceptionGroup wrapper instead of the parent task's error
+          # (one anyio derivation both passed and failed in CI). The asyncio
+          # variant stays enabled.
+          disabledTestPaths = (old.disabledTestPaths or [ ]) ++ [
+            "tests/test_taskgroups.py::test_nested_task_group_filtering[trio]"
+          ];
         });
         python-ulid = pyprev.python-ulid.overrideAttrs (old: {
           # test_same_millisecond_overflow: writes directly to the shared
@@ -299,6 +306,19 @@ rec {
     mainProgram = "bbr";
     importsCheck = [ "devinfra.bbr" ];
     propagatedBuildInputs = with python314Packages; [ pygit2 ];
+  };
+
+  cpap-gateway-health = mkWheel {
+    pname = "cpap-gateway-health";
+    description = "Self-healing check for the CPAP gateway's USB WiFi adapter";
+    mainProgram = "cpap-gateway-health";
+    importsCheck = [ "cpap.gateway.health" ];
+    # SYNC: requires in //cpap/gateway:health_wheel. `modprobe` comes from the guest's
+    # service PATH (cpap/gateway/nixos.nix).
+    propagatedBuildInputs = with python314Packages; [
+      dbus-fast
+      pydantic
+    ];
   };
 
   pr-visuals =

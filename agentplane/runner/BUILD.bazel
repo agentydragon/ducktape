@@ -398,7 +398,6 @@ py_wheel(
         "console_scripts": [
             "agentplane-runner = agentplane.runner.main:app",
             "agentplane-runner-vm = agentplane.runner.guest_config:main",
-            "agentplane-runner-validate-config = agentplane.runner.guest_config:validate_main",
         ],
     },
     platform = "linux_x86_64",
@@ -722,11 +721,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
-)
-
-py_library(
-    name = "errors",
-    srcs = ["errors.py"],
 )
 
 py_library(

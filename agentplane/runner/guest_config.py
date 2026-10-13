@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlsplit
@@ -16,13 +16,14 @@ from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig, Se
 from agentplane.runner.main import async_main
 
 CONFIG_PATH = Path("/run/agentplane/config.json")
-STATE_DEVICE = Path("/dev/disk/by-id/virtio-state")
 WORKSPACE_DEVICE = Path("/dev/disk/by-id/virtio-workspace")
-AGENT_UID = 1000
-AGENT_GID = 1000
+# KubeVirt's virtiofsd identity, the only non-root one that can write the state PVC (vm.nix).
+AGENT_UID = 107
+AGENT_GID = 107
+# The state PVC over virtiofs, laid out as in a runner Pod so a Session moves between kinds.
 RUNNER_STATE_DIR = Path("/state")
-NATIVE_STATE_DIR = RUNNER_STATE_DIR / "native"
-WORKSPACE_DIR = Path("/workspace")
+# The VM-local workspace disk, mounted where Pods keep Session working directories.
+WORKSPACE_DIR = RUNNER_STATE_DIR / "workspaces"
 CA_BUNDLE = Path("/run/agentplane/ca-certificates.crt")
 KUBECONFIG = Path("/run/agentplane/kubeconfig")
 
@@ -46,16 +47,6 @@ class GuestConfig(BaseModel):
     ingress: Endpoint
     llm_base_url: str = Field(min_length=1)
     proxy_url: str = Field(min_length=1)
-    format_blank_disks: list[Literal["state", "workspace"]] = Field(default_factory=list)
-
-    @field_validator("format_blank_disks")
-    @classmethod
-    def unique_format_authorizations(
-        cls, value: list[Literal["state", "workspace"]]
-    ) -> list[Literal["state", "workspace"]]:
-        if len(value) != len(set(value)):
-            raise ValueError("format_blank_disks must not contain duplicate disk names")
-        return value
 
     @field_validator("llm_base_url", "proxy_url")
     @classmethod
@@ -99,10 +90,17 @@ _RUNNER_NETWORK_ENVIRONMENT = (
 )
 
 
-def configure_runner_network_environment(environment: Mapping[str, str]) -> None:
-    """Give the runner process the egress proxy and CA used by its HTTP clients."""
+def configure_runner_network_environment(environment: Mapping[str, str], *, direct_targets: Iterable[str]) -> None:
+    """Give the runner process the egress proxy and CA used by its HTTP clients.
+
+    The control and ingress targets are the launcher relay's platform routes, which are the
+    proxy's own sibling listeners and swap the bearer themselves; the runner reaches them directly.
+    """
     for name in _RUNNER_NETWORK_ENVIRONMENT:
         os.environ[name] = environment[name]
+    direct_hosts = dict.fromkeys(urlsplit(f"//{target}").hostname for target in direct_targets)
+    no_proxy = ",".join([environment["NO_PROXY"], *filter(None, direct_hosts)])
+    os.environ["NO_PROXY"] = os.environ["no_proxy"] = no_proxy
 
 
 def make_runner_config(config: GuestConfig) -> RunnerConfig:
@@ -110,9 +108,9 @@ def make_runner_config(config: GuestConfig) -> RunnerConfig:
     llm_base_url = config.llm_base_url
     proxy_url = config.proxy_url
     harness_environment = {
-        "HOME": str(WORKSPACE_DIR / "home"),
-        "USER": "runner",
-        "LOGNAME": "runner",
+        "HOME": str(WORKSPACE_DIR / ".home"),
+        "USER": "agent",
+        "LOGNAME": "agent",
         "PATH": "/run/current-system/sw/bin",
         "TZDIR": "/usr/share/zoneinfo",
         "HTTP_PROXY": proxy_url,
@@ -150,10 +148,10 @@ def make_runner_config(config: GuestConfig) -> RunnerConfig:
             root=Path("/sys/fs/cgroup/system.slice/agentplane-runner.service/workloads"),
             agent_uid=AGENT_UID,
             agent_gid=AGENT_GID,
-            block_devices=(STATE_DEVICE, WORKSPACE_DEVICE),
+            # virtiofs has no block device to throttle.
+            block_devices=(WORKSPACE_DEVICE,),
         ),
         workspace_root=WORKSPACE_DIR,
-        native_state_dir=NATIVE_STATE_DIR,
         initialization_cwd=WORKSPACE_DIR,
     )
 
@@ -162,7 +160,9 @@ def main() -> None:
     """Entry point used by the dedicated NixOS guest's systemd unit."""
     config = read_guest_config()
     runner_config = make_runner_config(config)
-    configure_runner_network_environment(runner_config.harness_environment)
+    configure_runner_network_environment(
+        runner_config.harness_environment, direct_targets=[config.control.target, config.ingress.target]
+    )
     asyncio.run(
         async_main(
             runner_config,
@@ -170,13 +170,6 @@ def main() -> None:
             ingress=ServiceEndpoint(target=config.ingress.target, bearer=config.ingress.bearer),
         )
     )
-
-
-def validate_main() -> None:
-    """Validate the seed before storage is considered for initialization."""
-    config = read_guest_config()
-    for disk in config.format_blank_disks:
-        print(disk)
 
 
 if __name__ == "__main__":

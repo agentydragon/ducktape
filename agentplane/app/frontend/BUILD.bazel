@@ -468,6 +468,31 @@ ts_library(
     ],
 )
 
+agentplane_vitest_test(
+    name = "sandbox_status_test",
+    srcs = ["sandbox_status.test.ts"],
+    deps = [
+        ":client",
+        ":sandbox_status",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
+    name = "sandbox_name",
+    srcs = ["sandbox_name.ts"],
+    tsconfig = TSCONFIG,
+)
+
+agentplane_vitest_test(
+    name = "sandbox_name_test",
+    srcs = ["sandbox_name.test.ts"],
+    deps = [
+        ":sandbox_name",
+        "//:node_modules/vitest",
+    ],
+)
+
 ts_library(
     name = "sandboxes",
     srcs = [
@@ -480,11 +505,14 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":disclosure",
         ":lifecycle",
         ":live",
+        ":sandbox_name",
         ":sandbox_status",
         ":status_mark",
         ":stream_status",
+        ":topbar",
         "//:node_modules/@mantine/core",
         "//:node_modules/@tabler/icons-react",
         "//:node_modules/@types/react",
@@ -492,6 +520,23 @@ ts_library(
         "//:node_modules/react-router",
         "//agentplane/app/frontend/actions:action_client",
         "//agentplane/app/frontend/actions:policy",
+    ],
+)
+
+ts_library(
+    name = "decision_groups",
+    srcs = ["decision_groups.ts"],
+    tsconfig = TSCONFIG,
+    deps = [":client"],
+)
+
+agentplane_vitest_test(
+    name = "decision_groups_test",
+    srcs = ["decision_groups.test.ts"],
+    deps = [
+        ":client",
+        ":decision_groups",
+        "//:node_modules/vitest",
     ],
 )
 
@@ -669,6 +714,10 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":decision_groups",
+        ":live",
+        ":live_stream",
+        ":stream_status",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -714,6 +763,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":client",
+        ":disclosure",
         ":egress",
         ":json_view",
         ":lifecycle",

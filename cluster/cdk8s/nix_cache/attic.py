@@ -20,10 +20,10 @@ from external_secrets_crds.io.external_secrets import (
     ExternalSecretSpecTargetTemplate,
 )
 
-from cluster.cdk8s import cnpg, external_creds, namespaces, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup, external_creds, namespaces, node_scheduling
 from cluster.cdk8s.config_format import yaml_config
 from cluster.cdk8s.flux import ConfigMapArgs
-from cluster.cdk8s.forgejo_registry import chart as forgejo_images
+from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.namespaces import Vpa
@@ -110,8 +110,9 @@ def _database(scope: Construct) -> None:
         storage_class="local-path-ovh",
         size="2Gi",
         initdb=cnpg.same_owner_initdb("attic"),
-        wal_archive=False,
+        wal_archive=True,
     )
+    cnpg_backup.CnpgBackup(scope, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _storage(scope: Construct) -> s3.PrivateBucket:
@@ -252,7 +253,7 @@ def _rotation(scope: Construct) -> None:
                 )
             },
         ),
-        image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
+        image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
     )
     k8s.KubeRole(
         scope,
@@ -373,7 +374,7 @@ def _rotation(scope: Construct) -> None:
                     # Keep the registry credential explicit on the Pod. The Secret is reflected
                     # into nix-cache; this avoids relying on ServiceAccount admission timing for
                     # the image pull.
-                    image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
+                    image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
                     restart_policy="OnFailure",
                     security_context=k8s.PodSecurityContext(
                         run_as_non_root=True,
@@ -418,7 +419,7 @@ def _rotation(scope: Construct) -> None:
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
     namespaces.namespace(chart, "namespace", name=NAMESPACE, vpa=Vpa.AUTO)
-    forgejo_images.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
+    pull_credentials.forgejo_images_creds_external_secret(chart, "forgejo-images-creds", namespace=NAMESPACE)
     _database(chart)
     _server(chart, storage=_storage(chart))
     _rotation(chart)

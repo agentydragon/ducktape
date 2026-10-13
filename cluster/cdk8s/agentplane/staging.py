@@ -57,7 +57,6 @@ from cluster.cdk8s.agentplane.environment import (
     ReplicaProfile,
     WebPushProps,
 )
-from cluster.cdk8s.agentplane.llm_ingress import model_configs
 from cluster.cdk8s.agentplane.namespaces import STAGING_NAMESPACE
 from cluster.cdk8s.agentplane.runner_sandbox import RunnerTemplate
 from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_GRANT
@@ -67,7 +66,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
-from cluster.cdk8s.model_selections import STAGING_APP_MODELS
+from cluster.cdk8s.model_selections import STAGING_APP_MODELS, model_configs
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.public_coder import egress as public_coder_egress
@@ -303,7 +302,6 @@ ENV = Environment(
     settle_deltas=True,
     notifications_github=GitHubAppProps(app_id=5188971, secret_name="agentplane-github-app"),
     kubernetes_binding_cleanup_namespaces=frozenset(agent_access_profiles.cleanup_namespaces()),
-    kubernetes_cluster_binding_cleanup=True,
     db=DbProps(instances=2, wal_archive=True),
     llm_ingress=LlmIngressProps(
         litellm_key_secret_name=_LITELLM_KEY_SECRET, models=model_configs(STAGING_APP_MODELS), log_llm_requests=True
@@ -381,7 +379,7 @@ ENV = Environment(
             EgressRule.to_endpoints(cilium.AUTHENTIK_SERVER_LABELS, 9000, server_names=["auth.allegedly.works"]),
         ],
     ),
-    own_sandboxes=False,
+    vm_sandboxes=False,
 )
 
 
@@ -533,7 +531,6 @@ def agentplane_staging(
     artifact: ArtifactGeneratorSpecArtifacts,
     health_checks: list[KustomizationSpecHealthChecks],
     agentplane_crds: Kustomization,
-    agent_sandbox_controller: Kustomization,
     cert_manager_trust: Kustomization,
     cnpg: Kustomization,
     external_secrets_operator: Kustomization,
@@ -578,6 +575,6 @@ def agentplane_staging(
         ],
         decryption=sops_decryption(ENV.extra_resources),
         depends_on=flux_kustomization_depends_on_many(
-            agentplane_crds, agent_sandbox_controller, cert_manager_trust, cnpg, external_secrets_operator
+            agentplane_crds, cert_manager_trust, cnpg, external_secrets_operator
         ),
     )

@@ -32,13 +32,25 @@ py_library(
     name = "admin",
     srcs = ["admin.py"],
     deps = [
+        ":decision_changes",
         ":decision_log",
         ":decisions",
         ":policy",
         ":resources",
+        "//agentplane:sse",
         "//agentplane:subjects",
         "@pypi//fastapi",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "decision_changes",
+    srcs = ["decision_changes.py"],
+    deps = [
+        ":decision_store",
+        "//agentplane/postgres:wakeups",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -67,6 +79,7 @@ py_library(
     srcs = ["decisions_client.py"],
     deps = [
         ":decisions",
+        "//agentplane:changes",
         "//agentplane:subjects",
         "@pypi//httpx",
     ],
@@ -529,6 +542,7 @@ py_test(
         ":admin",
         ":conftest",
         ":database_migrate",
+        ":decision_changes",
         ":decision_log",
         ":decision_store",
         ":decisions",
@@ -587,6 +601,7 @@ py_library(
         ":decisions",
         ":policy",
         "//agentplane:subjects",
+        "//agentplane/postgres:wakeups",
         "@pypi//asyncpg",
         "@pypi//sqlalchemy",
     ],

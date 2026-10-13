@@ -21,8 +21,8 @@ an MCP approval gateway for any MCP-capable LLM product.
 - [Egress proxy](egress/README.md): authenticates sandbox workloads and substitutes credentials.
 - [Policy Controller](policy_controller/README.md): expires `PolicyBinding`s and keeps the
   RoleBindings they grant. Runs on staging and `agentplane-testing`; only Flux writes `PolicyBinding`s yet.
-- [Sandbox Controller](sandbox_controller/README.md): reconciles our own `Sandbox` into its state
-  PVC and Pods. Runs on `agentplane-testing` only; nothing creates our `Sandbox` yet.
+- [Sandbox Controller](sandbox_controller/README.md): reconciles `Sandbox` into its ServiceAccount,
+  `PolicyBinding`, state PVC and Pods or a KubeVirt VM (VMs on `agentplane-testing` only).
 - [LLM ingress](llm_ingress/README.md): authenticated hop in front of LiteLLM.
 - [Notification service](notification_service/README.md): subscriptions and session inboxes.
 - [Indexing](indexing/README.md): Git semantic search.
@@ -52,10 +52,14 @@ flowchart TB
         runner[Runner + native drivers]
         sidecar[Egress sidecar]
     end
+    subgraph vm_sandbox[VM Sandbox launcher Pod, testing]
+        guest[Guest: runner + native drivers]
+        relay[Egress relay, added by Kyverno]
+    end
     cmd_sandbox[Action box Pods]
     proxy[Egress proxy]
     llm[LLM ingress]
-    k8s[Kubernetes API, agent-sandbox controller]
+    k8s[Kubernetes API]
     authentik([Authentik])
     electric[Electric]
     hist_db[(history DB)]
@@ -68,17 +72,15 @@ flowchart TB
     app -->|gRPC: Session and Thread reads, change and Session-opening watch| hs
     app -->|HTTP| notif
     app -->|HTTP: operator decisions| actions
-    app -->|HTTP admin port: egress decisions| proxy
+    app -->|HTTP admin port: egress decisions and a stream of when they change| proxy
     app -->|Thread shapes for the browser| electric
     app -->|SandboxTemplates, Sandbox and policy reads| k8s
     app -->|OIDC| authentik
     electric -->|logical replication| hist_db
     hist_db -.->|staging: WAL archive, on-demand base backups| outside
 
-    ss -->|Sandbox CRs, grants; testing creates ours| k8s
-    ss -->|SealSandbox| gw
-    k8s -->|creates| sandbox
-    gw -->|control Services, Leases; SessionsSealed on our deleting Sandboxes| k8s
+    ss -->|Sandboxes, egress grants| k8s
+    gw -->|control Services, Leases; SessionsSealed on deleting Sandboxes| k8s
     hs -->|ingest, fold, read| hist_db
     notif -->|Sandbox lookups| ss
     notif -->|commands| gw
@@ -88,17 +90,19 @@ flowchart TB
     github -->|webhooks over an HTTPS route| notif
     actions -->|execute: box Pods as the caller, exec| k8s
     policy -->|PolicyBindings, RoleBindings| k8s
-    sandboxctl -.->|testing only: our Sandboxes, Pods, state PVCs| k8s
+    sandboxctl -->|Sandboxes, Pods, VMs on testing, state PVCs, PolicyBindings| k8s
+    sandboxctl -->|creates| sandbox
     k8s -->|runs| cmd_sandbox
     cmd_sandbox -->|all outbound traffic| proxy
     actions -->|MCP servers, GitHub, web push| outside
 
     runner --> sidecar -->|all outbound traffic| proxy
-    sidecar -.->|testing, our Sandboxes: platform routes, RunnerControl Connect| gw
-    sidecar -.->|testing, our Sandboxes: platform routes, RunnerIngress Push| hs
+    sidecar -.->|platform route: RunnerControl Connect| gw
+    sidecar -.->|platform route: RunnerIngress Push| hs
+    guest --> relay -->|all outbound traffic| proxy
+    relay -.->|platform routes| gw
+    relay -.->|platform routes| hs
     proxy -->|policy watches, EgressReady| k8s
-    proxy -->|RunnerControl Connect: commands, lifecycle| gw
-    proxy -->|RunnerIngress Push: Events| hs
     proxy -->|MCP| actions
     proxy -->|HTTP| notif
     proxy -->|model calls| llm --> outside
@@ -109,18 +113,20 @@ flowchart TB
   conversation view, folded by the History Service. Every runner pushes its Events to the History
   Service, the only way into retained history.
 - **Runner traffic is outbound.** Everything a runner sends goes through its Pod's egress
-  sidecar to the egress proxy, which authenticates the Pod and substitutes credentials, and runner
-  Pods admit no connections. Commands and lifecycle requests reach runners over the `RunnerControl`
-  stream they dial to the Runner Gateway, routed per Sandbox by its `<sandbox>-control` Service and
+  sidecar: to the egress proxy, which authenticates the Pod and substitutes credentials, or, for the
+  Runner Gateway and the History Service ingress, over the sidecar's platform routes with the Pod's
+  own token. Runner Pods admit no connections; a VM Sandbox's guest sends the same traffic to an
+  identical relay that Kyverno adds to its KubeVirt launcher Pod. Commands and lifecycle requests reach runners over
+  the `RunnerControl` stream they dial to the Runner Gateway, routed per Sandbox by its `<sandbox>-control` Service and
   `<sandbox>-runner` Lease ([runner control stream](docs/runner_control.md)).
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
   `sandbox_commands` (the Runner Gateway's Session registry),
   `sandbox_service` (Session history, written by the History Service), `actions`,
   `egress` and `notifications`; the Sandbox Service has none. Only the history database is drawn.
-- **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle, grants
-  and teardown; the Runner Gateway owns everything that talks to a runner: Sessions,
-  commands and the runner control stream. They run as separate Deployments with their own accounts,
-  and the Sandbox Service seals a Sandbox through the gateway before deleting it.
+- **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle and egress
+  grants; the Runner Gateway owns everything that talks to a runner: Sessions, commands and the
+  runner control stream, and the seal that holds a Sandbox's deletion until its Sessions are sealed.
+  They run as separate Deployments with their own accounts.
 
 Status, open work and design gates: [`plans/`](plans/README.md). Implemented contracts:
 [`docs/`](docs/).

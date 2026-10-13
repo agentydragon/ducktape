@@ -343,18 +343,9 @@ spec:
       name: plaid-mcp
       originRevision: "@repo"
     - copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/app/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/app/"
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/proxy/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/proxy/"
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/sshpiper/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/sshpiper/"
-      name: public-coder-agent-app
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/backup/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/backup/"
-      name: public-coder-agent-backup
+        - from: "@repo/cluster/generated/agents/public-coder-agent/access/**"
+          to: "@artifact/cluster/generated/agents/public-coder-agent/access/"
+      name: public-coder-agent-access
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/k8s/activitywatch/**"
@@ -379,11 +370,6 @@ spec:
         - from: "@repo/cluster/k8s/agents/alloy-otlp-bearer/**"
           to: "@artifact/cluster/k8s/agents/alloy-otlp-bearer/"
       name: alloy-otlp-bearer
-      originRevision: "@repo"
-    - copy:
-        - from: "@repo/cluster/k8s/agents/public-coder-agent/devbox/**"
-          to: "@artifact/cluster/k8s/agents/public-coder-agent/devbox/"
-      name: public-coder-agent-devbox
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/agents/shared-rbac/**"
@@ -692,6 +678,11 @@ spec:
         - from: "@repo/cluster/generated/monitoring/mktxp/**"
           to: "@artifact/cluster/generated/monitoring/mktxp/"
       name: monitoring-mktxp
+      originRevision: "@repo"
+    - copy:
+        - from: "@repo/cluster/generated/monitoring/smokeping/**"
+          to: "@artifact/cluster/generated/monitoring/smokeping/"
+      name: monitoring-smokeping
       originRevision: "@repo"
     - copy:
         - from: "@repo/cluster/generated/monitoring/tempo/**"

@@ -11,9 +11,7 @@ from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
 from constructs import Construct
 
-from agentplane.egress.resources import placeholder_of
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE, Settings
-from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import database, egress
@@ -32,11 +30,10 @@ NAME = "agentplane-history-service"
 TOKEN_AUDIENCE = "agentplane-history-service"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-history-service"
-# The policy a Sandbox's runner reaches the ingress under, and the credential it substitutes.
+# The policy a runner behind the egress proxy reaches the ingress under (the KubeVirt experiment's;
+# a Sandbox's runner uses its sidecar's platform route), and the credential it substitutes.
 EGRESS_POLICY = "runner-ingress"
 _CREDENTIAL = "agentplane-runner-ingress"
-# The bearer a runner sends on its pushes.
-BEARER = placeholder_of(_CREDENTIAL)
 _PUSH = "/agentplane.proto.runner_ingress.RunnerIngress/Push"
 
 
@@ -52,13 +49,6 @@ def ingress_service(namespace: str) -> ServiceRef:
         port=Port(name="runner-ingress", number=8081),
         pods=Pods(namespace=namespace, labels=tuple(_LABELS.items())),
     )
-
-
-def runner_ingress_endpoint(namespace: str) -> RunnerEndpoint:
-    """The endpoint every new Sandbox's runner pushes its Events to: through the egress proxy, which
-    swaps the placeholder bearer for the Pod's token."""
-    endpoint = ingress_service(namespace)
-    return RunnerEndpoint(target=f"{endpoint.fqdn}:{endpoint.port.number}", bearer=BEARER, egress_policy=EGRESS_POLICY)
 
 
 class HistoryService(Construct):
@@ -120,12 +110,7 @@ class HistoryService(Construct):
             migrate=migrate_init_container(
                 "git.allegedly.works/ducktape-ci/agentplane-history-migrate:unset",
                 name="migrate",
-                env_variables={
-                    "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL": database_url,
-                    # CLEANUP(added 2026-10-12): drop once agentplane-staging and agentplane-testing pin
-                    #   an agentplane-history-migrate image that reads the AGENTPLANE_HISTORY_SERVICE_ prefix.
-                    "AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL": database_url,
-                },
+                env_variables={"AGENTPLANE_HISTORY_SERVICE_DATABASE_URL": database_url},
             ),
         )
         config.mount_into(workload.container, env=Settings.config_file_env)

@@ -10,6 +10,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/scheme"
 )
 
@@ -23,16 +24,19 @@ func init() {
 	SchemeBuilder.Register(&Sandbox{}, &SandboxList{}, &SandboxTemplate{}, &SandboxTemplateList{})
 }
 
-// StateVolume is the Pod volume the controller fills with the Sandbox's state PVC; the template's
-// containers mount it by name.
+// StateVolume is the volume the controller fills with the Sandbox's state PVC: a Pod's containers
+// mount it by name, and a VM guest mounts the virtiofs filesystem of that name.
 type StateVolume struct {
 	Name  string                           `json:"name"`
 	Claim corev1.PersistentVolumeClaimSpec `json:"claim"`
 }
 
+// SandboxTemplateSpec sets the Sandbox's kind: exactly one of Pod and VM.
 type SandboxTemplateSpec struct {
-	Pod         corev1.PodTemplateSpec `json:"pod"`
-	StateVolume StateVolume            `json:"stateVolume"`
+	Pod *corev1.PodTemplateSpec `json:"pod,omitempty"`
+	// VM is the VirtualMachine's spec; the controller sets its run strategy from spec.running.
+	VM          *kubevirtv1.VirtualMachineSpec `json:"vm,omitempty"`
+	StateVolume StateVolume                    `json:"stateVolume"`
 }
 
 // +kubebuilder:object:root=true
@@ -70,7 +74,8 @@ type SessionDefaults struct {
 	SetupScript     *string `json:"setupScript,omitempty"`
 }
 
-// Incarnation is the Sandbox's current Pod.
+// Incarnation is the Pod the Sandbox's runner currently runs in: its own Pod, or its VM's
+// virt-launcher Pod.
 type Incarnation struct {
 	Name string `json:"name"`
 	UID  string `json:"uid"`

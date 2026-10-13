@@ -129,6 +129,11 @@ spec:
   instances: 2
   monitoring:
     enablePodMonitor: true
+  plugins:
+    - isWALArchiver: true
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: haku-console-db
   probes:
     liveness:
       isolationCheck:
@@ -136,6 +141,96 @@ spec:
   storage:
     size: 2Gi
     storageClass: local-path-ovh
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for haku-console/haku-console-db.
+  name: haku-console-db-backups
+  namespace: haku-console
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: haku-console-db-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: haku-console-db-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for haku-console/haku-console-db.
+  name: haku-console-db-backups
+  namespace: haku-console
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: haku-console-db-backups
+  namespace: haku-console
+spec:
+  identityRef:
+    name: haku-console-db-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: haku-console-db-backups-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  annotations:
+    description: SeaweedFS S3 destination for haku-console/haku-console-db base backups and WAL.
+  name: haku-console-db
+  namespace: haku-console
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://haku-console-db-backups/
+    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
+    s3Credentials:
+      accessKeyId:
+        key: AWS_ACCESS_KEY_ID
+        name: haku-console-db-backups-s3-credentials
+      secretAccessKey:
+        key: AWS_SECRET_ACCESS_KEY
+        name: haku-console-db-backups-s3-credentials
+    wal:
+      compression: gzip
+  retentionPolicy: 30d
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: haku-console-db
+  namespace: haku-console
+spec:
+  backupOwnerReference: self
+  cluster:
+    name: haku-console-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  schedule: 0 29 4 * * *
 ---
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
@@ -345,9 +440,6 @@ subjects:
     kind: ServiceAccount
     name: haku
     namespace: haku-sandbox
-  - apiGroup: rbac.authorization.k8s.io
-    kind: Group
-    name: haku:access-profile:public-coder
   - apiGroup: ""
     kind: ServiceAccount
     name: claude-ai
@@ -392,12 +484,6 @@ data:
         tools:
           grants:
             - revoke_grants
-      - id: public_coder_v1
-        type: any_of
-        policies:
-          - kubernetes_reads
-          - grants_self_introspection
-          - grants_own_revoke
       - id: haku_v1
         type: any_of
         policies:
@@ -409,10 +495,6 @@ data:
     access_profiles:
       - id: haku
         auto_approval_policy: haku_v1
-        in_process_server_ids:
-          - grants
-      - id: public-coder
-        auto_approval_policy: public_coder_v1
         in_process_server_ids:
           - grants
       - id: manual-review
@@ -427,21 +509,12 @@ data:
           groups:
             - haku:access-profile:haku
             - system:authenticated
-        public-coder:
-          username: haku:access-profile:public-coder
-          groups:
-            - haku:access-profile:public-coder
-            - system:authenticated
     kubernetes_grant_max_lifetime_seconds: 3600
     static_agents:
       haku:
         agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
         display_name: Haku
         access_profile_id: haku
-      public_coder:
-        agent_id: 43a833f3-2b1c-4a04-9b8c-1df0cedfb79e
-        display_name: public-coder-agent
-        access_profile_id: public-coder
     mcp:
       servers:
         grants:
@@ -457,7 +530,7 @@ kind: Deployment
 metadata:
   annotations:
     configmap.reloader.stakater.com/reload: config
-    secret.reloader.stakater.com/reload: haku-console-agent-api,haku-console-oidc,haku-console-public-coder-agent,haku-console-web-push-vapid,haku-routine-launch-token
+    secret.reloader.stakater.com/reload: haku-console-agent-api,haku-console-oidc,haku-routine-launch-token
   labels:
     app.kubernetes.io/name: haku-console
   name: haku-console
@@ -497,14 +570,6 @@ spec:
                   key: token
                   name: haku-routine-launch-token
                   optional: false
-            - name: HAKU_CONSOLE__WEB_PUSH__PRIVATE_KEY_PEM
-              valueFrom:
-                secretKeyRef:
-                  key: private-key-pem
-                  name: haku-console-web-push-vapid
-                  optional: false
-            - name: HAKU_CONSOLE__WEB_PUSH__SUBJECT
-              value: mailto:agentydragon@gmail.com
             - name: HAKU_CONSOLE__HAKU_UI_URL
               value: https://haku-ui.allegedly.works
             - name: HAKU_CONSOLE__AUTH_ORIGIN
@@ -548,19 +613,7 @@ spec:
                   key: token
                   name: haku-console-agent-api
                   optional: false
-            - name: HAKU_CONSOLE__STATIC_AGENTS__PUBLIC_CODER__TOKEN
-              valueFrom:
-                secretKeyRef:
-                  key: token
-                  name: haku-console-public-coder-agent
-                  optional: false
             - name: HAKU_CONSOLE__STATIC_AGENTS__HAKU__OPERATOR_SUBJECT
-              valueFrom:
-                secretKeyRef:
-                  key: operator_subject
-                  name: haku-console-oidc
-                  optional: false
-            - name: HAKU_CONSOLE__STATIC_AGENTS__PUBLIC_CODER__OPERATOR_SUBJECT
               valueFrom:
                 secretKeyRef:
                   key: operator_subject

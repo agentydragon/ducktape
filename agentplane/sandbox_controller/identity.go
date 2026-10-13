@@ -14,6 +14,11 @@ import (
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
 )
 
+// ActionCallerLabel on a ServiceAccount is what admits its workload to the Action Service. It
+// grants nothing alone: the account's PolicyBinding action rules decide. Must equal CALLER_LABEL in
+// agentplane/action_service/policies/resources.py.
+const ActionCallerLabel = "agentplane.allegedly.works/use-action-service"
+
 // ensureIdentity keeps the Sandbox's own ServiceAccount and, while it names PolicySets, its one
 // PolicyBinding. Both are controlled by the Sandbox, so deleting the Sandbox revokes them. It
 // returns why no Pod may start yet; a running Pod is never stopped for it. A Pod does not wait for
@@ -21,6 +26,7 @@ import (
 // refused, the same as for a running Pod whose PolicySets change.
 func (r *Reconciler) ensureIdentity(ctx context.Context, sandbox *Sandbox) (*unready, error) {
 	account := &corev1.ServiceAccount{ObjectMeta: owned(sandbox)}
+	account.Labels[ActionCallerLabel] = "true"
 	if err := r.Get(ctx, client.ObjectKeyFromObject(account), account); err != nil {
 		if !apierrors.IsNotFound(err) {
 			return nil, err
@@ -30,6 +36,15 @@ func (r *Reconciler) ensureIdentity(ctx context.Context, sandbox *Sandbox) (*unr
 		}
 	} else if !metav1.IsControlledBy(account, sandbox) {
 		return &unready{"ServiceAccountConflict", fmt.Sprintf("ServiceAccount %s exists and is not this Sandbox's", account.Name)}, nil
+	} else if account.Labels[ActionCallerLabel] != "true" {
+		// An account created before the label was set.
+		if account.Labels == nil {
+			account.Labels = map[string]string{}
+		}
+		account.Labels[ActionCallerLabel] = "true"
+		if err := r.Update(ctx, account); err != nil {
+			return nil, err
+		}
 	}
 	return r.ensureBinding(ctx, sandbox)
 }

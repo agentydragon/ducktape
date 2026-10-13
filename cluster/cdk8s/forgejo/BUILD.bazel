@@ -71,6 +71,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__pkg__"],
     deps = [
         "//cluster/cdk8s:cnpg",
+        "//cluster/cdk8s:cnpg_backup",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
@@ -143,7 +144,7 @@ py_library(
         "//cluster/cdk8s:manifest_roots",
         "//cluster/cdk8s:reflector",
         "//cluster/cdk8s/forgejo:secret_copy",
-        "//cluster/cdk8s/forgejo_registry:chart",
+        "//cluster/cdk8s/forgejo_registry:pull_credentials",
         "//cluster/rotators/forgejo_token_rotation:config",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",

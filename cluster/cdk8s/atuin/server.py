@@ -7,7 +7,7 @@ from cdk8s import ApiObjectMetadata, App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecDeletionPolicy
 
-from cluster.cdk8s import cnpg, namespaces, node_scheduling
+from cluster.cdk8s import cnpg, cnpg_backup, namespaces, node_scheduling
 from cluster.cdk8s.flux import Kustomization, RenderedDirectory, flux_kustomization, flux_kustomization_depends_on_many
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT
@@ -34,8 +34,9 @@ def _database(chart: Chart) -> None:
         storage_class="local-path-ovh-ssd",
         size="2Gi",
         initdb=cnpg.same_owner_initdb(NAME),
-        wal_archive=False,
+        wal_archive=True,
     )
+    cnpg_backup.CnpgBackup(chart, "db-backup", ref=DATABASE, retention="30d")
 
 
 def _http_probe(initial_delay_seconds: int, period_seconds: int) -> k8s.Probe:
@@ -116,12 +117,14 @@ def chart(app: App) -> Chart:
     return chart
 
 
-def atuin(chart: Chart, directory: RenderedDirectory, cnpg: Kustomization) -> Kustomization:
+def atuin(
+    chart: Chart, directory: RenderedDirectory, cnpg: Kustomization, seaweedfs_operator: Kustomization
+) -> Kustomization:
     return flux_kustomization(
         chart,
         NAME,
         directory,
         timeout="5m",
         deletion_policy=KustomizationSpecDeletionPolicy.ORPHAN,
-        depends_on=flux_kustomization_depends_on_many(cnpg),
+        depends_on=flux_kustomization_depends_on_many(cnpg, seaweedfs_operator),
     )

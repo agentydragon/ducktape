@@ -7,11 +7,14 @@ from google.protobuf.json_format import MessageToDict, MessageToJson, ParseDict
 
 from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SessionDestination
-from agentplane.runner.errors import RunnerError
 from agentplane.runner_gateway.instructions import combine_instructions
 
 # gazelle:include_dep @pypi//grpcio
 # gazelle:include_dep @pypi//protobuf
+
+
+class BootstrapError(Exception):
+    """The Sandbox bootstrap failed or was interrupted, so no Session opened."""
 
 
 def launch_spec(
@@ -68,9 +71,9 @@ async def open_session(
     if bootstrap:
         initialized = (await runner.Initialize(runner_control_pb2.InitializeRequest(script=bootstrap))).outcome
         if initialized.HasField("interrupted"):
-            raise RunnerError("the Sandbox bootstrap was interrupted and never runs again; use a new Sandbox")
+            raise BootstrapError("the Sandbox bootstrap was interrupted and never runs again; use a new Sandbox")
         if initialized.result.exit_code != 0:
-            raise RunnerError("Sandbox bootstrap failed; no session was opened")
+            raise BootstrapError("Sandbox bootstrap failed; no session was opened")
     opening = runner_control_pb2.OpenSessionRequest(session_id=runner_session_id, spec=spec)
     if setup_script is not None:
         opening.setup_script = setup_script

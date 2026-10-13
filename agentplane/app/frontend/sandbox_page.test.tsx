@@ -30,11 +30,6 @@ const live = vi.hoisted(
           operating_mode: "Running",
           service_account: { namespace: "agentplane-test", name: "startup-test" },
           status: null,
-          kubernetes_grants: [],
-          kubernetes_grants_ready: true,
-          kubernetes_grant_error: null,
-          launch_grants_pending: false,
-          initializing: false,
           deleting: false,
           pod: {
             name: "startup-test",
@@ -44,7 +39,7 @@ const live = vi.hoisted(
             node_name: "test-node",
             owner_references: [
               {
-                api_version: "agents.x-k8s.io/v1beta1",
+                api_version: "agentplane.allegedly.works/v1alpha1",
                 kind: "Sandbox",
                 name: "startup-test",
                 uid: "00000000-0000-4000-8000-000000000001",
@@ -57,6 +52,7 @@ const live = vi.hoisted(
         threads: [] as SandboxSnapshot["threads"],
         bindings: [],
         action_policy: null,
+        bound_policy: null,
         watch: { fresh: true, stale_after_seconds: 60, refreshed_seconds_ago: {} },
       },
       health: null,
@@ -68,6 +64,16 @@ vi.mock("./live", async (importOriginal) => ({
   useLive: () => live,
 }));
 
+/** The Egress panel stays mounted behind its tab and follows a stream that these tests never feed. */
+class SilentEventSource extends EventTarget {
+  static readonly CLOSED = 2;
+  readyState = 1;
+  constructor(readonly url: string) {
+    super();
+  }
+  close(): void {}
+}
+
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
@@ -78,10 +84,6 @@ afterEach(async () => {
   live.snapshot.threads = [];
   sessionStorage.clear();
   (live.snapshot.sandbox as SandboxView).binding = null;
-  (live.snapshot.sandbox as SandboxView).kubernetes_grants = [];
-  (live.snapshot.sandbox as SandboxView).kubernetes_grants_ready = true;
-  (live.snapshot.sandbox as SandboxView).kubernetes_grant_error = null;
-  (live.snapshot.sandbox as SandboxView).launch_grants_pending = false;
 });
 afterAll(() => vi.unstubAllGlobals());
 
@@ -106,6 +108,7 @@ async function render(
   claudePaused = false,
   routeNavigation = false
 ): Promise<ReturnType<typeof vi.fn>> {
+  vi.stubGlobal("EventSource", SilentEventSource);
   fetchMock.mockImplementation((request: Request) => {
     const path = new URL(request.url).pathname;
     if (path === "/models") {
@@ -117,7 +120,7 @@ async function render(
         Response.json(testModelCatalog(claudePaused ? [] : models, claudePaused ? models : codexModels))
       );
     }
-    if (path === "/egress/policies" || /^\/sandboxes\/(startup-test|other-test)\/egress\/decisions$/.test(path)) {
+    if (path === "/egress/policies") {
       return Promise.resolve(Response.json([]));
     }
     const threadPath = /^\/threads\/([^/]+)$/.exec(path);
@@ -185,9 +188,7 @@ it("resets the launch form when navigating directly between sandbox routes", asy
   await render(async () => Response.json([]), undefined, false, true);
   await choose("Harness", "Codex");
   expect(labeledInput("Model").value).toBe("Codex Model");
-  const instructions = [...container.querySelectorAll("label")].find(
-    (node) => node.textContent === "Standing instructions"
-  )?.control;
+  const instructions = container.querySelector('textarea[aria-label="Standing instructions"]');
   if (!(instructions instanceof HTMLTextAreaElement)) throw new Error("Missing instructions field");
   const setTextareaValue = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
   if (!setTextareaValue) throw new Error("Missing native textarea value setter");
@@ -203,9 +204,7 @@ it("resets the launch form when navigating directly between sandbox routes", asy
   expect(labeledInput("Harness").value).toBe("Claude");
   expect(labeledInput("Model").value).toBe("Test Model");
   expect(labeledInput("Reasoning effort").value).toBe("low");
-  const nextInstructions = [...container.querySelectorAll("label")].find(
-    (node) => node.textContent === "Standing instructions"
-  )?.control;
+  const nextInstructions = container.querySelector('textarea[aria-label="Standing instructions"]');
   expect(nextInstructions).toBeInstanceOf(HTMLTextAreaElement);
   expect((nextInstructions as HTMLTextAreaElement).value).toBe("");
 });
@@ -280,33 +279,6 @@ it("lets a later Thread override the Sandbox reasoning default locally", async (
   await act(async () => newSession().click());
   expect((await postedBody(sessions)).spec.reasoningEffort).toBe("medium");
   expect((live.snapshot.sandbox as SandboxView).binding?.session_defaults?.reasoning_effort).toBe("high");
-});
-
-it("shows the selected Kubernetes grant scope, role, and application error", async () => {
-  (live.snapshot.sandbox as SandboxView).launch_grants_pending = true;
-  (live.snapshot.sandbox as SandboxView).kubernetes_grants = [
-    {
-      name: "workspace-read",
-      grant: {
-        kind: "RoleBinding",
-        namespace: "agentplane-test",
-        role_ref: { kind: "Role", name: "workspace-reader" },
-      },
-    },
-  ];
-  (live.snapshot.sandbox as SandboxView).kubernetes_grants_ready = false;
-  (live.snapshot.sandbox as SandboxView).kubernetes_grant_error = "binding controller is waiting";
-  await render(async () => Response.json([]));
-  const statusTab = [...container.querySelectorAll<HTMLButtonElement>('button[role="tab"]')].find(
-    (tab) => tab.textContent === "Status"
-  );
-  if (!statusTab) throw new Error("Missing Status tab");
-  await act(async () => statusTab.click());
-  expect(container.textContent).toContain("Error");
-  expect(container.textContent).toContain("Launch or Kubernetes grants are not ready; sessions cannot start yet.");
-  expect(container.textContent).toContain("workspace-read · RoleBinding · namespace agentplane-test");
-  expect(container.textContent).toContain("Role/workspace-reader");
-  expect(container.textContent).toContain("binding controller is waiting");
 });
 
 /** Mantine portals a Menu's dropdown onto `document.body`, so its items live outside `container`. */

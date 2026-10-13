@@ -11,6 +11,7 @@ from more_itertools import first
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
+from agentplane.grpc_calls import RefusedError
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.channels import Channel
 from agentplane.notification_service.db import Inbox, Notice
@@ -34,8 +35,7 @@ from agentplane.notification_service.sources.github.state import RefreshDeferred
 from agentplane.notification_service.store import ClaimLostError, ConflictError, QuotaError, Store
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
-from agentplane.runner.errors import RunnerError
-from agentplane.runner_gateway.client import Runner, RunnerGatewayClient
+from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxRunner
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.errors import SandboxNotFoundError
 from agentplane.subjects import ServiceAccountRef
@@ -101,7 +101,7 @@ class Service:
         self.notice_debounce = notice_debounce
         self.stale_confirmation_s = stale_confirmation_s
 
-    async def runner(self, owner: ServiceAccountRef, destination: DestinationRef) -> Runner:
+    async def runner(self, owner: ServiceAccountRef, destination: DestinationRef) -> SandboxRunner:
         if destination.namespace != self.sandboxes.namespace:
             raise DestinationRejectedError
         try:
@@ -143,7 +143,7 @@ class Service:
             previous = entry.cursor
         return list(page.entries)
 
-    async def deliver(self, claim: Inbox, runner: Runner, notice: Notice) -> None:
+    async def deliver(self, claim: Inbox, runner: SandboxRunner, notice: Notice) -> None:
         # TODO: Observe command-scoped admission outcomes by command ID in the History Service, rather
         # than checkpointing the shared conversation journal.
         # The runner's journal end now; its entries are read from the History Service, which may lag.
@@ -297,7 +297,7 @@ class Service:
             ConnectionError,
             TimeoutError,
             grpc.aio.AioRpcError,
-            RunnerError,
+            RefusedError,
             DestinationRejectedError,
             QuotaError,
         ) as failure:

@@ -1,23 +1,30 @@
-"""The cluster-internal read side: recent decisions per subject, and health."""
+"""The cluster-internal read side: recent decisions per subject, when they change, and health."""
 
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import AsyncIterator, Callable
 from datetime import UTC, datetime
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Response, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, ConfigDict
 from pydantic.alias_generators import to_camel
 
+from agentplane.egress.decision_changes import DecisionChanges
 from agentplane.egress.decision_log import DB_ERRORS, DecisionLog
 from agentplane.egress.decisions import DecisionRecord
 from agentplane.egress.policy import Index, resolve_binding
 from agentplane.egress.resources import ActiveReason
+from agentplane.sse import frame, sse_response
 from agentplane.subjects import ServiceAccountRef
 
 logger = logging.getLogger(__name__)
+
+# Seconds of quiet after which `/decisions/changes` sends a frame anyway, so a reader whose connection
+# died silently finds out by its own read timeout instead of showing a frozen log as live.
+CHANGES_HEARTBEAT_S = 15
 
 
 class _CamelModel(BaseModel):
@@ -56,6 +63,18 @@ def create_admin_app(
     decision_log: DecisionLog, index: Index, *, clock: Callable[[], datetime] = lambda: datetime.now(UTC)
 ) -> FastAPI:
     app = FastAPI(title="agentplane-egress-admin")
+    decision_changes = DecisionChanges(decision_log.store.engine.url, heartbeat_s=CHANGES_HEARTBEAT_S)
+
+    @app.get("/decisions/changes")
+    async def changes() -> StreamingResponse:
+        """A `changed` frame whenever decisions may have been committed, and at least every heartbeat. It
+        carries nothing: the reader re-reads `/decisions`, which stays the authority."""
+
+        async def frames() -> AsyncIterator[bytes]:
+            async for _ in decision_changes.follow():
+                yield frame("changed", {})
+
+        return sse_response(frames())
 
     @app.get("/decisions")
     async def decisions(namespace: str | None = None, name: str | None = None) -> list[DecisionRecord]:

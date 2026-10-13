@@ -187,6 +187,11 @@ spec:
           name: plaid-mcp-db-spend
   monitoring:
     enablePodMonitor: true
+  plugins:
+    - isWALArchiver: true
+      name: barman-cloud.cloudnative-pg.io
+      parameters:
+        barmanObjectName: plaid-mcp-db
   probes:
     liveness:
       isolationCheck:
@@ -194,6 +199,96 @@ spec:
   storage:
     size: 5Gi
     storageClass: local-path-ovh
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: Bucket
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for plaid-mcp/plaid-mcp-db.
+  name: plaid-mcp-db-backups
+  namespace: plaid-mcp
+spec:
+  access:
+    - actions:
+        - Read
+        - Write
+        - List
+        - Tagging
+      user: plaid-mcp-db-backups
+  adoptExisting: true
+  clusterRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  name: plaid-mcp-db-backups
+  reclaimPolicy: Retain
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Identity
+metadata:
+  annotations:
+    description: Private CNPG physical backups and WAL archive for plaid-mcp/plaid-mcp-db.
+  name: plaid-mcp-db-backups
+  namespace: plaid-mcp
+spec:
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+---
+apiVersion: seaweed.seaweedfs.com/v1
+kind: S3Credentials
+metadata:
+  name: plaid-mcp-db-backups
+  namespace: plaid-mcp
+spec:
+  identityRef:
+    name: plaid-mcp-db-backups
+  reclaimPolicy: Retain
+  seaweedRef:
+    name: seaweedfs
+    namespace: seaweedfs
+  secretRef:
+    accessKeyField: AWS_ACCESS_KEY_ID
+    name: plaid-mcp-db-backups-s3-credentials
+    secretKeyField: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  annotations:
+    description: SeaweedFS S3 destination for plaid-mcp/plaid-mcp-db base backups and WAL.
+  name: plaid-mcp-db
+  namespace: plaid-mcp
+spec:
+  configuration:
+    data:
+      compression: gzip
+    destinationPath: s3://plaid-mcp-db-backups/
+    endpointURL: http://seaweedfs-s3.seaweedfs.svc:8333
+    s3Credentials:
+      accessKeyId:
+        key: AWS_ACCESS_KEY_ID
+        name: plaid-mcp-db-backups-s3-credentials
+      secretAccessKey:
+        key: AWS_SECRET_ACCESS_KEY
+        name: plaid-mcp-db-backups-s3-credentials
+    wal:
+      compression: gzip
+  retentionPolicy: 30d
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: ScheduledBackup
+metadata:
+  name: plaid-mcp-db
+  namespace: plaid-mcp
+spec:
+  backupOwnerReference: self
+  cluster:
+    name: plaid-mcp-db
+  method: plugin
+  pluginConfiguration:
+    name: barman-cloud.cloudnative-pg.io
+  schedule: 0 34 1 * * *
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

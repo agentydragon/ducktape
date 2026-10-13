@@ -1,15 +1,30 @@
-"""Public egress views and read-only Kubernetes projections. No grant mutation authority."""
+"""Public egress views and read-only Kubernetes projections. No grant mutation authority.
+
+A policy here is a `PolicySet`'s `egress` rules and a binding a `PolicyBinding` naming such a set;
+the other rule types of the same sets belong to other readers and show nowhere in these views.
+"""
 
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.egress.resources import EgressBinding, EgressCredential, EgressPolicy, Rule, Target
+from agentplane.egress.resources import EGRESS_RULE_TYPE, EgressCredential, Rule, Target
+from agentplane.policy_sets import (
+    POLICY_BINDINGS_PLURAL,
+    POLICY_SETS_PLURAL,
+    PolicyBinding,
+    PolicySet,
+    RefusedPolicySet,
+    parse_policy_set,
+    resolve_binding,
+)
+from agentplane.sandbox_resource import SANDBOX_KIND
 from agentplane.sandbox_service.errors import InventoryError
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient
@@ -19,14 +34,12 @@ from util.kubernetes import CustomObjectsClient
 FLUX_KUSTOMIZATION_LABEL = "kustomize.toolkit.fluxcd.io/name"
 
 EGRESS_API = (GROUP, VERSION)
-POLICIES_PLURAL = "egresspolicies"
-BINDINGS_PLURAL = "egressbindings"
 CREDENTIALS_PLURAL = "egresscredentials"
 
 
 class BindingNotFoundError(InventoryError):
     def __init__(self, name: str) -> None:
-        super().__init__(f"no EgressBinding {name=}")
+        super().__init__(f"no PolicyBinding {name=}")
         self.name = name
 
 
@@ -34,25 +47,32 @@ class FluxOwnedBindingError(InventoryError):
     """A Flux-applied binding is git's to remove; deleting it at runtime would only be re-applied."""
 
     def __init__(self, name: str) -> None:
-        super().__init__(f"EgressBinding {name=} comes from git; remove it there")
+        super().__init__(f"PolicyBinding {name=} comes from git; remove it there")
+        self.name = name
+
+
+class SandboxOwnedBindingError(InventoryError):
+    """The Sandbox controller keeps a Sandbox's own binding equal to its spec, so a delete would be undone."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"PolicyBinding {name=} is the Sandbox's own; change the Sandbox's policy sets instead")
         self.name = name
 
 
 class UnknownPolicyError(InventoryError):
-    """A grant naming an egress policy the namespace does not hold, which would grant nothing.
+    """A grant naming a PolicySet with no egress rules in the namespace, which would grant nothing.
 
-    The CRD admits any string in `spec.policies` and the proxy answers a name that resolves to
-    nothing with `MissingPolicy`, so a dangling name is a state the system already handles. This
-    refuses one at the moment it would be written; one the operator deletes afterwards still lands
-    there without granting rules from the missing egress policy.
+    The CRD admits any string in `spec.policySets`, and a name that resolves to nothing grants
+    nothing, so a dangling name is a state the system already handles. This refuses one at the
+    moment it would be written; one the operator deletes afterwards still lands there.
     """
 
     def __init__(self, names: list[str]) -> None:
-        super().__init__(f"no EgressPolicy in the namespace is named {', '.join(names)}")
+        super().__init__(f"no PolicySet with egress rules in the namespace is named {', '.join(names)}")
         self.names = names
 
 
-# The kinds themselves are `agentplane.egress.resources`, shared with the proxy that enforces them.
+# The rule and credential kinds are `agentplane.egress.resources`, shared with the proxy that enforces them.
 # The app modelled them separately until node H moved a rule's credential to `credentialRef` and the
 # same edit had to be made twice; a second copy of a CRD's shape is a second thing to forget.
 
@@ -109,9 +129,11 @@ class BindingView(BaseModel):
     from_git: bool = Field(description="Flux applied it; removing it is git's.")
     subjects: list[ServiceAccountRef] = Field(description="The ServiceAccounts this binding names.")
     expires_at: datetime | None = None
-    policies: list[PolicyView] = Field(description="The named egress policies that exist, in the binding's order.")
+    policies: list[PolicyView] = Field(
+        description="The named PolicySets that hold egress rules, in the binding's order."
+    )
     missing_policies: list[str] = Field(
-        description="Egress-policy names in the binding that no EgressPolicy answers to."
+        description="PolicySet names in the binding that no usable PolicySet answers to: absent, or refused."
     )
 
 
@@ -123,19 +145,17 @@ class EgressReader:
         self._custom_objects = custom_objects
 
     async def list_policies(self) -> list[PolicyView]:
-        policies, credentials = await asyncio.gather(self._list(POLICIES_PLURAL), self._list(CREDENTIALS_PLURAL))
-        return policy_views(
-            _ResourceList.model_validate(policies).items, _ResourceList.model_validate(credentials).items
-        )
+        sets, credentials = await asyncio.gather(self._list(POLICY_SETS_PLURAL), self._list(CREDENTIALS_PLURAL))
+        return policy_views(_ResourceList.model_validate(sets).items, _ResourceList.model_validate(credentials).items)
 
     async def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
         """Every binding naming this subject, in name order."""
-        policies, bindings, credentials = await asyncio.gather(
-            self._list(POLICIES_PLURAL), self._list(BINDINGS_PLURAL), self._list(CREDENTIALS_PLURAL)
+        sets, bindings, credentials = await asyncio.gather(
+            self._list(POLICY_SETS_PLURAL), self._list(POLICY_BINDINGS_PLURAL), self._list(CREDENTIALS_PLURAL)
         )
         return matching_bindings(
             _ResourceList.model_validate(bindings).items,
-            _ResourceList.model_validate(policies).items,
+            _ResourceList.model_validate(sets).items,
             _ResourceList.model_validate(credentials).items,
             subject=subject,
         )
@@ -152,27 +172,45 @@ class EgressReader:
 # same row.
 
 
+def _egress_rule(raw: dict[str, Any]) -> Rule | None:
+    return Rule.model_validate(raw) if raw["type"] == EGRESS_RULE_TYPE else None
+
+
+def egress_sets(policy_sets: Iterable[object]) -> dict[str, PolicySet[Rule] | RefusedPolicySet]:
+    """Each set as the egress reader sees it: its `egress` rules, or refused when one does not parse."""
+    parsed = [parse_policy_set(raw, parse_rule=_egress_rule) for raw in policy_sets]
+    return {policy_set.name: policy_set for policy_set in parsed}
+
+
 def matching_bindings(
-    bindings: Iterable[object], policies: Iterable[object], credentials: Iterable[object], *, subject: ServiceAccountRef
+    bindings: Iterable[object],
+    policy_sets: Iterable[object],
+    credentials: Iterable[object],
+    *,
+    subject: ServiceAccountRef,
 ) -> list[BindingView]:
-    """Every binding naming this subject, in name order."""
+    """Every binding naming this subject, in name order, but for the Sandbox's own: that is its spec's
+    `policySets`, which the Sandbox's bound policy already shows, and it is not the app's to revoke."""
+    sets = egress_sets(policy_sets)
     known = _credentials_by_name(credentials)
-    resolved = {
-        policy.metadata.name: _policy_view(policy, known) for policy in map(EgressPolicy.model_validate, policies)
-    }
     return sorted(
         (
-            binding_view(binding, resolved)
-            for binding in map(EgressBinding.model_validate, bindings)
-            if subject in binding.spec.subjects
+            binding_view(binding, sets, known)
+            for binding in map(PolicyBinding.model_validate, bindings)
+            if binding.spec.subject == subject and not is_sandbox_controlled(binding)
         ),
         key=lambda view: view.name,
     )
 
 
-def policy_views(policies: Iterable[object], credentials: Iterable[object]) -> list[PolicyView]:
+def policy_views(policy_sets: Iterable[object], credentials: Iterable[object]) -> list[PolicyView]:
+    """The sets that hold egress rules."""
     resolved = _credentials_by_name(credentials)
-    return [_policy_view(EgressPolicy.model_validate(policy), resolved) for policy in policies]
+    return [
+        _policy_view(policy_set, resolved)
+        for policy_set in egress_sets(policy_sets).values()
+        if isinstance(policy_set, PolicySet) and policy_set.rules
+    ]
 
 
 def _credentials_by_name(credentials: Iterable[object]) -> dict[str, CredentialView]:
@@ -190,8 +228,10 @@ def _credentials_by_name(credentials: Iterable[object]) -> dict[str, CredentialV
     return resolved
 
 
-def _policy_view(policy: EgressPolicy, credentials: dict[str, CredentialView]) -> PolicyView:
-    return PolicyView(name=policy.metadata.name, rules=[_rule_view(rule, credentials) for rule in policy.spec.rules])
+def _policy_view(policy_set: PolicySet[Rule], credentials: dict[str, CredentialView]) -> PolicyView:
+    return PolicyView(
+        name=policy_set.name, rules=[_rule_view(numbered.rule, credentials) for numbered in policy_set.rules]
+    )
 
 
 def _rule_view(rule: Rule, credentials: dict[str, CredentialView]) -> RuleView:
@@ -208,12 +248,21 @@ def _rule_view(rule: Rule, credentials: dict[str, CredentialView]) -> RuleView:
     )
 
 
-def binding_view(binding: EgressBinding, policies: dict[str, PolicyView]) -> BindingView:
+def is_sandbox_controlled(binding: PolicyBinding) -> bool:
+    return any(ref.controller and ref.kind == SANDBOX_KIND for ref in binding.metadata.owner_references)
+
+
+def binding_view(
+    binding: PolicyBinding,
+    sets: Mapping[str, PolicySet[Rule] | RefusedPolicySet],
+    credentials: dict[str, CredentialView],
+) -> BindingView:
+    resolution = resolve_binding(sets, binding)
     return BindingView(
         name=binding.metadata.name,
         from_git=FLUX_KUSTOMIZATION_LABEL in binding.metadata.labels,
-        subjects=list(binding.spec.subjects),
+        subjects=[binding.spec.subject],
         expires_at=binding.spec.expires_at,
-        policies=[policies[name] for name in binding.spec.policies if name in policies],
-        missing_policies=[name for name in binding.spec.policies if name not in policies],
+        policies=[_policy_view(policy_set, credentials) for policy_set in resolution.sets if policy_set.rules],
+        missing_policies=[*resolution.missing, *(refused.name for refused in resolution.refused)],
     )

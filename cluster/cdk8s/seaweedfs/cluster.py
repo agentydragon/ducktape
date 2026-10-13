@@ -99,16 +99,27 @@ GROUP = "seaweed.seaweedfs.com"
 TENANTS = frozenset(
     {
         "agentplane-staging",  # agentplane/db_backups.py
+        "atuin",  # atuin/server.py
         "authentik",  # authentik/db_backups.py
         "flux-system",  # seaweedfs/pr_visuals_bucket.py
-        "forgejo",  # forgejo/app.py
+        "forgejo",  # forgejo/app.py, forgejo/db.py
+        "gatus",  # gatus/app.py
+        "haku-console",  # haku/database.py
+        "haku-mailbox",  # haku/mailbox.py
         "home-assistant",  # home_assistant/backup.py
         "langfuse",  # langfuse/app.py
+        "litellm",  # litellm/database.py
         "loki",  # monitoring/loki.py
-        "monitoring",  # monitoring/mimir.py, monitoring/tempo.py
+        "matrix",  # matrix/matrix.py
+        "mcp-oauth-state",  # mcp_oauth_state.py
+        "monitoring",  # monitoring/mimir.py, monitoring/tempo.py, monitoring/grafana_instance.py
         "nix-cache",  # nix_cache/attic.py
+        "ntfy",  # ntfy.py
         "oci-cache",  # oci_cache/zot.py
+        "plaid-mcp",  # plaid_mcp/db.py
         "public-coder-agent",  # public_coder/backup.py
+        "study-casino",  # study_casino/app.py
+        "tofu-state",  # tofu_state/db.py
         "vm-images-publisher",  # vm_images_publisher/publisher.py
     }
 )

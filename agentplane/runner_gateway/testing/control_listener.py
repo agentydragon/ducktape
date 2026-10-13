@@ -3,7 +3,6 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import cast
 from uuid import UUID
 
 import grpc
@@ -21,7 +20,6 @@ from agentplane.runner_gateway.runner_control import ControlTiming, RunnerContro
 from agentplane.sandbox_service.reader import SandboxReader
 from agentplane.service_process import background
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
-from util.kubernetes import CustomObjectsClient
 
 # The control servicer stub names its messages; mypy reads stubs only from direct deps.
 # gazelle:include_dep //agentplane/proto:runner_control_pb2
@@ -38,7 +36,6 @@ async def serve_runner_control(
     *,
     principals: WorkloadPrincipalResolver,
     sandboxes: SandboxReader,
-    custom_objects: CustomObjectsClient,
     core: k8s_client.CoreV1Api,
     records: ConnectionRecords,
     control: LifecycleControl,
@@ -48,13 +45,7 @@ async def serve_runner_control(
     server = grpc.aio.server()
     runner_control_pb2_grpc.add_RunnerControlServicer_to_server(
         RunnerControlService(
-            principals=principals,
-            sandboxes=sandboxes,
-            custom_objects=custom_objects,
-            core=core,
-            records=records,
-            control=control,
-            timing=timing,
+            principals=principals, sandboxes=sandboxes, core=core, records=records, control=control, timing=timing
         ),
         server,
     )
@@ -88,7 +79,6 @@ async def control_plane(
         serve_runner_control(
             principals=principals,
             sandboxes=sandboxes,
-            custom_objects=cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api)),
             core=resources.destinations.core,
             records=ConnectionRecords(api, namespace=sandboxes.namespace, holder=HOLDER),
             control=resources.control,

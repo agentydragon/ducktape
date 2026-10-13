@@ -143,11 +143,17 @@ spec:
           ADAPTER: redis
           ENABLED: true
           HOST: redis://forgejo-valkey-ovh-master.forgejo.svc:6379/0
+        cron.git_gc_repos:
+          ENABLED: true
+          SCHEDULE: "@every 24h"
+          TIMEOUT: 1h
         database:
           DB_TYPE: postgres
           HOST: forgejo-db-ssd-rw.forgejo.svc:5432
           NAME: forgejo
           USER: forgejo
+        git.config:
+          gc.packRefs: false
         indexer:
           ISSUE_INDEXER_TYPE: db
         metrics:

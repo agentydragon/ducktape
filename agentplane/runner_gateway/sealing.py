@@ -14,8 +14,8 @@ from agentplane.runner_gateway.session_registry import SessionRegistry
 # gazelle:include_dep @pypi//grpcio
 # gazelle:include_dep @pypi//protobuf
 
-# Stopping harnesses can take a while, and the Sandbox Service reconciles one Sandbox at a time. Seal is
-# idempotent, so a reconcile that runs out of time seals again on its retry.
+# Stopping harnesses can take a while. Seal is idempotent, so a deletion seal that runs out of time seals
+# again on its retry.
 SEAL_S = 120
 
 

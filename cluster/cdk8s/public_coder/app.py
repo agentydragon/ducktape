@@ -1,7 +1,7 @@
 """Kubernetes resources for the public-coder-agent workload and its surrounding resources.
 
 The image tag is the placeholder "unset"; the hand-written
-cluster/k8s/agents/public-coder-agent/app/image-pins/kustomization.yaml overrides it at
+cluster/parked/public-coder-agent/app/image-pins/kustomization.yaml overrides it at
 `kustomize build` time via Flux's image-automation marker. The `ssh devbox` ConfigMap comes
 from the kustomization.yaml's configMapGenerator.
 """
@@ -25,15 +25,16 @@ from cluster.cdk8s import agent_access_profiles as access, external_creds, names
 from cluster.cdk8s.clickhouse import client
 from cluster.cdk8s.config_format import json5_config, yaml_config
 from cluster.cdk8s.external_secrets.minted_secret import mint_bearer_secret
-from cluster.cdk8s.forgejo_registry import chart as forgejo_images
+from cluster.cdk8s.forgejo_registry import pull_credentials
 from cluster.cdk8s.generation import config_map_chart, write_charts
 from cluster.cdk8s.haku import console, kube_api_proxy
-from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
+from cluster.cdk8s.manifest_roots import GENERATED_ROOT, PARKED_ROOT
 from cluster.cdk8s.namespaces import Vpa
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, remote_data
 from cluster.cdk8s.public_coder import (
     config as public_coder_config,
     egress as public_coder_egress,
+    egress_proxy_url,
     proxy as public_coder_proxy,
     sshpiper as public_coder_sshpiper,
 )
@@ -61,7 +62,7 @@ _STATE_CLAIM_NAME = "public-coder-agent-state-v2"
 _DIAGNOSTICS_CLAIM_NAME = "public-coder-agent-diagnostics"
 _GATEWAY_PASSWORD = SecretRef(namespace=NAMESPACE, name="public-coder-agent-gateway-password")
 # The OpenClaw config uses the same proxy for Matrix login-password substitution.
-_EGRESS_PROXY = public_coder_egress.PROXY_URL
+_EGRESS_PROXY = egress_proxy_url.PROXY_URL
 _NO_PROXY = "127.0.0.1,localhost,litellm.litellm.svc,litellm.litellm.svc.cluster.local"
 _KUBECONFIG_CONFIG_MAP_NAME = "kubeconfig"
 # Rendered by the kustomization.yaml's configMapGenerator.
@@ -375,7 +376,7 @@ def _deployment(scope: Construct) -> None:
                     ),
                     # The Secret comes from public_coder_proxy's ExternalSecret, rendered into this
                     # same Flux Kustomization through app/kustomization.yaml's ../proxy.
-                    image_pull_secrets=[k8s.LocalObjectReference(name=forgejo_images.SECRET_NAME)],
+                    image_pull_secrets=[k8s.LocalObjectReference(name=pull_credentials.SECRET_NAME)],
                     init_containers=[
                         k8s.Container(
                             name="seed-config",
@@ -446,11 +447,12 @@ def _claims(scope: Construct) -> None:
             name=_STATE_CLAIM_NAME,
             namespace=NAMESPACE,
             annotations={
+                "kustomize.toolkit.fluxcd.io/prune": "disabled",
                 "description": (
                     "Worker-local replacement for the archived Public Coder OpenClaw state. "
                     "WaitForFirstConsumer binds it to ovh-ns102453 when the one-off restore Pod is created; "
                     "it must not be mounted by the Deployment before restore."
-                )
+                ),
             },
         ),
         spec=k8s.PersistentVolumeClaimSpec(
@@ -485,7 +487,10 @@ def _claims(scope: Construct) -> None:
         metadata=k8s.ObjectMeta(
             name=_DIAGNOSTICS_CLAIM_NAME,
             namespace=NAMESPACE,
-            annotations={"description": "Heap snapshots and Node diagnostic reports for the OpenClaw gateway"},
+            annotations={
+                "kustomize.toolkit.fluxcd.io/prune": "disabled",
+                "description": "Heap snapshots and Node diagnostic reports for the OpenClaw gateway",
+            },
         ),
         spec=k8s.PersistentVolumeClaimSpec(
             access_modes=["ReadWriteOnce"],
@@ -873,11 +878,19 @@ def app_chart(app: App) -> Chart:
     _deployment(workload)
     _service(workload)
     _network_policies(workload)
-    _rbac(workload)
     return workload
 
 
+def rbac_chart(app: App) -> Chart:
+    """The Roles and bindings that Haku and Agentplane Sandboxes still read, and the kube-api-proxy ceiling."""
+    access = Chart(app, "rbac", disable_resource_name_hashes=True)
+    _rbac(access)
+    return access
+
+
+ACCESS_DIR = f"{GENERATED_ROOT}/agents/public-coder-agent/access"
+APP_DIR = f"{PARKED_ROOT}/public-coder-agent/app"
+
+
 def write_manifests(root: Path) -> None:
-    write_charts(
-        root, f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app", namespace_chart, chart, kubeconfig_chart, app_chart
-    )
+    write_charts(root, APP_DIR, chart, kubeconfig_chart, app_chart)

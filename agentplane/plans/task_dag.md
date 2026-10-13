@@ -327,26 +327,24 @@ builds on; changing connection direction does not move command durability or rem
 journal.
 
 Direction for stateful VMs (operator, 2026-10-12 PDT; not scheduled): our own Sandbox resource
-(`AGENTPLANE_SANDBOX_RESOURCE`, `kind: pod | vm`) replaces agent-sandbox's, and both kinds keep their
+(`AGENTPLANE_SANDBOX_RESOURCE`, `kind: pod | vm`) carries both kinds, and both keep their
 state on one filesystem PVC per Sandbox that Agentplane owns (section 7). Pods mount it as a volume,
 KubeVirt guests through virtiofs, so a Session can move between kinds.
 
 ```mermaid
 flowchart LR
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
-    VM_IMAGE[Candidate: packaged guest and storage]
     VM_PROVIDER[Candidate: production provider and API]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 7]
-    VM_EGRESS[Candidate: production admission and egress integration]
+    VM_EGRESS[Blocked: live launcher relay checks]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     VM_CONTROL_NETWORKING --> VM_LIFECYCLE
-    VM_IMAGE --> VM_PROCESS_ISOLATION
     VM_PROVIDER --> VM_PROCESS_ISOLATION
-    VM_IMAGE --> VM_LIFECYCLE
     VM_PROVIDER --> VM_LIFECYCLE
+    VM_PROVIDER --> VM_EGRESS
     VM_EGRESS --> VM_LIFECYCLE
     VM_PROCESS_ISOLATION --> VM_LIFECYCLE
     VM_LIFECYCLE --> SANDBOX_VM_ISOLATION[Capstone: selectable VM-backed Sandbox]
@@ -366,48 +364,29 @@ The experiment's guest already dials out, but `runtime_acceptance` no longer run
 or recovery on it: those phases called the runner over a port-forward. They return driven through a
 Runner Gateway.
 
-### `VM_IMAGE` — packaged guest and state storage
-
-**Candidate.** Publish a digest-pinned guest with runner/harness versions, blank-disk setup and
-retained state/workspace bounds. Check startup with both harnesses, without ad hoc downloads or
-real credentials baked into the image. Reuse the proven prototype, not another platform evaluation.
-The state PVC reaches the guest through virtiofs (`EnableVirtioFsStorageVolumes`, on in
-`cluster/cdk8s/kubevirt/app.py`; checked live 2026-10-12 with a Fedora 41 guest). KubeVirt v1.8.2
-runs virtiofsd as uid/gid 107 with all capabilities dropped and no setting to change that, so every
-file a guest writes lands on the PVC as `107:107`, `chown` to anything else fails, and only guest
-root and a guest user whose uid and gid are both 107 can write. Checked live: a `107:107` guest user
-creates, renames, `chmod`s and deletes files, and a pod running as `107:107` then edits all of it.
-The guest image therefore runs the runner as guest root and the harness as a `107:107` user (`VM_PROCESS_ISOLATION`). `agentplane-testing`'s
-4Gi container limit caps a guest at about 1.7Gi: raise testing's limits or use small VMs there
-(operator, 2026-10-12 PDT).
-
 ### `VM_PROVIDER` — production provider API and lifecycle intent
 
-**Candidate.** Integrate typed environment kinds, templates/destinations, inventory, reconciliation,
-RBAC and UI. Container behavior remains intact. Review the changed service contracts and schema
-rollout as part of this work. For stateful VMs the kind lives on our own Sandbox resource, which
-reconciles to a bare Pod or a `VirtualMachine` (suspend is deleting the Pod or `runStrategy: Halted`).
-Re-type what is worth keeping from draft #8843 (`vm_view` status mapping and ownership checks, the
-`VmTemplate` catalog, halted create then start, DataVolume validation, halted image replacement)
-onto today's code, then close #8843 unmerged; it cannot be rebased. A Sandbox's kind comes only
-from its `SandboxTemplate`, so `CreateSandbox`, its proto and the app need no change (operator,
-2026-10-12 PDT).
+**Candidate.** The Sandbox Controller makes a `VirtualMachine` from a `SandboxTemplate`'s `vm`
+(`agentplane/sandbox_controller/SPEC.md` § VMs), the Runner Gateway accepts its virt-launcher Pod, and
+`agentplane-testing` has the `runner-vm` template (`cluster/cdk8s/agentplane/runner_vm.py`). Left:
+boot a Sandbox on `runner-vm` and open a Session on it. Re-type what is
+worth keeping from draft #8843 (`vm_view` status mapping, DataVolume validation, halted image
+replacement), then close it unmerged; it cannot be rebased.
 
-### `VM_EGRESS` — integrate production admission and proxy path
+### `VM_EGRESS` — check the launcher relay live
 
-**Candidate.** Implement the selected launcher-injection/proxy route on the production stack: a
-VM's relay comes from the admission policy on virt-launcher (#8840,
-`cluster/cdk8s/agentplane/kubevirt_experiment/policy.py`), not from a Pod template, so the
-template-level sidecar check the Action box decision adds covers pods only. The relay's grants are
-the VM ServiceAccount's egress bindings; it reads
-`PolicyBinding`s only.
-Verify proxy-only credentials, routing, token replacement and denied cross-environment access;
-check failure scope for the new admission configuration. Do not repeat the entire completed
-prototype matrix or require simultaneous cluster-wide disasters.
+**Blocked on the VM provider.** `agentplane-testing` deploys the launcher relay policy
+(`cluster/cdk8s/agentplane/launcher_relay.py`), which copies a runner Pod's egress sidecar, routes and
+tokens into the virt-launcher of a VM controlled by one of our Sandboxes. Once the provider creates
+such a VM, check on it: no token reaches the guest; the proxy and each platform route answer the
+guest at `10.0.2.1`; the relay is ready, which needs the VM's masquerade interface to list ports so
+kubelet's probe on 3129 is not forwarded to the guest; the runner fence admits the launcher and
+another Sandbox's guest cannot reach it; a forged launcher is refused. Do not repeat the entire
+completed prototype matrix or require simultaneous cluster-wide disasters.
 
 ### `VM_PROCESS_ISOLATION` — protect control from harness processes
 
-**Blocked on image/provider.** Enforce aggregate memory/process/disk budgets and process-control
+**Blocked on the provider.** Enforce aggregate memory/process/disk budgets and process-control
 boundaries. Test representative tool/harness termination and bounded exhaustion to establish which
 runner/control state survives and what needs durable recovery. This directly addresses agents
 accidentally killing their own harness; guest or container packaging alone is not that guarantee.
@@ -424,7 +403,8 @@ until pods hit the problem. Disk exhaustion is not covered and waits on #4717.
 
 ### `VM_LIFECYCLE` — integrated lifecycle verification
 
-**Blocked on provider, image, selected control networking, egress and isolation.** Exercise both harnesses through real service
+**Blocked on provider, selected control networking, egress and isolation.** Boot the published
+guest (`agentplane-runner-vm-image.yml`) and exercise both harnesses through real service
 routes with retained-state stop/start and a representative replacement; confirm identity, replay and
 cleanup. Automated tests cover restart/concurrency branches. Additional live faults need a concrete
 unresolved platform risk, not a Cartesian product of every component crash and lifecycle operation.
@@ -438,8 +418,9 @@ absence of every imaginable failure, establishes the delivered contract.
 ### `KUBEVIRT_EXPERIMENT_RETIRE` — delete the KubeVirt experiment
 
 **Blocked on the VM capstone.** Once the production provider covers it, move anything still needed
-(the launcher relay admission policy, the acceptance driver if it becomes the VM lifecycle test)
-into production code, then delete `cluster/cdk8s/agentplane/kubevirt_experiment/` and the manifests it generates.
+(the acceptance driver, if it becomes the VM lifecycle test) into production code, then delete
+`cluster/cdk8s/agentplane/kubevirt_experiment/`, its launcher policy (production's is
+`launcher_relay.py`) and the manifests it generates.
 
 ### `LOCAL_BAZEL` — bounded local client in a VM
 
@@ -457,6 +438,7 @@ app/Sandbox Service database changes requires its own migration safety review.
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     SERVICE_LOG_FLAGS[Unscheduled: logging flags in the services]
+    ISOLATED_ACCEPTANCE_CI[Unscheduled: acceptance tests in their own CI workflow]
 ```
 
 ### `CLAUDE_CODE_WEB_BRIDGE` — Claude Code web sessions in Agentplane
@@ -472,6 +454,19 @@ messages, by shimming the web interface's control protocol. Builds on the viewer
 every service at `INFO`. A setting for the level, per logger where it helps (request logging in the
 app, the gRPC clients), lets a debugging session turn detail up on one Deployment without an image.
 
+### `ISOLATED_ACCEPTANCE_CI` — acceptance tests in their own CI workflow
+
+**Unscheduled; operator, 2026-10-12 PDT: eventually.** Today the deployed vertical tests under
+`agentplane/acceptance/` run by hand against the stateful `agentplane-testing` environment, and CI
+never runs them. Move them into their own CI workflow that runs in isolation, so the cluster no
+longer carries a stateful environment for them. Options named: an isolated part of the operator's
+cluster, GitHub's runners, or BuildBuddy's; and the cheap-experiments LiteLLM key or a new key
+provisioned for CI. Constraint: an agent can still run, inspect and step through the tests itself.
+Open: where they run. The k3s-on-RBE spike (#10214, draft) shows a real kubelet runs in a
+BuildBuddy action, but with no ClusterIP Services, no KubeVirt and no Cilium, so tests that need
+those stay elsewhere. envtest covers only API-server behavior, not Pods, harnesses or LLM calls, so
+it does not replace these tests.
+
 ## 6. Existing access and lifecycle follow-ups
 
 These are bounded existing work, not dependencies on the broader multiagent model. Confirm current
@@ -482,11 +477,10 @@ observations. New database work follows the task-specific review and rollout req
 flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
-    SANDBOX_CREATE_CUTOVER[Sandboxes are created as ours, section 7] --> POLICY_RUNTIME_GRANTS[Blocked: time-limited grants of any rule type]
-    SANDBOX_CREATE_CUTOVER --> SANDBOX_RBAC
-    AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox, section 7] --> OLD_POLICY_KINDS_DROP[Blocked: drop the old policy kinds]
+    POLICY_RUNTIME_GRANTS[Candidate: time-limited grants of any rule type]
+    OLD_POLICY_KINDS_DROP[Candidate: drop the old policy kinds]
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
-    SANDBOX_RBAC[Blocked: bounded deployed grant checks]
+    SANDBOX_RBAC[Candidate: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
     NETWORK_WORKLOAD_IDENTITY[Unscheduled: network-level workload identity]
     PC_KUBERNETES_POLICY_SET[Unscheduled: public-coder's Kubernetes access as one PolicySet]
@@ -523,22 +517,17 @@ not ad hoc grants. Test an allowed and denied operation; do not add privileges a
 
 ### `POLICY_RUNTIME_GRANTS` — time-limited grants
 
-**Blocked on Sandboxes being created as ours.** An operator-only grant/revoke RPC with optional `expiresAt`
+**Candidate.** An operator-only grant/revoke RPC with optional `expiresAt`
 for sets of any rule type, and UI chips showing each binding's set, expiry and ready conditions.
 One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry, so no reader
 handles expiry itself.
 
 ### `OLD_POLICY_KINDS_DROP` — drop the old policy kinds
 
-**Blocked on retiring agent-sandbox, whose Sandboxes keep the old kinds until then; the operator merges it.** Delete the
+**Candidate; the operator merges it.** Delete the
 `ActionPolicySet`/`ActionPolicyBinding` and `EgressPolicy`/`EgressBinding` CRDs, their readers in
-the Action Service and egress proxy (with the proxy's admin `/bindings` observations), the
-`EgressPolicy` that cdk8s's `add_egress_policy` renders beside each egress `PolicySet` (and the `ActionPolicySet`
-`actions_staging_policies._policy_set` renders beside each Action one), the Sandbox Service's per-type binding writers and
-annotations (`egress.py`, `action_policy.py`, `kubernetes_bindings.py` and their views), and the
-presets' separate `egress_policies`, `action_policy_sets` and `kubernetes_grants` fields
-(`app/presets.py`, after the manifests stop setting them), the KubernetesBindings reconciler, the
-grant annotation and its finalizer, and the grant catalog.
+the Action Service and egress proxy (with the proxy's admin `/bindings` observations), and the presets' separate `egress_policies`, `action_policy_sets`
+and `kubernetes_grants` fields (`app/presets.py`, once the manifest generator stops setting them).
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 
@@ -549,7 +538,7 @@ public-coder until `PC_KUBERNETES_POLICY_SET`) stay Flux bindings. Test an allow
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
 
-**Blocked on Sandboxes being created as ours; security-relevant.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
+**Candidate; security-relevant.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
 and verify intended versus unrelated scope, including Role edits and credential-use boundaries,
 without recording credentials. Use [agent RBAC](../../cluster/docs/agent_rbac.md) and existing tests;
 only unresolved deployed wiring needs a live check, not a repeat of every already-covered operation.
@@ -588,9 +577,8 @@ stays in place with no Pod or VM scheduled. A Sandbox is its state, running or n
 **incarnation** is one Pod or VM. Stopping, replacing the image and starting again keeps the
 Sandbox, so keeping the state means keeping the Sandbox, and deleting the Sandbox is the only thing
 that deletes it. The same resource carries the VM kind, so section 4's stateful VMs build on these
-nodes instead of a parallel track. Today a Session lives as long as its agent-sandbox `Sandbox`
-(suspension removes the Pod and keeps the volume, but the PVC is owned by the `Sandbox` and goes
-with it). The History Service keys by Session, so it can record each incarnation, and a seal closes
+nodes instead of a parallel track. Today a Session lives as long as its `Sandbox`
+(suspension removes the Pod and keeps the state PVC, which goes with the `Sandbox`). The History Service keys by Session, so it can record each incarnation, and a seal closes
 an incarnation, not the Session.
 
 A related direction (operator, 2026-10-11 PDT; later, not scheduled): Sessions living in a
@@ -610,7 +598,6 @@ flowchart TD
     DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
     SESSION_STATE_VOLUME_DESIGN --> AGENTPLANE_SANDBOX_RESOURCE
     AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
-    AGENTPLANE_SANDBOX_RESOURCE --> AGENT_SANDBOX_RETIRE[Blocked: Agentplane stops using agent-sandbox]
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
     SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Unscheduled: idle runner Sandboxes stop]
@@ -635,15 +622,14 @@ connects. Resuming by Session ID works while the Sandbox exists, stopped or not.
 
 **Decision; direction set by the operator, 2026-10-10 and 2026-10-12 PDT.** One filesystem PVC per Sandbox holds the native harness files and the
 runner's state, separate from the workspace; each incarnation's runner continues the same journal
-on it. The Sandbox Service creates and owns it, with no owner reference, mounted as a volume in pods
-and through virtiofs in VMs (`VM_IMAGE`), never from agent-sandbox's `volumeClaimTemplates`,
-which make the agent-sandbox `Sandbox` its controller owner. The runner's state and the harness files sit in
+on it. The Sandbox Controller creates it from the template's `stateVolume`, mounted as a volume in pods
+and through virtiofs in VMs (`agentplane/runner/vm.nix`). The runner's state and the harness files sit in
 separate `/state/runner` and `/state/harness` directories (`VM_PROCESS_ISOLATION`). For VMs, the operator's direction (2026-10-12 PDT) keeps the workspace
 VM-local rather than on a PVC, so it is dropped on a switch from VM to pod, and makes it a mounted
 PVC once the cluster has block storage that can move between kinds (OpenEBS or another
 provisioner); VM-local means a disk the VM keeps across stop and start, deleted only with the
 Sandbox, since a revived conversation refers to files the agent made (operator, 2026-10-12 PDT). Decide: storage class, since `local-path` pins a volume to one node and so pins every incarnation
-there; file ownership, since files a VM writes are `107:107` (`VM_IMAGE`), so pods run the runner and harness as `107:107` and a Session moves between kinds with no `chown` (checked live); its quota (TODO, deferred by the
+there; file ownership, since files a VM writes are `107:107` (`agentplane/runner/vm.nix`), so pods run the runner and harness as `107:107` and a Session moves between kinds with no `chown` (checked live); its quota (TODO, deferred by the
 operator 2026-10-12: `local-path` enforces no PVC size, and inside a guest `df` shows the node's
 whole disk; #4717 tracks a capacity-enforcing provisioner); and refusing an incompatible harness or
 runner version rather than attempting it.
@@ -652,32 +638,16 @@ runner version rather than attempting it.
 
 **In progress; operator, 2026-10-12 PDT: the shared base of this section and stateful VMs.** Our
 `Sandbox` and `SandboxTemplate` and the Sandbox Controller (`agentplane/sandbox_controller/SPEC.md`)
-reconcile a pod Sandbox into its state PVC and Pods. This node is done when the controller does
-everything the Sandbox Service does around an agent-sandbox `Sandbox` today and Sandboxes are created
-as ours: the nodes below. The Sandbox Service then folds into the controller, which is renamed for it
+reconcile a pod Sandbox into its state PVC and Pods. Sandboxes are created as ours, and
+what is left is the nodes below. The Sandbox Service then folds into the controller, which is renamed for it
 (operator, 2026-10-11 PDT), and stays separate from the Runner Gateway, so the provisioning
 permissions stay off the runner-facing service. The gateway may write a Sandbox's desired running
-state, which the controller validates; it gets no resume RPC on the Sandbox Service, which already
-calls the gateway to seal. Action Service boxes keep a catalog of their own ([ADR](../docs/adr_action_sandboxes.md)).
+state, which the controller validates; it gets no resume RPC on the Sandbox Service. Action Service boxes keep a catalog of their own ([ADR](../docs/adr_action_sandboxes.md)).
 
 ```mermaid
 flowchart TD
-    SANDBOX_CONTROLLER_PROVISIONING[In flight: the controller provisions a Sandbox]
     VM_PROVIDER[VM provider, section 4] --> SANDBOX_IMAGE_REPLACE[Blocked: replace a VM's runner image between incarnations]
-    SANDBOX_CREATE_CUTOVER[Blocked: Sandboxes are created as ours]
-    SANDBOX_CONTROLLER_PROVISIONING --> SANDBOX_CREATE_CUTOVER
-    SANDBOX_CREATE_CUTOVER --> AGENT_SANDBOX_RETIRE[Agentplane stops using agent-sandbox]
 ```
-
-### `SANDBOX_CONTROLLER_PROVISIONING` — the controller provisions a Sandbox
-
-**Done on testing.** Our Sandbox carries
-the whole recipe the Sandbox Service keeps as annotations on agent-sandbox's: `policySets`, session
-defaults and the bootstrap command. The controller makes its ServiceAccount and one `PolicyBinding`,
-which never sets `expiresAt`. Our runner template reaches the Runner Gateway and the ingress over
-the egress sidecar's platform routes (`cluster/cdk8s/agentplane/platform_routes.py`), so no
-runner-endpoint egress policy is bound. Runtime and time-limited grants are separate bindings
-(`POLICY_RUNTIME_GRANTS`).
 
 ### `SANDBOX_IMAGE_REPLACE` — replace a VM's runner image between incarnations
 
@@ -692,32 +662,6 @@ and the controller has no version gate. So of #8843's `ReplaceVmImage` (replaced
 [the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md)) the Halted-only rewrite carries over,
 and the exact `VmTemplate.state_schema_version` match does not.
 
-### `SANDBOX_CREATE_CUTOVER` — Sandboxes are created as ours
-
-**In flight; the operator chose "both kinds" (2026-10-12): new Sandboxes are ours, existing
-agent-sandbox ones keep working.** The Sandbox Service, the app's live view and the Runner
-Gateway's destination lookup read both kinds, and our spec carries session defaults and the
-bootstrap command. `CreateSandbox`, suspend, resume and delete write ours on testing
-(`own_sandboxes` in the Sandbox Service's settings). That lookup refuses new Sessions and commands for a deleting Sandbox, as it does for
-one in agent-sandbox teardown, while the gateway seals it. Existing staging Sandboxes stay on agent-sandbox until `AGENT_SANDBOX_RETIRE`
-recreates them. The Sandbox Controller and our runner `SandboxTemplate`s exist on `agentplane-testing` only
-(`Environment.own_sandboxes`) until then: the cutover
-lands on testing first, and staging gets the controller and the cutover only once testing holds
-(operator, 2026-10-12 PDT: testing down beats staging down). Where the app's `own_sandboxes`
-setting is on, the create form offers the namespace's `PolicySet`s in place of the three grant
-pickers and presets fill `policy_sets`; the acceptance suite asks for policy sets wherever the form
-offers them; testing has it on.
-
-### `AGENT_SANDBOX_RETIRE` — Agentplane stops using agent-sandbox
-
-**Blocked on our resource; decision card before the PR.** Staging Sandboxes are recreated on our
-resource, not converted; until then they keep the old policy kinds, and the recreated ones get the controller's `PolicyBinding`. Then delete Agentplane's
-agent-sandbox runner `SandboxTemplate`s (`cluster/cdk8s/agentplane/runner_sandbox.py`, whose
-rendered spec ours now copy: build ours directly) and `Environment.own_sandboxes`, the Sandbox
-Service's agent-sandbox inventory, views and watch, the gateway's `SealSandbox` RPC, the annotations it used as its record, the
-`volumeClaimTemplates` state volume and the Sandbox Service's agent-sandbox RBAC. The controller
-install stays for `cluster/cdk8s/agent_workspaces.py`.
-
 ### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes stop
 
 **Unscheduled; needs design; operator, 2026-10-11 PDT.** An idle runner Sandbox stops its
@@ -725,8 +669,7 @@ current incarnation: the Pod or VM goes, and the Sandbox, its ServiceAccount, bi
 PVC stay, so nothing is sealed or lost and `SESSION_REVIVE` resumes it on the same PVC. Decide what
 counts as idle (no turns or commands for a configured time, and nothing attached), and whether a
 stopped Sandbox is ever deleted outright, and when; deleting goes through
-[teardown](../sandbox_service/API.md#teardown) and the seal. Before our resource exists, a pod-only
-version could use agent-sandbox's `operatingMode`. Action Service boxes are
+[teardown](../sandbox_service/API.md#teardown) and the seal. Action Service boxes are
 `ACTION_BOX_IDLE_REAPER`'s, which only ever deletes.
 
 ### `SESSION_INCARNATIONS` — a Session records its incarnations
@@ -854,7 +797,6 @@ runner through the Sandbox Service.
 
 ```mermaid
 flowchart TD
-    GATEWAY_CLIENT_SPLIT[Unscheduled: the gateway client stands alone]
     AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 7]
     SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
     AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
@@ -867,11 +809,6 @@ flowchart TD
 journal entries its ingress has already acknowledged, behind a flag, with full persistence kept
 selectable. Not designed: what the runner still needs locally (cursors, seal state, entries a
 resumed harness or a lost push reads back) once acknowledged entries are gone.
-
-### `GATEWAY_CLIENT_SPLIT` — the gateway client stands alone
-
-**Unscheduled.** `RunnerGatewayClient`'s `Runner` handle is renamed and its
-`command_admission_timeout_s` stops being nullable.
 
 ### `SEAL_FINALIZER` — seal as a finalizer on every delete
 
@@ -904,39 +841,17 @@ Refactors found by reading devel (2026-10-11 PDT) against the quality bar and
 ```mermaid
 flowchart TD
     subgraph COHERENCE_REFACTORS[Coherence refactors]
-        RUNNER_ERRORS_REHOME[Unscheduled: errors beside the client that raises them]
         SETTLE_DELTAS_ALWAYS_ON[Unscheduled: retire the settle_deltas flag]
-        SERVICE_SETTING_OLD_NAMES_DROP[Waits on rollout: drop the old setting names]
         NOTIFICATION_GATEWAY_SETTINGS[Waits on rollout: the notification config sets runner_gateway]
     end
     COHERENCE_REFACTORS --> REFACTOR_COHERENCE_AUDIT[Whole-refactor coherence audit]
 ```
-
-### `RUNNER_ERRORS_REHOME` — errors beside the client that raises them
-
-**Unscheduled.** `agentplane.runner.errors` is now every service's "session refused" vocabulary:
-the gateway, the status translation the Sandbox Service and Runner Gateway clients share
-(`agentplane/grpc_calls.py`, which raises it for `FAILED_PRECONDITION`) and the app's
-Thread-identity conflicts raise it. Move the client-side error beside that translation, per
-grpc_services.md, and give the app's `bridge.py` its own error type.
 
 ### `SETTLE_DELTAS_ALWAYS_ON` — delta settlement always on
 
 **Unscheduled; operator, 2026-10-11 PDT: keep the flag for debugging for now, may retire it later.**
 Settlement is on by default; `ingress.settle_deltas` turns it off. Retiring the flag makes
 settlement unconditional: delete the setting, `Environment.settle_deltas` and the `Store` flag.
-
-### `SERVICE_SETTING_OLD_NAMES_DROP` — drop the old setting names
-
-**Waits on rollout** of `agentplane-app`, `agentplane-runner-gateway-migrate` and
-`agentplane-history-migrate` images that read `runner_gateway_control_target`,
-`AGENTPLANE_RUNNER_GATEWAY_COMMANDS_DATABASE_URL` and `AGENTPLANE_HISTORY_SERVICE_DATABASE_URL`, on
-both agentplane-staging and agentplane-testing. Until then cdk8s renders each old env var beside the
-new one, which an image that does not read it ignores. Then delete the three `CLEANUP` entries,
-`AGENTPLANE_SANDBOX_SERVICE_CONTROL_TARGET` (`cluster/cdk8s/agentplane/app.py`),
-`AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL` (`runner_gateway.py`) and
-`AGENTPLANE_SANDBOX_SERVICE_DATABASE_URL` (`history_service.py`), and regenerate. No code reads the
-old names.
 
 ### `NOTIFICATION_GATEWAY_SETTINGS` — the notification config sets `runner_gateway`
 
@@ -945,6 +860,86 @@ both agentplane-staging and agentplane-testing. Until then the config keeps the 
 keys in `sandbox_service`, which `Settings` moves to `runner_gateway` as it loads. Then cdk8s
 (`cluster/cdk8s/agentplane/notifications.py`) renders a `runner_gateway` block, regenerate, and
 delete the `CLEANUP` move in `notification_service/settings.py` with its test.
+
+## 12. The Runner Gateway serves the runner's own service
+
+Target and decisions: [History Service plan](history_service.md#decided-operator-2026-10-10-pdt)
+(Runner Gateway shape, Session specs). Today `RunnerGateway` wraps every `Runner` call with a
+Session registry, spec assembly, readiness checks and seals; these nodes move each job to its owner
+until the gateway is the `Connect` listener plus a proxy of `Runner` with per-method authorization.
+
+```mermaid
+flowchart TD
+    GATEWAY_RUNNER_PROXY[Candidate: the gateway proxies Runner at the control address]
+    RUNNER_SESSION_LAUNCH[Candidate: the runner owns bootstrap, platform text and starting]
+    APP_SESSION_DEFAULTS[Candidate: the app sends complete Session specs]
+    HISTORY_SESSION_SANDBOX[Candidate: the History Service records each Session's Sandbox]
+    CONTROLLER_SEALS[Blocked: the Sandbox controller seals]
+    GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
+    GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
+    GATEWAY_RUNNER_PROXY --> CONTROLLER_SEALS
+    GATEWAY_RUNNER_PROXY --> GATEWAY_WRAPPER_RETIRE
+    RUNNER_SESSION_LAUNCH --> APP_SESSION_DEFAULTS
+    APP_SESSION_DEFAULTS --> GATEWAY_WRAPPER_RETIRE
+    HISTORY_SESSION_SANDBOX --> GATEWAY_WRAPPER_RETIRE
+    CONTROLLER_SEALS --> GATEWAY_WRAPPER_RETIRE
+    GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
+```
+
+### `GATEWAY_RUNNER_PROXY` — the gateway proxies `Runner` at the control address
+
+**Candidate.** The replica holding a Sandbox's connection serves `agentplane.proto.runner_control.Runner`
+at `<sandbox>-control` as a generic unary handler: it forwards the serialized request as a tunnel
+`Call` and returns the `Reply`'s status and bytes. It names the Sandbox by `:authority`; if
+grpc-python does not expose that to the server, the shared client sets a header from the same
+target. Per-method authorization: callers' accounts as `RunnerGateway` allows them now, `Seal` for
+the Sandbox controller only. Nothing calls it yet.
+
+### `RUNNER_SESSION_LAUNCH` — the runner owns bootstrap, platform text and starting
+
+**Candidate; Sandboxes of our own kind.** The Sandbox controller gives the runner its Sandbox's
+`bootstrap` and the rendered platform instructions with the runner's other configuration. The
+runner runs the bootstrap once before its first Session opens, prepends the platform instructions
+and its own Sandbox and Session ID to every Session's instructions, and `OpenSession` starts a
+stopped harness whose setup succeeded. The gateway's `launch_spec` and `open_session` stop adding
+them for our kind.
+
+### `APP_SESSION_DEFAULTS` — the app sends complete Session specs
+
+**Candidate after `RUNNER_SESSION_LAUNCH`; a for-now choice.** The app records which preset a
+Sandbox was made from on the Sandbox (a label) and fills a complete `SessionSpec` and setup script
+from it. `session_defaults` leaves `CreateSandboxRequest`, `SandboxBinding` and our Sandbox's spec,
+and `CreateSessionRequest` loses its field mask.
+
+### `HISTORY_SESSION_SANDBOX` — the History Service records each Session's Sandbox
+
+**Candidate.** The ingress records, with each Session's writer, the Sandbox that writer is. Decide
+in the node: from the Pod-bound token's Pod claim (the Pod is named for its Sandbox) or from a
+lookup, which would make the History Service read Kubernetes. The read API answers which Sandbox
+each Session ran in, and which Sessions a Sandbox name matches, deleted Sandboxes included. The
+History Service learns a Session at its first push, so the app keeps the Sandbox it opened a
+Session in until the History Service has it. Existing Sessions are backfilled from the gateway's
+registry.
+
+### `CONTROLLER_SEALS` — the Sandbox controller seals
+
+**Blocked on `GATEWAY_RUNNER_PROXY`.** For a deleting Sandbox of our kind the Sandbox controller
+calls `Runner.Seal` through the proxy, repeats it until every seal is flushed, and sets
+`SessionsSealed` itself. `runner_gateway/deletion_seals.py` and the gateway's write to Sandboxes go.
+
+### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
+
+**Blocked on the nodes above.** The app and the Notification Service
+call `Runner` through the proxy and ask the History Service where a Session runs. Delete the
+`RunnerGateway` service and proto, its client, `session_registry.py`, `destinations.py`,
+`sealing.py`, `session_lifecycle.py`, `wire.py` and `instructions.py`. This makes
+`GATEWAY_CLIENT_SPLIT` and `SANDBOX_DATABASE_RENAME` moot; delete them here.
+
+### `GATEWAY_DATABASE_DROP` — drop the `sandbox_commands` database
+
+**Blocked on `GATEWAY_WRAPPER_RETIRE`; a data drop, merged by the operator.** Drop the database,
+its role, Secret and migration init container once `HISTORY_SESSION_SANDBOX` holds every Session's
+Sandbox.
 
 ## Scope and retirement of stale gates
 

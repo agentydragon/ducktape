@@ -44,7 +44,7 @@ def control_client(token_file: Path, control_target: str) -> SandboxControlClien
 
 
 def gateway_client(
-    channel: grpc.aio.Channel, token_file: Path, *, command_admission_timeout_s: float | None, control_target: str
+    channel: grpc.aio.Channel, token_file: Path, *, command_admission_timeout_s: float, control_target: str
 ) -> RunnerGatewayClient:
     return RunnerGatewayClient(
         channel,
@@ -57,7 +57,7 @@ def gateway_client(
 
 @asynccontextmanager
 async def connect(
-    target: str, token_file: Path, *, command_admission_timeout_s: float | None, control_target: str
+    target: str, token_file: Path, *, command_admission_timeout_s: float, control_target: str
 ) -> AsyncIterator[RunnerGatewayClient]:
     """The client of the gateway at `target`, with the control Service at `control_target`."""
     async with dial(target) as channel:

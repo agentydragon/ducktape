@@ -18,7 +18,8 @@ from uuid import UUID
 import httpx
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 
-from agentplane.app.api import EgressGrant, SandboxForm
+from agentplane.app.api import EgressGrant
+from agentplane.app.live import DecisionsSnapshot, DecisionsUnavailable
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPresetView
 from agentplane.app.sandbox_models import NewSandbox, SandboxView
@@ -81,9 +82,6 @@ class Client:
     async def presets(self) -> list[SandboxPresetView]:
         return [SandboxPresetView.model_validate(row) for row in await self._json("GET", "/presets")]
 
-    async def sandbox_form(self) -> SandboxForm:
-        return SandboxForm.model_validate(await self._json("GET", "/sandboxes/form"))
-
     async def templates(self) -> list[str]:
         return list(await self._json("GET", "/sandboxes/templates"))
 
@@ -115,7 +113,21 @@ class Client:
         return [BindingView.model_validate(row) for row in await self._json("GET", f"/sandboxes/{name}/egress")]
 
     async def decisions(self, name: str) -> list[Decision]:
-        return [Decision.model_validate(row) for row in await self._json("GET", f"/sandboxes/{name}/egress/decisions")]
+        """The first frame of the sandbox's egress decision stream, oldest first."""
+        async with self._http.stream(
+            "GET", f"/live/sandboxes/{name}/egress/decisions", headers={"Accept": "text/event-stream"}
+        ) as response:
+            response.raise_for_status()
+            kind = None
+            async for line in response.aiter_lines():
+                if line.startswith("event:"):
+                    kind = line.removeprefix("event:").strip()
+                elif line.startswith("data:") and kind == "snapshot":
+                    snapshot = DecisionsSnapshot.model_validate_json(line.removeprefix("data:"))
+                    if isinstance(snapshot.decisions, DecisionsUnavailable):
+                        raise RuntimeError(f"egress decisions of {name} unavailable: {snapshot.decisions.detail}")
+                    return snapshot.decisions
+        raise RuntimeError(f"the egress decision stream of {name} ended without a snapshot")
 
     async def create_session(
         self, name: str, session_id: UUID, *, overrides: dict[str, object] | None = None

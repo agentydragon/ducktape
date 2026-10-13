@@ -45,6 +45,3 @@ class Settings(YamlFileSettings):
         min_length=1,
         description="This replica's Pod IP, where a Sandbox's control Service points while it holds the runner connection.",
     )
-    sealer_accounts: frozenset[ServiceAccountRef] = Field(
-        description="The Sandbox Service's account, which alone may seal a Sandbox for teardown."
-    )

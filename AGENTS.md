@@ -94,8 +94,8 @@ by a PR that makes the controller own the state.
 
 All CI runs through GitHub Actions → `bbr` (BuildBuddy RBE); no `buildbuddy.yaml`.
 `.github/workflows/ci.yml` orchestrates bazel-ci → release/push-images;
-pre-commit, ansible-lint, nix-attic-push, container-images, rbe-container-image, and
-openclaw-image trigger independently. Adding or publishing a container image:
+pre-commit, ansible-lint, nix-attic-push, container-images, and rbe-container-image
+trigger independently. Adding or publishing a container image:
 <cluster/docs/container-images.md>.
 
 **FYI: a repin of the RBE image is costly, so avoid churn, not edits.** The

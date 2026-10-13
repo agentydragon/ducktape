@@ -1,5 +1,4 @@
-// Card and notification action descriptions for Grocy's tools. React-free so `../../sw.ts`
-// can bundle them (see ../action_entry.ts).
+// Action descriptions for Grocy's tools (see ../action_entry.ts).
 
 import { mcpToolSchema } from "../../mcp_tool_schema";
 import { type ActionEntry, fixed, fromArgs, plural } from "../action_entry";

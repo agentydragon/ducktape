@@ -43,7 +43,7 @@ from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
-from cluster.cdk8s.forgejo_registry.chart import forgejo_images_creds_external_secret
+from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_external_secret
 from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
@@ -122,12 +122,6 @@ class App(Construct):
             "role",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
-                RolePolicyRule(
-                    resources=[custom_resource("extensions.agents.x-k8s.io", "sandboxtemplates")], verbs=["get", "list"]
-                ),
-                RolePolicyRule(
-                    resources=[custom_resource("agents.x-k8s.io", "sandboxes")], verbs=["get", "list", "watch"]
-                ),
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 RolePolicyRule(
@@ -139,8 +133,8 @@ class App(Construct):
                             "egresscredentials",
                             "actionpolicysets",
                             "actionpolicybindings",
-                            # The create form lists PolicySets where Sandboxes are our own kind.
-                            *(("policysets",) if self.env.own_sandboxes else ()),
+                            # The create form lists them.
+                            "policysets",
                         )
                     ],
                     verbs=["get", "list", "watch"],
@@ -208,14 +202,7 @@ class App(Construct):
                 host="0.0.0.0",
                 port=self.service.pod_port,
             ),
-            env_variables={
-                **env,
-                env_name(Settings, "runner_gateway_control_target"): control_target,
-                # CLEANUP(added 2026-10-12): drop once agentplane-staging and agentplane-testing pin an
-                #   agentplane-app image that reads runner_gateway_control_target. Both names are env vars,
-                #   not flags, because an image ignores an env var it does not know but refuses a flag.
-                "AGENTPLANE_SANDBOX_SERVICE_CONTROL_TARGET": control_target,
-            },
+            env_variables={**env, env_name(Settings, "runner_gateway_control_target"): control_target},
             ports=[self.service.port.container_port()],
             readiness=http_probe("/readyz", port=self.service.pod_port, initial_delay_seconds=3, period_seconds=10),
             liveness=http_probe("/healthz", port=self.service.pod_port, initial_delay_seconds=20, period_seconds=30),

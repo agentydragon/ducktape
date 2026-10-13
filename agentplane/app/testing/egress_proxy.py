@@ -19,6 +19,8 @@ class FakeEgressAdmin:
     def _handle(self, request: httpx.Request) -> httpx.Response:
         if not self.reachable:
             raise httpx.ConnectError("connection refused", request=request)
+        if request.url.path == "/decisions/changes":
+            return httpx.Response(200, content=b"event: changed\ndata: {}\n\n")
         assert request.url.path == "/decisions"
         subject = (request.url.params["namespace"], request.url.params["name"])
         self.queries.append(subject)

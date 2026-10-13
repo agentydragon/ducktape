@@ -22,10 +22,8 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
-from agentplane.egress.resources import placeholder_of
 from agentplane.runner_gateway.instructions import combine_instructions, render_platform_instructions
 from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE, Settings
-from agentplane.sandbox_service.runner_endpoints import RunnerEndpoint
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import actions, database, egress, notifications
@@ -49,12 +47,10 @@ KUBERNETES_ADMIN_INSTRUCTIONS = (
     Path(__file__).with_name("kubernetes_admin_instructions.md").read_text(encoding="utf-8").strip()
 )
 
-# Granted by the Sandbox Service with its `runner_control` endpoint, so no launch selection can cut a
-# Sandbox off from its own control plane.
+# The policy a runner behind the egress proxy dials the control stream under (the KubeVirt
+# experiment's; a Sandbox's runner uses its sidecar's platform route), and the credential it substitutes.
 RUNNER_CONTROL_POLICY = "runner-control"
 RUNNER_CONTROL_CREDENTIAL = "agentplane-runner-control"
-# The bearer a runner sends on the control stream; the egress proxy swaps it for the Pod's control token.
-RUNNER_CONTROL_BEARER = placeholder_of(RUNNER_CONTROL_CREDENTIAL)
 _RUNNER_CONTROL_CONNECT = "/agentplane.proto.runner_control.RunnerControl/Connect"
 
 
@@ -83,28 +79,9 @@ def runner_control(namespace: str) -> ServiceRef:
     )
 
 
-def runner_control_endpoint(namespace: str) -> RunnerEndpoint:
-    """The endpoint every new Sandbox's runner dials for its control stream: through the egress proxy,
-    which swaps the placeholder bearer for the Pod's token."""
-    control = runner_control(namespace)
-    return RunnerEndpoint(
-        target=f"{control.fqdn}:{control.port.number}",
-        bearer=RUNNER_CONTROL_BEARER,
-        egress_policy=RUNNER_CONTROL_POLICY,
-    )
-
-
 class RunnerGateway(Construct):
-    def __init__(
-        self,
-        scope: Construct,
-        id: str,
-        env: Environment,
-        *,
-        callers: dict[ServiceAccountRef, Pods],
-        sealers: dict[ServiceAccountRef, Pods],
-    ) -> None:
-        """`callers` are the Session API's clients and their Pods; `sealers` alone may seal a Sandbox."""
+    def __init__(self, scope: Construct, id: str, env: Environment, *, callers: dict[ServiceAccountRef, Pods]) -> None:
+        """`callers` are the Session API's clients and their Pods."""
         super().__init__(scope, id)
         self.env = env
         endpoint = service(env.namespace)
@@ -120,10 +97,6 @@ class RunnerGateway(Construct):
                 "caller_accounts": [
                     caller.model_dump()
                     for caller in sorted(callers, key=lambda caller: (caller.namespace, caller.name))
-                ],
-                "sealer_accounts": [
-                    sealer.model_dump()
-                    for sealer in sorted(sealers, key=lambda sealer: (sealer.namespace, sealer.name))
                 ],
                 "token_audience": TOKEN_AUDIENCE,
                 "platform_instructions": combine_instructions(
@@ -168,12 +141,7 @@ class RunnerGateway(Construct):
             migrate=migrate_init_container(
                 "git.allegedly.works/ducktape-ci/agentplane-runner-gateway-migrate:unset",
                 name="migrate-commands",
-                env_variables={
-                    "AGENTPLANE_RUNNER_GATEWAY_COMMANDS_DATABASE_URL": commands_database,
-                    # CLEANUP(added 2026-10-12): drop once agentplane-staging and agentplane-testing pin
-                    #   an agentplane-runner-gateway-migrate image that reads the AGENTPLANE_RUNNER_GATEWAY_ prefix.
-                    "AGENTPLANE_SANDBOX_SERVICE_COMMANDS_DATABASE_URL": commands_database,
-                },
+                env_variables={"AGENTPLANE_RUNNER_GATEWAY_COMMANDS_DATABASE_URL": commands_database},
             ),
         )
         self._add_rbac(workload.account)
@@ -184,7 +152,7 @@ class RunnerGateway(Construct):
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[
-                *(pods.admit(endpoint.pod_port) for pods in (*callers.values(), *sealers.values())),
+                *(pods.admit(endpoint.pod_port) for pods in callers.values()),
                 egress.proxy(env.namespace).pods.admit(control.pod_port),
             ],
             egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER), database.egress(env.namespace)],
@@ -215,13 +183,9 @@ class RunnerGateway(Construct):
             "role",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
-                # Resolving a Session's Sandbox and its runner Pod.
-                RolePolicyRule(
-                    resources=[custom_resource("agents.x-k8s.io", "sandboxes")], verbs=["get", "list", "watch"]
-                ),
-                RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
-                # Agentplane's own Sandboxes: resolving a runner's, and marking a deleting one's
+                # Resolving a Session's Sandbox and its runner Pod, and marking a deleting Sandbox's
                 # Sessions sealed.
+                RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes/status")], verbs=["patch"]),
                 # Runner connection records, each owned by its Sandbox: the Lease every replica

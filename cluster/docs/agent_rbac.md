@@ -103,8 +103,7 @@ authorization proxy:
 - **Metadata and logs in explicitly classified namespaces**. `namespace_access.py`
   is the source of truth. Its static projection generates
   namespaced RoleBindings for both Haku groups, the direct Haku ServiceAccount,
-  `kubectl-sandbox-users`, the deploy-owned synthetic public-coder group, and `claude-ai`
-  (section 6).
+  `kubectl-sandbox-users`, and `claude-ai` (section 6).
 
 The labels describe the shared policy; changing a live Namespace label **does not**
 grant or revoke access. RoleBindings grant access, and ClusterRoles define the
@@ -151,8 +150,10 @@ every sandbox it stamps through the sandbox Action group runs as it
   the `agent-readable-*` namespaces (section 4).
 - The same narrow console metadata, ClickHouse diagnostics, public-coder diagnostics,
   and public-coder VolSync status Roles used by public coder and Haku.
-- `agentplane-testing-operator` in **agentplane-testing**, including Sandbox lifecycle,
+- `agentplane-testing-operator` in **agentplane-testing**, including Sandbox lifecycle, read-only KubeVirt VM/VMI/DataVolume views,
   pod exec, ActionPolicy writes, and testing app-token minting.
+- `get`/`list` on Agentplane `sandboxes` in **agentplane-staging** (`claude-ai-sandbox-reader`),
+  so a read-only check needs no approval.
 - `get` on two explicitly named Secrets: `agentplane-staging/coinbase-api-credentials`
   (the view-only Coinbase CDP key) and
   `public-coder-agent/agentplane-testing-acceptance-operator` (the testing login).
@@ -216,7 +217,6 @@ The logical profiles are distinct from the transport identities:
 
 | Access path                                    | Logical profile / contract                                                                                                                               |
 | ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `haku:access-profile:public-coder` group       | Static public coder; equals managed `public-coder`                                                                                                       |
 | `oidc-ksbx-groups:haku` group                  | Static Haku; checked independently                                                                                                                       |
 | `haku:access-profile:haku` group               | Static Haku Console; checked independently                                                                                                               |
 | `haku-sandbox/haku` ServiceAccount             | Static Haku compute; checked independently                                                                                                               |
@@ -246,7 +246,7 @@ each identity separately, using the Flux-owned namespace readers. It rejects the
 retired Kyverno policy, dedicated background-controller ClusterRole, and old binding
 names in rendered manifests, and checks binding scope against namespace classification
 labels (including the rendered Flux bootstrap overlay).
-It checks static/managed parity, Haku's public-coder superset, finance's exact Coinbase addition, and
+It checks static/managed parity, finance's exact Coinbase addition, and
 explicit denials for staging operator/login, devbox restart, and public node proxy.
 The separate legacy accounts have their own contracts; their permissions are not
 unioned with Haku's to mask missing access on a particular path.
@@ -390,7 +390,7 @@ The testing egress policy admits the testing app's internal API and the public
 **testing** app/Dex origins needed for the OIDC redirect flow, without credential
 substitution. It does not admit staging app or Authentik login origins.
 
-The existing `agentplane-testing-operator` Role and its static Haku/public-coder
+The existing `agentplane-testing-operator` Role and its static Haku
 RoleBinding remain Flux-owned. This is a
 **testing-only write grant**: it can create, patch, and delete Sandboxes, create
 Pod exec and port-forward sessions, create/patch/delete ActionPolicySets and
@@ -511,7 +511,7 @@ projects one of two descriptive labels onto each classified Namespace:
   `agent-readable-namespace-logs` role, which grants only `get` on `pods/log`.
 
 Both classifications grant the same subjects: Haku's OIDC and synthetic access-profile groups,
-its in-cluster ServiceAccounts, `kubectl-sandbox-users`, the synthetic public-coder group, and
+its in-cluster ServiceAccounts, `kubectl-sandbox-users`, and
 agentplane-staging's `claude-ai` ServiceAccount. The Flux-owned bindings come from
 `agent_namespace_rbac.py`; the Kyverno generator is retired. Sensitive or
 identity-specific access remains explicit service RBAC.

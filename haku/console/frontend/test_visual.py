@@ -181,13 +181,8 @@ async def test_settings(settings_view: VisualPage) -> None:
 
 @pytest.mark.parametrize(
     ("tab", "ready_text"),
-    [
-        ("Agents", "Public Coder"),
-        ("Grants", "Public Coder"),
-        ("Notifications", "This browser"),
-        ("System", "Mixed revisions"),
-    ],
-    ids=["agents", "grants", "notifications", "system"],
+    [("Agents", "Public Coder"), ("Grants", "Public Coder"), ("System", "Mixed revisions")],
+    ids=["agents", "grants", "system"],
 )
 async def test_settings_tab(settings_view: VisualPage, tab: str, ready_text: str) -> None:
     await settings_view.page.locator(f"[role='tab']:has-text('{tab}')").click()

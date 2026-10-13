@@ -42,37 +42,27 @@ from agentplane import sandbox_resource
 from agentplane.action_service.policies import resources
 from agentplane.app.action_federation import OperatorFederationError, operator_actions, upstream_failure_detail
 from agentplane.app.action_policy import ActionPolicyInventory, ActionPolicyUnavailable, ActionPolicyView
+from agentplane.app.bound_policy import BoundPolicyView, bound_policy_view
 from agentplane.app.database_updates import Channel
 from agentplane.app.identity import CallerIdentity, require_caller
 from agentplane.app.sandbox_models import SandboxView, sandbox_view as http_sandbox_view
 from agentplane.app.shutdown import Shutdown
-from agentplane.app.sse import frame, sse_response
 from agentplane.app.threads.store import MAX_PAGE, ThreadStore
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.changes import ChangeSignal
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.egress.decisions import Decision
+from agentplane.egress.decisions_client import DecisionsClient, DecisionsUnavailableError
 from agentplane.grpc_calls import ServiceError
 from agentplane.kubernetes_watch import Freshness
+from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandbox_resource import Sandbox
 from agentplane.sandbox_service.action_policy_views import ACTION_POLICY_API
-from agentplane.sandbox_service.egress_views import (
-    BINDINGS_PLURAL,
-    CREDENTIALS_PLURAL,
-    EGRESS_API,
-    POLICIES_PLURAL,
-    BindingView,
-    matching_bindings,
-)
-from agentplane.sandbox_service.kubernetes_views import (
-    MANAGED_LABEL,
-    own_sandbox_view,
-    own_sandbox_views,
-    sandbox_view,
-    sandbox_views,
-)
+from agentplane.sandbox_service.egress_views import CREDENTIALS_PLURAL, EGRESS_API, BindingView, matching_bindings
+from agentplane.sandbox_service.kubernetes_views import incarnation_pod, sandbox_view, sandbox_views
+from agentplane.sse import frame, sse_response
 from agentplane.subjects import ServiceAccountRef
-from util.agent_sandbox import SANDBOX_API, SANDBOXES_PLURAL
 from util.kubernetes import CustomObjectsClient
 from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
@@ -124,6 +114,29 @@ class ThreadsUnavailable(BaseModel):
     code: str = Field(description="The gRPC status code the Runner Gateway answered with.")
 
 
+class DecisionsUnavailable(BaseModel):
+    """Why the egress proxy's decisions could not be read; the frame says it rather than ending the stream."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    detail: str
+
+
+class DecisionsWatching(BaseModel):
+    """Whether this replica is following the proxy's change stream. While it is not, what a frame
+    carries is as old as the last change heard of."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    watching: bool
+
+
+class DecisionsSnapshot(DecisionsWatching):
+    """A frame of one sandbox's egress decision stream."""
+
+    decisions: list[Decision] | DecisionsUnavailable = Field(description="Oldest first.")
+
+
 class SandboxSnapshot(BaseModel):
     """A frame of one sandbox's stream: the sandbox itself, what may leave it, what the Action
     Service auto-decides for it, and its threads."""
@@ -135,6 +148,9 @@ class SandboxSnapshot(BaseModel):
     action_policy: ActionPolicyView | ActionPolicyUnavailable | None = Field(
         description="The Action Service's answer for the sandbox, or why it could not be asked; None only with "
         "the sandbox, since a policy subject pins its UID and a gone sandbox has none."
+    )
+    bound_policy: BoundPolicyView | None = Field(
+        description="Every rule of the PolicySets the sandbox names; None only with the sandbox."
     )
     threads: list[ThreadView] | ThreadsUnavailable
     watch: WatchHealth
@@ -151,12 +167,10 @@ class LiveIndex:
     freshness: Freshness
     core_v1: CoreV1Api
     sandboxes: dict[str, object] = field(default_factory=dict)
-    # Agentplane's own Sandboxes, beside agent-sandbox's; a Pod's name holds one of the two.
-    own_sandboxes: dict[str, object] = field(default_factory=dict)
     pods: dict[str, k8s_client.V1Pod] = field(default_factory=dict, repr=False)
     bindings: dict[str, object] = field(default_factory=dict)
-    policies: dict[str, object] = field(default_factory=dict)
     credentials: dict[str, object] = field(default_factory=dict)
+    rule_sets: dict[str, object] = field(default_factory=dict)
     # The action policy kinds are a trigger, not a copy: the Action Service's informer holds the
     # objects, and the sandbox stream asks it again whenever this moves. Only the names stay, for a
     # relist to reconcile against.
@@ -170,27 +184,27 @@ class LiveIndex:
         api_client = self.core_v1.api_client  # type: ignore[attr-defined]
         return [
             http_sandbox_view(view)
-            for view in (
-                *sandbox_views(self.sandboxes.values(), self.pods.values(), api_client=api_client),
-                *own_sandbox_views(self.own_sandboxes.values(), self.pods.values(), api_client=api_client),
-            )
+            for view in sandbox_views(self.sandboxes.values(), self.pods.values(), api_client=api_client)
         ]
 
     def sandbox_view(self, name: str) -> SandboxView | None:
-        own, raw = self.own_sandboxes.get(name), self.sandboxes.get(name)
-        if own is None and raw is None:
+        raw = self.sandboxes.get(name)
+        if raw is None:
             return None
         # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
         api_client = self.core_v1.api_client  # type: ignore[attr-defined]
-        if own is not None:
-            return http_sandbox_view(
-                own_sandbox_view(Sandbox.model_validate(own), self.pods.get(name), api_client=api_client)
-            )
-        return http_sandbox_view(sandbox_view(raw, self.pods.get(name), api_client=api_client))
+        parsed = Sandbox.model_validate(raw)
+        return http_sandbox_view(sandbox_view(parsed, incarnation_pod(parsed, self.pods), api_client=api_client))
+
+    def bound_policy_for(self, name: str) -> BoundPolicyView | None:
+        raw = self.sandboxes.get(name)
+        if raw is None:
+            return None
+        return bound_policy_view(Sandbox.model_validate(raw).spec.policy_sets, self.rule_sets.values())
 
     def bindings_for(self, subject: ServiceAccountRef) -> list[BindingView]:
         return matching_bindings(
-            self.bindings.values(), self.policies.values(), self.credentials.values(), subject=subject
+            self.bindings.values(), self.rule_sets.values(), self.credentials.values(), subject=subject
         )
 
     def action_policy_seen(self, names: set[str], name: str, obj: object | None) -> None:
@@ -224,16 +238,14 @@ def watch_for(
     *,
     custom_objects: CustomObjectsClient,
     core_v1: CoreV1Api,
-    namespace: str,
     sandbox_namespace: str,
     resync_seconds: int,
     clock: Callable[[], datetime] = lambda: datetime.now(UTC),
 ) -> ListWatch:
     """The kinds the app's views are built from, folded into `index` as they change.
 
-    Sandboxes, their Pods and the action policy objects come from the namespace the sandboxes run
-    in; the egress objects from the app's own, which is the same split `main.py` gives the
-    inventory, the egress reader and the action policy reader.
+    Everything comes from the namespace the sandboxes run in: a PolicyBinding names PolicySets in its
+    own namespace, and the Sandbox's own binding lives beside the Sandbox.
     """
 
     async def changed(_kind: WatchedKind) -> None:
@@ -246,21 +258,12 @@ def watch_for(
     return ListWatch(
         kinds=(
             WatchedKind(
-                name=SANDBOXES_PLURAL,
-                list=custom_objects.list_namespaced_custom_object,
-                args=(*SANDBOX_API, sandbox_namespace, SANDBOXES_PLURAL),
-                kwargs={"label_selector": f"{MANAGED_LABEL}=true"},
-                key=_name,
-                names=lambda: set(index.sandboxes),
-                apply=lambda name, obj: apply_to(index.sandboxes, name, obj),
-            ),
-            WatchedKind(
-                name=f"{sandbox_resource.SANDBOXES_PLURAL}.{GROUP}",
+                name=sandbox_resource.SANDBOXES_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
                 args=(GROUP, VERSION, sandbox_namespace, sandbox_resource.SANDBOXES_PLURAL),
                 key=_name,
-                names=lambda: set(index.own_sandboxes),
-                apply=lambda name, obj: apply_to(index.own_sandboxes, name, obj),
+                names=lambda: set(index.sandboxes),
+                apply=lambda name, obj: apply_to(index.sandboxes, name, obj),
             ),
             WatchedKind(
                 name=PODS_PLURAL,
@@ -271,28 +274,28 @@ def watch_for(
                 apply=lambda name, obj: apply_to(index.pods, name, obj),
             ),
             WatchedKind(
-                name=BINDINGS_PLURAL,
+                name=f"{POLICY_BINDINGS_PLURAL}.{GROUP}",
                 list=custom_objects.list_namespaced_custom_object,
-                args=(*EGRESS_API, namespace, BINDINGS_PLURAL),
+                args=(GROUP, VERSION, sandbox_namespace, POLICY_BINDINGS_PLURAL),
                 key=_name,
                 names=lambda: set(index.bindings),
                 apply=lambda name, obj: apply_to(index.bindings, name, obj),
             ),
             WatchedKind(
-                name=POLICIES_PLURAL,
-                list=custom_objects.list_namespaced_custom_object,
-                args=(*EGRESS_API, namespace, POLICIES_PLURAL),
-                key=_name,
-                names=lambda: set(index.policies),
-                apply=lambda name, obj: apply_to(index.policies, name, obj),
-            ),
-            WatchedKind(
                 name=CREDENTIALS_PLURAL,
                 list=custom_objects.list_namespaced_custom_object,
-                args=(*EGRESS_API, namespace, CREDENTIALS_PLURAL),
+                args=(*EGRESS_API, sandbox_namespace, CREDENTIALS_PLURAL),
                 key=_name,
                 names=lambda: set(index.credentials),
                 apply=lambda name, obj: apply_to(index.credentials, name, obj),
+            ),
+            WatchedKind(
+                name=f"{POLICY_SETS_PLURAL}.{GROUP}",
+                list=custom_objects.list_namespaced_custom_object,
+                args=(GROUP, VERSION, sandbox_namespace, POLICY_SETS_PLURAL),
+                key=_name,
+                names=lambda: set(index.rule_sets),
+                apply=lambda name, obj: apply_to(index.rule_sets, name, obj),
             ),
             WatchedKind(
                 name=resources.POLICY_SETS_PLURAL,
@@ -320,7 +323,7 @@ def watch_for(
 
 async def frames(
     snapshot: Callable[[], Awaitable[BaseModel]],
-    health: Callable[[], WatchHealth],
+    health: Callable[[], BaseModel],
     *watched: ChangeSignal,
     interval_s: float = HEALTH_INTERVAL_S,
 ) -> AsyncIterator[bytes]:
@@ -408,6 +411,13 @@ def _action_policy(request: Request) -> ActionPolicyInventory:
     return inventory
 
 
+def _decisions(request: Request) -> DecisionsClient:
+    decisions = request.app.state.services.decisions
+    if not isinstance(decisions, DecisionsClient):
+        raise TypeError(f"app.state.services.decisions is {type(decisions).__name__}, not DecisionsClient")
+    return decisions
+
+
 def _store(request: Request) -> ThreadStore:
     store = request.app.state.services.store
     if not isinstance(store, ThreadStore):
@@ -424,6 +434,7 @@ def _database_updates(request: Request) -> WakeupListener:
 
 Index = Annotated[LiveIndex, Depends(_index)]
 Store = Annotated[ThreadStore, Depends(_store)]
+Decisions = Annotated[DecisionsClient, Depends(_decisions)]
 Updates = Annotated[WakeupListener, Depends(_database_updates)]
 ActionPolicy = Annotated[ActionPolicyInventory, Depends(_action_policy)]
 Caller = Annotated[CallerIdentity, Depends(require_caller)]
@@ -440,6 +451,9 @@ _THREADS_FRAMES: dict[int | str, dict[str, Any]] = {
 }
 _SANDBOX_FRAMES: dict[int | str, dict[str, Any]] = {
     200: {"model": SandboxSnapshot, "content": {"text/event-stream": {}}}
+}
+_DECISIONS_FRAMES: dict[int | str, dict[str, Any]] = {
+    200: {"model": DecisionsSnapshot, "content": {"text/event-stream": {}}}
 }
 
 
@@ -525,10 +539,36 @@ async def live_sandbox(
             sandbox=sandbox,
             bindings=[] if sandbox is None else index.bindings_for(sandbox.service_account),
             action_policy=None if sandbox is None else await policy.for_subject(sandbox.service_account),
+            bound_policy=index.bound_policy_for(name),
             threads=await threads_frame(store, name, include_archived=include_archived),
             watch=_health(index),
         )
 
     return sse_response(
         shutdown.until(frames(snapshot, lambda: _health(index), index.changes, updates.changes[Channel.THREADS]))
+    )
+
+
+@router.get("/sandboxes/{name}/egress/decisions", responses=_DECISIONS_FRAMES)
+async def live_egress_decisions(index: Index, decisions: Decisions, shutdown: Shutdown, name: str) -> StreamingResponse:
+    """What the egress proxy recently admitted or refused for the sandbox's account, pushed.
+
+    The proxy keeps no copy per tab: it says when decisions were committed, and each frame re-reads
+    them from it. A proxy that cannot be asked is carried in the frame, not by ending the stream.
+    """
+
+    async def snapshot() -> DecisionsSnapshot:
+        sandbox = index.sandbox_view(name)
+        if sandbox is None:
+            return DecisionsSnapshot(
+                watching=decisions.watching, decisions=DecisionsUnavailable(detail=f"no sandbox {name}")
+            )
+        try:
+            recent = await decisions.recent(sandbox.service_account)
+        except DecisionsUnavailableError as error:
+            return DecisionsSnapshot(watching=decisions.watching, decisions=DecisionsUnavailable(detail=str(error)))
+        return DecisionsSnapshot(watching=decisions.watching, decisions=recent)
+
+    return sse_response(
+        shutdown.until(frames(snapshot, lambda: DecisionsWatching(watching=decisions.watching), decisions.changes))
     )

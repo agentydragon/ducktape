@@ -12,6 +12,7 @@ import pytest_bazel
 from pydantic import JsonValue, SecretStr
 
 from agentplane.acceptance.operator_login import (
+    IN_CLUSTER_API,
     KUBE_PROXY,
     SECRET_PATH,
     IdentityProvider,
@@ -150,11 +151,12 @@ async def _follow_mcp_linkage(browser: httpx.AsyncClient) -> tuple[str, str]:
     )
 
 
-def test_secret_is_one_named_get_through_current_proxy(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("server", [KUBE_PROXY, IN_CLUSTER_API])
+def test_secret_is_one_named_get_through_current_proxy(monkeypatch: pytest.MonkeyPatch, server: str) -> None:
     data = {name: base64.b64encode(value.get_secret_value().encode()).decode() for name, value in CREDENTIALS}
     run = Mock(
         side_effect=[
-            subprocess.CompletedProcess([], 0, stdout=KUBE_PROXY.encode()),
+            subprocess.CompletedProcess([], 0, stdout=server.encode()),
             subprocess.CompletedProcess([], 0, stdout=json.dumps({"data": data}).encode()),
         ]
     )
@@ -184,7 +186,7 @@ def test_secret_failures_are_closed_and_do_not_echo_output(
     marker = "must-not-be-in-failure-output"
     results: list[object] = [subprocess.CompletedProcess([], 0, stdout=KUBE_PROXY.encode())]
     if failure == "direct":
-        results = [subprocess.CompletedProcess([], 0, stdout=b"https://kubernetes.default.svc")]
+        results = [subprocess.CompletedProcess([], 0, stdout=b"https://other-cluster.example.test")]
     elif failure == "missing":
         results = [FileNotFoundError(marker)]
     elif failure == "timeout":

@@ -8,12 +8,11 @@ from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
 )
-from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
-    EgressPolicySpecRules,
-    EgressPolicySpecRulesCredentialRef,
-    EgressPolicySpecRulesMethods,
-)
 from agentplane_policybinding_crds.works.allegedly.agentplane import PolicyBindingSpecSubject
+from agentplane_policyset_crds.works.allegedly.agentplane import (
+    PolicySetSpecRulesCredentialRef,
+    PolicySetSpecRulesMethods,
+)
 from cdk8s import ApiObjectMetadata
 from cdk8s_plus_34 import ServiceAccount, k8s
 from constructs import Construct
@@ -29,6 +28,7 @@ from cluster.cdk8s.external_secrets.single_secret_store import single_secret_sto
 from cluster.cdk8s.haku import kube_api_proxy
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
 from cluster.cdk8s.providers.agentplane.policy_binding import PolicyBinding
+from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cilium.network_policy import IngressRule, NetworkPolicy
 from util.settings_contract import env_name
 
@@ -46,7 +46,6 @@ BRAVE_CREDENTIAL = "brave-search"
 MATRIX_CREDENTIAL = "public-coder-matrix"
 TOKEN_VOLUME = "agentplane-egress-token"
 _TOKEN_DIR = "/var/run/agentplane-egress"
-PROXY_URL = "http://127.0.0.1:3128"
 SIDECAR_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-egress-sidecar"
 
 
@@ -167,45 +166,45 @@ def add_gateway_resources(
         "policy",
         metadata=ApiObjectMetadata(name=POLICY, namespace=namespace),
         rules=[
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=["github.com", "api.github.com", "codeload.github.com"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name=GITHUB_CREDENTIAL),
+                credential_ref=PolicySetSpecRulesCredentialRef(name=GITHUB_CREDENTIAL),
             ),
-            EgressPolicySpecRules(
-                hosts=[kube_api_proxy.HOSTNAME], credential_ref=EgressPolicySpecRulesCredentialRef(name=HAKU_CREDENTIAL)
+            Rule.egress(
+                hosts=[kube_api_proxy.HOSTNAME], credential_ref=PolicySetSpecRulesCredentialRef(name=HAKU_CREDENTIAL)
             ),
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[client.HTTP.fqdn],
                 cluster_internal=True,
-                credential_ref=EgressPolicySpecRulesCredentialRef(name=CLICKHOUSE_CREDENTIAL),
+                credential_ref=PolicySetSpecRulesCredentialRef(name=CLICKHOUSE_CREDENTIAL),
             ),
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=["aiquota.allegedly.works"],
-                methods=[EgressPolicySpecRulesMethods.GET],
+                methods=[PolicySetSpecRulesMethods.GET],
                 paths=["/v1/quotas", "/v1/providers/*/raw"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name=AIQUOTA_CREDENTIAL),
+                credential_ref=PolicySetSpecRulesCredentialRef(name=AIQUOTA_CREDENTIAL),
             ),
-            EgressPolicySpecRules(
-                hosts=["api.search.brave.com"], credential_ref=EgressPolicySpecRulesCredentialRef(name=BRAVE_CREDENTIAL)
+            Rule.egress(
+                hosts=["api.search.brave.com"], credential_ref=PolicySetSpecRulesCredentialRef(name=BRAVE_CREDENTIAL)
             ),
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=["matrix.allegedly.works"],
-                methods=[EgressPolicySpecRulesMethods.POST],
+                methods=[PolicySetSpecRulesMethods.POST],
                 paths=["/_matrix/client/v3/login"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name=MATRIX_CREDENTIAL),
+                credential_ref=PolicySetSpecRulesCredentialRef(name=MATRIX_CREDENTIAL),
             ),
             # Discovery only, not the broader basic policy's LLM/Actions/Kubernetes grants.
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[GATEWAY.fqdn],
                 cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.GET],
+                methods=[PolicySetSpecRulesMethods.GET],
                 paths=["/v1/rules", "/openapi.json"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
+                credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[actions.service("agentplane-staging").fqdn],
                 cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST],
+                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
                 paths=[
                     "/mcp",
                     "/openapi.json",
@@ -215,7 +214,7 @@ def add_gateway_resources(
                     "/v1/action-requests",
                     "/v1/action-requests/**",
                 ],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
+                credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),
         ],
     )

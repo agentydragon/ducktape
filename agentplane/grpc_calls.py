@@ -1,7 +1,8 @@
 """Bearer metadata and status translation for the Agentplane gRPC clients. The Sandbox Service and
-Runner Gateway clients also dial through here and read FAILED_PRECONDITION as a `RunnerError`."""
+Runner Gateway clients also dial through here and read FAILED_PRECONDITION as a `RefusedError`."""
 
 import asyncio
+import logging
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Never
@@ -10,10 +11,15 @@ import grpc
 from google.protobuf.message import Message
 
 from agentplane.grpc_options import LARGE_EVENT_RECEIVE_OPTIONS
-from agentplane.runner.errors import RunnerError
+
+logger = logging.getLogger(__name__)
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
+
+
+class RefusedError(Exception):
+    """The runner or the Sandbox's state refused the operation (FAILED_PRECONDITION)."""
 
 
 class ServiceError(ConnectionError):
@@ -32,7 +38,12 @@ def dial(target: str) -> grpc.aio.Channel:
     )
 
 
+def _log_failure(error: grpc.aio.AioRpcError) -> None:
+    logger.warning("call failed with %s (%s)", error.code().name, error.details(), exc_info=error)
+
+
 def raise_status(error: grpc.aio.AioRpcError) -> Never:
+    _log_failure(error)
     if error.code() == grpc.StatusCode.DEADLINE_EXCEEDED:
         raise TimeoutError(f"{error.code().name}: {error.details()}") from error
     raise ServiceError(error.code(), error.details()) from error
@@ -40,7 +51,8 @@ def raise_status(error: grpc.aio.AioRpcError) -> Never:
 
 def _raise(error: grpc.aio.AioRpcError) -> Never:
     if error.code() == grpc.StatusCode.FAILED_PRECONDITION:
-        raise RunnerError(f"{error.code().name}: {error.details()}") from error
+        _log_failure(error)
+        raise RefusedError(f"{error.code().name}: {error.details()}") from error
     raise_status(error)
 
 

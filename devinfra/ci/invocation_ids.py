@@ -30,7 +30,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--run-id", required=True)
     parser.add_argument("--attempt", required=True)
-    parser.add_argument("--role", required=True, choices=["test", "build"])
+    parser.add_argument("--role", required=True, choices=["test", "build", "nix-wheel-build"])
     args = parser.parse_args()
     print(invocation_id(run_id=args.run_id, attempt=args.attempt, role=args.role))
 

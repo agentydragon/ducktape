@@ -1,0 +1,20 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+
+# Spike: can a real single-node k3s run Pods inside an RBE Firecracker action? Manual only; it
+# downloads k3s at run time, runs it as root, and must not leave it behind on a recycled runner.
+sh_test(
+    name = "k3s_spike_test",
+    size = "large",
+    srcs = ["k3s_spike.sh"],
+    exec_properties = {
+        "dockerNetwork": "bridge",
+        "recycle-runner": "false",
+        "EstimatedComputeUnits": "4",
+    },
+    tags = [
+        "external",
+        "manual",
+        "no-cache",
+        "requires-network",
+    ],
+)

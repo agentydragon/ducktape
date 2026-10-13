@@ -203,6 +203,7 @@ from cluster.cdk8s.monitoring import (
     mktxp as monitoring_mktxp,
     namespace as monitoring_namespace,
     rules as monitoring_rules,
+    smokeping,
     stack as monitoring_stack,
     tempo,
 )
@@ -507,6 +508,12 @@ def generate_manifests(root: Path) -> None:
         ),
         monitoring_crds_kustomization,
     )
+    monitoring_smokeping_artifact = artifact("monitoring-smokeping", smokeping.OUTPUT_DIR)
+    smokeping.smokeping(
+        flux_chart,
+        write_directory(root, monitoring_smokeping_artifact, functools.partial(smokeping.chart, mesh=mesh)),
+        monitoring_crds_kustomization,
+    )
     grafana_operator_artifact = artifact("grafana-operator", grafana_operator.OUTPUT_DIR)
     grafana_operator_kustomization = grafana_operator.grafana_operator(
         flux_chart,
@@ -700,7 +707,9 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
     )
     tofu_state_db_artifact = artifact("tofu-state-db", tofu_state_db.OUTPUT_DIR)
-    tofu_state_db.tofu_state_db(flux_chart, tofu_state_db_artifact, cnpg_kustomization)
+    tofu_state_db.tofu_state_db(
+        flux_chart, tofu_state_db_artifact, cnpg_kustomization, seaweedfs_operator_kustomization
+    )
     mcp_oauth_state_artifact = artifact("mcp-oauth-state", mcp_oauth_state.OUTPUT_DIR)
     mcp_oauth_state_kustomization = mcp_oauth_state.mcp_oauth_state_db(
         flux_chart,
@@ -709,6 +718,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
         kyverno_kustomization,
+        seaweedfs_operator_kustomization,
     )
     website_artifact = artifact("website", website.OUTPUT_DIR, website.PINS_DIR)
     website.website(
@@ -749,7 +759,10 @@ def generate_manifests(root: Path) -> None:
     )
     atuin_artifact = artifact("atuin", atuin_server.OUTPUT_DIR)
     atuin_kustomization = atuin_server.atuin(
-        flux_chart, write_directory(root, atuin_artifact, atuin_server.chart), cnpg_kustomization
+        flux_chart,
+        write_directory(root, atuin_artifact, atuin_server.chart),
+        cnpg_kustomization,
+        seaweedfs_operator_kustomization,
     )
     authentik_artifact = artifact("authentik", f"{HAND_WRITTEN_ROOT}/authentik")
     authentik_kustomization = authentik_flux_kustomizations.authentik(
@@ -813,6 +826,7 @@ def generate_manifests(root: Path) -> None:
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
         kyverno_kustomization,
+        seaweedfs_operator_kustomization,
     )
     ollama_app_artifact = artifact("ollama-app", ollama_app.OUTPUT_DIR)
     ollama_app.ollama(
@@ -1024,6 +1038,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart,
         write_directory(root, matrix_app_artifact, matrix.chart, siblings=matrix.SOPS_FILES),
         cnpg_kustomization,
+        seaweedfs_operator_kustomization,
     )
     headlamp_app_artifact = artifact("headlamp-app", headlamp.OUTPUT_DIR)
     headlamp.headlamp(flux_chart, write_directory(root, headlamp_app_artifact, headlamp.chart))
@@ -1041,6 +1056,7 @@ def generate_manifests(root: Path) -> None:
         ),
         grafana_operator_kustomization,
         cnpg_kustomization,
+        seaweedfs_operator_kustomization,
     )
     gatus_artifact = artifact("gatus", gatus_app.OUTPUT_DIR)
     gatus_kustomization = gatus_app.gatus(
@@ -1048,6 +1064,7 @@ def generate_manifests(root: Path) -> None:
         write_directory(root, gatus_artifact, gatus_app.chart, config_map_generator=[gatus_app.CONFIG_MAP]),
         cnpg_kustomization,
         monitoring_crds_kustomization,
+        seaweedfs_operator_kustomization,
     )
     flux_webhook_artifact = artifact("flux-webhook", flux_webhook_chart.OUTPUT_DIR)
     flux_webhook_chart.flux_webhook(
@@ -1247,6 +1264,7 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         authentik_kustomization,
+        seaweedfs_operator_kustomization,
     )
     tana_mcp_artifact = artifact("tana-mcp", tana_mcp.OUTPUT_DIR)
     tana_mcp_kustomization = agents_flux_kustomizations.tana_mcp(
@@ -1282,6 +1300,7 @@ def generate_manifests(root: Path) -> None:
         ),
         external_secrets_operator_kustomization,
         kubevirt_kustomization,
+        monitoring_crds_kustomization,
     )
     claude_session_sync_artifact = artifact(
         "claude-session-sync", claude_session_sync_app.OUTPUT_DIR, claude_session_sync_app.PINS_DIR
@@ -1393,6 +1412,7 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         cert_manager_kustomization,
         external_secrets_operator_kustomization,
+        seaweedfs_operator_kustomization,
     )
     home_assistant_artifact = artifact("home-assistant", f"{HAND_WRITTEN_ROOT}/home-assistant")
     home_assistant_flux_kustomizations.home_assistant(
@@ -1471,6 +1491,7 @@ def generate_manifests(root: Path) -> None:
         ),
         cnpg_kustomization,
         external_secrets_operator_kustomization,
+        seaweedfs_operator_kustomization,
     )
     litellm_artifact = artifact("litellm", litellm_namespace.OUTPUT_DIR)
     litellm_kustomization = litellm_proxy.litellm(
@@ -1479,6 +1500,7 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
+        seaweedfs_operator_kustomization,
     )
     aiquota_artifact = artifact("aiquota", aiquota.OUTPUT_DIR)
     aiquota.aiquota(
@@ -1604,10 +1626,10 @@ def generate_manifests(root: Path) -> None:
         agentplane_testing_artifact,
         agentplane_testing_health_checks,
         agentplane_crds_kustomization,
-        agent_sandbox_controller_kustomization,
         cert_manager_trust_kustomization,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
+        kyverno_kustomization,
     )
     agent_workspaces_app_artifact = artifact(
         "agent-workspaces-app", agent_workspaces.OUTPUT_DIR, agent_workspaces.PINS_DIR
@@ -1632,6 +1654,7 @@ def generate_manifests(root: Path) -> None:
         cnpg_kustomization,
         external_secrets_operator_kustomization,
         monitoring_crds_kustomization,
+        seaweedfs_operator_kustomization,
     )
     agentplane_staging_artifact = artifact("agentplane-staging", staging.ENV.output_dir)
     agentplane_staging_kustomization = staging.agentplane_staging(
@@ -1639,18 +1662,24 @@ def generate_manifests(root: Path) -> None:
         agentplane_staging_artifact,
         agentplane_staging_health_checks,
         agentplane_crds_kustomization,
-        agent_sandbox_controller_kustomization,
         cert_manager_trust_kustomization,
         cnpg_kustomization,
         external_secrets_operator_kustomization,
     )
+    public_coder_agent_access_artifact = artifact("public-coder-agent-access", public_coder_app.ACCESS_DIR)
+    public_coder_agent_access_kustomization = agents_flux_kustomizations.public_coder_agent_access(
+        flux_chart,
+        write_directory(
+            root, public_coder_agent_access_artifact, public_coder_app.namespace_chart, public_coder_app.rbac_chart
+        ),
+    )
     public_coder_agent_app_artifact = artifact(
         "public-coder-agent-app",
-        f"{HAND_WRITTEN_ROOT}/agents/public-coder-agent/app",
+        public_coder_app.APP_DIR,
         public_coder_proxy.OUTPUT_DIR,
         public_coder_sshpiper.OUTPUT_DIR,
     )
-    public_coder_agent_app_kustomization = agents_flux_kustomizations.public_coder_agent_app(
+    agents_flux_kustomizations.public_coder_agent_app(
         flux_chart,
         public_coder_agent_app_artifact,
         cert_manager_kustomization,
@@ -1703,7 +1732,7 @@ def generate_manifests(root: Path) -> None:
         "openebs": openebs_lvm_kustomization,
         "plaid-mcp": plaid_mcp_kustomization,
         "proxmox-proxy": proxmox_proxy_kustomization,
-        "public-coder-agent": public_coder_agent_app_kustomization,
+        "public-coder-agent": public_coder_agent_access_kustomization,
         "study-casino": study_casino_kustomization,
         "tana-mcp": tana_mcp_kustomization,
         "vm-images-publisher": vm_images_publisher_kustomization,
@@ -1778,13 +1807,11 @@ def generate_manifests(root: Path) -> None:
             kubectl_passthrough_mcp_artifact,
             loki_read_proxy_artifact,
             plaid_mcp_artifact,
-            public_coder_agent_app_artifact,
-            public_coder_agent_backup_artifact,
+            public_coder_agent_access_artifact,
             activitywatch_artifact,
             agent_workspaces_app_artifact,
             airlock_artifact,
             alloy_otlp_bearer_artifact,
-            public_coder_agent_devbox_artifact,
             agent_shared_rbac_artifact,
             agent_shared_secrets_artifact,
             aiquota_artifact,
@@ -1843,6 +1870,7 @@ def generate_manifests(root: Path) -> None:
             monitoring_loki_artifact,
             monitoring_mimir_artifact,
             monitoring_mktxp_artifact,
+            monitoring_smokeping_artifact,
             monitoring_tempo_artifact,
             node_feature_discovery_artifact,
             oci_cache_artifact,
