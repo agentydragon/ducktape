@@ -97,6 +97,7 @@ def _read_token(chart: Chart) -> None:
 
 
 def _database(chart: Chart) -> None:
+    # No CnpgBackup: the index is disposable and rebuilds from the Git remotes and Ollama.
     cnpg.cluster(
         chart,
         "database-cluster",
