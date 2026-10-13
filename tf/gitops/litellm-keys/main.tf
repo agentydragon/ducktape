@@ -87,6 +87,34 @@ resource "kubernetes_secret" "cheap_experiments" {
   }
 }
 
+# ============================================================================
+# disposable-env — Qwen-only key for the disposable k3s test environment
+# ============================================================================
+# Runs on BuildBuddy RBE (agentplane/x/k3s_env), where the key is stored as a BuildBuddy
+# secret; inside the environment only the LLM ingress holds it. No key-level budget.
+
+resource "litellm_key" "disposable_env" {
+  key_alias = "disposable-env"
+  models    = var.model_lanes.qwen_client_models.allowed_models
+  metadata = {
+    consumer = "agentplane-disposable-env"
+  }
+}
+
+resource "kubernetes_secret" "disposable_env" {
+  metadata {
+    name      = "litellm-key-disposable-env"
+    namespace = "litellm"
+    annotations = {
+      description = "LiteLLM virtual key for the disposable k3s test environment; local Ollama Qwen routes only"
+    }
+  }
+
+  data = {
+    api-key = litellm_key.disposable_env.key
+  }
+}
+
 # Deliberately has no key-level max_budget; testing retains its own budgeted key.
 resource "litellm_key" "agentplane_staging" {
   key_alias = "agentplane-staging"
