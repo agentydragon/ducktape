@@ -301,7 +301,6 @@ py_test(
         "//agentplane:grpc_serving",
         "//agentplane:policy_sets",
         "//agentplane:sandbox_resource",
-        "//agentplane/app/testing:egress_proxy",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/threads:bridge",
