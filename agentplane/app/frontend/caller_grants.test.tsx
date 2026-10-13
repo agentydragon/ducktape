@@ -65,7 +65,7 @@ it("preserves expired and missing egress references even when Action policy is u
   }));
   expect(container.textContent).toContain("external-grants");
   expect(container.textContent).toContain("removed-policy?");
-  expect(container.textContent).toContain("2000");
+  expect(container.querySelector("time")?.getAttribute("datetime")).toBe("2000-01-01T00:00:00.000Z");
   expect(container.textContent).toContain("operator_federation_not_configured");
   await act(async () => button("Rules").click());
   expect(container.textContent).toContain("removed-policy: no such egress policy");

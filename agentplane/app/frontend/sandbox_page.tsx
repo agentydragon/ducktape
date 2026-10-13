@@ -516,7 +516,7 @@ export function SandboxPage({
                 aria-label={`Sandbox status: ${sandboxSummary(sandbox).label}`}
                 style={{ display: "inline-flex", flexShrink: 0 }}
               >
-                <MarkGlyph mark={SANDBOX_STATUS_MARKS[sandboxSummary(sandbox).kind]} />
+                <MarkGlyph mark={SANDBOX_STATUS_MARKS[sandboxSummary(sandbox).kind]} size="small" />
               </span>
             </Tooltip>
           )}
