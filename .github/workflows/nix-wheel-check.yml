@@ -221,6 +221,17 @@ jobs:
             echo 'EOF'
           } >> "$GITHUB_OUTPUT"
 
+      # Upload every path this run adds to the store as soon as it lands, so a
+      # cold rebuild that times out or fails still leaves its finished paths in
+      # Attic for the next run. Fork revisions (pull_request_target, via
+      # trusted-fork-pr-ci.yml) never write to the shared cache.
+      - name: Start incremental Attic upload
+        if: github.event_name != 'pull_request_target'
+        run: |
+          nix profile install nixpkgs#attic-client
+          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
+          nohup attic watch-store ducktape:main > "$RUNNER_TEMP/attic-watch-store.log" 2>&1 &
+
       # Each marker depends on the complete source-built package and its checks.
       # Cache hits need only the marker; misses build the package as before.
       # --impure is required for the getEnv artifact override read.
@@ -234,11 +245,11 @@ jobs:
 
       # Publish the source-override results: ordinary pinned-artifact builds can
       # have different store paths even when they contain the same wheel bytes.
+      # The watcher may still be uploading; this push covers the markers' full
+      # closures before the job ends.
       - name: Cache source artifact checks in Attic
-        if: github.event_name == 'push' && (github.ref_name == 'devel' || github.ref_name == 'main')
+        if: github.event_name != 'pull_request_target'
         run: |
-          nix profile install nixpkgs#attic-client
-          attic login ducktape https://cache.allegedly.works "$ATTIC_TOKEN"
           mapfile -t checks < "$RUNNER_TEMP/artifact-check-paths"
           test "${#checks[@]}" -gt 0
           attic push ducktape:main "${checks[@]}"
