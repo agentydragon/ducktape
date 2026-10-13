@@ -14,6 +14,7 @@ import {
 import { type JSX, useEffect, useState } from "react";
 
 import { displayableError, serviceAccountKey } from "./client";
+import { TimeAgo } from "./time_ago";
 import { decideConsent, previewConsent, type ConsentDecision, type ConsentPreview } from "./consent_client";
 
 function continueAuthorization(url: string): void {
@@ -131,7 +132,7 @@ export function ConnectionConsent({
               <Text size="sm">Validated OAuth redirect</Text>
               <Code style={{ overflowWrap: "anywhere" }}>{preview.enrollment.redirect_uri}</Code>
               <Text size="xs" c="dimmed">
-                Expires {new Date(preview.enrollment.expires_at).toLocaleString()}
+                Expires <TimeAgo value={preview.enrollment.expires_at} />
               </Text>
             </Stack>
             <NativeSelect

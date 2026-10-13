@@ -3,6 +3,7 @@ import { Alert, Badge, Box, Code, Group, Stack, Table, Text, Title, Tooltip } fr
 
 import { CodeBlock } from "../code_block";
 import { expiry } from "../egress";
+import { TimeAgo } from "../time_ago";
 import type {
   ActionPolicyBindingView,
   ActionPolicySetView,
@@ -137,7 +138,7 @@ function BindingsTable({ bindings }: { bindings: ActionPolicyBindingView[] }): J
                   <Ready ready={binding.ready} />
                   <Text size="xs" c="dimmed">
                     {PROVENANCE[binding.provenance]} · expires{" "}
-                    {binding.expires_at ? new Date(binding.expires_at).toLocaleString() : "never"}
+                    {binding.expires_at ? <TimeAgo value={binding.expires_at} /> : "never"}
                   </Text>
                 </Group>
                 <PolicySets binding={binding} />

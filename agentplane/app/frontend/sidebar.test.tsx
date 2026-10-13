@@ -294,8 +294,8 @@ it("keeps retained rows but withdraws live indicators when any update source is 
   expect(container.querySelector("[data-connection]")).toBeNull();
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);
   await act(async () => vi.advanceTimersByTime(DEGRADED_AFTER_MS));
-  expect(container.querySelector('[data-connection="degraded"]')?.getAttribute("aria-label")).toBe(
-    "Threads: reconnecting since 17:21:04 · attempt 1"
+  expect(container.querySelector('[data-connection="degraded"]')?.getAttribute("aria-label")).toMatch(
+    /^Threads: reconnecting since 5 seconds ago \(.+\) · attempt 1$/
   );
   expect(container.textContent).toContain("Retained thread");
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);

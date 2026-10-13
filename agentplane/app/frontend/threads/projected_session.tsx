@@ -61,6 +61,7 @@ import { ThreadStatusIndicator } from "../thread_status_indicator";
 import { DISCLOSURE_STICKY_Z_INDEX } from "../disclosure";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
 import { sandboxReady, sandboxSummary } from "../sandbox_status";
+import { isoTime } from "../format_time";
 import { NotificationStatus } from "../notification_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import { installThreadFavicon } from "../thread_favicon";
@@ -1015,7 +1016,7 @@ function ModelActivityHint({
       aria-label={`Last inferred model activity: ${age}`}
       title={
         at && age !== "unknown"
-          ? `${new Date(at).toLocaleString()} · Inferred from model-originated Thread events, not a measured provider request or cache hit`
+          ? `${isoTime(at)} · Inferred from model-originated Thread events, not a measured provider request or cache hit`
           : "No model-originated Thread event observed; provider requests are not measured here"
       }
     >

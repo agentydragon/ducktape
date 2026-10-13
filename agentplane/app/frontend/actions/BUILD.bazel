@@ -272,6 +272,7 @@ ts_library(
         "//:node_modules/react",
         "//agentplane/app/frontend:code_block",
         "//agentplane/app/frontend:egress",
+        "//agentplane/app/frontend:time_ago",
     ],
 )
 

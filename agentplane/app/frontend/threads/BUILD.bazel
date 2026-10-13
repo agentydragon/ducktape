@@ -180,6 +180,7 @@ ts_library(
         "//agentplane/app/frontend:topbar",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_pb",
+        "//agentplane/app/frontend:format_time",
     ],
 )
 

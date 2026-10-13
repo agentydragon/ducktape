@@ -11,6 +11,7 @@
 import { Box, Loader, Tooltip } from "@mantine/core";
 import { type JSX, useEffect, useState, useSyncExternalStore } from "react";
 
+import { isoTime, timeAgo } from "./format_time";
 import type { StreamConnection } from "./live_stream";
 
 export const DEGRADED_AFTER_MS = 5_000;
@@ -137,10 +138,8 @@ export function useOptionalStreamStatus(name: string, connection: StreamConnecti
   return connection === null ? null : statusOf(reported, name, connection, null);
 }
 
-const CLOCK = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-
 function describe({ name, connection, stalled }: StreamStatus): string {
-  const parts = [`${name}: ${connection.phase} since ${CLOCK.format(connection.since)}`];
+  const parts = [`${name}: ${connection.phase} since ${timeAgo(connection.since)} (${isoTime(connection.since)})`];
   if (connection.phase === "reconnecting") {
     parts.push(`attempt ${connection.attempt}`);
     if (connection.lastError !== null) parts.push(connection.lastError);

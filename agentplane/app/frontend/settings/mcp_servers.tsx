@@ -4,6 +4,7 @@ import { useSnapshotStream } from "../live_stream";
 
 import { disconnectMcpLinkage, displayableError, startMcpLinkage, type McpLinkageView } from "../client";
 import type { ActionGroupView } from "../actions/client";
+import { TimeAgo } from "../time_ago";
 
 type McpHealth = ActionGroupView["health"];
 
@@ -83,11 +84,15 @@ function RefreshFailure({ linkage }: { linkage: McpLinkageView }): JSX.Element |
   const failure = linkage.refresh_failure;
   if (failure == null) return null;
   const next =
-    failure.action !== "retrying"
-      ? "link the account again"
-      : failure.retry_at != null
-        ? `retrying at ${new Date(failure.retry_at).toLocaleString()}`
-        : "retrying";
+    failure.action !== "retrying" ? (
+      "link the account again"
+    ) : failure.retry_at != null ? (
+      <>
+        retrying <TimeAgo value={failure.retry_at} />
+      </>
+    ) : (
+      "retrying"
+    );
   return (
     <Text size="sm" c="orange.8" mt="xs" style={{ overflowWrap: "anywhere" }}>
       Token refresh failed {failure.attempts === 1 ? "once" : `${failure.attempts} times`}, {next}:

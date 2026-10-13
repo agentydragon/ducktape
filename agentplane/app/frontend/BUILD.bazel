@@ -161,6 +161,7 @@ ts_library(
     deps = [
         ":client",
         ":consent_client",
+        ":time_ago",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -318,6 +319,7 @@ ts_library(
     deps = [
         ":client",
         ":live_stream",
+        ":time_ago",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -401,6 +403,7 @@ ts_library(
     srcs = ["stream_status.tsx"],
     tsconfig = TSCONFIG,
     deps = [
+        ":format_time",
         ":live_stream",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
@@ -634,6 +637,17 @@ js_library(
 )
 
 ts_library(
+    name = "time_ago",
+    srcs = ["time_ago.tsx"],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":format_time",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "format_time",
     srcs = ["format_time.ts"],
     tsconfig = TSCONFIG,
@@ -716,6 +730,7 @@ ts_library(
         ":live",
         ":live_stream",
         ":stream_status",
+        ":time_ago",
         "//:node_modules/@mantine/core",
         "//:node_modules/@types/react",
         "//:node_modules/react",
@@ -771,6 +786,7 @@ ts_library(
         ":raw_switch",
         ":sandbox_status",
         ":status_mark",
+        ":time_ago",
         ":topbar",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/@mantine/core",

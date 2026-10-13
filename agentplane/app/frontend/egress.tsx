@@ -2,6 +2,7 @@ import { Badge, Button, Group, MultiSelect, SegmentedControl, Stack, Table, Text
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
+import { TimeAgo } from "./time_ago";
 import { api, displayableError, type BindingView, type Decision, type PolicyView } from "./client";
 import { type DecisionGroup, groupDecisions } from "./decision_groups";
 import { type DecisionsSnapshot, liveEgressDecisionsUrl } from "./live";
@@ -18,7 +19,7 @@ export function expiry(expiresAt: string | null | undefined): JSX.Element {
   const at = new Date(expiresAt);
   return (
     <Text size="sm" c={at.getTime() < Date.now() ? "red" : undefined}>
-      {at.toLocaleString()}
+      <TimeAgo value={at} />
     </Text>
   );
 }
@@ -181,7 +182,7 @@ export function EgressBindings({
                   </Tooltip>
                   <Text size="xs" c="dimmed">
                     {provenance(binding)} · expires{" "}
-                    {binding.expires_at ? new Date(binding.expires_at).toLocaleString() : "never"}
+                    {binding.expires_at ? <TimeAgo value={binding.expires_at} /> : "never"}
                   </Text>
                   {policyNames}
                 </Stack>
@@ -279,7 +280,7 @@ function DecisionRow({ decision, nested }: { decision: Decision; nested: boolean
     <Table.Tr>
       <Table.Td pl={nested ? "xl" : undefined}>
         <Text size="sm" style={{ whiteSpace: "nowrap" }}>
-          {new Date(decision.at).toLocaleTimeString()}
+          <TimeAgo value={decision.at} />
         </Text>
       </Table.Td>
       <Table.Td>
@@ -325,9 +326,16 @@ function DecisionGroupRows({
     <>
       <Table.Tr>
         <Table.Td>
-          <Tooltip label={`First ${new Date(group.firstAt).toLocaleTimeString()}`} withArrow>
+          <Tooltip
+            label={
+              <>
+                First <TimeAgo value={group.firstAt} />
+              </>
+            }
+            withArrow
+          >
             <Text size="sm" style={{ whiteSpace: "nowrap" }}>
-              {new Date(group.lastAt).toLocaleTimeString()}
+              <TimeAgo value={group.lastAt} />
             </Text>
           </Tooltip>
         </Table.Td>

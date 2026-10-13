@@ -43,6 +43,7 @@ import { Disclosure } from "./disclosure";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
 import { MarkGlyph } from "./mark_glyph";
+import { TimeAgo } from "./time_ago";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, useLive, type SandboxSnapshot } from "./live";
 import { RawSwitch } from "./raw_switch";
@@ -150,7 +151,7 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
       ) : (
         <>
           <Text size="sm">
-            Sandbox {sandbox.operating_mode.toLowerCase()}, created {new Date(sandbox.created_at).toLocaleString()}
+            Sandbox {sandbox.operating_mode.toLowerCase()}, created <TimeAgo value={sandbox.created_at} />
             {sandbox.pod?.node_name ? `, Pod placed on ${sandbox.pod.node_name}` : ", Pod not placed"}
           </Text>
           {/* The account its Pod runs as is what every binding names, so the tabs below are its policy, not this

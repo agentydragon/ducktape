@@ -2,7 +2,7 @@
 import { Accordion, Divider, Drawer, Group, Paper, ScrollArea, Select, Stack, Text } from "@mantine/core";
 import { useEffect, useState, type JSX } from "react";
 
-import { clockTime } from "./format_time";
+import { clockTime, isoTime, timeAgo } from "./format_time";
 import { followStream, type StreamConnection } from "./live_stream";
 
 type Source = {
@@ -113,8 +113,9 @@ function sourceLabel(source: Source): string {
   return source.provider;
 }
 
+/** Plain text for the strings built from it; the ISO time stands where a tooltip cannot. */
 function timestamp(value: string): string {
-  return new Date(value).toLocaleString();
+  return `${timeAgo(value)} (${isoTime(value)})`;
 }
 
 export function NotificationStatus({

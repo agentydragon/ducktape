@@ -94,7 +94,9 @@ it("shows nothing within the grace, then a spinner naming the stream, amber once
   await act(async () => vi.advanceTimersByTime(1));
   const spinner = indicator.querySelector("[data-connection]");
   expect(spinner?.getAttribute("data-connection")).toBe("degraded");
-  expect(spinner?.getAttribute("aria-label")).toBe("Actions: reconnecting since 17:21:04 · attempt 3 · HTTP 503");
+  expect(spinner?.getAttribute("aria-label")).toMatch(
+    /^Actions: reconnecting since 5 seconds ago \(.+\) · attempt 3 · HTTP 503$/
+  );
 
   await act(async () => vi.advanceTimersByTime(STALE_AFTER_MS - DEGRADED_AFTER_MS));
   expect(indicator.querySelector("[data-connection]")?.getAttribute("data-connection")).toBe("stale");
