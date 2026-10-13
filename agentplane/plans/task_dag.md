@@ -469,6 +469,8 @@ flowchart LR
     ISOLATED_ACCEPTANCE_CI[Unscheduled: acceptance tests in their own CI workflow]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
+    NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
+    ACTION_SURFACES_DESIGN -. related .-> NOTIFICATION_PRESENTATION
 ```
 
 ### `ACTION_SURFACES_DESIGN` — where and in what states Actions render
@@ -491,7 +493,8 @@ since "quick approve" could mean the buttons on a card or Approve/Deny on a desk
 Proposed vocabulary, to settle with the design: **compact card** (the glance form in the sidebar
 and the strip), **full card** (the detail view with the whole `ActionCall`), **card decision
 buttons** (Approve/Deny on a compact card), **notification buttons** (Approve/Deny on a Web Push
-notification), **attention strip** (the top "Actions waiting" count). The compact-card
+notification), **attention strip** (the top "Actions waiting" count). `NOTIFICATION_PRESENTATION` (section 2) renders notices on the same surfaces and uses the same card
+names. The compact-card
 fixes under way (decision buttons on collapsed cards, a height cap, more Actions allowed inline)
 land first and need not wait for this.
 
@@ -542,8 +545,12 @@ flowchart LR
     PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     POLICY_RUNTIME_GRANTS[Candidate: web app affordances for bindings and sets]
-    AGENT_PERMISSION_REQUESTS[Unscheduled: agents ask the operator for time-limited permissions]
-    POLICY_RUNTIME_GRANTS -. related .-> AGENT_PERMISSION_REQUESTS
+    AGENT_PERMISSION_INSTRUCTIONS[Candidate: tell agents how and when to ask for a permission]
+    AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
+    ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
+    POLICY_RUNTIME_GRANTS --> AGENT_PERMISSION_REQUESTS
+    ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
+    AGENT_PERMISSION_INSTRUCTIONS -. related .-> AGENT_PERMISSION_REQUESTS
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: asynchronous Sandbox bootstrap]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
@@ -593,17 +600,24 @@ reference on the Sandbox) and gets the `policybindings` create/delete permission
 has today. One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry,
 so no reader handles expiry itself.
 
-### `AGENT_PERMISSION_REQUESTS` — agents ask the operator for time-limited permissions
+### `AGENT_PERMISSION_INSTRUCTIONS` — tell agents how and when to ask for a permission
 
-**Unscheduled; operator, 2026-10-13 PDT: eventually.** An agent running in Agentplane asks the
-operator in natural terms ("can I have permission X for two hours?") and the operator approves or
-denies. The operator says an agent can already do this by applying a custom resource through the
-Kubernetes admin Action. Two things are missing. First, instructions telling agents how and when to
-ask, so that asking is the normal route and not a surprise. Second, possibly a better experience: a
-specific Action type for the request instead of the Kubernetes MCP escape hatch, and an approval
-view that shows the operator the account, the sets and the duration rather than a blob of Kubernetes
-YAML. Related to `POLICY_RUNTIME_GRANTS`, which gives the operator the web app for creating the same
-bindings by hand; an approved request would create the same kind of `PolicyBinding`.
+**Candidate; operator, 2026-10-13 PDT.** An agent running in Agentplane should ask the operator in
+natural terms ("can I have permission X for two hours?") and the operator approves or denies. An
+agent can already do this by applying a `PolicyBinding` through the Kubernetes admin Action. Missing
+is the guidance that makes asking the normal route: how, with which sets and duration, and when to
+ask rather than work around a refusal. It needs nothing built, so it runs in parallel with the other
+nodes here; `AGENT_PERMISSION_REQUESTS` later replaces the Kubernetes route it describes.
+
+### `AGENT_PERMISSION_REQUESTS` — an Action type and approval view for permission requests
+
+**Blocked on `POLICY_RUNTIME_GRANTS` and `ACTION_SURFACES_DESIGN`; operator, 2026-10-13 PDT:
+eventually.** A specific Action type for the request instead of the Kubernetes MCP escape hatch, and
+an approval view that shows the operator the account, the sets and the duration rather than a blob of
+Kubernetes YAML. It shares with `POLICY_RUNTIME_GRANTS` the one path that writes a `PolicyBinding` for
+the operator, so that node lands first and an approved request creates the same kind of binding. How
+the request renders is the Action surfaces' decision: the approval view is one Action type described
+once there.
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 
@@ -696,6 +710,8 @@ flowchart TD
     SESSION_REVIVE --> SESSION_MESSAGE_QUEUE
     SESSION_MESSAGE_QUEUE --> SUSPENDED_COMPOSER
     SESSION_QUEUE_DESIGN -. may own .-> SANDBOX_IDLE_EXPIRY
+    SESSION_QUEUE_DESIGN -. shares delivery semantics .-> THREAD_SUCCESSOR_DELIVERY
+    AGENT_MESSAGE_RECEPTION[Blocked: receiving, recovery and acknowledgement, section 3] -. shares delivery semantics .-> SESSION_QUEUE_DESIGN
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
 ```
