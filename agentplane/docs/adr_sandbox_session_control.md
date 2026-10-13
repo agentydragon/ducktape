@@ -17,7 +17,7 @@ not redesign storage, the History Service, or policy.
    dial-out connection answers.
 3. **Say what state it is in.** Created, starting, booting, connected, ready, sealing,
    suspended, tearing down, and why it is stuck when it is.
-4. **Seal** (the operator's "quiesce"; one operation, name open). Before a Pod or VM goes away (suspend or delete), stop admitting work,
+4. **Quiesce** (today's "seal"; one operation, names in D3). Before a Pod or VM goes away (suspend or delete), stop admitting work,
    interrupt running turns, flush every Session's journal to the ingress, and only then stop it.
 5. **Deliver work to a Session whatever state its Sandbox is in.** A message to a suspended
    Sandbox's Session resumes the Sandbox and arrives once the runner is up, even if the sender is
@@ -90,7 +90,7 @@ flowchart LR
     K -. placement when caller omits Sandbox .-> HS[History Service]
     SS -- writes spec.running --> CR[(Sandbox CR)]
     SC[Sandbox Controller] -- reconciles --> CR
-    SC -- Seal through proxy --> GW
+    SC -- Quiesce through proxy --> GW
     GW -- Lease, EndpointSlice --> L[(Leases)]
     SC -- reads connectivity --> L
     Runner -- control stream --> GW
@@ -99,14 +99,14 @@ flowchart LR
     SC -- idle timer from busy facts --> L
 ```
 
-| Component          | Owns                                                                                                                                                       | Does not own                                                        |
-| ------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Sandbox CR         | Desired state (`spec.running`, template), current facts (`status`: incarnation, `sealedIncarnation`, conditions)                                           | Anything per Session                                                |
-| Sandbox Controller | Pod or VM, state volume, identity, the `<sandbox>-control` Service, seal sequencing, idle suspension, deletion, folding every layer's fact into conditions | Runner connection, Session records, queues                          |
-| Runner Gateway     | The runner connection and its authentication, the Lease and EndpointSlice, the proxy of `Runner`, per-method authorization                                 | Any Kubernetes object besides those two, Sessions, queues           |
-| Runner             | Harnesses, journal, admission, seal mechanics, busy state                                                                                                  | Policy about when to suspend                                        |
-| History Service    | Event log, fold, Session directory including the writing Sandbox                                                                                           | Routing, waking, suspending                                         |
-| Session Mailbox    | The durable queue of messages and Session creations, wake-on-send, send-side authorization (who may wake), delivery states                                 | Sandbox objects (it asks the Sandbox Service), idle policy, history |
+| Component          | Owns                                                                                                                                                          | Does not own                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Sandbox CR         | Desired state (`spec.running`, template), current facts (`status`: incarnation, `quiescedIncarnation`, conditions)                                            | Anything per Session                                                |
+| Sandbox Controller | Pod or VM, state volume, identity, the `<sandbox>-control` Service, quiesce sequencing, idle suspension, deletion, folding every layer's fact into conditions | Runner connection, Session records, queues                          |
+| Runner Gateway     | The runner connection and its authentication, the Lease and EndpointSlice, the proxy of `Runner`, per-method authorization                                    | Any Kubernetes object besides those two, Sessions, queues           |
+| Runner             | Harnesses, journal, admission, seal mechanics, busy state                                                                                                     | Policy about when to suspend                                        |
+| History Service    | Event log, fold, Session directory including the writing Sandbox                                                                                              | Routing, waking, suspending                                         |
+| Session Mailbox    | The durable queue of messages and Session creations, wake-on-send, send-side authorization (who may wake), delivery states                                    | Sandbox objects (it asks the Sandbox Service), idle policy, history |
 
 "Session Mailbox" is a placeholder name for the queue service; it is not a controller. Idle is a
 Sandbox-level fact (every Session in the Sandbox idle), which is why its policy sits on the Sandbox.
@@ -133,14 +133,14 @@ problem.
 
 Facts have different truth sources, so each gets its own condition and `Ready` is their AND:
 
-| Condition         | Source of truth                                                                | Meaning                                                                                                                |
-| ----------------- | ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `Running`         | controller (Pod or VMI)                                                        | an incarnation exists and runs                                                                                         |
-| `WorkloadReady`   | controller (Pod Ready)                                                         | what `Ready` reports today (#10326)                                                                                    |
-| `RunnerConnected` | gateway (connection Lease)                                                     | a runner of this incarnation holds a live connection                                                                   |
-| `Bootstrapped`    | runner (bootstrap result)                                                      | the Sandbox's bootstrap ran to success                                                                                 |
-| `Ready`           | controller                                                                     | all of the above for the current incarnation                                                                           |
-| `Sealed`          | controller, from the runner's `Seal` response and its ingress acknowledgements | False with reason `Sealing` while the runner is in lameduck and draining; True once every final cursor is acknowledged |
+| Condition         | Source of truth                                                                   | Meaning                                                                                     |
+| ----------------- | --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `Running`         | controller (Pod or VMI)                                                           | an incarnation exists and runs                                                              |
+| `WorkloadReady`   | controller (Pod Ready)                                                            | what `Ready` reports today (#10326)                                                         |
+| `RunnerConnected` | gateway (connection Lease)                                                        | a runner of this incarnation holds a live connection                                        |
+| `Bootstrapped`    | runner (bootstrap result)                                                         | the Sandbox's bootstrap ran to success                                                      |
+| `Ready`           | controller                                                                        | all of the above for the current incarnation                                                |
+| `Quiesced`        | controller, from the runner's `Quiesce` response and its ingress acknowledgements | False with reason `Draining`, then `Flushing`; True once every final cursor is acknowledged |
 
 Two rules make this safe. Conditions are keyed to the incarnation UID, so a connection or boot
 fact from incarnation N is never read as incarnation N+1's. And a condition is written by exactly
@@ -161,29 +161,44 @@ here is only the transport. A gateway rollout drops every connection at once; th
 treat the reconnect window as connectivity lost, not as a Sandbox failure, and must not replace or
 restart anything because of it (no automatic spec replacement, operator 2026-10-13).
 
-### D3. Sealing is one operation, and it leaves the runner in lameduck
+### D3. Quiescing is one operation; names say which stage a Sandbox is in
 
-**Seal is one operation on the whole runner, not on its Sessions** (operator, 2026-10-13). The
-operator's word for it is "quiesce"; the name can change later, and this document says "seal"
-because that is the RPC. It puts the runner in a durable lameduck state, in which it accepts only
-the operations that drain it, and drains it. The state survives a runner restart, as the runner
-records it today. What stays per Session is only the bookkeeping the drain finishes: each journal's
-final cursor and whether the ingress has acknowledged it.
+**Quiescing is one operation on the whole runner, not on its Sessions** (operator, 2026-10-13). It
+puts the runner in a durable lameduck state, in which it accepts only the operations that drain it,
+and drains it. The state survives a runner restart, as the runner records it today. What stays per
+Session is only the bookkeeping the drain finishes: each journal's final cursor and whether the
+ingress has acknowledged it.
 
-| Once sealing has begun, the runner                                                   |
+| Once quiescing has begun, the runner                                                 |
 | ------------------------------------------------------------------------------------ |
 | refuses `OpenSession`, `ResumeSession` and any command that starts or continues work |
-| accepts interrupts, reads (`ListSessions`) and repeated `Seal`                       |
+| accepts interrupts, reads (`ListSessions`) and repeated `Quiesce`                    |
 | interrupts active turns, stops harnesses, finalizes journals, pushes through cursors |
 
-The Sandbox's `Sealed` condition is False with reason `Sealing` until the operation finishes, and
-True once the ingress has acknowledged every final cursor. The Pod or VM may go only then.
-Per-Session cursors never appear in Kubernetes.
+**Names.** Today one word, "sealed", covers three different facts: the runner refuses new work, its
+journals are final, and the ingress has acknowledged them. A `Sealed` condition that is True while
+the runner is only refusing new work is wrong. Proposed:
 
-Today the runner refuses new Sessions
-immediately, but commands to a Session whose journal is not yet sealed are still admitted, and a turn is
-stopped rather than interrupted through the command protocol. The change is to refuse at entry and
-interrupt before stopping, inside the same `Seal`.
+| Today                      | Proposed                                                                | Meaning                                                                   |
+| -------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------- |
+| RPC `Runner.Seal`          | `Runner.Quiesce`                                                        | The one operation, idempotent, repeated until done                        |
+| (no name)                  | reason `Draining`                                                       | Refusing new work; interrupting turns, stopping harnesses                 |
+| (no name)                  | reason `Flushing`                                                       | Harnesses stopped, journals final; waiting for the ingress to acknowledge |
+| `Sealed`, `SessionsSealed` | condition `Quiesced`, True only when every final cursor is acknowledged | Safe to remove the Pod or VM                                              |
+| `status.sealedIncarnation` | `status.quiescedIncarnation`                                            | UID of the last incarnation that reached `Quiesced`                       |
+| Sandbox phases `Sealing`   | `Quiescing`                                                             | Draining or Flushing                                                      |
+| `Ready` while refusing     | `Ready` False, reason `Draining`                                        | Callers and the Mailbox read "not accepting work" from `Ready`            |
+
+`Quiesced` is False with reason `Draining`, then `Flushing`, until it is True; `NeverRan` and
+`NotQuiesced` cover a Sandbox whose runner never connected and one stopped without quiescing. The
+journal keeps the word "sealed": a journal is sealed at its final cursor, which is one step of
+`Flushing` and per Session, so it never names a Sandbox condition. Per-Session cursors never appear
+in Kubernetes. The remaining sections use the proposed names; the Current state section keeps today's.
+
+Today the runner refuses new Sessions immediately, but commands to a Session whose journal is not
+yet sealed are still admitted, and a turn is stopped rather than interrupted through the command
+protocol. The change is to refuse at entry and interrupt before stopping, inside the same
+operation.
 
 Sequence for suspend and delete:
 
@@ -192,23 +207,23 @@ sequenceDiagram
     participant C as Sandbox Controller
     participant R as Runner (through gateway proxy)
     participant I as Ingress (History Service)
-    C->>R: Seal (first call)
-    R->>R: enter lameduck (durable): refuse all but draining operations
+    C->>R: Quiesce (first call)
+    R->>R: enter lameduck (durable): refuse all but draining operations [Draining]
     R->>R: interrupt active turns (InterruptTurn), wait up to a deadline
-    R->>R: stop harnesses, seal journals
-    R->>I: push to the seal cursor
+    R->>R: stop harnesses, seal journals [Flushing]
+    R->>I: push to the final cursor
     I-->>R: ack
-    C->>R: Seal (repeat until every Session flushed)
-    C->>C: record sealedIncarnation, then delete Pod or VM
+    C->>R: Quiesce (repeat until every Session acknowledged)
+    C->>C: Quiesced; record quiescedIncarnation, then delete Pod or VM
 ```
 
-Interruption is part of `Seal` rather than a second RPC: the runner already owns turn state, and a
-caller wanting "suspend only if still idle" is better served by a precondition on the suspend
+Interruption is part of `Quiesce` rather than a second RPC: the runner already owns turn state, and
+a caller wanting "suspend only if still idle" is better served by a precondition on the suspend
 request (`if idle since T`) than by a drain phase to coordinate. It needs a deadline after which a
 turn that ignores the interrupt is stopped anyway, and a defined history entry showing a turn ended
 by teardown.
 
-Commands arriving at a sealing runner are refused with a code the Mailbox reads as "retry after
+Commands arriving at a draining runner are refused with a code the Mailbox reads as "retry after
 resume", not as failure.
 
 ### D4. The queue service: required or optional, one door or two, separate or merged
@@ -223,7 +238,7 @@ Mailbox's `Send`, so there is one set of delivery semantics: accepted, then deli
 with a reason. A second direct path for the same senders means "sometimes queued, sometimes an
 immediate error", which the suspended composer story cannot present. The runner proxy at the
 gateway stays the only runner surface, and system callers still use it directly: the Mailbox itself,
-the controller's `Seal`, operator diagnostics and acceptance tests. Per-method authorization at the
+the controller's `Quiesce`, operator diagnostics and acceptance tests. Per-method authorization at the
 gateway is where "only these callers may call `DeliverCommand`" is enforced; it is a policy edit,
 not a new path.
 
@@ -234,7 +249,7 @@ What remains of the runner surface for direct use once the Mailbox exists:
 | `DeliverCommand` | Mailbox (senders); direct for system callers and tests                |
 | `OpenSession`    | Mailbox (it can wait for a Sandbox to run); direct for system callers |
 | `ResumeSession`  | Mailbox only in practice: it is the harness half of waking            |
-| `Seal`           | Sandbox Controller only                                               |
+| `Quiesce`        | Sandbox Controller only                                               |
 | `ListSessions`   | direct; reads need no wake                                            |
 
 A deployment with no Mailbox is a valid reduced configuration (a Sandbox that is started by hand
@@ -255,7 +270,7 @@ Session directory when they do not. A Session that is only queued for creation i
 Mailbox alone until its runner pushes, so the Mailbox's own record is authoritative until then.
 
 **History Service dependency.** Delivery does not need it: admission is the runner's receipt, and
-placement is passed or looked up. Placement lookup and the reading of seal acks (already required
+placement is passed or looked up. Placement lookup and the reading of final-cursor acks (already required
 for any suspend or delete) are the only touches. For idle policy the controller should not derive
 activity from history at all (below), so idle policy and the Mailbox run with the History Service down, except
 that, as today, nothing can finish sealing while the ingress is down. An outage therefore blocks
@@ -301,14 +316,14 @@ Sandbox Service stays the only writer of desired state.
 
 ### D5. Where each fact lives
 
-| Fact                                                                                                            | Home                                          |
-| --------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| Desired running, template, incarnations, conditions, `sealedIncarnation`, the rendered spec of each incarnation | Sandbox CR (Kubernetes)                       |
-| Runner connected, boot state, busy state                                                                        | Lease annotations (Kubernetes, Sandbox-level) |
-| Session events, directory, writing Sandbox, summaries                                                           | History Service database                      |
-| Queued messages, their delivery state, queued Session creations, the pending mark's source                      | Mailbox database                              |
-| Session journal and cursors                                                                                     | Runner volume, mirrored by the ingress        |
-| Per-Session seal cursors and flush state                                                                        | the seal response and the ingress, never a CR |
+| Fact                                                                                                              | Home                                             |
+| ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| Desired running, template, incarnations, conditions, `quiescedIncarnation`, the rendered spec of each incarnation | Sandbox CR (Kubernetes)                          |
+| Runner connected, boot state, busy state                                                                          | Lease annotations (Kubernetes, Sandbox-level)    |
+| Session events, directory, writing Sandbox, summaries                                                             | History Service database                         |
+| Queued messages, their delivery state, queued Session creations, the pending mark's source                        | Mailbox database                                 |
+| Session journal and cursors                                                                                       | Runner volume, mirrored by the ingress           |
+| Per-Session seal cursors and flush state                                                                          | the quiesce response and the ingress, never a CR |
 
 Conditions and annotations carry Sandbox-level, transitional facts only. A per-Session list in
 Kubernetes is the line not to cross.
@@ -318,14 +333,14 @@ Kubernetes is the line not to cross.
 Phase is derived, never stored (as for the Sandbox Service today):
 
 ```text
-Creating -> Starting -> Booting -> Ready -> Sealing -> Suspended
+Creating -> Starting -> Booting -> Ready -> Quiescing -> Suspended
                                    ^                                |
                                    |------------ Resuming ----------|
-Any state --delete--> Sealing (if unsealed) -> Tearing down -> gone
+Any state --delete--> Quiescing (if not quiesced) -> Tearing down -> gone
 ```
 
 - Suspend and delete both run the D3 sequence; a suspended, already-sealed Sandbox deletes without
-  waking (`sealedIncarnation`).
+  waking (`quiescedIncarnation`).
 - A wedged seal is cleared by removing the finalizer by hand. No force-seal exists to build around.
 - Spec update is suspend, then resume, which re-derives the spec from the current template. The
   rendered spec of each incarnation is stored on the Sandbox for diffing.
@@ -372,7 +387,7 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
 
 - **Suspend versus an arriving message.** A message accepted while the Sandbox is sealing must wait
   for the _next_ incarnation to be Ready; delivering to the sealing runner loses it or errors. Key
-  every delivery attempt to the incarnation UID, and make the runner refuse after seal with a
+  every delivery attempt to the incarnation UID, and make the runner refuse once quiescing begins with a
   distinct code.
 - **At-least-once with ambiguity.** The Mailbox persists the command before acknowledging the
   sender; the runner deduplicates on `command_id`. A call whose reply was lost across an
@@ -401,7 +416,7 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
   `VM_RAM_SUSPEND` assumes the Pod sequence.
 - **Rolling out together.** The gateway rollout reconnects every runner at once and flaps
   `RunnerConnected`; debounce it. Runner, gateway, controller and Mailbox roll independently, so
-  protocol additions (interrupt in `Seal`, Lease annotations) must be accepted by readers before
+  protocol additions (interrupt in `Quiesce`, Lease annotations) must be accepted by readers before
   writers emit them (image before config).
 - **Credentials across suspension.** Egress grants, PolicyBindings and projected tokens must still
   be valid when a Sandbox resumes hours later; a resume that comes up with expired grants looks
@@ -427,7 +442,7 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
 4. **Lease annotations rather than gRPC health as the runner-fact transport?** Recommend Lease
    (D2); this changes the approved connectivity node's mechanism, not its goal.
 5. **Controller creates the control Service?** Recommend yes; low stakes (D1).
-6. **Interrupt inside `Seal`?** Recommend yes (D3).
+6. **Interrupt inside the one `Quiesce` operation, and the renames in D3 (`Quiesced`, `Draining`, `Flushing`, `quiescedIncarnation`)?** Recommend yes (D3).
 7. **A way for an operator to hold a Sandbox suspended against wake-on-send?** Needs a decision
    before the Mailbox lands.
 8. **Name.** Session Mailbox is a placeholder for the queue service; nothing else here needs a
