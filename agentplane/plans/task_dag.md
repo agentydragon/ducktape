@@ -544,9 +544,11 @@ not ad hoc grants. Test an allowed and denied operation; do not add privileges a
 
 ### `POLICY_RUNTIME_GRANTS` — time-limited grants
 
-**Candidate.** Extend the Sandbox Service's `GrantEgress`/`RevokeEgress` pair, which already
-creates and deletes a `PolicyBinding`, to take an optional `expiresAt` and sets of any rule type,
-and add UI chips showing each binding's set, expiry and ready conditions.
+**Candidate.** A grant is a `PolicyBinding` of any rule type, not only egress. The Sandbox
+Service's `GrantEgress`/`RevokeEgress` already create and delete one but are named for egress and
+take egress policies only (`egress_policies`, the egress-only views); make them a generic
+grant/revoke of PolicySets with an optional `expiresAt`, renaming the RPCs and their callers
+together, and add UI chips showing each binding's set, expiry and ready conditions.
 One `expiresAt` serves every type: the Policy Controller deletes the binding at expiry, so no reader
 handles expiry itself.
 
