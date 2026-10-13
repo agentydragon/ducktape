@@ -163,27 +163,32 @@ async def test_a_lost_connection_fails_the_call_unavailable(holder: Replica) -> 
         assert lost.value.code() == grpc.StatusCode.UNAVAILABLE
 
 
-@pytest.mark.parametrize(
-    ("operation", "request_type", "response_type"),
-    [
-        ("Seal", runner_pb2.SealRequest, runner_pb2.SealResponse),
-        ("Quiesce", runner_pb2.QuiesceRequest, runner_pb2.QuiesceResponse),
-    ],
-)
-async def test_only_the_sandbox_controller_quiesces(
-    holder: Replica, operation: str, request_type: type, response_type: type
-) -> None:
+async def test_only_the_sandbox_controller_seals(holder: Replica) -> None:
     async with runner_on(holder) as runner, runner_stub(holder) as stub:
-        call = getattr(stub, operation)
         with pytest.raises(grpc.aio.AioRpcError) as refused:
-            await call(request_type(), metadata=metadata(CALLER))
+            await stub.Seal(runner_pb2.SealRequest(), metadata=metadata(CALLER))
         assert refused.value.code() == grpc.StatusCode.PERMISSION_DENIED
         assert not runner.received
 
-        quiescing = asyncio.ensure_future(call(request_type(), metadata=metadata(CONTROLLER)))
-        quiesced = await runner.next(request_type)
+        sealing = asyncio.ensure_future(stub.Seal(runner_pb2.SealRequest(), metadata=metadata(CONTROLLER)))
+        sealed = await runner.next(runner_pb2.SealRequest)
+        sealed.outcome.set_result(
+            runner_pb2.SealResponse(sessions=[runner_pb2.SessionSeal(session_id="test-session", cursor=3)])
+        )
+        assert [(seal.session_id, seal.cursor) for seal in (await sealing).sessions] == [("test-session", 3)]
+
+
+async def test_only_the_sandbox_controller_quiesces(holder: Replica) -> None:
+    async with runner_on(holder) as runner, runner_stub(holder) as stub:
+        with pytest.raises(grpc.aio.AioRpcError) as refused:
+            await stub.Quiesce(runner_pb2.QuiesceRequest(), metadata=metadata(CALLER))
+        assert refused.value.code() == grpc.StatusCode.PERMISSION_DENIED
+        assert not runner.received
+
+        quiescing = asyncio.ensure_future(stub.Quiesce(runner_pb2.QuiesceRequest(), metadata=metadata(CONTROLLER)))
+        quiesced = await runner.next(runner_pb2.QuiesceRequest)
         quiesced.outcome.set_result(
-            response_type(sessions=[runner_pb2.SessionSeal(session_id="test-session", cursor=3)])
+            runner_pb2.QuiesceResponse(sessions=[runner_pb2.SessionSeal(session_id="test-session", cursor=3)])
         )
         assert [(seal.session_id, seal.cursor) for seal in (await quiescing).sessions] == [("test-session", 3)]
 
