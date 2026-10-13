@@ -133,8 +133,9 @@ class App(Construct):
                             "egresscredentials",
                             "actionpolicysets",
                             "actionpolicybindings",
-                            # The create form lists them.
+                            # The create form lists the sets; the live views watch both.
                             "policysets",
+                            "policybindings",
                         )
                     ],
                     verbs=["get", "list", "watch"],
