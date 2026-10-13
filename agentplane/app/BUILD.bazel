@@ -1311,6 +1311,7 @@ py_test(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner",
+        "//agentplane/runner/testing:launches",
         "//agentplane/runner/testing:scripted_model",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",

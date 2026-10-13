@@ -107,6 +107,11 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 	if err != nil {
 		return ctrl.Result{}, err
 	}
+	if launchGate, err := r.ensureLaunch(ctx, &sandbox); err != nil {
+		return ctrl.Result{}, err
+	} else if gate == nil {
+		gate = launchGate
+	}
 	if blocked == nil {
 		if w, blocked, err = r.converge(ctx, &sandbox, w, sandbox.Spec.Running, gate); err != nil {
 			return ctrl.Result{}, err
@@ -330,6 +335,9 @@ func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready)
 		return nil, &unready{"TemplateInvalid", fmt.Sprintf("SandboxTemplate %s defines the state volume %s itself", template.Name, volume)}
 	}
 	spec.ServiceAccountName = sandbox.Name
+	if blocked := withLaunch(sandbox, template, spec); blocked != nil {
+		return nil, blocked
+	}
 	spec.Volumes = append(spec.Volumes, corev1.Volume{
 		Name: volume,
 		VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
@@ -430,6 +438,7 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		For(&Sandbox{}).
 		Owns(&kubevirtv1.VirtualMachine{}).
 		Owns(&corev1.ServiceAccount{}).
+		Owns(&corev1.ConfigMap{}).
 		Owns(&policycontroller.PolicyBinding{}).
 		// A virt-launcher Pod is its VMI's, not the Sandbox's, so Pods map back by the label.
 		Watches(&corev1.Pod{}, bySandboxLabel).

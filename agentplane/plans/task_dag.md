@@ -564,8 +564,8 @@ tokens.
 **Candidate.** Per-session setup is already asynchronous: the Session opens at once and its setup
 output and outcome reach history as `SetupStarted`/`SetupOutput`/`SetupFinished` Events. The
 Sandbox bootstrap is not. The runner runs it once and keeps its output in a durable log, but the
-Runner Gateway's `open_session` (`runner_gateway/session_lifecycle.py`) sends `Initialize` and holds
-the first Open until the script exits, and nothing shows its output or progress. Start it when the
+runner runs it inside the first `OpenSession`, which the Runner Gateway's `open_session`
+(`runner_gateway/session_lifecycle.py`) holds until the script exits, and nothing shows its output or progress. Start it when the
 Sandbox comes up and expose its progress and result, keeping successful bootstrap as the Open
 precondition unless the operator reviews a change.
 
@@ -854,29 +854,18 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 
 ```mermaid
 flowchart TD
-    RUNNER_SESSION_LAUNCH[Candidate: the runner owns bootstrap, platform text and starting]
     APP_SESSION_DEFAULTS[Candidate: the app sends complete Session specs]
     CONTROLLER_SEALS[Candidate: the Sandbox controller seals]
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
-    RUNNER_SESSION_LAUNCH --> APP_SESSION_DEFAULTS
     APP_SESSION_DEFAULTS --> GATEWAY_WRAPPER_RETIRE
     CONTROLLER_SEALS --> GATEWAY_WRAPPER_RETIRE
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
 ```
 
-### `RUNNER_SESSION_LAUNCH` — the runner owns bootstrap, platform text and starting
-
-**Candidate; Sandboxes of our own kind.** The Sandbox controller gives the runner its Sandbox's
-`bootstrap` and the rendered platform instructions with the runner's other configuration. The
-runner runs the bootstrap once before its first Session opens, prepends the platform instructions
-and its own Sandbox and Session ID to every Session's instructions, and `OpenSession` starts a
-stopped harness whose setup succeeded. The gateway's `launch_spec` and `open_session` stop adding
-them for our kind.
-
 ### `APP_SESSION_DEFAULTS` — the app sends complete Session specs
 
-**Candidate after `RUNNER_SESSION_LAUNCH`; a for-now choice.** The app records which preset a
+**Candidate; a for-now choice.** The app records which preset a
 Sandbox was made from on the Sandbox (a label) and fills a complete `SessionSpec` and setup script
 from it. `session_defaults` leaves `CreateSandboxRequest`, `SandboxBinding` and our Sandbox's spec,
 and `CreateSessionRequest` loses its field mask.
@@ -894,7 +883,7 @@ gateway, which waits for the rollout of an image that reads it. `runner_gateway/
 **Blocked on the nodes above.** The app and the Notification Service
 call `Runner` through the proxy and ask the History Service where a Session runs. Delete the
 `RunnerGateway` service and proto, its client, `session_registry.py`, `destinations.py`,
-`sealing.py`, `session_lifecycle.py`, `wire.py` and `instructions.py`. This makes
+`sealing.py`, `session_lifecycle.py` and `wire.py`. This makes
 `GATEWAY_CLIENT_SPLIT` and `SANDBOX_DATABASE_RENAME` moot; delete them here.
 
 ### `GATEWAY_DATABASE_DROP` — drop the `sandbox_commands` database

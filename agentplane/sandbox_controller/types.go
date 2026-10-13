@@ -59,10 +59,11 @@ type SandboxSpec struct {
 	Running  bool   `json:"running"`
 	// PolicySets names the PolicySets in the Sandbox's namespace its ServiceAccount is bound to.
 	PolicySets []string `json:"policySets,omitempty"`
-	// SessionDefaults and Bootstrap are the Runner Gateway's; the controller keeps them only so its
-	// updates round-trip them.
+	// SessionDefaults are the Runner Gateway's; the controller keeps them only so its updates
+	// round-trip them.
 	SessionDefaults *SessionDefaults `json:"sessionDefaults,omitempty"`
-	Bootstrap       string           `json:"bootstrap,omitempty"`
+	// Bootstrap is the shell source the Sandbox's runner runs once, before its first Session.
+	Bootstrap string `json:"bootstrap,omitempty"`
 }
 
 type SessionDefaults struct {

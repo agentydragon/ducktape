@@ -40,7 +40,6 @@ class Resources(ServicerResources):
     """What `RunnerGateway` serves from."""
 
     destinations: DestinationResolver
-    platform_instructions: str
     runner_admission_ack_timeout_s: float
     sessions: SessionRegistry
     control: LifecycleControl
@@ -70,10 +69,7 @@ errors = status_mapping(
     Abort(SessionConflictError, (grpc.StatusCode.ALREADY_EXISTS, "session ID already belongs to another Sandbox")),
     Abort(grpc.aio.AioRpcError, _runner_status),
     Abort((ValueError, ParseError), (grpc.StatusCode.INVALID_ARGUMENT, "invalid service request")),
-    Abort(
-        (InventoryError, session_lifecycle.BootstrapError),
-        (grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request"),
-    ),
+    Abort(InventoryError, (grpc.StatusCode.FAILED_PRECONDITION, "runner or sandbox state refused the request")),
     deadline="service deadline expired",
     unavailable="destination unavailable; no offline admission",
     also_unavailable=(DestinationUnavailableError, SQLAlchemyError),
@@ -168,13 +164,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 sandbox_name=request.sandbox.sandbox,
                 sandbox_uid=sandbox_uid,
             )
-            spec = session_lifecycle.launch_spec(
-                sandbox_service_pb2.SessionDestination(sandbox=request.sandbox, session_id=str(session_id)),
-                overrides,
-                binding=binding,
-                platform_instructions=self.resources.platform_instructions,
-                sandbox_namespace=self.resources.destinations.sandboxes.namespace,
-            )
+            spec = session_lifecycle.launch_spec(str(session_id), overrides, binding=binding)
             setup_script = (
                 request.setup_script
                 if request.HasField("setup_script")
@@ -182,14 +172,11 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 if binding is not None and binding.session_defaults.HasField("setup_script")
                 else None
             )
+            opening = runner_control_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec)
+            if setup_script is not None:
+                opening.setup_script = setup_script
             # A retry recomputes the spec; the runner confirms it against the one it recorded.
-            attachment = await session_lifecycle.open_session(
-                self.resources.control.runner(sandbox_uid),
-                str(session_id),
-                spec,
-                bootstrap=binding.bootstrap if binding is not None else "",
-                setup_script=setup_script,
-            )
+            attachment = (await self.resources.control.runner(sandbox_uid).OpenSession(opening)).attached
             attachment.session_id = str(session_id)
             return runner_gateway_pb2.CreateSessionResponse(session_id=str(session_id), attached=attachment)
 

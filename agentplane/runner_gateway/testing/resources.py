@@ -18,7 +18,6 @@ def build_resources(
     principals: WorkloadPrincipalResolver,
     destinations: DestinationResolver,
     caller_accounts: frozenset[ServiceAccountRef],
-    platform_instructions: str,
     runner_admission_ack_timeout_s: float = 1,
 ) -> Resources:
     return Resources(
@@ -28,7 +27,6 @@ def build_resources(
         principals=principals,
         destinations=destinations,
         caller_accounts=caller_accounts,
-        platform_instructions=platform_instructions,
         sessions=SessionRegistry(engine),
         control=LifecycleControl(ConnectionLeases()),
     )

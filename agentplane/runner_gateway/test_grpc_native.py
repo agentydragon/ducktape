@@ -20,8 +20,9 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 from agentplane.grpc_calls import RefusedError, ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SessionDefaults
+from agentplane.runner.config import RunnerConfig
 from agentplane.runner.runner import Runner, follow_journal
-from agentplane.runner.testing import events
+from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxRunner
 from agentplane.runner_gateway.destinations import DestinationResolver
@@ -29,7 +30,7 @@ from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.testing.grpc_service import service_client
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
-from agentplane.sandbox_service.testing.kubernetes import DESTINATION, OWNER, SANDBOX_UID, Cluster, runner_connected
+from agentplane.sandbox_service.testing.kubernetes import DESTINATION, OWNER, Cluster, runner_connected
 from agentplane.testing.fake_apiserver import TokenVerdict
 
 # gazelle:include_dep @pypi//protobuf
@@ -51,11 +52,21 @@ def resources(cluster: Cluster, runner: Runner, engine: AsyncEngine) -> Resource
         principals=cluster.build_principal_resolver(AUDIENCE),
         destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
         caller_accounts=frozenset({OWNER}),
-        platform_instructions="Test backend-owned guidance.",
         # A real runner answers here, so admission needs room for delivery's two-second recheck:
         # under one second, a single missed dispatch wakeup or control-stream reconnect fails it.
         runner_admission_ack_timeout_s=15,
     )
+
+
+@pytest.fixture
+def bootstrap(workspace: Path) -> str | None:
+    """The Sandbox's bootstrap, which the runner runs before its first Session."""
+    return f"printf B >> {shlex.quote(str(workspace / 'bootstrap-runs'))}"
+
+
+@pytest.fixture
+def config(config: RunnerConfig, bootstrap: str | None) -> RunnerConfig:
+    return replace(config, launch=replace(config.launch, bootstrap=bootstrap))
 
 
 @pytest.fixture(autouse=True)
@@ -85,10 +96,9 @@ async def complete_turn(
     # Neither admission nor exact receipt replay waits for model completion.
     assert await remote.command(DESTINATION, session_id, command) == receipt
     request = await model.request()
-    assert "Test backend-owned guidance." in request.system_text
+    assert launches.PLATFORM_INSTRUCTIONS in request.system_text
     assert "Test task guidance." in request.system_text
-    assert "New platform guidance." not in request.system_text
-    assert str(SANDBOX_UID) in request.system_text
+    assert launches.SANDBOX.uid in request.system_text
     await model.reply(request, Text("GRPC_OK"))
     entries: list[event_log_pb2.EventEntry] = []
     async with (
@@ -120,7 +130,6 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     setup_marker = workspace / "setup-runs"
     cluster.set_binding(
         SandboxBinding(
-            bootstrap=f"printf B >> {shlex.quote(str(bootstrap_marker))}",
             session_defaults=SessionDefaults(
                 harness=spec.harness,
                 model=spec.model,
@@ -128,7 +137,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
                 cwd=spec.cwd,
                 instructions="Test task guidance.",
                 setup_script=f"printf S >> {shlex.quote(str(setup_marker))}",
-            ),
+            )
         )
     )
     async with service_client(resources, token_file) as remote:
@@ -169,11 +178,9 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
             entry.event.command_admitted.command.command_id
             for entry in await journal.since(0, limit=journal.last_cursor)
         ]
-    # Stop the service, change its configuration and stored defaults, and recover solely from the runner.
-    cluster.set_binding(SandboxBinding(bootstrap="exit 42", session_defaults=SessionDefaults(model="changed")))
-    async with service_client(
-        replace(resources, platform_instructions="New platform guidance."), token_file
-    ) as restarted:
+    # Stop the service, change the stored defaults, and recover solely from the runner.
+    cluster.set_binding(SandboxBinding(session_defaults=SessionDefaults(model="changed")))
+    async with service_client(resources, token_file) as restarted:
         destination = restarted.runner(DESTINATION)
         resumed = await destination.resume(session)
         assert resumed.spec == opened.spec
@@ -218,16 +225,19 @@ async def test_failed_setup_cannot_be_resumed(remote: RunnerGatewayClient, spec:
         await runner.resume(created.session_id)
 
 
-async def test_invalid_launch_and_failed_bootstrap_never_create(
-    remote: RunnerGatewayClient, cluster: Cluster, spec: runner_pb2.SessionSpec
-) -> None:
+async def test_invalid_launch_never_creates(remote: RunnerGatewayClient) -> None:
     runner = remote.runner(DESTINATION)
     invalid_specs: list[dict[str, object]] = [{}, {"harness": "HARNESS_CODEX", "model": "m"}]
     for invalid in invalid_specs:
         with pytest.raises(ServiceError) as rejected:
             await runner.create(session_id=uuid4(), spec=invalid)
         assert rejected.value.code == grpc.StatusCode.INVALID_ARGUMENT
-    cluster.set_binding(SandboxBinding(bootstrap="exit 42"))
+    assert not await runner.list_sessions()
+
+
+@pytest.mark.parametrize("bootstrap", ["exit 42"])
+async def test_failed_bootstrap_never_creates(remote: RunnerGatewayClient, spec: runner_pb2.SessionSpec) -> None:
+    runner = remote.runner(DESTINATION)
     with pytest.raises(RefusedError):
         await runner.create(session_id=uuid4(), spec=MessageToDict(spec))
     assert not await runner.list_sessions()

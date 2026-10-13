@@ -68,7 +68,6 @@ async def gateway(
         admission_timeout_s=settings.admission_timeout_s,
         runner_admission_ack_timeout_s=settings.runner_admission_ack_timeout_s,
         caller_accounts=settings.caller_accounts,
-        platform_instructions=settings.platform_instructions,
         lifecycle_timeout_s=settings.lifecycle_timeout_s,
     )
     add_service(resources, server)

@@ -14,8 +14,11 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 from agentplane.runner.cgroups import AgentCgroups
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig, ServiceEndpoint
 from agentplane.runner.main import async_main
+from agentplane.runner.sandbox_launch import SandboxLaunch
 
 CONFIG_PATH = Path("/run/agentplane/config.json")
+# The Sandbox's own launch file, copied from its disk by vm.nix like the public config.
+LAUNCH_PATH = Path("/run/agentplane/launch.json")
 WORKSPACE_DEVICE = Path("/dev/disk/by-id/virtio-workspace")
 # KubeVirt's virtiofsd identity, the only non-root one that can write the state PVC (vm.nix).
 AGENT_UID = 107
@@ -47,6 +50,7 @@ class GuestConfig(BaseModel):
     ingress: Endpoint
     llm_base_url: str = Field(min_length=1)
     proxy_url: str = Field(min_length=1)
+    platform_instructions: str = Field(min_length=1, description="Standing instructions for every Session.")
 
     @field_validator("llm_base_url", "proxy_url")
     @classmethod
@@ -103,7 +107,7 @@ def configure_runner_network_environment(environment: Mapping[str, str], *, dire
     os.environ["NO_PROXY"] = os.environ["no_proxy"] = no_proxy
 
 
-def make_runner_config(config: GuestConfig) -> RunnerConfig:
+def make_runner_config(config: GuestConfig, launch: SandboxLaunch) -> RunnerConfig:
     """Build explicit runner and child configuration from the public seed."""
     llm_base_url = config.llm_base_url
     proxy_url = config.proxy_url
@@ -133,6 +137,7 @@ def make_runner_config(config: GuestConfig) -> RunnerConfig:
     }
     return RunnerConfig(
         state_dir=RUNNER_STATE_DIR,
+        launch=launch,
         harness_environment=harness_environment,
         claude=ClaudeLaunch(
             binary=Path("/run/current-system/sw/bin/claude"),
@@ -159,7 +164,9 @@ def make_runner_config(config: GuestConfig) -> RunnerConfig:
 def main() -> None:
     """Entry point used by the dedicated NixOS guest's systemd unit."""
     config = read_guest_config()
-    runner_config = make_runner_config(config)
+    runner_config = make_runner_config(
+        config, SandboxLaunch.read(LAUNCH_PATH, platform_instructions=config.platform_instructions)
+    )
     configure_runner_network_environment(
         runner_config.harness_environment, direct_targets=[config.control.target, config.ingress.target]
     )

@@ -4,8 +4,9 @@ Reconciles `Sandbox` into a state PVC that outlives every incarnation, its own S
 `PolicyBinding`, and, while running, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel). The [Sandbox Service](../sandbox_service/README.md)'s
 `CreateSandbox` writes these Sandboxes. Its runner template reaches platform services over the
-egress sidecar's platform routes. `spec.sessionDefaults` and `spec.bootstrap` are the Runner
-Gateway's to read; the controller only carries them. Deletion waits for the
+egress sidecar's platform routes. `spec.sessionDefaults` is the Runner
+Gateway's to read; `spec.bootstrap` and the Sandbox's identity reach its runner through the Sandbox's
+launch ConfigMap (a Pod mounts it, a VM gets it as a disk). Deletion waits for the
 [Runner Gateway](../runner_gateway/README.md)'s `SessionsSealed` condition.
 
 Because the Runner Gateway sets that condition only once the History Service's ingress has

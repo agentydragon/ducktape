@@ -98,7 +98,6 @@ def backend(
     *,
     database_url: str,
     default_policy_sets: Set[str] = frozenset(),
-    platform_instructions: str = "Test backend guidance.",
 ) -> Iterator[Endpoint]:
     token_file.write_text(TOKEN)
     custom = cast(CustomObjectsClient, custom_objects)
@@ -118,7 +117,6 @@ def backend(
             principals=principals(AUDIENCE),
             destinations=DestinationResolver(inventory, core_api),
             caller_accounts=frozenset({MANAGER}),
-            platform_instructions=platform_instructions,
             # A real runner answers here, so admission needs room for delivery's two-second recheck:
             # under one second, a single missed dispatch wakeup or control-stream reconnect fails it.
             runner_admission_ack_timeout_s=15,

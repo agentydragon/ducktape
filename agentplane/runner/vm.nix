@@ -17,6 +17,7 @@
 }:
 let
   configDevice = "/dev/disk/by-id/virtio-agentplane-config";
+  launchDevice = "/dev/disk/by-id/virtio-agentplane-launch";
   trustDevice = "/dev/disk/by-id/virtio-agentplane-trust";
   workspaceDevice = "/dev/disk/by-id/virtio-workspace";
   workspaceDir = "/state/workspaces";
@@ -124,7 +125,7 @@ in
   };
 
   systemd.services.agentplane-config = {
-    description = "Read the Agentplane public configuration and trust disks";
+    description = "Read the Agentplane public configuration, launch and trust disks";
     wantedBy = [ "local-fs.target" ];
     before = [
       "agentplane-runner.service"
@@ -172,6 +173,7 @@ in
         umount "${sourceDir}"
       }
       copy_disk "${configDevice}" config.json kubeconfig
+      copy_disk "${launchDevice}" launch.json
       copy_disk "${trustDevice}" ca-certificates.crt ca-certificates.p12
       rmdir "${sourceDir}"
       trap - EXIT

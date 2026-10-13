@@ -11,6 +11,7 @@ from agentplane.llm_ingress.models import ModelConfig
 from agentplane.runner.cgroups import AgentCgroups
 from agentplane.runner.harness import Harness
 from agentplane.runner.model_config import HttpModelConfigResolver, ModelConfigLookupError
+from agentplane.runner.sandbox_launch import SandboxLaunch
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +52,9 @@ class DebugCheckpoint:
 class RunnerConfig:
     # Holds runner-owned logs and metadata.
     state_dir: Path
+    # The Sandbox this runner serves: it runs the bootstrap before the first Session and composes every
+    # Session's instructions.
+    launch: SandboxLaunch
     # Base environment of every harness child, as --harness-env gave it; native credentials are
     # added per launch. This is not the runner process environment.
     harness_environment: Mapping[str, str] = field(default_factory=dict)

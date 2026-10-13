@@ -156,7 +156,7 @@ that let an agent script MCP tools from code.
 
 - Egress rules, Actions, policies and notification inboxes are HTTP APIs with OpenAPI schemas,
   reached through the egress proxy with the workload placeholder; the platform instructions point
-  agents at them ([`agent_instructions.j2`](../sandbox_service/agent_instructions.j2)).
+  agents at them ([`platform_instructions.j2`](../runner/platform_instructions.j2)).
 - Kubernetes access is the agent's own `kubectl`, not a wrapper tool.
 - MCP is an additional surface, not the only one: the Action Service also serves its operations as
   MCP tools over OAuth.

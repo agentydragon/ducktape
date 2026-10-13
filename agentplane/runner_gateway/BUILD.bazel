@@ -84,27 +84,9 @@ py_library(
     name = "session_lifecycle",
     srcs = ["session_lifecycle.py"],
     deps = [
-        ":instructions",
-        "//agentplane/proto:runner_control_pb2",
-        "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",
-        "@pypi//grpcio",
         "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "instructions",
-    srcs = ["instructions.py"],
-    data = ["agent_instructions.j2"],  # explicit deployment config renders this shared instruction template
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s/agentplane:__subpackages__",
-    ],
-    deps = [
-        "//util/bazel:runfiles",
-        "@pypi//jinja2",
     ],
 )
 
@@ -144,21 +126,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
-    ],
-)
-
-py_test(
-    name = "test_instructions",
-    srcs = ["test_instructions.py"],
-    deps = [
-        ":conftest",
-        ":instructions",
-        ":session_lifecycle",
-        "//:conftest",
-        "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:sandbox_service_pb2",
-        "@pypi//protobuf",
-        "@pypi//pytest_bazel",
     ],
 )
 
@@ -398,7 +365,9 @@ py_test(
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/runner",
+        "//agentplane/runner:config",
         "//agentplane/runner/testing:events",
+        "//agentplane/runner/testing:launches",
         "//agentplane/runner/testing:scripted_model",
         "//agentplane/runner_gateway/testing:grpc_service",
         "//agentplane/runner_gateway/testing:resources",

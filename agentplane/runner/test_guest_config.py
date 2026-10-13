@@ -6,6 +6,7 @@ from pydantic import ValidationError
 
 from agentplane.runner import guest_config
 from agentplane.runner.guest_config import GuestConfig, make_runner_config
+from agentplane.runner.testing.launches import SANDBOX_LAUNCH
 
 
 def _config(**updates: object) -> GuestConfig:
@@ -15,12 +16,13 @@ def _config(**updates: object) -> GuestConfig:
         "ingress": {"target": "test-history.test:8081", "bearer": "test-ingress-placeholder"},
         "llm_base_url": "http://agentplane-llm-ingress.agentplane.svc.cluster.local:8080",
         "proxy_url": "http://10.0.2.2:3128",
+        "platform_instructions": "Test platform guidance.",
     }
     return GuestConfig.model_validate(values | updates)
 
 
 def test_guest_config_builds_explicit_proxy_and_persistent_paths() -> None:
-    runner = make_runner_config(_config())
+    runner = make_runner_config(_config(), SANDBOX_LAUNCH)
 
     assert runner.state_dir.as_posix() == "/state"
     assert runner.initialization_cwd is not None
@@ -48,6 +50,7 @@ def test_guest_config_builds_explicit_proxy_and_persistent_paths() -> None:
         {"llm_base_url": "https://user:password@model.test"},
         {"llm_base_url": "https://model.test/v1"},
         {"proxy_url": "http://proxy.test/path"},
+        {"platform_instructions": ""},
         {"unexpected": "value"},
     ],
 )
@@ -61,7 +64,8 @@ def test_guest_proxy_and_ca_are_installed_in_the_runner_process(monkeypatch: pyt
     monkeypatch.setattr(guest_config.os, "environ", runner_environment)
 
     guest_config.configure_runner_network_environment(
-        make_runner_config(_config()).harness_environment, direct_targets=["10.0.2.1:3130", "10.0.2.1:3131"]
+        make_runner_config(_config(), SANDBOX_LAUNCH).harness_environment,
+        direct_targets=["10.0.2.1:3130", "10.0.2.1:3131"],
     )
 
     assert runner_environment["HTTP_PROXY"] == "http://10.0.2.2:3128"

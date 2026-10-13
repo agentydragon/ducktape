@@ -26,6 +26,7 @@ from agentplane.runner.control import RunnerControlClient, RunnerService
 from agentplane.runner.ingress import IngressPusher
 from agentplane.runner.reconnect import StreamTiming
 from agentplane.runner.runner import Runner
+from agentplane.runner.sandbox_launch import SandboxLaunch
 
 logger = logging.getLogger(__name__)
 app = typer.Typer(add_completion=False)
@@ -74,6 +75,12 @@ def main(
     ingress_bearer: Annotated[
         str, typer.Option(help="Bearer placeholder the egress proxy substitutes on the runner ingress.")
     ],
+    launch_file: Annotated[
+        Path, typer.Option(help="The Sandbox's identity and bootstrap, as its controller mounts them.")
+    ],
+    platform_instructions_file: Annotated[
+        Path, typer.Option(help="The deployment-wide platform instructions every Session starts with.")
+    ],
     claude_binary: Annotated[Path | None, typer.Option(help="Claude Code CLI; omit to refuse Claude sessions.")] = None,
     anthropic_base_url: Annotated[str | None, typer.Option(help="Anthropic Messages endpoint for Claude.")] = None,
     codex_binary: Annotated[Path | None, typer.Option(help="Codex CLI; omit to refuse Codex sessions.")] = None,
@@ -120,6 +127,9 @@ def main(
         raise typer.BadParameter("both test debug checkpoint options must be set together")
     config = RunnerConfig(
         state_dir=state_dir,
+        launch=SandboxLaunch.read(
+            launch_file, platform_instructions=platform_instructions_file.read_text(encoding="utf-8").strip()
+        ),
         harness_environment=harness_environment(
             os.environ, declared=harness_env or [], inherited=harness_inherit_env or []
         ),

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from pathlib import PurePosixPath
 from typing import Any
 
 import pytest
@@ -218,6 +219,22 @@ def test_runner_reaches_its_service_over_the_sidecars_platform_route(
         }
         mount = one(mount for mount in sidecar["volumeMounts"] if mount["name"] == "egress-token")
         assert projected[routes[route]["token_file"].removeprefix(f"{mount['mountPath']}/")] == accepted
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_runner_reads_the_platform_instructions_its_template_mounts(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    docs = agentplane_manifests[namespace]
+    for template in _templates(docs):
+        pod = template["spec"]["pod"]["spec"]
+        runner = one(container for container in pod["containers"] if container["name"] == "runner")
+        args = runner["args"]
+        file = PurePosixPath(args[args.index("--platform-instructions-file") + 1])
+        mount = one(entry for entry in runner["volumeMounts"] if entry["mountPath"] == str(file.parent))
+        volume = one(entry for entry in pod["volumes"] if entry["name"] == mount["name"])
+        config_map = _by_name(docs, "ConfigMap", volume["configMap"]["name"])
+        assert file.name in config_map["data"], template["metadata"]["name"]
 
 
 if __name__ == "__main__":

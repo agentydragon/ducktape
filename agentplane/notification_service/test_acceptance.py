@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -38,10 +39,12 @@ from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.store import Store
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
+from agentplane.runner.config import RunnerConfig
+from agentplane.runner.platform_instructions import render_platform_instructions
 from agentplane.runner.runner import Runner
+from agentplane.runner.sandbox_launch import SandboxIdentity
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.runner_gateway.client import RunnerGatewayClient
-from agentplane.runner_gateway.instructions import render_platform_instructions
 from agentplane.sandbox_service.testing.kubernetes import (
     ACCOUNT,
     SANDBOX,
@@ -56,6 +59,24 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 # gazelle:include_dep @pypi//protobuf
 
 logger = logging.getLogger(__name__)
+
+
+@pytest.fixture
+def config(config: RunnerConfig) -> RunnerConfig:
+    """The runner starts every Session with the deployment's real platform instructions."""
+    platform_instructions = render_platform_instructions(
+        egress_api_url="http://egress.test",
+        actions_service_url="http://actions.test",
+        notifications_service_url="http://notifications.test",
+    )
+    return replace(
+        config,
+        launch=replace(
+            config.launch,
+            sandbox=SandboxIdentity(namespace=SANDBOX_NAMESPACE, name=SANDBOX, uid=str(SANDBOX_UID)),
+            platform_instructions=platform_instructions,
+        ),
+    )
 
 
 @pytest.mark.parametrize("busy", [False, True])
@@ -125,11 +146,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 manager=delegate,
                 token="delegate-token",
                 audience="test-notifications",
-                platform_instructions=render_platform_instructions(
-                    egress_api_url="http://egress.test",
-                    actions_service_url="http://actions.test",
-                    notifications_service_url="http://notifications.test",
-                ),
             ) as (sandboxes, remote),
             ingest(sandbox_service_db_url, runner),
             history_service(sandbox_service_db_url, tmp_path / "history-token") as history,

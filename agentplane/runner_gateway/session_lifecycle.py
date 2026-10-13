@@ -1,54 +1,26 @@
 """Explicit session management; runners retain launch specs, bootstrap results, and setup state."""
 
-import json
 from pathlib import PurePosixPath
 
-from google.protobuf.json_format import MessageToDict, MessageToJson, ParseDict
+from google.protobuf.json_format import MessageToDict, ParseDict
 
-from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc, runner_pb2
-from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SessionDestination
-from agentplane.runner_gateway.instructions import combine_instructions
+from agentplane.proto import runner_pb2
+from agentplane.proto.sandbox_service_pb2 import SandboxBinding
 
-# gazelle:include_dep @pypi//grpcio
 # gazelle:include_dep @pypi//protobuf
 
 
-class BootstrapError(Exception):
-    """The Sandbox bootstrap failed or was interrupted, so no Session opened."""
-
-
 def launch_spec(
-    destination: SessionDestination,
-    overrides: dict[str, object],
-    *,
-    binding: SandboxBinding | None,
-    platform_instructions: str,
-    sandbox_namespace: str,
+    session_id: str, overrides: dict[str, object], *, binding: SandboxBinding | None
 ) -> runner_pb2.SessionSpec:
     defaults = binding.session_defaults if binding is not None and binding.HasField("session_defaults") else None
     values = MessageToDict(defaults) if defaults is not None else {}
     values.pop("setupScript", None)
     merged = values | overrides
     if isinstance(cwd := merged.get("cwd"), str):
-        merged["cwd"] = cwd.replace("{session_id}", destination.session_id)
+        merged["cwd"] = cwd.replace("{session_id}", session_id)
     spec = ParseDict(merged, runner_pb2.SessionSpec())
     validate_spec(spec)
-    context = (
-        "Your explicit Runner Gateway session destination is:\n"
-        f"{MessageToJson(destination, preserving_proto_field_name=True)}\n"
-        "Use these identifiers when addressing this session; they are not credentials."
-    )
-    context += "\nYour explicit notification destination is:\n" + json.dumps(
-        {
-            "destination_ref": {
-                "namespace": sandbox_namespace,
-                "name": destination.sandbox.sandbox,
-                "uid": destination.sandbox.sandbox_uid,
-            },
-            "session_id": destination.session_id,
-        }
-    )
-    spec.instructions = combine_instructions(combine_instructions(platform_instructions, context), spec.instructions)
     return spec
 
 
@@ -57,34 +29,3 @@ def validate_spec(spec: runner_pb2.SessionSpec) -> None:
         raise ValueError("a supported harness, cwd, and model are required")
     if not PurePosixPath(spec.cwd).is_absolute():
         raise ValueError("cwd must be absolute")
-
-
-async def open_session(
-    runner: runner_control_pb2_grpc.RunnerAsyncStub,
-    runner_session_id: str,
-    spec: runner_pb2.SessionSpec,
-    *,
-    bootstrap: str,
-    setup_script: str | None,
-) -> runner_pb2.Attached:
-    """Run the Sandbox bootstrap once, then create the Session with `spec` and start it."""
-    if bootstrap:
-        initialized = (await runner.Initialize(runner_control_pb2.InitializeRequest(script=bootstrap))).outcome
-        if initialized.HasField("interrupted"):
-            raise BootstrapError("the Sandbox bootstrap was interrupted and never runs again; use a new Sandbox")
-        if initialized.result.exit_code != 0:
-            raise BootstrapError("Sandbox bootstrap failed; no session was opened")
-    opening = runner_control_pb2.OpenSessionRequest(session_id=runner_session_id, spec=spec)
-    if setup_script is not None:
-        opening.setup_script = setup_script
-    attached = (await runner.OpenSession(opening)).attached
-    # OpenSession only confirms an existing Session, so a retried create would leave a harness that
-    # an earlier attempt could not start stopped. Start it; a Session still in setup starts once its
-    # setup succeeds.
-    if attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED and attached.setup_state in (
-        runner_pb2.SETUP_STATE_NOT_REQUIRED,
-        runner_pb2.SETUP_STATE_SUCCEEDED,
-    ):
-        resumed = await runner.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id=runner_session_id))
-        return resumed.attached
-    return attached

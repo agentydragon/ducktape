@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -12,6 +13,7 @@ from agentplane.harness_tests.codex import harness as codex_harness
 from agentplane.proto import runner_pb2
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig, ServiceEndpoint
 from agentplane.runner.model_config import HttpModelConfigResolver
+from agentplane.runner.sandbox_launch import SandboxIdentity, SandboxLaunch
 from util.bazel.runfiles import get_required_path
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -21,6 +23,9 @@ CLAUDE_BINARY = "claude_code_cli_linux_x64/claude"
 CODEX_BINARY = "agentplane_codex_cli_linux_x64/bin/codex"
 RUNNER_BINARY = "_main/agentplane/runner/main_bin"
 TOKEN = "test-key"
+PLATFORM_INSTRUCTIONS = "Test platform guidance."
+SANDBOX = SandboxIdentity(namespace="test-sandboxes", name="test-sandbox", uid="test-sandbox-uid")
+SANDBOX_LAUNCH = SandboxLaunch(sandbox=SANDBOX, bootstrap=None, platform_instructions=PLATFORM_INSTRUCTIONS)
 
 
 def spec(harness: runner_pb2.Harness, cwd: Path) -> runner_pb2.SessionSpec:
@@ -52,6 +57,7 @@ def unconfigured_models() -> HttpModelConfigResolver:
 def config(harness: runner_pb2.Harness, endpoint: str, *, state_dir: Path, home: Path) -> RunnerConfig:
     return RunnerConfig(
         state_dir=state_dir,
+        launch=SANDBOX_LAUNCH,
         harness_environment=environment(home),
         model_config_resolver=unconfigured_models(),
         claude=claude_launch(endpoint) if harness == runner_pb2.HARNESS_CLAUDE else None,
@@ -74,12 +80,18 @@ def runner_command(
     state_dir: Path,
     gateway: ServiceEndpoint,
     test_debug_checkpoint: tuple[str, str] | None = None,
+    bootstrap: str | None = None,
 ) -> list[str]:
     """The runner as its own process, configured like `config` is, dialing `gateway` for both its
-    control stream and its ingress."""
+    control stream and its ingress. The Sandbox's files go beside `state_dir`."""
+    launch_file = state_dir.parent / "launch.json"
+    launch_file.write_text(json.dumps({"sandbox": SANDBOX.model_dump(), "bootstrap": bootstrap}))
+    platform_instructions_file = state_dir.parent / "platform-instructions.md"
+    platform_instructions_file.write_text(PLATFORM_INSTRUCTIONS)
     command = [
         str(get_required_path(RUNNER_BINARY)),
         *("--state-dir", str(state_dir)),
+        *("--launch-file", str(launch_file), "--platform-instructions-file", str(platform_instructions_file)),
         *("--control-target", gateway.target, "--control-bearer", gateway.bearer),
         *("--ingress-target", gateway.target, "--ingress-bearer", gateway.bearer),
     ]

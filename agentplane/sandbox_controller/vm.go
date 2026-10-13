@@ -109,6 +109,9 @@ func renderVM(sandbox *Sandbox, template *SandboxTemplate) (*kubevirtv1.VirtualM
 		slices.ContainsFunc(instance.Domain.Devices.Filesystems, func(f kubevirtv1.Filesystem) bool { return f.Name == volume }) {
 		return nil, &unready{"TemplateInvalid", fmt.Sprintf("SandboxTemplate %s defines the state volume %s itself", template.Name, volume)}
 	}
+	if blocked := withLaunchDisk(sandbox, template, instance); blocked != nil {
+		return nil, blocked
+	}
 	// DataVolume names are per namespace, so each Sandbox's VM gets its own, prefixed with the
 	// Sandbox's name. They belong to the VM: kept while it is halted, deleted with it.
 	renamed := map[string]string{}

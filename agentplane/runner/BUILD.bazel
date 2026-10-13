@@ -62,6 +62,7 @@ py_library(
         ":cgroups",
         ":harness",
         ":model_config",
+        ":sandbox_launch",
         "//agentplane/llm_ingress:models",
     ],
 )
@@ -139,6 +140,7 @@ py_library(
         ":ingress",
         ":reconnect",
         ":runner",
+        ":sandbox_launch",
         "@pypi//typer",
     ],
 )
@@ -344,6 +346,7 @@ py_test(
         "//agentplane/runner/testing:launches",
         "//agentplane/runner/testing:scripted_model",
         "//util/bazel:runfiles",
+        "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -424,6 +427,7 @@ py_library(
         ":cgroups",
         ":config",
         ":main",
+        ":sandbox_launch",
         "@pypi//pydantic",
     ],
 )
@@ -431,6 +435,15 @@ py_library(
 py_test(
     name = "test_initialize",
     srcs = ["test_initialize.py"],
+    data = [
+        "@agentplane_codex_cli_linux_x64//:files",  # keep: the pinned native harnesses the runner drives
+        "@claude_code_cli_linux_x64//:claude",  # keep: the pinned native harnesses the runner drives
+    ],
+    target_compatible_with = [
+        # keep: the pinned native harnesses are Linux/x86_64 only.
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
     deps = [
         ":config",
         ":conftest",
@@ -464,6 +477,7 @@ py_test(
         ":conftest",
         ":guest_config",
         "//:conftest",
+        "//agentplane/runner/testing:launches",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -491,7 +505,9 @@ py_test(
         "//agentplane/runner/testing:commands",
         "//agentplane/runner/testing:driver",
         "//agentplane/runner/testing:events",
+        "//agentplane/runner/testing:launches",
         "//agentplane/runner/testing:scripted_model",
+        "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],
@@ -534,6 +550,7 @@ py_test(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/runner/testing:adapters",
+        "//agentplane/runner/testing:launches",
         "//agentplane/runner/testing:sessions",
         "@pypi//httpx",
         "@pypi//protobuf",
@@ -650,6 +667,7 @@ py_test(
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:adapters",
+        "//agentplane/runner/testing:launches",
         "//agentplane/runner/testing:sessions",
         "@pypi//aiosqlite",
         "@pypi//protobuf",
@@ -769,6 +787,7 @@ py_test(
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:driver",
         "//agentplane/runner/testing:gateway",
+        "//agentplane/runner/testing:launches",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -859,9 +878,26 @@ py_test(
         "//agentplane/proto:runner_ingress_pb2",
         "//agentplane/proto:runner_ingress_pb2_grpc",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/runner/testing:launches",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "sandbox_launch",
+    srcs = ["sandbox_launch.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "platform_instructions",
+    srcs = ["platform_instructions.py"],
+    data = ["platform_instructions.j2"],  # explicit deployment config renders this shared instruction template
+    deps = [
+        "//util/bazel:runfiles",
+        "@pypi//jinja2",
     ],
 )

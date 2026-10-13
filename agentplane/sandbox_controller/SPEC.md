@@ -53,6 +53,15 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   starts only means its early requests are refused.
 - A ServiceAccount or `PolicyBinding` of the Sandbox's name that it does not own starts nothing.
 
+## Launch
+
+- Every Sandbox gets a ConfigMap `<sandbox>-launch`, owned by it, holding its namespace, name, UID
+  and `spec.bootstrap` as `launch.json`. A Pod mounts it read-only into its `runner` container; a VM
+  gets it as a virtio disk of serial `agentplane-launch`. A template without a `runner` container,
+  or that defines the launch volume itself, starts nothing.
+- A changed `spec.bootstrap` reaches the Sandbox's next incarnation only.
+- A ConfigMap of that name that the Sandbox does not own starts nothing.
+
 ## Deletion
 
 - A deleted Sandbox with a state PVC of its own keeps its Pod or VM, and a stopped one runs once more,

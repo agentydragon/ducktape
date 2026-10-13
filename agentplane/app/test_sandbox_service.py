@@ -20,6 +20,7 @@ from agentplane.history_service.testing.backend import ingest
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, runner_pb2
 from agentplane.runner.runner import Runner
+from agentplane.runner.testing import launches
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, authenticated_service, kubernetes
@@ -73,7 +74,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
             await bridge.create_session(SANDBOX, uuid4(), {"reasoning_effort": "low", "reasoningEffort": "high"})
         assert not runner.sessions
         opened = await bridge.create_session(SANDBOX, uuid4(), MessageToDict(spec))
-        assert "Backend guidance" in opened.spec.instructions
+        assert launches.PLATFORM_INSTRUCTIONS in opened.spec.instructions
         thread = UUID(opened.session_id)
         first = command_pb2.Command(command_id="remote-first", submit_input=command_pb2.SubmitInput(text="first"))
         receipt = await bridge.command(thread, first)

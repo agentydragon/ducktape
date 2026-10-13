@@ -22,6 +22,7 @@ from agentplane.runner.ingress import IngressPusher
 from agentplane.runner.reconnect import StreamTiming
 from agentplane.runner.runner import Runner
 from agentplane.runner.store import SessionRecord
+from agentplane.runner.testing import launches
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -110,7 +111,7 @@ class ScriptedIngress(runner_ingress_pb2_grpc.RunnerIngressServicer):
 
 @pytest.fixture
 def config(tmp_path: Path) -> RunnerConfig:
-    return RunnerConfig(state_dir=tmp_path / "state")
+    return RunnerConfig(state_dir=tmp_path / "state", launch=launches.SANDBOX_LAUNCH)
 
 
 async def journal_stderr(runner: Runner, session_id: str, count: int) -> None:

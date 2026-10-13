@@ -27,7 +27,7 @@ The gateway keeps no Session history; runners push their Events to the
   Sandbox; a request without a UUID is invalid. `ResumeSession` accepts the public ID of a Session
   registered within the pinned Sandbox UID. The UUID does not apply to runner-discovered native
   child sessions. The app opens every new Thread through it.
-- `CreateSession`'s bootstrap and setup use the runner's existing idempotence; the response is the
+- `CreateSession`'s setup uses the runner's existing idempotence; the Sandbox's bootstrap runs in the runner's first `OpenSession`. The response is the
   native attachment snapshot, not a claim that all setup or a model turn has completed.
 - `ResumeSession`: uses exactly the runner-retained spec, without applying today's
   defaults/instructions or rerunning setup. Missing sessions and failed/interrupted setup are
@@ -54,17 +54,13 @@ Session listing and command RPCs never provision, resume, or wake a Sandbox or h
 `CreateSessionRequest.spec` uses the runner `SessionSpec`. Its `override_mask` names the exact proto
 fields to replace in stored defaults, including fields explicitly set to empty/default values. For
 example, `paths: ["model", "instructions"]` selects `spec.model` and `spec.instructions`; an empty
-instructions string clears the caller's inherited instructions, but not backend platform guidance.
+instructions string clears the caller's inherited instructions, but not the runner's platform guidance.
 Nested paths, unknown paths, duplicate paths, and supplied nondefault fields outside the mask are
 refused. An empty mask means no overrides. Optional `setup_script` distinguishes omitted from empty.
 
-`platform_instructions` in deployment configuration is the complete deployment-wide platform
-instruction block; deployment construction supplies service URLs and assembles all shared guidance
-into this value. The Runner Gateway passes it through unchanged. On `CreateSession`, the gateway
-prepends the explicit Sandbox/session destination (and notification destination when configured),
-then appends the effective session `instructions`, stored or overridden. A non-empty
-`platform_instructions` value is required; there is no runtime default. Stored specs are never
-rewritten. `CreateSession` persists the original effective settings under the caller's key, so
+The gateway sends the effective session `instructions`, stored or overridden, as the Session's task.
+The runner adds the deployment-wide platform instructions and the Session's notification
+destination ([runner SPEC](../runner/SPEC.md)). Stored specs are never rewritten. `CreateSession` persists the original effective settings under the caller's key, so
 changed defaults cannot change a response-lost retry.
 
 Resume also needs the native harness's retained conversation. The pinned Claude harness can refuse
@@ -76,7 +72,7 @@ does not fabricate native history or claim runner admission proves native persis
 The gateway serves no Events. Runners push their journals to the
 [History Service](../history_service/README.md)'s ingress, which serves reads. To inspect a
 session's harness and setup state, read its `ListSessions` summary. There is no separate inspection
-or bootstrap RPC added for tests. Bootstrap runs through `CreateSession`; exact retries use the
+or bootstrap RPC added for tests. Bootstrap runs in the runner's first `OpenSession`, which `CreateSession` makes; exact retries use the
 runner's stored bootstrap result.
 
 ## Session placement

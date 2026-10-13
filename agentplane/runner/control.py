@@ -125,21 +125,6 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
         return runner_pb2.ListSessionsResponse(sessions=self.runner.summaries())
 
     @override
-    async def Initialize(
-        self, request: runner_control_pb2.InitializeRequest, context: grpc.aio.ServicerContext
-    ) -> runner_control_pb2.InitializeResponse:
-        async with _refusals(context):
-            await self._after_seal()
-            try:
-                log, execution = await self.runner.initialize(request.script)
-            except ValueError as error:
-                raise InvalidRequestError(str(error)) from error
-            if execution is not None:
-                # The bootstrap belongs to the Sandbox: abandoning this call must not stop it.
-                await asyncio.shield(execution)
-            return runner_control_pb2.InitializeResponse(outcome=log.since(log.last_sequence - 1)[0])
-
-    @override
     async def OpenSession(
         self, request: runner_control_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.OpenSessionResponse:

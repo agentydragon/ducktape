@@ -84,6 +84,10 @@ class SandboxController(Construct):
                 RolePolicyRule(
                     resources=[custom_resource("", "serviceaccounts")], verbs=["get", "list", "watch", "create"]
                 ),
+                # Each Sandbox's launch ConfigMap (its identity and bootstrap), kept current while it lives.
+                RolePolicyRule(
+                    resources=[custom_resource("", "configmaps")], verbs=["get", "list", "watch", "create", "update"]
+                ),
                 # Binding a Sandbox's account to the PolicySets its spec names, in this namespace.
                 RolePolicyRule(
                     resources=[custom_resource(_GROUP, "policybindings")],

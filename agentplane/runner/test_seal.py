@@ -11,6 +11,7 @@ from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.runner import Runner
 from agentplane.runner.store import SessionRecord
+from agentplane.runner.testing import launches
 from agentplane.runner.testing.driver import RunnerDriver, SessionFollow, SessionSealedError, refusal, running
 from agentplane.runner.testing.gateway import Gateway
 
@@ -22,7 +23,7 @@ SESSIONS = ("test-session-a", "test-session-b")
 
 @pytest.fixture
 def config(tmp_path: Path) -> RunnerConfig:
-    return RunnerConfig(state_dir=tmp_path / "state", harness_environment={})
+    return RunnerConfig(state_dir=tmp_path / "state", launch=launches.SANDBOX_LAUNCH, harness_environment={})
 
 
 @pytest.fixture

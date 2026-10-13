@@ -1,9 +1,10 @@
-"""Sandbox initialization is single-choice, runs at most once, and is durable and replayable."""
+"""The Sandbox bootstrap runs once, before the Sandbox's first Session, and is durable and replayable."""
 
 from __future__ import annotations
 
 import asyncio
 import os
+from dataclasses import replace
 from pathlib import Path
 
 import grpc
@@ -19,6 +20,10 @@ from agentplane.runner.testing.gateway import Gateway
 # gazelle:include_dep @pypi//protobuf
 
 
+def bootstrapped(config: RunnerConfig, script: str) -> RunnerConfig:
+    return replace(config, launch=replace(config.launch, bootstrap=script))
+
+
 def recorded(state: Path) -> list[runner_pb2.InitializationEvent]:
     log = InitializationLog(state / "initialization" / "events.jsonl")
     try:
@@ -27,77 +32,78 @@ def recorded(state: Path) -> list[runner_pb2.InitializationEvent]:
         log.close()
 
 
-async def test_initialize_executes_once_and_replays_its_outcome(tmp_path: Path, gateway: Gateway) -> None:
-    state = tmp_path / "state"
-    state.mkdir()
-    driver = RunnerDriver(gateway)
-    async with running(RunnerConfig(state_dir=state), gateway):
-        script = "mkdir -p workspaces\nprintf 'ready\\n' | tee -a workspaces/public-coder-ready\n"
-        first = await driver.initialize(script)
-        repeated = await driver.initialize(script)
+async def test_bootstrap_runs_before_the_first_session_and_not_again(
+    config: RunnerConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
+) -> None:
+    script = "mkdir -p workspaces\nprintf 'ready\\n' | tee -a workspaces/public-coder-ready\n"
+    async with running(bootstrapped(config, script), gateway):
+        driver = RunnerDriver(gateway)
+        first = await driver.attach("bootstrap-1", spec=spec)
+        second = await driver.attach("bootstrap-2", spec=spec)
 
-    assert (first.sequence, first.attempt) == (2, 1)
-    assert (first.result.executed, first.result.exit_code) == (True, 0)
-    assert repeated == first
-    assert recorded(state)[0].output == runner_pb2.InitializationOutput(
+    assert first.attached.harness_state == second.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+    assert (config.state_dir / "workspaces/public-coder-ready").read_text() == "ready\n"
+    output, result = recorded(config.state_dir)
+    assert output.output == runner_pb2.InitializationOutput(
         stream=runner_pb2.INITIALIZATION_STREAM_STDOUT, data=b"ready\n"
     )
-    assert (state / "workspaces/public-coder-ready").read_text() == "ready\n"
+    assert (result.result.executed, result.result.exit_code) == (True, 0)
 
 
-async def test_an_abandoned_request_leaves_the_bootstrap_running(tmp_path: Path, gateway: Gateway) -> None:
-    state = tmp_path / "state"
-    state.mkdir()
+async def test_an_abandoned_open_leaves_the_bootstrap_running(
+    config: RunnerConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
+) -> None:
     # The script blocks writing to this pipe until the test reads it, so its first step is observable.
-    os.mkfifo(state / "started")
-    driver = RunnerDriver(gateway)
-    async with running(RunnerConfig(state_dir=state), gateway):
-        script = "printf 'first\\n' > started\nwhile [ ! -f continue ]; do sleep 0.01; done\nprintf 'second\\n' >&2\n"
-        abandoned = asyncio.create_task(driver.initialize(script))
-        assert await asyncio.to_thread((state / "started").read_text) == "first\n"
+    config.state_dir.mkdir()
+    os.mkfifo(config.state_dir / "started")
+    script = "printf 'first\\n' > started\nwhile [ ! -f continue ]; do sleep 0.01; done\nprintf 'second\\n' >&2\n"
+    async with running(bootstrapped(config, script), gateway):
+        driver = RunnerDriver(gateway)
+        abandoned = asyncio.create_task(driver.attach("abandoned-1", spec=spec))
+        assert await asyncio.to_thread((config.state_dir / "started").read_text) == "first\n"
         abandoned.cancel()
-        (state / "continue").touch()
-        result = await driver.initialize(script)
+        (config.state_dir / "continue").touch()
+        opened = await driver.attach("abandoned-2", spec=spec)
 
-    assert result.result.exit_code == 0
-    (output, finished) = recorded(state)
+    assert opened.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING
+    (output, finished) = recorded(config.state_dir)
     assert output.output == runner_pb2.InitializationOutput(
         stream=runner_pb2.INITIALIZATION_STREAM_STDERR, data=b"second\n"
     )
-    assert finished == result
+    assert finished.result.exit_code == 0
 
 
-async def test_initialized_sandbox_refuses_a_different_script_after_restart(tmp_path: Path, gateway: Gateway) -> None:
-    state = tmp_path / "state"
-    state.mkdir()
+async def test_an_initialized_sandbox_refuses_a_different_script_after_restart(
+    config: RunnerConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
+) -> None:
     script = "printf 'first\\n' | tee -a initialized\n"
-    driver = RunnerDriver(gateway)
-    async with running(RunnerConfig(state_dir=state), gateway):
-        first = await driver.initialize(script)
+    async with running(bootstrapped(config, script), gateway):
+        await RunnerDriver(gateway).attach("restart-1", spec=spec)
 
-    async with running(RunnerConfig(state_dir=state), gateway):
-        replayed = await driver.initialize(script)
-        changed = await refusal(driver.initialize("printf 'changed\\n' >> initialized\n"))
+    async with running(bootstrapped(config, script), gateway):
+        await RunnerDriver(gateway).attach("restart-2", spec=spec)
 
-    assert replayed == first
-    assert replayed.result.exit_code == 0
+    async with running(bootstrapped(config, "printf 'changed\\n' >> initialized\n"), gateway):
+        changed = await refusal(RunnerDriver(gateway).attach("restart-3", spec=spec))
+
     assert changed == grpc.StatusCode.ALREADY_EXISTS
-    assert (state / "initialized").read_text() == "first\n"
+    assert (config.state_dir / "initialized").read_text() == "first\n"
 
 
-async def test_failed_initialize_is_replayed_and_never_rerun(tmp_path: Path, gateway: Gateway) -> None:
-    state = tmp_path / "state"
-    state.mkdir()
-    driver = RunnerDriver(gateway)
-    async with running(RunnerConfig(state_dir=state), gateway):
-        script = "echo run >> runs\necho broken >&2\nexit 7\n"
-        first = await driver.initialize(script)
-        repeated = await driver.initialize(script)
+async def test_a_failed_bootstrap_refuses_every_session_and_never_reruns(
+    config: RunnerConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
+) -> None:
+    script = "echo run >> runs\necho broken >&2\nexit 7\n"
+    async with running(bootstrapped(config, script), gateway):
+        driver = RunnerDriver(gateway)
+        first = await refusal(driver.attach("failed-1", spec=spec))
+        repeated = await refusal(driver.attach("failed-2", spec=spec))
+        sessions = await driver.list_sessions()
 
-    assert (first.result.executed, first.result.exit_code) == (True, 7)
-    assert recorded(state)[0].output.data == b"broken\n"
-    assert repeated == first
-    assert (state / "runs").read_text() == "run\n"
+    assert first == repeated == grpc.StatusCode.FAILED_PRECONDITION
+    assert sessions == []
+    assert recorded(config.state_dir)[0].output.data == b"broken\n"
+    assert (config.state_dir / "runs").read_text() == "run\n"
 
 
 if __name__ == "__main__":

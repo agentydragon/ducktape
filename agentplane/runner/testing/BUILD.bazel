@@ -98,6 +98,7 @@ py_library(
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:config",
         "//agentplane/runner:model_config",
+        "//agentplane/runner:sandbox_launch",
         "//util/bazel:runfiles",
         "@pypi//httpx",
         "@pypi//protobuf",

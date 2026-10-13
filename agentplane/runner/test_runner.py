@@ -41,6 +41,7 @@ def config(harness: runner_pb2.Harness, harness_binary: Path, tmp_path: Path) ->
     """Overrides the package fixture: the session's harness is `harness_binary`, not the pinned one."""
     return RunnerConfig(
         state_dir=tmp_path / "state",
+        launch=launches.SANDBOX_LAUNCH,
         model_config_resolver=launches.unconfigured_models(),
         claude=ClaudeLaunch(binary=harness_binary, base_url=TEST_ENDPOINT, auth_token="test-token")
         if harness == runner_pb2.HARNESS_CLAUDE
@@ -54,7 +55,7 @@ def config(harness: runner_pb2.Harness, harness_binary: Path, tmp_path: Path) ->
 async def test_failed_session_shutdown_still_closes_its_database(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    runner = Runner(RunnerConfig(state_dir=tmp_path, harness_environment={}))
+    runner = Runner(RunnerConfig(state_dir=tmp_path, launch=launches.SANDBOX_LAUNCH, harness_environment={}))
     runner.store.write(
         "test-session",
         SessionRecord.from_spec(runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, model="test-model")),
@@ -97,7 +98,9 @@ async def test_a_harness_the_supervisor_cannot_start_names_the_spawn_failure(
 
 
 async def test_summaries_report_the_published_log_not_a_batch_in_progress(tmp_path: Path) -> None:
-    async with Runner(RunnerConfig(state_dir=tmp_path, harness_environment={})) as runner:
+    async with Runner(
+        RunnerConfig(state_dir=tmp_path, launch=launches.SANDBOX_LAUNCH, harness_environment={})
+    ) as runner:
         runner.store.write(
             "test-session",
             SessionRecord.from_spec(runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, model="test-model")),
@@ -117,7 +120,9 @@ async def test_vm_workspace_root_rejects_outside_paths_and_symlink_escapes(tmp_p
     workspace.mkdir()
     outside.mkdir()
     (workspace / "escape").symlink_to(outside, target_is_directory=True)
-    async with Runner(RunnerConfig(state_dir=tmp_path / "state", workspace_root=workspace)) as runner:
+    async with Runner(
+        RunnerConfig(state_dir=tmp_path / "state", launch=launches.SANDBOX_LAUNCH, workspace_root=workspace)
+    ) as runner:
         runner._validate_workspace(str(workspace / "new-session"))
         with pytest.raises(ValueError, match="must be a child"):
             runner._validate_workspace(str(outside / "session"))

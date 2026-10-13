@@ -34,7 +34,6 @@ class Settings(YamlFileSettings):
     commands_database_url: str = Field(
         min_length=1, description="The `sandbox_commands` database holding command admission."
     )
-    platform_instructions: str = Field(min_length=1)
     runner_control_audience: str = Field(
         default=RUNNER_CONTROL_AUDIENCE,
         description="Audience of the Pod tokens the egress proxy substitutes on runner control stream connections.",

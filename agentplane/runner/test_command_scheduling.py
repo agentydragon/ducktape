@@ -17,6 +17,7 @@ from agentplane.runner.config import CodexLaunch, RunnerConfig
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.model_config import HttpModelConfigResolver
 from agentplane.runner.session import Session
+from agentplane.runner.testing import launches
 from agentplane.runner.testing.adapters import UnexpectedAdapter
 from agentplane.runner.testing.sessions import codex_record, open_session
 
@@ -74,6 +75,7 @@ async def session_with_blocked_adapter(
         ),
         config=RunnerConfig(
             state_dir=tmp_path / "state",
+            launch=launches.SANDBOX_LAUNCH,
             model_config_resolver=model_config_resolver(windows),
             codex=CodexLaunch(binary=Path("/bin/true"), base_url="http://ingress/v1", api_key="test"),
         ),

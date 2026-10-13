@@ -21,15 +21,13 @@ service RunnerControl {
 service Runner {
   rpc ListSessions(agentplane.proto.runner.ListSessionsRequest)
       returns (agentplane.proto.runner.ListSessionsResponse);
-  // Bootstrap, at most once per Sandbox: answers with the attempt's terminal event, `result` or
-  // `interrupted`, once the attempt has ended; its output is not carried. The runner records the
-  // selected script at one fixed state path. An exact retry replays the one attempt's outcome, failed
-  // or interrupted included, without running the script again; any other script is refused with
-  // `ALREADY_EXISTS`.
-  rpc Initialize(InitializeRequest) returns (InitializeResponse);
-  // Create a Session with `spec` and start it. An existing Session is confirmed only, never
-  // restarted: its `spec`, and `setup_script` when present, must equal the stored ones, or the call
-  // fails with `ALREADY_EXISTS`.
+  // Create a Session with `spec` and start it, after the Sandbox's bootstrap has run to success: the
+  // runner runs it once, before the Sandbox's first Session, and a failed or interrupted attempt
+  // refuses every later create with `FAILED_PRECONDITION`. The stored `spec` is `spec` with the
+  // platform instructions and the Sandbox's and Session's identity ahead of its `instructions`. An
+  // existing Session is confirmed against the same composition and, once its setup allows, a
+  // stopped harness is started: `spec`, and `setup_script` when present, must equal the stored ones,
+  // or the call fails with `ALREADY_EXISTS`.
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   // Restart a stopped harness on the Session's retained spec. A running harness is left as it is.
   rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
@@ -76,14 +74,6 @@ message Welcome {
 }
 
 message Heartbeat {}
-
-message InitializeRequest {
-  string script = 1;
-}
-
-message InitializeResponse {
-  agentplane.proto.runner.InitializationEvent outcome = 1;
-}
 
 message OpenSessionRequest {
   string session_id = 1;

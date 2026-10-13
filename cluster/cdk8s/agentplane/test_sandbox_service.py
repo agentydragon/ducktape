@@ -8,7 +8,14 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import app, history_service, notifications, runner_gateway, sandbox_service
+from cluster.cdk8s.agentplane import (
+    app,
+    history_service,
+    notifications,
+    runner_gateway,
+    runner_sandbox,
+    sandbox_service,
+)
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
@@ -77,9 +84,9 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
         assert set(rule["verbs"]) <= {"get", "list", "watch"}
     backend_config = yaml.safe_load(resource("ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
     gateway_config = yaml.safe_load(resource("ConfigMap", f"{runner_gateway.NAME}-config")["data"]["config.yaml"])
-    # The Runner Gateway supplies this platform block to every harness/preset in both environments.
-    platform = gateway_config["platform_instructions"]
-    assert platform.count(runner_gateway.KUBERNETES_ADMIN_INSTRUCTIONS) == 1
+    # Every runner starts each Session with this platform block, in both environments.
+    platform = resource("ConfigMap", "agentplane-runner-platform-instructions")["data"]["platform-instructions.md"]
+    assert platform.count(runner_sandbox.KUBERNETES_ADMIN_INSTRUCTIONS) == 1
     assert "kubernetes_admin" in platform
     assert "pods_exec" in platform
     assert f"http://agentplane-actions.{namespace}.svc.cluster.local:8080" in platform

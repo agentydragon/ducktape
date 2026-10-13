@@ -1,7 +1,6 @@
 """The Runner Gateway: Sessions, commands and the runner control stream. Its command admission schema migrates
 before Pod startup."""
 
-from pathlib import Path
 from typing import cast
 
 from cdk8s import ApiObjectMetadata, Duration, Size
@@ -22,11 +21,10 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
-from agentplane.runner_gateway.instructions import combine_instructions, render_platform_instructions
 from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE, Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import actions, database, egress, notifications
+from cluster.cdk8s.agentplane import database, egress
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
@@ -43,9 +41,6 @@ NAME = "agentplane-runner-gateway"
 TOKEN_AUDIENCE = "agentplane-runner-gateway"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-runner-gateway"
-KUBERNETES_ADMIN_INSTRUCTIONS = (
-    Path(__file__).with_name("kubernetes_admin_instructions.md").read_text(encoding="utf-8").strip()
-)
 
 # The policy a runner behind the egress proxy dials the control stream under (the KubeVirt
 # experiment's; a Sandbox's runner uses its sidecar's platform route), and the credential it substitutes.
@@ -86,7 +81,6 @@ class RunnerGateway(Construct):
         self.env = env
         endpoint = service(env.namespace)
         control = runner_control(env.namespace)
-        actions_service = actions.service(env.namespace)
         config = SettingsFile(
             self,
             "config",
@@ -99,14 +93,6 @@ class RunnerGateway(Construct):
                     for caller in sorted(callers, key=lambda caller: (caller.namespace, caller.name))
                 ],
                 "token_audience": TOKEN_AUDIENCE,
-                "platform_instructions": combine_instructions(
-                    render_platform_instructions(
-                        egress_api_url=f"http://{egress.agent_api(env.namespace).fqdn}",
-                        actions_service_url=f"http://{actions_service.fqdn}:{actions_service.port.number}",
-                        notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
-                    ),
-                    KUBERNETES_ADMIN_INSTRUCTIONS,
-                ),
                 "runner_control_audience": RUNNER_CONTROL_AUDIENCE,
                 "port": endpoint.port.number,
                 "runner_control_port": control.pod_port,

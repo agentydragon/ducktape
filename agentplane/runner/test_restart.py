@@ -13,6 +13,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
+import grpc
 import pytest
 import pytest_bazel
 
@@ -23,7 +24,7 @@ from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.store import StateOwner
 from agentplane.runner.testing import events, launches
 from agentplane.runner.testing.commands import submit_input
-from agentplane.runner.testing.driver import RunnerDriver
+from agentplane.runner.testing.driver import RunnerDriver, refusal
 from agentplane.runner.testing.gateway import Gateway
 from agentplane.runner.testing.scripted_model import Reasoning, ScriptedModel, ShellCall, Text
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
@@ -101,25 +102,27 @@ async def test_runner_shutdown_interrupts_setup_without_rerunning_it(
 
 
 async def test_runner_death_interrupts_bootstrap_without_rerunning_it(
-    start_runner: Callable[..., Awaitable[RunnerProcess]], driver: RunnerDriver, tmp_path: Path
+    spec: runner_pb2.SessionSpec,
+    start_runner: Callable[..., Awaitable[RunnerProcess]],
+    driver: RunnerDriver,
+    tmp_path: Path,
 ) -> None:
     state = tmp_path / "state"
     state.mkdir()
     # The script blocks writing its pid to this pipe until the test reads it.
     os.mkfifo(state / "started")
     script = "echo run >> runs\necho $$ > started\nwhile :; do sleep 1; done\n"
-    first_runner = await start_runner()
-    initializing = asyncio.create_task(driver.initialize(script))
+    first_runner = await start_runner(bootstrap=script)
+    opening = asyncio.create_task(driver.attach("bootstrap-1", spec=spec))
     pid = int(await asyncio.to_thread((state / "started").read_text))
     await first_runner.crash([pid])
-    initializing.cancel()
+    opening.cancel()
 
-    await start_runner()
-    interrupted = await driver.initialize(script)
-    repeated = await driver.initialize(script)
+    await start_runner(bootstrap=script)
+    first = await refusal(driver.attach("bootstrap-1", spec=spec))
+    second = await refusal(driver.attach("bootstrap-2", spec=spec))
 
-    assert interrupted.HasField("interrupted")
-    assert repeated == interrupted
+    assert first == second == grpc.StatusCode.FAILED_PRECONDITION
     assert (state / "runs").read_text() == "run\n"
 
 
@@ -148,7 +151,10 @@ async def start_runner(
     started: list[RunnerProcess] = []
 
     async def start(
-        *, test_debug_checkpoint: tuple[str, str] | None = None, home: Path = tmp_path / "home"
+        *,
+        test_debug_checkpoint: tuple[str, str] | None = None,
+        bootstrap: str | None = None,
+        home: Path = tmp_path / "home",
     ) -> RunnerProcess:
         connections = gateway.control.connections
         process = await asyncio.create_subprocess_exec(
@@ -158,6 +164,7 @@ async def start_runner(
                 state_dir=tmp_path / "state",
                 gateway=gateway.endpoint,
                 test_debug_checkpoint=test_debug_checkpoint,
+                bootstrap=bootstrap,
             ),
             env=_runner_environment(home),
             start_new_session=True,
@@ -610,7 +617,7 @@ async def test_sigterm_stops_the_harness_cleanly_and_a_new_incarnation_resumes(
     (running,) = await driver.list_sessions()
     assert running.session_id == "sigterm-1"
     assert running.harness_state == runner_pb2.HARNESS_STATE_RUNNING
-    assert running.spec == spec
+    assert running.spec == first.attached.spec
     # Native frames after the turn's result may still be arriving.
     assert running.last_cursor >= first.cursor
     # The runner exits only after the stop ladder has reaped every harness.

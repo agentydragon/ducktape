@@ -31,7 +31,6 @@ service RunnerControl {
 
 service Runner {
   rpc ListSessions(runner.ListSessionsRequest) returns (runner.ListSessionsResponse);
-  rpc Initialize(InitializeRequest) returns (InitializeResponse);
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
   rpc Seal(runner.SealRequest) returns (runner.SealResponse);
@@ -332,33 +331,31 @@ No routing record is kept: runners dial out, so nothing is routed inbound.
 
 Status: **built.** The Runner Gateway makes every Session call and teardown's seal through the
 control stream (`runner_gateway/lifecycle_control.py`). A runner fails `OpenSession` for a Session it created but could not
-start; asked again, it confirms the stopped Session, so `CreateSession` follows an
-`OpenSession` that confirms a stopped harness with `ResumeSession`. The App and the Notification
+start; asked again, it confirms the Session and starts the stopped harness. The App and the Notification
 Service reach the holder through the control Service (`control_target`, a required setting).
 
 Each operation is its own `Runner` method:
 
 - `ListSessions` reads.
-- `Initialize` bootstraps once per Sandbox; an identical retry replays the attempt's outcome.
-- `OpenSession` creates a Session with a spec and starts it; an existing Session is confirmed
-  only, never restarted.
+- `OpenSession` creates a Session with a spec and starts it, first running the Sandbox's
+  bootstrap from its launch file if it has not run; an existing Session is confirmed and its
+  stopped harness started.
 - `ResumeSession` restarts a stopped harness on its retained spec.
 - `Seal` fences, stops every harness and setup, and seals every journal.
 
-No operation creates a Session or starts a harness implicitly; only `OpenSession` and
-`ResumeSession` do. The runner orders `Seal` by arrival: it waits for every command admission
+Only `OpenSession` and `ResumeSession` create a Session or start a harness. The runner orders `Seal` by arrival: it waits for every command admission
 already under way, and every call that arrives after it waits for it, so no command delivered
 before it lands after it. Only the replica holding the runner's stream calls the runner: callers reach it through the Sandbox's control Service
 ([Connection records](#connection-records-in-kubernetes)), and background work such as sealing runs on the replica holding the Lease. Calls are bounded by the
 calling RPC's deadline, like command deliveries, and a reconnect replays none of them.
 
-| Runner Gateway caller | Control operation                                     |
-| --------------------- | ----------------------------------------------------- |
-| `ListSessions` RPC    | `ListSessions`                                        |
-| `CreateSession`       | `Initialize`, then `OpenSession` with the client's ID |
-| `ResumeSession`       | `ResumeSession`                                       |
-| `Teardown` sealing    | `Seal`, repeated until every Session is flushed       |
-| `SubmitCommand`       | `DeliverCommand`                                      |
+| Runner Gateway caller | Control operation                               |
+| --------------------- | ----------------------------------------------- |
+| `ListSessions` RPC    | `ListSessions`                                  |
+| `CreateSession`       | `OpenSession` with the client's ID              |
+| `ResumeSession`       | `ResumeSession`                                 |
+| `Teardown` sealing    | `Seal`, repeated until every Session is flushed |
+| `SubmitCommand`       | `DeliverCommand`                                |
 
 The VM experiment's runtime acceptance drives the guest runner directly through a port-forward and
 moves with the selected VM control path.

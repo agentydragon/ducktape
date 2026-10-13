@@ -60,6 +60,10 @@ class InitializationConflictError(Exception):
     """The sandbox already selected a different bootstrap initialization."""
 
 
+class BootstrapFailedError(OpenError):
+    """The Sandbox bootstrap failed or was interrupted, so no Session opens in this Sandbox."""
+
+
 def make_adapter(session: Session) -> HarnessAdapter:
     match session.record.harness:
         case Harness.CLAUDE:
@@ -222,16 +226,36 @@ class Runner:
         return await self._load(session_id) if self.store.exists(session_id) else None
 
     async def open_session(self, session_id: str, spec: runner_pb2.SessionSpec, setup_script: str | None) -> Session:
-        """Create the session with `spec` and start it, or confirm an existing one with the same spec
-        without starting anything."""
+        """Create the session with `spec` and start it, running the Sandbox bootstrap first if it has
+        not run; or confirm an existing one with the same spec and start its stopped harness."""
         session_id = self._valid_session_id(session_id)
         self._refuse_sealed()
+        launched = runner_pb2.SessionSpec()
+        launched.CopyFrom(spec)
+        launched.instructions = self.config.launch.instructions(session_id, spec.instructions)
+        if not self.store.exists(session_id):
+            await self._bootstrap()
         async with self._create_lock:
             if self.store.exists(session_id):
-                return await self._confirm(session_id, spec, setup_script)
-            session = await self._create(session_id, spec, setup_script)
+                session = await self._confirm(session_id, launched, setup_script)
+            else:
+                session = await self._create(session_id, launched, setup_script)
         await self._start(session)
         return session
+
+    async def _bootstrap(self) -> None:
+        """Run the Sandbox's bootstrap if it has not run, and refuse unless it succeeded."""
+        if self.config.launch.bootstrap is None:
+            return
+        log, execution = await self.initialize(self.config.launch.bootstrap)
+        if execution is not None:
+            # The bootstrap belongs to the Sandbox: abandoning this call must not stop it.
+            await asyncio.shield(execution)
+        outcome = log.since(log.last_sequence - 1)[0]
+        if outcome.WhichOneof("observation") == "interrupted":
+            raise BootstrapFailedError("the Sandbox bootstrap was interrupted and never runs again; use a new Sandbox")
+        if outcome.result.exit_code != 0:
+            raise BootstrapFailedError("the Sandbox bootstrap failed and never runs again; no session was opened")
 
     async def resume(self, session_id: str) -> Session:
         """Restart a stopped harness on the session's retained spec."""

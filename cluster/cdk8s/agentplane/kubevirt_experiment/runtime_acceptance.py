@@ -385,14 +385,16 @@ async def _ensure_data_volume(
         raise ValueError(f"DataVolume {name!r} does not match this VM's requested blank disk")
 
 
-def _config_data(args: argparse.Namespace, *, config: dict[str, Any]) -> dict[str, str]:
+def _config_data(args: argparse.Namespace, *, config: dict[str, Any], name: str, uid: str) -> dict[str, str]:
     guest_config = {
         "version": 1,
         "control": {"target": args.control_target, "bearer": args.control_bearer},
         "ingress": {"target": args.ingress_target, "bearer": args.ingress_bearer},
         "llm_base_url": config["llm_base_url"],
         "proxy_url": config["proxy_url"],
+        "platform_instructions": "Experiment guest: no platform instructions.",
     }
+    launch = {"sandbox": {"namespace": args.namespace, "name": name, "uid": uid}}
     kubeconfig = {
         "apiVersion": "v1",
         "kind": "Config",
@@ -411,6 +413,7 @@ def _config_data(args: argparse.Namespace, *, config: dict[str, Any]) -> dict[st
     }
     return {
         _CONFIG_KEY: json.dumps(guest_config, separators=(",", ":")),
+        "launch.json": json.dumps(launch, separators=(",", ":")),
         "kubeconfig": json.dumps(kubeconfig, separators=(",", ":")),
     }
 
@@ -587,7 +590,10 @@ async def create(args: argparse.Namespace) -> None:
             deadline,
         )
         await _within(
-            _ensure_config_map(core, args.namespace, name, uid=uid, data=_config_data(args, config=values)), deadline
+            _ensure_config_map(
+                core, args.namespace, name, uid=uid, data=_config_data(args, config=values, name=name, uid=uid)
+            ),
+            deadline,
         )
         await _check_data_volumes(
             custom,

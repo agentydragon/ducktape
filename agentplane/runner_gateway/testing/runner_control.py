@@ -157,12 +157,6 @@ class ScriptedRunner(runner_control_pb2_grpc.RunnerServicer):
         return runner_pb2.ListSessionsResponse(sessions=self.sessions.values())
 
     @override
-    async def Initialize(
-        self, request: runner_control_pb2.InitializeRequest, context: grpc.aio.ServicerContext
-    ) -> runner_control_pb2.InitializeResponse:
-        return await self._queue(request, runner_control_pb2.InitializeResponse, context)
-
-    @override
     async def OpenSession(
         self, request: runner_control_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.OpenSessionResponse:

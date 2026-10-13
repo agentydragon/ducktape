@@ -75,7 +75,6 @@ def replica(
                 principals=cluster.build_principal_resolver(CALLER_AUDIENCE),
                 destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
                 caller_accounts=frozenset({CALLER}),
-                platform_instructions="Test platform guidance.",
             ),
             control=control,
         )
@@ -125,7 +124,7 @@ def client(token_file: Path, target: str, *, control_target: str) -> AbstractAsy
     return connect(target, token_file, command_admission_timeout_s=10, control_target=control_target)
 
 
-async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
+async def test_a_create_whose_harness_failed_is_confirmed_and_started_on_retry(
     holder: Replica, other: Replica, token_file: Path
 ) -> None:
     # The caller's own target is the other replica; the control Service names the holder.
@@ -139,18 +138,13 @@ async def test_a_create_whose_harness_failed_resumes_the_session_on_retry(
         opened.outcome.set_result(grpc.StatusCode.UNKNOWN)
         with pytest.raises(RefusedError):
             await first
-        # The runner created the Session and could not start it; asked again it only confirms it,
-        # stopped, so the create starts it.
+        # The runner created the Session and could not start it; asked again it confirms it and
+        # starts its harness.
         retried = asyncio.create_task(sandbox.create(session_id=requested, spec=SPEC))
         confirmed = await runner.next(runner_control_pb2.OpenSessionRequest)
         assert (confirmed.request.session_id, confirmed.request.spec) == (session_id, opened.request.spec)
         confirmed.outcome.set_result(
-            runner_control_pb2.OpenSessionResponse(attached=attached(session_id, runner_pb2.HARNESS_STATE_STOPPED))
-        )
-        resumed = await runner.next(runner_control_pb2.ResumeSessionRequest)
-        assert resumed.request.session_id == session_id
-        resumed.outcome.set_result(
-            runner_control_pb2.ResumeSessionResponse(attached=attached(session_id, runner_pb2.HARNESS_STATE_RUNNING))
+            runner_control_pb2.OpenSessionResponse(attached=attached(session_id, runner_pb2.HARNESS_STATE_RUNNING))
         )
         response = await retried
     assert response.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING

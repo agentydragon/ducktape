@@ -31,6 +31,7 @@ from agentplane.runner.journal import Journal
 from agentplane.runner.observation import Observation
 from agentplane.runner.session import Session
 from agentplane.runner.store import SessionRecord, SessionStore, StateOwner
+from agentplane.runner.testing import launches
 from agentplane.runner.testing.adapters import UnexpectedAdapter
 from agentplane.runner.testing.sessions import codex_record, open_session
 
@@ -112,7 +113,7 @@ async def session(tmp_path: Path, make_adapter: Callable[[Session], HarnessAdapt
     async with open_session(
         "test-session",
         codex_record(tmp_path / "workspace"),
-        config=RunnerConfig(state_dir=tmp_path / "state"),
+        config=RunnerConfig(state_dir=tmp_path / "state", launch=launches.SANDBOX_LAUNCH),
         make_adapter=make_adapter,
     ) as session:
         await session.ensure_running()
@@ -269,7 +270,7 @@ async def test_a_sessions_launch_outcome_survives_a_restart(
             record=record,
             journal=journal,
             store=store,
-            config=RunnerConfig(state_dir=state_dir),
+            config=RunnerConfig(state_dir=state_dir, launch=launches.SANDBOX_LAUNCH),
             make_adapter=DerivingAdapter,
             state_owner_descriptor=owner.descriptor,
         )

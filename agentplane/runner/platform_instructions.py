@@ -1,10 +1,10 @@
-"""Render deployment-wide platform instructions in one place."""
+"""Render the deployment-wide platform instructions every Session starts with."""
 
 from jinja2 import StrictUndefined, Template
 
 from util.bazel.runfiles import get_required_path, own_repo_rlocation
 
-PLATFORM_INSTRUCTIONS_TEMPLATE = "agentplane/runner_gateway/agent_instructions.j2"
+PLATFORM_INSTRUCTIONS_TEMPLATE = "agentplane/runner/platform_instructions.j2"
 
 
 def render_platform_instructions(
@@ -22,8 +22,3 @@ def render_platform_instructions(
             notifications_service_url=notifications_service_url,
         )
     ).strip()
-
-
-def combine_instructions(platform: str, task: str) -> str:
-    """Join non-empty instruction blocks in order."""
-    return "\n\n".join(part.strip() for part in (platform, task) if part.strip())

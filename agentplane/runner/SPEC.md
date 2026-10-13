@@ -10,8 +10,11 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 
 ## Initialization
 
-- `Initialize` receives integration-app configured shell source and executes it with `/bin/sh -eu`
-  from `state_dir` before the Sandbox's workload starts.
+- The Sandbox's launch file (`--launch-file`, written by the Sandbox controller) carries the
+  Sandbox's identity and the bootstrap shell source. The runner executes the bootstrap with
+  `/bin/sh -eu` from `state_dir` inside the first `OpenSession` that creates a Session, before that
+  Session starts; a Sandbox without a bootstrap runs nothing. A failed or interrupted bootstrap
+  refuses every `OpenSession` that would create a Session with `FAILED_PRECONDITION`.
 - The first request durably selects the script digest at the fixed path
   `<state_dir>/initialization/request.json`, before the script starts. The runner thereafter refuses
   changed source, including after a failed attempt: two possibly incompatible initializations must
@@ -22,10 +25,9 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   may have run any part of itself, and an unknown result does not permit a retry. A fresh
   initialization needs a new Sandbox.
 - Stdout, stderr, and the attempt's result or interruption are appended to a persistent event log with
-  dense Sandbox-scoped sequence numbers. A request is answered with the attempt's terminal event once
-  it has ended. An abandoned request does not stop the script or recording.
-- The runner accepts source only over this in-cluster control protocol; how the integration app
-  selects that source is outside the runner contract.
+  dense Sandbox-scoped sequence numbers. An abandoned `OpenSession` does not stop the script or
+  recording.
+- The runner takes the bootstrap only from its launch file, never over the control protocol.
 
 ## Sessions
 
@@ -46,8 +48,11 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   source is refused. Start a new session to try again.
 - `spec.instructions` are the session's standing instructions: what the session is for, and the
   orders that hold for every turn of it. They reach the model appended to the harness's own system
-  prompt, so each harness keeps its coding-agent policy; empty is a session without any. They are
-  fixed for the session's life, because a `spec` supplied on reopening must equal the stored one.
+  prompt, so each harness keeps its coding-agent policy. A caller's empty task leaves the platform part. They are
+  fixed for the session's life. The runner composes them from the deployment's platform instructions
+  (`--platform-instructions-file`, or the guest config's `platform_instructions`), the Session's
+  notification destination (the Sandbox identity from the launch file and the Session ID) and the
+  caller's task, in that order; callers supply only the task. They are fixed because a `spec` supplied on reopening must equal the stored one.
 - The runner asks the workload-authenticated LLM ingress for `ModelConfig` when a
   session or model selection is made. Its `total_context_budget_tokens` is a client
   budget shared by input and output, not a provider maximum or an output request cap.
@@ -76,10 +81,9 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   sealed journal, a command ID already used for other work, or a command without an ID and an
   operation. Delivery never creates a session or starts a harness.
 - Each `Runner` call is answered once, with its result or a gRPC status naming the cause.
-  `ListSessions` and `Seal` answer as the RPCs of the same name do, and `Initialize` with the
-  attempt's terminal event once it has ended. `OpenSession` creates a session
+  `ListSessions` and `Seal` answer as the RPCs of the same name do. `OpenSession` creates a session
   from its spec and starts it; for an existing session with the same spec, and setup script when
-  given, it only confirms it and never starts a stopped harness, and any other spec is refused.
+  given, it confirms it and starts its harness if stopped, and any other spec is refused.
   `ResumeSession` restarts a stopped harness on the retained spec, and is refused for an unknown or
   sealed session or one whose setup failed or was interrupted. A `Seal` takes effect after every
   command delivered before it is answered, and calls after it wait for it. A lost connection drops

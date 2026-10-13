@@ -127,7 +127,6 @@ async def authenticated_service(
     manager: ServiceAccountRef | None = None,
     token: str = "test-app-service-token",
     audience: str = "test-app-sandbox-service",
-    platform_instructions: str = "Backend guidance for app-launched sessions.",
 ) -> AsyncIterator[tuple[SandboxServiceClient, RunnerGatewayClient]]:
     """The Sandbox Service and gateway over `cluster`, with `runner` as `SANDBOX`'s runner, connected over the
     control stream."""
@@ -145,7 +144,6 @@ async def authenticated_service(
             principals=cluster.build_principal_resolver(audience),
             destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
             caller_accounts=frozenset({manager}),
-            platform_instructions=platform_instructions,
             # Native acceptance uses production's admission budget, including delivery's
             # two-second recheck. The gateway unit fixture keeps its one-second default.
             runner_admission_ack_timeout_s=15,

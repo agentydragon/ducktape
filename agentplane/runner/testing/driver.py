@@ -126,7 +126,7 @@ class RunnerDriver:
         after_cursor: int = 0,
     ) -> SessionFollow:
         """Follow a session after `after_cursor`. With `spec`, open it first as a client reopening a
-        session does: create it, or confirm it and resume its stopped harness unless its setup failed."""
+        session does: create it, or confirm it and start its stopped harness unless its setup failed."""
         if spec is None:
             summary = next((found for found in await self.list_sessions() if found.session_id == session_id), None)
             if summary is None:
@@ -148,12 +148,6 @@ class RunnerDriver:
         if setup_script is not None:
             opening.setup_script = setup_script
         attached = (await runner.OpenSession(opening)).attached
-        if attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED and attached.setup_state in (
-            runner_pb2.SETUP_STATE_NOT_REQUIRED,
-            runner_pb2.SETUP_STATE_SUCCEEDED,
-        ):
-            resumed = await runner.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id=session_id))
-            attached = resumed.attached
         return SessionFollow(self.gateway, attached, after_cursor)
 
     async def list_sessions(self) -> list[runner_pb2.SessionSummary]:
@@ -166,11 +160,6 @@ class RunnerDriver:
         for session in sealed.sessions:
             await self.gateway.ingress.wait_sealed(session.session_id)
         return sealed
-
-    async def initialize(self, script: str) -> runner_pb2.InitializationEvent:
-        """The bootstrap's terminal event, `result` or `interrupted`, once the attempt has ended."""
-        runner = await self.gateway.control.runner()
-        return (await runner.Initialize(runner_control_pb2.InitializeRequest(script=script))).outcome
 
 
 @asynccontextmanager

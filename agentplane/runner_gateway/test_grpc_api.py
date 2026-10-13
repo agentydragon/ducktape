@@ -62,7 +62,6 @@ def resources(cluster: Cluster, engine: AsyncEngine, leases: ConnectionLeases) -
             principals=cluster.build_principal_resolver(AUDIENCE),
             destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
             caller_accounts=frozenset({OWNER}),
-            platform_instructions="Test guidance",
         ),
         admission_timeout_s=1,
         control=LifecycleControl(leases),
@@ -106,7 +105,6 @@ async def test_managed_open_uses_the_client_session_id_and_retries_on_the_runner
         # The runner's Session ID is the client's, as the ingress announces it.
         assert public == str(requested) == created.attached.session_id == first.session_id
         assert first.spec.cwd == f"/state/{public}"
-        assert public in first.spec.instructions
 
         # After a lost reply the retry reaches the runner again, which confirms it against the spec
         # it recorded.

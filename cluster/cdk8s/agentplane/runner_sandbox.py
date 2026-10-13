@@ -11,6 +11,7 @@ so image-pins/ covers them too.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 from typing import Any
 
 from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
@@ -21,15 +22,26 @@ from agent_sandbox_sandboxtemplate_crds.io.x_k8s.agents.extensions import (
     SandboxTemplateSpecPodTemplateSpecContainersResourcesRequests,
     SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts,
     SandboxTemplateSpecPodTemplateSpecVolumes,
+    SandboxTemplateSpecPodTemplateSpecVolumesConfigMap,
     SandboxTemplateSpecPodTemplateSpecVolumesSecret,
 )
 from cdk8s import ApiObject, ApiObjectMetadata, JsonPatch
-from cdk8s_plus_34 import ServiceAccount
+from cdk8s_plus_34 import ConfigMap, ServiceAccount
 from constructs import Construct
 
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.runner.platform_instructions import render_platform_instructions
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import egress, launcher_relay, llm_ingress, platform_routes, runner_vm, sandbox_pod
+from cluster.cdk8s.agentplane import (
+    actions,
+    egress,
+    launcher_relay,
+    llm_ingress,
+    notifications,
+    platform_routes,
+    runner_vm,
+    sandbox_pod,
+)
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.providers.cilium.network_policy import NetworkPolicy, isolate_ingress
 from cluster.cdk8s.service_ref import Pods
@@ -45,6 +57,27 @@ _STATE_VOLUME_NAME = "state"
 _STATE_DIR = "/state"
 _BUILDBUDDY_SECRET = "buildbuddy-api-key"
 _BUILDBUDDY_MOUNT = "/run/buildbuddy"
+KUBERNETES_ADMIN_INSTRUCTIONS = (
+    Path(__file__).with_name("kubernetes_admin_instructions.md").read_text(encoding="utf-8").strip()
+)
+# The deployment-wide instructions every Session starts with, as a ConfigMap the runner container mounts.
+_PLATFORM_INSTRUCTIONS_CONFIG_MAP = "agentplane-runner-platform-instructions"
+_PLATFORM_INSTRUCTIONS_KEY = "platform-instructions.md"
+_PLATFORM_INSTRUCTIONS_VOLUME = "platform-instructions"
+_PLATFORM_INSTRUCTIONS_DIR = "/etc/agentplane/platform-instructions"
+# Where the Sandbox controller mounts the Sandbox's launch ConfigMap (agentplane/sandbox_controller/launch.go).
+_LAUNCH_FILE = "/run/agentplane/sandbox/launch.json"
+
+
+def platform_instructions(env: Environment) -> str:
+    """The complete deployment-wide prompt: shared guidance with this environment's service URLs."""
+    actions_service = actions.service(env.namespace)
+    shared = render_platform_instructions(
+        egress_api_url=f"http://{egress.agent_api(env.namespace).fqdn}",
+        actions_service_url=f"http://{actions_service.fqdn}:{actions_service.port.number}",
+        notifications_service_url=f"http://{notifications.service(env.namespace).fqdn}:8080",
+    )
+    return f"{shared}\n\n{KUBERNETES_ADMIN_INSTRUCTIONS}"
 
 
 def pods(namespace: str) -> Pods:
@@ -74,13 +107,24 @@ class RunnerSandbox(Construct):
             egress=[cilium.dns_egress(), egress.proxy(namespace).egress()],
         )
         platform_routes.PlatformRouteFences(self, "platform-routes", namespace=namespace, clients=pods(namespace))
+        ConfigMap(
+            self,
+            "platform-instructions",
+            metadata=ApiObjectMetadata(name=_PLATFORM_INSTRUCTIONS_CONFIG_MAP, namespace=namespace),
+            data={_PLATFORM_INSTRUCTIONS_KEY: platform_instructions(env)},
+        )
         template = RunnerTemplate(self, "runner-template", env, name="runner", image=_IMAGE)
         if env.vm_sandboxes:
             launcher_relay.LauncherRelayPolicy(
                 self, "launcher-relay", namespace=namespace, runner_pod=template.spec["pod"]
             )
             runner_vm.RunnerVmTemplate(
-                self, "runner-vm-template", env, labels=_LABELS, state_volume=template.spec["stateVolume"]
+                self,
+                "runner-vm-template",
+                env,
+                labels=_LABELS,
+                state_volume=template.spec["stateVolume"],
+                platform_instructions=platform_instructions(env),
             )
 
 
@@ -139,6 +183,10 @@ class RunnerTemplate(Construct):
             "$(LITELLM_URL)/v1",
             # The Runner Gateway and the ingress, over the sidecar's platform routes.
             *platform_routes.runner_args(self.env.namespace),
+            "--launch-file",
+            _LAUNCH_FILE,
+            "--platform-instructions-file",
+            f"{_PLATFORM_INSTRUCTIONS_DIR}/{_PLATFORM_INSTRUCTIONS_KEY}",
         ]
         for entry in harness_env:
             args.extend(["--harness-env", entry])
@@ -196,6 +244,9 @@ class RunnerTemplate(Construct):
                 SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
                     name=_STATE_VOLUME_NAME, mount_path=_STATE_DIR
                 ),
+                SandboxTemplateSpecPodTemplateSpecContainersVolumeMounts(
+                    name=_PLATFORM_INSTRUCTIONS_VOLUME, mount_path=_PLATFORM_INSTRUCTIONS_DIR, read_only=True
+                ),
                 *sandbox_pod.egress_mounts(),
                 *(
                     [
@@ -216,19 +267,27 @@ class RunnerTemplate(Construct):
                 self.env,
                 workload=self._runner_container(image),
                 service_account_name=NAME,
-                workload_volumes=(
-                    [
-                        SandboxTemplateSpecPodTemplateSpecVolumes(
-                            name=_BUILDBUDDY_SECRET,
-                            secret=SandboxTemplateSpecPodTemplateSpecVolumesSecret(
-                                secret_name=_BUILDBUDDY_SECRET,
-                                default_mode=288,  # 0440; readable via fsGroup 1000
-                            ),
-                        )
-                    ]
-                    if self.buildbuddy_secret
-                    else []
-                ),
+                workload_volumes=[
+                    SandboxTemplateSpecPodTemplateSpecVolumes(
+                        name=_PLATFORM_INSTRUCTIONS_VOLUME,
+                        config_map=SandboxTemplateSpecPodTemplateSpecVolumesConfigMap(
+                            name=_PLATFORM_INSTRUCTIONS_CONFIG_MAP
+                        ),
+                    ),
+                    *(
+                        [
+                            SandboxTemplateSpecPodTemplateSpecVolumes(
+                                name=_BUILDBUDDY_SECRET,
+                                secret=SandboxTemplateSpecPodTemplateSpecVolumesSecret(
+                                    secret_name=_BUILDBUDDY_SECRET,
+                                    default_mode=288,  # 0440; readable via fsGroup 1000
+                                ),
+                            )
+                        ]
+                        if self.buildbuddy_secret
+                        else []
+                    ),
+                ],
                 sidecar_env=[platform_routes.sidecar_env(self.env.namespace)],
             ),
         )

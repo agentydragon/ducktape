@@ -2,9 +2,9 @@
 KubeVirt VM the Sandbox Controller makes from `spec.vm` (agentplane/sandbox_controller/SPEC.md § VMs).
 
 The guest gets what a runner Pod's container gets, as the disks vm.nix reads by serial: the public
-launch config and kubeconfig, the egress trust bundle, and a blank workspace disk that lives as long
-as the VM. The controller adds the state PVC as the virtiofs filesystem named after the state
-volume. The egress relay the guest dials at the masquerade gateway is the launcher policy's
+launch config (platform instructions included) and kubeconfig, the egress trust bundle, and a blank
+workspace disk that lives as long as the VM. The controller adds the state PVC as the virtiofs
+filesystem named after the state volume, and the Sandbox's own launch file as one more disk. The egress relay the guest dials at the masquerade gateway is the launcher policy's
 (launcher_relay.py); the VM carries the runner Pods' labels, so the runner fence applies to its
 launcher.
 """
@@ -55,10 +55,18 @@ def _guest_address(port: int) -> str:
 
 
 class RunnerVmTemplate(Construct):
-    """`labels` are the runner Pods' labels; `state_volume` is the runner template's `stateVolume`."""
+    """`labels` are the runner Pods' labels; `state_volume` is the runner template's `stateVolume`;
+    `platform_instructions` start every Session."""
 
     def __init__(
-        self, scope: Construct, id: str, env: Environment, *, labels: dict[str, str], state_volume: dict[str, Any]
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        labels: dict[str, str],
+        state_volume: dict[str, Any],
+        platform_instructions: str,
     ) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
@@ -74,6 +82,7 @@ class RunnerVmTemplate(Construct):
             ),
             llm_base_url=llm_ingress.proxied_url(namespace),
             proxy_url=f"http://{_guest_address(sandbox_pod.SIDECAR_LISTEN_PORT)}",
+            platform_instructions=platform_instructions,
         )
         ConfigMap(
             self,

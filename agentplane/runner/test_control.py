@@ -31,6 +31,16 @@ RUNNING = "test-running-session"
 STOPPED = "test-stopped-session"
 FAILED_SETUP = "test-failed-setup-session"
 SPEC = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/test-workspace", model="test-model")
+
+
+def stored(session_id: str) -> runner_pb2.SessionSpec:
+    """`SPEC` as the runner stores it for `session_id`: its task behind the platform instructions."""
+    spec = runner_pb2.SessionSpec()
+    spec.CopyFrom(SPEC)
+    spec.instructions = launches.SANDBOX_LAUNCH.instructions(session_id, SPEC.instructions)
+    return spec
+
+
 TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=0.5, backoff_initial_s=0.01, backoff_max_s=0.05)
 
 type Service = runner_control_pb2_grpc.RunnerAsyncStub
@@ -57,6 +67,7 @@ async def runner(tmp_path: Path) -> AsyncIterator[Runner]:
     async with Runner(
         RunnerConfig(
             state_dir=tmp_path / "state",
+            launch=launches.SANDBOX_LAUNCH,
             model_config_resolver=launches.unconfigured_models(),
             # Never launched: `started` stands in for the harness.
             claude=ClaudeLaunch(
@@ -67,13 +78,13 @@ async def runner(tmp_path: Path) -> AsyncIterator[Runner]:
         )
     ) as runner:
         for session_id in (RUNNING, STOPPED):
-            runner.store.write(session_id, SessionRecord.from_spec(SPEC))
+            runner.store.write(session_id, SessionRecord.from_spec(stored(session_id)))
             # As a started runner holds every stored session.
             await runner._load(session_id)
         running = runner.sessions[RUNNING]
         running.adapter = RecordingAdapter()
         running.process = cast(HarnessProcess, RunningProcess())
-        runner.store.write(FAILED_SETUP, SessionRecord.from_spec(SPEC, setup_script="exit 1"))
+        runner.store.write(FAILED_SETUP, SessionRecord.from_spec(stored(FAILED_SETUP), setup_script="exit 1"))
         await (await runner._load(FAILED_SETUP)).emit(event_pb2.SetupFinished(exit_code=1), sources=[])
         yield runner
 
@@ -215,19 +226,19 @@ async def test_open_creates_a_session_and_starts_it(
     opened = (await (await dial()).OpenSession(open_session("test-new-session"))).attached
     assert (opened.session_id, opened.spec, opened.harness_state) == (
         "test-new-session",
-        SPEC,
+        stored("test-new-session"),
         runner_pb2.HARNESS_STATE_RUNNING,
     )
     assert started == ["test-new-session"]
     assert runner.store.exists("test-new-session")
 
 
-async def test_opening_an_existing_session_confirms_it_without_restarting_its_harness(
+async def test_opening_an_existing_session_confirms_it_and_starts_its_stopped_harness(
     dial: Callable[[], Awaitable[Service]], started: list[str]
 ) -> None:
     opened = (await (await dial()).OpenSession(open_session(STOPPED))).attached
-    assert (opened.session_id, opened.harness_state) == (STOPPED, runner_pb2.HARNESS_STATE_STOPPED)
-    assert started == []
+    assert (opened.session_id, opened.harness_state) == (STOPPED, runner_pb2.HARNESS_STATE_RUNNING)
+    assert started == [STOPPED]
 
 
 @pytest.mark.parametrize(
@@ -251,7 +262,10 @@ async def test_resume_restarts_a_stopped_harness_on_its_retained_spec(
     dial: Callable[[], Awaitable[Service]], started: list[str]
 ) -> None:
     resumed = await (await dial()).ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id=STOPPED))
-    assert (resumed.attached.spec, resumed.attached.harness_state) == (SPEC, runner_pb2.HARNESS_STATE_RUNNING)
+    assert (resumed.attached.spec, resumed.attached.harness_state) == (
+        stored(STOPPED),
+        runner_pb2.HARNESS_STATE_RUNNING,
+    )
     assert started == [STOPPED]
 
 

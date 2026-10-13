@@ -156,6 +156,10 @@ def runner_vm(
         VirtualMachineSpecTemplateSpecVolumes(
             name="config", config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=config_map)
         ),
+        # The Sandbox controller's launch disk, here from the same ConfigMap, which also carries launch.json.
+        VirtualMachineSpecTemplateSpecVolumes(
+            name="launch", config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=config_map)
+        ),
         VirtualMachineSpecTemplateSpecVolumes(
             name="trust", config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=trust_config_map)
         ),
@@ -171,6 +175,7 @@ def runner_vm(
             for disk, serial in (
                 ("workspace", "workspace"),
                 ("config", "agentplane-config"),
+                ("launch", "agentplane-launch"),
                 ("trust", "agentplane-trust"),
             )
         ),
