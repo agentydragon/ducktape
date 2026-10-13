@@ -77,7 +77,7 @@ above. All authenticated agents may subscribe to repositories accessible through
 new App, including private repositories; install it with that sharing policy in mind.
 
 Registration, event permissions, and access-loss semantics are recorded in the
-[notification plan](../../../agentplane/plans/notifications.md#registration-and-credential-preparation).
+[GitHub App setup](../../../agentplane/notification_service/README.md#github-app-setup).
 The public App ID is configured in the notification service YAML settings, not a Secret.
 The operator-supplied `github-app.sops.yaml` contains the `agentplane-github-app` Secret
 with only `private-key` and `webhook-secret`. The staging Kustomization includes it for

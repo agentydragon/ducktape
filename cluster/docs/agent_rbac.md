@@ -172,36 +172,29 @@ change those authorities.
 
 ### Agentplane-managed Sandbox grants
 
-Agentplane creates a distinct ServiceAccount for each managed Sandbox. In staging,
-`cluster/cdk8s/agentplane/staging_config.py` defines the enabled Kubernetes grant
-catalog. Sandbox presets supply launch defaults; the operator can replace them with any
-catalog selection, including an empty list. The API resolves each name before creation
-and stores the concrete binding target on the Sandbox. Later preset or catalog edits do
-not retarget existing bindings. Role rule changes affect every already-bound Sandbox.
+Agentplane creates a distinct ServiceAccount for each managed Sandbox, and the Sandbox
+Controller binds it to the `PolicySet`s its `spec.policySets` names with one `PolicyBinding`
+the Sandbox owns ([model](../../agentplane/docs/adr_policy_sets.md)). The sets are
+Flux-rendered from the grant catalog in `cluster/cdk8s/agentplane/staging_config.py`
+and `cluster/cdk8s/agent_access_profiles.py`; presets supply the default set names for a launch,
+and the operator can replace them, including with none. The Policy Controller keeps the native
+RoleBindings and ClusterRoleBindings of the bound sets' Kubernetes rules
+([contract](../../agentplane/policy_controller/SPEC.md)). A set edit therefore reaches every
+bound Sandbox, and deleting a Sandbox deletes its binding and the native bindings it granted.
 
-Agentplane supplies the binding subject from the created Sandbox ServiceAccount. It
-reconciles its own bindings and reports incomplete provisioning before a session starts.
-Same-namespace RoleBindings carry a Sandbox owner reference. Cross-namespace
-RoleBindings and ClusterRoleBindings use a Sandbox finalizer for deletion cleanup;
-the app also sweeps orphaned bindings after an interrupted create/delete race. Catalog
-removal prevents new selection, while retained cleanup scopes let old bindings be
-deleted when their Sandboxes are deleted. The app may `bind` only the catalog's named
-Roles/ClusterRoles and cannot edit their rules.
+The Policy Controller may `bind` only the roles the sets name, by `resourceNames`, and cannot
+edit their rules. Its own Flux Kustomization owns delegation in `agentplane-staging` and at
+cluster scope. Each external target namespace has a separate, GitRepository-sourced Flux
+Kustomization for the Policy Controller's RoleBinding management Role and RoleBinding
+(`cluster/cdk8s/agentplane/binding_delegation.py`). The `haku-sandbox` delegation depends on
+`haku-rbac`, which depends on the namespace owner. A failure in this delegation Kustomization
+does not block the Agentplane app Kustomization. Keep an external delegation while its
+namespace is in the retained cleanup scopes, even if its catalog entry is removed.
 
-The app's own Flux Kustomization owns delegation in `agentplane-staging` and at
-cluster scope. Each external target namespace has a separate, GitRepository-sourced
-Flux Kustomization for the app ServiceAccount's RoleBinding management Role and
-RoleBinding. The `haku-sandbox` delegation depends on `haku-rbac`, which depends
-on the namespace owner. A failure in this delegation Kustomization does not
-block the Agentplane app Kustomization. Keep an external delegation while its namespace
-is in the retained cleanup scopes, even if its catalog entry is removed.
-
-Kubernetes RBAC does not constrain a ClusterRole's `bind` permission to
-namespaced RoleBindings. Because the app can create ClusterRoleBindings for the
-catalog's cluster grant, a compromised app identity could bind the named
-metadata and logs ClusterRoles cluster-wide too. The catalog and reconciler
-enforce the configured binding kind during ordinary operation; this remains a
-delegation limit of the app ServiceAccount's Kubernetes permissions.
+Kubernetes RBAC does not constrain a ClusterRole's `bind` permission to namespaced
+RoleBindings. Because the Policy Controller can create ClusterRoleBindings for the catalog's cluster
+grant, a compromised Policy Controller identity could bind the named metadata and logs ClusterRoles
+cluster-wide too. This is a delegation limit of its ServiceAccount's Kubernetes permissions.
 
 ### Shared deployment definitions and parity contract
 
@@ -427,7 +420,7 @@ target-owned delegation dependencies together.
 After the stacked grant PRs deploy, use the staging operator UI to create two Sandboxes
 from the Haku preset and one from public-coder with an explicitly empty Kubernetes
 grant list. Record their Sandbox names as `HAKU_A`,
-`HAKU_B`, and `OTHER`; wait for `kubernetes_grants_ready: true` before opening sessions.
+`HAKU_B`, and `OTHER`; wait for each Sandbox's `PolicyBinding` to report `KubernetesReady` before opening sessions.
 Run these commands with the operator kubeconfig. Each inner `kubectl` runs **inside**
 the Sandbox workload and uses its sidecar's substituted token:
 

@@ -541,6 +541,10 @@ browser response. That response forwards whole SSE frames and drops a `snapshot`
 last one it forwarded, so the snapshot each new upstream opens with reaches the tab only if the
 list changed. An upstream that ends before its first frame ends the browser stream instead.
 
+While the navigation sidebar is closed (phone width by default) and the route is not under
+`/actions`, a strip under the top bar shows "N Actions waiting for review" so a pending decision is
+visible over an open Thread. Tapping it expands the sidebar's queue rows (`ActionsAttentionBar`).
+
 The Settings modal's Notifications tab (`/#/notifications`, see [Settings](#settings)) registers the
 current browser, lists registered browsers, identifies this one, and forgets registrations. Forgetting the current browser also unsubscribes locally. The stable
 `/sw.js` service worker receives background Web Push, offers Approve/Deny, and opens the Actions

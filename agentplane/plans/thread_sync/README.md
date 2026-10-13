@@ -19,7 +19,7 @@ would be for.
    "keyset page by admission cursor" describes the page that does not exist yet.
 2. **Electric's server memory** under history growth, a restart and a stalled reader is still an
    adoption gate (<../../docs/thread_view_sync.md> § Server memory ownership). Probes exist on the
-   parked spike PR #7490 (`shape_history_memory_test`, `shape_stalled_reader_test`,
+   closed, unmerged spike PR #7490 (`shape_history_memory_test`, `shape_stalled_reader_test`,
    `shape_capacity_test`); they need rewriting against `history_service/testing/electric_service.py` and the thread
    tables.
 3. **Compacting completed bodies (D5).** A body completed with the text that streamed keeps the

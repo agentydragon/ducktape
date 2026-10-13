@@ -61,6 +61,10 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   through its seal before its state goes.
 - Then the Pod or VM is deleted, then, once it and any VMI are gone, the PVC, then the Sandbox.
 - A Sandbox without a state PVC of its own never had a runner, so nothing is sealed.
+- The Pod or VM and the Sandbox's ServiceAccount are owned by the Sandbox with `blockOwnerDeletion`, so
+  foreground propagation and namespace deletion remove them before the seal completes and the
+  unsealed tail of a Session's journal is lost; background propagation (the `kubectl` and
+  `DeleteSandbox` default) keeps them until the finalizer clears.
 
 ## Status
 

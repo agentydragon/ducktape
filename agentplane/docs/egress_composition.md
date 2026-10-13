@@ -182,6 +182,18 @@ picking policies is not choosing a precedence.
 
 The field remains available later if a real case needs one. Nothing here depends on its absence.
 
+### Rejected: a profile label selecting Sandboxes
+
+A label stamped on each Sandbox at creation (`agentplane.allegedly.works/profile`) that a binding's
+`sandboxSelector` matched gave "profile" a place to live without a new object.
+
+The constraint that killed it: the concept then had no owning object, only a string two unrelated
+places agreed on, and it bound a cross-cutting notion (Action approval, Kubernetes access and
+other grants key off the same choice) into the egress resource, so the second consumer would extend
+that resource or invent a parallel notion. A subject is one named object, never a selector; the
+reusable bundle across rule types is a `PolicySet`, and a launch preset only names sets
+([principles](principles.md#separate-concepts-mixed-and-matched-no-opaque-bundles)).
+
 ## A grant after launch is a new binding
 
 Granting a policy to an already-running sandbox creates a new binding naming just that sandbox,

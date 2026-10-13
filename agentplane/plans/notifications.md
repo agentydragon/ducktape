@@ -177,8 +177,8 @@ If idle polling becomes a priority, replace the notification source's five-secon
 
 - Consider removing `lifetime_days`. Prefer no automatic expiry; if retained, make it opt-in with
   agent warning/expiry-notification semantics.
-- Add command-scoped admission/confirmation/failure tracking through the Runner Gateway, resumable by
-  command ID and backed by the runner's journal, so notifications need not follow conversation content.
+- Notice delivery without reading conversation history:
+  [`NOTIFICATION_COMMAND_OUTCOME_DESIGN`](task_dag.md#notification_command_outcome_design--notice-delivery-without-reading-conversation-history).
 - Consider automatic Action following or a submission convenience flag, backed by durable authorized
   intent and reconciliation rather than a best-effort second request.
 - Consider narrower GitHub repository/event grants instead of shared access to every App installation.
@@ -189,4 +189,3 @@ If idle polling becomes a priority, replace the notification source's five-secon
   filters, tags/releases and deployment/environment subscriptions. No promise of complete historical replay.
 - Notification-triggered provisioning/resume, offline-delivery guarantees and wake budgets.
 - Runner-hosted MCP context, per-session identities, cross-account delivery and successor-session retargeting.
-- Proper runner RPC authentication/TLS; the authenticated service APIs do not resolve the runner-leg gap.

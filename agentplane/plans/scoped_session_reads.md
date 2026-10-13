@@ -1,8 +1,7 @@
 # Scoped ServiceAccount reads of Session history — proposed contract
 
 Status: **proposed policy design**, not an implemented permission or a grant to existing
-callers. Tracked as `THREAD_READ_POLICY_DESIGN` in [the task DAG](task_dag.md)
-(as expanded in [PR #9411](https://github.com/agentydragon/ducktape/pull/9411)).
+callers. Tracked as `THREAD_READ_POLICY_DESIGN` in [the task DAG](task_dag.md).
 Review the choices below before implementing the policy. The durable raw Session Event
 history and its Thread fold live in the [History Service](../history_service/README.md),
 which today serves only its configured reader accounts.
@@ -19,8 +18,7 @@ come from the same History Service.
 
 Retained history must be readable when the original Pod, Sandbox CR and PVC are gone.
 The history authority, not live Kubernetes inventory, owns the durable Session ID,
-its classification and grants. Legacy Sessions retain their current public UUID and
-map to their unchanged `(sandbox, runner session_id)` storage locator while it exists.
+its classification and grants.
 
 ## Proposed scope and principal
 
@@ -38,10 +36,9 @@ map to their unchanged `(sandbox, runner session_id)` storage locator while it e
 - Continue to authenticate Pod-bound workload bearers by TokenReview, but scope
   grants to the exact ServiceAccount incarnation as well as namespace/name: deleting
   and recreating an account of the same name must not inherit its predecessor's
-  access. The current `WorkloadPrincipal` records namespace/name and Pod identity,
-  **not** SA UID; implementation must extend its verified identity (or make an
-  equivalent UID check against Kubernetes), test token/SA replacement, and refuse
-  grants that cannot be verified. Never trust a forwarded principal header.
+  access. `WorkloadPrincipal.service_account_uid` (TokenReview's user UID) is the
+  verified incarnation; a grant pins it, token/SA replacement is tested, and a grant
+  that cannot be verified is refused. Never trust a forwarded principal header.
 - Operator authentication remains separate; operator history reads and management
   do not acquire an SA grant by accident. App and history service identities used
   for ingestion/projecting folds are service-to-service privileges, not an all-history
@@ -94,16 +91,14 @@ authorized reader but must not make a fold claim to cover Events beyond its curs
 
 ## Implementation readiness and acceptance
 
-Before granting SA reads, land and verify: (1) the independent durable raw history
-and one-way import of existing public IDs/Events; (2) Sandbox trust-domain enforcement;
-(3) verified SA-incarnation identity; (4) operator-managed grants/classification;
-(5) removal of the app's current direct SA transcript-read bypass. Test a director SA
-reading explicitly granted compartments but not unrelated histories, and an SA with
-no grants discovering none. Cover deleted Sandboxes, same-name replacement, legacy
-unclassified Sessions, raw/native paths, list pagination, two history replicas,
-reclassification, and revocation while following a stream.
+Before granting SA reads, land and verify: (1) Sandbox trust-domain enforcement;
+(2) operator-managed grants/classification, enforced by the History Service on every
+read path. Test a director SA reading explicitly granted compartments but not
+unrelated histories, and an SA with no grants discovering none. Cover deleted
+Sandboxes, same-name replacement, unclassified Sessions, raw/native paths, list
+pagination, two history replicas, reclassification, and revocation while following a
+stream.
 
-Open design reviews for this PR: confirm UID-pinned grant semantics (including how
-TokenReview conveys the ServiceAccount UID) and whether exactly-one compartment plus
-no exact-ID exceptions on day one matches the intended delegation workflows. These
-questions must be decided before an implementation is marked ready to expose reads.
+Open design review: whether exactly-one compartment plus no exact-ID exceptions on
+day one matches the intended delegation workflows. It must be decided before an
+implementation is marked ready to expose reads.

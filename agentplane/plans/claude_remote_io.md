@@ -31,7 +31,7 @@ the Sandbox runner as a thinner harness adapter. Reuse the RemoteIO wire evidenc
 that option; do not infer Claude's private server persistence scheme from the client
 protocol, or require its discovery before prototyping a compatible service.
 
-A runner-local interception shim is a fallback if the central route cannot be implemented without weakening those boundaries. It would need its own TLS identity and a reliable route for all other egress, so evaluate that cost rather than assuming it is free. The [KubeVirt plan](kubevirt_environments.md#proxy-outside-the-guest) puts the runner behind a guest/Pod boundary; prove the chosen path for both the existing Pod environment and any VM profile before enabling it there.
+A runner-local interception shim is a fallback if the central route cannot be implemented without weakening those boundaries. It would need its own TLS identity and a reliable route for all other egress, so evaluate that cost rather than assuming it is free. The [VM Sandboxes design](../docs/vm_sandboxes.md#guest-to-relay) puts the runner behind a guest/Pod boundary; prove the chosen path for both the existing Pod environment and any VM profile before enabling it there.
 
 ## Runner transport and evidence
 

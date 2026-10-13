@@ -701,15 +701,14 @@ Concrete gates for this implementation (not satisfied by characterization tests 
 ## Deferred hardening candidates
 
 These are not a live priority or acceptance obligations. Check current evidence before promoting a
-concrete gap from the [freezer](task_freezer.md#harness-features-and-native-research); finishing
-archive migration does not automatically unfreeze native-subagent work. They extend the
+concrete gap from the [freezer](task_freezer.md#harness-features-and-native-research). They extend the
 characterization suite and its shared fixtures, not the deferred shared-session implementation, and
 add no session authority or event store. The automatic current-versus-candidate upgrade lane is
 excluded.
 
 1. **Codex v2 live reconnect:** disconnect only the client during an active turn and after completion.
    Capture identity, history and lifecycle evidence on reconnect without submitting work as a status
-   query. Independent of the session-event migration.
+   query.
 2. **Input correlation and interrupt races:** script overlapping inputs and interleaved results for
    both harnesses; attribute each completion. Synchronize interrupt-before-start, active and completion
    boundaries. Reproduce and diagnose the observed Codex input-during-turn race.
@@ -718,7 +717,7 @@ excluded.
 4. **Protocol contracts and diagnostics:** consolidate evidenced guarantees beside native APIs; retain
    raw traces, pending model exchanges and the failing boundary without masking the original failure.
 5. **Duplicate-command retry:** lose a bridge reply, retry the same identity and assert execution count
-   and retained result. Coordinate with the session-event migration owner; do not add another queue.
+   and retained result; do not add another queue.
 6. **Synchronization and backpressure:** replace avoidable sleeps with frame/request barriers; exercise
    large frames and slow readers for integrity, ordering, cancellation and bounded teardown.
 7. **Permissions and configuration:** correlate permission allow/deny, interruption and recovery;

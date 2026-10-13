@@ -43,9 +43,7 @@ cluster-scoped admission/secret-store resources.
 
 ## Evidence and remaining checks
 
-[Recorded live acceptance](../../../../agentplane/debug/kubevirt/runtime-20261003.md)
-identifies the tested OCI digest, boot/resource/recovery results, and limitations.
-Those results use an earlier driver and image. The direct driver and updated trust-manager
+The direct driver and updated trust-manager
 PKCS#12 boot path have not yet been rerun live or timed.
 
 The HTTP model fixture does not validate real gateway credential substitution or

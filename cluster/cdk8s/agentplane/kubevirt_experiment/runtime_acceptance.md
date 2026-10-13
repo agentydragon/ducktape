@@ -116,5 +116,4 @@ earlier driver and image. The model fixture returns deterministic text and uses 
 relay identity. It does not validate production credential substitution, destination authorization,
 TLS interception, or CONNECT. The fixture relay forwards only to the model fixture, so it does not carry the
 runner's control stream or ingress push either: Sessions, setup probes and native recovery are not
-exercised on the guest. Recorded runtime findings and measured limits are in
-[`agentplane/debug/kubevirt/runtime-20261003.md`](../../../../agentplane/debug/kubevirt/runtime-20261003.md).
+exercised on the guest.

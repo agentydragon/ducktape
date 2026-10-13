@@ -59,7 +59,7 @@ outcome is recorded before the Notification Service stops reading history.
 
 ### `SESSION_INPUT_METADATA` — later typed annotations on input commands
 
-**Unscheduled; the operator's lean (2026-10-12 PDT) replaces the plan's gateway-stored metadata.**
+**Unscheduled; operator's lean, 2026-10-12 PDT.**
 Typed metadata and restricted trusted producer provenance on input commands, so a notice the
 Notification Service sends is not rendered as a user message. The lean: the Runner Gateway stamps
 verified provenance on the runner Command, and the runner echoes it into the Event that journals
@@ -319,8 +319,8 @@ does not grant history read, messaging, credentials or execution of another prin
 
 ## 4. VM environment phases
 
-The [KubeVirt plan](kubevirt_environments.md) contains completed prototype evidence and the detailed
-provider design. Split implementation rather than making “VM support” one indivisible task. This is
+The [VM Sandboxes design](../docs/vm_sandboxes.md) holds the provider constraints, and the
+[KubeVirt plan](kubevirt_environments.md) the live gates no node below names. Split implementation rather than making “VM support” one indivisible task. This is
 an unranked candidate lane, not authorization for local Bazel in current containers. The
 [runner control stream](../docs/runner_control.md) settles the dial-out contract VM control networking
 builds on; changing connection direction does not move command durability or remove the runner
@@ -462,7 +462,7 @@ never runs them. Move them into their own CI workflow that runs in isolation, so
 longer carries a stateful environment for them. Options named: an isolated part of the operator's
 cluster, GitHub's runners, or BuildBuddy's; and the cheap-experiments LiteLLM key or a new key
 provisioned for CI. Constraint: an agent can still run, inspect and step through the tests itself.
-Open: where they run. The k3s-on-RBE spike (#10214, draft) shows a real kubelet runs in a
+Open: where they run. The k3s-on-RBE spike (`agentplane/x/k3s_rbe_spike`) shows a real kubelet runs in a
 BuildBuddy action, but with no ClusterIP Services, no KubeVirt and no Cilium, so tests that need
 those stay elsewhere. envtest covers only API-server behavior, not Pods, harnesses or LLM calls, so
 it does not replace these tests.
@@ -659,7 +659,7 @@ PVC. Left is the same for VMs once our Sandbox has them: the controller rewrites
 only while `runStrategy: Halted`, keeping its state PVC. The state PVC's contents belong to the
 runner (operator, 2026-10-12 08:41 PDT): it versions and migrates them, or reports that it cannot,
 and the controller has no version gate. So of #8843's `ReplaceVmImage` (replaced live in
-[the 2026-10-03 run](../debug/kubevirt/runtime-20261003.md)) the Halted-only rewrite carries over,
+the 2026-10-03 run) the Halted-only rewrite carries over,
 and the exact `VmTemplate.state_schema_version` match does not.
 
 ### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes stop
@@ -797,9 +797,6 @@ runner through the Sandbox Service.
 
 ```mermaid
 flowchart TD
-    AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 7]
-    SEAL_FINALIZER[Unscheduled: seal as a finalizer on every delete]
-    AGENTPLANE_SANDBOX_RESOURCE -. to seal a suspended Sandbox on delete .-> SEAL_FINALIZER
     RUNNER_JOURNAL_TRIM[Unscheduled: runners stop keeping what the ingress committed]
 ```
 
@@ -807,30 +804,9 @@ flowchart TD
 
 **Unscheduled; the operator's direction, 2026-10-12 PDT: later.** A runner could stop persisting
 journal entries its ingress has already acknowledged, behind a flag, with full persistence kept
-selectable. Not designed: what the runner still needs locally (cursors, seal state, entries a
+selectable; the freezer's
+[`RUNNER_JOURNAL_SETTLEMENT`](task_freezer.md#runner_journal_settlement--settle-deltas-in-the-runner-journal-too) is the same idea at the delta level. Not designed: what the runner still needs locally (cursors, seal state, entries a
 resumed harness or a lost push reads back) once acknowledged entries are gone.
-
-### `SEAL_FINALIZER` — seal as a finalizer on every delete
-
-**Unscheduled; operator, 2026-10-11 PDT: not worth the effort for now.** Every Sandbox carries a seal
-finalizer, so any deletion (`kubectl`, `DeleteSandbox`) seals before its volume goes. It replaces
-the controller loop's seal from the replica holding the runner, the `teardown` annotation and the
-suspended-only delete guard. Deletion is one-way: a hold can delay it, never cancel it.
-
-Upstream agent-sandbox v0.5.5 does nothing for a Sandbox whose `deletionTimestamp` is set
-(`SandboxReconciler.Reconcile` returns before reconciling its Pod, PVCs or Service): it neither
-starts nor stops the Pod. So a Sandbox running when deletion begins keeps its runner and seals over
-control as now; a suspended one never runs again, and sealing it means reading the journal head off
-the volume with a Job, or our own resource (`AGENTPLANE_SANDBOX_RESOURCE`). The Pod and PVCs carry
-controller owner references with `blockOwnerDeletion`, so only background propagation (the
-`kubectl` and `DeleteSandbox` default) keeps them until the finalizer clears: foreground
-propagation garbage-collects them while the finalizer still holds the Sandbox, and namespace
-deletion removes them directly. Those two paths lose the unsealed tail.
-
-The considered way to seal a suspended one without our own resource: the finalizer starts a Job on
-the Sandbox's volume, under the Sandbox's own ServiceAccount and egress sidecar (the ingress binds a
-Session to its first writer), that pushes the unacknowledged tail and seals. The volume is
-ReadWriteOnce, so the Job starts only once every container of the old Pod is gone.
 
 ## 11. Coherence refactors
 

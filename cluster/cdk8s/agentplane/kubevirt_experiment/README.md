@@ -91,8 +91,7 @@ rm /tmp/agentplane-vm-prototype-key /tmp/agentplane-vm-prototype-key.pub
 
 Run `bbr test //cluster/cdk8s/agentplane/kubevirt_experiment:test_policy` for real Kyverno CLI
 mutation/reinvocation and negative admission checks. The test mocks API responses;
-it still executes the UID, account, caller, and mount predicates. Live evidence is
-recorded in [the experiment log](../../../../agentplane/debug/kubevirt/evidence.md).
+it still executes the UID, account, caller, and mount predicates.
 
 This does not stop shared Kyverno to test `failurePolicy: Fail`, or exercise production
 credential substitution/CONNECT. The runner acceptance guide exercises boot, stop/start, and

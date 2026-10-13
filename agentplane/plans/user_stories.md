@@ -37,21 +37,25 @@ Standing under it:
   (<../egress/SPEC.md>). Two halves of the ask are already there — a refused call comes back as
   `403` with a machine-readable reason, and an agent can read which rules it is bound to, so it can
   tell what it lacks from what it was never given.
-- A standing grant already has an object to be: an `EgressBinding` the app creates and revokes while
-  a sandbox runs, each grant its own binding with its own expiry
-  ([`../docs/egress_composition.md`](../docs/egress_composition.md)).
+- A standing grant already has an object to be: a `PolicyBinding` the Sandbox Service creates and
+  revokes while a Sandbox runs (`GrantEgress`/`RevokeEgress`), each grant its own binding with its own
+  expiry ([`../docs/egress_composition.md`](../docs/egress_composition.md#a-grant-after-launch-is-a-new-binding)).
 - Host commands: Haku's node daemons (`hostexec`) already run an approved command on a named
   machine.
-- Delivery to Rai: the Action Service sends approval Web Push for pending requests
+- Delivery to Rai: the Action Service sends one batched approval Web Push for the pending requests
   ([README](../action_service/README.md#action-live-updates-and-approval-web-push)), as Haku
-  Console does for waiting tool calls ([`haku/SPEC.md`](../../haku/SPEC.md)).
+  Console does for waiting tool calls ([`haku/SPEC.md`](../../haku/SPEC.md)), and the app shows the
+  waiting queue in a strip whenever its sidebar is closed
+  ([README](../app/README.md#action-live-updates-and-browser-notifications)).
 - [`../docs/hooks.md`](../docs/hooks.md): a `PreToolUse` deny with a reason is the cheapest way to
   turn a refused call into an ask the model understands.
 
 Missing:
 
-- **Standing grants as a separate product.** An `EgressBinding` or Kubernetes binding can represent
-  reusable authority; it is not another outcome or repeated Execution of one ActionRequest.
+- **Standing grants as a separate product.** A `PolicyBinding` represents reusable authority, for
+  egress today and for every rule type once
+  [`POLICY_RUNTIME_GRANTS`](task_dag.md#policy_runtime_grants--time-limited-grants) lands; it is not
+  another outcome or repeated Execution of one ActionRequest.
 
 ## 2. Trusted orchestrator, untrusted fleet
 
@@ -65,8 +69,8 @@ Haku and the fleet and checks that nothing sensitive crosses it.
 
 Standing under it:
 
-- One sandbox per agent with its own Kubernetes identity, standalone Sandboxes, which is
-  what the central proxy keys credentials and rules on.
+- One Sandbox per agent, each running as a ServiceAccount of its own, which is what the central
+  proxy keys credentials and rules on.
 - Threads outlive sandboxes (`T1`): every event on both sides of a delegation is stored under
   a thread, so the audit of what crossed the channel is the same store the UI reads.
 - The threads API is the seed of cross-transcript reads. Haku's
@@ -97,9 +101,8 @@ Missing:
 - **The orchestrator's identity on the API.** Haku creates and suspends sandboxes under
   its own Kubernetes identity, presenting an audience-scoped token the way the Ducktape agent does
   on staging today. What it may create is a permission on that identity, held wherever the app
-  keeps policy; a SandboxTemplate is a Pod shape and carries no permission, because a template
-  is copied into each Sandbox at creation and cannot change under a running Pod, while a
-  permission on the identity can (Rai).
+  keeps policy; a SandboxTemplate is a Pod shape and carries no permission, because editing a
+  template never changes a running Pod, while a permission on the identity can (Rai).
 - **Messaging in any topology.** Agents message each other back and forth through the same
   inputs and events, and the graph is a mesh, not a tree: a specialist may talk to a sibling,
   or back to the orchestrator, under the same tier rules and the same judge on any edge that

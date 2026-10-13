@@ -195,7 +195,7 @@ Conditional on the authority decision. Durable central admission/redelivery is d
 
 ### `RUNNER_OUTBOUND_CUTOVER` — migrate to thin, outbound-connected adapters
 
-Only if the thin-adapter/central-authority design is selected, after its per-harness catch-up and safe image transition. Runner dial-out shipped as a transport change without it.
+Only if the thin-adapter/central-authority design is selected, after its per-harness catch-up and safe image transition. Runner dial-out is a separate, existing transport ([runner control stream](../docs/runner_control.md)).
 
 ### `COMMAND_QUEUE_DECISION` — where submission becomes durable
 
@@ -252,10 +252,6 @@ Review who may request/approve/persist egress expansion before selecting an Acti
 ### `FORK` — per-task identity fork
 
 Per-task identity fork only for a concrete concurrent external-agent need. Depends on a reviewed identity/delegation lifecycle, not accidental inheritance.
-
-### `PROFILES` — cross-cutting capability profiles
-
-[Profiles](profiles.md) remains north-star context, not an active privilege-framework project.
 
 ### `SSHDURABLE` — durable SSH-backed processes
 
