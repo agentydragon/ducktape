@@ -707,7 +707,7 @@ flowchart TD
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     CONTROL_SERVICE_OWNER[Blocked: the controller creates the Sandbox's control Service]
-    RUNNER_CONNECTED_READY[Blocked: the Sandbox's Ready condition includes the runner connection]
+    RUNNER_CONNECTED_READY[Candidate: the Sandbox's Ready condition includes the runner connection]
     SESSION_ACTIVITY_STREAM[Decision: one derivation of folded Session activity for listeners]
     DISPATCHER_CORE[Blocked: the Session Dispatcher delivers to running Sandboxes]
     DISPATCHER_SESSION_CREATE[Blocked: dispatched Session creation]
@@ -744,7 +744,6 @@ flowchart TD
     AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. offline behavior .-> DISPATCHER_CORE
     SESSION_ACTIVITY_STREAM -. must not define a second idleness .-> SANDBOX_IDLE_EXPIRY
     SANDBOX_SESSION_CONTROL_DESIGN --> SESSION_ACTIVITY_STREAM
-    SANDBOX_SESSION_CONTROL_DESIGN --> RUNNER_CONNECTED_READY
     SANDBOX_SESSION_CONTROL_DESIGN --> CONTROL_SERVICE_OWNER
     SANDBOX_SESSION_CONTROL_DESIGN --> DISPATCHER_WAKE_ON_SEND
     SANDBOX_SESSION_CONTROL_DESIGN -. decides the level of sealing .-> CONTROLLER_SEALS[Candidate: the Sandbox controller seals, section 12]
@@ -956,9 +955,6 @@ implement it, and the ones marked blocked on this node wait for one of these ans
 
 - **RPC names** of the Session Dispatcher. The service is the Session Dispatcher and the seal
   renames are settled (operator, 2026-10-13 PDT; `SEAL_RENAME`).
-- **Transport for runner facts:** the connection Lease's annotations, which the doc recommends,
-  against the gateway's gRPC health that the readiness node was first approved with
-  (`RUNNER_CONNECTED_READY`).
 - **Control Service owner:** the controller creates it, the gateway writes the Lease and
   EndpointSlice (`CONTROL_SERVICE_OWNER`).
 - **Hold against wake-on-send:** whether an operator can keep a Sandbox suspended when a message or
@@ -1046,16 +1042,14 @@ that creates it is pinned, then the gateway stops creating it, then its permissi
 
 ### `RUNNER_CONNECTED_READY` — the Sandbox's Ready condition includes the runner connection
 
-**Blocked on `SANDBOX_SESSION_CONTROL_DESIGN`, which settles the transport; operator-approved
-2026-10-13 PDT.** `Ready` covers the Pod or VM, not whether the runner has connected, so a VM
+**Candidate; the transport is the connection Lease (operator, 2026-10-13 PDT).** `Ready` covers the Pod or VM, not whether the runner has connected, so a VM
 whose guest runner never reaches the gateway reads ready. The controller writes the conditions from
 facts others publish: `WorkloadReady` (today's `Ready`), `RunnerConnected` (the connection Lease's
 liveness for the current incarnation), and `Ready` as their AND, keyed to the incarnation UID so a
 connection from the last incarnation is never read as this one's. `Ready` means "can take work"
 only; the lifecycle phase stays separate. A gateway rollout drops every connection at once, so the
-controller debounces `RunnerConnected` and replaces or restarts nothing because of it. The doc
-recommends the Lease, which needs no new runner fact; the first approval named the gateway's gRPC
-health. The app reads `Ready` instead of inspecting the incarnation only once the controller image
+controller debounces `RunnerConnected` and replaces or restarts nothing because of it. The Lease
+already carries the Pod UID and liveness, so this does not wait for `RUNNER_FACTS_ON_LEASE`. The app reads `Ready` instead of inspecting the incarnation only once the controller image
 that publishes it is pinned. Test a runner that connects late, one that never connects, and a
 connection that drops while the Pod keeps running.
 
