@@ -173,6 +173,7 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
             {"apiVersion": "v1", "kind": "Pod", "namespace": "apps", "labelSelector": "app=web"},
             "app=web",
         ),
+        ("kubernetes_admin", "pods_get", {"name": "web-0", "namespace": "apps"}, "No additional arguments"),
         ("kubernetes_admin", "pods_log", {"name": "web-0", "previous": True, "tail": -1}, "previous: yes"),
         (
             "kubernetes_admin",
@@ -226,6 +227,7 @@ async def test_sidebar_compact_pod_approval(view: VisualPage, app: AgentplaneFix
         "resource-get",
         "pods-in-namespace",
         "resource-list",
+        "pod-get",
         "pod-log",
         "resource-delete",
         "events-list",
@@ -274,7 +276,7 @@ async def test_compact_action_chips(
             "Get or create Tana calendar node"
         )
     await expect(section.get_by_role("link", name=f"View details for {title}")).to_be_visible()
-    if group == "kubernetes_admin" and name in {"resources_get", "pods_list_in_namespace", "pods_log"}:
+    if group == "kubernetes_admin" and name in {"resources_get", "pods_list_in_namespace", "pods_get", "pods_log"}:
         await expect(section.get_by_role("button", name=f"Approve {title}")).to_be_visible()
     if group == "kubernetes_admin" and name == "pods_log":
         await expect(section.get_by_text("container: (default)", exact=True)).to_be_visible()

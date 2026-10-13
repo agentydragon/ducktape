@@ -396,7 +396,7 @@ const cardDecisionButtonCases: Array<{
     group: "kubernetes_admin",
     name: "pods_get",
     args: { name: "api-0", namespace: "apps" },
-    visible: ["namespace: apps"],
+    visible: ["No additional arguments"],
   },
   {
     group: "kubernetes_admin",

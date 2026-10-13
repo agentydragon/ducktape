@@ -2,7 +2,6 @@ import type { JSX } from "react";
 import { Code, Text } from "@mantine/core";
 import { z } from "zod";
 
-import { Chip } from "../chips";
 import { definePreview, type ArgumentsPreview } from "../entry";
 import { kubernetesTarget } from "./resource_common";
 
@@ -15,8 +14,13 @@ export function offersCardDecisionButtonsPodsGet(args: unknown): boolean {
   return podsGetArguments.safeParse(args).success;
 }
 
-function Target({ args }: { args: z.infer<typeof podsGetArguments> }): JSX.Element {
-  return <Chip label="namespace" value={args.namespace ?? "(default)"} />;
+// The label already carries the Pod and namespace; the name and namespace are the only arguments.
+function Target(): JSX.Element {
+  return (
+    <Text size="sm" c="dimmed">
+      No additional arguments
+    </Text>
+  );
 }
 
 function PodsGetLabel({ args }: { args: z.infer<typeof podsGetArguments> }): JSX.Element {
