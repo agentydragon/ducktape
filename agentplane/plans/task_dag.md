@@ -707,6 +707,7 @@ flowchart TD
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
     SESSION_QUEUE_DESIGN[Decision: where the Session message queue sits and what it owns]
+    SESSION_ACTIVITY_STREAM[Decision: one derivation of Session activity, streamed to listeners]
     SESSION_MESSAGE_QUEUE[Blocked: a durable queue that revives a Sandbox and delivers the message]
     SUSPENDED_COMPOSER[Blocked: the composer stays enabled while a Session is suspended]
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
@@ -738,6 +739,8 @@ flowchart TD
     MULTIAGENT_MODEL[Decision: identities and authority vocabulary, section 3] -. shares who-may vocabulary .-> SESSION_QUEUE_DESIGN
     AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. shares offline behavior .-> SESSION_QUEUE_DESIGN
     SESSION_QUEUE_DESIGN -. may own .-> SANDBOX_IDLE_EXPIRY
+    SESSION_ACTIVITY_STREAM -. decides what idle means for .-> SANDBOX_IDLE_EXPIRY
+    SESSION_ACTIVITY_STREAM -. decides whether the queue owns it .-> SESSION_QUEUE_DESIGN
     SESSION_QUEUE_DESIGN -. shares delivery semantics .-> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
@@ -933,9 +936,26 @@ deduplication and acknowledgement `THREAD_SUCCESSOR_DELIVERY` needs, and the off
 Session is deleted or whose revival fails; which senders may revive, since a notification or a user
 message resumes a Sandbox but an agent's message does not (`AGENT_MESSAGE_RECEPTION`) unless decided
 otherwise; and whether it also owns other lifecycle, for example deciding that nothing happened for
-an hour and suspending (`SANDBOX_IDLE_EXPIRY`). Delivery waits on the runner's bootstrap, which
+an hour and suspending (`SANDBOX_IDLE_EXPIRY`), then streaming Session activity to listeners (`SESSION_ACTIVITY_STREAM`); notifications are to send through this queue. Delivery waits on the runner's bootstrap, which
 `BOOTSTRAP_PROGRESS_CONTRACT` makes visible. The delivery states are `COMMAND_DELIVERY_STATES`'s. Owning suspension points toward layered resources,
 a Sandbox and a runner that runs inside one (`SANDBOX_GENERIC_SPLIT`).
+
+### `SESSION_ACTIVITY_STREAM` — one derivation of Session activity, streamed to listeners
+
+**Decision; operator, 2026-10-13 PDT.** Several parts want to know when a Session was last active
+and each derives it alone: the History Service folds `last_model_activity_at` for the app, the
+notification service waits a quiet window after the newest inbox entry before it prepares a notice
+(`NoticeDebounceSettings`), and `SANDBOX_IDLE_EXPIRY` needs its own idleness. The operator's
+direction: the component that already follows a Session's events (the controller that handles
+idleness, if `SESSION_QUEUE_DESIGN` makes one) derives activity once and streams Session state
+updates to listeners, and each listener picks its own moment, so the notification service decides
+when to deliver ("after a minute of quiet, at most ten minutes") and a notification reaches a
+Session through the queue. The alternative, where a sender hands the queue a delivery window
+and the queue schedules it, is not the direction. Decide: who derives activity and from which
+events; the update stream's shape and who may subscribe; whether the History Service's
+`last_model_activity_at` becomes a listener of it or stays the source; and that `SANDBOX_IDLE_EXPIRY`
+and the notification debounce read the same definition. Parallel with `SESSION_QUEUE_DESIGN`; the
+queue's design says whether the queue's owner is also the deriver.
 
 ### `SESSION_MESSAGE_QUEUE` — a durable queue that revives a Sandbox and delivers the message
 
