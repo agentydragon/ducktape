@@ -40,9 +40,6 @@ const (
 	// created or last started, so it can be diffed against what the template renders now. The
 	// Sandbox Service's update-spec diff is its reader.
 	RenderedSpecAnnotation = "agentplane.allegedly.works/rendered-spec"
-	// On the Sandbox: the UID of the Pod, or of the VM's VMI, to replace from the template as it is
-	// now. Nothing clears it: the next incarnation has another UID, so it stops matching.
-	ReplaceIncarnationAnnotation = "agentplane.allegedly.works/replace-incarnation"
 
 	templateIndex = "spec.template"
 )
@@ -298,17 +295,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 			}
 			return w, nil, nil
 		}
-		// A template change otherwise applies at the next start; an operator's request to replace
-		// this incarnation starts the next one from the current template.
-		if replaceRequested(sandbox, w) {
-			return w, nil, r.deleteIfLive(ctx, w.pod)
-		}
 		return w, nil, nil
-	}
-	// Halting a VM whose VMI is to be replaced lets the start below rewrite its spec once the VMI
-	// is gone.
-	if replaceRequested(sandbox, w) {
-		return w, nil, r.haltVM(ctx, w.vm)
 	}
 	// KubeVirt replaces a running VM's VMI that ends. A stopped VM's last VMI still stopping, or a VM
 	// being deleted, holds the next start until its deletion event.
@@ -352,18 +339,6 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 	}
 	w.pod = pod
 	return w, nil, nil
-}
-
-// replaceRequested is whether the Sandbox's request names the incarnation that is running now.
-func replaceRequested(sandbox *Sandbox, w workload) bool {
-	uid := sandbox.Annotations[ReplaceIncarnationAnnotation]
-	if uid == "" {
-		return false
-	}
-	if w.pod != nil {
-		return string(w.pod.UID) == uid
-	}
-	return w.vmi != nil && string(w.vmi.UID) == uid
 }
 
 // renderedSpec is the annotation value for a rendered Pod or VM spec.

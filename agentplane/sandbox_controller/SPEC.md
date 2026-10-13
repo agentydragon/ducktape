@@ -22,12 +22,7 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   Sandbox is running is replaced by a new incarnation on the same PVC.
 - Clearing `spec.running` deletes the Pod.
 - Each incarnation reads `spec.template` and the template as they are when it starts. Editing
-  either never changes a running Pod or VM, its kind included. One exception: while the Sandbox's
-  `agentplane.allegedly.works/replace-incarnation` annotation names the running incarnation's UID (the
-  Pod's, or the VM's VMI), the controller deletes that Pod, or halts that VM and starts it again, so
-  the next incarnation starts from the template as it is then. The state PVC and Sessions are not
-  touched, and an annotation naming an earlier incarnation does nothing. It also replaces an
-  incarnation a seal is waiting on.
+  either never changes a running Pod or VM, its kind included.
 - Each Pod and VM carries the spec rendered from the template when it started
   (`agentplane.allegedly.works/rendered-spec`), for diffing against what the template renders now.
 - A template that does not exist, sets neither or both kinds, or defines the state volume itself,

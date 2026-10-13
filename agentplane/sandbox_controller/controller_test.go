@@ -11,7 +11,6 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
-	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	clienttesting "k8s.io/client-go/testing"
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -276,50 +275,21 @@ func TestEndedPodIsDeleted(t *testing.T) {
 	}
 }
 
-func requestReplacement(t *testing.T, c client.Client, uid types.UID) {
-	t.Helper()
-	sandbox := getSandbox(t, c)
-	sandbox.Annotations = map[string]string{ReplaceIncarnationAnnotation: string(uid)}
-	if err := c.Update(context.Background(), sandbox); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func TestRequestedPodIsRecreatedFromTheCurrentTemplate(t *testing.T) {
+func TestSuspendedThenResumedPodRunsTheCurrentTemplateAndRecordsItsSpec(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
-	pod := getPod(t, c)
-	pod.UID = "uid-pod-v1"
-	if err := c.Update(context.Background(), pod); err != nil {
-		t.Fatal(err)
-	}
+	before := getPod(t, c)
 	replaceTemplate(t, c, testTemplate("test-image:v2"))
+	setRunning(t, c, false)
 	reconcileOnce(t, r)
-	if getPod(t, c) == nil {
-		t.Fatal("replaced a Pod before anyone asked")
-	}
-	requestReplacement(t, c, pod.UID)
+	setRunning(t, c, true)
 	reconcileOnce(t, r)
-	if getPod(t, c) != nil {
-		t.Fatal("the requested Pod was kept")
+	after := getPod(t, c)
+	if after == nil || after.Spec.Containers[0].Image != "test-image:v2" {
+		t.Fatalf("the resumed Pod does not run the current template's image: %v", after)
 	}
-	reconcileOnce(t, r)
-	next := getPod(t, c)
-	if next == nil || next.Spec.Containers[0].Image != "test-image:v2" {
-		t.Fatalf("the next Pod does not run the current template's image: %v", next)
-	}
-	if next.Annotations[RenderedSpecAnnotation] == pod.Annotations[RenderedSpecAnnotation] {
+	if after.Annotations[RenderedSpecAnnotation] == before.Annotations[RenderedSpecAnnotation] {
 		t.Error("the rendered spec was not recorded afresh for the new incarnation")
-	}
-}
-
-func TestRequestForAnotherIncarnationIsIgnored(t *testing.T) {
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
-	reconcileOnce(t, r)
-	requestReplacement(t, c, "uid-of-an-earlier-pod")
-	reconcileOnce(t, r)
-	if getPod(t, c) == nil {
-		t.Fatal("a request naming an earlier incarnation replaced the current one")
 	}
 }
 
