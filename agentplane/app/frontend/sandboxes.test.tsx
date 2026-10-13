@@ -34,7 +34,7 @@ const CREATED: SandboxView = {
   operating_mode: "Running",
   service_account: { namespace: "agentplane-test", name: "test-created-sandbox" },
   status: null,
-  deleting: false,
+  phase: "Creating",
   pod: null,
 };
 
@@ -218,7 +218,7 @@ it("keeps the creation form and reports rejection without navigating", async () 
 });
 
 it("lets a suspended sandbox be deleted", () => {
-  const suspended: SandboxView = { ...CREATED, operating_mode: "Suspended" };
+  const suspended: SandboxView = { ...CREATED, operating_mode: "Suspended", phase: "Suspended" };
   expect(sandboxSummary(suspended)).toEqual({ label: "Suspended", kind: "suspended" });
   expect(deletable(suspended)).toBe(true);
 });

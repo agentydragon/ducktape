@@ -15,7 +15,7 @@ const READY_SANDBOX: SandboxView = {
   operating_mode: "Running",
   service_account: { namespace: "agentplane-test", name: "test-sandbox" },
   status: null,
-  deleting: false,
+  phase: "Running",
   pod: {
     name: "test-sandbox",
     namespace: "agentplane-test",

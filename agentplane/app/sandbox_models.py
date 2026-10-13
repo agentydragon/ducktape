@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from enum import StrEnum
 from typing import Annotated
 from uuid import UUID
 
@@ -17,6 +18,17 @@ from agentplane.subjects import ServiceAccountRef
 # gazelle:include_dep @pypi//protobuf
 
 SandboxName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", min_length=1, max_length=57)]
+
+
+class SandboxPhase(StrEnum):
+    """Where the Sandbox is in its lifecycle, as the Sandbox Service derives it."""
+
+    CREATING = "Creating"
+    RUNNING = "Running"
+    SUSPENDING = "Suspending"
+    SUSPENDED = "Suspended"
+    SEALING = "Sealing"
+    TEARING_DOWN = "Tearing down"
 
 
 class SessionDefaults(BaseModel):
@@ -101,27 +113,22 @@ class SandboxView(BaseModel):
     binding: SandboxBinding | None = Field(
         default=None, description="The stored concrete session defaults and bootstrap selected for this Sandbox."
     )
-    deleting: bool = Field(
-        default=False, description="Deletion was asked for: it seals, waits for its ingress, or is being removed."
+    phase: SandboxPhase = Field(
+        description="Sealing and Tearing down mean deletion was asked for: it seals and waits for its ingress, "
+        "then is removed. A Sandbox in either takes no new work and cannot be suspended or resumed."
     )
     pod: PodView | None = None
 
 
-# Shown as deleting from DeleteSandbox on: during teardown it takes no new work either.
-_DELETING = {sandbox_service_pb2.SANDBOX_PHASE_SEALING, sandbox_service_pb2.SANDBOX_PHASE_TEARING_DOWN}
-
-
 def sandbox_view(value: sandbox_service_pb2.Sandbox) -> SandboxView:
     data = MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
-    del data["phase"]
-    data["deleting"] = value.phase in _DELETING
+    data["phase"] = SandboxPhase[sandbox_service_pb2.SandboxPhase.Name(value.phase).removeprefix("SANDBOX_PHASE_")]
     return SandboxView.model_validate(data)
 
 
 def sandbox_has_ready_pod(view: SandboxView) -> bool:
     if (
-        view.deleting
-        or view.operating_mode != OperatingMode.RUNNING
+        view.phase != SandboxPhase.RUNNING
         or view.pod is None
         or view.pod.name != view.name
         or view.pod.namespace != view.namespace

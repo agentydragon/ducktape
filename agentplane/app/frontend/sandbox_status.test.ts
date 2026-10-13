@@ -14,7 +14,7 @@ function sandboxOwnedBy(apiVersion: string): SandboxView {
     operating_mode: "Running",
     service_account: { namespace: "agentplane-test", name: "test-sandbox" },
     status: null,
-    deleting: false,
+    phase: "Running",
     pod: {
       name: "test-sandbox",
       namespace: "agentplane-test",
@@ -38,5 +38,18 @@ describe("a Sandbox whose running Pod is Ready", () => {
 
   it("is not ready when another API group's Sandbox controls the Pod", () => {
     expect(sandboxReady(sandboxOwnedBy("other.example/v1"))).toBe(false);
+  });
+});
+
+describe("a Sandbox's summary follows its phase over its Pod", () => {
+  it.each([
+    ["Sealing", { label: "Sealing", kind: "pending" }],
+    ["Tearing down", { label: "Deleting", kind: "gone" }],
+    ["Suspending", { label: "Suspending", kind: "pending" }],
+    ["Suspended", { label: "Suspended", kind: "suspended" }],
+  ] as const)("%s", (phase, summary) => {
+    const sandbox = { ...sandboxOwnedBy("agentplane.allegedly.works/v1alpha1"), phase };
+    expect(sandboxSummary(sandbox)).toEqual(summary);
+    expect(sandboxReady(sandbox)).toBe(false);
   });
 });

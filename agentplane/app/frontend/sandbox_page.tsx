@@ -151,7 +151,7 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
       ) : (
         <>
           <Text size="sm">
-            Sandbox {sandbox.operating_mode.toLowerCase()}, created <TimeAgo value={sandbox.created_at} />
+            Sandbox {sandbox.phase.toLowerCase()}, created <TimeAgo value={sandbox.created_at} />
             {sandbox.pod?.node_name ? `, Pod placed on ${sandbox.pod.node_name}` : ", Pod not placed"}
           </Text>
           {/* The account its Pod runs as is what every binding names, so the tabs below are its policy, not this
