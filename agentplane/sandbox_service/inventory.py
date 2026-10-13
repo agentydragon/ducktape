@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from collections.abc import Awaitable, Callable, Set
+from collections.abc import AsyncIterator, Awaitable, Callable, Set
 
 from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
@@ -22,6 +22,7 @@ from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Sandbox
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
+from agentplane.sandbox_service.console import stream_console
 from agentplane.sandbox_service.errors import (
     SandboxConflictError,
     SandboxNotFoundError,
@@ -86,6 +87,12 @@ class SandboxInventory(SandboxReader):
         # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
         api_client = self._core_v1.api_client  # type: ignore[attr-defined]
         return sandbox_views(_ResourceList.model_validate(sandboxes_page).items, pods.items, api_client=api_client)
+
+    def console(self, view: Sandbox) -> AsyncIterator[bytes]:
+        """The serial console of `view`'s VM, which is named for the Sandbox."""
+        # kubernetes_asyncio exposes this runtime attribute but omits it from generated SDK stubs.
+        configuration = self._core_v1.api_client.configuration  # type: ignore[attr-defined]
+        return stream_console(configuration, namespace=self._namespace, vmi=view.name)
 
     async def retry(self, spec: CreateSandboxRequest, *, caller: ServiceAccountRef) -> Sandbox | None:
         """Find the recorded Create before resolving mutable template/policy catalogues. This

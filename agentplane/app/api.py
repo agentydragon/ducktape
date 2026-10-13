@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable
@@ -98,7 +99,7 @@ from agentplane.sandbox_service.egress_views import (
     UnknownPolicyError,
 )
 from agentplane.sandbox_service.errors import SandboxNotFoundError, SandboxRunningError
-from agentplane.sse import sse_response
+from agentplane.sse import frame, sse_response
 from agentplane.subjects import ServiceAccountRef
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -300,6 +301,31 @@ def _operator_relay(
             logger.warning("%s stream interrupted", label, exc_info=True)
 
     return sse_response(body())
+
+
+@router.get("/{name}/console/stream", dependencies=[OperatorLogin])
+async def sandbox_console_stream(
+    request: Request, services: Services, name: str, shutdown: Shutdown, updates: Updates
+) -> StreamingResponse:
+    """Operator-only SSE of a VM Sandbox's serial console from now on; each `output` event carries
+    base64 bytes. The console is output-only here: nothing reaches the guest."""
+    # Fail before the response starts, while the status can still be an HTTP error.
+    sandbox = sandbox_view(await services.inventory.get(name))
+    console = services.inventory.stream_console(sandbox.name)
+
+    async def chunks() -> AsyncIterator[bytes]:
+        try:
+            async for output in console:
+                yield frame("output", base64.b64encode(output).decode())
+        except ServiceError as error:
+            if error.code != grpc.StatusCode.FAILED_PRECONDITION:
+                raise
+            # A Pod Sandbox, a stopped VM or a console someone else holds: retrying will not help.
+            yield frame("unavailable", str(error))
+
+    return _operator_relay(
+        request, shutdown, updates, services.operator_sessions, chunks(), "Console", (ServiceError, OSError)
+    )
 
 
 @router.post("/{name}/suspend", status_code=status.HTTP_204_NO_CONTENT)

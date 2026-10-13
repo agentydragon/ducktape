@@ -1,13 +1,13 @@
 """gRPC client for Sandbox Service, with no Kubernetes or direct-runner fallback."""
 
-from collections.abc import Awaitable, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from pathlib import Path
 
 import grpc
 from google.protobuf.empty_pb2 import Empty
 from google.protobuf.message import Message
 
-from agentplane.grpc_calls import ServiceError, call_unary
+from agentplane.grpc_calls import ServiceError, bearer, call_unary, raise_status
 from agentplane.proto import sandbox_service_pb2, sandbox_service_pb2_grpc
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Sandbox, SandboxDestination
 from agentplane.sandbox_service.errors import SandboxNotFoundError
@@ -86,3 +86,19 @@ class SandboxServiceClient:
 
     async def revoke_egress(self, name: str) -> None:
         await self.unary(self.stub.RevokeEgress, sandbox_service_pb2.RevokeEgressRequest(binding_name=name))
+
+    async def stream_console(self, name: str) -> AsyncIterator[bytes]:
+        """The serial console output of a VM Sandbox from now on, until the VM stops or the caller stops reading."""
+        view = await self.get(name)
+        destination = SandboxDestination(owner=view.service_account, sandbox=view.name, sandbox_uid=view.uid)
+        call = self.stub.StreamConsole(
+            sandbox_service_pb2.StreamConsoleRequest(destination=destination),
+            metadata=await bearer(self.token_file),
+        )
+        try:
+            async for response in call:
+                yield response.output
+        except grpc.aio.AioRpcError as error:
+            raise_status(error)
+        finally:
+            call.cancel()

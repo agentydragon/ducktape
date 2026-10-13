@@ -146,5 +146,20 @@ class SandboxService(sandbox_service_pb2_grpc.SandboxServiceServicer):
             return Empty()
 
 
+    @override
+    async def StreamConsole(
+        self, request: sandbox_service_pb2.StreamConsoleRequest, context: grpc.aio.ServicerContext
+    ) -> AsyncIterator[sandbox_service_pb2.StreamConsoleResponse]:
+        # The stream outlives the admission timeout, so only admission is bounded.
+        async with errors(context):
+            async with asyncio.timeout(self.resources.admission_timeout_s):
+                await self.resources.authenticate(context)
+                provisioning, view = await self.checked_sandbox(
+                    sandbox_service_pb2.SandboxRequest(destination=request.destination)
+                )
+            async for output in provisioning.inventory.console(view):
+                yield sandbox_service_pb2.StreamConsoleResponse(output=output)
+
+
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:
     sandbox_service_pb2_grpc.add_SandboxServiceServicer_to_server(SandboxService(resources), server)

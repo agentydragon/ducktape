@@ -27,3 +27,11 @@ class SandboxTearingDownError(InventoryError):
 
     def __init__(self, name: str) -> None:
         super().__init__(f"sandbox {name} is being deleted")
+
+
+class ConsoleUnavailableError(InventoryError):
+    """The Sandbox has no VM whose serial console can be attached: a Pod Sandbox, a stopped VM, or a
+    console another client already holds."""
+
+    def __init__(self, name: str, *, status: int) -> None:
+        super().__init__(f"sandbox {name} has no attachable VM console: Kubernetes answered {status}")

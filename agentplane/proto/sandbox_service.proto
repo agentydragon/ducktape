@@ -26,6 +26,9 @@ service SandboxService {
   rpc GrantEgress(GrantEgressRequest) returns (GrantEgressResponse);
   rpc RevokeEgress(RevokeEgressRequest) returns (google.protobuf.Empty);
 
+  // The serial console output of a VM Sandbox's current incarnation, from the moment of attach until
+  // the VM stops or the caller cancels. A Pod Sandbox or a stopped VM is FAILED_PRECONDITION.
+  rpc StreamConsole(StreamConsoleRequest) returns (stream StreamConsoleResponse);
 }
 
 message ServiceAccount {
@@ -46,6 +49,8 @@ message SessionDestination {
 
 message SandboxRequest { SandboxDestination destination = 1; }
 message GetSandboxRequest { string name = 1; }
+message StreamConsoleRequest { SandboxDestination destination = 1; }
+message StreamConsoleResponse { bytes output = 1; }
 
 message SessionDefaults {
   optional agentplane.proto.runner.Harness harness = 1;
