@@ -982,7 +982,7 @@ second rebases. Readers of the new code (the Session Dispatcher) land after it.
 transport several nodes share: the runner reports facts on the control stream, and the gateway
 replica holding the connection writes them as annotations on the Sandbox-owned connection Lease,
 on transitions only and stamped with the incarnation UID, clearing them when a different
-incarnation connects. Facts: the seal stage (draining, flushing, sealed), busy with the time it
+incarnation connects. Facts: the seal stage (draining, flushing, sealed), the Sandbox's busy with the time it
 became idle (`SANDBOX_IDLE_EXPIRY`), and the bootstrap result (`BOOTSTRAP_PROGRESS_CONTRACT`). Busy and idle
 facts ride the regular 15-second renewal write, so they add no etcd writes. The
 runner republishes its stage on reconnect so a gateway rollout loses nothing. Order: the
@@ -1023,9 +1023,13 @@ that creates it is pinned, then the gateway stops creating it, then its permissi
 
 ### `SESSION_ACTIVITY_STREAM` — the UI and notifications read the runner's busy and idle facts
 
-**Blocked on `RUNNER_FACTS_ON_LEASE`; operator, 2026-10-13 PDT.** Suspension and the UI's activity
-facts use the same runner busy/idle definition, so there is one idleness (`SANDBOX_IDLE_EXPIRY`
-reads it from the Lease). The History Service's folded `last_model_activity_at` stays a separate
+**Blocked on `RUNNER_FACTS_ON_LEASE`; operator, 2026-10-13 PDT.** The UI shows idle time per
+Session and suspension uses the aggregate over a Sandbox's Sessions; the runner computes both from
+the same per-Session facts, so there is one idleness. A Sandbox is busy while any Session is busy or
+a background process or attached terminal runs, and its `idleSince` is when the last of them went
+idle. Only that aggregate goes on the Lease (`SANDBOX_IDLE_EXPIRY` reads it); per-Session idle times
+stay out of Kubernetes and reach the UI through the runner's per-Session facts and this stream. The
+runner's `SessionSummary` has no per-Session idle field, so this node adds one. The History Service's folded `last_model_activity_at` stays a separate
 timestamp. What is left is the stream of those facts to listeners: the app and the notification
 service's quiet window (`NoticeDebounceSettings`) both derive "last active" in different ways today.
 The operator's direction: listeners pick their own moment, so the notification service decides when
