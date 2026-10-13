@@ -6,12 +6,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.proto.runner_pb2 import HARNESS_CODEX
-from agentplane.proto.sandbox_service_pb2 import (
-    TEARDOWN_PHASE_SEALING,
-    TEARDOWN_PHASE_UNSPECIFIED,
-    SandboxBinding,
-    SessionDefaults,
-)
+from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxPhase, SessionDefaults
 from agentplane.sandbox_resource import SANDBOXES_PLURAL, SESSIONS_SEALED, OperatingMode
 from agentplane.sandbox_service.errors import SandboxNotFoundError
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
@@ -64,34 +59,45 @@ async def test_missing_sandbox_is_not_created(cluster: Cluster) -> None:
     assert cluster.fake.objects == before
 
 
+SEALED = [
+    {
+        "type": SESSIONS_SEALED,
+        "status": "True",
+        "reason": "Sealed",
+        "message": "",
+        "lastTransitionTime": "2026-09-01T12:00:00Z",
+    }
+]
+
+
 @pytest.mark.parametrize(
-    ("conditions", "teardown", "deleting"),
+    ("running", "incarnated", "deletion", "conditions", "phase"),
     [
-        ([], TEARDOWN_PHASE_SEALING, False),
-        (
-            [
-                {
-                    "type": SESSIONS_SEALED,
-                    "status": "True",
-                    "reason": "Sealed",
-                    "message": "",
-                    "lastTransitionTime": "2026-09-01T12:00:00Z",
-                }
-            ],
-            TEARDOWN_PHASE_UNSPECIFIED,
-            True,
-        ),
+        (True, False, False, [], SandboxPhase.SANDBOX_PHASE_CREATING),
+        (True, True, False, [], SandboxPhase.SANDBOX_PHASE_RUNNING),
+        (False, True, False, [], SandboxPhase.SANDBOX_PHASE_SUSPENDING),
+        (False, False, False, [], SandboxPhase.SANDBOX_PHASE_SUSPENDED),
+        (False, True, True, [], SandboxPhase.SANDBOX_PHASE_SEALING),
+        (False, False, True, SEALED, SandboxPhase.SANDBOX_PHASE_TEARING_DOWN),
     ],
 )
-async def test_deleted_sandbox_is_in_teardown_until_sealed(
-    cluster: Cluster, conditions: list[dict[str, str]], teardown: int, deleting: bool
+async def test_phase_follows_what_the_controller_records(
+    cluster: Cluster,
+    running: bool,
+    incarnated: bool,
+    deletion: bool,
+    conditions: list[dict[str, str]],
+    phase: SandboxPhase,
 ) -> None:
-    """While it seals it takes no new work but its Sessions stay readable; once sealed it is going."""
+    """While it seals before deletion it takes no new work but its Sessions stay readable; once sealed it is going."""
     stored = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
-    stored["metadata"] |= {"deletionTimestamp": "2026-09-01T12:00:00Z", "finalizers": ["test-finalizer"]}
+    stored["spec"]["running"] = running
+    if not incarnated:
+        del stored["status"]["incarnation"]
+    if deletion:
+        stored["metadata"] |= {"deletionTimestamp": "2026-09-01T12:00:00Z", "finalizers": ["test-finalizer"]}
     stored["status"]["conditions"] = conditions
-    view = await cluster.inventory.get(SANDBOX)
-    assert (view.teardown, view.deleting) == (teardown, deleting)
+    assert (await cluster.inventory.get(SANDBOX)).phase == phase
 
 
 if __name__ == "__main__":

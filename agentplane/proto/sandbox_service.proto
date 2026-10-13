@@ -19,7 +19,7 @@ service SandboxService {
   rpc ResumeSandbox(SandboxRequest) returns (google.protobuf.Empty);
   // Starts teardown of a suspended Sandbox and returns; refused while it runs (FAILED_PRECONDITION).
   // Every Session is sealed, and the Sandbox deleted once the runner's ingress has acknowledged
-  // every seal. GetSandbox reports the teardown phase.
+  // every seal. GetSandbox reports the phase.
   rpc DeleteSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ListTemplates(google.protobuf.Empty) returns (ListTemplatesResponse);
 
@@ -90,9 +90,9 @@ message SandboxPod {
   optional string node_name = 7;
 }
 message Sandbox {
-  reserved 3, 6, 7, 10, 11, 12, 17, 18;
+  reserved 3, 6, 7, 10, 11, 12, 13, 17, 18, 19;
   reserved "state", "conditions", "node_name", "kubernetes_grants", "kubernetes_grants_ready",
-      "kubernetes_grant_error", "launch_grants_pending", "initializing";
+      "kubernetes_grant_error", "launch_grants_pending", "initializing", "deleting", "teardown";
 
   string name = 1;
   string uid = 2;
@@ -100,23 +100,31 @@ message Sandbox {
   string operating_mode = 5;
   ServiceAccount service_account = 8;
   SandboxBinding binding = 9;
-  bool deleting = 13;
   SandboxPod pod = 14;
   string namespace = 15;
   google.protobuf.Struct status = 16;
-  TeardownPhase teardown = 19;
+  SandboxPhase phase = 20;
 }
 
-// How far DeleteSandbox has got. A Sandbox being torn down takes no new Sessions or commands and
-// cannot be suspended or resumed; its Sessions can still be read.
-enum TeardownPhase {
-  TEARDOWN_PHASE_UNSPECIFIED = 0;
-  // Running again so that its runner can seal every Session, and deleted once its ingress has
-  // acknowledged every seal. Stays here while the runner is unreachable or the ingress has not
-  // acknowledged, for the operator to decide.
-  TEARDOWN_PHASE_SEALING = 1;
-  reserved 2;
-  reserved "TEARDOWN_PHASE_SEALED";
+// Where the Sandbox is in its lifecycle, derived from what the Sandbox Controller records: whether
+// deletion was asked for, whether it is to run, whether an incarnation exists, and whether its
+// Sessions are sealed. A Sandbox in SEALING or TEARING_DOWN takes no new Sessions or commands and
+// cannot be suspended or resumed; its Sessions can still be read until it is deleted.
+enum SandboxPhase {
+  SANDBOX_PHASE_UNSPECIFIED = 0;
+  // To run, and no incarnation exists yet.
+  SANDBOX_PHASE_CREATING = 1;
+  // To run, with an incarnation.
+  SANDBOX_PHASE_RUNNING = 2;
+  // Not to run, and its incarnation is still going.
+  SANDBOX_PHASE_SUSPENDING = 3;
+  // Not to run, and no incarnation exists; the state volume is kept.
+  SANDBOX_PHASE_SUSPENDED = 4;
+  // Being deleted, waiting for its runner to seal every Session and its ingress to acknowledge each
+  // seal. Stays here while the runner is unreachable, for the operator to decide.
+  SANDBOX_PHASE_SEALING = 5;
+  // Being deleted, every Session sealed: its Pod or VM and its state volume are being removed.
+  SANDBOX_PHASE_TEARING_DOWN = 6;
 }
 message ListSandboxesResponse { repeated Sandbox sandboxes = 1; }
 message ListTemplatesResponse { repeated string templates = 1; }

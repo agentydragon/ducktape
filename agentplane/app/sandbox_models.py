@@ -107,11 +107,14 @@ class SandboxView(BaseModel):
     pod: PodView | None = None
 
 
+# Shown as deleting from DeleteSandbox on: during teardown it takes no new work either.
+_DELETING = {sandbox_service_pb2.SANDBOX_PHASE_SEALING, sandbox_service_pb2.SANDBOX_PHASE_TEARING_DOWN}
+
+
 def sandbox_view(value: sandbox_service_pb2.Sandbox) -> SandboxView:
     data = MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
-    # Shown as deleting from DeleteSandbox on: during teardown it takes no new work either.
-    del data["teardown"]
-    data["deleting"] = value.deleting or value.teardown != sandbox_service_pb2.TEARDOWN_PHASE_UNSPECIFIED
+    del data["phase"]
+    data["deleting"] = value.phase in _DELETING
     return SandboxView.model_validate(data)
 
 

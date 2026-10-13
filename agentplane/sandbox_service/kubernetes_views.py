@@ -13,10 +13,10 @@ from agentplane.proto.sandbox_service_pb2 import (
     OwnerReference,
     Sandbox,
     SandboxBinding,
+    SandboxPhase,
     SandboxPod,
     ServiceAccount,
     SessionDefaults,
-    TeardownPhase,
 )
 from agentplane.sandbox_resource import OperatingMode
 
@@ -47,12 +47,10 @@ def sandbox_view(
 ) -> Sandbox:
     """Its Pod is its incarnation (its own, or its VM's virt-launcher Pod), and `pod` is shown only
     while it is that one. It runs as the ServiceAccount of its name, which the Sandbox Controller
-    binds. While it seals before deletion it is in teardown, and it is deleting once its Sessions
-    are sealed."""
+    binds."""
     metadata, spec = sandbox.metadata, sandbox.spec
     created_at = Timestamp()
     created_at.FromDatetime(metadata.creation_timestamp)
-    in_deletion = metadata.deletion_timestamp is not None
     return Sandbox(
         name=metadata.name,
         uid=str(metadata.uid),
@@ -62,12 +60,18 @@ def sandbox_view(
         status=_struct(sandbox.status.model_dump(mode="json", by_alias=True, exclude_none=True)),
         service_account=ServiceAccount(namespace=metadata.namespace, name=metadata.name),
         binding=_binding(spec),
-        deleting=in_deletion and sandbox.sessions_sealed,
-        teardown=TeardownPhase.TEARDOWN_PHASE_SEALING
-        if in_deletion and not sandbox.sessions_sealed
-        else TeardownPhase.TEARDOWN_PHASE_UNSPECIFIED,
+        phase=_phase(sandbox),
         pod=_pod(pod, api_client=api_client) if pod is not None and sandbox.runs_in(pod) else None,
     )
+
+
+def _phase(sandbox: sandbox_resource.Sandbox) -> SandboxPhase:
+    if sandbox.metadata.deletion_timestamp is not None:
+        return SandboxPhase.SANDBOX_PHASE_TEARING_DOWN if sandbox.sessions_sealed else SandboxPhase.SANDBOX_PHASE_SEALING
+    incarnated = sandbox.status.incarnation is not None
+    if sandbox.spec.running:
+        return SandboxPhase.SANDBOX_PHASE_RUNNING if incarnated else SandboxPhase.SANDBOX_PHASE_CREATING
+    return SandboxPhase.SANDBOX_PHASE_SUSPENDING if incarnated else SandboxPhase.SANDBOX_PHASE_SUSPENDED
 
 
 def _binding(spec: sandbox_resource.Spec) -> SandboxBinding | None:

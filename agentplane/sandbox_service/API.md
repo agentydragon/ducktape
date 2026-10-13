@@ -26,7 +26,7 @@ lookup or runner contact. An ordinary workload token, even for the destination's
 not grant access. There is no separate manager/delivery tier or inferred Thread identity in v1.
 Listed services can operate across owners, but must still supply the verified destination owner/UID.
 
-Resolution checks the Sandbox's account, UID, operating mode and teardown, and the current ready
+Resolution checks the Sandbox's account, UID and phase, and the current ready
 Pod's identity and controller ownership. Name reuse with a new UID is refused. The runner itself
 is reached only over the [runner control stream](../docs/runner_control.md) it dialed with a Pod-bound
 token.
@@ -37,8 +37,9 @@ The same service-caller allowlist gates every RPC:
 
 - `ListSandboxes`, `GetSandbox`: Kubernetes-backed inventory, including the Sandbox's session
   defaults and bootstrap, its raw status, and a same-name Pod's identity metadata and raw status as
-  separate objects. Operating mode and teardown remain separate fields; the service does not
-  synthesize one status from them.
+  separate objects. The operating mode is the desired state; the `phase` is derived from what the
+  Sandbox Controller records (deletion asked for, `spec.running`, whether an incarnation exists,
+  `SessionsSealed`) as Creating, Running, Suspending, Suspended, Sealing or Tearing down.
 - `ListTemplates`: available SandboxTemplates.
 - `CreateSandbox`: concrete template, `policy_sets`, optional session defaults, and bootstrap. The
   requested `name` is the Sandbox's. It runs from the start, bound to `policy_sets` plus the
@@ -62,10 +63,10 @@ retries. Mutations use UID/resourceVersion guards and are safe to replay.
 
 ## Teardown
 
-`DeleteSandbox` on a suspended Sandbox deletes it and returns; `GetSandbox` reports its `teardown`
-phase, and repeating the call changes nothing. The Sandbox Controller holds the deletion until the
+`DeleteSandbox` on a suspended Sandbox deletes it and returns; `GetSandbox` reports its `phase`
+(Sealing, then Tearing down), and repeating the call changes nothing. The Sandbox Controller holds the deletion until the
 runner has sealed every Session ([Sandbox Controller](../sandbox_controller/README.md)): it runs the
-Sandbox again (`TEARDOWN_PHASE_SEALING`), which from then on refuses new Sessions and commands, and
+Sandbox again (`SANDBOX_PHASE_SEALING`), which from then on refuses new Sessions and commands, and
 suspend and resume, while its Sessions can still be listed and read. The Runner Gateway replica
 holding the runner's connection seals it and records `SessionsSealed`, after which the Sandbox and
 its volume go.

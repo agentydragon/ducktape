@@ -15,7 +15,7 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane.grpc_calls import RefusedError, ServiceError
 from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.proto import runner_pb2, sandbox_service_pb2
-from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, SandboxDestination, TeardownPhase
+from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, SandboxDestination, SandboxPhase
 from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress import EgressInventory
@@ -149,7 +149,7 @@ async def test_suspend_resume_and_delete_are_pinned_to_the_incarnation(api: Sand
     await api.delete("test")
     await api.delete("test")
     # The controller runs it again to seal its Sessions, then deletes the rest.
-    assert (await api.get("test")).teardown == TeardownPhase.TEARDOWN_PHASE_SEALING
+    assert (await api.get("test")).phase == SandboxPhase.SANDBOX_PHASE_SEALING
     assert case.custom.deleted == [(SANDBOXES_PLURAL, "test")]
     with pytest.raises(RefusedError):
         await api.resume("test")
