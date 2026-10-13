@@ -83,13 +83,16 @@ class RunnerVmTemplate(Construct):
             llm_base_url=llm_ingress.proxied_url(namespace),
             proxy_url=f"http://{_guest_address(sandbox_pod.SIDECAR_LISTEN_PORT)}",
             platform_instructions=platform_instructions,
+            console_autologin=env.vm_console_autologin,
         )
         ConfigMap(
             self,
             "config",
             metadata=ApiObjectMetadata(name=_CONFIG_MAP_NAME, namespace=namespace),
             data={
-                "config.json": config.model_dump_json(),
+                # Defaults are omitted: an image that predates a field rejects it, so only an environment
+                # that sets it needs the image that reads it.
+                "config.json": config.model_dump_json(exclude_defaults=True),
                 "kubeconfig": yaml_config(sandbox_pod.kubeconfig(str(CA_BUNDLE))),
             },
         )

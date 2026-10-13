@@ -153,6 +153,9 @@ class Environment:
     # Whether this environment has VM Sandboxes: the runner VM template (runner_vm.py) and the egress
     # relay for their KubeVirt launchers (launcher_relay.py).
     vm_sandboxes: bool
+    # Whether a VM Sandbox's serial console is a root shell, for whoever holds the VMI `console`
+    # subresource. Only meaningful with `vm_sandboxes`.
+    vm_console_autologin: bool = False
     notifications_github: GitHubAppProps | None = None
     # Binding scopes delegated (binding_delegation.py) after their catalog entries are removed, so
     # the bindings existing Sandboxes still hold can be cleaned up.

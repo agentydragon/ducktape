@@ -51,6 +51,10 @@ class GuestConfig(BaseModel):
     llm_base_url: str = Field(min_length=1)
     proxy_url: str = Field(min_length=1)
     platform_instructions: str = Field(min_length=1, description="Standing instructions for every Session.")
+    console_autologin: bool = Field(
+        default=False,
+        description="Whether the serial console is a root shell without a login (vm.nix reads this field).",
+    )
 
     @field_validator("llm_base_url", "proxy_url")
     @classmethod

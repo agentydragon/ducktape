@@ -27,6 +27,18 @@ let
   agentUser = "agent";
   agentId = 107;
 
+  # Serial console login, selected per environment by the guest config (`console_autologin`): a root
+  # shell without a prompt where set, the ordinary login prompt otherwise. The guest has no account
+  # passwords, so without autologin an attach stops at the prompt.
+  consoleGetty = pkgs.writeShellScript "agentplane-console-getty" ''
+    set -euo pipefail
+    autologin=()
+    if ${pkgs.jq}/bin/jq -e '.console_autologin == true' "${runtimeDir}/config.json" >/dev/null; then
+      autologin=(--autologin root)
+    fi
+    exec ${pkgs.util-linux}/sbin/agetty "''${autologin[@]}" --keep-baud 115200,57600,38400,9600 ttyS0 "''${TERM:-vt220}"
+  '';
+
   workspacePreparation = pkgs.writeShellScript "agentplane-prepare-workspace" ''
     set -euo pipefail
     device="${workspaceDevice}"
@@ -90,6 +102,16 @@ in
   # the VMI serial log and `virtctl console` read, without a guest exec.
   services.journald.console = "/dev/ttyS0";
 
+  systemd.services."serial-getty@ttyS0" = {
+    overrideStrategy = "asDropin";
+    after = [ "agentplane-config.service" ];
+    wants = [ "agentplane-config.service" ];
+    serviceConfig.ExecStart = [
+      ""
+      "${consoleGetty}"
+    ];
+  };
+
   users.groups.${agentUser}.gid = agentId;
   users.users.${agentUser} = {
     isSystemUser = true;
@@ -99,9 +121,9 @@ in
     shell = pkgs.bash;
   };
   users.mutableUsers = false;
-  # This guest has no interactive access path and accepts no connections: KubeVirt and the runner's
-  # outbound control stream are its only interfaces, so do not create an account password or an SSH
-  # key just to satisfy host defaults.
+  # The guest accepts no connections: KubeVirt's serial console and the runner's outbound control
+  # stream are its only interfaces, so do not create an account password or an SSH key just to
+  # satisfy host defaults.
   users.allowNoPasswordLogin = true;
 
   # The KubeVirt filesystem named `state` is the virtiofs tag.
