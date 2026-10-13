@@ -4,10 +4,11 @@
  * A stream that drops and comes back within seconds -- a network change, a server roll -- leaves its
  * page no worse off, and saying so on screen each time only teaches the reader to ignore it. So a
  * stream counts as degraded only once it has been off for `DEGRADED_AFTER_MS` without a break, and
- * the sidebar's footer shows a spinner for it; at `STALE_AFTER_MS` the spinner turns amber, and a
- * page whose own stream it is says that what it shows may be out of date.
+ * the topbar shows a spinner for it; at `STALE_AFTER_MS` the spinner turns amber. A stream that is
+ * connected but whose server-side source has stopped moving is stale at once, with the reason in
+ * `stalled`. The spinner is the only place any of this shows; the details are in its tooltip.
  */
-import { Alert, Box, Loader, Tooltip } from "@mantine/core";
+import { Box, Loader, Tooltip } from "@mantine/core";
 import { type JSX, useEffect, useState, useSyncExternalStore } from "react";
 
 import type { StreamConnection } from "./live_stream";
@@ -22,10 +23,13 @@ export interface StreamStatus {
   /** What the indicator calls it: the page or panel the stream feeds. */
   name: string;
   connection: StreamConnection;
+  /** Why the server says the stream's data is not moving though the connection is up, if it does. */
+  stalled: string | null;
   standing: Standing;
 }
 
-function standingAt(connection: StreamConnection, now: number): Standing {
+function standingAt(connection: StreamConnection, stalled: string | null, now: number): Standing {
+  if (stalled !== null) return "stale";
   if (connection.phase === "live") return "current";
   const off = now - connection.since;
   return off >= STALE_AFTER_MS ? "stale" : off >= DEGRADED_AFTER_MS ? "degraded" : "current";
@@ -35,7 +39,7 @@ export class StreamRegistry {
   /** The clock the thresholds are measured on. The visual harness sets it ahead of the frozen `Date`
    * its captures run under, since a scene cannot wait out real seconds. */
   now: () => number = () => Date.now();
-  readonly #streams = new Map<symbol, { name: string; connection: StreamConnection }>();
+  readonly #streams = new Map<symbol, { name: string; connection: StreamConnection; stalled: string | null }>();
   readonly #listeners = new Set<() => void>();
   #statuses: ReadonlyMap<symbol, StreamStatus> = new Map();
   #crossing: number | undefined;
@@ -47,8 +51,8 @@ export class StreamRegistry {
 
   getStatuses = (): ReadonlyMap<symbol, StreamStatus> => this.#statuses;
 
-  report(key: symbol, name: string, connection: StreamConnection): void {
-    this.#streams.set(key, { name, connection });
+  report(key: symbol, name: string, connection: StreamConnection, stalled: string | null): void {
+    this.#streams.set(key, { name, connection, stalled });
     this.#derive();
   }
 
@@ -63,14 +67,17 @@ export class StreamRegistry {
     const now = this.now();
     let next = Infinity;
     const statuses = new Map<symbol, StreamStatus>();
-    for (const [key, { name, connection }] of this.#streams) {
-      const standing = standingAt(connection, now);
+    for (const [key, { name, connection, stalled }] of this.#streams) {
+      const standing = standingAt(connection, stalled, now);
       const previous = this.#statuses.get(key);
       statuses.set(
         key,
-        previous?.name === name && previous.connection === connection && previous.standing === standing
+        previous?.name === name &&
+          previous.connection === connection &&
+          previous.stalled === stalled &&
+          previous.standing === standing
           ? previous
-          : { name, connection, standing }
+          : { name, connection, stalled, standing }
       );
       if (connection.phase === "live") continue;
       for (const threshold of [DEGRADED_AFTER_MS, STALE_AFTER_MS]) {
@@ -88,48 +95,62 @@ export const streamRegistry: StreamRegistry = new StreamRegistry();
 
 /** Reports `connection` as the stream `name` for as long as the caller is mounted, or nothing while
  * it is null, and reads back what the registry has made of it. */
-function useReported(name: string, connection: StreamConnection | null): StreamStatus | undefined {
+function useReported(
+  name: string,
+  connection: StreamConnection | null,
+  stalled: string | null
+): StreamStatus | undefined {
   const [key] = useState(() => Symbol(name));
   useEffect(() => {
     if (connection === null) streamRegistry.remove(key);
-    else streamRegistry.report(key, name, connection);
-  }, [key, name, connection]);
+    else streamRegistry.report(key, name, connection, stalled);
+  }, [key, name, connection, stalled]);
   useEffect(() => () => streamRegistry.remove(key), [key]);
   return useSyncExternalStore(streamRegistry.subscribe, () => streamRegistry.getStatuses().get(key));
 }
 
 /** What `reported` says of `connection`, or until the report lands, the connection as it stands now. */
-function statusOf(reported: StreamStatus | undefined, name: string, connection: StreamConnection): StreamStatus {
-  return reported?.connection === connection
+function statusOf(
+  reported: StreamStatus | undefined,
+  name: string,
+  connection: StreamConnection,
+  stalled: string | null
+): StreamStatus {
+  return reported?.connection === connection && reported.stalled === stalled
     ? reported
-    : { name, connection, standing: standingAt(connection, streamRegistry.now()) };
+    : { name, connection, stalled, standing: standingAt(connection, stalled, streamRegistry.now()) };
 }
 
 /** Reports `connection` as the stream `name` for as long as the caller is mounted, and reads back
  * how the stream stands. */
-export function useStreamStatus(name: string, connection: StreamConnection): StreamStatus {
-  return statusOf(useReported(name, connection), name, connection);
+export function useStreamStatus(
+  name: string,
+  connection: StreamConnection,
+  stalled: string | null = null
+): StreamStatus {
+  return statusOf(useReported(name, connection, stalled), name, connection, stalled);
 }
 
 /** As `useStreamStatus`, for a stream that may not exist: nothing while `connection` is null. */
 export function useOptionalStreamStatus(name: string, connection: StreamConnection | null): StreamStatus | null {
-  const reported = useReported(name, connection);
-  return connection === null ? null : statusOf(reported, name, connection);
+  const reported = useReported(name, connection, null);
+  return connection === null ? null : statusOf(reported, name, connection, null);
 }
 
 const CLOCK = new Intl.DateTimeFormat("en-GB", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-function describe({ name, connection }: StreamStatus): string {
+function describe({ name, connection, stalled }: StreamStatus): string {
   const parts = [`${name}: ${connection.phase} since ${CLOCK.format(connection.since)}`];
   if (connection.phase === "reconnecting") {
     parts.push(`attempt ${connection.attempt}`);
     if (connection.lastError !== null) parts.push(connection.lastError);
   }
+  if (stalled !== null) parts.push(`${stalled}; the server keeps retrying`);
   return parts.join(" · ");
 }
 
 /** Nothing while every stream is current; otherwise a spinner, amber once one is stale, whose
- * tooltip names each stream that is not and since when. */
+ * tooltip names each stream that is not, since when and why. Every stream retries by itself. */
 export function ConnectionIndicator(): JSX.Element | null {
   const statuses = useSyncExternalStore(streamRegistry.subscribe, streamRegistry.getStatuses);
   const affected = [...statuses.values()].filter((status) => status.standing !== "current");
@@ -156,16 +177,5 @@ export function ConnectionIndicator(): JSX.Element | null {
         <Loader size="xs" color={standing === "stale" ? "yellow" : "gray"} />
       </Box>
     </Tooltip>
-  );
-}
-
-/** A page's own streams: nothing until one is stale, then when the page last heard from it. */
-export function StaleNotice({ streams }: { streams: readonly (StreamStatus | null)[] }): JSX.Element | null {
-  const since = streams.flatMap((stream) => (stream?.standing === "stale" ? [stream.connection.since] : []));
-  if (since.length === 0) return null;
-  return (
-    <Alert color="yellow" p="xs">
-      What&apos;s on screen may be out of date; last update {CLOCK.format(Math.min(...since))}
-    </Alert>
   );
 }

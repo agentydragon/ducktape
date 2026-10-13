@@ -7,7 +7,6 @@ import { Link, useLocation } from "react-router";
 
 import { JsonView } from "../json_view";
 import { ResizeHandle, usePaneSize } from "../resize_handle";
-import { StaleNotice } from "../stream_status";
 import {
   canApproveInline,
   renderActionLabel,
@@ -259,7 +258,6 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
       </UnstyledButton>
       {open && (
         <div id="agentplane-actions-sidebar-content" className="agentplane-actions-sidebar-content">
-          <StaleNotice streams={[actions.stream]} />
           {actions.error !== null && (
             <Text size="xs" c="red" role="alert">
               {actions.error}
@@ -316,7 +314,6 @@ export function ActionsAttentionBar(): JSX.Element | null {
       </UnstyledButton>
       {open && (
         <div id="agentplane-actions-attention-content" className="agentplane-actions-attention-content">
-          <StaleNotice streams={[actions.stream]} />
           {actions.error !== null && (
             <Text size="xs" c="red" role="alert">
               {actions.error}

@@ -15,6 +15,7 @@ import { SandboxList } from "./sandboxes";
 import { ProjectedSession } from "./threads/projected_session";
 import { Settings, type SettingsTab } from "./settings/dialog";
 import { Sidebar } from "./sidebar";
+import { ConnectionIndicator } from "./stream_status";
 import { electricThreadSync } from "./threads/thread_store";
 import { ThreadSyncContext } from "./threads/thread_sync";
 import { TopbarContext, TopbarTitle, type TopbarSlots } from "./topbar";
@@ -172,6 +173,7 @@ function AppRoutes(): JSX.Element {
               </ActionIcon>
               <div className="agentplane-topbar-title" ref={titleRef} />
               <div className="agentplane-topbar-actions" ref={actionsRef} />
+              <ConnectionIndicator />
             </div>
             {/* The sidebar carries the queue while it is open, and the Actions pages are the queue. */}
             {!sidebarOpen && actionsRoute === null && <ActionsAttentionBar />}

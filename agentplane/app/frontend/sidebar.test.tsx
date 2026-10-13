@@ -9,7 +9,7 @@ import type { SandboxView, ThreadView } from "./client";
 import { RoutedThreadsLiveProvider, type ThreadsSnapshot } from "./live";
 import { Sidebar } from "./sidebar";
 import { scrollCapture } from "./threads/scroll_diagnostics";
-import { DEGRADED_AFTER_MS } from "./stream_status";
+import { ConnectionIndicator, DEGRADED_AFTER_MS } from "./stream_status";
 import type { InboxNoticeState } from "./thread_notices";
 
 const NO_NOTICES: Omit<InboxNoticeState, "inbox_id" | "session_id"> = {
@@ -190,6 +190,7 @@ async function render(
       <MantineProvider env="test">
         <MemoryRouter initialEntries={[options.initialPath ?? "/"]}>
           <RoutedThreadsLiveProvider>
+            <ConnectionIndicator />
             <Sidebar
               settingsOpen={options.settingsOpen ?? false}
               onOpenSettings={onOpenSettings}
@@ -300,20 +301,22 @@ it("keeps retained rows but withdraws live indicators when any update source is 
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
 
   await pushSnapshot(stream, { ...snapshot(threads, sandboxes), updates_connected: false });
-  expect(container.querySelector("[data-connection]")).toBeNull();
-  expect(container.textContent).toContain("Thread updates disconnected");
+  expect(container.querySelector('[data-connection="stale"]')?.getAttribute("aria-label")).toContain(
+    "thread updates disconnected"
+  );
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
 
   const stale = snapshot(threads, sandboxes);
   stale.watch.fresh = false;
   await pushSnapshot(stream, stale);
-  expect(container.textContent).toContain("watch has stopped moving");
-  expect(container.textContent).not.toContain("Thread updates disconnected");
+  expect(container.querySelector('[data-connection="stale"]')?.getAttribute("aria-label")).toContain(
+    "watch stopped moving"
+  );
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(0);
 
   await pushSnapshot(stream, snapshot([{ ...threads[0], name: "Current thread" }], sandboxes));
   expect(container.textContent).not.toContain("Retained thread");
-  expect(container.textContent).not.toContain("watch has stopped moving");
+  expect(container.querySelector("[data-connection]")).toBeNull();
   expect(container.querySelectorAll(".agentplane-thread-status-indicator[data-status='idle']")).toHaveLength(1);
 });
 

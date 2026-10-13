@@ -550,9 +550,7 @@ it.each([
 
 const RUNNING = inventorySandbox();
 const SUSPENDED = inventorySandbox("Suspended");
-const STALE = "sandboxes last updated 40 minutes ago";
 const ABSENT = "Sandbox absent from last inventory snapshot. Current availability unknown";
-const OUT_OF_DATE = /^What's on screen may be out of date; last update \d{2}:\d{2}:\d{2}$/;
 
 function matching(text: string | RegExp): unknown {
   return typeof text === "string" ? expect.stringContaining(text) : expect.stringMatching(text);
@@ -591,28 +589,23 @@ it("fetches thread metadata when it is absent from the live snapshot", async () 
 });
 
 // Each of these but the first disables the controls, which the composer's indicator reports only as
-// "Sandbox unavailable"; the header says why: the state the inventory last reported, or that the
-// watch behind it has stalled or the stream been down a minute. A drop within the grace is a blip,
-// on which the last inventory still stands.
-it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | null, string | RegExp | null]>([
-  ["a running sandbox", [RUNNING], {}, null, null],
-  ["an inventory not yet heard from", null, {}, null, null],
-  ["a suspended sandbox", [SUSPENDED], {}, "Last observed Sandbox and Pod: Suspended.", null],
-  ["a deleted sandbox", [], {}, "Sandbox no longer exists.", null],
-  ["a running sandbox on a stale inventory", [RUNNING], { fresh: false }, null, STALE],
-  ["an absence from a stale inventory", [], { fresh: false }, ABSENT, STALE],
-  ["a running sandbox on a stream that just dropped", [RUNNING], { droppedFor: 0 }, null, null],
-  ["an absence from a stream that just dropped", [], { droppedFor: 0 }, "Sandbox no longer exists.", null],
-  ["an absence from a stream down past the grace", [], { droppedFor: DEGRADED_AFTER_MS }, ABSENT, null],
-  ["a running sandbox on a stream down a minute", [RUNNING], { droppedFor: STALE_AFTER_MS }, null, OUT_OF_DATE],
-  [
-    "a suspended sandbox on a stream down a minute",
-    [SUSPENDED],
-    { droppedFor: STALE_AFTER_MS },
-    "and Pod: Suspended.",
-    OUT_OF_DATE,
-  ],
-])("explains %s in the header", async (_, inventory, { fresh = true, droppedFor }, status, alert) => {
+// "Sandbox unavailable"; the header says why: the state the inventory last reported, or that its
+// absence from one that is stale or down past the grace proves nothing. A drop within the grace is a
+// blip, on which the last inventory still stands. A stale or dropped inventory is reported by the
+// connection indicator, never by an alert of its own.
+it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | null]>([
+  ["a running sandbox", [RUNNING], {}, null],
+  ["an inventory not yet heard from", null, {}, null],
+  ["a suspended sandbox", [SUSPENDED], {}, "Last observed Sandbox and Pod: Suspended."],
+  ["a deleted sandbox", [], {}, "Sandbox no longer exists."],
+  ["a running sandbox on a stale inventory", [RUNNING], { fresh: false }, null],
+  ["an absence from a stale inventory", [], { fresh: false }, ABSENT],
+  ["a running sandbox on a stream that just dropped", [RUNNING], { droppedFor: 0 }, null],
+  ["an absence from a stream that just dropped", [], { droppedFor: 0 }, "Sandbox no longer exists."],
+  ["an absence from a stream down past the grace", [], { droppedFor: DEGRADED_AFTER_MS }, ABSENT],
+  ["a running sandbox on a stream down a minute", [RUNNING], { droppedFor: STALE_AFTER_MS }, null],
+  ["a suspended sandbox on a stream down a minute", [SUSPENDED], { droppedFor: STALE_AFTER_MS }, "and Pod: Suspended."],
+])("explains %s in the header", async (_, inventory, { fresh = true, droppedFor }, status) => {
   vi.useFakeTimers();
   sandboxes = inventory;
   inventoryFresh = fresh;
@@ -621,7 +614,7 @@ it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | n
   await act(async () => vi.advanceTimersByTime(droppedFor ?? 0));
   const texts = (role: string) => [...container.querySelectorAll(`[role="${role}"]`)].map((node) => node.textContent);
   expect(texts("status")).toEqual(status === null ? [] : [matching(status)]);
-  expect(texts("alert")).toEqual(alert === null ? [] : [matching(alert)]);
+  expect(texts("alert")).toEqual([]);
 });
 
 it("shows the applied effort and sends a change command without optimistically changing it", async () => {
@@ -653,19 +646,16 @@ it.each([
   expect(picker?.placeholder).toBe(placeholder);
 });
 
-// A stopped window says so in its own alert, and is not following the thread to be out of date.
-it.each<[{ reconnectingFor: number; windowError?: string }, (string | RegExp)[]]>([
+// A stopped window says so in its own alert; a stream merely reconnecting shows in the indicator only.
+it.each<[{ reconnectingFor: number; windowError?: string }, string[]]>([
   [{ reconnectingFor: DEGRADED_AFTER_MS }, []],
-  [{ reconnectingFor: STALE_AFTER_MS }, [OUT_OF_DATE]],
+  [{ reconnectingFor: STALE_AFTER_MS }, []],
   [{ reconnectingFor: STALE_AFTER_MS, windowError: "test shape gone" }, ["Thread synchronization stopped"]],
-])(
-  "tells the reader the thread may be out of date only once its reads have failed a minute: %o",
-  async (state, alerts) => {
-    const container = await render(threadState(state));
-    const shown = [...container.querySelectorAll('[role="alert"]')].map((node) => node.textContent);
-    expect(shown).toEqual(alerts.map(matching));
-  }
-);
+])("alerts only for a stopped window, never for a thread stream still reconnecting: %o", async (state, alerts) => {
+  const container = await render(threadState(state));
+  const shown = [...container.querySelectorAll('[role="alert"]')].map((node) => node.textContent);
+  expect(shown).toEqual(alerts.map(matching));
+});
 
 function message(commandId: string): Command {
   return create(CommandSchema, {

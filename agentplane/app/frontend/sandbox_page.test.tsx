@@ -56,7 +56,12 @@ const live = vi.hoisted(
         watch: { fresh: true, stale_after_seconds: 60, refreshed_seconds_ago: {} },
       },
       health: null,
-      stream: { name: "Sandbox startup-test", connection: { phase: "live", since: 0 }, standing: "current" },
+      stream: {
+        name: "Sandbox startup-test",
+        connection: { phase: "live", since: 0 },
+        stalled: null,
+        standing: "current",
+      },
     }) satisfies Live<SandboxSnapshot>
 );
 vi.mock("./live", async (importOriginal) => ({

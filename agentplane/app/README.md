@@ -209,7 +209,9 @@ A snapshot is not a delta, and there is no resumable id: a relist replaces a kin
 one failure to handle honestly -- a watch that has wedged looks exactly like a cluster where
 nothing is happening -- so every frame carries how long ago each kind last completed a cycle,
 against the same three-cycle bound the egress proxy's `/healthz` uses, and a page whose data has
-stopped moving says so rather than showing it as live.
+stopped moving says so rather than showing it as live: the browser's connection and that verdict
+both feed the one connection indicator in the topbar, a spinner whose tooltip names each stream
+that is not current and why. Every stream, and the server's watch behind it, retries by itself.
 
 ## Authentication and authorization
 
@@ -255,8 +257,9 @@ the existing PostgreSQL thread notifications both refresh that snapshot. A liste
 rereads PostgreSQL, including writes whose notifications were missed while disconnected. There
 is no sidebar polling loop or new notification service.
 
-The retained snapshot stays navigable during an outage, with separate warnings for the browser
-connection, stale Kubernetes watch, and disconnected database listener. A Thread's live dot
+The retained snapshot stays navigable during an outage, and the browser connection, stale
+Kubernetes watch, and disconnected database listener all show in the topbar's one connection
+indicator rather than as page banners. A Thread's live dot
 requires fresh sources, a running Sandbox, and its last observed harness state; a stale persisted
 RUNNING state alone does not make a suspended or deleted Sandbox look live. The snapshot includes
 the feed's active turn, and how the Thread's last completed turn ended (`last_turn_status`, read

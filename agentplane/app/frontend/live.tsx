@@ -1,16 +1,15 @@
 /**
- * The pushed views: one stream per page, and the honesty banner that goes with them.
+ * The pushed views: one stream per page, and the honesty that goes with them.
  *
  * A page subscribes and renders what arrives; there is no fetch and no interval, because the
  * server holds a watch over the same objects and sends a whole snapshot whenever they change
  * (`live.py`). A snapshot replaces the page's state outright, so a reconnect needs no resume.
  *
- * The banner is the other half of that trade. A poll that stops shows an error on the next tick,
+ * Honesty is the other half of that trade. A poll that stops shows an error on the next tick,
  * while a stream that goes quiet looks exactly like nothing happening, so neither is assumed: the
- * stream's own connection goes to the app's one connection indicator (`stream_status.tsx`), and
- * `LiveStatus` shows the server's verdict on whether its watch is still cycling.
+ * stream's connection and the server's verdict on whether its watch is still cycling both go to the
+ * app's one connection indicator (`stream_status.tsx`).
  */
-import { Alert } from "@mantine/core";
 import { createContext, type JSX, type ReactNode, useContext, useEffect, useState } from "react";
 import { useMatch } from "react-router";
 
@@ -66,7 +65,12 @@ export function liveEgressDecisionsUrl(name: string): string {
 }
 
 /** The stream at `url`, which the connection indicator calls `name`. */
-export function useLive<T extends { watch: WatchHealth }>(url: string, name: string): Live<T> {
+export function useLive<T extends { watch: WatchHealth }>(
+  url: string,
+  name: string,
+  /** Why the last snapshot's own content says its data is not moving, where it can. */
+  stalledBy: (snapshot: T) => string | null = () => null
+): Live<T> {
   const [state, setState] = useState<Pick<Live<T>, "snapshot" | "health">>({ snapshot: null, health: null });
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
   // A different object starts blank; the same one under a different filter does not. Only the path
@@ -90,7 +94,11 @@ export function useLive<T extends { watch: WatchHealth }>(url: string, name: str
       }),
     [url]
   );
-  const stream = useStreamStatus(name, connection);
+  const stalled =
+    state.health && !state.health.fresh
+      ? `watch stopped moving (${stalest(state.health)})`
+      : state.snapshot && stalledBy(state.snapshot);
+  const stream = useStreamStatus(name, connection, stalled);
   return { ...state, stream };
 }
 
@@ -111,7 +119,9 @@ export function ThreadsLiveProvider({
   children: ReactNode;
 }): JSX.Element {
   const [listing, setListing] = useState<ThreadListing>({ limit: THREAD_PAGE, search: null, includeArchived: false });
-  const live = useLive<ThreadsSnapshot>(liveThreadsUrl(listing, openThreadId), "Threads");
+  const live = useLive<ThreadsSnapshot>(liveThreadsUrl(listing, openThreadId), "Threads", (snapshot) =>
+    snapshot.updates_connected ? null : "thread updates disconnected; showing the last snapshot"
+  );
   return (
     <ThreadListingContext.Provider value={{ listing, setListing }}>
       <ThreadsLiveContext.Provider value={live}>{children}</ThreadsLiveContext.Provider>
@@ -156,14 +166,4 @@ function stalest(health: WatchHealth): string {
     ["nothing", 0]
   );
   return `${kind} last updated ${ageAgo(age)}`;
-}
-
-/** Nothing while the server's watch is moving; otherwise how far behind it is. */
-export function LiveStatus<T>({ live }: { live: Live<T> }): JSX.Element | null {
-  if (!live.health || live.health.fresh) return null;
-  return (
-    <Alert color="red" p="xs">
-      The server&apos;s watch has stopped moving ({stalest(live.health)}), so this page is not being updated.
-    </Alert>
-  );
 }

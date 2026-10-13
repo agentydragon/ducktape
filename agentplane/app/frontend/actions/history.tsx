@@ -3,7 +3,7 @@ import { Alert, Badge, Button, Code, Paper, Stack, Text } from "@mantine/core";
 
 import { displayableError } from "../client";
 import { JsonView } from "../json_view";
-import { StaleNotice, useOptionalStreamStatus } from "../stream_status";
+import { useOptionalStreamStatus } from "../stream_status";
 import { followStream, type StreamConnection } from "../live_stream";
 import { ActionCall } from "./call";
 import { parseCallToolResult } from "./call_tool_result";
@@ -131,7 +131,7 @@ export function ActionHistory({ embedded = false }: { embedded?: boolean }): JSX
   const [loadingMore, setLoadingMore] = useState(false);
   const loadedMore = useRef(false);
   const [connection, setConnection] = useState<StreamConnection | null>(null);
-  const stream = useOptionalStreamStatus("Actions", connection);
+  useOptionalStreamStatus("Actions", connection);
   useEffect(() => {
     let active = true;
     let generation = 0;
@@ -197,7 +197,6 @@ export function ActionHistory({ embedded = false }: { embedded?: boolean }): JSX
           Denied and terminal ActionRequests, kept as durable receipts.
         </Text>
       )}
-      <StaleNotice streams={[stream]} />
       {error && <Text c="red">{error}</Text>}
       {executors.error && (
         <Alert color="orange">

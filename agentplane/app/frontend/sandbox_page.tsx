@@ -42,7 +42,7 @@ import { Disclosure } from "./disclosure";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
-import { liveSandboxUrl, LiveStatus, useLive, type SandboxSnapshot } from "./live";
+import { liveSandboxUrl, useLive, type SandboxSnapshot } from "./live";
 import { RawSwitch } from "./raw_switch";
 import {
   containerStatuses,
@@ -55,7 +55,6 @@ import {
   type RawCondition,
 } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
-import { StaleNotice } from "./stream_status";
 import { TopbarTitle } from "./topbar";
 import { HarnessState, SessionSpecSchema, SetupState, type SessionSummary } from "../../proto/runner_pb";
 
@@ -537,8 +536,6 @@ export function SandboxPage({
           </Group>
         )}
       </Group>
-      <StaleNotice streams={[live.stream]} />
-      <LiveStatus live={live} />
       {confirmingDelete && (
         <ConfirmDelete
           name={name}

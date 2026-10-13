@@ -14,7 +14,6 @@ import { sandboxSummary } from "./sandbox_status";
 vi.mock("./live", () => ({
   liveSandboxesUrl: () => "/live/sandboxes",
   useLive: () => ({ snapshot: null }),
-  LiveStatus: () => null,
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

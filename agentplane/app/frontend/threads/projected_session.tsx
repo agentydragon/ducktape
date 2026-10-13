@@ -42,8 +42,8 @@ import {
   setupProgress,
   type HistoryRow,
 } from "./history_rows";
-import { LiveStatus, useRequiredSandboxesLive, useRequiredThreadsLive } from "../live";
-import { StaleNotice, useOptionalStreamStatus, type StreamStatus } from "../stream_status";
+import { useRequiredSandboxesLive, useRequiredThreadsLive } from "../live";
+import { useOptionalStreamStatus } from "../stream_status";
 import { RetainedDisclosure, RetainedDisclosureProvider, useRetainedDisclosure } from "./retained_disclosures";
 import { CollapsibleCard, EntityCard, itemStatus, pendingSentMessage } from "./thread_cards";
 import {
@@ -1383,26 +1383,22 @@ function SyncedThread({
   threadId,
   thread,
   available,
-  inventory,
   onStatusChange,
 }: {
   threadId: string;
   thread: ThreadView;
   available: boolean;
-  /** The sandbox inventory's stream, which the page's one stale notice covers too. */
-  inventory: StreamStatus;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
   // A stopped window is not following the thread at all, and its alert says so.
-  const stream = useOptionalStreamStatus("Thread", shown !== null && shown.error === null ? shown.connection : null);
+  useOptionalStreamStatus("Thread", shown !== null && shown.error === null ? shown.connection : null);
   if (!shown) {
     if (error) return <p role="alert">Thread sync failed: {error}</p>;
     return <p role="status">Loading thread…</p>;
   }
   return (
     <>
-      <StaleNotice streams={[inventory, stream]} />
       {error && <p role="alert">Thread sync failed: {error}; showing the current window and retrying.</p>}
       {shown.error && (
         <p role="alert">
@@ -1514,11 +1510,6 @@ export function ProjectedSession({
         </Group>
       </TopbarTitle>
       <Stack style={{ flex: 1, minHeight: 0 }}>
-        {/* The controls wait on this stream's word that the sandbox runs, so one down past a blip, or
-            whose watch has stalled, disables them as surely as a stopped sandbox. The sidebar's
-            connection indicator says the first; this says the second. */}
-        <LiveStatus live={environment} />
-        {!thread && <StaleNotice streams={[environment.stream]} />}
         {error && (
           <Text role="alert" c="red">
             {error}
@@ -1540,7 +1531,6 @@ export function ProjectedSession({
               threadId={threadId}
               thread={thread}
               available={inventoryFresh && sandboxReady(sandbox)}
-              inventory={environment.stream}
               onStatusChange={setTabStatus}
             />
           </sync.Thread>

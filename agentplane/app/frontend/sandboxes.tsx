@@ -33,11 +33,10 @@ import {
 } from "./client";
 import { Disclosure } from "./disclosure";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
-import { liveSandboxesUrl, LiveStatus, useLive, type SandboxesSnapshot } from "./live";
+import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";
 import { podIp, sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
-import { StaleNotice } from "./stream_status";
 import { TopbarTitle } from "./topbar";
 
 const EMPTY_FORM: NewSandbox = {
@@ -186,8 +185,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           Sandboxes
         </Title>
       </TopbarTitle>
-      <StaleNotice streams={[live.stream]} />
-      <LiveStatus live={live} />
       {confirmingDelete !== null && (
         <ConfirmDelete
           name={confirmingDelete}

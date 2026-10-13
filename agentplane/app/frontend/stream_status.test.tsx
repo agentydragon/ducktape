@@ -9,7 +9,6 @@ import {
   ConnectionIndicator,
   DEGRADED_AFTER_MS,
   STALE_AFTER_MS,
-  StaleNotice,
   streamRegistry,
   useStreamStatus,
 } from "./stream_status";
@@ -38,10 +37,10 @@ function standing(): string | undefined {
 
 it("counts a stream degraded once it has been off for the grace without a break, and stale at a minute", () => {
   const since = Date.now();
-  streamRegistry.report(KEY, "Test", reconnecting(since));
+  streamRegistry.report(KEY, "Test", reconnecting(since), null);
   vi.advanceTimersByTime(DEGRADED_AFTER_MS - 2_000);
   // A later failure of the same outage does not restart its clock.
-  streamRegistry.report(KEY, "Test", reconnecting(since, 2));
+  streamRegistry.report(KEY, "Test", reconnecting(since, 2), null);
   vi.advanceTimersByTime(1_999);
   expect(standing()).toBe("current");
   vi.advanceTimersByTime(1);
@@ -51,18 +50,18 @@ it("counts a stream degraded once it has been off for the grace without a break,
   vi.advanceTimersByTime(1);
   expect(standing()).toBe("stale");
 
-  streamRegistry.report(KEY, "Test", { phase: "live", since: Date.now() });
+  streamRegistry.report(KEY, "Test", { phase: "live", since: Date.now() }, null);
   expect(standing()).toBe("current");
 });
 
 it("never counts a stream that recovers within the grace, and gives its next drop the whole grace again", () => {
-  streamRegistry.report(KEY, "Test", reconnecting(Date.now()));
+  streamRegistry.report(KEY, "Test", reconnecting(Date.now()), null);
   vi.advanceTimersByTime(DEGRADED_AFTER_MS - 1);
-  streamRegistry.report(KEY, "Test", { phase: "live", since: Date.now() });
+  streamRegistry.report(KEY, "Test", { phase: "live", since: Date.now() }, null);
   // Nothing is left to wake for.
   expect(vi.getTimerCount()).toBe(0);
 
-  streamRegistry.report(KEY, "Test", reconnecting(Date.now()));
+  streamRegistry.report(KEY, "Test", reconnecting(Date.now()), null);
   vi.advanceTimersByTime(DEGRADED_AFTER_MS - 1);
   expect(standing()).toBe("current");
   vi.advanceTimersByTime(1);
@@ -78,18 +77,17 @@ function mount(element: ReactNode): HTMLDivElement {
   return container;
 }
 
-function Page({ connection }: { connection: StreamConnection }): JSX.Element {
-  const stream = useStreamStatus("Actions", connection);
-  return <StaleNotice streams={[stream]} />;
+function Page({ connection, stalled = null }: { connection: StreamConnection; stalled?: string | null }): null {
+  useStreamStatus("Actions", connection, stalled);
+  return null;
 }
 
-it("shows nothing within the grace, then a spinner naming the stream, then the page's own notice", async () => {
+it("shows nothing within the grace, then a spinner naming the stream, amber once it is stale", async () => {
   const indicator = mount(<ConnectionIndicator />);
   const page = mount(
     <Page connection={{ phase: "reconnecting", since: Date.now(), attempt: 3, lastError: "HTTP 503" }} />
   );
   expect(indicator.querySelector("[data-connection]")).toBeNull();
-  expect(page.querySelector('[role="alert"]')).toBeNull();
 
   await act(async () => vi.advanceTimersByTime(DEGRADED_AFTER_MS - 1));
   expect(indicator.querySelector("[data-connection]")).toBeNull();
@@ -97,16 +95,23 @@ it("shows nothing within the grace, then a spinner naming the stream, then the p
   const spinner = indicator.querySelector("[data-connection]");
   expect(spinner?.getAttribute("data-connection")).toBe("degraded");
   expect(spinner?.getAttribute("aria-label")).toBe("Actions: reconnecting since 17:21:04 · attempt 3 · HTTP 503");
-  expect(page.querySelector('[role="alert"]')).toBeNull();
 
   await act(async () => vi.advanceTimersByTime(STALE_AFTER_MS - DEGRADED_AFTER_MS));
   expect(indicator.querySelector("[data-connection]")?.getAttribute("data-connection")).toBe("stale");
-  expect(page.querySelector('[role="alert"]')?.textContent).toBe(
-    "What's on screen may be out of date; last update 17:21:04"
-  );
 
   // The stream goes with the page that followed it.
   const [pageRoot] = roots.splice(1, 1);
   await act(async () => pageRoot.unmount());
   expect(indicator.querySelector("[data-connection]")).toBeNull();
+  expect(page.textContent).toBe("");
+});
+
+it("counts a connected stream stale at once when the server says its data has stopped moving", async () => {
+  const indicator = mount(<ConnectionIndicator />);
+  mount(
+    <Page connection={{ phase: "live", since: Date.now() }} stalled="watch stopped moving (pods last updated 2m ago)" />
+  );
+  const spinner = indicator.querySelector("[data-connection]");
+  expect(spinner?.getAttribute("data-connection")).toBe("stale");
+  expect(spinner?.getAttribute("aria-label")).toContain("watch stopped moving (pods last updated 2m ago)");
 });

@@ -5,7 +5,7 @@ import { createContext, type JSX, type ReactNode, useCallback, useContext, useEf
 
 import { displayableError } from "../client";
 import { followStream, type StreamConnection } from "../live_stream";
-import { StaleNotice, useOptionalStreamStatus, type StreamStatus } from "../stream_status";
+import { useOptionalStreamStatus } from "../stream_status";
 import { ActionCall } from "./call";
 import { decideAction, getAction, type ActionRequestView, type ActionState, type Verdict } from "./client";
 
@@ -62,7 +62,6 @@ export function useActionRequests(enabled = true): {
   requests: ActionRequestView[];
   error: string | null;
   loading: boolean;
-  stream: StreamStatus | null;
   deciding: string | null;
   decide: (request: ActionRequestView, verdict: Verdict) => void;
   knownRequests: ReadonlyMap<string, ActionRequestView>;
@@ -84,7 +83,7 @@ export function useActionRequests(enabled = true): {
   const knownRequestsRef = useRef(new Map<string, ActionRequestView>());
   const staleRequestIdsRef = useRef(new Set<string>());
   const detailLoadsRef = useRef(new Map<string, Promise<ActionRequestView>>());
-  const stream = useOptionalStreamStatus("Actions", connection);
+  useOptionalStreamStatus("Actions", connection);
 
   const rememberRequests = useCallback((rows: readonly ActionRequestView[]): void => {
     let next = knownRequestsRef.current;
@@ -233,7 +232,6 @@ export function useActionRequests(enabled = true): {
     requests,
     error,
     loading,
-    stream,
     deciding,
     decide: (request, verdict) => void decideRequest(request, verdict),
     knownRequests,
@@ -285,7 +283,7 @@ export function PendingActionCard({
 export function ActionRequests({ embedded = false }: { embedded?: boolean }): JSX.Element {
   const shared = useContext(ActionRequestsContext);
   const local = useActionRequests(shared === null);
-  const { requests, error, loading, stream, deciding, decide } = shared ?? local;
+  const { requests, error, loading, deciding, decide } = shared ?? local;
   const pending = requests.filter((request) => request.state === "decision_pending");
 
   return (
@@ -298,7 +296,6 @@ export function ActionRequests({ embedded = false }: { embedded?: boolean }): JS
           </Text>
         </div>
       )}
-      <StaleNotice streams={[stream]} />
       {error && <Text c="red">{error}</Text>}
       {loading && <Text role="status">Loading actions…</Text>}
       <Title order={3}>{loading || error ? "Pending" : `Pending (${pending.length})`}</Title>

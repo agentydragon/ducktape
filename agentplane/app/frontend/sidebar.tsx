@@ -2,7 +2,7 @@
  * The persistent left sidebar: Threads grouped by their Sandbox, including threadless Sandboxes
  * and retained Threads whose Sandbox no longer exists.
  */
-import { ActionIcon, Alert, Button, Switch, Text, TextInput, Tooltip } from "@mantine/core";
+import { ActionIcon, Button, Switch, Text, TextInput, Tooltip } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconArchive from "@tabler/icons-react/dist/esm/icons/IconArchive.mjs";
 import IconArchiveOff from "@tabler/icons-react/dist/esm/icons/IconArchiveOff.mjs";
@@ -17,20 +17,12 @@ import { Link, useLocation, useMatch, useNavigate } from "react-router";
 
 import { archiveThread, displayableError, type SandboxView, type ThreadView } from "./client";
 import { ActionsSidebarSection } from "./actions/sidebar";
-import {
-  LiveStatus,
-  THREAD_PAGE,
-  useRequiredThreadsLive,
-  useThreadListing,
-  type Live,
-  type ThreadsSnapshot,
-} from "./live";
+import { THREAD_PAGE, useRequiredThreadsLive, useThreadListing, type Live, type ThreadsSnapshot } from "./live";
 import { MarkGlyph } from "./mark_glyph";
 import { ResizeHandle, usePaneSize } from "./resize_handle";
 import { sandboxStatusDetail, sandboxSummary } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import "./sidebar.css";
-import { ConnectionIndicator } from "./stream_status";
 import { groupThreads, type ThreadGroup } from "./thread_groups";
 import { ThreadNoticeBadge, type ThreadNotices, useThreadNotices } from "./thread_notices";
 import { ThreadStatusIndicator } from "./thread_status_indicator";
@@ -352,12 +344,6 @@ function SidebarView({
             value={search}
             onChange={(event) => setSearch(event.currentTarget.value)}
           />
-          <LiveStatus live={live} />
-          {data?.updates_connected === false && (
-            <Alert color="orange" p="xs">
-              Thread updates disconnected; showing the last snapshot.
-            </Alert>
-          )}
           {error && (
             <Text c="red" size="xs" px={4}>
               {error}
@@ -415,7 +401,6 @@ function SidebarView({
         <div className="agentplane-sidebar-debug">
           <ScrollDebugTools />
         </div>
-        <ConnectionIndicator />
         <Tooltip label="Sandboxes" withArrow>
           <ActionIcon
             variant={location.pathname === "/sandboxes" ? "light" : "subtle"}

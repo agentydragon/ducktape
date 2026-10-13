@@ -6,7 +6,7 @@ import { api, displayableError, type BindingView, type Decision, type PolicyView
 import { type DecisionGroup, groupDecisions } from "./decision_groups";
 import { type DecisionsSnapshot, liveEgressDecisionsUrl } from "./live";
 import { followStream, type StreamConnection } from "./live_stream";
-import { StaleNotice, type StreamStatus, useStreamStatus } from "./stream_status";
+import { useStreamStatus } from "./stream_status";
 
 function provenance(binding: BindingView): string {
   return binding.from_git ? "from git" : "runtime";
@@ -436,7 +436,7 @@ function DecisionsTable({ decisions }: { decisions: Decision[] }): JSX.Element {
 }
 
 /** The sandbox's decisions as the proxy reports them: a snapshot per change, none while it is quiet. */
-function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null; stream: StreamStatus } {
+function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null } {
   const [snapshot, setSnapshot] = useState<DecisionsSnapshot | null>(null);
   const [connection, setConnection] = useState<StreamConnection>(() => ({ phase: "connecting", since: Date.now() }));
   useEffect(() => {
@@ -450,7 +450,8 @@ function useEgressDecisions(name: string): { snapshot: DecisionsSnapshot | null;
       onConnection: setConnection,
     });
   }, [name]);
-  return { snapshot, stream: useStreamStatus(`Egress decisions of ${name}`, connection) };
+  useStreamStatus(`Egress decisions of ${name}`, connection);
+  return { snapshot };
 }
 
 /** What may leave the sandbox and what recently did: its pushed bindings and the proxy's decisions. */
@@ -498,7 +499,6 @@ export function EgressSection({ name, bindings }: { name: string; bindings: Bind
       />
       {bindings && <EgressBindings bindings={bindings} onRevoke={(binding) => void revoke(binding)} />}
       <Title order={5}>Recent decisions</Title>
-      <StaleNotice streams={[decisions.stream]} />
       {decisions.snapshot !== null && !decisions.snapshot.watching && (
         <Text size="sm" c="dimmed">
           Not hearing from the egress proxy about new decisions; this log may be behind.
