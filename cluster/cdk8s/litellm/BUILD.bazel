@@ -117,6 +117,7 @@ py_library(
     name = "secrets",
     srcs = ["secrets.py"],
     deps = [
+        "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:flux",
         "//cluster/cdk8s:generation",
         "//cluster/cdk8s:manifest_roots",
