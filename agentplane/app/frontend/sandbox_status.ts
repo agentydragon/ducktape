@@ -101,13 +101,14 @@ export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
 export function sandboxSummary(sandbox: SandboxView): { label: string; kind: SandboxStatusKind } {
   if (sandbox.deleting) return { label: "Deleting", kind: "gone" };
   if (sandbox.operating_mode === "Suspended") return { label: "Suspended", kind: "suspended" };
-  if (!sandbox.pod) return { label: "No Pod", kind: "pending" };
-  if (sandbox.pod.deleting) return { label: "Pod deleting", kind: "gone" };
-  if (sandboxReady(sandbox)) return { label: "Pod ready", kind: "ready" };
+  // Neutral nouns: a VM Sandbox has no Pod of its own to name here. The tooltip carries the Pod's phase.
+  if (!sandbox.pod) return { label: "Not started", kind: "pending" };
+  if (sandbox.pod.deleting) return { label: "Shutting down", kind: "gone" };
+  if (sandboxReady(sandbox)) return { label: "Ready", kind: "ready" };
   const phase = podPhase(sandbox);
-  if (phase === "Failed") return { label: "Pod Failed", kind: "failed" };
-  if (phase === "Succeeded") return { label: "Pod Succeeded", kind: "gone" };
-  return { label: phase ? `Pod ${phase} · not ready` : "Pod status unknown", kind: "pending" };
+  if (phase === "Failed") return { label: "Failed", kind: "failed" };
+  if (phase === "Succeeded") return { label: "Exited", kind: "gone" };
+  return { label: phase === "Running" ? "Not ready" : phase ? "Starting" : "Status unknown", kind: "pending" };
 }
 
 function containerState(

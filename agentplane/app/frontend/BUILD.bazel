@@ -766,6 +766,7 @@ ts_library(
         ":json_view",
         ":lifecycle",
         ":live",
+        ":mark_glyph",
         ":notification_status",
         ":raw_switch",
         ":sandbox_status",

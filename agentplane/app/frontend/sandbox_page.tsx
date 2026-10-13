@@ -14,6 +14,7 @@ import {
   TextInput,
   Textarea,
   Title,
+  Tooltip,
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
@@ -41,6 +42,7 @@ import { ActionPolicySection, BoundPolicySection } from "./actions/policy";
 import { Disclosure } from "./disclosure";
 import { EgressSection } from "./egress";
 import { JsonView } from "./json_view";
+import { MarkGlyph } from "./mark_glyph";
 import { ConfirmDelete, DeleteButton, SuspendResume } from "./lifecycle";
 import { liveSandboxUrl, useLive, type SandboxSnapshot } from "./live";
 import { RawSwitch } from "./raw_switch";
@@ -51,6 +53,7 @@ import {
   rawConditions,
   rawString,
   sandboxReady,
+  sandboxStatusDetail,
   sandboxSummary,
   type RawCondition,
 } from "./sandbox_status";
@@ -505,9 +508,16 @@ export function SandboxPage({
             {name}
           </Title>
           {sandbox && (
-            <Badge color={SANDBOX_STATUS_MARKS[sandboxSummary(sandbox).kind].color} style={{ flexShrink: 0 }}>
-              {sandboxSummary(sandbox).label}
-            </Badge>
+            <Tooltip label={sandboxStatusDetail(sandbox)} multiline style={{ whiteSpace: "pre-line" }} withArrow>
+              <span
+                role="img"
+                tabIndex={0}
+                aria-label={`Sandbox status: ${sandboxSummary(sandbox).label}`}
+                style={{ display: "inline-flex", flexShrink: 0 }}
+              >
+                <MarkGlyph mark={SANDBOX_STATUS_MARKS[sandboxSummary(sandbox).kind]} />
+              </span>
+            </Tooltip>
           )}
         </Group>
       </TopbarTitle>
@@ -548,7 +558,9 @@ export function SandboxPage({
       )}
       {error && <Text c="red">{error}</Text>}
       {live.snapshot !== null && sandbox === null && <Text c="red">There is no sandbox {name} any more.</Text>}
-      {sandbox && !ready && <Text>Sandbox status: {sandboxSummary(sandbox).label}. Sessions need a ready Pod.</Text>}
+      {sandbox && !ready && (
+        <Text>Sandbox status: {sandboxSummary(sandbox).label}. Sessions need a ready Sandbox.</Text>
+      )}
       <Tabs
         value={tab}
         onChange={(value) => {
