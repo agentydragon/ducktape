@@ -190,7 +190,6 @@ class App(Construct):
             image=f"{_APP_IMAGE}:{_PLACEHOLDER_TAG}",
             args=cli_args(
                 Settings,
-                namespace=namespace,
                 # TODO: a separate Sandbox namespace, holding the Sandboxes, their
                 # template and the runner ServiceAccount.
                 sandbox_namespace=namespace,

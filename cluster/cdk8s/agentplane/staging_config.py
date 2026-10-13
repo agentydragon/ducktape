@@ -77,7 +77,7 @@ PUBLIC_CODER_ACTION_POLICY_SETS = (
 )
 
 
-# What the Haku preset binds: the reviewed read-only bundle the haku-agent-reads and claude-ai-reads
+# What the Haku preset binds: the reviewed read-only bundle the haku-agent and claude-ai
 # bindings name (GitHub, Home Assistant, Gmail, Google Calendar, Tana, Grocy SF, SSH) plus sandbox
 # use and the GitHub identity read, and Haku's one write: rerunning failed jobs on a ducktape CI
 # run. Nothing here is a new grant -- each set's own auto-approval rule was reviewed for the
@@ -167,7 +167,7 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
             AGENTPLANE_TESTING_POLICY,
         ],
         # Bound at launch rather than by a static account: a managed runner Pod runs as its own
-        # per-Sandbox ServiceAccount, so `haku-agent-reads` (subject: haku-agent) never reaches it
+        # per-Sandbox ServiceAccount, so the `haku-agent` binding never reaches it
         # and the preset is the only thing that decides what this Haku may do without the operator.
         action_policy_sets=list(HAKU_ACTION_POLICY_SETS),
         thread_preset=_THREAD_PRESET_HAKU_CODEX,

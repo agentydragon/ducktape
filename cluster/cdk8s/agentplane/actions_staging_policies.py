@@ -85,6 +85,21 @@ PUBLIC_GAFFER_PRIVATE_READS_SET = "public-gaffer-private-reads"
 DUCKTAPE_PR_FAILED_JOBS_SET = "ducktape-pr-failed-jobs"
 GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET = "gaffer-private-branch-and-pr-creation"
 
+# The reviewed Action reads and sandbox use bound to the claude-ai and haku-agent accounts. The
+# binding's existence is the grant: deleting it, or the label on the ServiceAccount, puts every
+# one of these Actions back on the human path.
+_ACCOUNT_READ_SETS = (
+    GITHUB_READS_SET,
+    GITHUB_IDENTITY_READS_SET,
+    SANDBOX_SELF_SET,
+    HOME_ASSISTANT_READS_SET,
+    GMAIL_READS_SET,
+    GOOGLE_CALENDAR_READS_SET,
+    TANA_READS_SET,
+    GROCY_SF_READS_SET,
+    SSH_READS_SET,
+)
+
 
 def _policy_set(scope: Construct, id: str, *, metadata: ApiObjectMetadata, rules: Sequence[PolicySetSpecRules]) -> None:
     # The Action Service parses a rule more strictly than the CRD schema (an unknown policy
@@ -106,15 +121,17 @@ def _binding(
     PolicyBinding(scope, id, metadata=metadata, subject=subject, policy_sets=policy_sets)
 
 
-def _sandbox_egress_binding(scope: Construct, account: ServiceAccount, *, policies: Sequence[str]) -> None:
-    """What sandboxes running as `account` may reach: the named egress policies."""
+def _account_binding(scope: Construct, account: ServiceAccount, *, policies: Sequence[str]) -> None:
+    """What `account`, and every sandbox running as it, may reach and have auto-approved."""
     PolicyBinding(
         scope,
-        f"egressbinding-{account.name}",
+        f"policybinding-{account.name}",
         metadata=ApiObjectMetadata(
             name=account.name,
             namespace=_NAMESPACE,
-            annotations={"description": f"What sandboxes running as the {account.name} ServiceAccount may reach."},
+            annotations={
+                "description": f"What the {account.name} ServiceAccount, and sandboxes running as it, may reach and have auto-approved."
+            },
         ),
         subject=PolicyBindingSpecSubject(namespace=_NAMESPACE, name=account.name),
         policy_sets=policies,
@@ -703,7 +720,7 @@ def add_staging_action_policies(scope: Construct) -> None:
     # identity the same *logical* Haku agent runs as from Claude.ai/Claude Code's own
     # out-of-cluster infrastructure, so it still needs Haku's credentials. Revisit whether
     # claude-ai should keep carrying them once haku-agent has been in use for a while.
-    _sandbox_egress_binding(
+    _account_binding(
         scope,
         claude_ai,
         policies=[
@@ -723,12 +740,13 @@ def add_staging_action_policies(scope: Construct) -> None:
             GITHUB_AGENTYDRAGON_AGENT_POLICY,
             GITHUB_ACTIONS_LOGS_POLICY,
             BUILDBUDDY_POLICY,
+            *_ACCOUNT_READ_SETS,
         ],
     )
 
     # Haku-like managed sandboxes keep their Haku-specific access, but do not get Coinbase
     # egress or the key until a supported managed-runner identity/credential path exists (#8596).
-    _sandbox_egress_binding(
+    _account_binding(
         scope,
         haku_agent,
         policies=[
@@ -746,6 +764,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             GITHUB_CLONE_POLICY,
             GITHUB_AGENTYDRAGON_AGENT_POLICY,
             GITHUB_ACTIONS_LOGS_POLICY,
+            *_ACCOUNT_READ_SETS,
         ],
     )
 
@@ -858,61 +877,6 @@ def add_staging_action_policies(scope: Construct) -> None:
             },
         ),
         rules=[AutoApproveIf.exact_actions(actions={"ssh": ["list_targets"]})],
-    )
-
-    # The reviewed read sets for GitHub (github-reads and github-identity-reads), Home
-    # Assistant, Gmail, Google Calendar, Tana, Grocy SF and SSH, plus sandbox use, attached to
-    # the Claude.ai connector's principal.
-    # The binding's existence is the grant: deleting it, or the label on the ServiceAccount,
-    # puts every one of these Actions back on the human path.
-    _binding(
-        scope,
-        "policybinding-claude-ai-reads",
-        metadata=ApiObjectMetadata(
-            name="claude-ai-reads",
-            namespace=_NAMESPACE,
-            annotations={
-                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for Connections acting as the claude-ai ServiceAccount."
-            },
-        ),
-        subject=PolicyBindingSpecSubject(namespace=_NAMESPACE, name="claude-ai"),
-        policy_sets=[
-            GITHUB_READS_SET,
-            GITHUB_IDENTITY_READS_SET,
-            SANDBOX_SELF_SET,
-            HOME_ASSISTANT_READS_SET,
-            GMAIL_READS_SET,
-            GOOGLE_CALENDAR_READS_SET,
-            TANA_READS_SET,
-            GROCY_SF_READS_SET,
-            SSH_READS_SET,
-        ],
-    )
-
-    # Same reviewed read sets and sandbox use, at least matching claude-ai-reads above, for the
-    # haku-agent ServiceAccount's in-cluster Haku-preset sandboxes.
-    _binding(
-        scope,
-        "policybinding-haku-agent-reads",
-        metadata=ApiObjectMetadata(
-            name="haku-agent-reads",
-            namespace=_NAMESPACE,
-            annotations={
-                "description": "Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for the haku-agent ServiceAccount."
-            },
-        ),
-        subject=PolicyBindingSpecSubject(namespace=_NAMESPACE, name="haku-agent"),
-        policy_sets=[
-            GITHUB_READS_SET,
-            GITHUB_IDENTITY_READS_SET,
-            SANDBOX_SELF_SET,
-            HOME_ASSISTANT_READS_SET,
-            GMAIL_READS_SET,
-            GOOGLE_CALENDAR_READS_SET,
-            TANA_READS_SET,
-            GROCY_SF_READS_SET,
-            SSH_READS_SET,
-        ],
     )
 
     # The long-running OpenClaw Pod is hosted in its own namespace; keep its Action

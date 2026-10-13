@@ -3078,7 +3078,6 @@ spec:
       automountServiceAccountToken: true
       containers:
         - args:
-            - --namespace=agentplane-testing
             - --sandbox-namespace=agentplane-testing
             - --sandbox-service-target=agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
             - --runner-gateway-target=agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8080

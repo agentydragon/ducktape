@@ -50,25 +50,23 @@ def test_gaffer_write_policies_are_finance_agent_only() -> None:
 def test_haku_preset_binds_what_its_account_binding_names(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
-    """The Haku preset covers every set the `haku-agent-reads` binding describes, plus Haku's one
+    """The Haku preset covers every Action set the `haku-agent` binding names, plus Haku's one
     write. The binding is the reviewed bundle; the preset is what a launch actually gets, because a
     managed runner Pod runs as its own per-Sandbox ServiceAccount and never sees that binding."""
     docs = agentplane_manifests[staging.ENV.namespace]
-    binding = one(
-        doc for doc in docs if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] == "haku-agent-reads"
-    )
-    bound = set(binding["spec"]["policySets"])
+    binding = one(doc for doc in docs if doc["kind"] == "PolicyBinding" and doc["metadata"]["name"] == "haku-agent")
     app_config = one(
         doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
     )
     preset = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]["haku"]["policy_sets"]
     assert len(preset) == len(set(preset))
-    assert bound <= set(preset), f"preset is missing {sorted(bound - set(preset))}"
     action_sets = {
         doc["metadata"]["name"]
         for doc in docs
         if doc["kind"] == "PolicySet" and any(rule["type"] == "action_auto_approve" for rule in doc["spec"]["rules"])
     }
+    bound = set(binding["spec"]["policySets"]) & action_sets
+    assert bound <= set(preset), f"preset is missing {sorted(bound - set(preset))}"
     assert set(preset) & action_sets == set(HAKU_ACTION_POLICY_SETS), "preset and its named bundle drifted"
     assert set(HAKU_ACTION_POLICY_SETS) - bound == {DUCKTAPE_PR_FAILED_JOBS_SET}, "a second write joined the bundle"
 

@@ -759,8 +759,10 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 ```mermaid
 flowchart TD
     ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
+    APP_NAMESPACE_SETTING_DROP[Waits on rollout: delete Settings.namespace]
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
     COHERENCE_REFACTORS[Section 11 coherence refactors] --> REFACTOR_COHERENCE_AUDIT
+    APP_NAMESPACE_SETTING_DROP --> REFACTOR_COHERENCE_AUDIT
 ```
 
 ### `ACTION_EXECUTION_AUDIT_TRIM` — execution reconciliation columns
@@ -769,6 +771,12 @@ flowchart TD
 `reconciliation_source` in `action_service/db.py` are written but read only by a test, and
 `ReconciliationSource` has one member. Either expose `reconciled_by` in the execution view, or
 drop both columns and the enum.
+
+### `APP_NAMESPACE_SETTING_DROP` — delete `Settings.namespace`
+
+**Waits on rollout** of an `agentplane-app` image built after the manifests stopped passing
+`--namespace` (already merged), on both agentplane-staging and agentplane-testing. Then delete the
+optional `namespace` field and its `CLEANUP` in `agentplane/app/settings.py`.
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 

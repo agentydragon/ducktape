@@ -3886,7 +3886,6 @@ spec:
       automountServiceAccountToken: true
       containers:
         - args:
-            - --namespace=agentplane-staging
             - --sandbox-namespace=agentplane-staging
             - --sandbox-service-target=agentplane-sandbox-service.agentplane-staging.svc.cluster.local:8080
             - --runner-gateway-target=agentplane-runner-gateway.agentplane-staging.svc.cluster.local:8080
@@ -8676,7 +8675,7 @@ apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
 metadata:
   annotations:
-    description: What sandboxes running as the claude-ai ServiceAccount may reach.
+    description: What the claude-ai ServiceAccount, and sandboxes running as it, may reach and have auto-approved.
   name: claude-ai
   namespace: agentplane-staging
 spec:
@@ -8700,12 +8699,21 @@ spec:
     - github-agentydragon-agent
     - github-actions-logs
     - buildbuddy
+    - github-reads
+    - github-identity-reads
+    - sandbox-self
+    - home-assistant-reads
+    - gmail-reads
+    - google-calendar-reads
+    - tana-reads
+    - grocy-sf-reads
+    - ssh-reads
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
 metadata:
   annotations:
-    description: What sandboxes running as the haku-agent ServiceAccount may reach.
+    description: What the haku-agent ServiceAccount, and sandboxes running as it, may reach and have auto-approved.
   name: haku-agent
   namespace: agentplane-staging
 spec:
@@ -8727,6 +8735,15 @@ spec:
     - github-clone
     - github-agentydragon-agent
     - github-actions-logs
+    - github-reads
+    - github-identity-reads
+    - sandbox-self
+    - home-assistant-reads
+    - gmail-reads
+    - google-calendar-reads
+    - tana-reads
+    - grocy-sf-reads
+    - ssh-reads
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -8934,50 +8951,6 @@ spec:
         actions:
           ssh:
             - list_targets
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicyBinding
-metadata:
-  annotations:
-    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for Connections acting as the claude-ai ServiceAccount.
-  name: claude-ai-reads
-  namespace: agentplane-staging
-spec:
-  subject:
-    namespace: agentplane-staging
-    name: claude-ai
-  policySets:
-    - github-reads
-    - github-identity-reads
-    - sandbox-self
-    - home-assistant-reads
-    - gmail-reads
-    - google-calendar-reads
-    - tana-reads
-    - grocy-sf-reads
-    - ssh-reads
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicyBinding
-metadata:
-  annotations:
-    description: Auto-approves the reviewed GitHub/Home Assistant/Gmail/Calendar/Tana/Grocy SF/SSH reads and sandbox use for the haku-agent ServiceAccount.
-  name: haku-agent-reads
-  namespace: agentplane-staging
-spec:
-  subject:
-    namespace: agentplane-staging
-    name: haku-agent
-  policySets:
-    - github-reads
-    - github-identity-reads
-    - sandbox-self
-    - home-assistant-reads
-    - gmail-reads
-    - google-calendar-reads
-    - tana-reads
-    - grocy-sf-reads
-    - ssh-reads
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicyBinding
