@@ -54,7 +54,7 @@ Missing:
 
 - **Standing grants as a separate product.** A `PolicyBinding` represents reusable authority, for
   egress today and for every rule type once
-  [`POLICY_RUNTIME_GRANTS`](task_dag.md#policy_runtime_grants--time-limited-grants) lands; it is not
+  [`POLICY_RUNTIME_GRANTS`](task_dag.md#policy_runtime_grants--web-app-affordances-for-bindings-and-sets) lands; it is not
   another outcome or repeated Execution of one ActionRequest.
 
 ## 2. Trusted orchestrator, untrusted fleet
