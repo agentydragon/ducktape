@@ -1,5 +1,5 @@
 """The central egress proxy, its interception CA/trust bundle, and the
-EgressCredential/EgressPolicy resources it reads.
+EgressCredential resources and egress PolicySets it reads.
 """
 
 from __future__ import annotations
@@ -8,10 +8,9 @@ from agentplane_egresscredential_crds.works.allegedly.agentplane import (
     EgressCredentialSpecTargets,
     EgressCredentialSpecTargetsMethod,
 )
-from agentplane_egresspolicy_crds.works.allegedly.agentplane import (
-    EgressPolicySpecRules,
-    EgressPolicySpecRulesCredentialRef,
-    EgressPolicySpecRulesMethods,
+from agentplane_policyset_crds.works.allegedly.agentplane import (
+    PolicySetSpecRulesCredentialRef,
+    PolicySetSpecRulesMethods,
 )
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
@@ -65,6 +64,7 @@ from cluster.cdk8s.litellm.credentials import CHEAP_EXPERIMENTS_KEY
 from cluster.cdk8s.ollama import app as ollama
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.agentplane.egress_credential import EgressCredential, Source
+from cluster.cdk8s.providers.agentplane.policy_set import Rule
 from cluster.cdk8s.providers.cert_manager.bundle import Bundle
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, IngressRule, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -106,7 +106,7 @@ CA_BUNDLE_KEY = "ca-certificates.crt"
 JAVA_TRUST_STORE_KEY = "ca-certificates.p12"
 _UPSTREAM_CA_DIR = "/etc/agentplane-egress/upstream-ca"
 
-# The EgressPolicy objects created below that every environment ships. A name is exported
+# The egress PolicySets created below that every environment ships. A name is exported
 # because a preset or an explicit grant refers to the policy by name; each lives with the
 # construct that creates it, so renaming or dropping a policy is a change in one file.
 BASIC_POLICY = "basic"
@@ -173,12 +173,12 @@ def add_runner_egress(
         f"{policy}-policy",
         metadata=ApiObjectMetadata(name=policy, namespace=namespace),
         rules=[
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[endpoint.fqdn],
                 cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.POST],
+                methods=[PolicySetSpecRulesMethods.POST],
                 paths=[path],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name=credential),
+                credential_ref=PolicySetSpecRulesCredentialRef(name=credential),
             )
         ],
     )
@@ -317,17 +317,17 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
         "egresspolicy-inference-experiments",
         metadata=ApiObjectMetadata(name=INFERENCE_EXPERIMENTS_POLICY, namespace=namespace),
         rules=[
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[ollama.AUTH_PROXY.fqdn],
                 cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.GET],
+                methods=[PolicySetSpecRulesMethods.GET],
                 paths=["/api/tags", "/api/ps", "/api/version", "/v1/models"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="ollama"),
+                credential_ref=PolicySetSpecRulesCredentialRef(name="ollama"),
             ),
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[ollama.AUTH_PROXY.fqdn],
                 cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.POST],
+                methods=[PolicySetSpecRulesMethods.POST],
                 paths=[
                     "/api/show",
                     "/api/chat",
@@ -339,19 +339,19 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                     "/v1/responses",
                     "/v1/embeddings",
                 ],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="ollama"),
+                credential_ref=PolicySetSpecRulesCredentialRef(name="ollama"),
             ),
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[litellm_service.fqdn],
                 cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.GET],
+                methods=[PolicySetSpecRulesMethods.GET],
                 paths=["/v1/models", "/models", "/model/info"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="litellm-cheap-experiments"),
+                credential_ref=PolicySetSpecRulesCredentialRef(name="litellm-cheap-experiments"),
             ),
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[litellm_service.fqdn],
                 cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.POST],
+                methods=[PolicySetSpecRulesMethods.POST],
                 paths=[
                     "/v1/chat/completions",
                     "/v1/completions",
@@ -361,7 +361,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                     "/v1/embeddings",
                     "/v1/audio/transcriptions",
                 ],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="litellm-cheap-experiments"),
+                credential_ref=PolicySetSpecRulesCredentialRef(name="litellm-cheap-experiments"),
             ),
         ],
     )
@@ -370,7 +370,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
         scope,
         "public-internet-policy",
         metadata=ApiObjectMetadata(name=PUBLIC_INTERNET_POLICY, namespace=namespace),
-        rules=[EgressPolicySpecRules(hosts=["*"])],
+        rules=[Rule.egress(hosts=["*"])],
     )
     add_egress_policy(
         scope,
@@ -379,21 +379,21 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
         rules=[
             # The proxy matches a request's host on the exact string, so the in-cluster hosts are the
             # full names their clients spell.
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[llm_ingress.service(namespace).fqdn],
                 cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
+                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
+                credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[notifications.service(namespace).fqdn],
                 cluster_internal=True,
                 methods=[
-                    EgressPolicySpecRulesMethods.GET,
-                    EgressPolicySpecRulesMethods.POST,
-                    EgressPolicySpecRulesMethods.PUT,
-                    EgressPolicySpecRulesMethods.PATCH,
-                    EgressPolicySpecRulesMethods.DELETE,
+                    PolicySetSpecRulesMethods.GET,
+                    PolicySetSpecRulesMethods.POST,
+                    PolicySetSpecRulesMethods.PUT,
+                    PolicySetSpecRulesMethods.PATCH,
+                    PolicySetSpecRulesMethods.DELETE,
                 ],
                 paths=[
                     "/openapi.json",
@@ -403,12 +403,12 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                     "/v1/inboxes",
                     "/v1/inboxes/**",
                 ],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name=notifications.WORKLOAD_CREDENTIAL),
+                credential_ref=PolicySetSpecRulesCredentialRef(name=notifications.WORKLOAD_CREDENTIAL),
             ),
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[actions.service(namespace).fqdn],
                 cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST],
+                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
                 paths=[
                     "/mcp",
                     "/openapi.json",
@@ -418,14 +418,14 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                     "/v1/action-requests",
                     "/v1/action-requests/**",
                 ],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
+                credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[agent_api(namespace).fqdn],
                 cluster_internal=True,
-                methods=[EgressPolicySpecRulesMethods.GET],
+                methods=[PolicySetSpecRulesMethods.GET],
                 paths=["/openapi.json", "/v1/rules"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="agentplane-workload"),
+                credential_ref=PolicySetSpecRulesCredentialRef(name="agentplane-workload"),
             ),
             # The API server, inside `basic` rather than behind a policy a launch opts into: every
             # agent talks to Kubernetes, so what decides it is RBAC and not whether a preset or a
@@ -439,10 +439,10 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             # of RBAC that drifts from it. Upgrade verbs (exec, attach, port-forward) negotiate
             # SPDY or WebSocket through an intercepting proxy and are not known to work; ordinary
             # requests and watches are what this admits in practice.
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[KUBERNETES_HOST],
                 cluster_internal=True,
-                credential_ref=EgressPolicySpecRulesCredentialRef(name=KUBERNETES_CREDENTIAL),
+                credential_ref=PolicySetSpecRulesCredentialRef(name=KUBERNETES_CREDENTIAL),
             ),
         ],
     )
@@ -469,7 +469,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             # substitutes a PAT on the same hosts; claude-ai's boxes, which are not bound to
             # it, get them without a credential from `github-downloads`
             # (actions_staging_policies.py).
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=[
                     # keep-sorted start
                     "bcr.bazel.build",
@@ -495,7 +495,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                     "static.rust-lang.org",
                     # keep-sorted end
                 ],
-                methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.HEAD],
+                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.HEAD],
             )
         ],
     )
@@ -504,10 +504,10 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
         "egresspolicy-github-agentydragon-agent",
         metadata=ApiObjectMetadata(name=GITHUB_AGENTYDRAGON_AGENT_POLICY, namespace=namespace),
         rules=[
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=["api.github.com", "github.com", "codeload.github.com", "*.githubusercontent.com"],
-                methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name="github-pat"),
+                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
+                credential_ref=PolicySetSpecRulesCredentialRef(name="github-pat"),
             )
         ],
     )
@@ -524,7 +524,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             # a header, so there is nothing for the PAT substitution to attach and no
             # credentialRef here -- this is the same shape as `packages` below. GET-only:
             # retrieving a log or artifact archive, never uploading one.
-            EgressPolicySpecRules(hosts=["*.blob.core.windows.net"], methods=[EgressPolicySpecRulesMethods.GET])
+            Rule.egress(hosts=["*.blob.core.windows.net"], methods=[PolicySetSpecRulesMethods.GET])
         ],
     )
     add_egress_policy(
@@ -535,9 +535,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             # PR visual review publishes public before/after screenshots under this path.
             # No credential is sent: GET-only for the report and its image assets, not
             # general access to the S3 host or arbitrary object storage operations.
-            EgressPolicySpecRules(
-                hosts=["s3.allegedly.works"], methods=[EgressPolicySpecRulesMethods.GET], paths=["/pr-visuals/**"]
-            )
+            Rule.egress(hosts=["s3.allegedly.works"], methods=[PolicySetSpecRulesMethods.GET], paths=["/pr-visuals/**"])
         ],
     )
     add_egress_policy(
@@ -548,9 +546,9 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             # app.buildbuddy.io serves the HTTP API (including invocation details and logs);
             # remote.buildbuddy.io serves Build Event Service, Remote Execution and remote cache.
             # The API key itself limits BuildBuddy authority to the account's configured access.
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=["app.buildbuddy.io", "remote.buildbuddy.io"],
-                credential_ref=EgressPolicySpecRulesCredentialRef(name=BUILDBUDDY_POLICY),
+                credential_ref=PolicySetSpecRulesCredentialRef(name=BUILDBUDDY_POLICY),
             )
         ],
     )
@@ -567,9 +565,9 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
             # gains no identity, only the ability to attempt the same request GitHub already
             # answers for a public repo (or 401s/404s for a private one it has no other access
             # to).
-            EgressPolicySpecRules(
+            Rule.egress(
                 hosts=["github.com"],
-                methods=[EgressPolicySpecRulesMethods.GET, EgressPolicySpecRulesMethods.POST],
+                methods=[PolicySetSpecRulesMethods.GET, PolicySetSpecRulesMethods.POST],
                 paths=["/*/*.git/info/refs", "/*/*.git/git-upload-pack", "/*/*/info/refs", "/*/*/git-upload-pack"],
             )
         ],
@@ -579,7 +577,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
 class Egress(Construct):
     """The central egress proxy: ServiceAccount, RBAC, interception CA/trust bundle,
     Deployment, Services, CiliumNetworkPolicy, optional PodDisruptionBudget, and the
-    EgressCredential/EgressPolicy resources it reads.
+    EgressCredential resources and egress PolicySets it reads.
     """
 
     def __init__(self, scope: Construct, id: str, env: Environment, *, runners: Pods) -> None:

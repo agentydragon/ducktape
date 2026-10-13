@@ -64,7 +64,11 @@ def test_haku_preset_binds_what_its_account_binding_names(
     preset = yaml.safe_load(app_config["data"]["config.yaml"])["sandbox_presets"]["haku"]["policy_sets"]
     assert len(preset) == len(set(preset))
     assert bound <= set(preset), f"preset is missing {sorted(bound - set(preset))}"
-    action_sets = {doc["metadata"]["name"] for doc in docs if doc["kind"] == "ActionPolicySet"}
+    action_sets = {
+        doc["metadata"]["name"]
+        for doc in docs
+        if doc["kind"] == "PolicySet" and any(rule["type"] == "action_auto_approve" for rule in doc["spec"]["rules"])
+    }
     assert set(preset) & action_sets == set(HAKU_ACTION_POLICY_SETS), "preset and its named bundle drifted"
     assert set(HAKU_ACTION_POLICY_SETS) - bound == {DUCKTAPE_PR_FAILED_JOBS_SET}, "a second write joined the bundle"
 

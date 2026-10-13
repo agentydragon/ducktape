@@ -1437,69 +1437,6 @@ spec:
       scheme: Bearer
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: inference-experiments
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - ollama.ollama.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /api/tags
-        - /api/ps
-        - /api/version
-        - /v1/models
-      clusterInternal: true
-      credentialRef:
-        name: ollama
-    - hosts:
-        - ollama.ollama.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /api/show
-        - /api/chat
-        - /api/generate
-        - /api/embed
-        - /api/embeddings
-        - /v1/chat/completions
-        - /v1/completions
-        - /v1/responses
-        - /v1/embeddings
-      clusterInternal: true
-      credentialRef:
-        name: ollama
-    - hosts:
-        - litellm.litellm.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /v1/models
-        - /models
-        - /model/info
-      clusterInternal: true
-      credentialRef:
-        name: litellm-cheap-experiments
-    - hosts:
-        - litellm.litellm.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /v1/chat/completions
-        - /v1/completions
-        - /v1/responses
-        - /v1/messages
-        - /v1/messages/count_tokens
-        - /v1/embeddings
-        - /v1/audio/transcriptions
-      clusterInternal: true
-      credentialRef:
-        name: litellm-cheap-experiments
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: inference-experiments
@@ -1567,16 +1504,6 @@ spec:
         name: litellm-cheap-experiments
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: public-internet
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - "*"
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: public-internet
@@ -1586,71 +1513,6 @@ spec:
     - type: egress
       hosts:
         - "*"
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: basic
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - agentplane-llm-ingress.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-        - POST
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
-    - hosts:
-        - agentplane-notifications.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-        - POST
-        - PUT
-        - PATCH
-        - DELETE
-      paths:
-        - /openapi.json
-        - /v1/sources
-        - /v1/subscriptions
-        - /v1/subscriptions/**
-        - /v1/inboxes
-        - /v1/inboxes/**
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-notifications-workload
-    - hosts:
-        - agentplane-actions.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-        - POST
-      paths:
-        - /mcp
-        - /openapi.json
-        - /v1/action-groups
-        - /v1/action-groups/**
-        - /v1/action-policy
-        - /v1/action-requests
-        - /v1/action-requests/**
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
-    - hosts:
-        - agentplane-egress.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /openapi.json
-        - /v1/rules
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
-    - hosts:
-        - kubernetes.default.svc.cluster.local
-      clusterInternal: true
-      credentialRef:
-        name: kubernetes-workload
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1723,36 +1585,6 @@ spec:
         name: kubernetes-workload
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: packages
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - bcr.bazel.build
-        - cache.nixos.org
-        - channels.nixos.org
-        - code.forgejo.org
-        - data.forgejo.org
-        - files.pythonhosted.org
-        - ftp.gnu.org
-        - ghcr.io
-        - index.crates.io
-        - nixos.org
-        - nodejs.org
-        - pkg-containers.githubusercontent.com
-        - pypi.org
-        - registry.npmjs.org
-        - releases.bazel.build
-        - snapshot.debian.org
-        - static.crates.io
-        - static.rust-lang.org
-      methods:
-        - GET
-        - HEAD
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: packages
@@ -1784,24 +1616,6 @@ spec:
         - HEAD
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: github-agentydragon-agent
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - api.github.com
-        - github.com
-        - codeload.github.com
-        - "*.githubusercontent.com"
-      methods:
-        - GET
-        - POST
-      credentialRef:
-        name: github-pat
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: github-agentydragon-agent
@@ -1821,18 +1635,6 @@ spec:
         name: github-pat
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: github-actions-logs
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - "*.blob.core.windows.net"
-      methods:
-        - GET
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: github-actions-logs
@@ -1844,20 +1646,6 @@ spec:
         - "*.blob.core.windows.net"
       methods:
         - GET
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: public-coder-pr-visuals
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - s3.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /pr-visuals/**
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -1875,19 +1663,6 @@ spec:
         - /pr-visuals/**
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: buildbuddy
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - app.buildbuddy.io
-        - remote.buildbuddy.io
-      credentialRef:
-        name: buildbuddy
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: buildbuddy
@@ -1900,24 +1675,6 @@ spec:
         - remote.buildbuddy.io
       credentialRef:
         name: buildbuddy
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: github-clone
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - github.com
-      methods:
-        - GET
-        - POST
-      paths:
-        - /*/*.git/info/refs
-        - /*/*.git/git-upload-pack
-        - /*/*/info/refs
-        - /*/*/git-upload-pack
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -2839,23 +2596,6 @@ spec:
       scheme: Bearer
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: runner-control
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - agentplane-runner-gateway.agentplane-staging.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /agentplane.proto.runner_control.RunnerControl/Connect
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-runner-control
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: runner-control
@@ -3174,23 +2914,6 @@ spec:
     - header: Authorization
       method: schemeToken
       scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: runner-ingress
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - agentplane-history-service.agentplane-staging.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /agentplane.proto.runner_ingress.RunnerIngress/Push
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-runner-ingress
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -8044,49 +7767,6 @@ metadata:
 automountServiceAccountToken: false
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: The reviewed read-only subset of GitHub MCP's default catalog; every other GitHub Action stays on the human path.
-  name: github-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        github:
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_label
-          - get_latest_release
-          - get_me
-          - get_release_by_tag
-          - get_tag
-          - get_team_members
-          - get_teams
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_code
-          - search_commits
-          - search_issues
-          - search_pull_requests
-          - search_repositories
-          - search_users
-          - ui_get
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -8132,20 +7812,6 @@ spec:
             - ui_get
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: The caller's own GitHub identity read, with no repository or mutation surface.
-  name: github-identity-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        github:
-          - get_me
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -8160,47 +7826,6 @@ spec:
         actions:
           github:
             - get_me
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Reviewed GitHub reads scoped to agentydragon-agent/ducktape, the coder Agent's fork.
-  name: public-ducktape-fork-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: github_repository
-      actions:
-        github:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_code
-          - search_issues
-          - search_pull_requests
-      owner: agentydragon-agent
-      repository: ducktape
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -8246,47 +7871,6 @@ spec:
         repository: ducktape
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Reviewed GitHub reads scoped to agentydragon/ducktape.
-  name: public-ducktape-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: github_repository
-      actions:
-        github:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_code
-          - search_issues
-          - search_pull_requests
-      owner: agentydragon
-      repository: ducktape
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -8328,47 +7912,6 @@ spec:
             - search_pull_requests
         owner: agentydragon
         repository: ducktape
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Reviewed GitHub reads scoped to the private agentydragon/gaffer-private.
-  name: public-gaffer-private-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: github_repository
-      actions:
-        github:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_code
-          - search_issues
-          - search_pull_requests
-      owner: agentydragon
-      repository: gaffer-private
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -8414,45 +7957,6 @@ spec:
         repository: gaffer-private
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Reviewed GitHub reads of any repository a live unauthenticated lookup confirms public.
-  name: public-github-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: github_public_repository
-      actions:
-        github:
-          - actions_get
-          - actions_list
-          - find_duplicate
-          - get_commit
-          - get_file_blame
-          - get_file_contents
-          - get_job_logs
-          - get_label
-          - get_latest_release
-          - get_release_by_tag
-          - get_tag
-          - issue_dependency_read
-          - issue_read
-          - list_branches
-          - list_commits
-          - list_issue_fields
-          - list_issue_types
-          - list_issues
-          - list_pull_requests
-          - list_releases
-          - list_repository_collaborators
-          - list_tags
-          - pull_request_read
-          - search_code
-          - search_issues
-          - search_pull_requests
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -8494,37 +7998,6 @@ spec:
             - search_pull_requests
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Auto-approves only GitHub MCP rerun_failed_jobs calls for agentydragon/ducktape; dispatch, whole-run rerun, cancellation and log deletion remain on the human path.
-  name: ducktape-pr-failed-jobs
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: argument_schema
-      actions:
-        github:
-          - actions_run_trigger
-      schema:
-        properties:
-          method:
-            const: rerun_failed_jobs
-          owner:
-            const: agentydragon
-          repo:
-            const: ducktape
-          run_id:
-            minimum: 1
-            type: integer
-        required:
-          - method
-          - owner
-          - repo
-          - run_id
-        type: object
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -8556,71 +8029,6 @@ spec:
             - repo
             - run_id
           type: object
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Auto-approves only GitHub MCP create_branch and create_pull_request calls targeting agentydragon/gaffer-private; existing branches cannot be overwritten, the PR is not merged, and other writes remain human-approved.
-  name: gaffer-private-branch-and-pr-creation
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: argument_schema
-      actions:
-        github:
-          - create_branch
-      schema:
-        additionalProperties: false
-        properties:
-          branch:
-            minLength: 1
-            type: string
-          from_branch:
-            minLength: 1
-            type: string
-          owner:
-            const: agentydragon
-          repo:
-            const: gaffer-private
-        required:
-          - owner
-          - repo
-          - branch
-        type: object
-    - type: argument_schema
-      actions:
-        github:
-          - create_pull_request
-      schema:
-        additionalProperties: false
-        properties:
-          base:
-            minLength: 1
-            type: string
-          body:
-            type: string
-          draft:
-            type: boolean
-          head:
-            minLength: 1
-            type: string
-          maintainer_can_modify:
-            const: false
-          owner:
-            const: agentydragon
-          repo:
-            const: gaffer-private
-          title:
-            minLength: 1
-            type: string
-        required:
-          - owner
-          - repo
-          - title
-          - head
-          - base
-        type: object
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -8787,18 +8195,6 @@ subjects:
     namespace: agentplane-staging
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: coinbase
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - api.coinbase.com
-      methods:
-        - GET
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: coinbase
@@ -8810,21 +8206,6 @@ spec:
         - api.coinbase.com
       methods:
         - GET
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: agentplane-testing
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - agentplane-app.agentplane-testing.svc.cluster.local
-      clusterInternal: true
-    - hosts:
-        - agentplane-testing.allegedly.works
-        - agentplane-dex-testing.allegedly.works
-      clusterInternal: true
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -8871,23 +8252,6 @@ spec:
   endpointSelector:
     matchLabels:
       app.kubernetes.io/name: agentplane-egress
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: github-downloads
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - github.com
-        - codeload.github.com
-        - objects.githubusercontent.com
-        - release-assets.githubusercontent.com
-        - raw.githubusercontent.com
-      methods:
-        - GET
-        - HEAD
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -8968,25 +8332,6 @@ spec:
     - github-actions-logs
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: "Auto-approves every sandbox Action: a caller's own boxes, which act only as that caller, and reads of the templates they are made from."
-  name: sandbox-self
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        sandbox:
-          - create
-          - dispose
-          - exec
-          - get
-          - get_template
-          - list
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -9006,49 +8351,6 @@ spec:
             - get
             - get_template
             - list
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: The reviewed read-only subset of Home Assistant MCP's default catalog; every other Home Assistant Action stays on the human path.
-  name: home-assistant-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        home_assistant:
-          - ha_config_get_automation
-          - ha_config_get_calendar_events
-          - ha_config_get_category
-          - ha_config_get_dashboard
-          - ha_config_get_label
-          - ha_config_get_scene
-          - ha_config_get_script
-          - ha_config_list_dashboard_resources
-          - ha_config_list_groups
-          - ha_config_list_helpers
-          - ha_get_app
-          - ha_get_automation_traces
-          - ha_get_blueprint
-          - ha_get_device
-          - ha_get_entity
-          - ha_get_entity_exposure
-          - ha_get_hacs_info
-          - ha_get_history
-          - ha_get_integration
-          - ha_get_logs
-          - ha_get_operation_status
-          - ha_get_overview
-          - ha_get_skill_guide
-          - ha_get_state
-          - ha_get_system_health
-          - ha_get_todo
-          - ha_get_zone
-          - ha_list_floors_areas
-          - ha_list_services
-          - ha_search
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9096,28 +8398,6 @@ spec:
             - ha_search
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: The reviewed read-only subset of the Gmail MCP backend's catalog; every write stays on the human path.
-  name: gmail-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        gmail:
-          - drafts_get
-          - drafts_list
-          - filters_get
-          - filters_list
-          - labels_get
-          - labels_list
-          - messages_get
-          - threads_get
-          - threads_list
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -9142,22 +8422,6 @@ spec:
             - threads_list
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: The reviewed read-only subset of the Google Calendar MCP backend's catalog; create_event stays on the human path.
-  name: google-calendar-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        google_calendar:
-          - get_event
-          - list_event_instances
-          - list_events
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   annotations:
@@ -9174,26 +8438,6 @@ spec:
             - get_event
             - list_event_instances
             - list_events
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: The reviewed read-only subset of the Tana MCP backend's catalog, plus get_or_create_calendar_node; every other write and open_node stay on the human path.
-  name: tana-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        tana:
-          - get_children
-          - get_or_create_calendar_node
-          - get_tag_schema
-          - list_tags
-          - list_workspaces
-          - read_node
-          - search_nodes
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9216,38 +8460,6 @@ spec:
             - list_workspaces
             - read_node
             - search_nodes
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: The reviewed read-only subset of the Grocy SF MCP backend's catalog; every write, open_product_stock included, stays on the human path.
-  name: grocy-sf-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        grocy_sf:
-          - entities_get
-          - entities_list
-          - file_get
-          - get_below_minimum_stock
-          - get_current_user
-          - get_db_changed_time
-          - get_expired_stock
-          - get_expiring_stock
-          - get_product_stock
-          - get_system_info
-          - list_volatile_stock
-          - locations_list
-          - product_groups_list
-          - products_list
-          - quantity_units_list
-          - shopping_list_get
-          - shopping_lists_list
-          - stock_entries_list
-          - stock_get
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9282,20 +8494,6 @@ spec:
             - shopping_lists_list
             - stock_entries_list
             - stock_get
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: ActionPolicySet
-metadata:
-  annotations:
-    description: Auto-approves the SSH MCP backend's list_targets, which only names configured targets and key availability; every other SSH Action stays on the human path.
-  name: ssh-reads
-  namespace: agentplane-staging
-spec:
-  autoApproveIf:
-    - type: exact_actions
-      actions:
-        ssh:
-          - list_targets
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9528,25 +8726,6 @@ spec:
       method: basicPassword
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: forgejo-haku
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - forgejo-http.forgejo.svc.cluster.local
-        - forgejo-http.forgejo.svc
-        - forgejo-http.forgejo
-      clusterInternal: true
-      credentialRef:
-        name: forgejo-haku
-    - hosts:
-        - git.allegedly.works
-      credentialRef:
-        name: forgejo-haku
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: forgejo-haku
@@ -9654,25 +8833,6 @@ spec:
       method: basicPassword
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: forgejo-finance-agent
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - forgejo-http.forgejo.svc.cluster.local
-        - forgejo-http.forgejo.svc
-        - forgejo-http.forgejo
-      clusterInternal: true
-      credentialRef:
-        name: forgejo-finance-agent
-    - hosts:
-        - git.allegedly.works
-      credentialRef:
-        name: forgejo-finance-agent
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: forgejo-finance-agent
@@ -9708,44 +8868,6 @@ spec:
     - header: Authorization
       method: schemeToken
       scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: google-readonly
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - docs.googleapis.com
-        - gmail.googleapis.com
-        - people.googleapis.com
-        - sheets.googleapis.com
-        - slides.googleapis.com
-        - tasks.googleapis.com
-        - youtube.googleapis.com
-      methods:
-        - GET
-      credentialRef:
-        name: google-readonly
-    - hosts:
-        - www.googleapis.com
-      methods:
-        - GET
-      paths:
-        - /calendar/v3/**
-        - /drive/v3/**
-        - /youtube/v3/**
-      credentialRef:
-        name: google-readonly
-    - hosts:
-        - driveactivity.googleapis.com
-      methods:
-        - POST
-      paths:
-        - /v2/activity:query
-      credentialRef:
-        name: google-readonly
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9875,28 +8997,6 @@ spec:
       method: basicPassword
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: grocy-sf-readonly
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - grocy-sf.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /api/files/**
-        - /api/objects/**
-        - /api/stock
-        - /api/stock/**
-        - /api/system/db-changed-time
-        - /api/system/info
-        - /api/user
-      credentialRef:
-        name: grocy-sf-readonly
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: grocy-sf-readonly
@@ -10007,25 +9107,6 @@ spec:
       scheme: Bearer
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: home-assistant-readonly
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - home-assistant.home-assistant.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /api/states
-        - /api/states/*
-        - /api/history/period/*
-      clusterInternal: true
-      credentialRef:
-        name: home-assistant-readonly
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: home-assistant-readonly
@@ -10133,31 +9214,6 @@ spec:
       scheme: Bearer
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: activitywatch-read
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - activitywatch-read.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /api/0/**
-      credentialRef:
-        name: activitywatch-read
-    - hosts:
-        - activitywatch-read.allegedly.works
-      methods:
-        - POST
-      paths:
-        - /api/0/query
-        - /api/0/query/
-      credentialRef:
-        name: activitywatch-read
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: activitywatch-read
@@ -10199,32 +9255,6 @@ spec:
     - header: Authorization
       method: schemeToken
       scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: aiquota-read
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - aiquota.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /v1/**
-      credentialRef:
-        name: aiquota-read
-    - hosts:
-        - aiquota-api.cli-proxy-api.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /v1/quotas
-        - /v1/providers/*/raw
-      clusterInternal: true
-      credentialRef:
-        name: aiquota-read
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -10341,23 +9371,6 @@ spec:
       method: basicPassword
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: finance-aiquota-history
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - clickhouse.clickhouse.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /
-      clusterInternal: true
-      credentialRef:
-        name: clickhouse-finance-agent-credentials
----
-apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
   name: finance-aiquota-history
@@ -10461,31 +9474,6 @@ spec:
     - header: Authorization
       method: schemeToken
       scheme: Bearer
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: haku-mailbox
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - haku-mailbox.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /.well-known/jmap
-        - /jmap/**
-      credentialRef:
-        name: haku-mailbox
-    - hosts:
-        - haku-mailbox.allegedly.works
-      methods:
-        - POST
-      paths:
-        - /jmap/**
-      credentialRef:
-        name: haku-mailbox
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -10619,37 +9607,6 @@ spec:
   targets:
     - header: Authorization
       method: basicPassword
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: plaid-pgweb
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - plaid-pgweb.plaid-mcp.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /api/connection
-        - /api/info
-        - /api/objects
-        - /api/query
-        - /api/schemas
-        - /api/tables/**
-      clusterInternal: true
-      credentialRef:
-        name: plaid-pgweb
-    - hosts:
-        - plaid-pgweb.plaid-mcp.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /api/query
-      clusterInternal: true
-      credentialRef:
-        name: plaid-pgweb
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -11119,76 +10076,6 @@ spec:
   targets:
     - header: X-Subscription-Token
       method: wholeValue
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: EgressPolicy
-metadata:
-  name: public-coder-openclaw
-  namespace: agentplane-staging
-spec:
-  rules:
-    - hosts:
-        - github.com
-        - api.github.com
-        - codeload.github.com
-      credentialRef:
-        name: github-pat
-    - hosts:
-        - haku-kubeapi.allegedly.works
-      credentialRef:
-        name: public-coder-haku-console
-    - hosts:
-        - clickhouse.clickhouse.svc.cluster.local
-      clusterInternal: true
-      credentialRef:
-        name: public-coder-clickhouse
-    - hosts:
-        - aiquota.allegedly.works
-      methods:
-        - GET
-      paths:
-        - /v1/quotas
-        - /v1/providers/*/raw
-      credentialRef:
-        name: aiquota-read
-    - hosts:
-        - api.search.brave.com
-      credentialRef:
-        name: brave-search
-    - hosts:
-        - matrix.allegedly.works
-      methods:
-        - POST
-      paths:
-        - /_matrix/client/v3/login
-      credentialRef:
-        name: public-coder-matrix
-    - hosts:
-        - agentplane-egress.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /v1/rules
-        - /openapi.json
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
-    - hosts:
-        - agentplane-actions.agentplane-staging.svc.cluster.local
-      methods:
-        - GET
-        - POST
-      paths:
-        - /mcp
-        - /openapi.json
-        - /v1/action-groups
-        - /v1/action-groups/**
-        - /v1/action-policy
-        - /v1/action-requests
-        - /v1/action-requests/**
-      clusterInternal: true
-      credentialRef:
-        name: agentplane-workload
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet

@@ -111,8 +111,8 @@ def settings(
 def on_policy_sets(cfg: AppSettingsConfig) -> AppSettingsConfig:
     """The same settings with each preset on PolicySets, which a Sandbox takes alone.
 
-    Each egress policy and Action policy set has a PolicySet of its name (`egress_policies.py`,
-    `actions_staging_policies.py`); a preset's Kubernetes grants become the sets that cover them.
+    A preset's egress policies and Action policy sets are PolicySets already; its Kubernetes grants
+    become the sets that cover them.
     """
     # `model_copy` is typed `Any` on this settings class.
     converted: AppSettingsConfig = cfg.model_copy(

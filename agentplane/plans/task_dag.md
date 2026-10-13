@@ -526,9 +526,7 @@ handles expiry itself.
 
 **Candidate; the operator merges it.** Delete the
 `ActionPolicySet`/`ActionPolicyBinding` and `EgressPolicy`/`EgressBinding` CRDs, their readers in
-the Action Service and egress proxy (with the proxy's admin `/bindings` observations), the
-`EgressPolicy` that cdk8s's `add_egress_policy` renders beside each egress `PolicySet` (and the `ActionPolicySet`
-`actions_staging_policies._policy_set` renders beside each Action one), and the presets' separate `egress_policies`, `action_policy_sets`
+the Action Service and egress proxy (with the proxy's admin `/bindings` observations), and the presets' separate `egress_policies`, `action_policy_sets`
 and `kubernetes_grants` fields (`app/presets.py`, once the manifest generator stops setting them).
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox

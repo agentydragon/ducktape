@@ -60,7 +60,6 @@ class SandboxService(Construct):
                     for account in sorted(callers, key=lambda account: (account.namespace, account.name))
                 ],
                 "token_audience": TOKEN_AUDIENCE,
-                # Each egress policy has a PolicySet twin of its name (egress_policies.py).
                 "default_policy_sets": sorted(egress.DEFAULT_POLICIES),
                 "port": endpoint.port.number,
             },

@@ -69,7 +69,7 @@ _FINANCE_AGENT_INSTRUCTIONS = "\n\n".join(
 _FINANCE_AGENT_THREAD_SETUP = Path(__file__).with_name("finance_agent_thread_setup.sh").read_text(encoding="utf-8")
 # What the public-coder preset binds: reads of confirmed-public repositories, of ducktape and
 # its fork, and of the private Gaffer repository. The names come from
-# actions_staging_policies, which creates each ActionPolicySet this refers to; grouping them
+# actions_staging_policies, which creates each Action PolicySet this refers to; grouping them
 # into a preset is this module's business, naming them is not.
 PUBLIC_CODER_ACTION_POLICY_SETS = (
     PUBLIC_GITHUB_READS_SET,

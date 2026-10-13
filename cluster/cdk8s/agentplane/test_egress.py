@@ -62,8 +62,8 @@ def test_public_internet_is_available_but_never_implicitly_granted(
     agentplane_manifests: dict[str, list[dict[str, Any]]], namespace: str
 ) -> None:
     docs = agentplane_manifests[namespace]
-    public = _by_name(docs, "EgressPolicy", PUBLIC_INTERNET_POLICY)
-    assert public["spec"]["rules"] == [{"hosts": ["*"]}]
+    public = _by_name(docs, "PolicySet", PUBLIC_INTERNET_POLICY)
+    assert public["spec"]["rules"] == [{"type": "egress", "hosts": ["*"]}]
     # Every preset, not just today's public-coder preset, and the defaults.
     assert PUBLIC_INTERNET_POLICY not in _by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"]
     assert PUBLIC_INTERNET_POLICY not in _default_policies(docs)
@@ -87,7 +87,7 @@ def test_workload_policy_grants_only_the_agent_facing_actions_api(
     policy = one(
         doc
         for doc in agentplane_manifests[namespace]
-        if doc["kind"] == "EgressPolicy" and doc["metadata"]["name"] == BASIC_POLICY
+        if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == BASIC_POLICY
     )
     rule = one(rule for rule in policy["spec"]["rules"] if one(rule["hosts"]).startswith("agentplane-actions."))
     assert rule["paths"], "a rule without paths admits every path on the host"
@@ -116,7 +116,7 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(
     is why the rule names neither methods nor paths.
     """
     docs = agentplane_manifests[namespace]
-    basic = _by_name(docs, "EgressPolicy", BASIC_POLICY)
+    basic = _by_name(docs, "PolicySet", BASIC_POLICY)
     api_server = one(rule for rule in basic["spec"]["rules"] if KUBERNETES_HOST in rule["hosts"])
     assert api_server.get("credentialRef") == {"name": KUBERNETES_CREDENTIAL}, api_server
     # Narrowing by verb or path would be a second, weaker copy of RBAC; RBAC decides.
@@ -138,7 +138,7 @@ def test_notifications_use_their_own_projected_audience(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     docs = agentplane_manifests[namespace]
-    policy = _by_name(docs, "EgressPolicy", BASIC_POLICY)
+    policy = _by_name(docs, "PolicySet", BASIC_POLICY)
     notification_rule = one(
         rule for rule in policy["spec"]["rules"] if notifications.service(namespace).fqdn in rule["hosts"]
     )
@@ -161,7 +161,7 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
     github = one(
         doc
         for doc in manifests
-        if doc["kind"] == "EgressPolicy" and doc["metadata"]["name"] == GITHUB_AGENTYDRAGON_AGENT_POLICY
+        if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == GITHUB_AGENTYDRAGON_AGENT_POLICY
     )
     github_rule = one(github["spec"]["rules"])
     assert "codeload.github.com" in github_rule["hosts"]
@@ -171,7 +171,7 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
     )
     assert credential["spec"]["source"]["secretRef"]
     assert not any(
-        doc["kind"] in {"EgressCredential", "EgressPolicy"}
+        doc["kind"] in {"EgressCredential", "PolicySet"}
         and doc["metadata"]["name"]
         in {
             FORGEJO_HAKU_POLICY,
@@ -353,8 +353,8 @@ def test_inference_is_granted_separately_from_platform_operations(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     docs = agentplane_manifests[namespace]
-    granted = _by_name(docs, "EgressPolicy", INFERENCE_EXPERIMENTS_POLICY)
-    basic = _by_name(docs, "EgressPolicy", BASIC_POLICY)
+    granted = _by_name(docs, "PolicySet", INFERENCE_EXPERIMENTS_POLICY)
+    basic = _by_name(docs, "PolicySet", BASIC_POLICY)
     assert INFERENCE_EXPERIMENTS_POLICY in _default_policies(docs)
     # Standing caller identities and static OpenClaw must receive the separate grant too.
     for binding in (doc for doc in docs if doc["kind"] == "PolicyBinding"):
@@ -393,9 +393,10 @@ def test_finance_aiquota_history_is_read_only_and_finance_only(
     assert FINANCE_AIQUOTA_HISTORY_POLICY in config["sandbox_presets"]["finance-agent"]["policy_sets"]
     for name in ("public-coder", "haku"):
         assert FINANCE_AIQUOTA_HISTORY_POLICY not in config["sandbox_presets"][name]["policy_sets"]
-    policy = _by_name(docs, "EgressPolicy", FINANCE_AIQUOTA_HISTORY_POLICY)
+    policy = _by_name(docs, "PolicySet", FINANCE_AIQUOTA_HISTORY_POLICY)
     assert policy["spec"]["rules"] == [
         {
+            "type": "egress",
             "hosts": [client.HTTP.fqdn],
             "clusterInternal": True,
             "methods": ["GET"],
@@ -408,7 +409,7 @@ def test_finance_aiquota_history_is_read_only_and_finance_only(
         "secretRef": {"name": client.FINANCE_AGENT_CREDENTIALS, "key": client.PASSWORD_KEY}
     }
     assert credential["spec"]["targets"] == [{"header": "Authorization", "method": "basicPassword"}]
-    quota = _by_name(docs, "EgressPolicy", AIQUOTA_READ_POLICY)
+    quota = _by_name(docs, "PolicySet", AIQUOTA_READ_POLICY)
     assert any(
         rule.get("clusterInternal")
         and rule.get("hosts") == ["aiquota-api.cli-proxy-api.svc.cluster.local"]

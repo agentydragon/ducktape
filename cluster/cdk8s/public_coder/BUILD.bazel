@@ -1,4 +1,4 @@
-# gazelle:resolve py agentplane_egresspolicy_crds //agentplane/crds:egresspolicy
+# gazelle:resolve py agentplane_policyset_crds //agentplane/crds:policyset
 # gazelle:resolve py agentplane_egresscredential_crds //agentplane/crds:egresscredential
 # gazelle:resolve py agentplane_policybinding_crds //agentplane/crds:policybinding
 # gazelle:resolve py kubevirt_virtualmachine_crds //cluster/cdk8s/providers/kubevirt:virtualmachine
@@ -81,8 +81,8 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         "//agentplane/crds:egresscredential",
-        "//agentplane/crds:egresspolicy",
         "//agentplane/crds:policybinding",
+        "//agentplane/crds:policyset",
         "//agentplane/egress:sidecar",
         "//agentplane/workload_auth:audience",
         "//cluster/cdk8s:cilium",
@@ -95,6 +95,7 @@ py_library(
         "//cluster/cdk8s/haku:kube_api_proxy",
         "//cluster/cdk8s/providers/agentplane:egress_credential",
         "//cluster/cdk8s/providers/agentplane:policy_binding",
+        "//cluster/cdk8s/providers/agentplane:policy_set",
         "//cluster/cdk8s/providers/cilium:network_policy",
         "//util:settings_contract",
         "@pypi//cdk8s",

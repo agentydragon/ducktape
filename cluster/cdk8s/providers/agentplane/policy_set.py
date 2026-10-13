@@ -6,7 +6,8 @@ variant shapes.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from typing import Any
 
 from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySet as _PolicySet,
@@ -15,6 +16,7 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
     PolicySetSpecRulesPolicy,
+    PolicySetSpecRulesPolicyType,
     PolicySetSpecRulesRole,
     PolicySetSpecRulesRoleKind,
     PolicySetSpecRulesType,
@@ -70,6 +72,54 @@ class Rule:
     def action_auto_approve(*, policy: PolicySetSpecRulesPolicy) -> PolicySetSpecRules:
         """Has the Action Service auto-approve a request `policy` matches."""
         return PolicySetSpecRules(type=PolicySetSpecRulesType.ACTION_UNDERSCORE_AUTO_UNDERSCORE_APPROVE, policy=policy)
+
+
+class AutoApproveIf:
+    """`action_auto_approve` rules by policy kind: `exact_actions` (an Action name allowlist),
+    `github_repository` (a fixed owner/repository), `github_public_repository` (a live,
+    unauthenticated visibility check in place of a fixed owner/repository), and `argument_schema`
+    (arguments satisfying a JSON Schema). The schema also defines `home_assistant_entity_control`
+    (a Home Assistant service call confined to configured entities and services) -- add a factory
+    the day this repo builds one.
+    """
+
+    @staticmethod
+    def exact_actions(*, actions: Mapping[str, Sequence[str]]) -> PolicySetSpecRules:
+        """Matches by Action name alone."""
+        return Rule.action_auto_approve(
+            policy=PolicySetSpecRulesPolicy(type=PolicySetSpecRulesPolicyType.EXACT_UNDERSCORE_ACTIONS, actions=actions)
+        )
+
+    @staticmethod
+    def github_repository(*, owner: str, repository: str, actions: Mapping[str, Sequence[str]]) -> PolicySetSpecRules:
+        """Requires a GitHub MCP call to target `owner`/`repository`."""
+        return Rule.action_auto_approve(
+            policy=PolicySetSpecRulesPolicy(
+                type=PolicySetSpecRulesPolicyType.GITHUB_UNDERSCORE_REPOSITORY,
+                owner=owner,
+                repository=repository,
+                actions=actions,
+            )
+        )
+
+    @staticmethod
+    def argument_schema(*, actions: Mapping[str, Sequence[str]], schema: dict[str, Any]) -> PolicySetSpecRules:
+        """Requires a listed Action's arguments to satisfy `schema`."""
+        return Rule.action_auto_approve(
+            policy=PolicySetSpecRulesPolicy(
+                type=PolicySetSpecRulesPolicyType.ARGUMENT_UNDERSCORE_SCHEMA, actions=actions, schema=schema
+            )
+        )
+
+    @staticmethod
+    def github_public_repository(*, actions: Mapping[str, Sequence[str]]) -> PolicySetSpecRules:
+        """Requires a GitHub MCP call to target a repository a live, unauthenticated lookup
+        confirms public."""
+        return Rule.action_auto_approve(
+            policy=PolicySetSpecRulesPolicy(
+                type=PolicySetSpecRulesPolicyType.GITHUB_UNDERSCORE_PUBLIC_UNDERSCORE_REPOSITORY, actions=actions
+            )
+        )
 
 
 class PolicySet(_PolicySet):

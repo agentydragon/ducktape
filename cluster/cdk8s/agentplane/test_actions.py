@@ -51,9 +51,9 @@ def _gaffer_approval(manifests: dict[str, list[dict[str, Any]]], action: str) ->
     policy = one(
         doc
         for doc in manifests["agentplane-staging"]
-        if doc["kind"] == "ActionPolicySet" and doc["metadata"]["name"] == "gaffer-private-branch-and-pr-creation"
+        if doc["kind"] == "PolicySet" and doc["metadata"]["name"] == "gaffer-private-branch-and-pr-creation"
     )
-    return one(entry for entry in policy["spec"]["autoApproveIf"] if entry["actions"] == {"github": [action]})
+    return one(rule["policy"] for rule in policy["spec"]["rules"] if rule["policy"]["actions"] == {"github": [action]})
 
 
 def test_gaffer_branch_policy_approves_only_create_branch(
