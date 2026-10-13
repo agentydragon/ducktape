@@ -39,6 +39,8 @@ const (
 	// stateVolume once no state PVC lacks an owner reference (check `kubectl get pvc -l
 	// agentplane.allegedly.works/sandbox` on each cluster).
 	SandboxUIDAnnotation = "agentplane.allegedly.works/sandbox-uid"
+	// On the Runner Gateway's Lease for a Sandbox: the Pod UID of the runner that last connected.
+	PodUIDAnnotation = "agentplane.allegedly.works/pod-uid"
 	// Seals a deleted Sandbox's Sessions, then deletes its Pod or VM; the state PVC goes by garbage
 	// collection once the Sandbox does.
 	StateVolumeFinalizer = "agentplane.allegedly.works/state-volume"
@@ -83,6 +85,13 @@ type unready struct {
 	retryAfter time.Duration
 }
 
+func (u *unready) retryAfterOrZero() time.Duration {
+	if u == nil {
+		return 0
+	}
+	return u.retryAfter
+}
+
 // workload is what runs the Sandbox, or ran it: its Pod, or its VirtualMachine with the VMI and
 // virt-launcher Pod of the VM's current run. A start deletes the other kind's first, so only one
 // kind is there unless someone else made it.
@@ -120,7 +129,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		if err != nil || blocked == nil {
 			return ctrl.Result{}, err
 		}
-		return ctrl.Result{RequeueAfter: blocked.retryAfter}, r.updateStatus(ctx, &sandbox, w, blocked)
+		return ctrl.Result{RequeueAfter: blocked.retryAfterOrZero()}, r.updateStatus(ctx, &sandbox, w, blocked)
 	}
 	if controllerutil.AddFinalizer(&sandbox, StateVolumeFinalizer) {
 		if err := r.Update(ctx, &sandbox); err != nil {
@@ -140,12 +149,17 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 	} else if gate == nil {
 		gate = launchGate
 	}
+	if blocked == nil && !sandbox.Spec.Running {
+		if blocked, err = r.sealBeforeStop(ctx, &sandbox, w); err != nil {
+			return ctrl.Result{}, err
+		}
+	}
 	if blocked == nil {
 		if w, blocked, err = r.converge(ctx, &sandbox, w, sandbox.Spec.Running, gate); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
-	return ctrl.Result{}, r.updateStatus(ctx, &sandbox, w, blocked)
+	return ctrl.Result{RequeueAfter: blocked.retryAfterOrZero()}, r.updateStatus(ctx, &sandbox, w, blocked)
 }
 
 func (r *Reconciler) workload(ctx context.Context, sandbox *Sandbox) (workload, error) {
@@ -193,12 +207,13 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 	// Without a state PVC of its own the Sandbox never had a runner, so it has no Session to seal;
 	// nor has one whose runner never connected, which is not sealed, only has nothing to seal.
 	needsSeal := own && !meta.IsStatusConditionTrue(sandbox.Status.Conditions, SessionsSealed)
+	var runner string
 	if needsSeal && r.Sealer != nil {
-		connected, err := r.everConnected(ctx, sandbox)
-		if err != nil {
+		var err error
+		if runner, err = r.unsealedRunner(ctx, sandbox); err != nil {
 			return w, nil, err
 		}
-		needsSeal = connected
+		needsSeal = runner != ""
 	}
 	if needsSeal {
 		// Only a running runner seals, so a stopped Sandbox runs once more; the Runner Gateway
@@ -210,7 +225,13 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 		if r.Sealer == nil {
 			return w, &unready{reason: "Sealing", message: "waiting for the Runner Gateway to seal every Session"}, nil
 		}
-		return w, r.seal(ctx, sandbox), nil
+		blocked = r.seal(ctx, sandbox, runner)
+		if blocked.retryAfter == 0 {
+			meta.SetStatusCondition(&sandbox.Status.Conditions, metav1.Condition{
+				Type: SessionsSealed, Status: metav1.ConditionTrue, Reason: "Sealed", Message: blocked.message, ObservedGeneration: sandbox.Generation,
+			})
+		}
+		return w, blocked, nil
 	}
 	if w.pod != nil {
 		if err := r.deleteIfLive(ctx, w.pod); err != nil {
@@ -234,18 +255,43 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 	return w, nil, r.Update(ctx, sandbox)
 }
 
-// everConnected is whether a runner ever connected for the Sandbox: the Runner Gateway's Lease for it
-// exists.
-func (r *Reconciler) everConnected(ctx context.Context, sandbox *Sandbox) (bool, error) {
+// connectedRunner is the Pod UID of the runner that last connected for the Sandbox, which the Runner
+// Gateway records on the Sandbox's Lease, or "" if none ever did.
+func (r *Reconciler) connectedRunner(ctx context.Context, sandbox *Sandbox) (string, error) {
 	var lease coordinationv1.Lease
 	err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + "-runner"}, &lease)
-	return err == nil, client.IgnoreNotFound(err)
+	return lease.Annotations[PodUIDAnnotation], client.IgnoreNotFound(err)
 }
 
-// seal asks the runner to seal every Session and, once the ingress has acknowledged each seal,
-// records it on the Sandbox's status for the caller to write. Seal is idempotent, so any failure is
-// asked again.
-func (r *Reconciler) seal(ctx context.Context, sandbox *Sandbox) *unready {
+// unsealedRunner is the Pod UID of the last connected runner if it still has Sessions to seal, or
+// "": none connected, or it is the one already sealed.
+func (r *Reconciler) unsealedRunner(ctx context.Context, sandbox *Sandbox) (string, error) {
+	runner, err := r.connectedRunner(ctx, sandbox)
+	if err != nil || (sandbox.Status.SealedIncarnation != nil && *sandbox.Status.SealedIncarnation == runner) {
+		return "", err
+	}
+	return runner, nil
+}
+
+// sealBeforeStop holds a Sandbox that is to stop while its current incarnation's runner has Sessions
+// to seal, and seals them. An incarnation whose runner never connected has none.
+func (r *Reconciler) sealBeforeStop(ctx context.Context, sandbox *Sandbox, w workload) (*unready, error) {
+	pod := w.incarnation()
+	if r.Sealer == nil || pod == nil {
+		return nil, nil
+	}
+	runner, err := r.unsealedRunner(ctx, sandbox)
+	if err != nil || runner == "" || runner != string(pod.UID) {
+		return nil, err
+	}
+	return r.seal(ctx, sandbox, runner), nil
+}
+
+// seal asks the runner of the Pod with this UID to seal every Session and, once the ingress has
+// acknowledged each seal, records it on the Sandbox's status for the caller to write. The returned
+// unready always says why the Sandbox is still held and has no retryAfter once the seal is recorded.
+// Seal is idempotent, so any failure is asked again.
+func (r *Reconciler) seal(ctx context.Context, sandbox *Sandbox, runner string) *unready {
 	result, err := r.Sealer.Seal(ctx, sandbox)
 	if err != nil {
 		return &unready{reason: "Sealing", message: err.Error(), retryAfter: sealRetry}
@@ -253,11 +299,8 @@ func (r *Reconciler) seal(ctx context.Context, sandbox *Sandbox) *unready {
 	if len(result.Unflushed) > 0 {
 		return &unready{reason: "Sealing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: sealRetry}
 	}
-	message := fmt.Sprintf("%d Sessions sealed", result.Sessions)
-	meta.SetStatusCondition(&sandbox.Status.Conditions, metav1.Condition{
-		Type: SessionsSealed, Status: metav1.ConditionTrue, Reason: "Sealed", Message: message, ObservedGeneration: sandbox.Generation,
-	})
-	return &unready{reason: "Sealing", message: message}
+	sandbox.Status.SealedIncarnation = &runner
+	return &unready{reason: "Sealing", message: fmt.Sprintf("%d Sessions sealed", result.Sessions)}
 }
 
 // deleteIfLive deletes obj, that very object, unless its deletion has begun.
@@ -354,6 +397,13 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 			}
 		}
 		return w, nil, r.haltVM(ctx, w.vm)
+	}
+	// A runner that sealed its Sessions takes no new ones, so a Sandbox resumed meanwhile starts anew.
+	if pod := w.incarnation(); pod != nil && sandbox.Status.SealedIncarnation != nil && *sandbox.Status.SealedIncarnation == string(pod.UID) {
+		if err := r.deleteIfLive(ctx, pod); err != nil {
+			return w, nil, err
+		}
+		return w, &unready{reason: "Starting", message: fmt.Sprintf("Pod %s is sealed and is being replaced", pod.Name)}, nil
 	}
 	if w.pod != nil {
 		// An ended incarnation goes too, so a running Sandbox gets a new one. A Pod still terminating

@@ -225,7 +225,7 @@ func TestVMDeletionWaitsForTheVMIBeforeTheStateVolume(t *testing.T) {
 	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
 	reconcileOnce(t, r)
 	vmi, _ := startVMI(t, c, kubevirtv1.Running)
-	connect(t, c)
+	connect(t, c, "uid-runner")
 	r.Sealer.(*fakeSealer).err = errors.New("runner unreachable")
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)

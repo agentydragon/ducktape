@@ -83,8 +83,10 @@ type Incarnation struct {
 }
 
 type SandboxStatus struct {
-	Incarnation *Incarnation       `json:"incarnation,omitempty"`
-	Conditions  []metav1.Condition `json:"conditions,omitempty"`
+	Incarnation *Incarnation `json:"incarnation,omitempty"`
+	// The UID of the last incarnation whose runner sealed every Session, kept after it stops.
+	SealedIncarnation *string            `json:"sealedIncarnation,omitempty"`
+	Conditions        []metav1.Condition `json:"conditions,omitempty"`
 }
 
 // +kubebuilder:object:root=true
