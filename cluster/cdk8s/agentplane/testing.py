@@ -274,6 +274,10 @@ _SANDBOX_RULES = [
         ],
         verbs=["get", "list", "watch"],
     ),
+    # `virtctl console`: the only way into a guest whose runner never connected.
+    RolePolicyRule(
+        resources=[custom_resource("subresources.kubevirt.io", "virtualmachineinstances/console")], verbs=["get"]
+    ),
 ]
 
 # Mints app-audience tokens for `agentplane-agent`, which has no RoleBindings: an identity for the
