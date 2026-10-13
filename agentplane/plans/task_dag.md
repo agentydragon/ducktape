@@ -662,6 +662,7 @@ state, which the controller validates; it gets no resume RPC on the Sandbox Serv
 ```mermaid
 flowchart TD
     VM_PROVIDER[VM provider, section 4] --> SANDBOX_IMAGE_REPLACE[Blocked: replace a VM's runner image between incarnations]
+    SANDBOX_LIFECYCLE[In progress: seal before suspend, PVC owned by the Sandbox]
 ```
 
 ### `SANDBOX_IMAGE_REPLACE` — replace a VM's runner image between incarnations
@@ -677,11 +678,32 @@ and the controller has no version gate. So of #8843's `ReplaceVmImage` (replaced
 the 2026-10-03 run) the Halted-only rewrite carries over,
 and the exact `VmTemplate.state_schema_version` match does not.
 
+### `SANDBOX_LIFECYCLE` — how a Sandbox suspends, seals and is deleted
+
+**In progress; the operator's target, 2026-10-13 PDT.** What is left of it, as the controller-seals
+and state-volume-owner PRs land, leaves this node.
+
+- **Seal before suspend.** Suspending seals the live incarnation first: the runner flushes, then
+  the Pod or VM goes. The Sandbox status records `sealedIncarnation`, the UID of the last sealed
+  incarnation. `CONTROLLER_SEALS` (section 12) is the sealing.
+- **No double seal.** A suspended Sandbox whose last incarnation is sealed is deleted without being
+  woken. Only an unsealed stopped Sandbox runs once more to seal.
+- **The Sandbox owns its state PVC.** `<sandbox>-state` has the Sandbox as controller owner with
+  `blockOwnerDeletion: false`, so foreground deletion cannot remove it before the seal. The
+  explicit PVC delete and the `sandbox-uid` annotation go away.
+- **Conditions.** `Running`, and `Sealed` in place of `SessionsSealed`, with reasons `Sealed`,
+  `NeverRan`, `Unsealed` and `Sealing`. The Sandbox's phase is derived from `spec.running`, the
+  deletion timestamp, the live incarnation and `Sealed`, never stored.
+- **Not done:** a force-seal operation (a stuck Sandbox has its finalizer removed by hand), and
+  automatic or explicit replacement of a Sandbox's spec. Suspend then resume starts from the
+  template as it is then; a stored rendered spec can feed a later diff.
+
 ### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes stop
 
 **Unscheduled; needs design; operator, 2026-10-11 PDT.** An idle runner Sandbox stops its
-current incarnation: the Pod or VM goes, and the Sandbox, its ServiceAccount, bindings and state
-PVC stay, so nothing is sealed or lost and `SESSION_REVIVE` resumes it on the same PVC. Decide what
+current incarnation: it is sealed (`SANDBOX_LIFECYCLE`), then the Pod or VM goes, and the Sandbox,
+its ServiceAccount, bindings and state PVC stay, so nothing is lost and `SESSION_REVIVE` resumes it
+on the same PVC. Decide what
 counts as idle (no turns or commands for a configured time, and nothing attached), and whether a
 stopped Sandbox is ever deleted outright, and when; deleting goes through
 [teardown](../sandbox_service/API.md#teardown) and the seal. Action Service boxes are
