@@ -161,7 +161,7 @@ here is only the transport. A gateway rollout drops every connection at once; th
 treat the reconnect window as connectivity lost, not as a Sandbox failure, and must not replace or
 restart anything because of it (no automatic spec replacement, operator 2026-10-13).
 
-**etcd write cost of runner facts.** The gateway already renews every connected Sandbox's Lease every
+**etcd write cost of runner facts (accepted by the operator, 2026-10-13).** The gateway already renews every connected Sandbox's Lease every
 `touch_s` (15 s by default), so each connected Sandbox costs about four etcd writes a minute before this
 design adds anything. Runner facts therefore add no writes: the gateway holds the latest busy/idle and stage
 facts in memory and puts them on the Lease in the next scheduled renewal, so an annotation change rides a write
