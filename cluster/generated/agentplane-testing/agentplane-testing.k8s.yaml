@@ -1891,6 +1891,12 @@ rules:
       - get
       - list
   - apiGroups:
+      - subresources.kubevirt.io
+    resources:
+      - virtualmachineinstances/console
+    verbs:
+      - get
+  - apiGroups:
       - ""
     resources:
       - pods
