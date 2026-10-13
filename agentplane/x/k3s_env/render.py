@@ -146,6 +146,18 @@ def _cnpg_cluster_fixups(cluster: dict[str, Any], node_ip: str) -> None:
     }
 
 
+def _use_local_path(node: Any) -> None:
+    """The cluster's storage classes do not exist on k3s, which ships `local-path`."""
+    if isinstance(node, dict):
+        if "storageClassName" in node:
+            node["storageClassName"] = "local-path"
+        for value in node.values():
+            _use_local_path(value)
+    elif isinstance(node, list):
+        for value in node:
+            _use_local_path(value)
+
+
 def _pod_spec_fixups(pod: dict[str, Any], node_ip: str) -> None:
     pod.pop("imagePullSecrets", None)
     pod.pop("nodeSelector", None)
@@ -181,6 +193,7 @@ def rewrite(docs: Iterable[Mapping[str, Any]], *, overrides: Mapping[str, str], 
             _pod_spec_fixups(doc["spec"]["template"]["spec"], node_ip)
         elif kind == "SandboxTemplate":
             _pod_spec_fixups(doc["spec"]["pod"]["spec"], node_ip)
+        _use_local_path(doc)
         out.append(doc)
     return out
 
