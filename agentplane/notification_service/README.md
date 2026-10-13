@@ -46,9 +46,7 @@ Configuration changes require a service restart.
 
 `actions` contains `url` and `token_file`; `sandbox_service` the Sandbox Service `target` and
 `token_file`; `runner_gateway` the Runner Gateway `target`, `control_target` and `token_file`;
-`history_service` its `target` and `token_file`. A config that still sets the gateway's keys in
-`sandbox_service` as `gateway_target`, `control_target` and `gateway_token_file` is read as
-`runner_gateway`. Each service checks its own token audience,
+`history_service` its `target` and `token_file`. Each service checks its own token audience,
 so each token file holds a token projected for that service. Token paths refer to rotating projected ServiceAccount tokens, not static secrets. Actions rereads its
 token file for each request. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed
 environment variable rather than putting the DSN in the ConfigMap.
