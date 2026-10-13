@@ -69,6 +69,9 @@ message Hello {
 
 message Welcome {
   uint64 connection_epoch = 1;
+  // The UID of the Sandbox incarnation (its Pod, or a VM's virt-launcher Pod) the gateway authenticated
+  // this connection as. A seal the runner recorded under another UID is an earlier incarnation's.
+  string incarnation_uid = 3;
   reserved 2;
   reserved "capabilities";
 }

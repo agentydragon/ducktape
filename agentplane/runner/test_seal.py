@@ -77,5 +77,18 @@ async def test_a_restarted_runner_keeps_the_seal(
             assert await refusal(driver.attach("test-session-b", spec=SPEC)) == grpc.StatusCode.FAILED_PRECONDITION
 
 
+async def test_a_new_incarnation_on_the_same_state_is_not_sealed(
+    config: RunnerConfig, last_cursors: dict[str, int], gateway: Gateway
+) -> None:
+    del last_cursors
+    async with running(config, gateway):
+        await RunnerDriver(gateway).seal()
+    gateway.control.incarnation_uid = "test-next-incarnation"
+    async with running(config, gateway) as next_incarnation:
+        # A call is served only after the Welcome has been adopted.
+        await RunnerDriver(gateway).list_sessions()
+        assert not next_incarnation.store.sealed
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

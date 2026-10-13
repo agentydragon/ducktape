@@ -107,8 +107,9 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 
 ## Teardown seal
 
-- `Seal` is for Sandbox teardown only. The runner first records, durably, that the Sandbox is sealed;
-  from then on, including after a restart, it refuses `OpenSession` and `ResumeSession`, so no
+- `Seal` is for Sandbox teardown only. The runner first records, durably, that the Sandbox is sealed
+  in this incarnation, naming the incarnation UID its latest `Welcome` carried; from then on,
+  including after a restart in the same incarnation, it refuses `OpenSession` and `ResumeSession`, so no
   session is created or resumed. It then stops every setup script and harness, and seals each session's journal at its
   final cursor, returning those cursors. Sealing again returns the same cursors. Each cursor comes
   with `flushed`: whether the ingress has acknowledged that seal, as the runner recorded it, so it
@@ -117,6 +118,9 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   every entry through the seal's cursor, then `Sealed`.
 - An ordinary stop never seals, since a stopped session can resume. A seal ends this Sandbox's
   incarnation of the session's history.
+- The state volume outlives incarnations, so on each `Welcome` the runner drops a seal recorded under
+  another incarnation UID before it serves any call: a new incarnation starts unsealed. Journals
+  sealed by the earlier incarnation stay sealed.
 
 ## Events
 

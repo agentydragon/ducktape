@@ -116,7 +116,11 @@ async def dial(runner: Runner, gateway: Gateway) -> AsyncIterator[Callable[[], A
 
     async def start() -> Service:
         client = RunnerControlClient(
-            RunnerService(runner), target=gateway.endpoint.target, bearer="test-placeholder", timing=TIMING
+            RunnerService(runner),
+            target=gateway.endpoint.target,
+            bearer="test-placeholder",
+            timing=TIMING,
+            adopt_incarnation=runner.adopt_incarnation,
         )
         tasks.append(asyncio.create_task(client.run()))
         return await gateway.control.runner()

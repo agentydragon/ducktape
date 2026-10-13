@@ -31,6 +31,7 @@ A = "test-session-a"
 B = "test-session-b"
 TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=0.5, backoff_initial_s=0.01, backoff_max_s=0.05)
 JOURNALED = 3
+INCARNATION = "test-incarnation"
 
 
 @dataclass
@@ -129,6 +130,7 @@ async def journal_of(runner: Runner, session_id: str) -> list[event_log_pb2.Even
 @pytest.fixture
 async def runner(config: RunnerConfig) -> AsyncIterator[Runner]:
     async with Runner(config) as runner:
+        runner.adopt_incarnation(INCARNATION)
         for session_id in (A, B):
             runner.store.write(session_id, SessionRecord.from_spec(SPEC))
             await journal_stderr(runner, session_id, JOURNALED)
@@ -220,6 +222,7 @@ async def test_flushed_reports_the_acknowledged_seal_across_a_restart(
     assert {seal.session_id: seal.flushed for seal in (await runner.seal()).sessions} == {A: True, B: True}
     await runner.stop()
     async with Runner(config) as restarted:
+        restarted.adopt_incarnation(INCARNATION)
         assert {seal.session_id: (seal.cursor, seal.flushed) for seal in (await restarted.seal()).sessions} == {
             A: (JOURNALED, True),
             B: (JOURNALED, True),

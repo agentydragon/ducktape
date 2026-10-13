@@ -164,7 +164,9 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
             )
             async with asyncio.timeout(self.timing.liveness_s):
                 await context.write(
-                    runner_control_pb2.ServiceFrame(welcome=runner_control_pb2.Welcome(connection_epoch=epoch))
+                    runner_control_pb2.ServiceFrame(
+                        welcome=runner_control_pb2.Welcome(connection_epoch=epoch, incarnation_uid=peer.pod_uid)
+                    )
                 )
             await self.serve(principal, peer, epoch, request_iterator, context)
         except WorkloadPrincipalRejectedError:

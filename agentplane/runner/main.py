@@ -161,7 +161,11 @@ async def async_main(config: RunnerConfig, *, control: ServiceEndpoint, ingress:
         dialing = [
             asyncio.create_task(
                 RunnerControlClient(
-                    RunnerService(runner), target=control.target, bearer=control.bearer, timing=StreamTiming()
+                    RunnerService(runner),
+                    target=control.target,
+                    bearer=control.bearer,
+                    timing=StreamTiming(),
+                    adopt_incarnation=runner.adopt_incarnation,
                 ).run(),
                 name="runner control stream",
             ),

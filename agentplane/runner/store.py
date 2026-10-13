@@ -140,6 +140,8 @@ def validate_session_id(session_id: str) -> str:
 class SessionStore:
     def __init__(self, root: Path) -> None:
         self.root = root
+        # None until the first `Welcome` names the incarnation.
+        self._incarnation_uid: str | None = None
         make_directory(root)
 
     def directory(self, session_id: str) -> Path:
@@ -152,11 +154,28 @@ class SessionStore:
     def sealed(self) -> bool:
         return (self.root / "sealed").is_file()
 
+    def adopt_incarnation(self, incarnation_uid: str) -> None:
+        """Learn which incarnation of its Sandbox this runner is, from the gateway's `Welcome`, before
+        any call is served. The state volume outlives incarnations, so a seal recorded by an earlier
+        one is dropped; a seal recorded by this one, such as before a runner restart, stands."""
+        self._incarnation_uid = incarnation_uid
+        marker = self.root / "sealed"
+        if marker.is_file() and marker.read_text() != incarnation_uid:
+            marker.unlink()
+            sync_directory(self.root)
+
     def seal(self) -> None:
-        """Durably refuse new and resumed sessions in this Sandbox, across runner restarts."""
+        """Durably refuse new and resumed sessions in this incarnation, across runner restarts."""
+        if self._incarnation_uid is None:
+            raise RuntimeError("the incarnation is unknown until the first Welcome")
         marker = self.root / "sealed"
         if not marker.is_file():
-            marker.touch()
+            staged = self.root / "sealed.tmp"
+            with staged.open("w") as file:
+                file.write(self._incarnation_uid)
+                file.flush()
+                os.fsync(file.fileno())
+            staged.replace(marker)
             sync_directory(self.root)
 
     def exists(self, session_id: str) -> bool:

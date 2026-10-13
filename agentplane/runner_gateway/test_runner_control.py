@@ -23,6 +23,7 @@ from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
 from agentplane.runner_gateway.testing.runner_control import (
     HELLO,
+    LAUNCHER_POD_UID,
     OTHER_REPLICA,
     REPLICA,
     RUNNER_TOKEN,
@@ -110,7 +111,7 @@ async def test_newest_connection_supersedes_the_previous_one(
     async with connect(listener) as first:
         await first.write(HELLO)
         welcome = await read_frame(first)
-        assert welcome.welcome == runner_control_pb2.Welcome(connection_epoch=1)
+        assert welcome.welcome == runner_control_pb2.Welcome(connection_epoch=1, incarnation_uid="test-pod-uid")
         assert (await read_frame(first)).HasField("heartbeat")
         async with connect(listener) as second:
             await second.write(HELLO)
@@ -155,7 +156,7 @@ async def test_a_runner_in_a_vm_connects(
     run_in_a_vm(cluster)
     async with connect(listener) as call:
         await call.write(HELLO)
-        assert (await read_frame(call)).welcome.connection_epoch == 1
+        assert (await read_frame(call)).welcome.incarnation_uid == LAUNCHER_POD_UID
 
 
 async def test_a_virt_launcher_pod_that_is_not_its_sandboxes_incarnation_is_refused(

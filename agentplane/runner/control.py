@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from typing import override
 from uuid import uuid4
@@ -177,9 +177,17 @@ class RunnerControlClient:
     """
 
     def __init__(
-        self, runner: runner_control_pb2_grpc.RunnerServicer, *, target: str, bearer: str, timing: StreamTiming
+        self,
+        runner: runner_control_pb2_grpc.RunnerServicer,
+        *,
+        target: str,
+        bearer: str,
+        timing: StreamTiming,
+        adopt_incarnation: Callable[[str], None],
     ) -> None:
         self.runner = runner
+        # Told each Welcome's incarnation before the gateway's first call can arrive.
+        self.adopt_incarnation = adopt_incarnation
         self.target = target
         # A placeholder the egress proxy swaps for this Pod's control token; the runner never holds it.
         self.bearer = bearer
@@ -217,6 +225,9 @@ class RunnerControlClient:
                     raise StreamLostError(await call.code(), await call.details())
                 if first.WhichOneof("frame") != "welcome":
                     raise StreamLostError(None, f"expected Welcome, got {first.WhichOneof('frame')}")
+                if not first.welcome.incarnation_uid:
+                    raise StreamLostError(None, "the Welcome names no incarnation")
+                self.adopt_incarnation(first.welcome.incarnation_uid)
                 welcomed_at = loop.time()
                 logger.info("runner control stream connected at epoch %d", first.welcome.connection_epoch)
                 await self.serve(call, runner)

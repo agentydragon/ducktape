@@ -49,6 +49,8 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
         self.authorizations: list[str] = []
         self.closes: list[grpc.StatusCode] = []
         self.silences = 0
+        # The incarnation each new connection's Welcome names; a test changes it to start another.
+        self.incarnation_uid = "test-incarnation"
         self._runner: runner_control_pb2_grpc.RunnerAsyncStub | None = None
         self._connected = asyncio.Condition()
 
@@ -73,7 +75,11 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
         self.hellos.append((await anext(request_iterator)).hello)
         self.peers.append(context.peer())
         await context.write(
-            runner_control_pb2.ServiceFrame(welcome=runner_control_pb2.Welcome(connection_epoch=len(self.hellos)))
+            runner_control_pb2.ServiceFrame(
+                welcome=runner_control_pb2.Welcome(
+                    connection_epoch=len(self.hellos), incarnation_uid=self.incarnation_uid
+                )
+            )
         )
         if self.closes:
             await context.abort(self.closes.pop(0), "test service closes this connection")
@@ -181,7 +187,13 @@ async def dialing(runner: Runner, gateway: Gateway) -> AsyncIterator[None]:
     connections = gateway.control.connections
     async with (
         background(
-            RunnerControlClient(RunnerService(runner), target=target, bearer=bearer, timing=TIMING).run(),
+            RunnerControlClient(
+                RunnerService(runner),
+                target=target,
+                bearer=bearer,
+                timing=TIMING,
+                adopt_incarnation=runner.adopt_incarnation,
+            ).run(),
             name="runner control stream",
         ),
         background(IngressPusher(runner, target=target, bearer=bearer, timing=TIMING).run(), name="ingress push"),

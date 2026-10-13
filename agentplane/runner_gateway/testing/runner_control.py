@@ -191,7 +191,9 @@ async def connected(
     """`runner` holds one `Connect` stream to the listener at `target`, which `control` belongs to, as
     the runner `token` names, and serves the gateway's calls on it until the block ends. It does not
     reconnect."""
-    client = RunnerControlClient(runner, target=target, bearer=token, timing=RUNNER_TIMING)
+    client = RunnerControlClient(
+        runner, target=target, bearer=token, timing=RUNNER_TIMING, adopt_incarnation=lambda _: None
+    )
     async with local_server(
         lambda server: runner_control_pb2_grpc.add_RunnerServicer_to_server(runner, server)
     ) as served:
