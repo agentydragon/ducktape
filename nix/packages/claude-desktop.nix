@@ -16,6 +16,7 @@
 }:
 let
   version = "2.31226.1";
+  desktopFile = "com.anthropic.Claude.desktop";
 in
 pkgs.stdenv.mkDerivation {
   pname = "claude-desktop";
@@ -63,6 +64,7 @@ pkgs.stdenv.mkDerivation {
     nspr
     nss
     pango
+    pipewire # claude-native-binding.node
     util-linux # libuuid
     libx11
     libxcomposite
@@ -117,12 +119,15 @@ pkgs.stdenv.mkDerivation {
 
     # Point the desktop entry's Exec lines at our wrapper. Match the three
     # `Exec=claude-desktop <arg>` lines (main + NewChat/NewCode actions) without
-    # touching StartupWMClass/Icon, which also contain the literal name.
-    substituteInPlace $out/share/applications/claude-desktop.desktop \
+    # touching Icon, which also contains the literal name.
+    substituteInPlace $out/share/applications/${desktopFile} \
       --replace-fail "Exec=claude-desktop " "Exec=$out/bin/claude-desktop "
 
     runHook postInstall
   '';
+
+  # The .deb's desktop-entry filename; the GitHub-proxy wrapper rewrites it.
+  passthru = { inherit desktopFile; };
 
   meta = {
     description = "Claude Desktop — Anthropic's Electron desktop app (Linux beta)";

@@ -84,10 +84,9 @@ let
       rm "$out/bin/claude-desktop"
       ln -s ${lib.getExe desktopLauncher} "$out/bin/claude-desktop"
       ln -s ${lib.getExe desktopLauncher} "$out/bin/claude-desktop-proxied"
-      # Keep this in sync with the desktop entry installed by claude-desktop.nix.
-      rm "$out/share/applications/claude-desktop.desktop"
-      substitute ${rawDesktop}/share/applications/claude-desktop.desktop \
-        "$out/share/applications/claude-desktop.desktop" \
+      rm "$out/share/applications/${rawDesktop.desktopFile}"
+      substitute ${rawDesktop}/share/applications/${rawDesktop.desktopFile} \
+        "$out/share/applications/${rawDesktop.desktopFile}" \
         --replace-fail ${lib.getExe rawDesktop} "$out/bin/claude-desktop"
     '';
     inherit (rawDesktop) meta;
