@@ -777,6 +777,10 @@ flowchart TD
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
+    K3S_LIFECYCLE_SUITE[Candidate: k3s lifecycle integration suite]
+    SEAL_RENAME -. quiesce assertions .-> K3S_LIFECYCLE_SUITE
+    QUIESCE_INTERRUPT -. quiesce assertions .-> K3S_LIFECYCLE_SUITE
+    BOOTSTRAP_PROGRESS_CONTRACT[Candidate: the Sandbox bootstrap runs when the runner starts, section 6] -. Ready implies bootstrapped .-> K3S_LIFECYCLE_SUITE
 ```
 
 ### `DURABLE_SESSION_LIFECYCLE` — Session lifetime and revival
@@ -791,6 +795,17 @@ one hook covers them: the gateway finds the Sandbox in its Session registry, set
 resource's desired state to running and holds the command until the new incarnation's runner
 connects. A command held only while the sender waits is lost if the sender goes away;
 `DISPATCHER_WAKE_ON_SEND` is the durable version, and it wakes the Sandbox through the Sandbox Service rather than the gateway. Resuming by Session ID works while the Sandbox exists, stopped or not. Open: what the user sees while it starts.
+
+### `K3S_LIFECYCLE_SUITE` — a k3s lifecycle integration suite
+
+**Candidate; operator, 2026-10-13 PDT: smaller k3s-based tests of the Sandbox lifecycle.** One
+shared k3s environment fixture on a BuildBuddy action (`agentplane/x/k3s_rbe_spike`), one test per
+flow, no LLM: create, bootstrap, suspend, resume, quiesce and delete, about 15 minutes on RBE. The
+flows that work today (create, suspend, resume, delete, bootstrap) can land first. The quiesce
+assertions wait for `SEAL_RENAME` and `QUIESCE_INTERRUPT`, and the assertion that `Ready` implies a
+finished bootstrap for `BOOTSTRAP_PROGRESS_CONTRACT`. The disposable-environment lane owns the
+fixture. Tests that need ClusterIP Services, KubeVirt or Cilium stay elsewhere
+(`ISOLATED_ACCEPTANCE_CI`).
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
 
