@@ -663,7 +663,12 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 ```mermaid
 flowchart TD
     DURABLE_SESSION_LIFECYCLE[Decision: Session lifetime and revival]
-    SESSION_STATE_VOLUME_DESIGN[Decision: what the state PVC holds]
+    SESSION_STATE_VOLUME_DESIGN[Decision: should the state volume stay virtiofs]
+    NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
+    WORKSPACE_VOLUME[Blocked: a workspace volume tracked apart from the state PVC]
+    SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
+    WORKSPACE_CONVERSION[Decision: convert a workspace volume while suspended]
+    WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
     AGENTPLANE_SANDBOX_RESOURCE[In progress: our own Sandbox resource]
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
@@ -673,6 +678,12 @@ flowchart TD
     DURABLE_SESSION_LIFECYCLE --> SESSION_STATE_VOLUME_DESIGN
     DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
     SESSION_STATE_VOLUME_DESIGN --> AGENTPLANE_SANDBOX_RESOURCE
+    NODE_LOCAL_BLOCK_STORAGE --> WORKSPACE_VOLUME
+    AGENTPLANE_SANDBOX_RESOURCE --> WORKSPACE_VOLUME
+    WORKSPACE_VOLUME --> WORKSPACE_CONVERSION
+    WORKSPACE_VOLUME --> WORKSPACE_NODE_PORTABILITY
+    SANDBOX_SPEC_EDIT -. related .-> WORKSPACE_VOLUME
+    SESSION_STATE_VOLUME_DESIGN -. related .-> WORKSPACE_VOLUME
     AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
@@ -684,8 +695,8 @@ flowchart TD
 
 ### `DURABLE_SESSION_LIFECYCLE` — Session lifetime and revival
 
-**Decision.** Decide: what a revived Session gets
-back (native harness state only, or also its workspace files); who may revive. Each incarnation
+**Decision.** Decide: who may revive. A revived Session gets back its native harness state, and its workspace if
+the workspace volume still exists (`WORKSPACE_VOLUME`). Each incarnation
 uses the Sandbox's template as it is at that start (`AGENTPLANE_SANDBOX_RESOURCE`), so revival
 picks up template and image updates. Sessions that share a Sandbox revive together,
 since they share its state PVC. Direction (operator, 2026-10-11 PDT): a new user message or a
@@ -694,21 +705,66 @@ one hook covers them: the gateway finds the Sandbox in its Session registry, set
 resource's desired state to running and holds the command until the new incarnation's runner
 connects. Resuming by Session ID works while the Sandbox exists, stopped or not. Open: what the user sees while it starts.
 
-### `SESSION_STATE_VOLUME_DESIGN` — what the state PVC holds
+### `SESSION_STATE_VOLUME_DESIGN` — should the state volume stay virtiofs
 
-**Decision; direction set by the operator, 2026-10-10 and 2026-10-12 PDT.** One filesystem PVC per Sandbox holds the native harness files and the
-runner's state, separate from the workspace; each incarnation's runner continues the same journal
-on it. The Sandbox Controller creates it from the template's `stateVolume`, mounted as a volume in pods
-and through virtiofs in VMs (`agentplane/runner/vm.nix`). The runner's state and the harness files sit in
-separate `/state/runner` and `/state/harness` directories (`VM_PROCESS_ISOLATION`). For VMs, the operator's direction (2026-10-12 PDT) keeps the workspace
-VM-local rather than on a PVC, so it is dropped on a switch from VM to pod, and makes it a mounted
-PVC once the cluster has block storage that can move between kinds (OpenEBS or another
-provisioner); VM-local means a disk the VM keeps across stop and start, deleted only with the
-Sandbox, since a revived conversation refers to files the agent made (operator, 2026-10-12 PDT). Decide: storage class, since `local-path` pins a volume to one node and so pins every incarnation
-there; file ownership, since files a VM writes are `107:107` (`agentplane/runner/vm.nix`), so pods run the runner and harness as `107:107` and a Session moves between kinds with no `chown` (checked live); its quota (TODO, deferred by the
-operator 2026-10-12: `local-path` enforces no PVC size, and inside a guest `df` shows the node's
-whole disk; #4717 tracks a capacity-enforcing provisioner); and refusing an incompatible harness or
-runner version rather than attempting it.
+**Decision; direction set by the operator, 2026-10-10, 2026-10-12 and 2026-10-13 PDT.** One
+filesystem PVC per Sandbox holds the runner's state and the harness's native files, not the
+workspace; each incarnation's runner continues the same journal on it. The Sandbox Controller creates
+it from the template's `stateVolume`, mounted as a volume in pods and through virtiofs in VMs
+(`agentplane/runner/vm.nix`), in separate `/state/runner` and `/state/harness` directories
+(`VM_PROCESS_ISOLATION`). Files a VM writes are `107:107`, so pods run the runner and harness as
+`107:107` and a Session moves between kinds with no `chown` (checked live). The runner versions and
+migrates the contents, and the controller has no version gate (`SANDBOX_IMAGE_REPLACE`). Decide
+whether both kinds should instead use block storage for it: virtiofs's speed is the operator's
+recollection and not measured here, and it may lack operations such as `mmap`. Measure both first.
+The workspace is `WORKSPACE_VOLUME`'s.
+
+### `NODE_LOCAL_BLOCK_STORAGE` — node-local block volumes on every node
+
+**Unscheduled; operator, 2026-10-13 PDT.** The cluster has no provisioner on every node that makes
+block volumes (a PVC with `volumeMode: Block`, or a filesystem PVC on a block device), so a VM
+cannot get a fast workspace that way. Install one that is node-local, since replicated filesystems
+were slow in the operator's experience, and capacity-enforcing, which is #4717
+(<https://github.com/agentydragon/ducktape/issues/4717>): `local-path` enforces no PVC size, and inside a
+guest `df` shows the node's whole disk. OpenEBS LVM already serves `llm-models` on one node.
+Node-local pins a volume, and so every incarnation, to its node; moving it is
+`WORKSPACE_NODE_PORTABILITY`.
+
+### `WORKSPACE_VOLUME` — a workspace volume tracked apart from the state PVC
+
+**Blocked on `NODE_LOCAL_BLOCK_STORAGE` and the Sandbox resource; operator, 2026-10-13 PDT.** Today,
+read from the code and not run: a pod's workspaces sit under `/state/workspaces` on the state PVC; a
+VM's workspace is a VM-local blank disk (a DataVolume) that survives stop and start, because stopping
+keeps the VM and its disks, and is deleted with the VM, that is, when the Sandbox is deleted or its
+template switches from VM to Pod. The pod's `/state/workspaces` content is not visible in a VM, whose
+disk mounts over that path. Track the workspace as its own volume in the Sandbox, apart from the state
+PVC, for both kinds, and when it is gone (dropped, or never made) resume reconciles by creating a
+fresh one, so losing a workspace never loses the runner's state. Workspaces can be large (tens of GB
+of build caches), so this is where the block storage matters. Portable workspaces and runner state
+between VM and Pod then depend on the storage config moving together; `WORKSPACE_CONVERSION` decides
+how.
+
+### `SANDBOX_SPEC_EDIT` — edit a suspended Sandbox's template or kind
+
+**Unscheduled; operator, 2026-10-13 PDT.** Let the operator change a Sandbox's template, including a
+switch between VM and Pod, from the app, only while the Sandbox is suspended. Each incarnation
+already reads the template as it is then (`SANDBOX_IMAGE_REPLACE`), and no spec is replaced
+automatically (`SANDBOX_LIFECYCLE`); this is the explicit, operator-driven edit. Needs `WORKSPACE_VOLUME`
+to say what happens to the workspace on a kind switch.
+
+### `WORKSPACE_CONVERSION` — convert a workspace volume while suspended
+
+**Decision; operator, 2026-10-13 PDT.** While a Sandbox is suspended, allow "convert the workspace
+volume into this other type" (for example block to filesystem, or to another storage class), perhaps
+through volsync. Decide whether to define which Sandbox kinds are compatible with which volume types
+and refuse the rest up front, or to try the start and surface the Kubernetes or KubeVirt error.
+Blocked on `WORKSPACE_VOLUME`.
+
+### `WORKSPACE_NODE_PORTABILITY` — move a workspace between nodes
+
+**Unscheduled; operator, 2026-10-13 PDT: even later.** A reasonably fast, node-portable workspace, or
+node portability by copying: volsync from node to node, through S3 on SeaweedFS or directly, while the
+Sandbox is suspended. Node-local volumes stay the default; this only moves them.
 
 ### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
 
