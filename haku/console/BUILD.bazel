@@ -4,8 +4,8 @@ load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:mappings.bzl", "pkg_files", "strip_prefix")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
+load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//visibility:public"])
 

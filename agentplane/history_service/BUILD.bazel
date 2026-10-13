@@ -1,7 +1,7 @@
 load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
-load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
 
 package(default_visibility = ["//agentplane/history_service:__subpackages__"])
 

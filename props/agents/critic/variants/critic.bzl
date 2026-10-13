@@ -9,7 +9,7 @@ Architecture:
 """
 
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load", "oci_push")
-load("//props:oci.bzl", "py_image_entrypoint", "py_image_env")
+load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
 
 def critic_variant(name, prompt_md):
     """Build a critic variant using the in-container model.
