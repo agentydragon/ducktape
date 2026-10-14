@@ -1,37 +1,29 @@
 # Workspace storage cutoff proposal
 
-Status: reviewable resource list; **not executed**. The operator accepted an incompatible storage
+Status: remaining cutoff is **not executed**; two separately authorized deletions are recorded below.
+The operator accepted an incompatible storage
 cutoff in principle. This proposal names the actual data loss and remaining execution gate before
 typed workspace templates become active. It does not authorize routine Sandbox deletion.
 
 ## Observed resources
 
-Metadata-only inventory refreshed on 2026-10-14 at approximately 19:09 UTC found three old-layout
-Sandboxes in staging and no non-fixture Sandboxes in testing. The earlier 08:52 UTC one-Sandbox
-snapshot became stale while the operator host slept; the refresh expanded the proposed resource
-list before publication. Testing acceptance fixtures are separate and cleaned by their exact UIDs. Both environments'
+Metadata-only staging inventory refreshed on 2026-10-14 at approximately 20:02 UTC found one
+remaining old-layout Sandbox, `finance-agent-2`. The earlier testing inventory found no non-fixture
+Sandboxes. Testing acceptance fixtures are separate and cleaned by their exact UIDs. Both environments'
 sandbox-controller is on accepting image `devel-20261014082718-1ceacb7`; staging has two Ready replicas
 and testing one. Existing `runner`, staging `runner-ducktape`, and `runner-vm` templates still omit
 `workspaceVolume`. They have not been activated by this proposal.
 
 | Namespace          | Resource | Name                                     | UID                                  | Disposition if this exact cutoff is approved                 |
 | ------------------ | -------- | ---------------------------------------- | ------------------------------------ | ------------------------------------------------------------ |
-| agentplane-staging | Sandbox  | finance-agent-1                          | 8faad755-2a71-4ad1-94f6-c987189b896a | Delete through ordinary quiesce/finalizer path               |
-| agentplane-staging | PVC      | finance-agent-1-state                    | 3a32ec13-824f-45fe-a684-e2e04c9ca4b0 | Garbage-collected with its Sandbox; all contents lost        |
-| cluster-scoped     | PV       | pvc-3a32ec13-824f-45fe-a684-e2e04c9ca4b0 | ac15ec94-7d92-4dbb-aae1-7f88cad066cf | StorageClass local-path-ovh-hdd, 10Gi, reclaim policy Delete |
 | agentplane-staging | Sandbox  | finance-agent-2                          | e5660f61-6466-44cd-8fc3-f38c121c2df6 | Delete through ordinary quiesce/finalizer path               |
 | agentplane-staging | PVC      | finance-agent-2-state                    | 3f01e4ef-0efc-45df-8c56-85095c92ee6b | Garbage-collected with its Sandbox; all contents lost        |
 | cluster-scoped     | PV       | pvc-3f01e4ef-0efc-45df-8c56-85095c92ee6b | f35cbdd9-c855-4649-83c9-73c8d2aaed03 | StorageClass local-path-ovh-hdd, 10Gi, reclaim policy Delete |
-| agentplane-staging | Sandbox  | public-coder-ducktape-1                  | dfcbbc4a-16f9-40da-906a-c92fc7aca0bc | Delete through ordinary quiesce/finalizer path               |
-| agentplane-staging | PVC      | public-coder-ducktape-1-state            | e91614cf-fdc3-4fd4-9a6b-9ca9f18e2573 | Garbage-collected with its Sandbox; all contents lost        |
-| cluster-scoped     | PV       | pvc-e91614cf-fdc3-4fd4-9a6b-9ca9f18e2573 | a43a07c8-4b33-4647-a2be-073f98600555 | StorageClass local-path-ovh-hdd, 10Gi, reclaim policy Delete |
 
-`finance-agent-1` requests `running: false`; the other two request `running: true`. Desired state
-does not prove the old writer is gone: observed Pods still appeared in this metadata snapshot.
-The first uses `runner`; the latter two use `runner-ducktape`.
+`finance-agent-2` requests `running: true`, uses `runner-ducktape`, and still has its Pod.
 
-These Pod Sandboxes have no separate workspace PVC. Their `/state/workspaces` working files, local
-repositories and any uncommitted notes share each 10Gi state PVC with runner journals, native
+This Pod Sandbox has no separate workspace PVC. Its `/state/workspaces` working files, local
+repositories and any uncommitted notes share its 10Gi state PVC with runner journals, native
 harness persistence and bootstrap metadata. The contents were **not inspected**; this proposal
 does not assume every local change was pushed. Native Sessions become impossible to resume after
 the volume is removed. Quiesce flushes their final journals to the History Service; this proposal
@@ -39,20 +31,34 @@ does not drop shared PostgreSQL data or archived history, but an archive is not 
 state or a backup of working files. Any necessary local authored work must be saved or explicitly
 accepted as part of approving the concrete loss before deletion.
 
-Their Sandbox-owned Pod, ServiceAccount, PolicyBinding, launch ConfigMap, control Service and
+Its Sandbox-owned Pod, ServiceAccount, PolicyBinding, launch ConfigMap, control Service and
 runner Lease follow ordinary ownership cleanup. Identity records for revocation checks are:
 
-| Sandbox                 | ServiceAccount UID                   | PolicyBinding UID                    |
-| ----------------------- | ------------------------------------ | ------------------------------------ |
-| finance-agent-1         | 6a413a7f-2e44-4f6f-9db7-e27e2fc5b355 | c0e7916e-8cdf-421b-b295-ce9fcd010051 |
-| finance-agent-2         | e41b04eb-4c1e-41e6-8a1d-7b4e681fe756 | 403aa305-4c0f-470d-a62a-8ba1853deaca |
-| public-coder-ducktape-1 | 5aee3263-3ff5-4129-a5bc-01a609e7f6c9 | 0706cf84-b4af-4548-b1cb-cee5623d9872 |
+| Sandbox         | ServiceAccount UID                   | PolicyBinding UID                    |
+| --------------- | ------------------------------------ | ------------------------------------ |
+| finance-agent-2 | e41b04eb-4c1e-41e6-8a1d-7b4e681fe756 | 403aa305-4c0f-470d-a62a-8ba1853deaca |
 
-The earlier finance-agent-1 PolicyBinding snapshot produced 73 RoleBindings and two
-ClusterRoleBindings for that ServiceAccount, under `agentplane-policy-controller`. Those native
+RoleBindings and ClusterRoleBindings for the ServiceAccount are managed by
+`agentplane-policy-controller`. Those native
 grants lack ownerReferences and are reconciled away on PolicyBinding deletion; they are not
 manually deleted by this proposal. Check the binding/subject UID annotations during revocation.
 Shared Roles, PolicySets, services, ConfigMaps, Secrets and PostgreSQL PVCs are outside this list.
+
+## Completed operator-directed deletions
+
+The operator reported deleting a staging Sandbox; `public-coder-ducktape-1` was subsequently
+absent from the refreshed inventory. Separately, the operator explicitly requested force-deletion
+of `finance-agent-1` because it was wedged. Its controller was waiting for quiesce while the
+Gateway returned `destination unavailable; no offline admission`.
+
+At 20:01 UTC, deletion was requested with Sandbox UID precondition
+`8faad755-2a71-4ad1-94f6-c987189b896a`, then the state-volume finalizer was removed with UID and
+finalizer-list tests. This bypassed the seal; no successful final journal flush is claimed.
+Ordinary garbage collection removed its Pod and PVC without force-deleting the Pod or removing
+PVC protection. Follow-up reads confirmed the Sandbox, Pod, state PVC and backing PV, identity,
+control Service, runner Lease, and RoleBindings/ClusterRoleBindings targeting its ServiceAccount
+were absent. `finance-agent-2` was not changed. This explicit exception does not authorize bypassing
+finalizers for the remaining cutoff.
 
 ## Execution and activation gates
 
@@ -63,7 +69,7 @@ Shared Roles, PolicySets, services, ConfigMaps, Secrets and PostgreSQL PVCs are 
    Only testing is proved; no staging fixtures or existing-data migration were run.
 2. Review and approve this exact Sandbox/PVC/PV loss. Refresh the inventory immediately before
    execution. Any new Sandbox, replaced UID, or changed ownership requires a revised resource
-   list; a name is not a deletion precondition. No staging deletion runs as part of this PR.
+   list; a name is not a deletion precondition. This PR authorizes no additional staging deletion.
 3. Arrange the short creation/send hold for this cutoff so no old-layout Sandbox is created while
    deletion and template activation are separated. It affects the named Sandbox, not shared
    service readiness. The concrete hold mechanism is part of the operator execution review.
