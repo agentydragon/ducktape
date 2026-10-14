@@ -589,7 +589,8 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workl
 	meta.SetStatusCondition(&status.Conditions, bootstrapped)
 	if workloadReady.Status == metav1.ConditionTrue {
 		ready = connected
-		// Unknown does not gate: a runner that predates the bootstrap fact never reports one.
+		// CLEANUP(added 2026-10-14): Let an Unknown Bootstrapped hold Ready too once no live Sandbox runs a
+		// runner that predates the bootstrap fact (#10368): every live Sandbox's Lease carries the annotation.
 		if connected.Status == metav1.ConditionTrue && bootstrapped.Status == metav1.ConditionFalse {
 			ready = bootstrapped
 		}
