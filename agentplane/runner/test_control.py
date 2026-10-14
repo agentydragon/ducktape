@@ -26,7 +26,7 @@ from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.reconnect import StreamTiming
 from agentplane.runner.runner import Runner
 from agentplane.runner.session import Session
-from agentplane.runner.store import SessionRecord
+from agentplane.runner.store import IngressAcknowledgement, SessionRecord
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.adapters import UnexpectedAdapter
 from agentplane.runner.testing.driver import refusal
@@ -128,6 +128,8 @@ async def dial(runner: Runner, gateway: Gateway) -> AsyncIterator[Callable[[], A
             bearer="test-placeholder",
             timing=TIMING,
             adopt_incarnation=runner.adopt_incarnation,
+            facts=runner.facts,
+            facts_changed=runner.facts_changed,
         )
         tasks.append(asyncio.create_task(client.run()))
         return await gateway.control.runner()
@@ -400,6 +402,42 @@ async def test_quiescing_returns_what_sealing_does(runner: Runner, dial: Callabl
     quiesced = await service.Quiesce(runner_pb2.QuiesceRequest())
     assert quiesced.sessions == (await service.Seal(runner_pb2.SealRequest())).sessions
     assert {row.session_id for row in quiesced.sessions} == {RUNNING, STOPPED, FAILED_SETUP}
+
+
+Facts = runner_control_pb2.RunnerFacts
+
+
+async def test_the_first_heartbeat_of_a_connection_carries_the_facts(
+    runner: Runner, gateway: Gateway, dial: Callable[[], Awaitable[Service]]
+) -> None:
+    await dial()
+    await gateway.control.wait_for_facts(Facts())
+    assert gateway.control.facts == [Facts()]
+
+
+async def test_quiescing_publishes_flushing_until_the_ingress_acknowledged_every_journal(
+    runner: Runner, gateway: Gateway, dial: Callable[[], Awaitable[Service]]
+) -> None:
+    service = await dial()
+    quiesced = await service.Quiesce(runner_pb2.QuiesceRequest())
+    await gateway.control.wait_for_facts(Facts(quiesce_stage=Facts.QUIESCE_STAGE_FLUSHING))
+    for row in quiesced.sessions:
+        runner.store.write_acknowledgement(row.session_id, IngressAcknowledgement(cursor=row.cursor, sealed=True))
+    runner.acknowledged()
+    await gateway.control.wait_for_facts(Facts(quiesce_stage=Facts.QUIESCE_STAGE_QUIESCED))
+
+
+@pytest.mark.parametrize(
+    ("script", "bootstrap"), [("exit 0", Facts.BOOTSTRAP_SUCCEEDED), ("exit 3", Facts.BOOTSTRAP_FAILED)]
+)
+async def test_the_bootstrap_result_is_published(
+    script: str, bootstrap: Facts.Bootstrap, runner: Runner, gateway: Gateway, dial: Callable[[], Awaitable[Service]]
+) -> None:
+    await dial()
+    _, execution = await runner.initialize(script)
+    assert execution is not None
+    await execution
+    await gateway.control.wait_for_facts(Facts(bootstrap=bootstrap))
 
 
 if __name__ == "__main__":

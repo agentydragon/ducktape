@@ -258,8 +258,13 @@ class RunnerControlClient:
         bearer: str,
         timing: StreamTiming,
         adopt_incarnation: Callable[[str | None], None],
+        facts: Callable[[], runner_control_pb2.RunnerFacts],
+        facts_changed: asyncio.Event,
     ) -> None:
         self.runner = runner
+        # Published on each connection first, then whenever `facts_changed` is set.
+        self.facts = facts
+        self.facts_changed = facts_changed
         # Told each Welcome's incarnation before the gateway's first call can arrive.
         self.adopt_incarnation = adopt_incarnation
         self.target = target
@@ -327,7 +332,11 @@ class RunnerControlClient:
 
         async def send(frame: runner_control_pb2.RunnerFrame) -> None:
             async with writing:
-                await call.write(frame)
+                try:
+                    await call.write(frame)
+                except asyncio.InvalidStateError:
+                    # A write after the gateway ended the call.
+                    raise StreamLostError(await call.code(), await call.details()) from None
 
         async def answer(tunneled: grpc_tunnel_pb2.Call) -> None:
             await send(runner_control_pb2.RunnerFrame(reply=await relay(tunneled, runner)))
@@ -345,6 +354,17 @@ class RunnerControlClient:
                         raise StreamLostError(grpc.StatusCode.INVALID_ARGUMENT, f"unexpected {kind} frame")
             raise StreamLostError(await call.code(), await call.details())
 
+        async def publish_facts() -> None:
+            # Cleared before reading, so a change during the read is not lost. A new connection starts
+            # with none recorded, so its first heartbeat carries them even if they have not changed.
+            published: runner_control_pb2.RunnerFacts | None = None
+            while True:
+                self.facts_changed.clear()
+                if (facts := self.facts()) != published:
+                    await send(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.Heartbeat(facts=facts)))
+                    published = facts
+                await self.facts_changed.wait()
+
         async def keep_alive() -> None:
             while True:
                 await asyncio.sleep(self.timing.heartbeat_s)
@@ -356,6 +376,7 @@ class RunnerControlClient:
             async with asyncio.TaskGroup() as tasks:
                 tasks.create_task(read(tasks))
                 tasks.create_task(keep_alive())
+                tasks.create_task(publish_facts())
         except* (grpc.aio.AioRpcError, StreamLostError, TimeoutError) as group:
             # The first failure ends the connection; the rest are its consequences.
             raise group.exceptions[0] from None

@@ -13,7 +13,7 @@ from agentplane.proto import runner_ingress_pb2, runner_ingress_pb2_grpc, runner
 from agentplane.runner.reconnect import StreamLostError, StreamTiming, reconnect
 from agentplane.runner.runner import Runner, build_attached, follow_journal
 from agentplane.runner.session import Session
-from agentplane.runner.store import IngressAcknowledgement, SessionStore
+from agentplane.runner.store import IngressAcknowledgement
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -32,14 +32,14 @@ class _Push:
         self,
         call: grpc.aio.StreamStreamCall[runner_ingress_pb2.PushFrame, runner_ingress_pb2.Acknowledgement],
         session: Session,
-        store: SessionStore,
+        runner: Runner,
         timing: StreamTiming,
     ) -> None:
         self.call = call
         self.session = session
-        self.store = store
+        self.runner = runner
         self.timing = timing
-        self.recorded = store.read_acknowledgement(session.session_id)
+        self.recorded = runner.store.read_acknowledgement(session.session_id)
         self.acknowledged = 0
         self.sent = 0
         # Set, and replaced, whenever the acknowledged cursor advances.
@@ -68,8 +68,9 @@ class _Push:
             advanced.set()
         latest = IngressAcknowledgement(cursor=acknowledgement.cursor, sealed=acknowledgement.sealed)
         if latest != self.recorded:
-            self.store.write_acknowledgement(self.session.session_id, latest)
+            self.runner.store.write_acknowledgement(self.session.session_id, latest)
             self.recorded = latest
+            self.runner.acknowledged()
 
     async def run(self) -> None:
         """Push until the ingress acknowledges the journal's seal."""
@@ -200,7 +201,7 @@ class IngressPusher:
     async def push_once(self, stub: runner_ingress_pb2_grpc.RunnerIngressAsyncStub, session: Session) -> bool:
         """True once the ingress acknowledged the seal; False after a call that made progress."""
         call = stub.Push(metadata=(("authorization", f"Bearer {self.bearer}"),))
-        push = _Push(call, session, self.runner.store, self.timing)
+        push = _Push(call, session, self.runner, self.timing)
         try:
             await push.run()
             return True

@@ -96,6 +96,8 @@ async def dialing(runner: Runner, target: str, bearer: str) -> AsyncIterator[Non
         bearer=bearer,
         timing=RUNNER_TIMING,
         adopt_incarnation=runner.adopt_incarnation,
+        facts=runner.facts,
+        facts_changed=runner.facts_changed,
     )
     async with background(client.run(), name="runner control stream"):
         yield

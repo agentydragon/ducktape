@@ -198,7 +198,13 @@ async def connected(
     the runner `token` names, and serves the gateway's calls on it until the block ends. It does not
     reconnect."""
     client = RunnerControlClient(
-        runner, target=target, bearer=token, timing=RUNNER_TIMING, adopt_incarnation=lambda _: None
+        runner,
+        target=target,
+        bearer=token,
+        timing=RUNNER_TIMING,
+        adopt_incarnation=lambda _: None,
+        facts=runner_control_pb2.RunnerFacts,
+        facts_changed=asyncio.Event(),
     )
     async with local_server(
         lambda server: runner_control_pb2_grpc.add_RunnerServicer_to_server(runner, server)

@@ -49,6 +49,9 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
         self.authorizations: list[str] = []
         self.closes: list[grpc.StatusCode] = []
         self.silences = 0
+        # The facts each connection's heartbeats carried, in order.
+        self.facts: list[runner_control_pb2.RunnerFacts] = []
+        self.facts_published = asyncio.Condition()
         # The incarnation each new connection's Welcome names; a test changes it to start another.
         self.incarnation_uid = "test-incarnation"
         self._runner: runner_control_pb2_grpc.RunnerAsyncStub | None = None
@@ -58,6 +61,11 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
         """Until the runner holds a connection and has opened at least `connections` in all."""
         async with asyncio.timeout(30), self._connected:
             await self._connected.wait_for(lambda: self.connections >= connections and self._runner is not None)
+
+    async def wait_for_facts(self, expected: runner_control_pb2.RunnerFacts) -> None:
+        """Until a heartbeat has carried exactly `expected`."""
+        async with asyncio.timeout(30), self.facts_published:
+            await self.facts_published.wait_for(lambda: expected in self.facts)
 
     async def runner(self) -> runner_control_pb2_grpc.RunnerAsyncStub:
         """The runner's service through its newest connection, once it has one."""
@@ -105,6 +113,10 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
                 async for frame in request_iterator:
                     match frame.WhichOneof("frame"):
                         case "heartbeat":
+                            if frame.heartbeat.HasField("facts"):
+                                async with self.facts_published:
+                                    self.facts.append(frame.heartbeat.facts)
+                                    self.facts_published.notify_all()
                             await send(runner_control_pb2.ServiceFrame(heartbeat=runner_control_pb2.Heartbeat()))
                         case "reply":
                             tunnel.answer(frame.reply)
@@ -193,6 +205,8 @@ async def dialing(runner: Runner, gateway: Gateway) -> AsyncIterator[None]:
                 bearer=bearer,
                 timing=TIMING,
                 adopt_incarnation=runner.adopt_incarnation,
+                facts=runner.facts,
+                facts_changed=runner.facts_changed,
             ).run(),
             name="runner control stream",
         ),

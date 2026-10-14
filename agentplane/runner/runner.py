@@ -11,9 +11,9 @@ from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
 from contextlib import AsyncExitStack, suppress
 from pathlib import Path, PurePosixPath
 from types import TracebackType
-from typing import Self, assert_never
+from typing import Self, assert_never, cast
 
-from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.proto import event_log_pb2, runner_control_pb2, runner_pb2
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.claude import ClaudeAdapter
 from agentplane.runner.codex import CodexAdapter
@@ -103,6 +103,41 @@ class Runner:
         self._initialize_lock = asyncio.Lock()
         self._initialization_log: InitializationLog | None = None
         self._initialization_task: asyncio.Task[None] | None = None
+        self._sealing = False
+        # Set whenever `facts()` may have changed; the control stream clears it before reading.
+        self.facts_changed = asyncio.Event()
+
+    def facts(self) -> runner_control_pb2.RunnerFacts:
+        """What the Runner Gateway records about this runner on the connection Lease."""
+        facts = runner_control_pb2.RunnerFacts()
+        if self.lameduck:
+            facts.quiesce_stage = self._quiesce_stage()
+        if (log := self._initialization_log) is not None:
+            facts.bootstrap = self._bootstrap_state(log)
+        return facts
+
+    def _quiesce_stage(self) -> runner_control_pb2.RunnerFacts.QuiesceStage:
+        sessions = [self.sessions[session_id] for session_id in self.store.session_ids() if session_id in self.sessions]
+        if self._sealing or any(session.journal.sealed_cursor is None for session in sessions):
+            return runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
+        if all(self._flushed(session.session_id, cast(int, session.journal.sealed_cursor)) for session in sessions):
+            return runner_control_pb2.RunnerFacts.QUIESCE_STAGE_QUIESCED
+        return runner_control_pb2.RunnerFacts.QUIESCE_STAGE_FLUSHING
+
+    @staticmethod
+    def _bootstrap_state(log: InitializationLog) -> runner_control_pb2.RunnerFacts.Bootstrap:
+        if not log.ended:
+            return runner_control_pb2.RunnerFacts.BOOTSTRAP_RUNNING
+        outcome = log.since(log.last_sequence - 1)[0]
+        if outcome.WhichOneof("observation") == "interrupted":
+            return runner_control_pb2.RunnerFacts.BOOTSTRAP_INTERRUPTED
+        if outcome.result.exit_code == 0:
+            return runner_control_pb2.RunnerFacts.BOOTSTRAP_SUCCEEDED
+        return runner_control_pb2.RunnerFacts.BOOTSTRAP_FAILED
+
+    def acknowledged(self) -> None:
+        """The ingress acknowledged a journal, which may complete a quiesce."""
+        self.facts_changed.set()
 
     async def initialize(self, script: str) -> tuple[InitializationLog, asyncio.Task[None] | None]:
         """Select one sandbox bootstrap and return its log and current execution."""
@@ -111,6 +146,7 @@ class Runner:
             raise ValueError(f"initialize.script must contain 1..{_MAX_BOOTSTRAP_BYTES} UTF-8 bytes")
         async with self._initialize_lock:
             log, selected_now = self._claim_initialization(source)
+            self.facts_changed.set()
             if log.ended:
                 return log, None
             if self._initialization_task is not None and not self._initialization_task.done():
@@ -123,6 +159,7 @@ class Runner:
             # Selected earlier with no recorded end and nothing running it now: the script may have
             # run any part of itself. Never run it again; a fresh initialization needs a new Sandbox.
             log.append_interrupted(max(log.last_attempt, 1))
+            self.facts_changed.set()
             return log, None
 
     def _claim_initialization(self, source: bytes) -> tuple[InitializationLog, bool]:
@@ -181,6 +218,7 @@ class Runner:
         exit_code = await process.wait()
         await asyncio.gather(stdout, stderr)
         log.append_result(attempt, exit_code)
+        self.facts_changed.set()
 
     @staticmethod
     async def _record_initialization_output(
@@ -357,9 +395,15 @@ class Runner:
 
     async def seal(self) -> runner_pb2.SealResponse:
         """Sandbox teardown: refuse new work, interrupt running turns, stop every harness, seal every journal."""
+        self._sealing = True
         self.enter_lameduck()
-        sessions = [await self._load(session_id) for session_id in self.store.session_ids()]
-        cursors = await asyncio.gather(*(session.seal() for session in sessions))
+        self.facts_changed.set()
+        try:
+            sessions = [await self._load(session_id) for session_id in self.store.session_ids()]
+            cursors = await asyncio.gather(*(session.seal() for session in sessions))
+        finally:
+            self._sealing = False
+            self.facts_changed.set()
         return runner_pb2.SealResponse(
             sessions=[
                 runner_pb2.SessionSeal(

@@ -170,6 +170,7 @@ py_library(
         ":session",
         ":store",
         "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_pb2",
         "@pypi//protobuf",
     ],
