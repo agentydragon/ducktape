@@ -10,7 +10,7 @@ from google.protobuf.message import Message
 from agentplane.grpc_calls import ServiceError, bearer, call_unary, raise_status
 from agentplane.proto import sandbox_service_pb2, sandbox_service_pb2_grpc
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Sandbox, SandboxDestination
-from agentplane.sandbox_service.errors import SandboxNotFoundError
+from agentplane.sandboxes.errors import SandboxNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio

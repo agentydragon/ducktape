@@ -1,0 +1,79 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+py_library(
+    name = "console",
+    srcs = ["console.py"],
+    deps = [
+        ":errors",
+        "@pypi//aiohttp",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "errors",
+    srcs = ["errors.py"],
+)
+
+py_library(
+    name = "inventory",
+    srcs = ["inventory.py"],
+    deps = [
+        ":console",
+        ":errors",
+        ":kubernetes_views",
+        ":reader",
+        "//agentplane:crd_group",
+        "//agentplane:policy_sets",
+        "//agentplane:sandbox_resource",
+        "//agentplane:subjects",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:sandbox_service_pb2",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pydantic",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "kubernetes_views",
+    srcs = ["kubernetes_views.py"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//agentplane/proto:sandbox_service_pb2",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "reader",
+    srcs = ["reader.py"],
+    deps = [
+        ":errors",
+        ":kubernetes_views",
+        "//agentplane:sandbox_resource",
+        "//agentplane/proto:sandbox_service_pb2",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_console",
+    srcs = ["test_console.py"],
+    deps = [
+        ":console",
+        ":errors",
+        "//:conftest",
+        "@pypi//aiohttp",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

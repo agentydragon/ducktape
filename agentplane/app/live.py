@@ -58,7 +58,7 @@ from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandbox_resource import Sandbox
 from agentplane.sandbox_service.egress_views import CREDENTIALS_PLURAL, EGRESS_API, BindingView, matching_bindings
-from agentplane.sandbox_service.kubernetes_views import incarnation_pod, sandbox_view, sandbox_views
+from agentplane.sandboxes.kubernetes_views import incarnation_pod, sandbox_view, sandbox_views
 from agentplane.sse import frame, sse_response
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient

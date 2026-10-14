@@ -89,7 +89,6 @@ from agentplane.grpc_calls import RefusedError, ServiceError
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress_views import (
     BindingNotFoundError,
@@ -97,7 +96,7 @@ from agentplane.sandbox_service.egress_views import (
     FluxOwnedBindingError,
     SandboxOwnedBindingError,
 )
-from agentplane.sandbox_service.errors import SandboxNotFoundError, SandboxRunningError
+from agentplane.sandboxes.errors import SandboxNotFoundError, SandboxRunningError, UnknownPolicySetError
 from agentplane.sse import frame, sse_response
 from agentplane.subjects import ServiceAccountRef
 

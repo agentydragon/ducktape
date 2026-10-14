@@ -13,10 +13,14 @@ from google.protobuf.json_format import ParseError
 from agentplane.grpc_servicer import Abort, ServicerResources, status_mapping
 from agentplane.proto import sandbox_service_pb2, sandbox_service_pb2_grpc
 from agentplane.proto.sandbox_service_pb2 import Sandbox
-from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.egress_views import BindingNotFoundError, UnknownPolicyError
-from agentplane.sandbox_service.errors import InventoryError, SandboxConflictError, SandboxNotFoundError
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandboxes.errors import (
+    InventoryError,
+    SandboxConflictError,
+    SandboxNotFoundError,
+    UnknownPolicySetError,
+)
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio

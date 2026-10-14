@@ -1,4 +1,4 @@
-"""Sandbox Service domain errors shared with the browser API."""
+"""Sandbox domain errors shared by every requester and reader of Sandboxes."""
 
 
 class InventoryError(Exception):
@@ -35,3 +35,17 @@ class ConsoleUnavailableError(InventoryError):
 
     def __init__(self, name: str, *, status: int) -> None:
         super().__init__(f"sandbox {name} has no attachable VM console: Kubernetes answered {status}")
+
+
+class UnknownPolicySetError(InventoryError):
+    """A binding naming a set the namespace does not hold, which would grant nothing.
+
+    The CRD admits any string in `spec.policySets` and the Action Service treats a name that
+    resolves to nothing as contributing nothing, so a dangling name is a state the system already
+    handles. This refuses one at the moment it would be written; one the operator deletes
+    afterwards still lands there without granting anything from the missing set.
+    """
+
+    def __init__(self, names: list[str], *, kind: str) -> None:
+        super().__init__(f"no {kind} in the namespace is named {', '.join(names)}")
+        self.names = names

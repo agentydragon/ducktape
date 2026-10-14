@@ -8,8 +8,8 @@ import pytest_bazel
 from agentplane.proto.runner_pb2 import HARNESS_CODEX
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxPhase, SessionDefaults
 from agentplane.sandbox_resource import QUIESCED, SANDBOXES_PLURAL, OperatingMode
-from agentplane.sandbox_service.errors import SandboxNotFoundError
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
+from agentplane.sandboxes.errors import SandboxNotFoundError
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 
 # gazelle:include_dep @pypi//protobuf

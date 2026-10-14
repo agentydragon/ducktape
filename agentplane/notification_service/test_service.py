@@ -22,7 +22,7 @@ from agentplane.notification_service.store import ConflictError, Store
 from agentplane.notification_service.testing.store import claimed
 from agentplane.proto import event_log_pb2, event_pb2
 from agentplane.proto.sandbox_service_pb2 import Sandbox, ServiceAccount
-from agentplane.sandbox_service.errors import SandboxNotFoundError
+from agentplane.sandboxes.errors import SandboxNotFoundError
 from agentplane.workload_auth.principal import WorkloadPrincipal
 
 # gazelle:include_dep @pypi//protobuf

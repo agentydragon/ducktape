@@ -8,8 +8,8 @@ from kubernetes_asyncio.client import CoreV1Api
 from agentplane import sandbox_resource
 from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxDestination
 from agentplane.sandbox_resource import read_sandbox
-from agentplane.sandbox_service.errors import SandboxNotFoundError
-from agentplane.sandbox_service.kubernetes_views import sandbox_view
+from agentplane.sandboxes.errors import SandboxNotFoundError
+from agentplane.sandboxes.kubernetes_views import sandbox_view
 from util.kubernetes import CustomObjectsClient
 
 

@@ -108,7 +108,7 @@ py_library(
         "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/runner_gateway:client",
-        "//agentplane/sandbox_service:errors",
+        "//agentplane/sandboxes:errors",
         "@pypi//protobuf",
         "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],

@@ -38,8 +38,8 @@ from agentplane.notification_service.store import ClaimLostError, ConflictError,
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxRunner
-from agentplane.sandbox_service.errors import SandboxNotFoundError
-from agentplane.sandbox_service.reader import SandboxReader
+from agentplane.sandboxes.errors import SandboxNotFoundError
+from agentplane.sandboxes.reader import SandboxReader
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal
 

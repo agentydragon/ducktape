@@ -12,9 +12,9 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane.grpc_serving import add_health, serving
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources, add_service
-from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.settings import Settings
+from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.service_process import configure_logging, kubernetes_configuration, until_terminated
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient

@@ -20,7 +20,6 @@ from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources
-from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
@@ -31,6 +30,7 @@ from agentplane.sandbox_service.testing.fake_inventory import (
 )
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, service_client
 from agentplane.sandbox_service.testing.kubernetes import Cluster
+from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from util.kubernetes import CustomObjectsClient

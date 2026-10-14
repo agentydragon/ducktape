@@ -15,8 +15,8 @@ import grpc
 from agentplane.grpc_servicer import Abort, ServicerResources, status_mapping
 from agentplane.proto import runner_control_pb2
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
-from agentplane.sandbox_service.errors import SandboxNotFoundError
-from agentplane.sandbox_service.reader import SandboxReader
+from agentplane.sandboxes.errors import SandboxNotFoundError
+from agentplane.sandboxes.reader import SandboxReader
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.grpc_caller import authenticate
 

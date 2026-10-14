@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import re
 from collections.abc import AsyncIterator, Awaitable, Callable, Set
 
 from google.protobuf.json_format import MessageToDict
@@ -20,17 +21,18 @@ from tenacity import retry, retry_if_exception, stop_after_attempt
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_SETS_PLURAL
+from agentplane.proto import runner_pb2
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Sandbox
-from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
-from agentplane.sandbox_service.console import stream_console
-from agentplane.sandbox_service.errors import (
+from agentplane.sandboxes.console import stream_console
+from agentplane.sandboxes.errors import (
     SandboxConflictError,
     SandboxNotFoundError,
     SandboxRunningError,
     SandboxTearingDownError,
+    UnknownPolicySetError,
 )
-from agentplane.sandbox_service.kubernetes_views import CREATE_INTENT, sandbox_views
-from agentplane.sandbox_service.reader import SandboxReader
+from agentplane.sandboxes.kubernetes_views import CREATE_INTENT, sandbox_views
+from agentplane.sandboxes.reader import SandboxReader
 from agentplane.subjects import ServiceAccountRef
 
 _MERGE_PATCH = "application/merge-patch+json"
@@ -109,6 +111,28 @@ class SandboxInventory(SandboxReader):
     async def require_policy_sets(self, names: Set[str]) -> None:
         if missing := sorted(names - await self._names(POLICY_SETS_PLURAL)):
             raise UnknownPolicySetError(missing, kind="PolicySet")
+
+    async def create_validated(
+        self, spec: CreateSandboxRequest, *, default_policy_sets: Set[str], caller: ServiceAccountRef
+    ) -> Sandbox:
+        """Create what `spec` asks for, or return the Sandbox an earlier identical Create made."""
+        if not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", spec.name) or len(spec.name) > 57 or not spec.template:
+            raise ValueError("valid name and template are required")
+        if spec.HasField("preset") and not re.fullmatch(r"[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?", spec.preset):
+            raise ValueError("preset must be a valid label value")
+        if max(len(spec.bootstrap), len(spec.session_defaults.setup_script)) > 65_536:
+            raise ValueError("script exceeds 65536 characters")
+        if spec.session_defaults.HasField("harness") and spec.session_defaults.harness not in (
+            runner_pb2.HARNESS_CLAUDE,
+            runner_pb2.HARNESS_CODEX,
+        ):
+            raise ValueError("unsupported harness")
+        existing = await self.retry(spec, caller=caller)
+        if existing is not None:
+            return existing
+        policy_sets = {*default_policy_sets, *spec.policy_sets}
+        await self.require_policy_sets(policy_sets)
+        return await self.create(spec, policy_sets=policy_sets, caller=caller)
 
     async def create(self, spec: CreateSandboxRequest, *, policy_sets: Set[str], caller: ServiceAccountRef) -> Sandbox:
         """A Sandbox running from the start: the Sandbox Controller makes its ServiceAccount and

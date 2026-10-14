@@ -27,7 +27,7 @@ from agentplane.runner_gateway.destinations import DestinationResolver, Destinat
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
 from agentplane.runner_gateway.sealing import Sealing
 from agentplane.runner_gateway.session_registry import SessionConflictError, SessionNotFoundError, SessionRegistry
-from agentplane.sandbox_service.errors import InventoryError, SandboxNotFoundError
+from agentplane.sandboxes.errors import InventoryError, SandboxNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio

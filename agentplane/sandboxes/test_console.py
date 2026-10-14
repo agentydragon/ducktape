@@ -7,8 +7,8 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.sandbox_service.console import CONSOLE_SUBPROTOCOL, stream_console
-from agentplane.sandbox_service.errors import ConsoleUnavailableError
+from agentplane.sandboxes.console import CONSOLE_SUBPROTOCOL, stream_console
+from agentplane.sandboxes.errors import ConsoleUnavailableError
 
 
 @asynccontextmanager

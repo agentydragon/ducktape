@@ -9,27 +9,12 @@ from agentplane.action_service.policies.resources import parse_action_rule
 from agentplane.action_service.policy_view import ActionPolicySetView, set_view
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_SETS_PLURAL, PolicySet, RefusedPolicySet, parse_policy_set
-from agentplane.sandbox_service.errors import InventoryError
 from util.kubernetes import CustomObjectsClient
 
 ACTION_POLICY_API = (GROUP, VERSION)
 # Preserve these existing ownership stamps when adopting staging resources.
 MANAGED_BY_LABEL = f"app.{GROUP}/managed-by"
 MANAGED_BY_APP = "integration-app"
-
-
-class UnknownPolicySetError(InventoryError):
-    """A binding naming a set the namespace does not hold, which would grant nothing.
-
-    The CRD admits any string in `spec.policySets` and the Action Service treats a name that
-    resolves to nothing as contributing nothing, so a dangling name is a state the system already
-    handles. This refuses one at the moment it would be written; one the operator deletes
-    afterwards still lands there without granting anything from the missing set.
-    """
-
-    def __init__(self, names: list[str], *, kind: str) -> None:
-        super().__init__(f"no {kind} in the namespace is named {', '.join(names)}")
-        self.names = names
 
 
 class _ResourceList(BaseModel):

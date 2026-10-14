@@ -93,7 +93,7 @@ py_library(
         "//agentplane/runner_gateway:grpc_api",
         "//agentplane/runner_gateway:lifecycle_control",
         "//agentplane/runner_gateway:runner_control",
-        "//agentplane/sandbox_service:reader",
+        "//agentplane/sandboxes:reader",
         "//agentplane/workload_auth:principal",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",

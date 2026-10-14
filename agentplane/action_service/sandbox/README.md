@@ -57,7 +57,7 @@ invariant; breaking it costs the whole account's authority rather than one box's
 ## Separation from the integration app
 
 **Its own label and selector.** Not `agentplane.allegedly.works/managed`, which the Sandbox Service
-lists, watches and gates operations on (<../../sandbox_service/inventory.py>). A box carrying it
+lists, watches and gates operations on (<../../sandboxes/inventory.py>). A box carrying it
 would join the fleet view, which then looks for a runner the box does not have.
 
 **Owned by its caller's account.** Each box carries an owner reference to the ServiceAccount it runs

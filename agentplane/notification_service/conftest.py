@@ -19,7 +19,7 @@ from agentplane.notification_service.store import Store
 from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
 from agentplane.runner_gateway.client import RunnerGatewayClient
-from agentplane.sandbox_service.reader import SandboxReader
+from agentplane.sandboxes.reader import SandboxReader
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import (
     database_clones,

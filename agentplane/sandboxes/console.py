@@ -6,7 +6,7 @@ from aiohttp import WSMsgType, WSServerHandshakeError
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.stream import WsApiClient
 
-from agentplane.sandbox_service.errors import ConsoleUnavailableError
+from agentplane.sandboxes.errors import ConsoleUnavailableError
 
 CONSOLE_PATH = "/apis/subresources.kubevirt.io/v1/namespaces/{namespace}/virtualmachineinstances/{name}/console"
 # KubeVirt's websocket subprotocol for a raw byte stream, without the exec channel framing.

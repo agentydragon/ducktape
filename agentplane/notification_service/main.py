@@ -20,7 +20,7 @@ from agentplane.notification_service.sources.github.client import GitHubClient
 from agentplane.notification_service.sources.github.source import GitHub
 from agentplane.notification_service.store import Store
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
-from agentplane.sandbox_service.reader import SandboxReader
+from agentplane.sandboxes.reader import SandboxReader
 from agentplane.service_process import configure_logging, kubernetes_configuration
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient

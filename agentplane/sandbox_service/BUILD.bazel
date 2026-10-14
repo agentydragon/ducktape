@@ -15,37 +15,16 @@ py_library(
     ],
     deps = [
         ":egress",
-        ":inventory",
         "//agentplane/history_service/testing:fixtures",
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/sandboxes:inventory",
         "//util:kubernetes",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
         "@pypi//kubernetes_asyncio",
         "@pypi//pytest",
-    ],
-)
-
-py_library(
-    name = "inventory",
-    srcs = ["inventory.py"],
-    deps = [
-        ":action_policy_views",
-        ":console",
-        ":errors",
-        ":kubernetes_views",
-        ":reader",
-        "//agentplane:crd_group",
-        "//agentplane:policy_sets",
-        "//agentplane:sandbox_resource",
-        "//agentplane:subjects",
-        "//agentplane/proto:sandbox_service_pb2",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-        "@pypi//pydantic",
-        "@pypi//tenacity",
     ],
 )
 
@@ -65,12 +44,12 @@ py_test(
     srcs = ["test_inventory.py"],
     deps = [
         ":conftest",
-        ":errors",
         "//:conftest",
         "//agentplane:sandbox_resource",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/sandboxes:errors",
         "//agentplane/testing:fake_apiserver",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -87,11 +66,11 @@ py_library(
     deps = [
         ":egress",
         ":grpc_api",
-        ":inventory",
         ":provisioning",
         ":settings",
         "//agentplane:grpc_serving",
         "//agentplane:service_process",
+        "//agentplane/sandboxes:inventory",
         "//agentplane/workload_auth:principal",
         "//util:kubernetes",
         "@pypi//grpcio",
@@ -129,10 +108,9 @@ py_library(
     ],
     deps = [
         ":egress",
-        ":inventory",
         "//agentplane:subjects",
-        "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",
+        "//agentplane/sandboxes:inventory",
         "@pypi//protobuf",
         "@pypi//types_protobuf",
     ],
@@ -168,7 +146,6 @@ py_test(
         ":conftest",
         ":egress",
         ":grpc_api",
-        ":inventory",
         ":provisioning",
         "//:conftest",
         "//agentplane:grpc_calls",
@@ -180,6 +157,7 @@ py_test(
         "//agentplane/sandbox_service/testing:fake_inventory",
         "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/sandboxes:inventory",
         "//agentplane/testing:fake_apiserver",
         "//util:kubernetes",
         "@pypi//grpcio",
@@ -195,10 +173,10 @@ py_library(
     srcs = ["client.py"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        ":errors",
         "//agentplane:grpc_calls",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/proto:sandbox_service_pb2_grpc",
+        "//agentplane/sandboxes:errors",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -212,13 +190,12 @@ py_library(
         "//agentplane/sandbox_service:__subpackages__",
     ],
     deps = [
-        ":action_policy_views",
         ":egress_views",
-        ":errors",
         ":provisioning",
         "//agentplane:grpc_servicer",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/proto:sandbox_service_pb2_grpc",
+        "//agentplane/sandboxes:errors",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],
@@ -260,7 +237,6 @@ py_library(
     srcs = ["action_policy_views.py"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        ":errors",
         "//agentplane:crd_group",
         "//agentplane:policy_sets",
         "//agentplane/action_service:policy_view",
@@ -276,45 +252,22 @@ py_library(
     srcs = ["egress_views.py"],
     visibility = ["//agentplane:__subpackages__"],
     deps = [
-        ":errors",
         "//agentplane:crd_group",
         "//agentplane:policy_sets",
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/egress:resources",
+        "//agentplane/sandboxes:errors",
         "//util:kubernetes",
         "@pypi//pydantic",
     ],
-)
-
-py_library(
-    name = "kubernetes_views",
-    srcs = ["kubernetes_views.py"],
-    visibility = ["//agentplane:__subpackages__"],
-    deps = [
-        "//agentplane:crd_group",
-        "//agentplane:sandbox_resource",
-        "//agentplane/proto:sandbox_service_pb2",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "errors",
-    srcs = ["errors.py"],
-    visibility = ["//agentplane:__subpackages__"],
 )
 
 py_test(
     name = "test_inventory_mutations",
     srcs = ["test_inventory_mutations.py"],
     deps = [
-        ":action_policy_views",
         ":conftest",
-        ":errors",
-        ":inventory",
-        ":kubernetes_views",
         "//:conftest",
         "//agentplane:policy_sets",
         "//agentplane:sandbox_resource",
@@ -322,6 +275,9 @@ py_test(
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/sandbox_service/testing:fake_inventory",
+        "//agentplane/sandboxes:errors",
+        "//agentplane/sandboxes:inventory",
+        "//agentplane/sandboxes:kubernetes_views",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -341,49 +297,5 @@ py_library(
         "//util:yaml_file_settings",
         "@pypi//pydantic",
         "@pypi//pydantic_settings",
-    ],
-)
-
-py_library(
-    name = "reader",
-    srcs = ["reader.py"],
-    visibility = [
-        "//agentplane/notification_service:__subpackages__",
-        "//agentplane/runner_gateway:__subpackages__",
-        "//agentplane/sandbox_service:__subpackages__",
-    ],
-    deps = [
-        ":errors",
-        ":kubernetes_views",
-        "//agentplane:sandbox_resource",
-        "//agentplane/proto:sandbox_service_pb2",
-        "//util:kubernetes",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "console",
-    srcs = ["console.py"],
-    deps = [
-        ":errors",
-        "@pypi//aiohttp",
-        "@pypi//kubernetes_asyncio",
-    ],
-)
-
-py_test(
-    name = "test_console",
-    srcs = ["test_console.py"],
-    deps = [
-        ":conftest",
-        ":console",
-        ":errors",
-        "//:conftest",
-        "@pypi//aiohttp",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//pytest",
-        "@pypi//pytest_bazel",
     ],
 )

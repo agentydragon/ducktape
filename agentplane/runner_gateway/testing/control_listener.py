@@ -18,7 +18,7 @@ from agentplane.runner_gateway.connection_records import ConnectionHolder, Conne
 from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming, RunnerControlService
-from agentplane.sandbox_service.reader import SandboxReader
+from agentplane.sandboxes.reader import SandboxReader
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 
 # The control servicer stub names its messages; mypy reads stubs only from direct deps.

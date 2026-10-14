@@ -25,7 +25,7 @@ from agentplane.policy_sets import (
     resolve_binding,
 )
 from agentplane.sandbox_resource import SANDBOX_KIND
-from agentplane.sandbox_service.errors import InventoryError
+from agentplane.sandboxes.errors import InventoryError
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient
 

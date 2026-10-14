@@ -13,7 +13,6 @@ from agentplane import sandbox_resource
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, PolicyBinding
 from agentplane.proto.sandbox_service_pb2 import Sandbox
-from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.egress_views import (
     EGRESS_API,
     FLUX_KUSTOMIZATION_LABEL,
@@ -24,6 +23,7 @@ from agentplane.sandbox_service.egress_views import (
     SandboxOwnedBindingError,
     is_sandbox_controlled,
 )
+from agentplane.sandboxes.errors import UnknownPolicySetError
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient
 

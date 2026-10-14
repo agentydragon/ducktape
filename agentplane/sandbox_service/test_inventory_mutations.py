@@ -15,15 +15,6 @@ from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.proto.runner_pb2 import HARNESS_CODEX
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, SandboxPhase, SessionDefaults
 from agentplane.sandbox_resource import PRESET_LABEL, SANDBOXES_PLURAL, OperatingMode
-from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
-from agentplane.sandbox_service.errors import (
-    SandboxConflictError,
-    SandboxNotFoundError,
-    SandboxRunningError,
-    SandboxTearingDownError,
-)
-from agentplane.sandbox_service.inventory import SandboxInventory
-from agentplane.sandbox_service.kubernetes_views import CREATE_INTENT
 from agentplane.sandbox_service.testing.fake_inventory import (
     TEMPLATE,
     FakeCoreV1Api,
@@ -31,6 +22,15 @@ from agentplane.sandbox_service.testing.fake_inventory import (
     pod,
     sandbox,
 )
+from agentplane.sandboxes.errors import (
+    SandboxConflictError,
+    SandboxNotFoundError,
+    SandboxRunningError,
+    SandboxTearingDownError,
+    UnknownPolicySetError,
+)
+from agentplane.sandboxes.inventory import SandboxInventory
+from agentplane.sandboxes.kubernetes_views import CREATE_INTENT
 from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf

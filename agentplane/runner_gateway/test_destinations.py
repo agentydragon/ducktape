@@ -8,8 +8,8 @@ from agentplane.proto.sandbox_service_pb2 import SandboxBinding
 from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.runner_gateway.testing.runner_control import run_in_a_vm
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
-from agentplane.sandbox_service.errors import SandboxTearingDownError
 from agentplane.sandbox_service.testing.kubernetes import DESTINATION, SANDBOX, Cluster
+from agentplane.sandboxes.errors import SandboxTearingDownError
 
 # gazelle:include_dep @pypi//protobuf
 
