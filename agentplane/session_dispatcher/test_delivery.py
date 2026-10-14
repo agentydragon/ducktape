@@ -170,7 +170,7 @@ async def test_a_peer_replica_insert_wakes_the_sandbox_owner(
     engine: AsyncEngine,
 ) -> None:
     set_sandbox(cluster, ready=True)
-    peer = DispatchStore(engine, queue_cap=100)
+    peer = DispatchStore(engine, queue_cap=100, terminal_broadcast=store.terminal_broadcast)
     sandbox = sandboxes.get_sandbox(SANDBOX)
     assert sandbox is not None
     async with peer.wakeups.listener.listen():
