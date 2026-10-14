@@ -380,7 +380,7 @@ sequenceDiagram
 Interruption is part of `Quiesce` rather than a second RPC: the runner already owns turn state. An
 automatic suspend is conditional (operator, 2026-10-14): `Quiesce` carries `if_idle_since`, the runner's own
 `idleSince` token as the controller last observed it. The runner compares it under the lock that enters lameduck
-and refuses when it differs or the runner is busy; the controller then resets its idle timer. The token is checked
+and refuses when it differs or the runner is busy; the controller then resets its idle timer. Busy includes a delivery under way, marked at RPC entry before the first `await`: a `SubmitInput` between RPC entry and the journal write is already in the runner's set of admissions in flight, and the compare goes directly before lameduck entry with no `await` between. The two orderings are then exhaustive: a delivery precedes the compare and finds the runner busy, or follows lameduck entry and is refused. The token is checked
 only on entry: a repeat `Quiesce` that finds the runner already in lameduck for this incarnation succeeds
 whatever its token, because the controller re-issues `Quiesce` after a lost response. Operator suspend and delete
 are unconditional and carry no token. A message that arrives after the controller decided but before
@@ -413,7 +413,7 @@ Lease does not already carry), and the History Service notifying the controller 
 dependency the other path does not need).
 
 **Refusal codes** (operator, 2026-10-14). The runner's gRPC code says what the Dispatcher does; the gateway proxy
-passes runner codes through, and only its own stream close uses `ABORTED` today.
+passes runner codes through. The first row is already true on `devel`, where the runner returns `ABORTED` for the lameduck refusal; only the conditional-`Quiesce` row is new.
 
 | Case                                                             | Code                  | Dispatcher                                                      |
 | ---------------------------------------------------------------- | --------------------- | --------------------------------------------------------------- |
