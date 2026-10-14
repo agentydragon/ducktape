@@ -252,10 +252,25 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 )
                 native = remote.runner(destination)
                 session_id = (await native.create(session_id=uuid4(), spec=MessageToDict(spec))).session_id
+                native_session = runner.sessions[session_id]
+
+                async def wait_for_turn_completion(after_cursor: int) -> None:
+                    cursor = after_cursor
+                    async with asyncio.timeout(30):
+                        while True:
+                            entries = await native_session.journal.since(cursor, limit=128)
+                            for entry in entries:
+                                cursor = entry.cursor
+                                if entry.event.HasField("turn_completed"):
+                                    return
+                            await native_session.journal.wait_beyond(cursor)
+
                 # Codex starts with a model turn before it accepts runner input. Let that startup
-                # turn settle before opening a journal batch to seed unrelated backlog entries.
+                # turn complete in the journal before opening a batch to seed unrelated backlog.
                 if spec.harness == runner_pb2.HARNESS_CODEX:
+                    startup_cursor = native_session.journal.last_cursor
                     await model.reply(await model.request(), Text("Ready for notifications"))
+                    await wait_for_turn_completion(startup_cursor)
 
                 async def history_caught_up() -> None:
                     # Delivery reads entries from the History Service, which copies them behind the runner.
@@ -330,7 +345,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 # Seed the real journal past one worker replay batch. The send path is exercised
                 # through Dispatcher below; unrelated backlog entries need no Gateway RPCs.
                 history_cursor = 0
-                native_session = runner.sessions[session_id]
                 async with native_session.journal.batch():
                     for index in range(130):
                         entry = await native_session.journal.append(
@@ -394,25 +408,38 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     assert attempted_id is not None
                     last_state = "not submitted"
                     last_reason = ""
-                    for _ in range(100):
-                        response = await dispatcher.stub.GetDispatch(
-                            session_dispatcher_pb2.GetDispatchRequest(command_id=attempted_id),
-                            metadata=await bearer(dispatcher.token_file),
-                            timeout=5,
+                    watch = dispatcher.stub.WatchDispatches(
+                        session_dispatcher_pb2.WatchDispatchesRequest(
+                            filter=session_dispatcher_pb2.DispatchFilter(session_id=session_id)
+                        ),
+                        metadata=await bearer(dispatcher.token_file),
+                        timeout=30,
+                    )
+                    try:
+                        async with asyncio.timeout(30):
+                            async for response in watch:
+                                dispatch = response.dispatch
+                                if dispatch.command_id != attempted_id:
+                                    continue
+                                last_state = session_dispatcher_pb2.DeliveryState.Name(dispatch.state)
+                                last_reason = dispatch.reason if dispatch.HasField("reason") else ""
+                                if dispatch.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED:
+                                    return
+                                assert dispatch.state not in {
+                                    session_dispatcher_pb2.DELIVERY_STATE_NO_OP,
+                                    session_dispatcher_pb2.DELIVERY_STATE_FAILED,
+                                    session_dispatcher_pb2.DELIVERY_STATE_CANCELLED_IN_DISPATCHER,
+                                    session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
+                                }, f"Dispatcher terminated notification delivery: {last_state}: {last_reason}"
+                        raise AssertionError(
+                            f"Dispatcher WatchDispatches ended before admission: {last_state}: {last_reason}"
                         )
-                        dispatch = response.dispatch
-                        last_state = session_dispatcher_pb2.DeliveryState.Name(dispatch.state)
-                        last_reason = dispatch.reason if dispatch.HasField("reason") else ""
-                        if dispatch.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED:
-                            return
-                        assert dispatch.state not in {
-                            session_dispatcher_pb2.DELIVERY_STATE_NO_OP,
-                            session_dispatcher_pb2.DELIVERY_STATE_FAILED,
-                            session_dispatcher_pb2.DELIVERY_STATE_CANCELLED_IN_DISPATCHER,
-                            session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
-                        }, f"Dispatcher terminated notification delivery: {last_state}: {last_reason}"
-                        await asyncio.sleep(0.05)
-                    raise AssertionError(f"Dispatcher did not admit notification: {last_state}: {last_reason}")
+                    except TimeoutError as error:
+                        raise AssertionError(
+                            f"Dispatcher did not admit notification: {last_state}: {last_reason}"
+                        ) from error
+                    finally:
+                        watch.cancel()
 
                 if failed_before_rpc:
                     with pytest.raises(ValueError, match="before SubmitInput"):
