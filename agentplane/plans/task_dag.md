@@ -685,10 +685,9 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 flowchart TD
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
-    WORKSPACE_VOLUME[In flight: activate typed Sandbox-owned workspaces]
-    WORKSPACE_DATAVOLUME_RETIRE[Blocked: retire the old DataVolume workspace path]
-    STATE_VOLUME_LAYOUT[Candidate: declare the state volume layout explicitly]
-    VM_GUEST_DECLARATIVE_STORAGE[In flight: declarative guest disk setup]
+    WORKSPACE_DATAVOLUME_RETIRE[Candidate: retire the old DataVolume workspace path]
+    STATE_VOLUME_LAYOUT_ROLLOUT[Candidate: activate explicit state layout declarations]
+    VM_GUEST_DECLARATIVE_STORAGE[In flight: declarative guest disk initialization]
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
@@ -713,16 +712,11 @@ flowchart TD
     HOSTED_THREAD_SURFACES[Blocked: show and revive stopped Sessions]
     VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
-    WORKSPACE_VOLUME -- old consumers gone and images pinned --> WORKSPACE_DATAVOLUME_RETIRE
-    STATE_VOLUME_LAYOUT --> STATE_VOLUME_BLOCK
+    STATE_VOLUME_LAYOUT_ROLLOUT --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
-    WORKSPACE_VOLUME --> WORKSPACE_NODE_PORTABILITY
-    WORKSPACE_VOLUME --> SANDBOX_ARCHIVE
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
-    SANDBOX_SPEC_EDIT -. related .-> WORKSPACE_VOLUME
     VM_PROVIDER -. related .-> SANDBOX_SPEC_EDIT
     APP_SESSION_DEFAULTS[Candidate: the app sends complete Session specs, section 12] -. keeps the preset label true .-> SANDBOX_SPEC_EDIT
-    STATE_VOLUME_BLOCK -. related .-> WORKSPACE_VOLUME
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
     HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
@@ -735,7 +729,6 @@ flowchart TD
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
     EFFECTIVE_MODE_FALLBACK_DROP[Blocked: remove spec.running fallback after controller rollout]
-    DISPATCHER_REPLICA_ACTIVATION[Candidate: remove singleton deployment restriction]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
     APP_SESSION_DEFAULTS --> APP_SESSION_OPEN_VIA_DISPATCHER
@@ -744,12 +737,9 @@ flowchart TD
     NOTIFICATIONS_VIA_DISPATCHER --> NOTIFICATION_GATEWAY_SEND_REMOVE
     APP_GATEWAY_SEND_REMOVE --> PROXY_START_METHODS_DISPATCHER_ONLY
     NOTIFICATION_GATEWAY_SEND_REMOVE --> PROXY_START_METHODS_DISPATCHER_ONLY
-    STATE_VOLUME_LAYOUT --> STATE_VOLUME_LAYOUT_FALLBACK_REMOVE
+    STATE_VOLUME_LAYOUT_ROLLOUT --> STATE_VOLUME_LAYOUT_FALLBACK_REMOVE
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE
     RUNNER_HEARTBEAT_SPLIT[Candidate: runner-only heartbeat type]
-    DISPATCHER_WAKE_ABUSE_LIMITS --> DISPATCHER_WAKE_ACTIVATION
-    SELECTIVE_SESSION_REVIVAL --> DISPATCHER_WAKE_ACTIVATION
-    DISPATCHER_WAKE_FAILURE_FEEDBACK --> DISPATCHER_WAKE_ACTIVATION
     INCARNATION_UID_REQUIRED --> JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE
     K3S_LIFECYCLE_SUITE[Candidate: k3s lifecycle integration suite]
     QUIESCE_WITHOUT_POLLING -. quiesce assertions .-> K3S_LIFECYCLE_SUITE
@@ -768,7 +758,7 @@ fixture. Tests that need ClusterIP Services, KubeVirt or Cilium stay elsewhere
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
 
-**Blocked on `NODE_LOCAL_BLOCK_STORAGE` and `STATE_VOLUME_LAYOUT`.** Replace the VM's virtiofs
+**Blocked on `NODE_LOCAL_BLOCK_STORAGE` and `STATE_VOLUME_LAYOUT_ROLLOUT`.** Replace the VM's virtiofs
 state attachment with a declared disk layout once suitable node-local storage exists. The state
 PVC holds journals and native harness persistence under `/state/sessions`, separately from the
 workspace. A disk would remove virtiofs's `107:107` ownership constraint; check all callers before
@@ -788,56 +778,30 @@ node affinity and both required volume modes. A node-local volume remains pinned
 moving it is `WORKSPACE_NODE_PORTABILITY`. This provisioner work does not gate Sandbox ownership
 or the explicit layout contract for workspace PVCs.
 
-### `WORKSPACE_VOLUME` — roll out explicitly typed Sandbox-owned workspaces
-
-**In flight (Codex, 2026-10-14); template activation is in draft #10507, based on devel after merged #10493.**
-The operator-directed existing Sandbox cutoff is complete; [cutoff evidence](workspace_cutoff.md)
-records the empty inventory verified on 2026-10-14. The implementation merged in #10440 adds
-explicit workspace layouts, retained PVC identity and attachment compatibility checks;
-[storage layouts](../docs/sandbox_storage.md) owns the contract. This PR activates the selected
-layouts in the Pod and VM templates, not another implementation of ownership.
-
-Fresh testing Pod DirectoryTree and VM RawDiskImage fixtures passed retained file/PVC checks,
-including a changed-claim refusal and halted VM-object replacement. The old DataVolume kept files
-through halt/start but lost its workspace on VM-object replacement. The selected paths and exact
-evidence are in [storage acceptance](../acceptance/debug/storage_acceptance.md); no staging run
-has been run. The existing-data cutoff is recorded separately below.
-
-The accepted controller pin `devel-20261014082718-1ceacb7` reads `workspaceVolume`; the selected
-VM image `devel-20261014055155-9642b3d` and runner wheel `a13d9a7d58ff` accept the explicit
-RawDiskImage/ext4 guest path. The Pod uses DirectoryTree at `/state/workspaces`; the VM uses the
-Sandbox-owned RawDiskImage/ext4 claim at that same guest path. The test and staging image pin files
-already carry these controller and guest references. The operator-directed cutoff is recorded in
-[#10493](https://github.com/agentydragon/ducktape/pull/10493). Refresh both namespace inventories
-immediately before the template change is applied; do not create, delete, or replace Sandboxes as
-part of this PR. Do not require migration, a converter or the future block provisioner. The losing
-workspace path is removed by `WORKSPACE_DATAVOLUME_RETIRE` after its callers are gone.
-
 ### `WORKSPACE_DATAVOLUME_RETIRE` — retire the old DataVolume workspace path
 
-**Blocked on `WORKSPACE_VOLUME` and old template/workload consumers being gone.** Remove the
+**Candidate; assigned to `dag_burndown`, 2026-10-14.** Typed templates from #10507 have reconciled
+in both environments and no legacy workload consumers remain; see
+[rollout evidence](../acceptance/debug/storage_acceptance.md#typed-template-rollout). Remove the
 superseded blank-DataVolume workspace template, controller support used only by that path and its
 obsolete tests/docs. Search all callers before removing generic DataVolume support. Gate removals
 on pinned caller images where applicable. Do not delete retained data as an incidental cleanup;
 completed existing-data disposition is recorded in [cutoff evidence](workspace_cutoff.md). Testing selected the retained
-Sandbox-owned RawDiskImage path; its evidence is linked above.
+Sandbox-owned RawDiskImage path; its evidence is in the same acceptance note.
 
-### `STATE_VOLUME_LAYOUT` — declare the state volume layout explicitly
+### `STATE_VOLUME_LAYOUT_ROLLOUT` — activate explicit state layout declarations
 
-**In flight; assigned to `dispatcher`, 2026-10-14 PDT.** Extend the layout vocabulary and durable
-identity contract to `stateVolume`, whose existing contents are fixed `DirectoryTree`. The accepting
-reader adds an optional field so old templates remain valid, defaults omission only to
-`DirectoryTree`, and currently accepts no other layout. Record the layout on the PVC and pin its name,
-UID and layout in Sandbox status before attachment. An existing controller-owned Filesystem state
-PVC with no record may be recorded using the historical fixed contract, never by reading the mutable
-template. Keep deployed templates unchanged until both the CRD schema and controller accepting image
-are pinned. `STATE_VOLUME_LAYOUT_FALLBACK_REMOVE` remains a separate successor that requires explicit
-declarations after accepting images are pinned. This does not choose block storage, convert volumes,
-or drop data; test layout and identity mismatches before workload replacement.
+**Candidate; assigned to `dispatcher`, 2026-10-14 PDT.** The optional DirectoryTree reader and
+retained PVC identity/layout guard merged in #10509. Both environments now run controller
+`devel-20261014210304-b2c581c`; their templates still omit `stateVolume.layout`. Verify the installed
+CRD schema accepts the field, then declare `DirectoryTree` in every deployed state template and
+regenerate manifests. Check reconciliation in both environments before removing the omitted-layout
+default in `STATE_VOLUME_LAYOUT_FALLBACK_REMOVE`. This does not choose block storage, convert
+volumes or drop data; the existing mismatch and identity checks remain required.
 
 ### `STATE_VOLUME_LAYOUT_FALLBACK_REMOVE` — require explicit state layout declarations
 
-**Blocked on `STATE_VOLUME_LAYOUT` and all declaring templates and accepting images rolled out.**
+**Blocked on `STATE_VOLUME_LAYOUT_ROLLOUT` and all declaring templates and accepting images rolled out.**
 Remove temporary omitted-layout defaults and their tests if the code-first rollout introduces them.
 Validate retained identity/layout before attachment. No old-data tolerant adoption or conversion;
 any incompatible data disposition is a separate operator-reviewed cutoff.
@@ -851,18 +815,14 @@ the selected explicit layouts before retiring the path; data drops stay in a sep
 
 ### `VM_GUEST_DECLARATIVE_STORAGE` — declarative guest disk initialization
 
-**In flight (`dag_burndown`, 2026-10-14; draft [#10513](https://github.com/agentydragon/ducktape/pull/10513); follows `WORKSPACE_VOLUME`).** The workspace mount remains a NixOS `fileSystems`
-declaration; `systemd.tmpfiles` now owns directory mode, owner, default ACL and private home setup.
-The old formatting shell body is replaced by a small tested Python guard because NixOS
-`autoFormat` checks only for a recognizable filesystem, not that every byte is zero. Keep
-`autoFormat = false`: first use formats only a zero-filled disk with no signatures, remount accepts
-only the expected ext4 label/signature, and incompatible or unrecognized content refuses startup.
-`agentplane-config` still copies runtime config/credential disks and the console getty still selects
-autologin from runtime config; those shell paths read per-boot inputs and are outside disk setup.
-
-Build and pin the new VM image before a bounded staging first-format/remount acceptance; this lane
-does not change the embedded runner wheel. Do not apply the image or edit deployed templates in
-this PR. Do not add a second formatting path or raise the existing device-discovery wait.
+**Rollout remaining; `dag_burndown`, 2026-10-14.** #10513 merged the guest shell inventory,
+workspace disk preparation helper and declarative tmpfiles ownership. Its tests and Nix build
+passed; wait for the accepting VM image, then verify fresh formatting and retained remount behavior
+on testing before staging activation. Preserve the explicit layout contract and refusal of
+incompatible existing data. `autoFormat`'s recognizable-filesystem check is not equivalent to the
+zero-content scan. Runner changes additionally wait on the embedded wheel pin. The inline helper
+has the operator-requested TODO to package a proper Bazel-built executable rather than embedding
+raw script text; that packaging follow-up does not gate this rollout.
 
 ### `VOLUME_LAYOUT_CONVERSION` — explicit offline volume conversion
 
@@ -878,8 +838,9 @@ a generic conversion framework now.
 **Unscheduled; operator, 2026-10-13 PDT.** Let the operator change a Sandbox's template, including a
 switch between VM and Pod, from the app, only while the Sandbox is suspended. Each incarnation
 already reads the template as it is then (`SANDBOX_IMAGE_REPLACE`), and no spec is replaced
-automatically; this is the explicit, operator-driven edit. Needs `WORKSPACE_VOLUME`,
-so a compatible kind switch keeps the workspace, and `VM_PROVIDER` for the VM side. Validate the
+automatically; this is the explicit, operator-driven edit. Use the deployed
+[workspace layout contract](../docs/sandbox_storage.md) so a compatible kind switch keeps the
+workspace; `VM_PROVIDER` covers the VM side. Validate the
 retained state and workspace layouts before replacing a workload. Reject incompatible edits;
 `VOLUME_LAYOUT_CONVERSION` is a separate, much later task and does not block compatible edits. The
 preset the app records on a Sandbox as a label (`APP_SESSION_DEFAULTS`) must stay true after the edit.
@@ -898,8 +859,8 @@ Sandbox is suspended. Node-local volumes stay the default; this only moves them.
 affordances for a Sandbox that still exists but whose volumes sit in restic or S3, so it must be
 rehydrated before it can start, freeing the node's disk meanwhile. Sandbox status would say that it
 is archived and where, and resuming one rehydrates first. Related to `WORKSPACE_NODE_PORTABILITY`,
-which shares the copy mechanism. Needs `WORKSPACE_VOLUME`; the runner's state PVC would archive the
-same way.
+which shares the copy mechanism. Preserve the declared workspace layout and retained identity;
+the runner's state PVC would archive the same way.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
@@ -964,7 +925,7 @@ Sandbox suspends: it is sealed, then the Pod or VM goes, freeing memory and comp
 ServiceAccount, bindings and state PVC stay, so `SESSION_REVIVE` resumes it on the same PVC. Nothing deletes a
 Sandbox on idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one, through
 [teardown](../sandbox_service/API.md#teardown) and the seal. What a resume gets back of the
-workspace depends on `WORKSPACE_VOLUME`. Idle is a Sandbox-level fact: every Session in the Sandbox
+workspace follows the declared [storage layout](../docs/sandbox_storage.md). Idle is a Sandbox-level fact: every Session in the Sandbox
 is idle. The control design (`docs/adr_sandbox_session_control.md`) puts the policy in the Sandbox
 controller: `spec.idleSuspendAfter`, a timer the controller measures from the `idleSince`
 fact the runner publishes (the connection Lease facts), so it needs no History Service and
@@ -986,8 +947,8 @@ Session identity, journal continuation and native recall has passed; do not repe
 or scenario as an open gate. Audit deterministic coverage for concurrent resume, interrupted setup
 and incompatible retained storage; add only missing contract coverage. Current setup handling refuses
 a failed/interrupted setup rather than restarting it. Long-stop credential validity belongs to
-`RESUME_CREDENTIALS_VALID`, accepted workspace/replacement evidence to the storage acceptance note, and dormant
-harness restoration to `SELECTIVE_SESSION_REVIVAL`. Remove this node once its bounded coverage audit
+`RESUME_CREDENTIALS_VALID`; accepted workspace/replacement evidence is in the storage acceptance
+note. Dormant harness restoration is covered by merged #10492 (`runner/test_restart.py`). Remove this node once its bounded coverage audit
 is complete; a missing live version of an adequately automated case is not another gate.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
@@ -1086,49 +1047,13 @@ fixtures, before deleting a shared helper or generated target. Regenerate derive
 service docs and the README diagram. Preserve History Service's independently owned database; database
 renaming is deferred. No data deletion is bundled with this retirement.
 
-### `DISPATCHER_REPLICA_ACTIVATION` — remove the singleton deployment restriction
-
-**In flight (coordinator, 2026-10-14): replica activation and testing acceptance.**
-#10469 (per-Sandbox ownership) and #10478 (cross-replica terminal broadcast) are merged.
-The Dispatcher image and schema migration 0004 are deployed in testing and staging; their health and
-pin gates are clear. Testing replica acceptance passed in invocation
-`46067206-22ee-4274-8215-99fb71fc8a1d`: queued work survived owner replacement, then reached runner
-admission; both replica streams received deletion outcomes without app HTTP calls. Testing was
-restored to one replica and its fixture storage removed; see
-[acceptance evidence](../session_dispatcher/debug/deployment_acceptance.md#passed-deployed-replica-failover-and-deletion-broadcast).
-#10505 removes the singleton override and uses the environment's normal replica strategy/PDB.
-Remaining: CI/manual merge and verify the staging two-replica rollout. This node finishes with the restriction gone, not merely a successful
-experiment; preserve the normal Lease renewal/fencing machinery.
-
-### `DISPATCHER_WAKE_ABUSE_LIMITS` — enforce the initial wake budget
-
-**Candidate; assigned to the Dispatcher worker. Operator, 2026-10-14: use an initial limit of
-10 wakes per minute and leave tuning for later.** Enforce the budget per authenticated caller,
-shared across Dispatcher replicas and restarts. Deduplicate retries of the same wake and test
-concurrent requests, limit exhaustion and recovery. Surface exhaustion explicitly; do not drop
-queued work or poll for budget availability. Preserve the existing wake allowlist and per-Sandbox
-policy; this decision does not authorize agent callers or change destination authorization.
-Keep wake activation off until enforcement and its accepting image are deployed.
-
-TODO: tune the rate and algorithm from observed use; initial numerical tuning is not an activation
-gate. Document the accounting window and which attempted wakes consume the budget in the implementation.
-
-### `SELECTIVE_SESSION_REVIVAL` — resume only native Sessions with pending work
-
-**Candidate.** Audit runner startup and Dispatcher delivery together: selecting queued Dispatch rows
-alone does not prove dormant harnesses remain stopped. Preserve native identity/history and start only
-Sessions with pending work after a wake; cover multiple retained Sessions and explicit manual resume.
-
-### `DISPATCHER_WAKE_FAILURE_FEEDBACK` — bound a failed revival with a visible cause
-
-**Candidate.** Surface unavailable/full volume nodes and other terminal revival failures in delivery
-state and the app, with a bounded wait and no automatic data deletion. Use condition/events and an
-explicit deadline; test failure and recovery without arbitrary sleep or increased timeouts.
-
 ### `DISPATCHER_WAKE_ACTIVATION` — enable send-triggered revival
 
-**Blocked on reviewed/enforced `DISPATCHER_WAKE_ABUSE_LIMITS`,
-`SELECTIVE_SESSION_REVIVAL`, `DISPATCHER_WAKE_FAILURE_FEEDBACK` and accepting controller/Dispatcher images.**
+**Blocked on accepting controller/Dispatcher images and schema migration rollout.** The wake
+budget (#10487), selective native revival (#10492), and visible terminal wake failure (#10500)
+implementations are merged. The Dispatcher receiver and migration must include #10500 before
+activation; live `a3161b0` images observed on 2026-10-14 precede it. Keep the shared ten-wakes-per-minute
+caller budget and its tuning follow-up in the [Dispatcher contract](../session_dispatcher/README.md).
 The defaults-off wake implementation from #10463 is merged. Verify already-granted Sandbox patch RBAC and schema/image pins, then enable the approved caller
 allowlist and `wakeOnSend` configuration. Test message-during-seal, concurrent sends and deletion
 precedence on testing before staging. Keep `wakeOnSend: false` as the intentional per-Sandbox policy;

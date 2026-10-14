@@ -124,3 +124,18 @@ raw expiry claim and Kubernetes error detail are unavailable; the observed host 
 short-lived credential explain this authentication failure. A fresh pytest process minted a fresh
 token and ran only the remaining legacy row successfully, with unchanged code, bounds and auth
 policy. No automatic auth retry or longer token lifetime was added.
+
+## Typed-template rollout
+
+After #10507 merged, read-only API checks on 2026-10-14 found the selected workspace declarations
+reconciled in testing and staging. Pod templates `runner` (both) and `runner-ducktape` (staging)
+declare DirectoryTree and mount `workspace` at `/state/workspaces`. Both `runner-vm` templates
+declare RawDiskImage/ext4 and attach a virtio disk named/serialized `workspace`; the old blank
+DataVolume declaration is absent. The VM container disk is
+`devel-20261014055155-9642b3d`, the accepted guest image from the testing matrix above.
+
+Both controllers run `devel-20261014210304-b2c581c` and are Ready (staging 2/2, testing 1/1).
+Both namespaces contain no Sandboxes, VirtualMachines, VMIs or DataVolumes. Only shared PostgreSQL
+PVCs remain: staging `postgres-1`/`postgres-2`, testing `postgres-1`. The old workspace path has no
+live consumers; its code retirement can proceed after a repository-wide caller check. No workloads
+were created or deleted during this verification, and this is not a staging workload acceptance run.

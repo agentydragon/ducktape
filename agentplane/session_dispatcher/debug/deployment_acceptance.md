@@ -124,3 +124,14 @@ The artifact records `passed: true` and `cleanup_complete: true`. Subsequent API
 testing Sandboxes and only the shared `postgres-1` PVC. Testing returned to one Ready Dispatcher
 replica; staging remained one Ready replica. #10505 proposes staging activation; its reconciliation
 remains a separate rollout gate.
+
+## Staging replica activation
+
+#10505 merged as `f76ff9d93e457b92d3099b67729de7495e992e94`. Read-only API verification on
+2026-10-14 found staging Deployment generation 10 observed, desired/Ready replicas 2/2,
+RollingUpdate strategy, and its PDB at `minAvailable: 1`, current healthy 2, desired healthy 1.
+The server image was `devel-20261014203113-a3161b0` and migration image
+`devel-20261014203137-a3161b0`. Testing retained its normal one-Ready-replica profile.
+The deployment restriction and staging reconciliation gates are complete; the preceding
+failover/deletion test supplies the behavior evidence. Send-triggered wake activation remains
+separate and requires the newer failure-feedback receiver and migration from #10500.

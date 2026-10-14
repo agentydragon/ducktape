@@ -1,7 +1,9 @@
 # Workspace storage cutoff
 
 Status: **existing Sandbox cutoff complete**, verified on 2026-10-14 at approximately 20:07 UTC.
-Typed workspace template activation remains separate. This record authorizes no further deletion.
+Typed workspace templates from #10507 subsequently reconciled in both environments; see
+[rollout evidence](../acceptance/debug/storage_acceptance.md#typed-template-rollout).
+This record authorizes no further deletion.
 
 ## Completed operator-directed deletions
 
@@ -35,27 +37,20 @@ history were not deleted. The removed state PVCs also held workspace files and n
 persistence; reverting manifests cannot restore them. No content backup or successful seal for
 the operator's deletions is claimed.
 
-## Remaining activation and cleanup
+## Completed activation and remaining cleanup
 
-1. The bounded testing matrix is complete: Pod DirectoryTree passed in
-   `d8d6387e-87f1-4a3a-b73b-fae7fc62598a`, VM RawDiskImage in
-   `7e47a94a-78f2-478f-af7d-14e474ce615d`, and the legacy comparison in
-   `c0c5046b-52e9-4d80-8544-79a5d7eb0b30`. #10480 merged the corrected fixture. The
-   [owning acceptance note](../acceptance/debug/storage_acceptance.md) records source/pins/results.
-   This proves testing, not staging acceptance or existing-data migration.
-2. Refresh the empty inventory and accepting controller/VM wheel pins before activating templates.
-   The old templates can still create old-layout Sandboxes until reconciliation; any new consumer
-   needs a separate disposition rather than silent adoption or another automatic deletion.
-3. Land/reconcile the separately reviewed typed templates: Pod DirectoryTree at `/state/workspaces`
-   for `runner` and `runner-ducktape`, and VM RawDiskImage/ext4 for `runner-vm`. Replace the old
-   VM DataVolume workspace declaration with the Sandbox-owned declaration. Do not hide old data
-   behind a new mount or copy a declaration onto an existing unclassified PVC.
-4. Fresh Sandboxes get fresh UIDs and storage. Recreate finance Sandboxes only when the operator
-   requests them; use new Sessions rather than claiming deleted native Sessions were revived.
-   Verify reconciled declarations and mounts in both environments.
-5. Retire the obsolete DataVolume-specific production path after old consumers are gone, relevant
-   images are pinned, and typed-template reconciliation is verified. Keep generic KubeVirt support
-   needed by other callers. Conversion and node portability remain separate future work.
+The bounded testing matrix passed for Pod DirectoryTree, VM RawDiskImage, and the legacy
+DataVolume comparison; exact invocations and limitations are in the
+[owning acceptance note](../acceptance/debug/storage_acceptance.md). #10507 activated Pod
+DirectoryTree at `/state/workspaces` and VM RawDiskImage/ext4. Read-only verification on
+2026-10-14 found those declarations and attachments reconciled in both environments, with no
+Sandboxes, VMs, VMIs or DataVolumes remaining. This proves template reconciliation, not staging
+workload acceptance or existing-data migration.
+
+Retire the obsolete DataVolume-specific production path after checking all remaining code callers.
+Keep generic KubeVirt support needed elsewhere. Conversion and node portability remain separate
+future work. Fresh Sandboxes get fresh UIDs and storage; recreate finance Sandboxes only when the
+operator requests them, using new Sessions rather than claiming deleted native Sessions revived.
 
 Reverting activation cannot reinterpret already provisioned new workspaces: the durable layout
 and identity guard must reject incompatible declarations until an explicit future conversion exists.
