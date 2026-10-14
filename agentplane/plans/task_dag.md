@@ -282,7 +282,7 @@ acceptance receipts in the chosen authority. Test denied pairs, spoofing and ret
 **Blocked on ingress contract/implementation.** Implement selected recipient read/delivery/ack
 operations, batching and recovery of unread work. Test revoked/deleted recipients, ordinary offline
 catch-up and duplicate delivery without leaking payloads. Do not start/resume a harness implicitly
-unless `DISPATCHER_WAKE_ON_SEND` lets that kind of sender wake a Sandbox.
+unless `DISPATCHER_WAKE_ACTIVATION` lets that kind of sender wake a Sandbox.
 
 ### `AGENT_MESSAGING` — integrated messaging capstone
 
@@ -299,7 +299,7 @@ creator visibility and revocation. Use the service-reserved Session identity, no
 public UUID. Opening in an existing Sandbox grants no isolation from its other Sessions; require a
 separate Sandbox when incompatible trust or credentials are needed. Decide whether launch-and-open
 is a composition of separate grants, never an implicit read/send/launch permission. This contract
-need not choose a durable offline command queue; `DISPATCHER_CORE` owns that.
+reuse the existing Session Dispatcher durable command queue.
 
 ### `THREAD_CREATE_AUTHORIZATION` — implement session-create grants
 
@@ -319,7 +319,7 @@ operation also opens a session; if so, depend on `THREAD_CREATE_AUTHORIZATION` f
 
 **Blocked on launch policy and idempotent create.** Enforce the reviewed
 effective spec and delegation server-side. Test allowed and forbidden launch parameters and
-concurrent retries. Reuse the app's create path (`SANDBOX_WRITE_HELPER`'s shared create), not harness-native agent tools. Launch alone
+concurrent retries. Reuse the app's create path (the shared Sandbox inventory), not harness-native agent tools. Launch alone
 does not grant history read, messaging, credentials or execution of another principal's Actions.
 
 ## 4. VM environment phases
@@ -331,8 +331,8 @@ an unranked candidate lane, not authorization for local Bazel in current contain
 builds on; changing connection direction does not move command durability or remove the runner
 journal.
 
-Direction for stateful VMs (operator, 2026-10-12 PDT; not scheduled): our own Sandbox resource
-(`AGENTPLANE_SANDBOX_RESOURCE`, `kind: pod | vm`) carries both kinds, and both keep their
+Stateful VM contract: our own Sandbox resource
+(`kind: pod | vm`) carries both kinds, and both keep their
 state on one filesystem PVC per Sandbox that Agentplane owns (section 7). Pods mount it as a volume,
 KubeVirt guests through virtiofs. Workspace portability is a separate constraint: retained layouts
 must be compatible with the next workload. `STATE_VOLUME_BLOCK` may change state attachment later;
@@ -343,13 +343,11 @@ a block StorageClass does not itself make Pod and VM layouts interchangeable. Se
 flowchart LR
     VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
     VM_PROVIDER[Candidate: production provider and API]
-    AGENTPLANE_SANDBOX_RESOURCE[Our own Sandbox resource, section 7]
     VM_EGRESS[Blocked: live launcher relay checks]
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
     VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
     VM_PROVIDER --> VM_CONTROL_NETWORKING
-    AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     VM_CONTROL_NETWORKING --> VM_LIFECYCLE
     VM_PROVIDER --> VM_PROCESS_ISOLATION
     VM_PROVIDER --> VM_LIFECYCLE
@@ -516,16 +514,42 @@ messages, by shimming the web interface's control protocol. Builds on the viewer
 
 ### `ISOLATED_ACCEPTANCE_CI` — acceptance tests in their own CI workflow
 
-**Unscheduled; operator, 2026-10-12 PDT: eventually.** Today the deployed vertical tests under
+**In flight (Codex, 2026-10-14), current-stack refresh #10467 and measured OCI import work.**
+Pod/VM storage acceptance remains the first priority. Today the deployed vertical tests under
 `agentplane/acceptance/` run by hand against the stateful `agentplane-testing` environment, and CI
 never runs them. Move them into their own CI workflow that runs in isolation, so the cluster no
 longer carries a stateful environment for them. Options named: an isolated part of the operator's
 cluster, GitHub's runners, or BuildBuddy's; and the cheap-experiments LiteLLM key or a new key
 provisioned for CI. Constraint: an agent can still run, inspect and step through the tests itself.
-Open: where they run. The k3s-on-RBE spike (`agentplane/x/k3s_rbe_spike`) shows a real kubelet runs in a
+The current candidate is k3s on RBE; measure setup/image import and lifecycle costs, then improve
+the measured bottleneck without weakening assertions or increasing timeouts. The k3s-on-RBE spike (`agentplane/x/k3s_rbe_spike`) shows a real kubelet runs in a
 BuildBuddy action, but with no ClusterIP Services, no KubeVirt and no Cilium, so tests that need
 those stay elsewhere. envtest covers only API-server behavior, not Pods, harnesses or LLM calls, so
 it does not replace these tests.
+
+### `ISOLATED_TEST_SPIKES_RETIRE` — remove superseded isolated-test scaffolding
+
+**Blocked on `ISOLATED_ACCEPTANCE_CI` providing the maintained fixtures and entry points.** Move the
+retained k3s fixture/tests into their owning test package, then delete superseded `x/k3s_rbe_spike`
+and `x/k3s_env` entry points, image-loader paths, BUILD targets and old recipes. Keep any still-needed
+platform-specific fixture until its replacement covers the same contract. End with one documented
+local/CI invocation path per supported test tier.
+
+### `TESTING_ENVIRONMENT_RETIRE` — retire the stateful testing deployment once coverage replaces it
+
+**Blocked on `ISOLATED_ACCEPTANCE_CI` and an explicit gap review.** Pod lifecycle/Dispatcher tests on
+bare k3s do not cover KubeVirt, Cilium, external identity or real service routing. Assign those checks
+to an isolated tier or retain their bounded live environment before removing `agentplane-testing`.
+Prepare a separate operator-reviewed retirement/data-disposition PR: remove obsolete Flux/deployments,
+databases, credentials, RBAC, DNS/network rules and stateful acceptance recipes only after the new
+paths are usable by agents and CI. Preserve staging and user-authored data; this node does not authorize
+immediate deletion of the testing namespace or its volumes.
+
+```mermaid
+flowchart LR
+    ISOLATED_ACCEPTANCE_CI --> ISOLATED_TEST_SPIKES_RETIRE
+    ISOLATED_ACCEPTANCE_CI --> TESTING_ENVIRONMENT_RETIRE
+```
 
 ## 6. Existing access and lifecycle follow-ups
 
@@ -540,8 +564,7 @@ flowchart LR
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
     ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
-    BOOTSTRAP_PROGRESS_CONTRACT[Candidate: the Sandbox bootstrap runs when the runner starts]
-    BOOTSTRAP_PROGRESS_CONTRACT --> BOOTSTRAP_UNKNOWN_HOLDS_READY[Blocked: an unreported bootstrap holds Ready]
+    BOOTSTRAP_UNKNOWN_HOLDS_READY[Blocked: remove old-runner readiness tolerance]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
     NETWORK_WORKLOAD_IDENTITY[Unscheduled: network-level workload identity]
@@ -617,30 +640,9 @@ authorize by SPIFFE ID or workload label. Costs: SPIRE or a mesh to install, Cil
 authentication still in beta, and a second authentication scheme in every service beside projected
 tokens.
 
-### `BOOTSTRAP_PROGRESS_CONTRACT` — the Sandbox bootstrap runs when the runner starts
-
-**Candidate; operator, 2026-10-13 PDT: run the Sandbox's bootstrap before any Session opens, not
-inside the first one.** Per-Session setup is already asynchronous: the Session opens at once and
-its setup output and outcome reach history as `SetupStarted`/`SetupOutput`/`SetupFinished` Events.
-The Sandbox bootstrap (the launch file's, once per Sandbox) starts when the runner starts, but
-nothing shows its output or progress, and an `OpenSession` that meets it still running waits for it,
-which the Runner Gateway's `open_session` (`runner_gateway/session_lifecycle.py`) holds until the
-script exits. Remaining: a suspend waits for the bootstrap to succeed or fail. A successful bootstrap stays the precondition of
-opening a Session: an `OpenSession` that meets a bootstrap still running is refused with a retryable
-code, and one that meets a failed or interrupted bootstrap is refused for good (use a new Sandbox). A failed or interrupted bootstrap
-is a Sandbox state of its own, `BootstrapFailed` (operator, 2026-10-13 PDT): terminal, never retried,
-shown as the reason on `Bootstrapped` and `Ready`. A Sandbox is not suspendable until its bootstrap has either succeeded or failed (operator,
-2026-10-13 PDT), so a suspend never interrupts it; likewise a suspend waits for every Session's setup to
-complete (operator, 2026-10-13 PDT). Deletion is still always allowed. While a Sandbox is quiescing
-it accepts no resume command (operator, 2026-10-13 PDT). The result reaches the Sandbox's
-conditions as a runner fact on the connection Lease (`RUNNER_FACTS_ON_LEASE`), is republished at each
-connect because it lasts the Sandbox's lifetime, and is part of `Ready`. `BootstrapFailed` is
-terminal.
-
 ### `BOOTSTRAP_UNKNOWN_HOLDS_READY` — an unreported bootstrap holds `Ready`
 
-**Blocked on `BOOTSTRAP_PROGRESS_CONTRACT` and on every live Sandbox running a runner that reports the
-bootstrap fact.** `BOOTSTRAP_PROGRESS_CONTRACT` lets an `Unknown` `Bootstrapped` condition (reason
+**Blocked on every live Sandbox running a runner that reports the bootstrap fact.** The controller lets an `Unknown` `Bootstrapped` condition (reason
 `BootstrapNotReported`: the runner reported no bootstrap fact) leave `Ready` alone, because runners older
 than the Lease facts change never report it. Once none runs, `Unknown` holds `Ready` too (`Ready` False,
 reason `BootstrapNotReported`) and the gating comment in `agentplane/sandbox_controller/controller.go` goes.
@@ -651,7 +653,7 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ## 7. Our own Sandbox resource: Sessions that outlive their Pod
 
-Not scheduled. A Session and its history are durable. The operator's direction (2026-10-12 PDT):
+A Session and its history are durable. The operator's direction (2026-10-12 PDT):
 the way a Session outlives its runner is our own Sandbox resource, which holds the state PVC and
 stays in place with no Pod or VM scheduled. A Sandbox is its state, running or not; an
 **incarnation** is one Pod or VM. Stopping, replacing the image and starting again keeps the
@@ -666,10 +668,9 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 
 ```mermaid
 flowchart TD
-    DURABLE_SESSION_LIFECYCLE[Decision: Session lifetime and revival]
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
-    WORKSPACE_PVC_ACCEPTANCE[Blocked: verify Sandbox-owned workspaces on testing]
+    WORKSPACE_PVC_ACCEPTANCE[In flight: verify Sandbox-owned workspaces on testing]
     WORKSPACE_VOLUME[Blocked: roll out explicitly typed Sandbox-owned workspaces]
     WORKSPACE_SANDBOX_CUTOFF[Blocked: separate PR drops existing Sandboxes for the storage cutoff]
     WORKSPACE_DATAVOLUME_RETIRE[Blocked: retire the old DataVolume workspace path]
@@ -679,39 +680,27 @@ flowchart TD
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
-    AGENTPLANE_SANDBOX_RESOURCE[In progress: our own Sandbox resource]
-    SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
-    SESSION_INCARNATIONS -. related .-> AGENT_RESUME_NOTICE
     SESSION_REVIVE -. related .-> AGENT_RESUME_NOTICE
     SANDBOX_IDLE_EXPIRY -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
-    BOOTSTRAP_PROGRESS_CONTRACT[Candidate: the Sandbox bootstrap runs when the runner starts, section 6] -. related .-> AGENT_RESUME_NOTICE
     INCARNATION_UID_REQUIRED[Blocked: the runner rejects a Welcome without the incarnation UID]
-    RUNNER_FACTS_ON_LEASE[Candidate: the runner publishes stage, idle and boot facts on the connection Lease]
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: the controller stops reading the blocking Quiesce shape]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
-    DISPATCHER_CORE[Candidate: deploy the Session Dispatcher, then the facts that settle its commands]
     SANDBOX_SERVICE_REMOVE[Blocked: remove the Sandbox Service]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
-    DISPATCHER_WAKE_ON_SEND[In flight: authenticated sends wake a suspended Sandbox]
-    DISPATCHER_WAKE_ABUSE_LIMITS[Decision: per-sender wake limits before enabling wake config]
-    DISPATCHER_WAKE_FAILURE_FEEDBACK[Blocked: bounded, visible outcome when a wake cannot restore a runner]
-    APP_SENDS_VIA_DISPATCHER[Blocked: the app sends through the Session Dispatcher]
+    APP_SENDS_VIA_DISPATCHER[In flight: the app sends through the Session Dispatcher]
     NOTIFICATIONS_VIA_DISPATCHER[Blocked: notifications send through the Session Dispatcher]
     NOTIFICATION_GATEWAY_SEND_REMOVE[Blocked: remove the Notification Service's pre-activation gateway command path]
-    RUNNER_PROXY_SENDER_RESTRICT[Blocked: only system callers send to the runner directly]
     RESUME_CREDENTIALS_VALID[Blocked: grants and tokens still valid after a long suspension]
     SUSPENDED_COMPOSER[Blocked: the composer stays enabled while a Session is suspended]
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
     HOSTED_THREAD_SURFACES[Blocked: show and revive stopped Sessions]
     VM_PROVIDER[VM provider, section 4]
-    DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
-    AGENTPLANE_SANDBOX_RESOURCE --> WORKSPACE_VOLUME
     WORKSPACE_PVC_ACCEPTANCE --> WORKSPACE_SANDBOX_CUTOFF
     WORKSPACE_SANDBOX_CUTOFF --> WORKSPACE_VOLUME
     WORKSPACE_VOLUME -- old consumers gone and images pinned --> WORKSPACE_DATAVOLUME_RETIRE
@@ -723,60 +712,48 @@ flowchart TD
     SANDBOX_SPEC_EDIT -. related .-> WORKSPACE_VOLUME
     VM_PROVIDER -. related .-> SANDBOX_SPEC_EDIT
     APP_SESSION_DEFAULTS[Candidate: the app sends complete Session specs, section 12] -. keeps the preset label true .-> SANDBOX_SPEC_EDIT
-    RUNNER_JOURNAL_TRIM[Unscheduled: runners stop keeping what the ingress committed, section 10] -. keeps what a revival reads back .-> SESSION_INCARNATIONS
     STATE_VOLUME_BLOCK -. related .-> WORKSPACE_VOLUME
-    AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
-    AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
-    SESSION_INCARNATIONS --> SESSION_REVIVE
-    SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Blocked: the controller suspends an idle Sandbox]
-    RUNNER_SEAL_PER_INCARNATION[Candidate: the runner keys its seal to the incarnation and reopens]
-    RUNNER_SEAL_PER_INCARNATION --> SANDBOX_IDLE_EXPIRY
-    IDLE_SUSPEND_FIELDS[Candidate: optional idle-suspend fields and the effective mode in status] -- image pinned --> EFFECTIVE_MODE_FALLBACK_DROP[Blocked: readers stop falling back to spec.running]
-    RUNNER_SEAL_PER_INCARNATION -. related .-> SESSION_INCARNATIONS
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
     HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
-    MULTIAGENT_MODEL[Decision: identities and authority vocabulary, section 3] -. who may send and wake .-> DISPATCHER_CORE
-    AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. offline behavior .-> DISPATCHER_CORE
-    RUNNER_FACTS_ON_LEASE --> QUIESCE_WITHOUT_POLLING
-    RUNNER_FACTS_ON_LEASE --> SANDBOX_IDLE_EXPIRY
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
-    RUNNER_FACTS_ON_LEASE -. carries the boot result .-> BOOTSTRAP_PROGRESS_CONTRACT
-    DISPATCHER_CORE --> PROXY_START_METHODS_DISPATCHER_ONLY
-    APP_SENDS_VIA_DISPATCHER --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
-        DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
-    DISPATCHER_CORE --> DISPATCHER_DEPLOY[In flight: the Session Dispatcher is deployed]
-    DISPATCHER_CORE --> DISPATCHER_REPLICA_OWNERSHIP[Candidate: multiple replicas own disjoint Sandboxes]
-    DISPATCHER_DEPLOY --> APP_SENDS_VIA_DISPATCHER
     DISPATCHER_DEPLOY --> NOTIFICATIONS_VIA_DISPATCHER
-    SESSION_REVIVE --> DISPATCHER_WAKE_ON_SEND
-    APP_SENDS_VIA_DISPATCHER --> RUNNER_PROXY_SENDER_RESTRICT
-    NOTIFICATION_GATEWAY_SEND_REMOVE --> RUNNER_PROXY_SENDER_RESTRICT
     NOTIFICATIONS_VIA_DISPATCHER --> SESSION_ACTIVITY_STREAM
-    DISPATCHER_WAKE_ON_SEND --> SUSPENDED_COMPOSER
+    DISPATCHER_WAKE_ACTIVATION --> SUSPENDED_COMPOSER
     APP_SENDS_VIA_DISPATCHER --> SUSPENDED_COMPOSER
-    DISPATCHER_CORE -. shares delivery semantics .-> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> RESUME_CREDENTIALS_VALID
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
+    EFFECTIVE_MODE_FALLBACK_DROP[Blocked: remove spec.running fallback after controller rollout]
+    DISPATCHER_DEPLOY[In flight: remaining deployed Dispatcher acceptance]
+    DISPATCHER_REPLICA_OWNERSHIP[In flight: fenced per-Sandbox ownership]
+    DISPATCHER_TERMINAL_BROADCAST[In flight: cross-replica deletion outcomes]
+    DISPATCHER_REPLICA_ACTIVATION[Blocked: remove singleton deployment restriction]
+    DISPATCHER_REPLICA_OWNERSHIP --> DISPATCHER_REPLICA_ACTIVATION
+    DISPATCHER_TERMINAL_BROADCAST --> DISPATCHER_REPLICA_ACTIVATION
+    DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
+    DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
+    APP_SENDS_VIA_DISPATCHER --> APP_DISPATCHER_ACTIVATION
+    DISPATCHER_DEPLOY --> APP_DISPATCHER_ACTIVATION
+    APP_SESSION_DEFAULTS --> APP_SESSION_OPEN_VIA_DISPATCHER
+    APP_DISPATCHER_ACTIVATION --> APP_GATEWAY_SEND_REMOVE
+    APP_SESSION_OPEN_VIA_DISPATCHER --> APP_GATEWAY_SEND_REMOVE
+    NOTIFICATIONS_VIA_DISPATCHER --> NOTIFICATION_GATEWAY_SEND_REMOVE
+    APP_GATEWAY_SEND_REMOVE --> PROXY_START_METHODS_DISPATCHER_ONLY
+    NOTIFICATION_GATEWAY_SEND_REMOVE --> PROXY_START_METHODS_DISPATCHER_ONLY
+    SANDBOX_SERVICE_CONFIG_REMOVE --> SANDBOX_SERVICE_REMOVE
+    STATE_VOLUME_LAYOUT --> STATE_VOLUME_LAYOUT_FALLBACK_REMOVE
+    STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE
+    RUNNER_HEARTBEAT_SPLIT[Candidate: runner-only heartbeat type]
+    DISPATCHER_WAKE_ABUSE_LIMITS --> DISPATCHER_WAKE_ACTIVATION
+    SELECTIVE_SESSION_REVIVAL --> DISPATCHER_WAKE_ACTIVATION
+    DISPATCHER_WAKE_FAILURE_FEEDBACK --> DISPATCHER_WAKE_ACTIVATION
+    WORKSPACE_SANDBOX_CUTOFF --> JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE
+    INCARNATION_UID_REQUIRED --> JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE
     K3S_LIFECYCLE_SUITE[Candidate: k3s lifecycle integration suite]
-    BOOTSTRAP_PROGRESS_CONTRACT[Candidate: the Sandbox bootstrap runs when the runner starts, section 6] -. Ready implies bootstrapped .-> K3S_LIFECYCLE_SUITE
     QUIESCE_WITHOUT_POLLING -. quiesce assertions .-> K3S_LIFECYCLE_SUITE
 ```
-
-### `DURABLE_SESSION_LIFECYCLE` — Session lifetime and revival
-
-**Decision.** Decide: who may revive. A revived Session gets back its native harness state, and its workspace if
-the workspace volume still exists (`WORKSPACE_VOLUME`). Each incarnation
-uses the Sandbox's template as it is at that start (`AGENTPLANE_SANDBOX_RESOURCE`), so revival
-picks up template and image updates. Sessions that share a Sandbox revive together,
-since they share its state PVC. Direction (operator, 2026-10-11 PDT): a new user message or a
-notification resumes a stopped Sandbox, never a read. Both reach the Runner Gateway as commands, so
-one hook covers them: the gateway finds the Sandbox in its Session registry, sets the Sandbox
-resource's desired state to running and holds the command until the new incarnation's runner
-connects. A command held only while the sender waits is lost if the sender goes away;
-`DISPATCHER_WAKE_ON_SEND` is the durable version, and it wakes the Sandbox by patching the Sandbox CR with the shared wake helper (`SANDBOX_WRITE_HELPER`) rather than through the gateway. Resuming by Session ID works while the Sandbox exists, stopped or not. Open: what the user sees while it starts.
 
 ### `K3S_LIFECYCLE_SUITE` — a k3s lifecycle integration suite
 
@@ -785,7 +762,7 @@ shared k3s environment fixture on a BuildBuddy action, one test per
 flow, no LLM: create, bootstrap, suspend, resume, quiesce and delete, about 15 minutes on RBE. Create,
 bootstrap, suspend, resume and delete have landed (`agentplane/x/k3s_env`). Left: the quiesce
 assertions, which wait for `QUIESCE_WITHOUT_POLLING`, and the assertion that `Ready` implies a
-finished bootstrap, for `BOOTSTRAP_PROGRESS_CONTRACT`. The disposable-environment lane owns the
+finished bootstrap. The controller contract is implemented; this node adds integration assertions. The disposable-environment lane owns the
 fixture. Tests that need ClusterIP Services, KubeVirt or Cilium stay elsewhere
 (`ISOLATED_ACCEPTANCE_CI`).
 
@@ -813,7 +790,8 @@ or the explicit layout contract for workspace PVCs.
 
 ### `WORKSPACE_PVC_ACCEPTANCE` — verify Sandbox-owned workspaces on testing
 
-**Blocked on the controller image implementing #10440 being pinned.** On testing, compare the
+**In flight (Codex acceptance worker, 2026-10-14); gate each run on the #10440 controller image pin.**
+Verify a fresh Pod `DirectoryTree` workspace as well as the VM case. On testing, compare the
 current VM DataVolume path with a fresh Sandbox-owned `RawDiskImage` workspace, then verify files
 and PVC identity survive stop/start and workload replacement. Run one VM harness at a time within
 quota. Record the selected path and bounded acceptance evidence in the storage/VM docs. This is
@@ -823,7 +801,7 @@ Complete this before the incompatible cutoff and deployed-template rollout.
 ### `WORKSPACE_VOLUME` — roll out explicitly typed Sandbox-owned workspaces
 
 **Blocked on `WORKSPACE_SANDBOX_CUTOFF`, after `WORKSPACE_PVC_ACCEPTANCE`.** The implementation
-under review in #10440 adds explicit workspace layouts, retained PVC identity and attachment
+merged in #10440 adds explicit workspace layouts, retained PVC identity and attachment
 compatibility checks; [storage layouts](../docs/sandbox_storage.md) owns the contract. This node is
 the remaining template rollout, not another implementation of ownership. No deployed template
 changes belong in #10440.
@@ -861,11 +839,24 @@ path instead, remove the unused new path and update this node to that actual out
 **Candidate.** Extend the workspace layout vocabulary and durable identity contract to
 `stateVolume`, whose existing contract is fixed `DirectoryTree`. Keep this separate from choosing
 block storage. Reader code must land and be pinned before manifests declare new fields; old
-manifests must remain accepted during that rolling deployment. Remove any temporary optional-field
-fallback in a follow-up node added with that implementation, after all declarations and images
-have moved. Do not infer an existing disk's format from a mutable template. Test mismatches before
+manifests must remain accepted during that rolling deployment. `STATE_VOLUME_LAYOUT_FALLBACK_REMOVE` removes any temporary optional-field fallback after all
+declarations and images have moved. Do not infer an existing disk's format from a mutable template. Test mismatches before
 workload replacement. If existing declarations cannot be retained, use the approved incompatible
 cutoff in a separate data-drop PR rather than adding old-data compatibility fields.
+
+### `STATE_VOLUME_LAYOUT_FALLBACK_REMOVE` — require explicit state layout declarations
+
+**Blocked on `STATE_VOLUME_LAYOUT` and all declaring templates and accepting images rolled out.**
+Remove temporary omitted-layout defaults and their tests if the code-first rollout introduces them.
+Validate retained identity/layout before attachment. No old-data tolerant adoption or conversion;
+any incompatible data disposition is a separate operator-reviewed cutoff.
+
+### `STATE_VOLUME_VIRTIOFS_RETIRE` — delete the superseded state attachment
+
+**Blocked on `STATE_VOLUME_BLOCK` acceptance/activation and old workloads gone.** Remove VM state
+virtiofs mounts, guest ownership/UID workarounds used only by them, old template paths and tests/docs.
+Keep unrelated virtiofs uses where live callers still need them. Verify Pod/VM state persistence on
+the selected explicit layouts before retiring the path; data drops stay in a separate cutoff PR.
 
 ### `VM_GUEST_DECLARATIVE_STORAGE` — declarative guest disk initialization
 
@@ -875,7 +866,8 @@ Preserve the explicit layout contract and refuse incompatible existing data. `au
 recognizable-filesystem check is not equivalent to the existing zero-content scan; specify and
 test first-use formatting and remount behavior before removing the old scripts. This can proceed
 independently of workspace ownership. New guest configuration waits on the accepting VM image
-and, for runner changes, its embedded wheel pin.
+and, for runner changes, its embedded wheel pin. Finish by deleting the replaced shell scripts,
+units and packaging references; do not leave a second formatting path.
 
 ### `VOLUME_LAYOUT_CONVERSION` — explicit offline volume conversion
 
@@ -915,17 +907,6 @@ which shares the copy mechanism. Needs `WORKSPACE_VOLUME`; the runner's state PV
 same way.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
-### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
-
-**In progress; operator, 2026-10-12 PDT: the shared base of this section and stateful VMs.** Our
-`Sandbox` and `SandboxTemplate` and the Sandbox Controller (`agentplane/sandbox_controller/SPEC.md`)
-reconcile a pod Sandbox into its state PVC and Pods. Sandboxes are created as ours, and
-what is left is the nodes below. The Sandbox Service goes away (`SANDBOX_SERVICE_REMOVE`; operator, 2026-10-13 PDT): requesters, the app and
-the Dispatcher, write a Sandbox's spec through the Kubernetes API as the operator who asked, and the
-controller writes status and validates the spec. The controller stays separate from the Runner Gateway, so
-the provisioning permissions stay off the runner-facing service. Layers that act on CRs, the controller's
-idle timer included, do not edit the spec (`docs/adr_sandbox_session_control.md`). Action Service boxes keep a catalog of their own ([ADR](../docs/adr_action_sandboxes.md)).
 
 ```mermaid
 flowchart TD
@@ -974,29 +955,16 @@ Options the operator named, none chosen: mount a separate volume that carries th
 Codex into a Pod image that has none of them; or take a user root filesystem and run it under
 Firecracker with the runner as init.
 
-### `IDLE_SUSPEND_FIELDS` — optional idle-suspend fields and the effective mode in status
-
-**Candidate; operator, 2026-10-11, 2026-10-13 and 2026-10-14 PDT.** The Sandbox resource gains
-`spec.idleSuspendAfter`, `status.suspendedBy` and `spec.wakeGeneration` (the last if it is not there yet;
-`SANDBOX_WRITE_HELPER` bumps it), all optional so the image that reads them ships before any manifest sets
-them. The controller publishes the effective mode once in status: whether the Sandbox is meant to run,
-from `spec.running` and, once `SANDBOX_IDLE_EXPIRY` writes it, `status.suspendedBy`. It reads the idle fields
-and decides nothing yet, so a Sandbox behaves exactly as before. Gate: the controller image is pinned before
-the readers (landed with the wake helper). Reader before writer.
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
 ### `EFFECTIVE_MODE_FALLBACK_DROP` — the Python readers stop falling back to `spec.running`
 
-**Blocked on `IDLE_SUSPEND_FIELDS`, its controller image pinned.** `Sandbox.operating_mode` in
+**Blocked on the operating-mode controller image being pinned in both environments and existing CRs having status populated.** `Sandbox.operating_mode` in
 `sandbox_resource.py` reads `status.operatingMode` and falls back to `spec.running` while the controller
 has not published it. Once the controller that publishes it is pinned everywhere, make the status field
 required and delete the fallback (its `CLEANUP` marker names the same gate).
 
 ### `SANDBOX_IDLE_EXPIRY` — the controller suspends an idle Sandbox
 
-**Blocked on the app image that reads `status.operatingMode` being pinned, `SESSION_INCARNATIONS`, `RUNNER_SEAL_PER_INCARNATION`,
-`RUNNER_FACTS_ON_LEASE` and `QUIESCE_WITHOUT_POLLING`; operator, 2026-10-11 and 2026-10-13 PDT.** An idle runner
+**Blocked on the app image that reads `status.operatingMode` being pinned, `QUIESCE_WITHOUT_POLLING`; operator, 2026-10-11 and 2026-10-13 PDT.** An idle runner
 Sandbox suspends: it is sealed, then the Pod or VM goes, freeing memory and compute, and the Sandbox, its
 ServiceAccount, bindings and state PVC stay, so `SESSION_REVIVE` resumes it on the same PVC. Nothing deletes a
 Sandbox on idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one, through
@@ -1004,7 +972,7 @@ Sandbox on idleness or any timer (operator, 2026-10-13 PDT): only the operator d
 workspace depends on `WORKSPACE_VOLUME`. Idle is a Sandbox-level fact: every Session in the Sandbox
 is idle. The control design (`docs/adr_sandbox_session_control.md`) puts the policy in the Sandbox
 controller: `spec.idleSuspendAfter`, a timer the controller measures from the `idleSince`
-fact the runner publishes (`RUNNER_FACTS_ON_LEASE`), so it needs no History Service and
+fact the runner publishes (the connection Lease facts), so it needs no History Service and
 survives a controller restart. Busy covers a delivery under way, the bootstrap, a turn, a command and a setup script. A background or
 durable process or an attached terminal does not count (operator, 2026-10-14), so a suspend ends them (`RUNNER_BUSY_TRACKING`). The controller's idle timer does not edit the spec: it
 writes `status.suspendedBy: Idle` with the `spec.wakeGeneration` it suspended at. Automatic suspension is
@@ -1016,41 +984,16 @@ only ever deletes.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `SESSION_INCARNATIONS` — a Session records its incarnations
-
-**Blocked on the lifecycle decision and the resource.** The Sandbox resource's status lists its
-incarnations, at most one live; each incarnation's runner announces its Pod or VM UID on ingress,
-from which the History Service records it, and its seal ends that incarnation, not the Session. On
-the kept volume the runner journal and its cursors simply continue; the next incarnation journals
-that it resumed after a seal.
-
-The reopening of a sealed journal is `RUNNER_SEAL_PER_INCARNATION`; the History Service accepts the continuation and `Attached` carries the incarnation UID.
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
-### `RUNNER_SEAL_PER_INCARNATION` — the runner keys its seal to the incarnation and reopens
-
-**Candidate; operator, 2026-10-13 PDT: a seal belongs to the incarnation that sealed it.** The History Service accepts the continuation and `Attached` carries the incarnation UID. The History Service folds the resume entry (`JournalReopened`). Remaining: a runner under a different
-UID than the one that sealed treats the seal as ended, reopens the journal and appends that entry, so `ensure_running` and `IngressPusher.track` accept the Session again. Seals on disk without a UID
-count as an earlier incarnation's. The lameduck marker keeps its own incarnation key. Test a suspend and
-resume on the same state volume (on `agentplane-testing`) with a Session that has history, an unacknowledged tail at the seal, and
-a seal written before the UID existed. The runner's side ships once the History Service image that folds the
-entry is pinned; after it merges only this test is left.
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
 ### `SESSION_REVIVE` — start a stopped Sandbox again
 
-**Blocked on incarnations.** The controller schedules a new Pod or VM
-for a stopped Sandbox, set running by the wake helper (`SANDBOX_WRITE_HELPER`: the Dispatcher's wake, `DISPATCHER_WAKE_ON_SEND`, or the app for an operator), from its
-template as it is now, possibly on a new image, and resume each harness as
-a new incarnation of the same Session and history. Incarnation N+1 is created only after N has fully
-terminated, and the runner treats an interrupted Session setup as resumable. Test
-revival after a long stop, a refused incompatible state PVC, and concurrent revive requests.
-The earlier requirement to revive only Sessions with pending work remains unverified: a Sandbox wake
-restores the runner workload, and the `DISPATCHER_WAKE_ON_SEND` two-send test does not exercise a dormant
-native Session. Inspect the runner's new-incarnation restore path and cover the selected behavior with
-both queued and dormant Sessions before claiming selective revival.
+**Acceptance audit remaining.** Same-state-PVC VM Codex resume with changed workload UID, unchanged
+Session identity, journal continuation and native recall has passed; do not repeat that implementation
+or scenario as an open gate. Audit deterministic coverage for concurrent resume, interrupted setup
+and incompatible retained storage; add only missing contract coverage. Current setup handling refuses
+a failed/interrupted setup rather than restarting it. Long-stop credential validity belongs to
+`RESUME_CREDENTIALS_VALID`, workspace/replacement acceptance to `WORKSPACE_PVC_ACCEPTANCE`, and dormant
+harness restoration to `SELECTIVE_SESSION_REVIVAL`. Remove this node once its bounded coverage audit
+is complete; a missing live version of an adequately automated case is not another gate.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
@@ -1069,8 +1012,7 @@ message through the Dispatcher; and the wording agents act on. Test a suspend an
 background process, a terminal and workspace files, and a crash restart (no suspend) that reads
 differently.
 
-Related: `SESSION_INCARNATIONS`, `SESSION_REVIVE`, `SANDBOX_IDLE_EXPIRY`, `BOOTSTRAP_PROGRESS_CONTRACT`
-(section 6).
+Related: `SESSION_REVIVE`, `SANDBOX_IDLE_EXPIRY`.
 
 ### `INCARNATION_UID_REQUIRED` — the runner rejects a `Welcome` without the incarnation UID
 
@@ -1080,24 +1022,23 @@ every environment, and in the VM guest's runner wheel pin.** Removes the missing
 adoption (marked by its `CLEANUP` tombstone) goes. Pin ordering is not relied on before this; afterwards a
 runner too old to know the field cannot meet a gateway that no longer sends it.
 
-### `RUNNER_FACTS_ON_LEASE` — the runner publishes stage, idle and boot facts on the connection Lease
+### `JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE` — delete the pre-incarnation seal compatibility path
 
-**In progress; the gateway writes what a runner sends, the runner sends its quiesce stage and bootstrap result, and the controller reader is the Sandbox controller lane's.** The one
-transport several nodes share: the runner reports facts on the control stream, as optional `facts` on the `Heartbeat` message
-shared by `RunnerFrame.heartbeat` and `ServiceFrame.heartbeat`, sent on change and on the first `Heartbeat` after
-connect; what is left is moving them to a runner-only `RunnerHeartbeat` on `RunnerFrame.heartbeat`
-(wire-compatible: same field numbers), and the gateway
-replica holding the connection writes them as annotations on the Sandbox-owned connection Lease,
-stamped with the incarnation UID, clearing them when a different incarnation connects. Facts: the
-seal stage (draining, flushing, sealed), when the Sandbox last went idle (`idleSince`, set only
-while no delivery, bootstrap, turn, command or setup script is busy; there is no `busy`
-fact) for `SANDBOX_IDLE_EXPIRY`, and the bootstrap result (`BOOTSTRAP_PROGRESS_CONTRACT`), and the Sessions whose setup is still running, which
-holds a suspend back (`Ready` False with reason `SuspendPending`, `SANDBOX_IDLE_EXPIRY`). The
-gateway writes stage transitions to the Lease at once and coalesces only `idleSince` into the
-regular 15-second renewal write, so it adds no etcd writes. The runner republishes its facts on
-reconnect so a gateway rollout loses nothing. A first-connection
-annotation, persisted, tells `NeverRan` (a Sandbox whose runner has not connected yet) from a runner
-that is down. Order: the controller reads the annotations before the gateway starts writing them.
+**Blocked on `INCARNATION_UID_REQUIRED` and a verified inventory/cutoff of old retained journals.**
+`runner/journal.py` still probes `PRAGMA table_info(seal)` and adds a missing `incarnation_uid`
+column, accepting UID-less seals. Once the separately approved storage cutoff covers those journals
+and old Pod images/VM wheels can no longer write them, remove this old-schema upgrade and missing-UID
+seal tolerance, with obsolete fixtures. Do not erase journals incidentally; if the workspace cutoff
+leaves any old state PVC, name it in a separate operator-reviewed data-disposition step first.
+
+### `RUNNER_HEARTBEAT_SPLIT` — remove runner-only facts from service heartbeats
+
+**Candidate.** Facts already travel from the runner to the gateway's incarnation-stamped connection
+Lease and are read by the controller. Only the wire-type cleanup remains: use a runner-only
+`RunnerHeartbeat` on `RunnerFrame.heartbeat`, retaining field numbers, while service heartbeats
+carry no runner facts. Update all users and generated outputs atomically; delete the shared-message
+facts field once no live caller requires that shape. This wire-compatible cleanup is not a new
+prerequisite for idle suspension or bootstrap readiness.
 
 ### `RUNNER_BUSY_TRACKING` — the runner counts terminals and background processes as busy
 
@@ -1116,7 +1057,7 @@ included.** Deletes the controller's legacy-shape read and the tombstone marking
 
 ### `QUIESCE_WITHOUT_POLLING` — a runner that never progresses is backed off, not hammered
 
-**Blocked on `RUNNER_FACTS_ON_LEASE` pinned in every environment (done in testing and staging).** The
+**Candidate; the Lease-facts images are pinned in testing and staging.** The
 controller already calls once and reacts to the Lease stage events, re-issuing the idempotent call
 only at a one-minute deadline. What is left: while the ingress is down the controller backs off
 instead of retrying per Sandbox, and a live test (a Sandbox with a Session whose flush is held
@@ -1131,144 +1072,154 @@ What is left is the second listener: the notification service reads the Session'
 `WatchSessionSummaries` notice and picks its own moment, so it delivers after a minute of idleness,
 at most ten minutes after the first pending entry, through `NOTIFICATIONS_VIA_DISPATCHER`. Its
 `NoticeDebounceSettings` quiet window stays about inbox entry times until then. `idle_since` is
-display and delivery timing: suspension reads the runner's busy facts (`RUNNER_FACTS_ON_LEASE`) and
+display and delivery timing: suspension reads the runner's busy facts (the connection Lease facts) and
 never this field. Per-Session idle times stay out of Kubernetes.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `SANDBOX_SERVICE_REMOVE` — remove the Sandbox Service
+### `SANDBOX_SERVICE_CONFIG_REMOVE` — stop configuring the retired Sandbox Service clients
 
-**In flight (Codex, 2026-10-14).** Direct app lifecycle config and its guarded image have rolled out in
-both environments (evidence in [the app README](../app/README.md#sandbox-service-retirement)). The next
-receiver change makes the app target optional and drops its channel and health probe in direct mode.
-After that app image is pinned, remove the old target and token configuration; keep the Service until
-all callers and their images no longer need it. Remove the Deployment,
-Role and TokenReview,
-the protos and client, `StreamConsole`, the grant RPCs (`GrantEgress`, `RevokeEgress`, their messages,
-servicer, client methods, `sandbox_service/egress.py` and the `egresscredentials`/`policybindings` rules of
-the Role, each marked by a `CLEANUP` tombstone), the Notification Service's `sandbox_service` setting (its
-`CLEANUP` tombstone in `notification_service/settings.py`, the key in its manifest, the `sandboxes` token
-and its egress rule) and the Notification Service's place among the Service's callers (the
-`notification_service/docs/api.md` and `sandbox_service/README.md` sentences that name it), the app's
-gRPC fallback, health probe, target/token settings and ServiceAccount token projection, and update the
-README services diagram (12 to 11 services). First make the app's Sandbox Service target optional
-and skip its connection in direct mode while the old config remains. Then remove the Service target
-and token from app manifests and Notification's unused `sandbox_service` key; after those manifests
-roll out, remove their settings readers and clients. Delete the Service only after the direct-path
-config rollout and all remaining caller images are confirmed.
+**Blocked on the #10466 app image being pinned in testing and staging.** Direct app lifecycle config
+has rolled out; the optional-target receiver and conditional channel/health probe have merged.
+Remove the app's `sandbox_service_target`, token projection and obsolete network edge, and the
+Notification Service's unused `sandbox_service` config, token and egress rule. Check all remaining
+readers before removing a projected token. Generate manifests canonically and verify both rollouts
+before deleting strict settings fields. Update the deployed traffic diagram with the config change.
 
-### `DISPATCHER_CORE` — the Session Dispatcher delivers to running Sandboxes
+### `SANDBOX_SERVICE_REMOVE` — delete the Sandbox Service and its legacy clients
 
-**Candidate.** The service is in `session_dispatcher/` (README there) with its image, built and tested, and not
-deployed; it moves no sender and wakes nothing. What remains:
-
-1. **Deploy it, after the image is pinned.** Deployment (one replica, `Recreate`), Service, database on the shared
-   CNPG cluster with the migration init container, Role with `get/list/watch` on `sandboxes`, its account in the
-   gateway's `caller_accounts`, the Flux image automation, and the README services diagram.
-2. **`HARNESS_CONFIRMED` has no writer.** A command stays `RUNNER_ADMITTED` until a fact says it reached the model's
-   context; decide which fact (the runner's journal, read from the Lease or the History Service) and settle `submit_input`
-   rows on it.
-3. **Multiple replicas are a separate follow-up, `DISPATCHER_REPLICA_OWNERSHIP`.** Until it lands, deployment stays
-   at one active replica.
-4. **Authorization names which senders may send** (any `caller_accounts` entry may today); the sender kinds that may
-   wake are `DISPATCHER_WAKE_ON_SEND`'s.
-5. **A command whose reply was lost across an incarnation boundary** is redelivered to the next incarnation
-   (`THREAD_SUCCESSOR_DELIVERY`).
-6. **Poison commands** get no special handling yet.
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
+**Blocked on `SANDBOX_SERVICE_CONFIG_REMOVE` rolled out and all caller images using direct inventory.**
+Delete the app's gRPC lifecycle fallback, obsolete settings/client/channel/probe code, and Notification's
+unused `SandboxServiceSettings`. Remove the Service, Deployment, ServiceAccount, Role/Binding,
+TokenReview grants, network rules, image publication/Flux registration and migration-free service wiring.
+Delete its proto/service client, console/grant RPCs, server and tests, after moving any still-used shared
+inventory code into `agentplane/sandboxes/`. Search the whole repo, including acceptance and isolated
+fixtures, before deleting a shared helper or generated target. Regenerate derived files and update
+service docs and the README diagram. Preserve History Service's independently owned database; database
+renaming is deferred. No data deletion is bundled with this retirement.
 
 ### `DISPATCHER_REPLICA_OWNERSHIP` — multiple replicas own disjoint Sandboxes
 
-**Candidate; independently finishable from `DISPATCHER_DEPLOY` and sender cutovers.** The accepted control design
-shards Sandboxes among Dispatcher replicas with a per-Sandbox Lease. Until this node lands, `DISPATCHER_DEPLOY`
-keeps one active replica with `Recreate`; this is a temporary correctness limit, not the intended replica model.
+**In flight (Codex, 2026-10-14), draft #10469.** Namespace Lease grants have merged and were verified
+in testing and staging. Implement per-Sandbox Lease ownership with database generation fencing of
+claim/settle and owner-scoped recovery. Competing, stale and restarting replicas must not reset or
+settle a live peer's work. Preserve authenticated, app-independent operation. Publish deterministic
+two-replica evidence; terminal-event broadcast and manifest activation are separate nodes below.
 
-**Rollout prerequisite:** the Dispatcher's namespace Role grants `get/list/watch/create/update` on
-`coordination.k8s.io/leases` before the ownership code starts using them. The grant is an independent
-PR; verify Flux has applied it in testing and staging before activating Lease callers. Code and tests
-can be prepared in parallel. The grant alone changes neither replica count nor delivery ownership.
+### `DISPATCHER_TERMINAL_BROADCAST` — deletion outcomes reach streams on every replica
 
-Implement per-Sandbox Lease ownership with stale-owner fencing so only the current holder delivers for a Sandbox or
-settles its work. Scope startup recovery to Sandboxes owned by that replica; starting or restarting one replica must
-not reset a live peer's in-flight commands. Keep PostgreSQL change notifications visible across replicas so the owner
-wakes for inserted or changed Dispatches, and make a deleted Sandbox's terminal Dispatch events reach
-`WatchDispatches` streams connected to any replica even though its rows are deleted. Preserve TokenReview caller
-authentication and Dispatcher operation while the integration app is unavailable. Add deterministic tests with at
-least two replicas sharing one database: competing or stale owners cannot deliver or settle the same command; a
-command inserted or changed wakes its owner; a deletion's terminal events reach a watcher on another replica; and
-failover, restart and rejoin recover queued or in-flight work without resetting a live owner's commands.
+**In flight (Codex, 2026-10-14); separate PR from ownership.** A Sandbox deletion terminalizes and
+deletes its Dispatch/SessionOpening rows in one transaction. Broadcast exact terminal Dispatch
+snapshots through transactional PostgreSQL notifications, bounded into chunks and assembled before
+fanout. A listener gap or incomplete event must fail the affected watch explicitly; do not imply
+durable replay after row deletion. Test a watcher on a different replica, commit/rollback, chunking
+and listener loss. Replace the process-local-only terminal handoff; delete the superseded implementation
+and tests in this PR wherever no rolling-image dependency requires them.
 
-Changing a manifest to more than one active replica is gated on this node. Control design: [ADR](../docs/adr_sandbox_session_control.md).
+### `DISPATCHER_REPLICA_ACTIVATION` — remove the singleton deployment restriction
 
-### `DISPATCHER_DEPLOY` — the Session Dispatcher is deployed
+**Blocked on `DISPATCHER_REPLICA_OWNERSHIP`, `DISPATCHER_TERMINAL_BROADCAST`, their migrated database
+and accepting images pinned.** Run two replicas on testing; verify ownership failover, queued delivery
+and deletion events across replica boundaries without the app. Then remove the one-replica limit and
+`Recreate` strategy in generated manifests, roll out testing before staging, and delete the temporary
+singleton warnings from docs. This node finishes with the restriction gone, not merely a successful
+experiment; preserve the normal Lease renewal/fencing machinery.
 
-**In flight (Codex, 2026-10-13):** `DISPATCHER_CORE` is merged, and the service and migration images are pinned
-in both environments. The cdk8s generators add its
-Deployment, its CNPG database and migration job, a Role with `get/list/watch` on `sandboxes`
-(`patch` joins it with `DISPATCHER_WAKE_ON_SEND`), the gateway's `caller_accounts` entry that lets the
-Dispatcher call the `Runner` proxy, the network policies both ways, and the Flux wiring; the README's
-services-and-traffic diagram shows the Dispatcher route with sender cutover pending. The sender paths
-remain on the Runner Gateway until the Dispatcher is accepted. Image before config: no manifest or
-required setting lands before the image that accepts it is pinned. After merge and Flux reconciliation,
-test in `agentplane-testing` that a
-queued command waits for `Ready` and then reaches the runner, that a Dispatcher restart preserves queued
-commands, and that the service path remains usable with the integration app unavailable. This PR has
-not been merged or reconciled, so those deployment checks remain outstanding.
+### `DISPATCHER_DEPLOY` — finish deployed Dispatcher acceptance
 
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
+**In flight (Codex acceptance worker, 2026-10-14), draft #10471; merge the probe correction/evidence.** The Deployment, database,
+migration init container, network policy, gateway account and Flux images from #10449 are deployed.
+Do not recreate deployment work. The testing probe has delivered a queued command through the real
+Dispatcher/Gateway without calling the app; exact evidence belongs in the Dispatcher component docs.
+The isolated production `serve()` startup/restart test also passes with a persisted queue and no app;
+its exact tested source and the live probe evidence are being published together. Remove this node
+with that evidence PR, without demanding a second live shared-service restart. Local port-forward
+transport does not prove Cilium caller ingress; the actual sender cutovers verify their service route.
+Sender code can be prepared in parallel; activation waits for the evidence handoff.
 
-### `DISPATCHER_WAKE_ON_SEND` — authenticated sends wake an opted-in Sandbox
+### `DISPATCHER_WAKE_ABUSE_LIMITS` — choose wake budgets before activation
 
-**In flight (Codex, 2026-10-14; [PR #10463](https://github.com/agentydragon/ducktape/pull/10463)).** The
-Dispatcher persists wake eligibility from the authenticated caller identity, never from the RPC payload, and
-only wakes when `spec.wakeOnSend: true`; both eligibility configuration and the Sandbox field default off. It
-uses the shared guarded resume helper and persists the old incarnation before patching, so a crash or transient
-API failure retries safely; delivery waits until a different incarnation is `Ready`. This covers authenticated
-`OpenSession` and user/notification commands. `InterruptTurn` and `StopRunnerSession` never wake, and deletion
-wins. Only durable queued command/opening rows trigger a Sandbox wake. Acceptance covers a pending send,
-concurrent sends sharing one wake, an `ABORTED` sealing reply and redelivery, default-off behavior, transient
-patch failure, and restart between recording the wake and patching. Before enabling configuration, pin the accepting Dispatcher image and the
-Sandbox Controller image carrying the `wakeOnSend` CRD schema, and apply the Dispatcher Sandbox `patch` grant
-([PR #10462](https://github.com/agentydragon/ducktape/pull/10462); merged and Flux-applied in testing and staging,
-parent-verified 2026-10-14). Sender cutover and deployment configuration remain separate.
+**Decision.** Review rates/per-sender quotas and authority for user and notification wakeups; no
+invented numeric limits. Keep agents unable to wake until their authority is reviewed. Drafting
+policy is independent of the defaults-off implementation; add its implementation node on decision.
 
-### `DISPATCHER_WAKE_ABUSE_LIMITS` — choose per-sender send-wake limits
+### `SELECTIVE_SESSION_REVIVAL` — resume only native Sessions with pending work
 
-**Decision.** Resuming a Sandbox starts a Pod or VM and its harness, so a sender can impose substantial
-startup work. D4 leaves per-sender rates and quotas open; decide and test the budgets and exhaustion
-behavior for authenticated user and notification identities. This decision does not block landing the
-default-off receiver implementation, but it blocks enabling `wake_caller_accounts` or `spec.wakeOnSend: true`.
-Do not invent limits in the receiver or deployment configuration.
+**Candidate.** Audit runner startup and Dispatcher delivery together: selecting queued Dispatch rows
+alone does not prove dormant harnesses remain stopped. Preserve native identity/history and start only
+Sessions with pending work after a wake; cover multiple retained Sessions and explicit manual resume.
 
-### `DISPATCHER_WAKE_FAILURE_FEEDBACK` — bound and explain a wake that does not restore a runner
+### `DISPATCHER_WAKE_FAILURE_FEEDBACK` — bound a failed revival with a visible cause
 
-**Blocked.** A successful resume patch can still wait indefinitely when the Sandbox Controller cannot
-restore a Ready incarnation, for example when its volume's node is unavailable or full. Choose a bounded
-wait and a visible queued reason for that capacity failure, and cover a failed revival. The default-off wake
-implementation keeps the current `SANDBOX_RESUMING` state while waiting; this follow-up does not block its
-code landing, but it must be resolved before treating wake behavior as complete.
+**Candidate.** Surface unavailable/full volume nodes and other terminal revival failures in delivery
+state and the app, with a bounded wait and no automatic data deletion. Use condition/events and an
+explicit deadline; test failure and recovery without arbitrary sleep or increased timeouts.
 
-The Dispatcher's namespace Role must grant Sandbox `patch`, and Flux must apply that grant before
-the wake caller is activated. This is independent of the Lease permissions in PR #10459 and does not
-enable wake-on-send. Enable `wakeOnSend` only after the accepting controller and
-Dispatcher images are pinned. RBAC cannot restrict the Sandbox patch to individual spec fields.
+### `DISPATCHER_WAKE_ACTIVATION` — enable send-triggered revival
+
+**Blocked on reviewed/enforced `DISPATCHER_WAKE_ABUSE_LIMITS`,
+`SELECTIVE_SESSION_REVIVAL`, `DISPATCHER_WAKE_FAILURE_FEEDBACK` and accepting controller/Dispatcher images.**
+The defaults-off wake implementation from #10463 is merged. Verify already-granted Sandbox patch RBAC and schema/image pins, then enable the approved caller
+allowlist and `wakeOnSend` configuration. Test message-during-seal, concurrent sends and deletion
+precedence on testing before staging. Keep `wakeOnSend: false` as the intentional per-Sandbox policy;
+it is not a compatibility shim to delete.
 
 ### `APP_SENDS_VIA_DISPATCHER` — the app sends through the Session Dispatcher
 
-**Blocked on `DISPATCHER_DEPLOY`.** The composer and the app's other command sends call the Session
+**In flight (Codex, 2026-10-14); activation waits for `DISPATCHER_DEPLOY` and accepting app images.** The composer and the app's other command sends call the Session
 Dispatcher instead of `SubmitCommand`, showing its delivery states. The command-progress lights
 (`CommandProgress`: saved in browser, runner accepted, effect confirmed) gain a dispatch stage
 between the browser and the runner: queued in the Dispatcher (operator, 2026-10-13 PDT). It reads
 the Dispatcher's delivery states, and for a Session whose Sandbox is waking
-(`DISPATCHER_WAKE_ON_SEND`) says so; `SUSPENDED_COMPOSER` is the composer side of the same wait.
+(`DISPATCHER_WAKE_ACTIVATION`) says so; `SUSPENDED_COMPOSER` is the composer side of the same wait.
 Visual scenarios name each stage's command after the state it shows. Parallel with
 `NOTIFICATIONS_VIA_DISPATCHER`; reader before writer, so the Session Dispatcher lands and is read before any
 sender moves.
 
+### `DISPATCHER_HARNESS_CONFIRMATION` — settle admitted inputs on a canonical confirmation
+
+**Decision, then bounded implementation.** `HARNESS_CONFIRMED` currently has no writer. Review the canonical runner/history
+fact that proves an input reached the harness, consume it idempotently and settle the matching
+Dispatch without reading unrelated conversation content. Preserve the distinction between durable
+queue acceptance, runner admission and harness confirmation. Test duplicate/replayed facts and
+restart. Notification presentation/outcome design remains separate.
+
+### `DISPATCHER_SEND_AUTHORIZATION` — scope which callers may submit work
+
+**Decision.** Current `caller_accounts` admits every configured caller to every Sandbox. Review
+destination/operation authorization for the current app and notification callers;
+agent senders wait for the reviewed multiagent authority contract. Do not confuse send permission
+with wake permission or silently expand the caller allowlist during a cutover. Add the bounded
+implementation node once policy is reviewed; existing caller cutovers do not silently select policy.
+
+### `APP_DISPATCHER_ACTIVATION` — activate app command sends through Dispatcher
+
+**Blocked on `APP_SENDS_VIA_DISPATCHER`, `DISPATCHER_DEPLOY` and the accepting app image pinned.**
+Add endpoint/token/network configuration, deploy testing before staging, and verify queued, admitted
+and confirmed UI states. No fallback to direct sends on a Dispatcher error. Keep session creation
+and explicit native resume accounted for separately until all start-work callers have migrated.
+
+### `APP_SESSION_OPEN_VIA_DISPATCHER` — route app session creation and native resume
+
+**Blocked on `APP_SESSION_DEFAULTS`; can be prepared alongside command sends.** Route complete
+Session specs through Dispatcher `OpenSession`. Explicit resume of a retained Session must also go
+through an idempotent Dispatcher operation; add its receiver before activating the caller if needed.
+Pin accepting Dispatcher and app images before config activation. Remove app-side gateway readiness
+and in-process waiting as queue authorities. Verify retained Session identity and suspended opening.
+
+### `APP_GATEWAY_SEND_REMOVE` — delete app direct command and session-start branches
+
+**Blocked on `APP_DISPATCHER_ACTIVATION` and `APP_SESSION_OPEN_VIA_DISPATCHER` rolled out in both
+environments.** Remove optional Dispatcher selection and the legacy direct command/CreateSession/
+ResumeSession branches; make Dispatcher configuration required. Delete obsolete client methods,
+queue/progress adaptations and tests. Preserve independently used read-only Gateway credentials and
+routes until their callers migrate under `GATEWAY_WRAPPER_RETIRE`; do not delete all gateway access
+merely because command sends moved.
+
 ### `NOTIFICATIONS_VIA_DISPATCHER` — notifications send through the Session Dispatcher
 
-**Blocked on `DISPATCHER_DEPLOY`; operator, 2026-10-13 PDT.** The Notification Service sends its
+**Blocked on `DISPATCHER_DEPLOY` and the #10465 Notification Service image being pinned in both environments.**
+The optional sender implementation has merged; this node is the manifest activation and acceptance. The Notification Service sends its
 notices through the Session Dispatcher and keeps choosing when to deliver from its existing quiet window.
 It submits the already persisted notice ID and text, treats queued as
 acceptance rather than runner admission, and keeps reading admission/confirmation from History Service.
@@ -1281,15 +1232,8 @@ Parallel with `APP_SENDS_VIA_DISPATCHER`.
 **Blocked on `NOTIFICATIONS_VIA_DISPATCHER` and healthy rollout of its Dispatcher config.** After the
 manifest routes sends to a pinned, accepting image, remove the old direct `SubmitCommand` branch and make
 the Dispatcher endpoint required. Keep Runner Gateway only for the Notification Service's read-only
-`ListSessions` validation. This cleanup must land before `RUNNER_PROXY_SENDER_RESTRICT` closes command
+`ListSessions` validation. This cleanup must land before `PROXY_START_METHODS_DISPATCHER_ONLY` closes command
 RPC authorization to the Notification Service.
-
-### `RUNNER_PROXY_SENDER_RESTRICT` — only system callers send to the runner directly
-
-**Blocked on `APP_SENDS_VIA_DISPATCHER` and `NOTIFICATION_GATEWAY_SEND_REMOVE`.** A policy edit at the gateway's
-per-method authorization: the command RPCs and `OpenSession` are open to the Session Dispatcher, the
-controller's seal call, operator diagnostics and acceptance tests, and to no other caller.
-`ListSessions` stays open to readers. Agent-to-agent messaging joins through its own nodes.
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
 
@@ -1300,7 +1244,7 @@ half-granted. Grants made from the app can carry an `expiresAt`.
 
 ### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
 
-**Blocked on `DISPATCHER_WAKE_ON_SEND`, `APP_SENDS_VIA_DISPATCHER` and `HOSTED_THREAD_SURFACES`.** A suspended
+**Blocked on `DISPATCHER_WAKE_ACTIVATION`, `APP_DISPATCHER_ACTIVATION` and `HOSTED_THREAD_SURFACES`.** A suspended
 Session in the app has an enabled composer; sending queues the message and shows that the Sandbox
 is starting and the message waits.
 
@@ -1429,7 +1373,7 @@ journal entries its ingress has already acknowledged, behind a flag, with full p
 selectable; the freezer's
 [`RUNNER_JOURNAL_SETTLEMENT`](task_freezer.md#runner_journal_settlement--settle-deltas-in-the-runner-journal-too) is the same idea at the delta level. Not designed: what the runner still needs locally (cursors, seal state, entries a
 resumed harness or a lost push reads back) once acknowledged entries are gone, including what a revived incarnation reads back
-(`SESSION_INCARNATIONS`).
+(the retained incarnation history).
 
 ## 11. Coherence refactors
 
@@ -1451,6 +1395,10 @@ flowchart TD
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
     GATEWAY_STATUS_RBAC_REMOVE[Blocked: the gateway loses its Sandbox status write]
     APP_SESSION_DEFAULTS --> GATEWAY_WRAPPER_RETIRE
+    APP_GATEWAY_SEND_REMOVE --> GATEWAY_WRAPPER_RETIRE
+    NOTIFICATION_GATEWAY_SEND_REMOVE --> GATEWAY_WRAPPER_RETIRE
+    PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
+    GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
 ```
 
@@ -1463,7 +1411,8 @@ and `CreateSessionRequest` loses its field mask.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
-**Blocked on `APP_SENDS_VIA_DISPATCHER` and `GATEWAY_WRAPPER_RETIRE`.** Today
+**Blocked on `APP_GATEWAY_SEND_REMOVE`, `NOTIFICATION_GATEWAY_SEND_REMOVE` and `GATEWAY_WRAPPER_RETIRE`,
+with their caller images pinned in both environments.** Today
 the gateway's runner proxy (`runner_gateway/runner_proxy.py`) lets every configured caller account call
 every runner method except `Quiesce` and `Seal`, and the gateway wrapper calls `OpenSession` too. The
 bound on a suspend waiting for setups (`SuspendPending`, `SANDBOX_IDLE_EXPIRY`) holds only if nothing
@@ -1495,17 +1444,22 @@ migration and `Command` stays as that event's field type.
 
 ### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
 
-**Blocked on the nodes above.** The app and the Notification Service
-call `Runner` through the proxy and ask the History Service where a Session runs. Delete the
+**Blocked on `APP_SESSION_DEFAULTS`, `APP_GATEWAY_SEND_REMOVE` and `NOTIFICATION_GATEWAY_SEND_REMOVE`.**
+Audit and migrate every remaining wrapper read caller (including notification `ListSessions`) to
+History Service or the runner proxy, then pin those caller images before deleting the RPC receiver.
+App and notification command sends go through Dispatcher; read-only calls may use the proxy. Delete the
 `RunnerGateway` service and proto, its client, `session_registry.py`, `destinations.py`,
-`session_lifecycle.py` and `wire.py`. This makes
-`GATEWAY_CLIENT_SPLIT` and `SANDBOX_DATABASE_RENAME` moot; delete them here.
+`session_lifecycle.py` and `wire.py`, obsolete client settings, projected tokens and network rules
+whose final callers are gone. Delete associated BUILD targets and tests; retain the control stream
+and runner proxy. This makes `SANDBOX_DATABASE_RENAME` moot; delete that deferred node here.
 
 ### `GATEWAY_DATABASE_DROP` — drop the `sandbox_commands` database
 
 **Blocked on `GATEWAY_WRAPPER_RETIRE`; a data drop, merged by the operator.** Drop the database,
-its role, Secret and migration init container once the History Service holds every Session's
-Sandbox.
+its role, Secret, migration init container, old models/migrations and image publication wiring once
+the History Service holds every Session's Sandbox and all pinned gateways have stopped reading or
+writing this database. First remove strict config keys from manifests with an accepting receiver;
+only after that rollout delete their settings readers. This remains a separate data-drop PR.
 
 ## Scope and retirement of stale gates
 

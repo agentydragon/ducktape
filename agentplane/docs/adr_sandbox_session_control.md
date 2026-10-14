@@ -301,8 +301,7 @@ incarnation, so the ingress cannot tell a continuation from a runner that wrongl
 
 1. **A seal belongs to an incarnation.** The runner's seal, its acknowledgement file and the feed-state seal each
    record the incarnation UID that sealed. A runner under a different UID treats the seal as ended, reopens the journal
-   and appends an entry recording the resume. `Attached` gains the incarnation UID (the field `SESSION_INCARNATIONS`
-   needs anyway); the ingress accepts a push whose UID differs from the seal's, when `last_cursor` equals the seal's
+   and appends an entry recording the resume. `Attached` gains the incarnation UID; the ingress accepts a push whose UID differs from the seal's, when `last_cursor` equals the seal's
    cursor, and replaces the seal. Keeps a durable end-of-incarnation fact and the guarantee that nothing is written past
    it. Costs a wire field, three runner places and two History Service places, and the History Service must accept the
    continuation before any runner sends it (image before config). Existing seals have no UID and count as an earlier
@@ -316,7 +315,7 @@ incarnation, so the ingress cannot tell a continuation from a runner that wrongl
 3. **A new journal file per incarnation.** Rejected: cursors restart, so History Service cursors and every reader's
    position would need an incarnation component.
 
-**Why 1.** It matches `SESSION_INCARNATIONS` ("its seal ends that incarnation, not the Session"), keeps
+**Why 1.** Its seal ends the incarnation, not the Session; it keeps
 the invariant that makes `Quiesced` safe, and option 2 would need option 1's path for existing seals anyway.
 
 **Transitions the sequence must cover.**
