@@ -4167,6 +4167,8 @@ spec:
           volumeMounts:
             - mountPath: /state
               name: state
+            - mountPath: /state/workspaces
+              name: workspace
             - mountPath: /etc/agentplane/platform-instructions
               name: platform-instructions
               readOnly: true
@@ -4278,6 +4280,18 @@ spec:
       resources:
         requests:
           storage: 10Gi
+  workspaceVolume:
+    name: workspace
+    claim:
+      storageClassName: local-path-ovh-hdd
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+      volumeMode: Filesystem
+    layout:
+      type: DirectoryTree
 ---
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
@@ -4578,19 +4592,6 @@ metadata:
   namespace: agentplane-testing
 spec:
   vm:
-    dataVolumeTemplates:
-      - metadata:
-          name: workspace
-        spec:
-          pvc:
-            accessModes:
-              - ReadWriteOnce
-            resources:
-              requests:
-                storage: 10Gi
-            storageClassName: local-path-ovh-hdd
-          source:
-            blank: {}
     template:
       metadata:
         labels:
@@ -4608,16 +4609,16 @@ spec:
                 name: rootdisk
               - disk:
                   bus: virtio
-                name: workspace
-                serial: workspace
-              - disk:
-                  bus: virtio
                 name: config
                 serial: agentplane-config
               - disk:
                   bus: virtio
                 name: trust
                 serial: agentplane-trust
+              - disk:
+                  bus: virtio
+                name: workspace
+                serial: workspace
             interfaces:
               - masquerade: {}
                 name: default
@@ -4640,9 +4641,6 @@ spec:
               image: git.allegedly.works/ducktape-ci/agentplane-runner-vm:unset
               imagePullPolicy: IfNotPresent
             name: rootdisk
-          - dataVolume:
-              name: workspace
-            name: workspace
           - configMap:
               name: agentplane-runner-vm-config
             name: config
@@ -4658,6 +4656,19 @@ spec:
       resources:
         requests:
           storage: 10Gi
+  workspaceVolume:
+    name: workspace
+    claim:
+      storageClassName: local-path-ovh-hdd
+      accessModes:
+        - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
+      volumeMode: Filesystem
+    layout:
+      type: RawDiskImage
+      filesystem: ext4
 ---
 apiVersion: v1
 kind: ServiceAccount

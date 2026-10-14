@@ -18,12 +18,12 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized, Codex reported, 2026-10-14):
 
-| Worker            | Assigned sequence; each successor retains its node's gates                                                                                                                                                |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dispatcher`      | Wake limits, selective revival and failure feedback; complete app Session defaults and Dispatcher creation/resume; app/wake/UI activation and direct sender removal.                                      |
-| `dag_burndown`    | Typed workspace template rollout; legacy DataVolume retirement. Cutoff completed; evidence in #10493.                                                                                                     |
-| `sandbox_service` | Notification activation and direct sender removal; Sandbox Service config removal and service retirement; replica activation and Gateway wrapper/RPC/database retirement as caller and image gates clear. |
-| Coordinator       | Isolated k3s measurements/CI work, integration review and DAG burn-down.                                                                                                                                  |
+| Worker            | Assigned sequence; each successor retains its node's gates                                                                                                           |
+| ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dispatcher`      | Wake limits, selective revival and failure feedback; state-volume layout; Dispatcher creation/resume and app/wake/UI activation as gates clear.                      |
+| `dag_burndown`    | Isolated k3s CI; typed workspace templates and legacy DataVolume retirement; then declarative VM guest storage. Cutoff evidence in #10493.                           |
+| `sandbox_service` | Complete app Session defaults and Dispatcher routing; notification activation and direct sender removal; Sandbox Service config cleanup and eligible legacy cleanup. |
+| Coordinator       | Replica acceptance, integration review and DAG burn-down.                                                                                                            |
 
 These are assignments, not claims that gated work has started. Independent config changes can
 proceed while behavior PRs are under review. Publish drafts as soon as a branch has reviewable work,
@@ -685,7 +685,7 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 flowchart TD
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
-    WORKSPACE_VOLUME[Candidate: roll out explicitly typed Sandbox-owned workspaces]
+    WORKSPACE_VOLUME[In flight: activate typed Sandbox-owned workspaces]
     WORKSPACE_DATAVOLUME_RETIRE[Blocked: retire the old DataVolume workspace path]
     STATE_VOLUME_LAYOUT[Candidate: declare the state volume layout explicitly]
     VM_GUEST_DECLARATIVE_STORAGE[Candidate: declarative guest disk initialization]
@@ -791,12 +791,12 @@ or the explicit layout contract for workspace PVCs.
 
 ### `WORKSPACE_VOLUME` — roll out explicitly typed Sandbox-owned workspaces
 
-**Candidate.** The operator-directed existing Sandbox cutoff is complete;
-[cutoff evidence](workspace_cutoff.md) records the empty inventory verified on 2026-10-14. The implementation
-merged in #10440 adds explicit workspace layouts, retained PVC identity and attachment
-compatibility checks; [storage layouts](../docs/sandbox_storage.md) owns the contract. This node is
-the remaining template rollout, not another implementation of ownership. No deployed template
-changes belong in #10440.
+**In flight (Codex, 2026-10-14); template activation is drafted in #10503, stacked on #10493.**
+The operator-directed existing Sandbox cutoff is complete; [cutoff evidence](workspace_cutoff.md)
+records the empty inventory verified on 2026-10-14. The implementation merged in #10440 adds
+explicit workspace layouts, retained PVC identity and attachment compatibility checks;
+[storage layouts](../docs/sandbox_storage.md) owns the contract. This PR activates the selected
+layouts in the Pod and VM templates, not another implementation of ownership.
 
 Fresh testing Pod DirectoryTree and VM RawDiskImage fixtures passed retained file/PVC checks,
 including a changed-claim refusal and halted VM-object replacement. The old DataVolume kept files
@@ -804,14 +804,15 @@ through halt/start but lost its workspace on VM-object replacement. The selected
 evidence are in [storage acceptance](../acceptance/debug/storage_acceptance.md); no staging run
 has been run. The existing-data cutoff is recorded separately below.
 
-Activate the selected layout only after its accepting controller image is pinned. A Pod's current
-workspace is under `/state/workspaces` on the state PVC; a VM's is a VM-owned DataVolume mounted
-over that path. Neither may be silently hidden by a new mount or adopted as an unclassified PVC.
-The operator-directed cutoff is recorded in [#10493](https://github.com/agentydragon/ducktape/pull/10493).
-Refresh the empty inventory before activation; old templates can still create new old-layout
-consumers, which require a separate disposition. Do not require migration, a converter
-or the future block provisioner. The losing workspace path is removed by
-`WORKSPACE_DATAVOLUME_RETIRE` after its callers are gone.
+The accepted controller pin `devel-20261014082718-1ceacb7` reads `workspaceVolume`; the selected
+VM image `devel-20261014055155-9642b3d` and runner wheel `a13d9a7d58ff` accept the explicit
+RawDiskImage/ext4 guest path. The Pod uses DirectoryTree at `/state/workspaces`; the VM uses the
+Sandbox-owned RawDiskImage/ext4 claim at that same guest path. The test and staging image pin files
+already carry these controller and guest references. The operator-directed cutoff is recorded in
+[#10493](https://github.com/agentydragon/ducktape/pull/10493). Refresh both namespace inventories
+immediately before the template change is applied; do not create, delete, or replace Sandboxes as
+part of this PR. Do not require migration, a converter or the future block provisioner. The losing
+workspace path is removed by `WORKSPACE_DATAVOLUME_RETIRE` after its callers are gone.
 
 ### `WORKSPACE_DATAVOLUME_RETIRE` — retire the old DataVolume workspace path
 
@@ -824,7 +825,8 @@ Sandbox-owned RawDiskImage path; its evidence is linked above.
 
 ### `STATE_VOLUME_LAYOUT` — declare the state volume layout explicitly
 
-**Candidate.** Extend the workspace layout vocabulary and durable identity contract to
+**Candidate; assigned to `dispatcher` alongside the wake-feedback lane.**
+Extend the workspace layout vocabulary and durable identity contract to
 `stateVolume`, whose existing contract is fixed `DirectoryTree`. Keep this separate from choosing
 block storage. Reader code must land and be pinned before manifests declare new fields; old
 manifests must remain accepted during that rolling deployment. `STATE_VOLUME_LAYOUT_FALLBACK_REMOVE` removes any temporary optional-field fallback after all
@@ -848,7 +850,8 @@ the selected explicit layouts before retiring the path; data drops stay in a sep
 
 ### `VM_GUEST_DECLARATIVE_STORAGE` — declarative guest disk initialization
 
-**Candidate; operator: the VM is running too much bash.** Inventory guest shell scripts and the
+**Candidate; assigned to `dag_burndown` after `WORKSPACE_VOLUME`; operator: the VM is running too much bash.**
+Inventory guest shell scripts and the
 NixOS module replacing each, then use declarative filesystem/disk initialization where supported.
 Preserve the explicit layout contract and refuse incompatible existing data. `autoFormat`'s
 recognizable-filesystem check is not equivalent to the existing zero-content scan; specify and

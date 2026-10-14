@@ -127,8 +127,9 @@ does not inspect or repair filesystems through the Kubernetes API.
 The operator accepts an incompatible cutoff dropping existing Sandboxes rather than migrating
 their old storage layouts. The [task DAG](../plans/task_dag.md) separates the controller/image pin,
 testing comparison, a data-drop PR listing the affected Sandboxes and owned volumes, template
-activation, and retirement of the losing DataVolume/PVC path. #10440 implements the contract; it
-does not activate new deployed templates or delete existing data. The cutoff is not a policy of
+activation, and retirement of the losing DataVolume/PVC path. #10440 implements the contract and
+does not delete existing data. The template activation uses the accepted controller and guest pins;
+refresh both namespace inventories immediately before applying it. The cutoff is not a policy of
 automatically deleting idle Sandboxes.
 
 ## Formatting and conversion

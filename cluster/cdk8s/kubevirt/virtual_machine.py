@@ -60,15 +60,16 @@ def container_disk_template(
     node_selector: Mapping[str, str],
     ports: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts],
     disks: Mapping[str, VirtualMachineSpecTemplateSpecVolumes],
+    controller_attached_disks: Sequence[str] = (),
     affinity: VirtualMachineSpecTemplateSpecAffinity | None = None,
     host_devices: Sequence[VirtualMachineSpecTemplateSpecDomainDevicesHostDevices] | None = None,
     autoattach_graphics_device: bool | None = None,
 ) -> VirtualMachineSpecTemplate:
     """A VMI template, its pods labelled `labels`, that boots `image` as an ephemeral containerDisk
     under EFI without Secure Boot, and reaches the pod network through masquerade on `ports`. Each of
-    `disks` attaches as a virtio disk the guest finds at `/dev/disk/by-id/virtio-<key>`. `cpu`,
-    `resources`, `node_selector`, `affinity`, `host_devices` and `autoattach_graphics_device` are the
-    VMI spec fields of those names.
+    `disks` attaches as a virtio disk the guest finds at `/dev/disk/by-id/virtio-<key>`.
+    `controller_attached_disks` adds only the disk device; the enclosing controller supplies its
+    volume source when it creates the VM. The remaining argument names are the corresponding VMI fields.
     """
     return VirtualMachineSpecTemplate(
         metadata=k8s.ObjectMeta(labels=dict(labels)),
@@ -88,6 +89,7 @@ def container_disk_template(
                     disks=[
                         _virtio_disk(_ROOT_DISK, boot_order=1),
                         *(_virtio_disk(volume.name, serial=serial) for serial, volume in disks.items()),
+                        *(_virtio_disk(name, serial=name) for name in controller_attached_disks),
                     ],
                     interfaces=[
                         VirtualMachineSpecTemplateSpecDomainDevicesInterfaces(

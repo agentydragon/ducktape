@@ -47,6 +47,27 @@ def test_all_sandbox_workloads_use_shared_environment_defaults(
     assert any(args[index : index + 2] == ["--harness-inherit-env", "TZDIR"] for index in range(len(args) - 1))
 
 
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_pod_runner_templates_declare_and_mount_directory_tree_workspaces(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    templates = {template["metadata"]["name"]: template for template in _templates(agentplane_manifests[namespace])}
+    names = ["runner", *(["runner-ducktape"] if namespace == "agentplane-staging" else [])]
+    for name in names:
+        spec = templates[name]["spec"]
+        state_claim = spec["stateVolume"]["claim"]
+        assert spec["workspaceVolume"] == {
+            "name": "workspace",
+            "claim": {**state_claim, "volumeMode": "Filesystem"},
+            "layout": {"type": "DirectoryTree"},
+        }
+        pod = spec["pod"]["spec"]
+        runner = one(container for container in pod["containers"] if container["name"] == "runner")
+        assert {"name": "workspace", "mountPath": "/state/workspaces"} in runner["volumeMounts"]
+        # The controller binds this separately declared claim to each Sandbox.
+        assert "workspace" not in {volume["name"] for volume in pod["volumes"]}
+
+
 def test_sandbox_sidecars_project_the_notifications_audience(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:

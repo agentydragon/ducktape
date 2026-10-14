@@ -44,6 +44,8 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 # SandboxTemplate's state volume -- all three must name the same volume.
 _STATE_VOLUME_NAME = "state"
 _STATE_DIR = "/state"
+_WORKSPACE_VOLUME_NAME = "workspace"
+_WORKSPACE_DIR = f"{_STATE_DIR}/workspaces"
 _BUILDBUDDY_SECRET = "buildbuddy-api-key"
 _BUILDBUDDY_MOUNT = "/run/buildbuddy"
 KUBERNETES_ADMIN_INSTRUCTIONS = (
@@ -72,6 +74,20 @@ def platform_instructions(env: Environment) -> str:
 def pods(namespace: str) -> Pods:
     """Every runner Pod in one environment's namespace, whichever template it was stamped from."""
     return Pods(namespace=namespace, labels=tuple(_LABELS.items()))
+
+
+def workspace_volume_spec(
+    state_volume: dict[str, Any], *, layout_type: str, filesystem: str | None = None
+) -> dict[str, Any]:
+    """The Sandbox-owned workspace claim uses the runner's storage class and requested size."""
+    layout = {"type": layout_type}
+    if filesystem is not None:
+        layout["filesystem"] = filesystem
+    return {
+        "name": _WORKSPACE_VOLUME_NAME,
+        "claim": {**state_volume["claim"], "volumeMode": "Filesystem"},
+        "layout": layout,
+    }
 
 
 class RunnerSandbox(Construct):
@@ -113,6 +129,9 @@ class RunnerSandbox(Construct):
                 env,
                 labels=_LABELS,
                 state_volume=template.spec["stateVolume"],
+                workspace_volume=workspace_volume_spec(
+                    template.spec["stateVolume"], layout_type="RawDiskImage", filesystem="ext4"
+                ),
                 platform_instructions=platform_instructions(env),
             )
 
@@ -215,6 +234,8 @@ class RunnerTemplate(Construct):
             ),
             volume_mounts=[
                 k8s.VolumeMount(name=_STATE_VOLUME_NAME, mount_path=_STATE_DIR),
+                # Session presets use this same path in Pod and VM Sandboxes.
+                k8s.VolumeMount(name=_WORKSPACE_VOLUME_NAME, mount_path=_WORKSPACE_DIR),
                 k8s.VolumeMount(
                     name=_PLATFORM_INSTRUCTIONS_VOLUME, mount_path=_PLATFORM_INSTRUCTIONS_DIR, read_only=True
                 ),
@@ -267,7 +288,11 @@ class RunnerTemplate(Construct):
                 "resources": {"requests": {"storage": "10Gi"}},
             },
         }
-        spec = {"pod": pod, "stateVolume": state_volume}
+        spec = {
+            "pod": pod,
+            "stateVolume": state_volume,
+            "workspaceVolume": workspace_volume_spec(state_volume, layout_type="DirectoryTree"),
+        }
         ApiObject(
             self,
             "sandboxtemplate",

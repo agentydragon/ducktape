@@ -2,9 +2,10 @@
 KubeVirt VM the Sandbox Controller makes from `spec.vm` (agentplane/sandbox_controller/SPEC.md § VMs).
 
 The guest gets what a runner Pod's container gets, as the disks vm.nix reads by serial: the public
-launch config (platform instructions included) and kubeconfig, the egress trust bundle, and a blank
-workspace disk that lives as long as the VM. The controller adds the state PVC as the virtiofs
-filesystem named after the state volume, and the Sandbox's own launch file as one more disk. The egress relay the guest dials at the masquerade gateway is the launcher policy's
+launch config (platform instructions included) and kubeconfig, the egress trust bundle, and the
+Sandbox-owned workspace disk, which survives VM replacements. The controller attaches its PVC and
+adds the state PVC as the virtiofs filesystem named after the state volume, along with the Sandbox's
+own launch file as one more disk. The egress relay the guest dials at the masquerade gateway is the launcher policy's
 (launcher_relay.py); the VM carries the runner Pods' labels, so the runner fence applies to its
 launcher.
 """
@@ -19,19 +20,12 @@ from constructs import Construct
 from kubevirt_virtualmachine_crds.io.kubevirt import (
     VirtualMachine,
     VirtualMachineSpec,
-    VirtualMachineSpecDataVolumeTemplates,
-    VirtualMachineSpecDataVolumeTemplatesSpec,
-    VirtualMachineSpecDataVolumeTemplatesSpecPvc,
-    VirtualMachineSpecDataVolumeTemplatesSpecPvcResources,
-    VirtualMachineSpecDataVolumeTemplatesSpecPvcResourcesRequests,
-    VirtualMachineSpecDataVolumeTemplatesSpecSource,
     VirtualMachineSpecTemplateSpecDomainCpu,
     VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts,
     VirtualMachineSpecTemplateSpecDomainResources,
     VirtualMachineSpecTemplateSpecDomainResourcesRequests,
     VirtualMachineSpecTemplateSpecVolumes,
     VirtualMachineSpecTemplateSpecVolumesConfigMap,
-    VirtualMachineSpecTemplateSpecVolumesDataVolume,
 )
 
 from agentplane.crd_group import GROUP
@@ -55,8 +49,7 @@ def _guest_address(port: int) -> str:
 
 
 class RunnerVmTemplate(Construct):
-    """`labels` are the runner Pods' labels; `state_volume` is the runner template's `stateVolume`;
-    `platform_instructions` start every Session."""
+    """Build the VM SandboxTemplate and the guest configuration it carries."""
 
     def __init__(
         self,
@@ -66,6 +59,7 @@ class RunnerVmTemplate(Construct):
         *,
         labels: dict[str, str],
         state_volume: dict[str, Any],
+        workspace_volume: dict[str, Any],
         platform_instructions: str,
     ) -> None:
         super().__init__(scope, id)
@@ -107,9 +101,6 @@ class RunnerVmTemplate(Construct):
             node_selector={"kubevirt.io/schedulable": "true"},
             ports=[VirtualMachineSpecTemplateSpecDomainDevicesInterfacesPorts(port=_UNUSED_GUEST_PORT)],
             disks={
-                _WORKSPACE: VirtualMachineSpecTemplateSpecVolumes(
-                    name=_WORKSPACE, data_volume=VirtualMachineSpecTemplateSpecVolumesDataVolume(name=_WORKSPACE)
-                ),
                 "agentplane-config": VirtualMachineSpecTemplateSpecVolumes(
                     name="config", config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=_CONFIG_MAP_NAME)
                 ),
@@ -119,33 +110,18 @@ class RunnerVmTemplate(Construct):
                     config_map=VirtualMachineSpecTemplateSpecVolumesConfigMap(name=env.egress.ca_secret_name),
                 ),
             },
+            controller_attached_disks=[_WORKSPACE],
             autoattach_graphics_device=False,
         )
-        # The controller renames it per Sandbox; the VM keeps it while halted and deletes it with itself.
-        workspace = VirtualMachineSpecDataVolumeTemplates(
-            metadata={"name": _WORKSPACE},
-            spec=VirtualMachineSpecDataVolumeTemplatesSpec(
-                source=VirtualMachineSpecDataVolumeTemplatesSpecSource(blank={}),
-                pvc=VirtualMachineSpecDataVolumeTemplatesSpecPvc(
-                    # The state PVC's tier, which the VM's node must also reach.
-                    storage_class_name=state_volume["claim"]["storageClassName"],
-                    access_modes=["ReadWriteOnce"],
-                    resources=VirtualMachineSpecDataVolumeTemplatesSpecPvcResources(
-                        requests={
-                            "storage": VirtualMachineSpecDataVolumeTemplatesSpecPvcResourcesRequests.from_string("10Gi")
-                        }
-                    ),
-                ),
-            ),
-        )
-        vm = VirtualMachine.manifest(
-            metadata=ApiObjectMetadata(name=NAME),
-            spec=VirtualMachineSpec(template=template, data_volume_templates=[workspace]),
-        )["spec"]
+        vm = VirtualMachine.manifest(metadata=ApiObjectMetadata(name=NAME), spec=VirtualMachineSpec(template=template))[
+            "spec"
+        ]
         ApiObject(
             self,
             "sandboxtemplate",
             api_version=f"{GROUP}/v1alpha1",
             kind="SandboxTemplate",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-        ).add_json_patch(JsonPatch.add("/spec", {"vm": vm, "stateVolume": state_volume}))
+        ).add_json_patch(
+            JsonPatch.add("/spec", {"vm": vm, "stateVolume": state_volume, "workspaceVolume": workspace_volume})
+        )
