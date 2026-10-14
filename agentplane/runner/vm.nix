@@ -66,6 +66,8 @@ let
     exec ${pkgs.util-linux}/sbin/agetty "''${autologin[@]}" --keep-baud 115200,57600,38400,9600 ttyS0 "''${TERM:-vt220}"
   '';
 
+  # TODO: Package repo-owned code run in the VM as a Bazel-built binary (Python, Go, Rust,
+  # etc.) and consume that artifact here instead of embedding a raw script with a shebang.
   workspaceDiskPreparation = pkgs.writeTextFile {
     name = "agentplane-prepare-workspace";
     executable = true;
