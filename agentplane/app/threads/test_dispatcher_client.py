@@ -9,6 +9,9 @@ import pytest_bazel
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_dispatcher_pb2
 
+# The mypy aspect adds generated protobuf stubs from the runtime dependency.
+# gazelle:include_dep @pypi//protobuf
+
 
 class Stub:
     def __init__(self) -> None:

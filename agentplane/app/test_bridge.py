@@ -1035,7 +1035,7 @@ async def test_command_admission_timeout_is_not_an_internal_server_error(
         thread_id = await _create(http, spec, uuid4())
 
         async def timed_out(
-            _bridge: RunnerBridge, _thread_id: UUID, _command: command_pb2.Command
+            _bridge: RunnerBridge, _thread_id: UUID, _command: command_pb2.Command, **_kwargs: object
         ) -> event_log_pb2.EventEntry:
             raise RunnerAdmissionTimeoutError("timed-out-command")
 
