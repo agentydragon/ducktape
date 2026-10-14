@@ -7,12 +7,20 @@ kube-proxy)? Manual only: `bbr test //agentplane/x/k3s_env:test_env --test_outpu
 Prometheus, cert-manager and External Secrets kinds, emulates the ExternalSecrets with random
 Secrets, keeps the CNPG `Cluster` and `Database` objects (the real operator is installed from its release
 manifest), makes Services headless (no kube-proxy means no ClusterIP) and generates the egress CA. `test_env.py` starts k3s (recipe from
-`agentplane/x/k3s_rbe_spike`), imports the Bazel-built image tarballs, applies everything and reports
+`agentplane/x/k3s_rbe_spike`), streams the Bazel-built OCI image layouts into containerd, applies everything and reports
 per-Deployment readiness.
 
 The image list includes the Session Dispatcher and its migration image, matching the generated
 stack. Both tests remain manual; the model-free lifecycle target is the first candidate for CI.
-Its current-stack runtime is being measured before choosing performance changes. Earlier evidence
+The importer consumes the `oci_image` targets through `oci_layout_rloc`, combines their index
+descriptors with the rendered tags, and streams each distinct blob once. It does not materialize
+Docker-format `oci_load` tarballs.
+
+Baseline measurement at `4fcc98579e` plus temporary cProfile instrumentation:
+[BuildBuddy lifecycle run](https://app.buildbuddy.io/invocation/75cf36f3-50c9-423c-bc24-522e00782390),
+2026-10-14, four tests passed in 869.98 seconds. Pytest setup took 812.96 seconds; cProfile attributed
+528.43 seconds to image import. The OCI-layout import change still needs a measured lifecycle pass;
+these are baseline numbers, not a claimed improvement. Earlier evidence
 from [#10414](https://github.com/agentydragon/ducktape/pull/10414) was 784 seconds for four lifecycle
 tests and 590 seconds for the model test; those timings predate Dispatcher deployment.
 
