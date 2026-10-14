@@ -146,3 +146,30 @@ The live `test_storage_deployed` target now exercises only the active Pod Direct
 RawDiskImage workspace paths. The legacy DataVolume row above remains historical evidence; generic
 DataVolume disks in custom VM templates and the separate fixture-local KubeVirt experiment are not
 covered by that retired comparison.
+
+## Latest guest-image acceptance attempt
+
+On 2026-10-14, the VM-only `vm-raw` case was run against controller
+`devel-20261014211114-31e0b37` and guest image
+`devel-20261014212650-ae038e8`, from source revision `9d9dd9aa`. The
+[BuildBuddy invocation](https://app.buildbuddy.io/invocation/df462bed-42ee-49b0-8d3f-df1b6c7b5ef1)
+failed after 430.03 seconds of pytest time: the fixture never reached the Sandbox `Ready` condition
+within the existing 300-second gate. The test stopped before fresh-format, suspend/remount, or
+retained-data assertions, so this is not acceptance of the newer guest image. The earlier accepted
+rows above remain evidence for their recorded older pins.
+
+The fixture was `accept-storage-vm-raw-e3ee7675`, Sandbox UID
+`3a543297-c6e4-4caa-96c0-0989ebb5a671`. Kubernetes events show the VM and launcher Pod were created,
+then the VMI reached `Running`. The test's UID-scoped cleanup halted the VM after the readiness wait
+failed; the later `VirtualMachineInstance crashed` event followed that requested shutdown and does
+not establish a spontaneous guest crash. Controller logs contain optimistic-concurrency conflicts
+for this Sandbox, but no retained status identifies whether the launcher readiness or guest runner
+connection held `Ready` false. The current controller sets `Ready` only after both are satisfied.
+Gateway logs had no entry keyed by this Sandbox name or UID, which does not determine which condition
+was false.
+
+After cleanup, the testing namespace had no Sandboxes, VMs, VMIs, or fixture PVCs; only `postgres-1`
+remained and storage usage returned to 5Gi/80Gi. The test artifact's `cleanup_complete` field remained
+false because the exception interrupted its final evidence write, so the post-run inventory is the
+cleanup evidence. No retry or timeout change is included; fresh-format and retained-remount acceptance
+for the newer guest image remains open.
