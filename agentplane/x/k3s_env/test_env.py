@@ -383,6 +383,7 @@ def test_stack_comes_up() -> None:
                 raise
         print("memory:", _run("free", "-m"))
         print("answer:", answer)
+        (Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", work)) / "answer.txt").write_text(answer)
         print(k3s.report())
         assert not failed, f"Deployments not Available: {failed}"
         assert answer, "the Qwen turn returned no answer"
