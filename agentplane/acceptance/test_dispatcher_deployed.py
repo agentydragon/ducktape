@@ -68,6 +68,24 @@ async def _delete_pod(name: str, uid: str) -> None:
     await _delete("pod", name, uid)
 
 
+async def _bound_caller(service_account: str) -> tuple[Caller, str, str]:
+    pods = json.loads(await _kubectl("get", "pods", "-l", f"app.kubernetes.io/name={service_account}", "-o", "json"))
+    pod = next(item for item in pods["items"] if not item["metadata"].get("deletionTimestamp"))
+    name = pod["metadata"]["name"]
+    uid = pod["metadata"]["uid"]
+    token = await _kubectl(
+        "create",
+        "token",
+        service_account,
+        f"--audience={SERVICE}",
+        "--duration=600s",
+        "--bound-object-kind=Pod",
+        f"--bound-object-name={name}",
+        f"--bound-object-uid={uid}",
+    )
+    return Caller(token), name, uid
+
+
 async def _delete(kind: str, name: str, uid: str) -> None:
     configuration = k8s.Configuration()
     await k8s_config.load_kube_config(client_configuration=configuration)
@@ -255,21 +273,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
     async with AsyncExitStack() as stack:
         # TokenReview needs a bound workload identity, not an app HTTP session. Reuse an
         # existing app Pod as the token's binding object; this probe creates no caller Pods.
-        callers = json.loads(await _kubectl("get", "pods", "-l", "app.kubernetes.io/name=agentplane-app", "-o", "json"))
-        pod = next(item for item in callers["items"] if not item["metadata"].get("deletionTimestamp"))
-        caller = pod["metadata"]["name"]
-        caller_uid = pod["metadata"]["uid"]
-        token = await _kubectl(
-            "create",
-            "token",
-            "agentplane-app",
-            f"--audience={SERVICE}",
-            "--duration=600s",
-            "--bound-object-kind=Pod",
-            f"--bound-object-name={caller}",
-            f"--bound-object-uid={caller_uid}",
-        )
-        authentication = Caller(token)
+        authentication, caller, _caller_uid = await _bound_caller("agentplane-app")
         created = json.loads(
             await _kubectl(
                 "create",
@@ -312,8 +316,13 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             timeout=15,
         )
         assert queued.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-        waiting = await _dispatch_until(stub, authentication, session, lambda row: row.reason == "sandbox_suspended")
+        waiting = await _dispatch_until(
+            stub, authentication, session, lambda row: row.reason == "wake_on_send_disabled"
+        )
         assert waiting.sandbox_uid == uid
+        waiting_sandbox = json.loads(await _kubectl("get", "sandbox", sandbox, "-o", "json"))
+        assert waiting_sandbox["spec"].get("running") is False
+        assert waiting_sandbox["spec"].get("wakeGeneration", 0) == 0
         evidence["waiting_reason"] = waiting.reason
         caller_view = json.loads(await _kubectl("get", "pod", caller, "-o", "json"))
         evidence["caller_phase"] = caller_view.get("status", {}).get("phase")
@@ -450,6 +459,198 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             }
         )
         path.write_text(json.dumps(evidence, indent=2) + "\n")
+    evidence["cleanup_complete"] = True
+    path.write_text(json.dumps(evidence, indent=2) + "\n")
+
+
+@pytest.mark.timeout(600)
+async def test_deployed_dispatcher_wakes_only_opted_in_sandbox_for_app_and_notification_sends() -> None:
+    deployments: dict[str, object] = {}
+    for name in (
+        SERVICE,
+        "agentplane-sandbox-controller",
+        "agentplane-runner-gateway",
+        "agentplane-app",
+        "agentplane-notifications",
+    ):
+        deployment = json.loads(await _kubectl("get", "deployment", name, "-o", "json"))
+        assert deployment["status"].get("readyReplicas") == deployment["spec"]["replicas"], f"{name} is not Ready"
+        deployments[name] = {
+            "images": {
+                container["name"]: container["image"]
+                for container in deployment["spec"]["template"]["spec"]["containers"]
+            },
+            "init_images": {
+                container["name"]: container["image"]
+                for container in deployment["spec"]["template"]["spec"].get("initContainers", [])
+            },
+        }
+    dispatcher_config = yaml.safe_load(
+        json.loads(await _kubectl("get", "configmap", f"{SERVICE}-config", "-o", "json"))["data"]["config.yaml"]
+    )
+    expected_wake_callers = [
+        {"namespace": NAMESPACE, "name": "agentplane-app"},
+        {"namespace": NAMESPACE, "name": "agentplane-notifications"},
+    ]
+    assert dispatcher_config["caller_accounts"] == expected_wake_callers
+    assert dispatcher_config["wake_caller_accounts"] == expected_wake_callers
+
+    service_config = json.loads(await _kubectl("get", "configmap", "agentplane-sandbox-service-config", "-o", "json"))
+    policies = yaml.safe_load(service_config["data"]["config.yaml"])["default_policy_sets"]
+    assert isinstance(policies, list)
+    assert policies
+    suffix = uuid4().hex[:8]
+    sandbox, session, command = (f"accept-wake-{suffix}", str(uuid4()), str(uuid4()))
+    evidence: dict[str, object] = {
+        "namespace": NAMESPACE,
+        "images": deployments,
+        "sandbox": sandbox,
+        "session": session,
+        "command": command,
+        "wake_caller_accounts": expected_wake_callers,
+        "passed": False,
+        "policy_sets": policies,
+    }
+    path = undeclared_outputs_dir() / "dispatcher-wake.json"
+    path.write_text(json.dumps(evidence, indent=2) + "\n")
+    created = json.loads(
+        await _kubectl(
+            "create",
+            "-f",
+            "-",
+            "-o",
+            "json",
+            body={
+                "apiVersion": SANDBOX_API_VERSION,
+                "kind": "Sandbox",
+                "metadata": {"name": sandbox, "namespace": NAMESPACE},
+                "spec": {"template": "runner", "running": False, "wakeOnSend": True, "policySets": policies},
+            },
+        )
+    )
+    uid = created["metadata"]["uid"]
+    evidence["sandbox_uid"] = uid
+    cleaned = False
+
+    async def cleanup() -> None:
+        nonlocal cleaned
+        if not cleaned:
+            await _cleanup_sandbox(sandbox, uid)
+            cleaned = True
+
+    try:
+        await _kubectl(
+            "wait",
+            f"sandbox.agentplane.allegedly.works/{sandbox}",
+            '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
+            "--timeout=300s",
+        )
+        stopped = json.loads(await _kubectl("get", "sandbox", sandbox, "-o", "json"))
+        initial_incarnation = stopped.get("status", {}).get("incarnation", {}).get("uid")
+        evidence["initial_incarnation"] = initial_incarnation
+        app_authentication, app_pod, app_pod_uid = await _bound_caller("agentplane-app")
+        notification_authentication, notification_pod, notification_pod_uid = await _bound_caller(
+            "agentplane-notifications"
+        )
+        evidence["caller_pods"] = {
+            "app": {"name": app_pod, "uid": app_pod_uid},
+            "notifications": {"name": notification_pod, "uid": notification_pod_uid},
+        }
+        path.write_text(json.dumps(evidence, indent=2) + "\n")
+        async with _forward() as target:
+            channel = await dial(target)
+            try:
+                stub: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
+                opened, queued = await asyncio.gather(
+                    stub.OpenSession(
+                        pb.OpenSessionRequest(
+                            sandbox=sandbox,
+                            session_id=session,
+                            spec=runner_pb2.SessionSpec(
+                                harness=runner_pb2.HARNESS_CODEX,
+                                model="chatgpt/oai-responses/gpt-6-luna",
+                                cwd="/state/work",
+                                reasoning_effort="low",
+                            ),
+                        ),
+                        metadata=app_authentication.metadata,
+                        timeout=15,
+                    ),
+                    stub.SubmitInput(
+                        pb.SubmitInputRequest(
+                            sandbox=sandbox,
+                            session_id=session,
+                            command_id=command,
+                            text="Reply with exactly OK and do not use tools.",
+                        ),
+                        metadata=notification_authentication.metadata,
+                        timeout=15,
+                    ),
+                )
+                assert opened.opening.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
+                assert queued.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
+                await _kubectl(
+                    "wait",
+                    f"sandbox.agentplane.allegedly.works/{sandbox}",
+                    "--for=jsonpath={.spec.wakeGeneration}=1",
+                    "--timeout=120s",
+                )
+                waking = json.loads(await _kubectl("get", "sandbox", sandbox, "-o", "json"))
+                assert waking["spec"]["running"] is True
+                assert waking["spec"]["wakeGeneration"] == 1
+                evidence["wake_generation"] = waking["spec"]["wakeGeneration"]
+                path.write_text(json.dumps(evidence, indent=2) + "\n")
+
+                await _kubectl(
+                    "wait",
+                    f"sandbox.agentplane.allegedly.works/{sandbox}",
+                    "--for=condition=Ready=True",
+                    "--timeout=300s",
+                )
+                ready = json.loads(await _kubectl("get", "sandbox", sandbox, "-o", "json"))
+                ready_incarnation = ready.get("status", {}).get("incarnation", {}).get("uid")
+                assert ready_incarnation
+                assert ready_incarnation != initial_incarnation
+                admitted = await _dispatch_until(
+                    stub,
+                    notification_authentication,
+                    session,
+                    lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED,
+                )
+                assert admitted.command_id == command
+                assert admitted.admission.event.command_admitted.command.submit_input.text == (
+                    "Reply with exactly OK and do not use tools."
+                )
+                deadline = asyncio.get_running_loop().time() + BOUND_SECONDS
+                while True:
+                    opening = await stub.GetSessionOpening(
+                        pb.GetSessionOpeningRequest(session_id=session),
+                        metadata=app_authentication.metadata,
+                        timeout=15,
+                    )
+                    if opening.opening.state in (pb.DELIVERY_STATE_FAILED, pb.DELIVERY_STATE_UNKNOWN):
+                        raise DispatchFailedError(
+                            f"opening {pb.DeliveryState.Name(opening.opening.state)}: {opening.opening.reason}"
+                        )
+                    if opening.opening.state == pb.DELIVERY_STATE_RUNNER_ADMITTED:
+                        break
+                    if asyncio.get_running_loop().time() >= deadline:
+                        raise AssertionError("Session opening did not reach runner admission")
+                    await asyncio.sleep(1)
+                evidence.update(
+                    {
+                        "ready_incarnation": ready_incarnation,
+                        "opening_state": pb.DeliveryState.Name(opening.opening.state),
+                        "dispatch_state": pb.DeliveryState.Name(admitted.state),
+                        "dispatch_admission_cursor": admitted.admission.cursor,
+                        "passed": True,
+                    }
+                )
+                path.write_text(json.dumps(evidence, indent=2) + "\n")
+            finally:
+                await channel.close()
+    finally:
+        await cleanup()
     evidence["cleanup_complete"] = True
     path.write_text(json.dumps(evidence, indent=2) + "\n")
 

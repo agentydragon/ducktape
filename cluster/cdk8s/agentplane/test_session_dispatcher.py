@@ -1,4 +1,4 @@
-"""The deployed Dispatcher accepts authenticated app and notification senders."""
+"""Dispatcher wake eligibility is enabled only for the approved testing senders."""
 
 from typing import Any
 
@@ -8,7 +8,7 @@ import yaml
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
-from cluster.cdk8s.agentplane import app, notifications, runner_gateway, session_dispatcher, staging
+from cluster.cdk8s.agentplane import app, notifications, runner_gateway, session_dispatcher, staging, testing
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
@@ -48,7 +48,7 @@ def test_dispatcher_deployment_and_sender_auth(
     assert container["image"] == "git.allegedly.works/ducktape-ci/agentplane-session-dispatcher:unset"
 
     settings = yaml.safe_load(resource("ConfigMap", f"{session_dispatcher.NAME}-config")["data"]["config.yaml"])
-    assert settings == {
+    expected_settings = {
         "namespace": namespace,
         "caller_accounts": [
             {"namespace": namespace, "name": app.NAME},
@@ -59,6 +59,12 @@ def test_dispatcher_deployment_and_sender_auth(
         "runner_token_file": "/var/run/secrets/agentplane-runner-gateway/token",
         "port": 8080,
     }
+    if namespace == testing.ENV.namespace:
+        expected_settings["wake_caller_accounts"] = [
+            {"namespace": namespace, "name": app.NAME},
+            {"namespace": namespace, "name": notifications.NAME},
+        ]
+    assert settings == expected_settings
     token_mount = one(mount for mount in container["volumeMounts"] if mount["name"] == "runner-gateway-token")
     assert token_mount["mountPath"] == "/var/run/secrets/agentplane-runner-gateway"
     assert token_mount["readOnly"] is True

@@ -37,6 +37,7 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.action_federation_settings import DirectFederationSettings
 from agentplane.crd_group import GROUP
+from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import agent_access_profiles as access, cilium
 from cluster.cdk8s.agentplane import (
     actions,
@@ -45,6 +46,7 @@ from cluster.cdk8s.agentplane import (
     command_sandbox,
     dex,
     egress,
+    notifications,
     policy_controller,
     sandbox_pod,
 )
@@ -194,6 +196,12 @@ ENV = Environment(
     ),
     vm_sandboxes=True,
     vm_console_autologin=True,
+    wake_caller_accounts=frozenset(
+        {
+            ServiceAccountRef(namespace=TESTING_NAMESPACE, name=app_component.NAME),
+            ServiceAccountRef(namespace=TESTING_NAMESPACE, name=notifications.NAME),
+        }
+    ),
 )
 
 

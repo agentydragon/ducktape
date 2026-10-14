@@ -52,11 +52,14 @@ class SessionDispatcher(Construct):
         env: Environment,
         *,
         callers: dict[ServiceAccountRef, Pods],
+        wake_callers: frozenset[ServiceAccountRef] = frozenset(),
         runner_gateway: ServiceRef,
         runner_control_target: str,
         runner_gateway_audience: str,
     ) -> None:
         super().__init__(scope, id)
+        if not wake_callers <= callers.keys():
+            raise ValueError("wake callers must also be Dispatcher callers")
         endpoint = service(env.namespace)
         config = SettingsFile(
             self,
@@ -69,6 +72,16 @@ class SessionDispatcher(Construct):
                     caller.model_dump()
                     for caller in sorted(callers, key=lambda caller: (caller.namespace, caller.name))
                 ],
+                **(
+                    {
+                        "wake_caller_accounts": [
+                            caller.model_dump()
+                            for caller in sorted(wake_callers, key=lambda caller: (caller.namespace, caller.name))
+                        ]
+                    }
+                    if wake_callers
+                    else {}
+                ),
                 "token_audience": TOKEN_AUDIENCE,
                 "runner_control_target": runner_control_target,
                 "runner_token_file": _RUNNER_TOKEN_FILE,

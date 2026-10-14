@@ -18,6 +18,7 @@ from agentplane.action_service.mcp_settings import McpClientMetadataSettings, Mc
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.app.settings import AppSettingsConfig
 from agentplane.llm_ingress.models import ModelConfig
+from agentplane.subjects import ServiceAccountRef
 
 
 @dataclass(frozen=True)
@@ -156,6 +157,8 @@ class Environment:
     # Whether a VM Sandbox's serial console is a root shell, for whoever holds the VMI `console`
     # subresource. Only meaningful with `vm_sandboxes`.
     vm_console_autologin: bool = False
+    # Authenticated service callers permitted to wake only Sandboxes whose own `wakeOnSend` is true.
+    wake_caller_accounts: frozenset[ServiceAccountRef] = frozenset()
     notifications_github: GitHubAppProps | None = None
     # Binding scopes delegated (binding_delegation.py) after their catalog entries are removed, so
     # the bindings existing Sandboxes still hold can be cleaned up.

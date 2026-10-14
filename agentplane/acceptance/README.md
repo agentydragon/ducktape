@@ -79,6 +79,22 @@ and generation still match the temporary scale, preserving concurrent GitOps/ope
 Evidence is written to `test.outputs/dispatcher-deployed.json`; `passed` and `cleanup_complete`
 are distinct. The `queue` case retains the original single-replica delivery check.
 
+After the testing-only `wake_caller_accounts` config is applied and the Dispatcher, migration and
+Sandbox Controller images are Ready, run the wake case separately:
+
+```bash
+bazelisk test //agentplane/acceptance:test_dispatcher_deployed \
+  --test_arg=-k --test_arg=opted_in --test_output=streamed
+```
+
+It creates one fresh stopped Sandbox with `wakeOnSend: true`, then concurrently submits an app
+`OpenSession` and a notification `SubmitInput` using short-lived tokens bound to their existing Pods.
+Both senders must share one `wakeGeneration`; the Dispatcher must wait for a new Ready incarnation
+before admitting the Session and input. The existing `queue` case checks that an app send against
+the default `wakeOnSend: false` stays queued with `wake_on_send_disabled` and does not mutate the
+Sandbox. The test records the deployed image references and deletes only its own Sandbox. It does
+not exercise staging or expand the caller allowlist.
+
 ## MCP integration
 
 `//agentplane/acceptance:test_mcp` belongs to this deployed suite. Both real harnesses

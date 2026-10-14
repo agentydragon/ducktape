@@ -80,6 +80,7 @@ def environment_chart(app: App, env: Environment) -> Chart:
         "session-dispatcher",
         env,
         callers=dispatcher_callers,
+        wake_callers=env.wake_caller_accounts,
         runner_gateway=runner_gateway.service(env.namespace),
         runner_control_target=runner_gateway.control_target(env.namespace),
         runner_gateway_audience=runner_gateway.TOKEN_AUDIENCE,
