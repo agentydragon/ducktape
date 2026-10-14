@@ -58,6 +58,27 @@ It does not delete an existing Sandbox. This completed-turn scenario does not co
 command checkpoint or interrupted setup; deterministic coverage for those boundaries lives in
 `//agentplane/runner:test_restart` and `//agentplane/runner:test_seal`.
 
+## Dispatcher replica acceptance
+
+On the authorized operator host, run the bounded testing-only replica case:
+
+```bash
+bazelisk test //agentplane/acceptance:test_dispatcher_deployed \
+  --test_arg=-k --test_arg=replicas --test_output=streamed
+```
+
+It queues a setting change in a fresh stopped Sandbox, temporarily scales the testing Dispatcher
+from one replica to two, deletes the original owner's Pod with a UID precondition, and observes
+Lease takeover through a watch. The retained command is then delivered after explicitly starting
+the Sandbox. Finally, streams pinned to both replica Pods must receive the queued command's
+terminal deletion outcome. No model turn or app HTTP API is used. Authentication uses a short-lived
+token bound to an existing testing app Pod, so an app rollout during the probe revokes that token.
+
+Only the fixture Sandbox is deleted. The original replica count is restored if the Deployment UID
+and generation still match the temporary scale, preserving concurrent GitOps/operator changes.
+Evidence is written to `test.outputs/dispatcher-deployed.json`; `passed` and `cleanup_complete`
+are distinct. The `queue` case retains the original single-replica delivery check.
+
 ## MCP integration
 
 `//agentplane/acceptance:test_mcp` belongs to this deployed suite. Both real harnesses

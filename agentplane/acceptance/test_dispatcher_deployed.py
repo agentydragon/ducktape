@@ -5,13 +5,13 @@ import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
 from dataclasses import dataclass, field
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import grpc
 import pytest
 import pytest_bazel
 import yaml
-from kubernetes_asyncio import client as k8s, config as k8s_config
+from kubernetes_asyncio import client as k8s, config as k8s_config, watch as k8s_watch
 
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc_calls import dial
@@ -107,14 +107,14 @@ async def _cleanup_sandbox(name: str, uid: str) -> None:
 
 
 @asynccontextmanager
-async def _forward() -> AsyncIterator[str]:
+async def _forward(resource: str = f"service/{SERVICE}") -> AsyncIterator[str]:
     port = pick_free_port()
     process = await asyncio.create_subprocess_exec(
         "kubectl",
         "-n",
         NAMESPACE,
         "port-forward",
-        f"service/{SERVICE}",
+        resource,
         f"{port}:8080",
         "--address=127.0.0.1",
         stdout=asyncio.subprocess.PIPE,
@@ -155,8 +155,80 @@ async def _dispatch_until(
     raise AssertionError("Dispatch watch ended before the expected state")
 
 
+@asynccontextmanager
+async def _replace_owner_with_peer(
+    sandbox_uid: str, deployment_uid: str, evidence: dict[str, object]
+) -> AsyncIterator[str]:
+    pods = json.loads(await _kubectl("get", "pods", "-l", f"app.kubernetes.io/name={SERVICE}", "-o", "json"))
+    (original,) = pods["items"]
+    lease_name = f"dispatcher-{UUID(sandbox_uid).hex}"
+    lease = json.loads(await _kubectl("get", "lease", lease_name, "-o", "json"))
+    holder = lease["spec"]["holderIdentity"]
+    scaled_generation: int | None = None
+    try:
+        patched = json.loads(
+            await _kubectl(
+                "patch",
+                "deployment",
+                SERVICE,
+                "--type=json",
+                "-p",
+                json.dumps(
+                    [
+                        {"op": "test", "path": "/metadata/uid", "value": deployment_uid},
+                        {"op": "test", "path": "/spec/replicas", "value": 1},
+                        {"op": "replace", "path": "/spec/replicas", "value": 2},
+                    ]
+                ),
+                "-o",
+                "json",
+            )
+        )
+        scaled_generation = patched["metadata"]["generation"]
+        await _kubectl("rollout", "status", f"deployment/{SERVICE}", "--timeout=120s")
+        pods = json.loads(await _kubectl("get", "pods", "-l", f"app.kubernetes.io/name={SERVICE}", "-o", "json"))
+        (peer,) = [item for item in pods["items"] if item["metadata"]["uid"] != original["metadata"]["uid"]]
+        await _delete_pod(original["metadata"]["name"], original["metadata"]["uid"])
+        configuration = k8s.Configuration()
+        await k8s_config.load_kube_config(client_configuration=configuration)
+        async with k8s.ApiClient(configuration) as api, k8s_watch.Watch() as watch:
+            coordination = k8s.CoordinationV1Api(api)
+            current = await coordination.read_namespaced_lease(lease_name, NAMESPACE)
+            if current.spec.holder_identity == holder:
+                async with asyncio.timeout(BOUND_SECONDS):
+                    async for event in watch.stream(
+                        coordination.list_namespaced_lease,
+                        NAMESPACE,
+                        field_selector=f"metadata.name={lease_name}",
+                        resource_version=current.metadata.resource_version,
+                    ):
+                        current = event["object"]
+                        if current.spec.holder_identity != holder:
+                            break
+            assert current.spec.holder_identity != holder
+            assert current.spec.lease_transitions > lease["spec"]["leaseTransitions"]
+            evidence["owner_before"] = holder
+            evidence["owner_after"] = current.spec.holder_identity
+            evidence["replaced_dispatcher_pod_uid"] = original["metadata"]["uid"]
+        yield peer["metadata"]["name"]
+    finally:
+        if scaled_generation is not None:
+            current = json.loads(await _kubectl("get", "deployment", SERVICE, "-o", "json"))
+            # Do not overwrite a concurrent operator or GitOps rollout.
+            if current["metadata"]["uid"] == deployment_uid and current["metadata"]["generation"] == scaled_generation:
+                await _kubectl(
+                    "scale",
+                    f"deployment/{SERVICE}",
+                    "--current-replicas=2",
+                    "--replicas=1",
+                    f"--resource-version={current['metadata']['resourceVersion']}",
+                )
+                await _kubectl("rollout", "status", f"deployment/{SERVICE}", "--timeout=120s")
+
+
 @pytest.mark.timeout(600)
-async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission() -> None:
+@pytest.mark.parametrize("replica_failover", [False, True], ids=["queue", "replicas"])
+async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission(replica_failover: bool) -> None:
     deployment = json.loads(await _kubectl("get", "deployment", SERVICE, "-o", "json"))
     assert deployment["status"].get("readyReplicas") == 1, "testing Dispatcher is not Ready"
     assert deployment["spec"]["replicas"] == 1
@@ -168,12 +240,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
     assert policies
     assert all(isinstance(name, str) and name for name in policies)
     suffix = uuid4().hex[:8]
-    sandbox, caller, session, command = (
-        f"accept-dispatch-{suffix}",
-        f"accept-dispatch-caller-{suffix}",
-        str(uuid4()),
-        str(uuid4()),
-    )
+    sandbox, session, command = (f"accept-dispatch-{suffix}", str(uuid4()), str(uuid4()))
     evidence: dict[str, object] = {
         "namespace": NAMESPACE,
         "image": image,
@@ -186,39 +253,12 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
     path = undeclared_outputs_dir() / "dispatcher-deployed.json"
     path.write_text(json.dumps(evidence, indent=2) + "\n")
     async with AsyncExitStack() as stack:
-        pod = json.loads(
-            await _kubectl(
-                "create",
-                "-f",
-                "-",
-                "-o",
-                "json",
-                body={
-                    "apiVersion": "v1",
-                    "kind": "Pod",
-                    "metadata": {"name": caller, "namespace": NAMESPACE},
-                    "spec": {
-                        "serviceAccountName": "agentplane-app",
-                        "imagePullSecrets": deployment["spec"]["template"]["spec"].get("imagePullSecrets", []),
-                        "automountServiceAccountToken": False,
-                        "restartPolicy": "Never",
-                        "containers": [
-                            {
-                                "name": "caller",
-                                "image": image,
-                                "command": ["/bin/sleep", "infinity"],
-                                "resources": {
-                                    "requests": {"cpu": "10m", "memory": "16Mi"},
-                                    "limits": {"cpu": "100m", "memory": "64Mi"},
-                                },
-                            }
-                        ],
-                    },
-                },
-            )
-        )
+        # TokenReview needs a bound workload identity, not an app HTTP session. Reuse an
+        # existing app Pod as the token's binding object; this probe creates no caller Pods.
+        callers = json.loads(await _kubectl("get", "pods", "-l", "app.kubernetes.io/name=agentplane-app", "-o", "json"))
+        pod = next(item for item in callers["items"] if not item["metadata"].get("deletionTimestamp"))
+        caller = pod["metadata"]["name"]
         caller_uid = pod["metadata"]["uid"]
-        stack.push_async_callback(_delete_pod, caller, caller_uid)
         token = await _kubectl(
             "create",
             "token",
@@ -247,7 +287,13 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
         )
         uid = created["metadata"]["uid"]
         evidence["sandbox_uid"] = uid
-        stack.push_async_callback(_cleanup_sandbox, sandbox, uid)
+        cleaned = False
+
+        async def cleanup() -> None:
+            if not cleaned:
+                await _cleanup_sandbox(sandbox, uid)
+
+        stack.push_async_callback(cleanup)
         await _kubectl(
             "wait",
             f"sandbox.agentplane.allegedly.works/{sandbox}",
@@ -272,6 +318,22 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
         caller_view = json.loads(await _kubectl("get", "pod", caller, "-o", "json"))
         evidence["caller_phase"] = caller_view.get("status", {}).get("phase")
         path.write_text(json.dumps(evidence, indent=2) + "\n")
+        if replica_failover:
+            # Only one replica can have acquired this Sandbox's Lease before scaling.
+            # Killing that known owner, then watching through the surviving peer, exercises
+            # lease expiry and durable queue recovery without the app HTTP service.
+            peer = await stack.enter_async_context(
+                _replace_owner_with_peer(uid, deployment["metadata"]["uid"], evidence)
+            )
+            peer_target = await stack.enter_async_context(_forward(f"pod/{peer}"))
+            peer_channel = await stack.enter_async_context(dial(peer_target))
+            stub = session_dispatcher_pb2_grpc.SessionDispatcherStub(peer_channel)
+            retained = await stub.GetDispatch(
+                pb.GetDispatchRequest(command_id=command), metadata=authentication.metadata, timeout=15
+            )
+            assert retained.dispatch.created_at == queued.dispatch.created_at
+            assert retained.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
+
         # Opening blocks the Session's commands. Queue it after observing the command's own
         # suspended reason; it must still reach the runner before the setting change.
         opened = await stub.OpenSession(
@@ -322,6 +384,63 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             pb.GetSessionOpeningRequest(session_id=session), metadata=authentication.metadata, timeout=15
         )
         assert opening.opening.state == pb.DELIVERY_STATE_RUNNER_ADMITTED
+        if replica_failover:
+            await _kubectl(
+                "patch",
+                "sandbox.agentplane.allegedly.works",
+                sandbox,
+                "--type=merge",
+                "-p",
+                json.dumps({"metadata": {"uid": uid}, "spec": {"running": False}}),
+            )
+            await _kubectl(
+                "wait",
+                f"sandbox.agentplane.allegedly.works/{sandbox}",
+                '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
+                "--timeout=300s",
+            )
+            deletion_session = str(uuid4())
+            deletion_command = str(uuid4())
+            await stub.ChangeReasoningEffort(
+                pb.ChangeReasoningEffortRequest(
+                    sandbox=sandbox, session_id=deletion_session, command_id=deletion_command, effort="low"
+                ),
+                metadata=authentication.metadata,
+                timeout=15,
+            )
+            await _kubectl("rollout", "status", f"deployment/{SERVICE}", "--timeout=120s")
+            pods = json.loads(await _kubectl("get", "pods", "-l", f"app.kubernetes.io/name={SERVICE}", "-o", "json"))
+            live = [item for item in pods["items"] if not item["metadata"].get("deletionTimestamp")]
+            assert len(live) == 2
+            streams = []
+            for replica in live:
+                target = await stack.enter_async_context(_forward(f"pod/{replica['metadata']['name']}"))
+                channel = await stack.enter_async_context(dial(target))
+                reader = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
+                stream = reader.WatchDispatches(
+                    pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=deletion_session)),
+                    metadata=authentication.metadata,
+                    timeout=BOUND_SECONDS,
+                )
+                stack.callback(stream.cancel)
+                first = await stream.read()
+                assert isinstance(first, pb.WatchDispatchesResponse), "Replica watch ended before its initial snapshot"
+                assert first.dispatch.command_id == deletion_command
+                assert first.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
+                streams.append(stream)
+            await cleanup()
+            cleaned = True
+            for stream in streams:
+                while True:
+                    response = await stream.read()
+                    if response == grpc.aio.EOF:
+                        raise AssertionError("Replica watch missed the Sandbox deletion outcome")
+                    assert isinstance(response, pb.WatchDispatchesResponse)
+                    if response.dispatch.state == pb.DELIVERY_STATE_FAILED:
+                        assert response.dispatch.reason == "sandbox_deleted"
+                        assert response.dispatch.command_id == deletion_command
+                        break
+            evidence["deletion_observed_replicas"] = [item["metadata"]["uid"] for item in live]
         evidence.update(
             {
                 "runner_admitted": True,
