@@ -14,6 +14,8 @@ an MCP approval gateway for any MCP-capable LLM product.
 - [Sandbox Service](sandbox_service/README.md): Sandbox lifecycle, grants, egress and teardown.
 - [Runner Gateway](runner_gateway/README.md): the runner control stream, Sessions, and command
   admission and delivery.
+- [Session Dispatcher](session_dispatcher/README.md): the durable command queue and delivery state
+  between senders and Sandbox runners.
 - [History Service](history_service/README.md): retained Session history, read by the
   integration app and the Notification service.
 - [Runner](runner/README.md) and [native drivers](native/README.md): run Claude Code or Codex in a
@@ -47,7 +49,7 @@ flowchart TB
         actions[Action Service]
         policy[Policy Controller]
         sandboxctl[Sandbox Controller]
-        dispatcher[Session Dispatcher, not yet deployed]
+        dispatcher[Session Dispatcher]
     end
     subgraph sandbox[Sandbox Pod]
         runner[Runner + native drivers]
@@ -85,7 +87,9 @@ flowchart TB
     hs -->|ingest, fold, read| hist_db
     notif -->|Sandbox reads| k8s
     dispatcher -->|Sandbox watch| k8s
-    dispatcher -->|per-command Runner RPCs through the runner proxy| gw
+    dispatcher -->|queued commands and delivery state| dispatcher_db
+    dispatcher_db[(session_dispatcher DB)]
+    dispatcher -.->|per-command Runner RPCs through the runner proxy; sender cutover pending| gw
     notif -->|commands| gw
     notif -->|command receipts| hs
     notif --> actions
@@ -126,7 +130,8 @@ flowchart TB
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
   `sandbox_commands` (the Runner Gateway's Session registry),
   `sandbox_service` (Session history, written by the History Service), `actions`,
-  `egress` and `notifications`; the Sandbox Service has none. Only the history database is drawn.
+  `egress`, `notifications` and `session_dispatcher`; the Sandbox Service has none. The history and
+  Dispatcher databases are drawn.
 - **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle and egress
   grants; the Runner Gateway owns everything that talks to a runner: Sessions, commands and the
   runner control stream. The Sandbox Controller holds a Sandbox's deletion until its Sessions are sealed.

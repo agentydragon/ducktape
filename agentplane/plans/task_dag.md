@@ -738,7 +738,7 @@ flowchart TD
     SANDBOX_SHARED_CODE_MOVE --> SANDBOX_SERVICE_REMOVE
     SANDBOX_SHARED_CODE_MOVE -. land first, then the helper is written once .-> SANDBOX_WRITE_HELPER
     APP_SANDBOX_WRITES --> SANDBOX_SERVICE_REMOVE
-    DISPATCHER_CORE --> DISPATCHER_DEPLOY[Blocked: the Session Dispatcher is deployed]
+    DISPATCHER_CORE --> DISPATCHER_DEPLOY[In flight: the Session Dispatcher is deployed]
     DISPATCHER_DEPLOY --> APP_SENDS_VIA_DISPATCHER
     DISPATCHER_DEPLOY --> NOTIFICATIONS_VIA_DISPATCHER
     SESSION_REVIVE --> DISPATCHER_WAKE_ON_SEND
@@ -1139,15 +1139,18 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `DISPATCHER_DEPLOY` — the Session Dispatcher is deployed
 
-**Blocked on `DISPATCHER_CORE` merged and its image, and its migration image, pinned.** The service is
-built and tested but ships no manifests, so no sender can call it. The cdk8s generators add its
+**In flight (Codex, 2026-10-13):** `DISPATCHER_CORE` is merged, and the service and migration images are pinned
+in both environments. The cdk8s generators add its
 Deployment, its CNPG database and migration job, a Role with `get/list/watch` on `sandboxes`
 (`patch` joins it with `DISPATCHER_WAKE_ON_SEND`), the gateway's `caller_accounts` entry that lets the
 Dispatcher call the `Runner` proxy, the network policies both ways, and the Flux wiring; the README's
-services-and-traffic diagram marks it deployed. Image before config: no manifest, flag or required setting
-lands before the image that accepts it is pinned. Test that a Sandbox that becomes `Ready` receives a
-queued command through the deployed pair in `agentplane-testing`, and that a Dispatcher restart loses no
-queued command.
+services-and-traffic diagram shows the Dispatcher route with sender cutover pending. The sender paths
+remain on the Runner Gateway until the Dispatcher is accepted. Image before config: no manifest or
+required setting lands before the image that accepts it is pinned. After merge and Flux reconciliation,
+test in `agentplane-testing` that a
+queued command waits for `Ready` and then reaches the runner, that a Dispatcher restart preserves queued
+commands, and that the service path remains usable with the integration app unavailable. This PR has
+not been merged or reconciled, so those deployment checks remain outstanding.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 

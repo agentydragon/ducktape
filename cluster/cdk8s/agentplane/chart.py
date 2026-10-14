@@ -25,6 +25,7 @@ from cluster.cdk8s.agentplane import (
     sandbox_controller,
     sandbox_pod,
     sandbox_service,
+    session_dispatcher,
 )
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.namespaces import Vpa
@@ -68,11 +69,26 @@ def environment_chart(app: App, env: Environment) -> Chart:
         ServiceAccountRef(namespace=env.namespace, name=notifications.NAME): notifications.service(env.namespace).pods
     }
     sandbox_service.SandboxService(chart, "sandbox-service", env, callers=app_caller | notifications_caller)
+    dispatcher_callers = app_caller | notifications_caller
+    dispatcher_caller = {
+        ServiceAccountRef(namespace=env.namespace, name=session_dispatcher.NAME): session_dispatcher.service(
+            env.namespace
+        ).pods
+    }
+    session_dispatcher.SessionDispatcher(
+        chart,
+        "session-dispatcher",
+        env,
+        callers=dispatcher_callers,
+        runner_gateway=runner_gateway.service(env.namespace),
+        runner_control_target=runner_gateway.control_target(env.namespace),
+        runner_gateway_audience=runner_gateway.TOKEN_AUDIENCE,
+    )
     runner_gateway.RunnerGateway(
         chart,
         "runner-gateway",
         env,
-        callers=app_caller | notifications_caller,
+        callers=dispatcher_callers | dispatcher_caller,
         sandbox_controller=(
             ServiceAccountRef(namespace=env.namespace, name=sandbox_controller.NAME),
             sandbox_controller.pods(env.namespace),

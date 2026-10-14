@@ -2,9 +2,10 @@
 
 The durable queue between senders and a Sandbox's runner. A sender stores a command and gets a
 `Dispatch` back at once; the Dispatcher delivers it through the Runner Gateway's runner proxy once the
-Sandbox is `Ready`, and the sender reads where it is. Control design:
-[ADR](../docs/adr_sandbox_session_control.md). Not deployed yet; what remains is in
-[`DISPATCHER_CORE`](../plans/task_dag.md).
+Sandbox is `Ready`, and the sender reads where it is. The manifests configure one active replica in
+staging and testing; the app and Notification Service still send through the Runner Gateway pending
+their cutovers. Control design: [ADR](../docs/adr_sandbox_session_control.md). Rollout acceptance is tracked
+in [`DISPATCHER_DEPLOY`](../plans/task_dag.md).
 
 ## Contract
 
