@@ -10,15 +10,15 @@ from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest
 from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
-from agentplane.sandbox_service.testing.fake_inventory import (
+from agentplane.sandboxes.errors import InvalidSandboxError, SandboxNotFoundError, UnknownPolicySetError
+from agentplane.sandboxes.inventory import SandboxInventory
+from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
     close_fake_api_clients,
 )
-from agentplane.sandboxes.errors import InvalidSandboxError, SandboxNotFoundError, UnknownPolicySetError
-from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.subjects import ServiceAccountRef
 from util.kubernetes import CustomObjectsClient
 
