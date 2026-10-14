@@ -36,6 +36,10 @@ LAUNCHER_POD = f"virt-launcher-{SANDBOX}-test"
 LAUNCHER_POD_UID = "test-launcher-pod-uid"
 
 
+async def ignore_incarnation(incarnation_uid: str | None) -> None:
+    del incarnation_uid
+
+
 def run_in_a_vm(cluster: Cluster) -> None:
     """`SANDBOX` as a VM Sandbox: its incarnation is its VMI's virt-launcher Pod, labelled with the
     Sandbox and running as its ServiceAccount, and `RUNNER_TOKEN` is that Pod's runner's."""
@@ -199,7 +203,7 @@ async def connected(
         target=target,
         bearer=token,
         timing=RUNNER_TIMING,
-        adopt_incarnation=lambda _: None,
+        adopt_incarnation=ignore_incarnation,
         facts=runner_control_pb2.RunnerFacts,
         facts_changed=asyncio.Event(),
     )
