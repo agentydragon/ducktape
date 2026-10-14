@@ -709,6 +709,8 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
     SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Blocked: idle runner Sandboxes suspend]
+    JOURNAL_REOPEN_DECISION[Decision: how a sealed journal is reopened] --> SANDBOX_IDLE_EXPIRY
+    JOURNAL_REOPEN_DECISION -. related .-> SESSION_INCARNATIONS
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
     HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
     MULTIAGENT_MODEL[Decision: identities and authority vocabulary, section 3] -. who may send and wake .-> DISPATCHER_CORE
@@ -903,7 +905,7 @@ Firecracker with the runner as init.
 
 ### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes suspend
 
-**Blocked on `SESSION_INCARNATIONS`, `RUNNER_FACTS_ON_LEASE`, `RUNNER_BUSY_TRACKING` and `QUIESCE_WITHOUT_POLLING`; operator,
+**Blocked on `SESSION_INCARNATIONS`, `JOURNAL_REOPEN_DECISION`, `RUNNER_FACTS_ON_LEASE`, `RUNNER_BUSY_TRACKING` and `QUIESCE_WITHOUT_POLLING`; operator,
 2026-10-11 and 2026-10-13 PDT.** An idle runner Sandbox suspends: it is sealed,
 then the Pod or VM goes, freeing memory and compute, and the Sandbox, its ServiceAccount, bindings
 and state PVC stay, so `SESSION_REVIVE` resumes it on the same PVC. Nothing deletes a Sandbox on
@@ -936,9 +938,20 @@ from which the History Service records it, and its seal ends that incarnation, n
 the kept volume the runner journal and its cursors simply continue; the next incarnation journals
 that it resumed after a seal.
 
-Open piece (`SANDBOX_IDLE_EXPIRY` waits for it, since a sealed journal cannot restart today): the runner's per-incarnation seal marker lets a new incarnation's runner accept work, but a journal the earlier
-incarnation sealed stays sealed. This node decides how such a journal is reopened and what the ingress
-does with the next cursor range.
+The reopening of a sealed journal is `JOURNAL_REOPEN_DECISION`.
+
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
+### `JOURNAL_REOPEN_DECISION` — how a sealed journal is reopened
+
+**Decision; waiting on the operator.** The runner's per-incarnation seal marker lets a new
+incarnation's runner accept work, but a journal the earlier incarnation sealed stays sealed, and
+`SANDBOX_IDLE_EXPIRY` cannot suspend and resume a Sandbox until that changes. The options, with the
+recommendation, are in the ADR section "Reopening a sealed journal": (1) key each seal to an
+incarnation UID, so `Attached` gains the UID, the History Service accepts a continuation first and
+then the runner reopens (recommended); (2) drop the journal seal and use the lameduck marker
+instead; (3) a new journal per incarnation (rejected). Once decided the node splits, in the roll-safe
+order: the History Service accepts a continuation, then the runner reopens.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
