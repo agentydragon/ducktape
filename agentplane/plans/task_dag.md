@@ -1280,9 +1280,9 @@ the gateway's runner proxy (`runner_gateway/runner_proxy.py`) lets every configu
 every runner method except `Quiesce` and `Seal`, and the gateway wrapper calls `OpenSession` too. The
 bound on a suspend waiting for setups (`SuspendPending`, `SANDBOX_IDLE_EXPIRY`) holds only if nothing
 but the Dispatcher can open a Session or send work, so the proxy's per-method policy authorizes
-`OpenSession` and the other start-or-continue-work methods (`SubmitInput`, `ResumeSession`, and
-`ChangeModel`/`ChangeReasoningEffort` if the design lane decides they start a stopped harness) for the
-Dispatcher's account alone. `InterruptTurn`, `StopRunnerSession` and the reads stay open to the callers
+`OpenSession` and the other start-or-continue-work methods (`SubmitInput`, `ResumeSession`,
+`ChangeModel` and `ChangeReasoningEffort`, which start a stopped harness; operator, 2026-10-13 PDT) for
+the Dispatcher's account alone. `InterruptTurn`, `StopRunnerSession` and the reads stay open to the callers
 that have them. Order: every other caller has moved to the Dispatcher, then the policy narrows.
 
 ### `CONTROLLER_SEALS` — the Sandbox controller seals
