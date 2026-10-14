@@ -19,6 +19,13 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 )
 
+func workspaceBinding(sandbox *Sandbox) *WorkspaceBinding {
+	if sandbox.Status.Volumes == nil {
+		return nil
+	}
+	return sandbox.Status.Volumes.Workspace
+}
+
 func workspaceTemplate(kind string, layout VolumeLayoutType) *SandboxTemplate {
 	template := testWorkspaceVMTemplate("guest:v1")
 	w := template.Spec.WorkspaceVolume
@@ -146,7 +153,7 @@ func TestWorkspaceRestartRecoversCreationRecordAfterFailedStatusWrite(t *testing
 	failure := errors.New("controller interrupted before binding persistence")
 	r.Client = interceptor.NewClient(c.(client.WithWatch), interceptor.Funcs{
 		SubResourceUpdate: func(ctx context.Context, c client.Client, name string, obj client.Object, opts ...client.SubResourceUpdateOption) error {
-			if sandbox, ok := obj.(*Sandbox); ok && sandbox.Status.Volumes != nil {
+			if sandbox, ok := obj.(*Sandbox); ok && workspaceBinding(sandbox) != nil {
 				return failure
 			}
 			return c.SubResource(name).Update(ctx, obj, opts...)
@@ -156,7 +163,7 @@ func TestWorkspaceRestartRecoversCreationRecordAfterFailedStatusWrite(t *testing
 		t.Fatalf("error = %v", err)
 	}
 	pvc := getWorkspacePVC(t, c)
-	if pvc == nil || getVM(t, c) != nil || getSandbox(t, c).Status.Volumes != nil {
+	if pvc == nil || getVM(t, c) != nil || workspaceBinding(getSandbox(t, c)) != nil {
 		t.Fatal("claim creation and binding/start ordering was not preserved")
 	}
 	restarted := *r
@@ -266,7 +273,7 @@ func TestLegacyVMWorkspaceClaimStillResumesWithoutManagedDeclaration(t *testing.
 	reconcileOnce(t, r)
 	setRunning(t, c, true)
 	reconcileOnce(t, r)
-	if !vmRunning(getVM(t, c)) || getWorkspacePVC(t, c).UID != legacy.UID || getSandbox(t, c).Status.Volumes != nil {
+	if !vmRunning(getVM(t, c)) || getWorkspacePVC(t, c).UID != legacy.UID || workspaceBinding(getSandbox(t, c)) != nil {
 		t.Fatal("legacy DataVolume claim was adopted or blocked")
 	}
 }
@@ -279,7 +286,7 @@ func TestOwnedUnrecordedWorkspaceIsNeverAdoptedOnFirstStart(t *testing.T) {
 	}}
 	r, c := newReconciler(t, true, workspaceTemplate("vm", RawDiskImage), claim)
 	reconcileOnce(t, r)
-	if getVM(t, c) != nil || getSandbox(t, c).Status.Volumes != nil || getWorkspacePVC(t, c).UID != claim.UID {
+	if getVM(t, c) != nil || workspaceBinding(getSandbox(t, c)) != nil || getWorkspacePVC(t, c).UID != claim.UID {
 		t.Fatal("unrecorded owned claim was adopted or replaced")
 	}
 	if runningReason(t, c) != "VolumeLayoutMismatch" {
@@ -374,7 +381,7 @@ func TestTemplateEditAfterBindingPersistenceCannotChangeValidatedAttachment(t *t
 			if err := c.SubResource(name).Update(ctx, obj, opts...); err != nil {
 				return err
 			}
-			if sandbox, ok := obj.(*Sandbox); ok && sandbox.Status.Volumes != nil && !changed {
+			if sandbox, ok := obj.(*Sandbox); ok && workspaceBinding(sandbox) != nil && !changed {
 				changed = true
 				replaceTemplate(t, c, workspaceTemplate("vm", DirectoryTree))
 			}
