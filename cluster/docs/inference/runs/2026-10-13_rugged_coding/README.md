@@ -71,6 +71,22 @@ request carried `reasoning_effort: none`, temperature `0.2`, `top_p: 0.95`,
 and the six local tools `bash`, `edit`, `glob`, `grep`, `read`, and `write`.
 The mock artifacts are under `results/built-launcher-wire-24031/`.
 
+The exact long-prompt handoff was checked separately through the built launcher
+using OpenCode ACP v1 over stdio and a loopback mock backend. Both outgoing
+completion requests contained the full 487,500-byte fixture, including its
+prefix, midpoint, and suffix; both used the experimental alias with the
+configured 131,072 context and 4,096 output limit. The fixture is 123,997
+tokens under the Gemma tokenizer. The mock does not tokenize the full request;
+its fixed usage response is synthetic and no inference was run. See
+`results/model-picker/long-prompt-acp-exact-bytes/`.
+
+OpenCode's separate CLI `run --file` attachment path included an explicit
+`Output capped at 50 KB. Showing lines 1-517. Use offset=518 to continue.`
+marker in its mock request. This is file/read-tool paging guidance rather than
+silent context-window truncation. The check did not run a model to determine
+whether it would page the attachment; its size and marker are recorded in
+`results/model-picker/long-prompt-attachment-boundary/`.
+
 ## End-to-end task
 
 The runner `smoke_7910/run_fully_offline_task.py` starts the cached Ollama model

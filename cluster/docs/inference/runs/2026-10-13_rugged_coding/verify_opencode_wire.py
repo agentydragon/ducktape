@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
@@ -119,6 +120,8 @@ def main() -> int:
     parser.add_argument("--launcher", type=Path, help="exercise a built rugged-opencode-offline launcher")
     parser.add_argument("--workspace", type=Path, help="writable workspace for the built launcher")
     parser.add_argument("--profile-config", type=Path, help="generated OpenCode JSON for the selected profile")
+    parser.add_argument("--attachment", type=Path, help="attach this file to the OpenCode run")
+    parser.add_argument("--expected-attachment-sha256", help="optional expected hash for the attached file")
     parser.add_argument(
         "--backend-port", type=int, default=0, help="host-loopback port; 0 chooses an available mock port"
     )
@@ -130,6 +133,22 @@ def main() -> int:
     )
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=False)
+
+    attachment_text: str | None = None
+    attachment_sha256: str | None = None
+    staged_attachment: Path | None = None
+    if args.attachment is not None:
+        if args.launcher is None or args.workspace is None:
+            parser.error("--attachment requires --launcher and --workspace")
+        attachment_bytes = args.attachment.read_bytes()
+        attachment_sha256 = hashlib.sha256(attachment_bytes).hexdigest()
+        if args.expected_attachment_sha256 and attachment_sha256 != args.expected_attachment_sha256:
+            raise ValueError(f"attached file hash mismatch: {args.attachment}")
+        attachment_text = attachment_bytes.decode("utf-8")
+        staged_attachment = args.workspace / ".opencode-wire-attachment.txt"
+        if staged_attachment.exists():
+            raise FileExistsError(f"refusing to overwrite attachment path: {staged_attachment}")
+        staged_attachment.write_bytes(attachment_bytes)
 
     expected_model = MODEL_PROFILES[args.selector]
     expected_context, expected_output, expected_tool_call, _ = EXPECTED_ROSTER[expected_model]
@@ -207,8 +226,12 @@ def main() -> int:
             "json",
             "--title",
             "Built offline OpenCode launcher wire verification",
-            "Reply exactly mock-wire-ok.",
         ]
+        if staged_attachment is not None:
+            command.extend(["--file", staged_attachment.name, "--"])
+            command.append("Use the attached text as the source. Reply exactly mock-wire-ok.")
+        else:
+            command.append("Reply exactly mock-wire-ok.")
         env = {**os.environ, "RUGGED_OPENCODE_BACKEND_PORT": str(backend_port), "RUGGED_OPENCODE_MODEL": args.selector}
     else:
         command = [
@@ -249,13 +272,69 @@ def main() -> int:
         server.shutdown()
         server.server_close()
         thread.join(timeout=2)
+        if staged_attachment is not None:
+            staged_attachment.unlink(missing_ok=True)
 
     (args.output_dir / "opencode.stdout.log").write_text(completed.stdout)
     (args.output_dir / "opencode.stderr.log").write_text(completed.stderr)
     if len(MockHandler.requests) != 1:
         raise RuntimeError(f"expected one mock completion request, got {len(MockHandler.requests)}")
     request = MockHandler.requests[0]
-    (args.output_dir / "request.json").write_text(json.dumps(request, indent=2) + "\n")
+    attachment_check: dict[str, object] = {}
+    if attachment_text is None:
+        (args.output_dir / "request.json").write_text(json.dumps(request, indent=2) + "\n")
+    else:
+        messages = request.get("messages", [])
+
+        def strings(value: object) -> list[str]:
+            if isinstance(value, str):
+                return [value]
+            if isinstance(value, list):
+                return [item for child in value for item in strings(child)]
+            if isinstance(value, dict):
+                return [item for child in value.values() for item in strings(child)]
+            return []
+
+        message_strings = strings(messages)
+        exact_attachment_present = any(attachment_text in value for value in message_strings)
+        attachment_middle = attachment_text[len(attachment_text) // 2 - 128 : len(attachment_text) // 2 + 128]
+        attachment_tail = attachment_text[-256:]
+        message_summaries = []
+        for message in messages if isinstance(messages, list) else []:
+            values = strings(message.get("content")) if isinstance(message, dict) else []
+            joined = "\n".join(values)
+            message_summaries.append(
+                {
+                    "role": message.get("role") if isinstance(message, dict) else None,
+                    "text_utf8_bytes": len(joined.encode("utf-8")),
+                    "text_sha256": hashlib.sha256(joined.encode("utf-8")).hexdigest(),
+                    "attachment_prefix_256_present": attachment_text[:256] in joined,
+                    "attachment_middle_256_present": attachment_middle in joined,
+                    "attachment_suffix_256_present": attachment_tail in joined,
+                    "tail_excerpt": joined[-240:],
+                    "truncation_markers": [
+                        marker
+                        for marker in ("truncated", "omitted", "too large", "file limit", "Use offset")
+                        if marker.lower() in joined.lower()
+                    ],
+                }
+            )
+        attachment_check = {
+            "attachment_sha256": attachment_sha256,
+            "attachment_utf8_bytes": len(attachment_text.encode("utf-8")),
+            "attachment_exactly_present_in_outgoing_messages": exact_attachment_present,
+            "outgoing_message_text_utf8_bytes": sum(len(value.encode("utf-8")) for value in message_strings),
+            "raw_request_body_saved": False,
+        }
+        request_summary = {key: value for key, value in request.items() if key != "messages"}
+        request_summary["message_count"] = len(messages) if isinstance(messages, list) else None
+        request_summary["message_roles"] = (
+            [message.get("role") for message in messages if isinstance(message, dict)]
+            if isinstance(messages, list)
+            else []
+        )
+        request_summary["message_summaries"] = message_summaries
+        (args.output_dir / "request-summary.json").write_text(json.dumps(request_summary, indent=2) + "\n")
     raw_tools = request.get("tools", [])
     tools = [tool for tool in raw_tools if isinstance(tool, dict)] if isinstance(raw_tools, list) else []
     tool_names = []
@@ -280,6 +359,7 @@ def main() -> int:
         "response_seen": "mock-wire-ok" in completed.stdout,
         "mock_server_host": "127.0.0.1",
         "mock_server_port": server.server_address[1],
+        **attachment_check,
     }
     (args.output_dir / "checks.json").write_text(json.dumps(checks, indent=2) + "\n")
     print(json.dumps(checks, indent=2))
@@ -290,6 +370,7 @@ def main() -> int:
         or request.get("reasoning_effort") != "none"
         or request.get("temperature") != 0.2
         or request.get("top_p") != 0.95
+        or (attachment_text is not None and not attachment_check["attachment_exactly_present_in_outgoing_messages"])
         or (expected_tool_call and not {"read", "write", "edit", "bash", "glob", "grep"}.issubset(tool_names))
     ):
         return 1

@@ -1,0 +1,26 @@
+[
+  {
+    "model": "gemma4:e2b-it-qat-long-128k-b128",
+    "max_tokens": 4096,
+    "message_count": 3,
+    "message_roles": ["system", "user", "user"],
+    "message_content_bytes": [2120, 40, 487571],
+    "message_text_utf8_bytes": 489745,
+    "fixture_exactly_present": true,
+    "fixture_prefix_256_present": true,
+    "fixture_middle_256_present": true,
+    "fixture_suffix_256_present": true
+  },
+  {
+    "model": "gemma4:e2b-it-qat-long-128k-b128",
+    "max_tokens": 4096,
+    "message_count": 2,
+    "message_roles": ["system", "user"],
+    "message_content_bytes": [9607, 487571],
+    "message_text_utf8_bytes": 497188,
+    "fixture_exactly_present": true,
+    "fixture_prefix_256_present": true,
+    "fixture_middle_256_present": true,
+    "fixture_suffix_256_present": true
+  }
+]

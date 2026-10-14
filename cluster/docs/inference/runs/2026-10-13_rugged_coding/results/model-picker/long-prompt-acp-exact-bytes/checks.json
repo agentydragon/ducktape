@@ -1,0 +1,39 @@
+{
+  "transport": "OpenCode ACP v1 over stdio to mocked OpenAI-compatible HTTP backend",
+  "exit_code": 0,
+  "initialize_protocol_version": 1,
+  "acp_prompt_result": {
+    "stopReason": "end_turn",
+    "usage": {
+      "inputTokens": 1,
+      "outputTokens": 1,
+      "totalTokens": 2
+    },
+    "_meta": {}
+  },
+  "acp_mock_usage_is_synthetic": true,
+  "acp_mock_usage_note": "The mock returns fixed 1-input/1-output counts; they are not prompt tokenization evidence.",
+  "mock_request_count": 2,
+  "requests_containing_exact_fixture": 2,
+  "model": "gemma4:e2b-it-qat-long-128k-b128",
+  "expected_model": "gemma4:e2b-it-qat-long-128k-b128",
+  "all_requests_use_selected_model": true,
+  "configured_context_limit": 131072,
+  "expected_context_limit": 131072,
+  "configured_output_limit": 4096,
+  "request_max_tokens_by_request": [4096, 4096],
+  "expected_output_limit": 4096,
+  "fixture_sha256": "45c6eacad81d5bc33ff5f355a7ec901211f292237154d0d2b8ff7295f6d33c8d",
+  "fixture_utf8_bytes": 487500,
+  "fixture_tokens_per_gemma4_tokenizer": 123997,
+  "fixture_exactly_present_in_outgoing_messages": true,
+  "fixture_prefix_256_present": true,
+  "fixture_middle_256_present": true,
+  "fixture_suffix_256_present": true,
+  "outgoing_message_text_utf8_bytes_by_request": [489745, 497188],
+  "acp_events": ["session/update", "session/update", "session/update"],
+  "mock_server_host": "127.0.0.1",
+  "mock_server_port": 44587,
+  "raw_request_body_saved": false,
+  "prompt_token_count_scope": "fixture only; mock does not tokenize or measure total model input"
+}

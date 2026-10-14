@@ -14,3 +14,11 @@ py_binary(
     name = "verify_opencode_wire",
     srcs = ["verify_opencode_wire.py"],
 )
+
+py_binary(
+    name = "verify_opencode_acp_prompt",
+    srcs = [
+        "verify_opencode_acp_prompt.py",
+        "verify_opencode_wire.py",
+    ],
+)

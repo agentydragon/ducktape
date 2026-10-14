@@ -159,7 +159,11 @@ let
         "$OPENCODE_CONFIG"
 
       set +e
-      ${pkgsUnstable.opencode}/bin/opencode --model "$selected_route" --agent local-build "$@"
+      if [[ "''${1:-}" == acp ]]; then
+        ${pkgsUnstable.opencode}/bin/opencode "$@"
+      else
+        ${pkgsUnstable.opencode}/bin/opencode --model "$selected_route" --agent local-build "$@"
+      fi
       result=$?
       set -e
       exit "$result"
