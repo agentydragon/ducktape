@@ -77,18 +77,6 @@ def _read_member(archive: tarfile.TarFile, name: str) -> bytes:
     return member.read()
 
 
-def _symlink_entries(tarball: Path) -> list[str]:
-    """Every symlink in the image's layers, as `layer: path -> target`."""
-    found: list[str] = []
-    with tarfile.open(tarball) as archive:
-        for layer in (
-            layer for image in json.loads(_read_member(archive, "manifest.json")) for layer in image["Layers"]
-        ):
-            with tarfile.open(fileobj=archive.extractfile(layer)) as inner:
-                found += [f"{layer[:12]}: {m.name} -> {m.linkname}" for m in inner if m.issym()]
-    return found
-
-
 def _layer_sizes(tarball: Path) -> dict[str, int]:
     """Layer path (a content digest in docker-format tarballs) to size, per `manifest.json`."""
     with tarfile.open(tarball) as archive:
@@ -311,7 +299,6 @@ def test_stack_comes_up() -> None:
     try:
         ca_cert, ca_key = _openssl_ca(work)
         k3s.import_images(tarballs)
-        print("runner symlinks:", _symlink_entries(next(t for t in tarballs if t.parent.name == "runner_load")))
         for crd in crds:
             k3s.kubectl("apply", "-f", str(crd))
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(render.kubevirt_stub_crds()))
@@ -380,7 +367,7 @@ def test_stack_comes_up() -> None:
                     "--- harness files\n",
                     k3s.kubectl(
                         "exec", "-n", render.NAMESPACE, "-c", "runner", "pod/" + k3s.kubectl("get", "pod", "-n", render.NAMESPACE, "-l", "agentplane.allegedly.works/sandbox=smoke", "-o", "jsonpath={.items[0].metadata.name}"),
-                        "--", "sh", "-c", "ls -laL /bin/claude /bin/codex; ls -la /bin /opt/harnesses",
+                        "--", "sh", "-c", "find /opt/harnesses -maxdepth 4 | head -60",
                         check=False,
                     ),
                 )  # fmt: skip
