@@ -136,6 +136,7 @@ py_test(
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",
         "//util/bazel:runfiles",
+        "@pypi//httpx",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",

@@ -18,6 +18,7 @@ import tempfile
 import time
 from pathlib import Path
 
+import httpx
 import pytest_bazel
 import yaml
 
@@ -348,7 +349,21 @@ def test_stack_comes_up() -> None:
             token = k3s.kubectl(
                 "-n", render.NAMESPACE, "create", "token", TESTING_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
             ).strip()
-            answer = asyncio.run(_run_turn(f"http://{app_ip}:8080", token))
+            try:
+                answer = asyncio.run(_run_turn(f"http://{app_ip}:8080", token))
+            except httpx.HTTPStatusError as error:
+                # The status line alone does not say why the app refused.
+                print("refused:", error.response.text)
+                for selector in (
+                    "app.kubernetes.io/name=agentplane-app",
+                    "app.kubernetes.io/name=agentplane-runner-gateway",
+                    "agentplane.allegedly.works/sandbox=smoke",
+                ):
+                    logs = k3s.kubectl(
+                        "logs", "-l", selector, "-n", render.NAMESPACE, "--all-containers", "--tail=60", check=False
+                    )
+                    print(f"--- {selector}\n{logs}")
+                raise
         print("memory:", _run("free", "-m"))
         print("answer:", answer)
         print(k3s.report())
