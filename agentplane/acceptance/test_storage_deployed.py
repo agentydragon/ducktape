@@ -63,6 +63,67 @@ async def _condition(name: str, condition: str, value: str = "True") -> None:
     )
 
 
+async def _readiness_snapshot(name: str) -> dict:
+    """Capture the bounded Sandbox/VM readiness state before fixture cleanup removes it."""
+    sandbox = await _object(f"sandboxes.{GROUP}", name)
+    snapshot: dict = {
+        "sandbox": {
+            "uid": sandbox["metadata"]["uid"],
+            "conditions": sandbox.get("status", {}).get("conditions", []),
+            "incarnation": sandbox.get("status", {}).get("incarnation"),
+        }
+    }
+    for kind in ("virtualmachine", "virtualmachineinstance"):
+        try:
+            obj = await _object(kind, name)
+        except Exception as error:
+            snapshot[kind] = {"read_error": str(error)}
+        else:
+            status = obj.get("status", {})
+            snapshot[kind] = {
+                "uid": obj["metadata"]["uid"],
+                "phase": status.get("phase"),
+                "run_strategy": obj.get("spec", {}).get("runStrategy"),
+                "conditions": status.get("conditions", []),
+                "reason": status.get("reason"),
+                "message": status.get("message"),
+            }
+
+    pods = json.loads(
+        await _kubectl("get", "pods", "--selector=agentplane.allegedly.works/sandbox=" + name, "-o", "json")
+    )["items"]
+    pod_names = {pod["metadata"]["name"] for pod in pods}
+    snapshot["pods"] = [
+        {
+            "name": pod["metadata"]["name"],
+            "uid": pod["metadata"]["uid"],
+            "node": pod.get("spec", {}).get("nodeName"),
+            "phase": pod.get("status", {}).get("phase"),
+            "conditions": pod.get("status", {}).get("conditions", []),
+            "containers": [
+                {
+                    "name": status["name"],
+                    "ready": status.get("ready"),
+                    "started": status.get("started"),
+                    "restart_count": status.get("restartCount"),
+                    "state": next(iter(status.get("state", {})), None),
+                    "last_state": next(iter(status.get("lastState", {})), None),
+                }
+                for status in pod.get("status", {}).get("containerStatuses", [])
+            ],
+        }
+        for pod in pods
+    ]
+    events = json.loads(await _kubectl("get", "events", "-o", "json"))["items"]
+    snapshot["events"] = [
+        {key: event.get(key) for key in ("eventTime", "firstTimestamp", "lastTimestamp", "type", "reason", "message")}
+        | {"object": event.get("involvedObject", {}).get("name"), "kind": event.get("involvedObject", {}).get("kind")}
+        for event in events
+        if event.get("involvedObject", {}).get("name") in ({name} | pod_names)
+    ]
+    return snapshot
+
+
 async def _running(name: str, uid: str, value: bool) -> None:
     await _kubectl(
         "patch",
@@ -265,7 +326,16 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
         evidence["sandbox_uid"] = uid
         stack.push_async_callback(_cleanup, name, uid, [f"{name}-state", f"{name}-workspace"])
         save()
-        await _condition(name, "Ready")
+        try:
+            await _condition(name, "Ready")
+        except Exception as error:
+            evidence["readiness_error"] = str(error)
+            try:
+                evidence["readiness_snapshot"] = await _readiness_snapshot(name)
+            except Exception as diagnostic_error:
+                evidence["readiness_snapshot_error"] = str(diagnostic_error)
+            save()
+            raise
         await _condition(name, "Bootstrapped")
         old_incarnation = (await _object(f"sandboxes.{GROUP}", name))["status"]["incarnation"]
         before = await _volumes(name, uid)
