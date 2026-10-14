@@ -23,6 +23,13 @@ def rss_kib() -> int:
     raise RuntimeError("VmRSS missing")
 
 
+def available_memory_kib() -> int:
+    for line in Path("/proc/meminfo").read_text().splitlines():
+        if line.startswith("MemAvailable:"):
+            return int(line.split()[1])
+    raise RuntimeError("MemAvailable missing")
+
+
 def accel_fds() -> list[str]:
     result = []
     for fd in Path("/proc/self/fd").iterdir():
@@ -50,6 +57,8 @@ def main() -> None:
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(args.output)
+    if available_memory_kib() < 8 * 2**20:
+        raise RuntimeError("less than 8 GiB available before NPU pipeline load")
     core = ov.Core()
     if "NPU" not in core.available_devices:
         raise RuntimeError(f"NPU missing: {core.available_devices}")
@@ -64,6 +73,7 @@ def main() -> None:
             "min_response_len": 256,
             "npu_name": core.get_property("NPU", "FULL_DEVICE_NAME"),
             "ac_online": Path("/sys/class/power_supply/AC/online").read_text().strip(),
+            "mem_available_kib": available_memory_kib(),
         },
     )
     start = time.perf_counter()
@@ -79,11 +89,14 @@ def main() -> None:
             "peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
             "accel_fds": accel_fds(),
             "drm_memory": process_drm_memory(os.getpid()),
+            "mem_available_kib": available_memory_kib(),
         },
     )
     tokenizer = pipe.get_tokenizer()
     for size in (384, 3072):
         for repeat in (1, 2, 3):
+            if available_memory_kib() < 8 * 2**20:
+                raise RuntimeError("less than 8 GiB available before NPU generation")
             filename = f"words-{size}-repeat-{repeat}-request.json"
             data = (args.requests / filename).read_bytes()
             request = json.loads(data)
@@ -110,6 +123,7 @@ def main() -> None:
                     "peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
                     "accel_fds": accel_fds(),
                     "drm_memory": process_drm_memory(os.getpid()),
+                    "mem_available_kib": available_memory_kib(),
                     "ac_online": Path("/sys/class/power_supply/AC/online").read_text().strip(),
                     "response": result.texts[0],
                 },
