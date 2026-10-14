@@ -1052,8 +1052,11 @@ renaming is deferred. No data deletion is bundled with this retirement.
 **Blocked on accepting controller/Dispatcher images and schema migration rollout.** The wake
 budget (#10487), selective native revival (#10492), and visible terminal wake failure (#10500)
 implementations are merged. The Dispatcher receiver and migration must include #10500 before
-activation; live `a3161b0` images observed on 2026-10-14 precede it. Keep the shared ten-wakes-per-minute
-caller budget and its tuning follow-up in the [Dispatcher contract](../session_dispatcher/README.md).
+activation. Testing has the new `31e0b37` receiver and completed migration; staging still has an old
+serving replica and an exited init container incorrectly reported running by its node runtime.
+[Read-only diagnosis](../session_dispatcher/debug/staging_rollout_runtime.md) records the remaining
+staging rollout hold. Keep the shared ten-wakes-per-minute caller budget and its tuning follow-up
+in the [Dispatcher contract](../session_dispatcher/README.md).
 The defaults-off wake implementation from #10463 is merged. Verify already-granted Sandbox patch RBAC and schema/image pins, then enable the approved caller
 allowlist and `wakeOnSend` configuration. Test message-during-seal, concurrent sends and deletion
 precedence on testing before staging. Keep `wakeOnSend: false` as the intentional per-Sandbox policy;
