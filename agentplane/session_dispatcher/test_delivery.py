@@ -162,6 +162,18 @@ async def test_a_session_commands_reach_a_ready_runner_in_order(
     assert runner[0].calls == [("SubmitInput", "first"), ("SubmitInput", "second")]
 
 
+async def test_delivery_resumes_only_the_session_with_a_pending_command(
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster, runner: tuple[ScriptedRunner, str]
+) -> None:
+    set_sandbox(cluster, ready=True)
+    runner[0].listed_sessions.extend(["pending-session", "dormant-session"])
+    await enqueue(store, sandboxes, "resume-pending", session_id="pending-session")
+    await wait_for(store, "resume-pending", DeliveryState.RUNNER_ADMITTED)
+
+    assert runner[0].resumed_sessions == ["pending-session"]
+    assert runner[0].calls == [("SubmitInput", "resume-pending")]
+
+
 async def test_a_peer_replica_insert_wakes_the_sandbox_owner(
     store: DispatchStore,
     sandboxes: SandboxWatch,

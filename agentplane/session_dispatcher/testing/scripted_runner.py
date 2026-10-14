@@ -17,6 +17,7 @@ class ScriptedRunner(runner_control_pb2_grpc.RunnerServicer):
         self.calls: list[tuple[str, str]] = []
         self.failures: list[tuple[grpc.StatusCode, str]] = []
         self.listed_sessions: list[str] = []
+        self.resumed_sessions: list[str] = []
 
     async def _answer(self, call: str, command_id: str, context: grpc.aio.ServicerContext) -> event_log_pb2.EventEntry:
         self.calls.append((call, command_id))
@@ -44,6 +45,7 @@ class ScriptedRunner(runner_control_pb2_grpc.RunnerServicer):
     async def ResumeSession(
         self, request: runner_control_pb2.ResumeSessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.ResumeSessionResponse:
+        self.resumed_sessions.append(request.session_id)
         return runner_control_pb2.ResumeSessionResponse()
 
     @override

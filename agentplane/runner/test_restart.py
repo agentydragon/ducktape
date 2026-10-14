@@ -19,7 +19,7 @@ import pytest_bazel
 
 from agentplane.harness_tests.claude.messages import AnthropicMessages
 from agentplane.harness_tests.codex.responses import OpenAIResponses
-from agentplane.proto import event_pb2, runner_pb2
+from agentplane.proto import event_pb2, runner_control_pb2, runner_pb2
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.store import StateOwner
 from agentplane.runner.testing import events, launches
@@ -396,6 +396,76 @@ async def test_a_restarted_runner_reports_the_loss_and_resumes_the_conversation(
     events.assert_contiguous([*first.seen, *second.seen])
     await second.stop_runner_session("stop-after-crash")
     await second.drain_until_end()
+
+
+async def test_runner_startup_keeps_unselected_sessions_dormant_and_resume_keeps_history(
+    start_runner: Callable[[], Awaitable[RunnerProcess]],
+    model: ScriptedModel,
+    spec: runner_pb2.SessionSpec,
+    driver: RunnerDriver,
+) -> None:
+    """A restarted Sandbox keeps dormant native sessions stopped until one has pending work."""
+    first_runner = await start_runner()
+
+    async def seed_and_stop(session_id: str, suffix: str) -> tuple[int, str]:
+        session = await driver.attach(session_id, spec=spec)
+        await submit_input(session, f"{suffix}-seed", f"Reply with exactly: {suffix}_SEED_OK")
+        await model.reply(await model.request(), Text(f"{suffix}_SEED_OK"))
+        await session.until(events.turn_completed)
+        (started,) = events.of_kind(session.seen, "harness_started")
+        source_id = started.origin.source_id
+        await session.stop_runner_session(f"{suffix}-stop-before-restart")
+        await session.until(events.is_kind("harness_exited"))
+        await session.drain_until_end()
+        return session.cursor, source_id
+
+    pending_cursor, pending_source_id = await seed_and_stop("pending-after-wake", "PENDING")
+    dormant_cursor, dormant_source_id = await seed_and_stop("dormant-after-wake", "DORMANT")
+    await first_runner.stop()
+
+    await start_runner()
+    summaries = {summary.session_id: summary for summary in await driver.list_sessions()}
+    assert summaries["pending-after-wake"].harness_state == runner_pb2.HARNESS_STATE_STOPPED
+    assert summaries["dormant-after-wake"].harness_state == runner_pb2.HARNESS_STATE_STOPPED
+
+    runner = await driver.gateway.control.runner()
+    await runner.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id="pending-after-wake"))
+    pending = await driver.attach("pending-after-wake", after_cursor=pending_cursor)
+    pending_started = await pending.until(events.is_kind("harness_started"))
+    assert pending_started.event.harness_started.resumed
+    assert pending_started.origin.source_id == pending_source_id
+    await submit_input(pending, "pending-after-wake-input", "Reply with exactly: PENDING_RESUMED_OK")
+    pending_request = await model.request()
+    assert pending_request.user_texts == [
+        "Reply with exactly: PENDING_SEED_OK",
+        "Reply with exactly: PENDING_RESUMED_OK",
+    ]
+    assert pending_request.assistant_texts == ["PENDING_SEED_OK"]
+    await model.reply(pending_request, Text("PENDING_RESUMED_OK"))
+    await pending.until(events.turn_completed)
+    summaries = {summary.session_id: summary for summary in await driver.list_sessions()}
+    assert summaries["dormant-after-wake"].harness_state == runner_pb2.HARNESS_STATE_STOPPED
+
+    # A user-initiated resume remains available for a dormant Session and has the same continuity.
+    await runner.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id="dormant-after-wake"))
+    dormant = await driver.attach("dormant-after-wake", after_cursor=dormant_cursor)
+    dormant_started = await dormant.until(events.is_kind("harness_started"))
+    assert dormant_started.event.harness_started.resumed
+    assert dormant_started.origin.source_id == dormant_source_id
+    await submit_input(dormant, "dormant-after-wake-input", "Reply with exactly: DORMANT_RESUMED_OK")
+    dormant_request = await model.request()
+    assert dormant_request.user_texts == [
+        "Reply with exactly: DORMANT_SEED_OK",
+        "Reply with exactly: DORMANT_RESUMED_OK",
+    ]
+    assert dormant_request.assistant_texts == ["DORMANT_SEED_OK"]
+    await model.reply(dormant_request, Text("DORMANT_RESUMED_OK"))
+    await dormant.until(events.turn_completed)
+
+    await pending.stop_runner_session("stop-pending-after-wake")
+    await pending.drain_until_end()
+    await dormant.stop_runner_session("stop-dormant-after-manual-resume")
+    await dormant.drain_until_end()
 
 
 async def test_crash_after_runner_receipt_before_native_dispatch_retries_once(

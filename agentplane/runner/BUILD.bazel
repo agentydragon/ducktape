@@ -339,6 +339,7 @@ py_test(
         "//agentplane/harness_tests/claude:messages",
         "//agentplane/harness_tests/codex:responses",
         "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner/testing:commands",
         "//agentplane/runner/testing:driver",
