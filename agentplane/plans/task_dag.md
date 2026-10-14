@@ -18,16 +18,16 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized, Codex reported, 2026-10-14):
 
-| Worker              | Assigned sequence; each successor retains its node's gates                                                                                                                                                                                                                   |
-| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dispatcher`        | Finish app command sends (#10475); wake limits, selective revival and failure feedback; complete app Session defaults and Dispatcher creation/resume; app/wake/UI activation and direct sender removal.                                                                      |
-| `resume_acceptance` | Finish Pod/VM storage acceptance; separate concrete Sandbox cutoff PR; typed workspace template rollout; legacy DataVolume retirement.                                                                                                                                       |
-| `sandbox_service`   | Finish replica ownership (#10469) and terminal broadcast (#10478); notification activation and direct sender removal; Sandbox Service config removal and service retirement; replica activation and Gateway wrapper/RPC/database retirement as caller and image gates clear. |
-| Coordinator         | Isolated k3s measurements/CI work, integration review and DAG burn-down.                                                                                                                                                                                                     |
+| Worker              | Assigned sequence; each successor retains its node's gates                                                                                                                                                |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dispatcher`        | Wake limits, selective revival and failure feedback; complete app Session defaults and Dispatcher creation/resume; app/wake/UI activation and direct sender removal.                                      |
+| `resume_acceptance` | Separate concrete Sandbox cutoff PR; typed workspace template rollout; legacy DataVolume retirement.                                                                                                      |
+| `sandbox_service`   | Notification activation and direct sender removal; Sandbox Service config removal and service retirement; replica activation and Gateway wrapper/RPC/database retirement as caller and image gates clear. |
+| Coordinator         | Isolated k3s measurements/CI work, integration review and DAG burn-down.                                                                                                                                  |
 
 These are assignments, not claims that gated work has started. Independent config changes can
 proceed while behavior PRs are under review. Publish drafts as soon as a branch has reviewable work,
-with remaining gates in the body; Rai merges each PR by hand. Storage acceptance remains the priority.
+with remaining gates in the body; Rai merges each PR by hand.
 
 ## 1. Session schema and identity follow-up
 
@@ -706,7 +706,6 @@ flowchart TD
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
     SANDBOX_SERVICE_REMOVE[Blocked: remove the Sandbox Service]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
-    APP_SENDS_VIA_DISPATCHER[In flight: the app sends through the Session Dispatcher]
     NOTIFICATIONS_VIA_DISPATCHER[Blocked: notifications send through the Session Dispatcher]
     NOTIFICATION_GATEWAY_SEND_REMOVE[Blocked: remove the Notification Service's pre-activation gateway command path]
     RESUME_CREDENTIALS_VALID[Blocked: grants and tokens still valid after a long suspension]
@@ -732,20 +731,15 @@ flowchart TD
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
     NOTIFICATIONS_VIA_DISPATCHER --> SESSION_ACTIVITY_STREAM
     DISPATCHER_WAKE_ACTIVATION --> SUSPENDED_COMPOSER
-    APP_SENDS_VIA_DISPATCHER --> SUSPENDED_COMPOSER
+    APP_DISPATCHER_ACTIVATION --> SUSPENDED_COMPOSER
     SESSION_REVIVE --> RESUME_CREDENTIALS_VALID
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
     EFFECTIVE_MODE_FALLBACK_DROP[Blocked: remove spec.running fallback after controller rollout]
-    DISPATCHER_REPLICA_OWNERSHIP[In flight: fenced per-Sandbox ownership]
-    DISPATCHER_TERMINAL_BROADCAST[In flight: cross-replica deletion outcomes]
-    DISPATCHER_REPLICA_ACTIVATION[Blocked: remove singleton deployment restriction]
-    DISPATCHER_REPLICA_OWNERSHIP --> DISPATCHER_REPLICA_ACTIVATION
-    DISPATCHER_TERMINAL_BROADCAST --> DISPATCHER_REPLICA_ACTIVATION
+    DISPATCHER_REPLICA_ACTIVATION[Candidate: remove singleton deployment restriction]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
-    APP_SENDS_VIA_DISPATCHER --> APP_DISPATCHER_ACTIVATION
     APP_SESSION_DEFAULTS --> APP_SESSION_OPEN_VIA_DISPATCHER
     APP_DISPATCHER_ACTIVATION --> APP_GATEWAY_SEND_REMOVE
     APP_SESSION_OPEN_VIA_DISPATCHER --> APP_GATEWAY_SEND_REMOVE
@@ -1105,29 +1099,12 @@ fixtures, before deleting a shared helper or generated target. Regenerate derive
 service docs and the README diagram. Preserve History Service's independently owned database; database
 renaming is deferred. No data deletion is bundled with this retirement.
 
-### `DISPATCHER_REPLICA_OWNERSHIP` — multiple replicas own disjoint Sandboxes
-
-**In flight (Codex, 2026-10-14), draft #10469.** Namespace Lease grants have merged and were verified
-in testing and staging. Implement per-Sandbox Lease ownership with database generation fencing of
-claim/settle and owner-scoped recovery. Competing, stale and restarting replicas must not reset or
-settle a live peer's work. Preserve authenticated, app-independent operation. Publish deterministic
-two-replica evidence; terminal-event broadcast and manifest activation are separate nodes below.
-
-### `DISPATCHER_TERMINAL_BROADCAST` — deletion outcomes reach streams on every replica
-
-**In flight (Codex, 2026-10-14), draft #10478; separate PR from ownership.** A Sandbox deletion terminalizes and
-deletes its Dispatch/SessionOpening rows in one transaction. Broadcast exact terminal Dispatch
-snapshots through transactional PostgreSQL notifications, bounded into chunks and assembled before
-fanout. A listener gap or incomplete event must fail the affected watch explicitly; do not imply
-durable replay after row deletion. Test a watcher on a different replica, commit/rollback, chunking
-and listener loss. Replace the process-local-only terminal handoff; delete the superseded implementation
-and tests in this PR wherever no rolling-image dependency requires them.
-
 ### `DISPATCHER_REPLICA_ACTIVATION` — remove the singleton deployment restriction
 
-**Blocked on `DISPATCHER_REPLICA_OWNERSHIP`, `DISPATCHER_TERMINAL_BROADCAST`, their migrated database
-and accepting images pinned.** Run two replicas on testing; verify ownership failover, queued delivery
-and deletion events across replica boundaries without the app. Then remove the one-replica limit and
+**Candidate; #10469 (per-Sandbox ownership) and #10478 (cross-replica terminal broadcast) are merged.**
+The Dispatcher image and schema migration 0004 are deployed in testing and staging; their health and
+pin gates are clear. Run two replicas on testing; verify ownership failover, queued delivery and
+deletion events across replica boundaries without the app. Then remove the one-replica limit and
 `Recreate` strategy in generated manifests, roll out testing before staging, and delete the temporary
 singleton warnings from docs. This node finishes with the restriction gone, not merely a successful
 experiment; preserve the normal Lease renewal/fencing machinery.
@@ -1166,18 +1143,6 @@ allowlist and `wakeOnSend` configuration. Test message-during-seal, concurrent s
 precedence on testing before staging. Keep `wakeOnSend: false` as the intentional per-Sandbox policy;
 it is not a compatibility shim to delete.
 
-### `APP_SENDS_VIA_DISPATCHER` — the app sends through the Session Dispatcher
-
-**In flight (Codex, 2026-10-14); draft #10475; activation waits for accepting app images.** The composer and the app's other command sends call the Session
-Dispatcher instead of `SubmitCommand`, showing its delivery states. The command-progress lights
-(`CommandProgress`: saved in browser, runner accepted, effect confirmed) gain a dispatch stage
-between the browser and the runner: queued in the Dispatcher (operator, 2026-10-13 PDT). It reads
-the Dispatcher's delivery states, and for a Session whose Sandbox is waking
-(`DISPATCHER_WAKE_ACTIVATION`) says so; `SUSPENDED_COMPOSER` is the composer side of the same wait.
-Visual scenarios name each stage's command after the state it shows. Parallel with
-`NOTIFICATIONS_VIA_DISPATCHER`; reader before writer, so the Session Dispatcher lands and is read before any
-sender moves.
-
 ### `DISPATCHER_HARNESS_CONFIRMATION` — settle admitted inputs on a canonical confirmation
 
 **Decision, then bounded implementation.** `HARNESS_CONFIRMED` currently has no writer. Review the canonical runner/history
@@ -1196,10 +1161,12 @@ implementation node once policy is reviewed; existing caller cutovers do not sil
 
 ### `APP_DISPATCHER_ACTIVATION` — activate app command sends through Dispatcher
 
-**Blocked on `APP_SENDS_VIA_DISPATCHER` and the accepting app image pinned.**
-Add endpoint/token/network configuration, deploy testing before staging, and verify queued, admitted
-and confirmed UI states. No fallback to direct sends on a Dispatcher error. Keep session creation
-and explicit native resume accounted for separately until all start-work callers have migrated.
+**Candidate; #10475 is merged, and the accepting app image is healthy in both environments.** The
+app configuration still has `noDispatcher` and no Dispatcher arguments. Pin an image that accepts
+the complete setting before adding endpoint/token/network configuration, then verify queued,
+admitted and confirmed UI states in testing before staging. No fallback to direct sends on a
+Dispatcher error. Keep session creation and explicit native resume accounted for separately until
+all start-work callers have migrated.
 
 ### `APP_SESSION_OPEN_VIA_DISPATCHER` — route app session creation and native resume
 
@@ -1228,7 +1195,8 @@ It submits the already persisted notice ID and text, treats queued as
 acceptance rather than runner admission, and keeps reading admission/confirmation from History Service.
 The optional endpoint/token setting is code-first: pin an image that accepts the complete setting before
 adding it to the manifest. Once configured, a Dispatcher error never falls back to Runner Gateway.
-Parallel with `APP_SENDS_VIA_DISPATCHER`.
+The app's separate send activation is tracked by `APP_DISPATCHER_ACTIVATION`; it is not a prerequisite
+for this Notification Service route.
 
 ### `NOTIFICATION_GATEWAY_SEND_REMOVE` — remove the pre-activation gateway command path
 
