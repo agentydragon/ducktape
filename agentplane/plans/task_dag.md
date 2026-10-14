@@ -979,7 +979,10 @@ that is down. Order: the controller reads the annotations before the gateway sta
 runner computes the whole-Sandbox idle time: busy while any Session runs a turn or a command, a
 background or durable process runs, or a terminal or console is attached; `idle_since` is set only
 while idle, absent while busy, and published on each transition (`RUNNER_FACTS_ON_LEASE` carries it,
-`SANDBOX_IDLE_EXPIRY` reads it). Open: the runner's notion of a running turn or command today is a
+`SANDBOX_IDLE_EXPIRY` reads it). A delivery under way counts as busy, marked at RPC entry before the first `await`
+(`RunnerService._admissions` is already that set), and the conditional `Quiesce` compare sits directly
+before `enter_lameduck()` with no `await` between, so a `SubmitInput` between RPC entry and the journal
+write is never admitted into a runner that is then torn down. Open: the runner's notion of a running turn or command today is a
 Session's `active_turn_id` and its pending commands; who owns terminals and background processes
 (the harness adapters, the VM console) is not decided. Test idleness across a turn that ends, a
 background process that outlives it, an attached terminal that detaches and a runner restart.
