@@ -33,6 +33,7 @@ Observation = (
     | event_pb2.Native
     | event_pb2.ConversationReconciled
     | event_pb2.DebugCheckpoint
+    | event_pb2.JournalReopened
 )
 
 
@@ -90,5 +91,7 @@ def observation_event(observation: Observation) -> event_pb2.Event:
             return event_pb2.Event(conversation_reconciled=observation)
         case event_pb2.DebugCheckpoint():
             return event_pb2.Event(debug_checkpoint=observation)
+        case event_pb2.JournalReopened():
+            return event_pb2.Event(journal_reopened=observation)
         case _:
             assert_never(observation)

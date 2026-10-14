@@ -740,10 +740,10 @@ class Session:
         await self.stop()
         return await self.journal.seal(incarnation_uid)
 
-    async def reopen(self) -> None:
+    async def reopen(self, incarnation_uid: str) -> None:
         """Let a Session sealed by an earlier incarnation take work again, its harness stopped."""
         async with self._lock:
-            await self.journal.reopen()
+            await self.journal.reopen(incarnation_uid)
             self._sealing = False
             self._tearing_down = False
 

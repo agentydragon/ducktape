@@ -468,7 +468,7 @@ class Runner:
             or session.journal.sealed_incarnation_uid == incarnation_uid
         ):
             return
-        await session.reopen()
+        await session.reopen(incarnation_uid)
         acknowledged = self.store.read_acknowledgement(session.session_id)
         self.store.write_acknowledgement(
             session.session_id,

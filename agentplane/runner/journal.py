@@ -343,12 +343,14 @@ class Journal:
         changed.set()
         return seal.cursor
 
-    async def reopen(self) -> None:
-        """Make a sealed journal writable again; its next entry follows the seal's cursor. Open already: no-op."""
-        async with self._committed_transaction() as (session, _):
+    async def reopen(self, incarnation_uid: str) -> None:
+        """Make a sealed journal writable again for this incarnation: the seal is dropped and the entry
+        recording the reopening follows the seal's cursor, in one commit."""
+        async with self._committed_transaction() as (session, appended):
             await session.execute(delete(Seal))
             self._sealed_cursor = None
             self._sealed_incarnation_uid = None
+            await self._append(session, appended, event_pb2.JournalReopened(incarnation_uid=incarnation_uid), ())
         changed, self._changed = self._changed, asyncio.Event()
         changed.set()
 
