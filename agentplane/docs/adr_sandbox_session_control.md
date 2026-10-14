@@ -197,10 +197,10 @@ connect, so nothing polls and a reconnect republishes.
   `facts`, `idleSince` absent means busy, so there is no separate `busy` fact.
 - The gateway holds each connection's latest facts and every Lease write, renewals included, carries them. A
   runner that sends only on change never resends, so a failed immediate write (a stage change, the bootstrap
-  result) is retried from the gateway's copy, not by the runner. The same copy repopulates the Lease after
-  `accept()` rebuilds it on a reconnect: that rebuild carries only the pod UID and boot ID annotations, so the
-  facts of the same incarnation come back from the runner's first heartbeat, and a different incarnation starts
-  with none (D3, Outside the runner).
+  result) is retried from the gateway's copy, not by the runner. The copy is per connection, so a new
+  connection starts empty. `accept()` rebuilds the Lease with only the pod UID and boot ID annotations, and the
+  facts come back with the runner's first heartbeat on the new connection (a different incarnation starts with
+  none, D3 Outside the runner).
 - Stage transitions and the bootstrap result are written to the Lease at once. Only `idleSince` is coalesced into
   the regular renewal.
 
@@ -287,8 +287,9 @@ Rollout, reader before writer:
 1. `QuiesceResponse` gains a `stage` field. The controller reads both shapes: `stage` absent means legacy
    blocking, with `sessions` authoritative.
 2. The gateway's deletion seal is retired, so the controller is the only reader.
-3. Only then does the runner's `Quiesce` stop blocking, once the controller is pinned everywhere, including the
-   VM guest's runner wheel, which pins separately.
+3. Only then does the runner's `Quiesce` stop blocking. The runner is the writer: the runner image and the VM
+   guest's runner wheel (`nix/artifact-pins.json`, pinned separately) move only after the controller is pinned and
+   the gateway's deletion seal is retired.
 
 The legacy shape carries a removal node.
 
@@ -302,8 +303,11 @@ count as busy for idle suspension. Delete interrupts them, since the Sandbox is 
 How the wait works (operator, 2026-10-14). `RunnerFacts` carries a Sandbox-level fact for the setups running.
 While an operator suspend waits for it and for the bootstrap, the controller holds `Ready` False with reason
 `SuspendPending`. The Dispatcher already waits on `Ready`, so it stops delivering, new `OpenSession` included, and
-the wait is bounded by the setups already running; the runner needs no mode of its own. The Dispatcher is the only
-caller of the runner's `OpenSession` (per-method authorization at the gateway), which is what makes that hold. A
+the wait is bounded by the setups already running; the runner needs no mode of its own. That bound holds only if the
+Dispatcher is the only caller of the runner's `OpenSession`. Today it is not: the gateway proxy lets every
+configured caller account call every method except `Quiesce` and `Seal`, and the gateway's own wrapper calls it
+too. So the gateway must authorize `OpenSession`, and the other methods that start or continue work, for the
+Dispatcher's account alone; that is a requirement of this design with its own task. A
 setup that never ends makes the suspend wait forever and leaves delete working, which is intended. An automatic
 suspend needs none of it: a running setup is busy, so the conditional `Quiesce` refuses.
 
@@ -339,15 +343,18 @@ door for every Session until then, and `SANDBOX_IDLE_EXPIRY` is gated on that no
 **Commands that meet lameduck.** Three states differ. A command admitted but not yet dispatched stays pending in
 the journal (#10341); the next incarnation does not dispatch it, since the conversation has moved on, and the
 Dispatcher fails it with the reason `ended_by_teardown`. A command dispatched and in flight ends its turn as
-`ended_by_teardown`. A refused send is retried after resume. An `InterruptTurn` or `StopRunnerSession` that
-completes as a no-op (nothing running, or Sandbox suspended) ends in the delivery state `NO_OP` (D4).
+`ended_by_teardown`. A refused send is retried after resume. A `StopRunnerSession` that
+completes as a no-op (nothing running, or Sandbox suspended) ends in the delivery state `NO_OP` (D4). An
+`InterruptTurn` is never stored: its outcome (`NO_OP`, or delivered) is its RPC response, in the same state
+names, with no durable record.
 
 **Order per Session** (operator, 2026-10-14). Inputs and model changes to one Session deliver in FIFO order.
-`InterruptTurn` is delivered at once when the Sandbox is `Ready`, else it ends `NO_OP`; it is never queued and
-bypasses the FIFO, so stopping a runaway turn depends on neither the Dispatcher's database nor anything ahead of it
+`InterruptTurn` is delivered at once when the Sandbox is `Ready`, else it ends `NO_OP`; it is never queued or stored
+and bypasses the FIFO, so stopping a runaway turn depends on neither the Dispatcher's database nor anything ahead of it
 (the command names its turn, and a runner does not carry an interrupt forward to a later one). `StopRunnerSession`
-stays durable and goes ahead of the line: it cancels the Session's earlier undelivered inputs, because delivering
-them would restart the harness the user just stopped.
+stays durable and goes ahead of the line: it cancels the Session's earlier undelivered inputs, which end
+`CANCELLED_IN_DISPATCHER` with the reason `stopped`, because delivering them would restart the harness the user
+just stopped.
 
 Sequence for suspend and delete:
 
@@ -394,8 +401,11 @@ Two things keep this level-triggered rather than reliant on one event: the runne
 stage whenever it reconnects (a gateway rollout or a dropped stream loses nothing), and the
 controller re-issues the idempotent `Quiesce` when it finds a Sandbox that should be quiescing
 whose Lease shows no stage. A controller restart between its `Quiesce` call and the stage reaching the Lease
-re-evaluates and re-issues, which is safe because a repeat into a runner already in lameduck succeeds; that gap is
-the gateway's immediate Lease write. A runner that never progresses is caught by a deadline the controller
+depends on the cause. For an operator suspend or delete the controller re-evaluates and re-issues `Quiesce`, which
+is safe because a repeat into a runner already in lameduck succeeds. For an idle suspend a restarted controller
+starts its idle timer fresh and has no token to send, so it issues nothing: the runner is already in lameduck, the
+stage reaches the Lease (written at once, retried from the gateway's copy), and the controller adopts the quiesce
+from there. The gap is the gateway's immediate Lease write. A runner that never progresses is caught by a deadline the controller
 requeues for, not by periodic checks, and ends as a stuck `Quiescing` Sandbox whose finalizer an
 operator removes by hand. Rejected: a server-streaming `Quiesce` held open by the controller (it
 is lost on every gateway rollout and ties up a connection per quiescing Sandbox for no fact the
@@ -405,13 +415,13 @@ dependency the other path does not need).
 **Refusal codes** (operator, 2026-10-14). The runner's gRPC code says what the Dispatcher does; the gateway proxy
 passes runner codes through, and only its own stream close uses `ABORTED` today.
 
-| Case                                                                     | Code                  | Dispatcher                                                      |
-| ------------------------------------------------------------------------ | --------------------- | --------------------------------------------------------------- |
-| Runner in lameduck refuses work                                          | `ABORTED`             | back to `QUEUED_IN_DISPATCHER`, retry after resume              |
-| Conditional `Quiesce` refused (`if_idle_since` differs, or busy)         | `ABORTED`             | none: the controller resets its idle timer                      |
-| Sealed, journal sealed, setup failed, harness stopped, `BootstrapFailed` | `FAILED_PRECONDITION` | terminal: `FAILED` with the reason                              |
-| Redelivered `command_id` already admitted                                | success               | `RUNNER_ADMITTED`, or later, from the runner's answer           |
-| Runner `OpenSession` of an existing Session (`ALREADY_EXISTS`)           | `ALREADY_EXISTS`      | `ListSessions` says whether it is on this runner; if so, opened |
+| Case                                                             | Code                  | Dispatcher                                                      |
+| ---------------------------------------------------------------- | --------------------- | --------------------------------------------------------------- |
+| Runner in lameduck refuses work                                  | `ABORTED`             | back to `QUEUED_IN_DISPATCHER`, retry after resume              |
+| Conditional `Quiesce` refused (`if_idle_since` differs, or busy) | `ABORTED`             | none: the controller resets its idle timer                      |
+| Journal sealed, setup failed, harness stopped, `BootstrapFailed` | `FAILED_PRECONDITION` | terminal: `FAILED` with the reason                              |
+| Redelivered `command_id` already admitted                        | success               | `RUNNER_ADMITTED`, or later, from the runner's answer           |
+| Runner `OpenSession` of an existing Session (`ALREADY_EXISTS`)   | `ALREADY_EXISTS`      | `ListSessions` says whether it is on this runner; if so, opened |
 
 **Ambiguous delivery resolves on redelivery.** The runner's journal lives on the state volume and answers a
 redelivered `command_id` with its existing admission, even after the harness stopped or the journal was sealed. A
@@ -470,7 +480,7 @@ callers.
   directory, resumes the Sandbox if suspended (where the sender may wake it), waits for `Ready`, resumes a
   stopped harness, and calls the runner's RPC of the same name. An unknown Session fails `NOT_FOUND`; a
   command queued behind its Session's `OpenSession` waits for it. A notification is a `SubmitInput` from a
-  different caller, authorized by caller identity, so it has no RPC of its own. `InterruptTurn` and `StopRunnerSession` never wake a suspended Sandbox (operator, 2026-10-13): with nothing running there is nothing to interrupt or stop, so they complete as no-ops.
+  different caller, authorized by caller identity, so it has no RPC of its own. `InterruptTurn` and `StopRunnerSession` never wake a suspended Sandbox (operator, 2026-10-13): with nothing running there is nothing to interrupt or stop, so they complete as no-ops. `InterruptTurn` is the exception to "stores the command durably": it is delivered at once or reports `NO_OP` in its response.
 - `GetDispatch`, `WatchDispatches` (stream, by Session or Sandbox), `ListDispatches`, `CancelDispatch`
   (not once delivery is ambiguous). A Session's open is a dispatch like a command, with the same states.
 
@@ -485,12 +495,12 @@ dispatch, a command or a Session creation, recorded by the Dispatcher:
 | `HARNESS_CONFIRMED`       | It reached the model's context (today's `harness_user_message_confirmed`). Only `SubmitInput` gets here                                       | yes (History Service)                                  |
 | `NO_OP`                   | Nothing to do, e.g. `InterruptTurn` or `StopRunnerSession` on a suspended Sandbox or with nothing running; a reason says where it was decided | yes                                                    |
 | `FAILED`                  | Terminal, with a reason that names where it failed, e.g. `ended_by_teardown` for an admitted-but-undispatched command                         | yes                                                    |
-| `CANCELLED_IN_DISPATCHER` | Cancelled by the sender before delivery began                                                                                                 | yes                                                    |
+| `CANCELLED_IN_DISPATCHER` | Cancelled before delivery began, by its sender or by a later `StopRunnerSession`; a reason says which                                         | yes                                                    |
 | `UNKNOWN`                 | Only for a deleted Sandbox, whose journal can no longer answer a redelivery                                                                   | yes                                                    |
 
 Transitions: `QUEUED_IN_DISPATCHER → DELIVERING_TO_RUNNER → RUNNER_ADMITTED → HARNESS_CONFIRMED`. A refusal because
 the runner is quiescing returns `DELIVERING_TO_RUNNER` to `QUEUED_IN_DISPATCHER`, a retry rather than a failure.
-`QUEUED_IN_DISPATCHER → NO_OP` for an interrupt or stop that finds nothing to do. Redelivery of a `command_id`
+`QUEUED_IN_DISPATCHER → NO_OP` for a stop that finds nothing to do; an interrupt that finds nothing to do reports `NO_OP` in its response. Redelivery of a `command_id`
 after a lost reply resolves from the runner's journal, which is why `UNKNOWN` is rare.
 
 **Where a new Session's spec comes from.** `OpenSession` carries it, from the caller (the app resolves its
@@ -767,3 +777,7 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
    it makes.
 9. ~~Suspend during setup or bootstrap?~~ **Decided (operator, 2026-10-13):** suspend waits for the Sandbox bootstrap and for every Session's setup; deletion does not (D3).
 10. ~~How idle suspension is expressed?~~ **Decided (operator, 2026-10-14): `status.suspendedBy: Idle`**: the controller writes `status.suspendedBy: Idle` and the Sandbox Service wakes by bumping `spec.wakeGeneration`, so `spec.running` is never edited by a layer that acts on the CR (Sandbox lifecycle).
+11. **Do `ChangeModel` and `ChangeReasoningEffort` start a stopped harness?** The Dispatcher resumes a stopped
+    harness as an internal step of each command RPC, so a change to a stopped Session would start a harness only
+    to change a setting. The alternative applies the change to the retained spec and takes effect at the next
+    resume, with no wake. Not ruled yet.
