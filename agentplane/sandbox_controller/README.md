@@ -19,10 +19,10 @@ everything else the controller does is unaffected.
 
 A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) controller:
 
-- [`types.go`](types.go): the CRD types. `zz_generated.deepcopy.go` is controller-gen output; after
-  changing the types, regenerate it with
-  `go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.20.0 object paths=./agentplane/sandbox_controller`
-  from a module that resolves this package.
+- [`types.go`](types.go): the CRD types. Bazel generates the controller-gen deep-copy methods when
+  building the controller; build `//agentplane/sandbox_controller:deepcopy` to check the generated
+  file directly. The pinned upstream `controller-gen` binary and Go SDK run with declared Bazel
+  inputs, so no generated Go file is committed.
 - [`controller.go`](controller.go): one reconcile per `Sandbox`. Its VM (`Owns`), its Pods, VMI and
   state PVC (by the Sandbox label) and the templates it names (by a field index) map back to it.
 - [`vm.go`](vm.go): a VM Sandbox's VirtualMachine (types from `kubevirt.io/api`), its run strategy,

@@ -6,10 +6,10 @@ are in [`agentplane/crds`](../crds/BUILD.bazel).
 
 A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) controller:
 
-- [`types.go`](types.go): the CRD types. `zz_generated.deepcopy.go` is controller-gen output; after
-  changing the types, regenerate it with
-  `go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.20.0 object paths=./agentplane/policy_controller`
-  from a module that resolves this package.
+- [`types.go`](types.go): the CRD types. Bazel generates the controller-gen deep-copy methods when
+  building the controller; build `//agentplane/policy_controller:deepcopy` to check the generated
+  file directly. The pinned upstream `controller-gen` binary and Go SDK run with declared Bazel
+  inputs, so no generated Go file is committed.
 - [`controller.go`](controller.go): one reconcile per `PolicyBinding`. Sets, subject accounts and
   the labeled native bindings map back to the bindings they affect, through field indexes and the
   native bindings' binding annotation; `RequeueAfter` runs a binding again at its `expiresAt`, when it is deleted.

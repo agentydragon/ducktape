@@ -1,13 +1,15 @@
-load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
+load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_path", "go_test")
 load("@rules_oci//oci:defs.bzl", "oci_image", "oci_load")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
+load("//devinfra/go:controller_gen.bzl", "controller_deepcopy")
 
 go_library(
     name = "policy_controller",
     srcs = [
         "controller.go",
+        "scheme.go",
         "types.go",
-        "zz_generated.deepcopy.go",
+        ":deepcopy",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/policy_controller",
     visibility = [
@@ -31,6 +33,26 @@ go_library(
         "@io_k8s_sigs_controller_runtime//pkg/reconcile",
         "@io_k8s_sigs_controller_runtime//pkg/scheme",
     ],
+)
+
+go_library(
+    name = "deepcopy_inputs",
+    srcs = ["types.go"],
+    importpath = "github.com/agentydragon/ducktape/agentplane/policy_controller",
+    visibility = ["//visibility:private"],
+    deps = ["@io_k8s_apimachinery//pkg/apis/meta/v1:meta"],
+)
+
+go_path(
+    name = "deepcopy_gopath",
+    mode = "copy",
+    deps = [":deepcopy_inputs"],
+)
+
+controller_deepcopy(
+    name = "deepcopy",
+    gopath = ":deepcopy_gopath",
+    importpath = "github.com/agentydragon/ducktape/agentplane/policy_controller",
 )
 
 go_test(

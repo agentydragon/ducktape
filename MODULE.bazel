@@ -1817,9 +1817,49 @@ go_deps.module(
     version = "v0.23.0",
 )
 go_deps.module(
+    path = "k8s.io/gengo/v2",
+    sum = "h1:gMplByicHV/TJBizHd9aVEsTYoJBnnUAT5MHlTkbjhQ=",
+    version = "v2.0.0-20250922181213-ec3ebc5fd46b",
+)
+go_deps.module(
+    path = "github.com/fatih/color",
+    sum = "h1:S8gINlzdQ840/4pfAwic/ZE0djQEH3wM94VfqLTZcOM=",
+    version = "v1.18.0",
+)
+go_deps.module(
+    path = "github.com/gobuffalo/flect",
+    sum = "h1:xeWBM2nui+qnVvNM4S3foBhCAL2XgPU+a7FdpelbTq4=",
+    version = "v1.0.3",
+)
+go_deps.module(
+    path = "github.com/josharian/intern",
+    sum = "h1:vlS4z54oSdjm0bgjRigI+G1HpF+tI+9rE5LLzOg8HmY=",
+    version = "v1.0.0",
+)
+go_deps.module(
+    path = "github.com/mailru/easyjson",
+    sum = "h1:UGYAvKxe3sBsEDzO8ZeWOSlIQfWFlxbzLZe7hwFURr0=",
+    version = "v0.7.7",
+)
+go_deps.module(
+    path = "github.com/mattn/go-colorable",
+    sum = "h1:9A9LHSqF/7dyVVX6g0U9cwm9pG3kP9gSzcuIPHPsaIE=",
+    version = "v0.1.14",
+)
+go_deps.module(
+    path = "github.com/mattn/go-isatty",
+    sum = "h1:xfD0iDuEKnDkl03q4limB+vH+GxLEtL/jb4xVJSWWEY=",
+    version = "v0.0.20",
+)
+go_deps.module(
+    path = "k8s.io/code-generator",
+    sum = "h1:TvrtfKYZTm9oDF2z+veFKSCcgZE3Igv0svY+ehCmjHQ=",
+    version = "v0.35.0",
+)
+go_deps.module(
     path = "golang.org/x/time",
-    sum = "h1:/bpjEDfN9tkoN/ryeYHnv5hcMlc8ncjMcM4XBk5NWV0=",
-    version = "v0.11.0",
+    sum = "h1:bbrp8t3bGUeFOx08pvsMYRTCVSMk89u4tKbNOZbp88U=",
+    version = "v0.15.0",
 )
 go_deps.module(
     path = "github.com/prometheus/client_golang",
@@ -1876,6 +1916,11 @@ go_deps.module(
     sum = "h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=",
     version = "v1.2.1",
 )
+go_deps.module(
+    path = "sigs.k8s.io/controller-tools",
+    sum = "h1:VWZF71pwSQ2lZZCt7hFGJsOfDc5dVG28/IysjjMWXL8=",
+    version = "v0.20.0",
+)
 
 # ─ Repos exported for Bazel BUILD files ──────────────────────────────────
 # Includes directly-used repos AND transitive deps of manual go_deps.module()
@@ -1894,15 +1939,21 @@ use_repo(
     "com_github_docker_docker",
     "com_github_dustin_go_humanize",
     "com_github_elliotchance_orderedmap",
+    "com_github_fatih_color",
     "com_github_firebase_genkit_go",
     "com_github_fsouza_go_dockerclient",
     "com_github_go_git_go_git_v5",
+    "com_github_gobuffalo_flect",
     "com_github_google_uuid",
     "com_github_goretk_gore",
     "com_github_goretk_redress",
     "com_github_hashicorp_golang_lru_v2",
+    "com_github_josharian_intern",
+    "com_github_mailru_easyjson",
     "com_github_mandiant_goresym",
     "com_github_mark3labs_mcp_go",
+    "com_github_mattn_go_colorable",
+    "com_github_mattn_go_isatty",
     "com_github_munnerz_goautoneg",
     "com_github_nervsystems_osmmcp",
     "com_github_pb33f_ordered_map_v2",
@@ -1919,8 +1970,11 @@ use_repo(
     "io_k8s_apimachinery",
     "io_k8s_apiserver",
     "io_k8s_client_go",
+    "io_k8s_code_generator",
+    "io_k8s_gengo_v2",
     "io_k8s_kube_openapi",
     "io_k8s_sigs_controller_runtime",
+    "io_k8s_sigs_controller_tools",
     "io_kubevirt_api",
     "io_opentelemetry_go_auto_sdk",
     "io_opentelemetry_go_otel",
