@@ -137,7 +137,14 @@ class SessionDispatcher(Construct):
             self,
             "role",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
-            rules=[RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"])],
+            rules=[
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
+                # Per-Sandbox delivery ownership. Grant before the Dispatcher starts using Leases.
+                RolePolicyRule(
+                    resources=[custom_resource("coordination.k8s.io", "leases")],
+                    verbs=["get", "list", "watch", "create", "update"],
+                ),
+            ],
         )
         RoleBinding(
             self,

@@ -1192,6 +1192,11 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 shards Sandboxes among Dispatcher replicas with a per-Sandbox Lease. Until this node lands, `DISPATCHER_DEPLOY`
 keeps one active replica with `Recreate`; this is a temporary correctness limit, not the intended replica model.
 
+**Rollout prerequisite:** the Dispatcher's namespace Role grants `get/list/watch/create/update` on
+`coordination.k8s.io/leases` before the ownership code starts using them. The grant is an independent
+PR; verify Flux has applied it in testing and staging before activating Lease callers. Code and tests
+can be prepared in parallel. The grant alone changes neither replica count nor delivery ownership.
+
 Implement per-Sandbox Lease ownership with stale-owner fencing so only the current holder delivers for a Sandbox or
 settles its work. Scope startup recovery to Sandboxes owned by that replica; starting or restarting one replica must
 not reset a live peer's in-flight commands. Keep PostgreSQL change notifications visible across replicas so the owner

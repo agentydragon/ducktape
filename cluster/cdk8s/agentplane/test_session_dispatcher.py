@@ -66,7 +66,14 @@ def test_dispatcher_deployment_and_gateway_auth(
     assert service["spec"]["ports"] == [{"name": "grpc", "port": 8080, "protocol": "TCP", "targetPort": 8080}]
 
     role = resource("Role", session_dispatcher.NAME)
-    assert role["rules"] == [{"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list", "watch"]}]
+    assert role["rules"] == [
+        {"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list", "watch"]},
+        {
+            "apiGroups": ["coordination.k8s.io"],
+            "resources": ["leases"],
+            "verbs": ["get", "list", "watch", "create", "update"],
+        },
+    ]
     role_binding = resource("RoleBinding", session_dispatcher.NAME)
     assert role_binding["subjects"] == [
         {"apiGroup": "", "kind": "ServiceAccount", "name": session_dispatcher.NAME, "namespace": namespace}
