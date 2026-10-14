@@ -25,6 +25,7 @@ from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
 from cluster.cdk8s.plaid_mcp import db, spend
 
 RBAC_GROUP = "rbac.authorization.k8s.io"
+COINBASE_POLICY = "coinbase"
 PLAID_DIAGNOSTICS_POLICY = "plaid-diagnostics"
 
 
@@ -185,7 +186,7 @@ POLICY_SETS = {
     "public-inventory": PUBLIC_INVENTORY,
     "cluster-diagnostics": ("cluster-diagnostics",),
     "haku-sandbox-write": ("haku-sandbox-write",),
-    "coinbase-credentials": ("coinbase-credentials",),
+    COINBASE_POLICY: ("coinbase-credentials",),
     "spend-policy-config": ("spend-policy-config",),
     PLAID_DIAGNOSTICS_POLICY: (PLAID_DIAGNOSTICS_POLICY,),
 }

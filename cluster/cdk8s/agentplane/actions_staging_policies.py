@@ -66,12 +66,18 @@ _COINBASE_SECRET = "coinbase-api-credentials"
 _GITHUB_DOWNLOADS_POLICY = "github-downloads"
 
 # The staging-only policies created below. `agentplane-testing` lets a staging sandbox reach the
-# testing instance and `coinbase` publishes the Coinbase key, so their names belong to this
-# module; so do the two Action PolicySet reads every preset binds by default.
+# testing instance. The `coinbase` PolicySet combines GET egress with the view-only Coinbase key's
+# Secret grant; its set definition lives with Agentplane's Kubernetes access profiles. The two
+# Action PolicySet reads every preset binds by default live here too.
 AGENTPLANE_TESTING_POLICY = "agentplane-testing"
-COINBASE_POLICY = "coinbase"
+COINBASE_POLICY = access.COINBASE_POLICY
 GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 SSH_READS_SET = "ssh-reads"
+
+
+def coinbase_egress_rules() -> list[PolicySetSpecRules]:
+    """GET-only access to Coinbase; callers sign requests with the key held in Kubernetes."""
+    return [Rule.egress(hosts=["api.coinbase.com"], methods=[PolicySetSpecRulesMethods.GET])]
 
 # The Action PolicySets created below that the launch presets bind, named because a
 # preset refers to them by name. They live here rather than in the preset's own module so the
@@ -506,10 +512,9 @@ def add_staging_action_policies(scope: Construct) -> None:
     )
 
     # Coinbase authenticates each request with a fresh JWT signed over its method, host and path,
-    # which the egress proxy's placeholder substitution cannot produce. So a sandbox of claude-ai's
-    # holds the key and signs for itself: it may read this one Secret through the API server, and
-    # the `coinbase` policy passes its GETs to api.coinbase.com unchanged. What makes handing the
-    # sandbox the key acceptable is that the key can only view.
+    # which the egress proxy's placeholder substitution cannot produce. The `coinbase` PolicySet
+    # grants selected sandboxes read access to this Secret and GET egress to api.coinbase.com, so
+    # they sign requests locally. What makes handing out the key acceptable is that it can only view.
     ExternalSecret(
         scope,
         "coinbase-external-secret",
@@ -517,7 +522,10 @@ def add_staging_action_policies(scope: Construct) -> None:
             name=_COINBASE_SECRET,
             namespace=_NAMESPACE,
             annotations={
-                "description": "ESO copy of the view-only Coinbase CDP key from external-creds, read by claude-ai's sandboxes."
+                "description": (
+                    "ESO copy of the view-only Coinbase CDP key from external-creds, read by explicitly "
+                    "authorized Haku, finance-agent, claude-ai, and haku-agent sandboxes."
+                )
             },
         ),
         refresh_interval="1h",
@@ -586,12 +594,6 @@ def add_staging_action_policies(scope: Construct) -> None:
             subject.imported(scope, f"sandbox-reader-subject-{index}")
             for index, subject in enumerate(access.profile_subjects("agentplane-sandbox-read"))
         )
-    )
-    add_egress_policy(
-        scope,
-        "egresspolicy-coinbase",
-        metadata=ApiObjectMetadata(name=COINBASE_POLICY, namespace=_NAMESPACE),
-        rules=[Rule.egress(hosts=["api.coinbase.com"], methods=[PolicySetSpecRulesMethods.GET])],
     )
     # The testing deployment's app, for the acceptance suite's harness scenarios run from a box
     # (agentplane/acceptance/README.md): by its Service rather than its public name, which would
@@ -681,8 +683,8 @@ def add_staging_action_policies(scope: Construct) -> None:
     # which that route itself holds to reads, and `aiquota-read` aiquota's bearer on its read-only
     # API. `haku-mailbox` presents the JWT of Haku's own mailbox: JMAP reads and changes that one
     # mailbox and cannot send. It and `forgejo-haku` are Haku's credentials, bound here because
-    # claude-ai is the connection Haku runs through (haku/TODO.md). `coinbase` presents nothing: the
-    # sandbox signs with the key above. `plaid-diagnostics` grants read-only control-plane metadata
+    # claude-ai is the connection Haku runs through (haku/TODO.md). `coinbase` combines the named
+    # key Secret grant with GET egress. `plaid-diagnostics` grants read-only control-plane metadata
     # in plaid-mcp and presents pgweb's HTTP Basic password only on its query API, so a sandbox of
     # this caller's can inspect sync health and run SQL over the Plaid mirror as `plaid_ro`, which
     # can only SELECT (agent_access_profiles.py, egress_staging_credentials.py).
@@ -735,8 +737,7 @@ def add_staging_action_policies(scope: Construct) -> None:
         ],
     )
 
-    # Haku-like managed sandboxes keep their Haku-specific access, but do not get Coinbase
-    # egress or the key until a supported managed-runner identity/credential path exists (#8596).
+    # Haku-like sandboxes get Coinbase only through this explicit combined PolicySet selection.
     _account_binding(
         scope,
         haku_agent,
@@ -749,6 +750,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
+            COINBASE_POLICY,
             access.PLAID_DIAGNOSTICS_POLICY,
             AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,

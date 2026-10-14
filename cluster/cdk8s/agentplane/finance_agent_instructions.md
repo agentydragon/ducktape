@@ -89,9 +89,10 @@ resource kinds. Kubernetes RBAC cannot name-restrict the create verb, so the
 namespace is the capability boundary. Ducktape owns the namespace and the
 ExternalSecret copy in `plaid-mcp`; Finance Flux has no write access there.
 
-Coinbase is separate from the Plaid mirror. The finance preset grants `get` on the
-view-only CDP credential `agentplane-staging/coinbase-api-credentials` and GET egress
-to `api.coinbase.com`. The permitted `api.coinbase.com` GET route does not substitute a
+Coinbase is separate from the Plaid mirror. The finance preset selects the `coinbase`
+PolicySet, which grants `get` on the view-only CDP credential
+`agentplane-staging/coinbase-api-credentials` and GET egress to `api.coinbase.com`. The
+permitted `api.coinbase.com` GET route does not substitute a
 credential: CDP requires a fresh, request-bound ES256 JWT signed in memory by the view-only key.
 Use GET `/api/v3/brokerage/accounts` to list balances, paging with `has_next`/`cursor`; public
 GET `/v2/prices/<asset>-USD/spot` quotes are separate from personal holdings. Never log or persist

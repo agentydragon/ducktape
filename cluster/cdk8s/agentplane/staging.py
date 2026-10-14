@@ -36,7 +36,7 @@ from cluster.cdk8s import (
     node_scheduling,
 )
 from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, policy_controller, staging_config
-from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies
+from cluster.cdk8s.agentplane.actions_staging_policies import add_staging_action_policies, coinbase_egress_rules
 from cluster.cdk8s.agentplane.chart import environment_chart
 from cluster.cdk8s.agentplane.egress_credentials import (
     EXTERNAL_CREDS_STORE,
@@ -432,7 +432,10 @@ def chart(app: App) -> Chart:
             name: [catalog[grant] for grant in grants]
             for name, grants in {**agent_access_profiles.POLICY_SETS, TOOL_CONFIG_GRANT: (TOOL_CONFIG_GRANT,)}.items()
         },
-        additional_rules={agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: plaid_pgweb_egress_rules()},
+        additional_rules={
+            agent_access_profiles.COINBASE_POLICY: coinbase_egress_rules(),
+            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: plaid_pgweb_egress_rules(),
+        },
     )
     reader = ServiceAccount(
         chart,

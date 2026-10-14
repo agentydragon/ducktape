@@ -14,7 +14,6 @@ from agentplane.runner.harness import Harness
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane.actions_staging_policies import (
     AGENTPLANE_TESTING_POLICY,
-    COINBASE_POLICY,
     COMMON_GITHUB_READ_SET,
     DUCKTAPE_PR_FAILED_JOBS_SET,
     GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
@@ -148,7 +147,6 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
             GOOGLE_READONLY_POLICY,
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
-            COINBASE_POLICY,
             HAKU_MAILBOX_POLICY,
             GITHUB_CLONE_POLICY,
             GITHUB_AGENTYDRAGON_AGENT_POLICY,
@@ -181,7 +179,6 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
             PACKAGES_POLICY,
             AIQUOTA_READ_POLICY,
             FINANCE_AIQUOTA_HISTORY_POLICY,
-            COINBASE_POLICY,
             FORGEJO_FINANCE_AGENT_POLICY,
             GITHUB_AGENTYDRAGON_AGENT_POLICY,
             GITHUB_CLONE_POLICY,

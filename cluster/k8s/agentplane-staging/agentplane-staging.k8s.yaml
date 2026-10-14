@@ -3330,9 +3330,10 @@ data:
           namespace is the capability boundary. Ducktape owns the namespace and the
           ExternalSecret copy in `plaid-mcp`; Finance Flux has no write access there.
 
-          Coinbase is separate from the Plaid mirror. The finance preset grants `get` on the
-          view-only CDP credential `agentplane-staging/coinbase-api-credentials` and GET egress
-          to `api.coinbase.com`. The permitted `api.coinbase.com` GET route does not substitute a
+          Coinbase is separate from the Plaid mirror. The finance preset selects the `coinbase`
+          PolicySet, which grants `get` on the view-only CDP credential
+          `agentplane-staging/coinbase-api-credentials` and GET egress to `api.coinbase.com`. The
+          permitted `api.coinbase.com` GET route does not substitute a
           credential: CDP requires a fresh, request-bound ES256 JWT signed in memory by the view-only key.
           Use GET `/api/v3/brokerage/accounts` to list balances, paging with `has_next`/`cursor`; public
           GET `/v2/prices/<asset>-USD/spot` quotes are separate from personal holdings. Never log or persist
@@ -3453,7 +3454,6 @@ data:
           - google-readonly
           - activitywatch-read
           - aiquota-read
-          - coinbase
           - haku-mailbox
           - github-clone
           - github-agentydragon-agent
@@ -3473,7 +3473,7 @@ data:
           - testing-access
           - cluster-diagnostics
           - haku-sandbox-write
-          - coinbase-credentials
+          - coinbase
           - plaid-diagnostics
         thread_preset: haku-codex
       finance-agent:
@@ -3484,7 +3484,6 @@ data:
           - packages
           - aiquota-read
           - finance-aiquota-history
-          - coinbase
           - forgejo-finance-agent
           - github-agentydragon-agent
           - github-clone
@@ -3497,7 +3496,7 @@ data:
           - shared-diagnostics
           - testing-access
           - public-inventory
-          - coinbase-credentials
+          - coinbase
           - spend-policy-config
           - plaid-diagnostics
           - ducktape-pr-failed-jobs
@@ -7770,7 +7769,7 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
-  name: coinbase-credentials
+  name: coinbase
   namespace: agentplane-staging
 spec:
   rules:
@@ -7780,6 +7779,11 @@ spec:
         name: claude-ai-coinbase-reader
       namespaces:
         - agentplane-staging
+    - type: egress
+      hosts:
+        - api.coinbase.com
+      methods:
+        - GET
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -9017,7 +9021,7 @@ apiVersion: external-secrets.io/v1
 kind: ExternalSecret
 metadata:
   annotations:
-    description: ESO copy of the view-only Coinbase CDP key from external-creds, read by claude-ai's sandboxes.
+    description: ESO copy of the view-only Coinbase CDP key from external-creds, read by explicitly authorized Haku, finance-agent, claude-ai, and haku-agent sandboxes.
   name: coinbase-api-credentials
   namespace: agentplane-staging
 spec:
@@ -9154,19 +9158,6 @@ subjects:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
-  name: coinbase
-  namespace: agentplane-staging
-spec:
-  rules:
-    - type: egress
-      hosts:
-        - api.coinbase.com
-      methods:
-        - GET
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
   name: agentplane-testing
   namespace: agentplane-staging
 spec:
@@ -9286,6 +9277,7 @@ spec:
     - activitywatch-read
     - aiquota-read
     - haku-mailbox
+    - coinbase
     - plaid-diagnostics
     - agentplane-testing
     - github-downloads

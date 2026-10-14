@@ -198,6 +198,7 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             AIQUOTA_READ_POLICY,
             FINANCE_AIQUOTA_HISTORY_POLICY,
             HAKU_MAILBOX_POLICY,
+            COINBASE_POLICY,
             PLAID_PGWEB_CREDENTIAL,
         }
         for doc in manifests
@@ -266,12 +267,29 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         if preset == "finance-agent"
         else set()
     )
-    # Coinbase egress follows the Secret grant; haku-agent's egress PolicyBinding carries none.
+    # Coinbase bundles the Secret grant and GET egress; only explicitly selected callers get it.
     assert (COINBASE_POLICY in config["sandbox_presets"][preset]["policy_sets"]) == (preset == "finance-agent")
-    assert COINBASE_POLICY not in _by_name(docs, "PolicyBinding", "haku-agent")["spec"]["policySets"]
     assert selected == _kubernetes_grants(config["sandbox_presets"]["public-coder"]["policy_sets"]) | credential_grants
     haku_policy_sets = config["sandbox_presets"]["haku"]["policy_sets"]
     haku = _kubernetes_grants(haku_policy_sets)
+    assert COINBASE_POLICY in haku_policy_sets
+    assert COINBASE_POLICY in _by_name(docs, "PolicyBinding", "claude-ai")["spec"]["policySets"]
+    assert COINBASE_POLICY in _by_name(docs, "PolicyBinding", "haku-agent")["spec"]["policySets"]
+    assert not any(
+        doc["kind"] == "PolicySet" and doc["metadata"]["name"] == "coinbase-credentials" for doc in docs
+    )
+    coinbase_rules = _by_name(docs, "PolicySet", COINBASE_POLICY)["spec"]["rules"]
+    assert {rule["type"] for rule in coinbase_rules} == {"egress", "kubernetes_role_binding"}
+    assert {
+        (rule["role"]["kind"], rule["role"]["name"], tuple(rule["namespaces"]))
+        for rule in coinbase_rules
+        if rule["type"] == "kubernetes_role_binding"
+    } == {("Role", "claude-ai-coinbase-reader", ("agentplane-staging",))}
+    egress_rule = one(rule for rule in coinbase_rules if rule["type"] == "egress")
+    assert egress_rule["hosts"] == ["api.coinbase.com"]
+    assert egress_rule["methods"] == ["GET"]
+    assert "paths" not in egress_rule
+    assert "credentialRef" not in egress_rule
     assert agent_access_profiles.PLAID_DIAGNOSTICS_POLICY in haku_policy_sets
     assert agent_access_profiles.PLAID_DIAGNOSTICS_POLICY in _by_name(docs, "PolicyBinding", "claude-ai")["spec"][
         "policySets"

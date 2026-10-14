@@ -225,7 +225,7 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         "ducktape-flux",
         "haku-console",
         "haku-sandbox",
-        "plaid-mcp",  # Finance's named spend-policy grant, outside shared diagnostics.
+        "plaid-mcp",  # Finance's spend-policy and diagnostics grants, outside shared diagnostics.
     }
     assert not any(
         doc["kind"] in {"Role", "RoleBinding"}
@@ -477,7 +477,19 @@ def test_agent_permission_superset_and_finance_parity(
     finance = rbac.managed(config, policy_sets, "finance-agent", namespace="agentplane-staging")
     assert not uncovered(public, haku)
     assert not uncovered(public, finance)
-    assert uncovered(finance, public) == {
+    plaid_diagnostics = {
+        Permission("plaid-mcp", api_group, resource, verb)
+        for api_group, resources in (
+            ("", ("pods", "services", "endpoints", "events", "persistentvolumeclaims")),
+            ("discovery.k8s.io", ("endpointslices",)),
+            ("apps", ("deployments", "statefulsets")),
+            ("batch", ("jobs", "cronjobs")),
+            ("postgresql.cnpg.io", ("clusters",)),
+        )
+        for resource in resources
+        for verb in ("get", "list")
+    }
+    assert uncovered(finance, public) == plaid_diagnostics | {
         Permission("agentplane-staging", "", "secrets", "get", "coinbase-api-credentials"),
         Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy"),
     }
