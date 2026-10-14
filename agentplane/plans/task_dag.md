@@ -677,7 +677,6 @@ flowchart TD
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
     QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: the controller stops reading the blocking Quiesce shape]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
-    CONTROL_SERVICE_OWNER[Candidate: the gateway's permission to create Services goes]
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
     DISPATCHER_CORE[Blocked: the Session Dispatcher delivers to running Sandboxes]
     SANDBOX_SHARED_CODE_MOVE[Candidate: what outlives the Sandbox Service leaves its package]
@@ -1034,13 +1033,6 @@ runner that never progresses is caught by a deadline the controller requeues for
 Sandbox whose finalizer an operator removes by hand. While the ingress is down the controller backs
 off instead of retrying per Sandbox. Test a gateway rollout mid-seal, a runner restart mid-seal and
 a lost event.
-
-### `CONTROL_SERVICE_OWNER` — the gateway's permission to create Services goes
-
-**Candidate; operator, 2026-10-13 PDT: the controller creates it.** The controller creates the
-Sandbox's control Service and the gateway no longer does. What is left is the gateway's `services`
-permission in `cluster/cdk8s/agentplane/runner_gateway.py`: drop it once the gateway image without
-the Service writes is pinned in both environments (image before config); it keeps `endpointslices`.
 
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 

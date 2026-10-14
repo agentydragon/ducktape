@@ -175,14 +175,13 @@ class RunnerGateway(Construct):
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes/status")], verbs=["patch"]),
                 # Runner connection records, each owned by its Sandbox: the Lease every replica
-                # watches, and the control Service and EndpointSlice its holder points at itself.
+                # watches, and the EndpointSlice of the control Service its holder points at itself.
                 RolePolicyRule(
                     resources=[custom_resource("coordination.k8s.io", "leases")],
                     verbs=["get", "list", "watch", "create", "update"],
                 ),
                 RolePolicyRule(
-                    resources=[custom_resource("", "services"), custom_resource("discovery.k8s.io", "endpointslices")],
-                    verbs=["get", "create", "update"],
+                    resources=[custom_resource("discovery.k8s.io", "endpointslices")], verbs=["get", "create", "update"]
                 ),
             ],
         )

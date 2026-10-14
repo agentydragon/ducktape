@@ -2268,14 +2268,6 @@ rules:
       - create
       - update
   - apiGroups:
-      - ""
-    resources:
-      - services
-    verbs:
-      - get
-      - create
-      - update
-  - apiGroups:
       - discovery.k8s.io
     resources:
       - endpointslices
