@@ -17,6 +17,8 @@ from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, Ne
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
 
+_GATEWAY_TOKEN_DIR = "/var/run/secrets/agentplane-runner-gateway"
+
 NAME = "agentplane-sandbox-controller"
 _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-sandbox-controller"
@@ -30,10 +32,25 @@ def metrics(namespace: str) -> ServiceRef:
     )
 
 
+def pods(namespace: str) -> Pods:
+    return metrics(namespace).pods
+
+
 class SandboxController(Construct):
     """The controller's Deployment, RBAC, network policy and metrics scrape."""
 
-    def __init__(self, scope: Construct, id: str, env: Environment) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        gateway: ServiceRef,
+        gateway_audience: str,
+        gateway_control_target: str,
+    ) -> None:
+        """The controller quiesces runners through the Runner Gateway's proxy, at each Sandbox's own
+        control Service (`gateway_control_target`) under a token of `gateway_audience`."""
         super().__init__(scope, id)
         namespace = env.namespace
         endpoint = metrics(namespace)
@@ -43,7 +60,11 @@ class SandboxController(Construct):
             serves=[endpoint],
             container="sandbox-controller",
             image=f"{_IMAGE}:unset",
-            args=[f"--namespace={namespace}"],
+            args=[
+                f"--namespace={namespace}",
+                f"--runner-gateway-target={gateway_control_target}",
+                f"--runner-gateway-token-file={_GATEWAY_TOKEN_DIR}/token",
+            ],
             ports=[endpoint.port.container_port(), Port(name="health", number=_HEALTH_PORT).container_port()],
             readiness=http_probe("/readyz", port=_HEALTH_PORT, initial_delay_seconds=3),
             liveness=http_probe("/healthz", port=_HEALTH_PORT, initial_delay_seconds=10, period_seconds=30),
@@ -53,6 +74,7 @@ class SandboxController(Construct):
             ),
             termination_grace=Duration.seconds(30),
         )
+        workload.project_tokens("runner-gateway-token", _GATEWAY_TOKEN_DIR, {"token": gateway_audience})
         Role(
             self,
             "role",
@@ -119,7 +141,7 @@ class SandboxController(Construct):
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             endpoint_selector=endpoint.pods.selector,
             ingress=[cilium.SCRAPERS.admit(endpoint.pod_port)],
-            egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER)],
+            egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER), gateway.egress()],
         )
         ServiceMonitor(
             self,

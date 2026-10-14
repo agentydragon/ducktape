@@ -92,6 +92,7 @@ flowchart TB
     policy -->|PolicyBindings, RoleBindings| k8s
     sandboxctl -->|Sandboxes, Pods, VMs, state PVCs, PolicyBindings| k8s
     sandboxctl -->|creates| sandbox
+    sandboxctl -->|gRPC: Quiesce| gw
     k8s -->|runs| cmd_sandbox
     cmd_sandbox -->|all outbound traffic| proxy
     actions -->|MCP servers, GitHub, web push| outside

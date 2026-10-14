@@ -8,7 +8,7 @@ its construct path (`cdk8s.io/metadata.addr`), and a selector cannot change on a
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from cdk8s import ApiObject, ApiObjectMetadata, Duration, JsonPatch
 from cdk8s_plus_34 import (
@@ -40,35 +40,37 @@ class ServiceWorkload:
     account: ServiceAccount
     deployment: Deployment
     container: Container
+    # Volume names `project_tokens` has patched in; the Deployment's own `volumes` omit them.
+    _projected: list[str] = field(default_factory=list, init=False)
 
     def project_tokens(self, volume: str, mount_path: str, audiences: Mapping[str, str]) -> None:
         """Mounts a rotating workload token for each `{file: audience}` under `mount_path`, apart
         from the API-server token. cdk8s-plus has no projected ServiceAccount token volume."""
         deployment = ApiObject.of(self.deployment)
-        deployment.add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/volumes/-",
-                k8s.Volume(
-                    name=volume,
-                    projected=k8s.ProjectedVolumeSource(
-                        sources=[
-                            k8s.VolumeProjection(
-                                service_account_token=k8s.ServiceAccountTokenProjection(
-                                    audience=audience, expiration_seconds=3600, path=path
-                                )
-                            )
-                            for path, audience in audiences.items()
-                        ]
-                    ),
-                ),
-            )
+        token_volume = k8s.Volume(
+            name=volume,
+            projected=k8s.ProjectedVolumeSource(
+                sources=[
+                    k8s.VolumeProjection(
+                        service_account_token=k8s.ServiceAccountTokenProjection(
+                            audience=audience, expiration_seconds=3600, path=path
+                        )
+                    )
+                    for path, audience in audiences.items()
+                ]
+            ),
         )
-        deployment.add_json_patch(
-            JsonPatch.add(
-                "/spec/template/spec/containers/0/volumeMounts/-",
-                k8s.VolumeMount(name=volume, mount_path=mount_path, read_only=True),
-            )
-        )
+        mount = k8s.VolumeMount(name=volume, mount_path=mount_path, read_only=True)
+        # A patch appending to an absent array fails, so with no earlier volume the first one creates the
+        # array. The Pod's volumes come from its containers' mounts, which `container.mounts` lists
+        # (`deployment.volumes` stays empty until synthesis); neither lists these patches.
+        if self._projected or self.container.mounts:
+            deployment.add_json_patch(JsonPatch.add("/spec/template/spec/volumes/-", token_volume))
+            deployment.add_json_patch(JsonPatch.add("/spec/template/spec/containers/0/volumeMounts/-", mount))
+        else:
+            deployment.add_json_patch(JsonPatch.add("/spec/template/spec/volumes", [token_volume]))
+            deployment.add_json_patch(JsonPatch.add("/spec/template/spec/containers/0/volumeMounts", [mount]))
+        self._projected.append(volume)
 
 
 def add_service_workload(

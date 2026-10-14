@@ -75,8 +75,17 @@ def runner_control(namespace: str) -> ServiceRef:
 
 
 class RunnerGateway(Construct):
-    def __init__(self, scope: Construct, id: str, env: Environment, *, callers: dict[ServiceAccountRef, Pods]) -> None:
-        """`callers` are the Session API's clients and their Pods."""
+    def __init__(
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        callers: dict[ServiceAccountRef, Pods],
+        sandbox_controller: tuple[ServiceAccountRef, Pods],
+    ) -> None:
+        """`callers` are the Session API's clients and their Pods; `sandbox_controller` is the one caller
+        of `Runner.Quiesce`."""
         super().__init__(scope, id)
         self.env = env
         endpoint = service(env.namespace)
@@ -93,6 +102,7 @@ class RunnerGateway(Construct):
                     for caller in sorted(callers, key=lambda caller: (caller.namespace, caller.name))
                 ],
                 "token_audience": TOKEN_AUDIENCE,
+                "sandbox_controller_account": sandbox_controller[0].model_dump(),
                 "runner_control_audience": RUNNER_CONTROL_AUDIENCE,
                 "port": endpoint.port.number,
                 "runner_control_port": control.pod_port,
@@ -139,6 +149,7 @@ class RunnerGateway(Construct):
             endpoint_selector=endpoint.pods.selector,
             ingress=[
                 *(pods.admit(endpoint.pod_port) for pods in callers.values()),
+                sandbox_controller[1].admit(endpoint.pod_port),
                 egress.proxy(env.namespace).pods.admit(control.pod_port),
             ],
             egress=[cilium.dns_egress(), EgressRule.to_entities(Entity.KUBE_APISERVER), database.egress(env.namespace)],
