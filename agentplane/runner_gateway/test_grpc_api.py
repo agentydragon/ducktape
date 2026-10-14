@@ -182,8 +182,8 @@ async def test_complete_spec_opens_as_sent_and_inherits_nothing_from_the_sandbox
     request = runner_gateway_pb2.CreateSessionRequest(sandbox=DESTINATION, spec=spec, session_id=str(uuid4()))
     metadata = await remote.metadata()
 
-    async def create() -> runner_gateway_pb2.CreateSessionResponse:
-        return await remote.stub.CreateSession(request, metadata=metadata, timeout=5)
+    async def create() -> None:
+        await remote.stub.CreateSession(request, metadata=metadata, timeout=5)
 
     creating = asyncio.create_task(create())
     opened = await peer.open()
