@@ -1,0 +1,30 @@
+{
+  "evalplus_version": "0.3.1",
+  "humaneval_plus_release": "v0.1.10",
+  "dataset_hash_md5": "fe585eb4df8c88d844eeb463ea4d0302",
+  "task_ids": [
+    "HumanEval/4",
+    "HumanEval/13",
+    "HumanEval/18",
+    "HumanEval/24",
+    "HumanEval/26",
+    "HumanEval/49",
+    "HumanEval/56",
+    "HumanEval/60",
+    "HumanEval/83",
+    "HumanEval/106",
+    "HumanEval/117",
+    "HumanEval/121",
+    "HumanEval/142",
+    "HumanEval/146",
+    "HumanEval/147",
+    "HumanEval/150",
+    "HumanEval/152",
+    "HumanEval/156",
+    "HumanEval/158",
+    "HumanEval/159"
+  ],
+  "system_prompt": "You are a helpful assistant good at coding.",
+  "user_prompt_template": "Please provide a self-contained Python script that solves the following problem in a markdown code block:\\n```python\\n{problem_prompt.strip()}\\n```",
+  "prompts_sha256": "6c3741d0b8be9dd9adeb29eae100372b891cb0939484b5dcfc0b973604de8cbd"
+}

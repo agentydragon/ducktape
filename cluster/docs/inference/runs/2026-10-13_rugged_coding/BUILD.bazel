@@ -1,0 +1,6 @@
+load("//devinfra/python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "verify_generated_coding_task",
+    srcs = ["verify_generated_coding_task.py"],
+)

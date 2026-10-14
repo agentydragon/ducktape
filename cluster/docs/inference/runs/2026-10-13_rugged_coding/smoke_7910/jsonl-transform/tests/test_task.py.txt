@@ -1,0 +1,34 @@
+import unittest
+
+from jsonl_transform import transform_jsonl
+
+
+class JsonlTransformTests(unittest.TestCase):
+    def test_normalizes_records_and_preserves_unicode(self) -> None:
+        source = (
+            '\n{"count": 2, "name": " Jose\u0301 ", "tags": [" bleu ", "bleu", "", "東京"]}'
+            '\n{"name": "Zoe 🚀"}\n'
+        )
+        expected = (
+            '{"count":2,"name":"José","tags":["bleu","東京"]}\n'
+            '{"name":"Zoe 🚀","tags":[]}\n'
+        )
+        self.assertEqual(transform_jsonl(source), expected)
+
+    def test_reports_malformed_json_line(self) -> None:
+        with self.assertRaisesRegex(ValueError, "line 3"):
+            transform_jsonl('{"name":"ok"}\n\n{"name":')
+
+    def test_rejects_non_objects_and_invalid_names(self) -> None:
+        for source in ['[]', '{"name": "  "}', '{"name": 4}']:
+            with self.subTest(source=source), self.assertRaises(ValueError):
+                transform_jsonl(source)
+
+    def test_rejects_non_string_tags(self) -> None:
+        for tags in ['"blue"', '["blue", 3]']:
+            with self.subTest(tags=tags), self.assertRaises(ValueError):
+                transform_jsonl('{"name":"ok","tags":' + tags + '}')
+
+
+if __name__ == "__main__":
+    unittest.main()

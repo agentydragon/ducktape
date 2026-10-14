@@ -1,0 +1,39 @@
+{
+  "suite": "EvalPlus HumanEval+",
+  "evalplus_version": "0.3.1",
+  "dataset": "humaneval",
+  "dataset_size": 164,
+  "selection": "20 task indices sampled uniformly without replacement, sorted for run order",
+  "selection_seed": 20261013,
+  "task_ids": [
+    "HumanEval/4",
+    "HumanEval/13",
+    "HumanEval/18",
+    "HumanEval/24",
+    "HumanEval/26",
+    "HumanEval/49",
+    "HumanEval/56",
+    "HumanEval/60",
+    "HumanEval/83",
+    "HumanEval/106",
+    "HumanEval/117",
+    "HumanEval/121",
+    "HumanEval/142",
+    "HumanEval/146",
+    "HumanEval/147",
+    "HumanEval/150",
+    "HumanEval/152",
+    "HumanEval/156",
+    "HumanEval/158",
+    "HumanEval/159"
+  ],
+  "repeats_per_task": 3,
+  "generation": {
+    "temperature": 0.2,
+    "top_p": 0.95,
+    "max_completion_tokens": 2048,
+    "seed_per_repeat": [20261013, 20261014, 20261015]
+  },
+  "scoring": "upstream EvalPlus evaluator on its pinned original and augmented tests; report Base + Extra separately",
+  "caveat": "This fixed 20-task cohort is a local comparative sample, not the full HumanEval+ leaderboard score."
+}

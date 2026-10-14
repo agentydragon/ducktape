@@ -1,0 +1,7 @@
+{
+  "name": "jsonl-transform",
+  "module": "jsonl_transform.py",
+  "prompt_sha256": "d42cf652de57a27258f4c127606de03e0015e2bd6633c22db5d31ae785879c7d",
+  "verifier_sha256": "97e9d21bb9273765cece1307ef485833186467b297f64a359fa96210d0dbb764",
+  "prompt": "Implement `transform_jsonl(text)` in `jsonl_transform.py` using only the Python standard library.\n\nThe function receives JSON Lines text and returns normalized JSON Lines text:\n- Ignore blank or whitespace-only input lines.\n- Each other line must decode to an object with a non-empty string `name` and an optional `tags` list containing only strings. Raise `ValueError` for malformed JSON or invalid fields, and include the 1-based input line number in the error.\n- Normalize `name` and each tag to Unicode NFC, then strip surrounding whitespace. Reject an empty normalized name. Drop empty tags and deduplicate tags while preserving their first normalized occurrence. An omitted `tags` field becomes an empty list.\n- Preserve other object fields. Emit compact JSON with sorted keys and literal Unicode (do not escape non-ASCII characters), one record per line, ending each output record with a newline.\n- Do not modify the tests.\n\nRun `python3 -m unittest -v tests.test_task`, fix any implementation failures, and report briefly what you changed."
+}
