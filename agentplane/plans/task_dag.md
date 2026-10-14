@@ -1075,9 +1075,9 @@ enforcement; admission policy is undecided and the cost is accepted.
 **Blocked on `SANDBOX_WRITE_HELPER`.** The app does what it asks of the Sandbox Service through the
 Kubernetes API as the operator who asked, as it already does for `PolicyBinding`s: create, delete, suspend,
 resume, and it edits permissions (egress grants, policy views, templates) and reads the inventory with the
-derived phase. The app's Role gains `sandboxes` `create/patch/delete`. The VM serial console
-(`sandbox_service/console.py`) moves into the app through the KubeVirt console subresource
-(`virtualmachineinstances/console` `get`); provisional, the operator has not been asked.
+derived phase. The VM serial console
+(`sandbox_service/console.py`) moves into the app (operator, 2026-10-13 PDT) through the KubeVirt console
+subresource. The app's Role gains `sandboxes` `create/patch/delete` and `virtualmachineinstances/console` `get`.
 
 ### `NOTIFICATION_READS_SANDBOX_CR` — the Notification Service reads the Sandbox CR
 
