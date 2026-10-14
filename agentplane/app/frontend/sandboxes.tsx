@@ -20,7 +20,6 @@ import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { api, displayableError, type NewSandbox, type SandboxPresetView, type SandboxView } from "./client";
-import { Disclosure } from "./disclosure";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
 import { placeholderSandboxName, sandboxNameError } from "./sandbox_name";

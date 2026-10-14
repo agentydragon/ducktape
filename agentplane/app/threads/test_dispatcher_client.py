@@ -36,6 +36,10 @@ class Stub:
 
     async def _dispatch(self, name: str, request: Any, **kwargs: object) -> Any:
         self.calls.append((name, request, kwargs))
+        if name == "OpenSession":
+            return session_dispatcher_pb2.OpenSessionResponse(opening=self.opening)
+        if name == "GetSessionOpening":
+            return session_dispatcher_pb2.GetSessionOpeningResponse(opening=self.opening)
         dispatch = session_dispatcher_pb2.Dispatch(
             command_id=request.command_id,
             session_id=getattr(request, "session_id", "session-a"),
@@ -51,8 +55,6 @@ class Stub:
                 state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED, admission=self.admission
             ),
             "GetDispatch": session_dispatcher_pb2.GetDispatchResponse(dispatch=dispatch),
-            "OpenSession": session_dispatcher_pb2.OpenSessionResponse(opening=self.opening),
-            "GetSessionOpening": session_dispatcher_pb2.GetSessionOpeningResponse(opening=self.opening),
         }[name]
 
     def __getattr__(self, name: str) -> Any:
