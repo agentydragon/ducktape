@@ -29,7 +29,7 @@ from agentplane.app.sandbox_models import NewSandbox, SandboxView
 from agentplane.app.threads.bridge import NewSession
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.egress.decisions import Decision
-from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.sandboxes.egress_views import BindingView
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -68,7 +68,7 @@ class _StreamDroppedError(Exception):
 
 @dataclass(frozen=True)
 class Attachment:
-    """What opening a session answers: the session's spec, and where its log stands."""
+    """What an admitted Session opening answers: its runner snapshot, when available."""
 
     attached: runner_pb2.Attached
 
@@ -180,13 +180,32 @@ class Client:
         overrides: dict[str, object] | None = None,
         setup_script: str | None = None,
     ) -> Attachment:
-        """Create a Session from the defaults recorded on the Sandbox plus proto-JSON overrides.
+        """Open a Session from configured preset defaults plus proto-JSON overrides.
 
         Retrying with the same Session ID and overrides answers the same Session.
         """
         body = NewSession(session_id=session_id, spec=overrides or {}, setup_script=setup_script)
         answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump(mode="json"))
-        return Attachment(ParseDict(answered, runner_pb2.Attached()))
+        opening = ParseDict(answered, session_dispatcher_pb2.SessionOpening())
+        deadline = time.monotonic() + REQUEST_SECONDS
+        while True:
+            if opening.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED:
+                attached = (
+                    opening.attached
+                    if opening.HasField("attached")
+                    else runner_pb2.Attached(session_id=opening.session_id)
+                )
+                return Attachment(attached)
+            if opening.state in (
+                session_dispatcher_pb2.DELIVERY_STATE_FAILED,
+                session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
+            ):
+                raise RuntimeError(f"Session opening {opening.session_id} ended in {opening.state}: {opening.reason}")
+            if time.monotonic() >= deadline:
+                raise TimeoutError(f"Session opening {opening.session_id} remained {opening.state}: {opening.reason}")
+            await asyncio.sleep(0.2)
+            answered = await self._json("GET", f"/sandboxes/{name}/sessions/{session_id}/opening")
+            opening = ParseDict(answered, session_dispatcher_pb2.SessionOpening())
 
     async def resume_thread(self, thread_id: UUID) -> Attachment:
         """Resume the runner session already bound to this Thread."""

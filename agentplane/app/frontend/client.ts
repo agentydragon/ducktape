@@ -63,6 +63,13 @@ export type BindingView = components["schemas"]["BindingView"];
 export type PolicyView = components["schemas"]["PolicyView"];
 export type SandboxPresetView = components["schemas"]["SandboxPresetView"];
 export type SessionDefaults = components["schemas"]["SessionDefaults"];
+export type SessionOpening = {
+  sessionId: string;
+  sandbox: string;
+  state: string;
+  reason?: string;
+  attached?: Attached;
+};
 export type Harness = components["schemas"]["Harness"];
 export type ModelOption = components["schemas"]["ModelOption"];
 export type ModelCatalog = components["schemas"]["ModelCatalog"];
@@ -259,14 +266,22 @@ export async function openSession(
   sessionId: string,
   spec: SessionSpec,
   setupScript?: string
-): Promise<Attached> {
+): Promise<SessionOpening> {
   const data = ok(
     await api.POST("/sandboxes/{name}/sessions", {
       params: { path: { name: sandbox } },
       body: { session_id: sessionId, spec: toJson(SessionSpecSchema, spec) as JsonObject, setup_script: setupScript },
     })
   );
-  return fromJson(AttachedSchema, data as JsonValue);
+  return data as SessionOpening;
+}
+
+export async function getSessionOpening(sandbox: string, sessionId: string): Promise<SessionOpening> {
+  return ok(
+    await api.GET("/sandboxes/{name}/sessions/{session_id}/opening", {
+      params: { path: { name: sandbox, session_id: sessionId } },
+    })
+  ) as SessionOpening;
 }
 
 export async function resumeThread(threadId: string): Promise<Attached> {

@@ -1024,6 +1024,7 @@ _ERROR_STATUS: dict[type[Exception], int] = {
     runner_bridge.RunnerAdmissionTimeoutError: status.HTTP_504_GATEWAY_TIMEOUT,
     runner_bridge.DispatcherNotConfiguredError: status.HTTP_503_SERVICE_UNAVAILABLE,
     runner_bridge.DispatchNotFoundError: status.HTTP_404_NOT_FOUND,
+    runner_bridge.SessionOpeningNotFoundError: status.HTTP_404_NOT_FOUND,
     # The runner or the Sandbox's state refused a lifecycle request or a command: an unknown session.
     RefusedError: status.HTTP_409_CONFLICT,
     # The Thread's history or retained Session spec does not admit it: a spec mismatch.

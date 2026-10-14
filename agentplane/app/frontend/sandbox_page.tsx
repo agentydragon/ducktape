@@ -27,7 +27,9 @@ import {
   api,
   displayableError,
   findThread,
+  getSessionOpening,
   getThread,
+  HttpError,
   listSessions,
   modelsForHarness,
   harnessOptions,
@@ -35,6 +37,7 @@ import {
   RunnerUnavailableError,
   type Harness,
   type ModelCatalog,
+  type SessionDefaults,
   type SandboxView,
   type ThreadView,
 } from "./client";
@@ -68,7 +71,26 @@ function pendingOpenKey(sandbox: string): string {
   return `agentplane:pending-open:${sandbox}`;
 }
 
-type PendingOpen = { sessionId: string };
+type PendingOpen = { sessionId: string; state?: string; reason?: string };
+
+type LoadedPresetDefaults = { preset: string | null; defaults: SessionDefaults | null };
+
+function openingStateLabel(state: string | undefined): string {
+  switch (state) {
+    case "DELIVERY_STATE_QUEUED_IN_DISPATCHER":
+      return "Queued in Dispatcher";
+    case "DELIVERY_STATE_DELIVERING_TO_RUNNER":
+      return "Opening on the runner";
+    case "DELIVERY_STATE_RUNNER_ADMITTED":
+      return "Accepted by the runner";
+    case "DELIVERY_STATE_FAILED":
+      return "Opening failed";
+    case "DELIVERY_STATE_UNKNOWN":
+      return "Opening outcome unavailable";
+    default:
+      return "Waiting for opening status";
+  }
+}
 
 function setupLabel(state: SetupState): string {
   switch (state) {
@@ -294,6 +316,7 @@ export function SandboxPage({
   const [cwdTemplate, setCwdTemplate] = useState("/state/workspaces/{session_id}");
   const [setupScript, setSetupScript] = useState("");
   const [inheritsDefaults, setInheritsDefaults] = useState(false);
+  const [presetDefaults, setPresetDefaults] = useState<LoadedPresetDefaults | null>(null);
   // Launch-form offerings; existing threads retain their harness and model.
   const [harness, setHarness] = useState<Harness>("HARNESS_CLAUDE");
   const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
@@ -323,7 +346,7 @@ export function SandboxPage({
   const currentPodIp = sandbox ? podIp(sandbox) : null;
   const podUid = sandbox?.pod?.uid;
   const openedSessions = threads.length;
-  const bindingKey = JSON.stringify(sandbox?.binding ?? null);
+  const presetName = sandbox?.preset ?? null;
   useEffect(() => {
     let cancelled = false;
     let retry: number | undefined;
@@ -368,6 +391,35 @@ export function SandboxPage({
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    if (presetName === null) {
+      setPresetDefaults({ preset: null, defaults: {} });
+      return () => {
+        cancelled = true;
+      };
+    }
+    setPresetDefaults(null);
+    void (async () => {
+      const { data, error: failure } = await api.GET("/presets");
+      if (cancelled) return;
+      if (failure) {
+        setError(displayableError(failure));
+        return;
+      }
+      const preset = data?.find((candidate) => candidate.name === presetName);
+      if (!preset) {
+        setError(`Sandbox preset ${presetName} is missing from the app configuration.`);
+        setPresetDefaults({ preset: presetName, defaults: null });
+        return;
+      }
+      setPresetDefaults({ preset: presetName, defaults: preset.session_defaults });
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [presetName]);
+
+  useEffect(() => {
     const offered = harnessOptions(modelCatalog).filter((option) => !option.disabled);
     if (offered.length && !offered.some((option) => option.value === harness)) {
       setHarness(offered[0].value);
@@ -386,29 +438,18 @@ export function SandboxPage({
     if (option && !option.reasoning_efforts.includes(effort)) setEffort(option.reasoning_efforts[0] ?? "");
   }, [effort, model, models]);
 
-  const applyBindingDefaults = useEffectEvent(() => {
-    const binding = sandbox?.binding;
-    if (!binding) {
-      setInheritsDefaults(false);
-      setCwdTemplate("/state/workspaces/{session_id}");
-      setSetupScript("");
-      return;
-    }
-    const defaults = binding.session_defaults;
-    setInheritsDefaults(Boolean(defaults));
-    if (!defaults) {
-      setCwdTemplate("/state/workspaces/{session_id}");
-      setSetupScript("");
-      return;
-    }
-    if (defaults.harness) setHarness(defaults.harness);
-    if (defaults.model) setModel(defaults.model);
-    if (defaults.reasoning_effort) setEffort(defaults.reasoning_effort);
+  const applyPresetDefaults = useEffectEvent(() => {
+    if (!presetDefaults || presetDefaults.preset !== presetName || presetDefaults.defaults === null) return;
+    const defaults = presetDefaults.defaults;
+    setInheritsDefaults(presetName !== null);
+    setHarness(defaults.harness ?? "HARNESS_CLAUDE");
+    setModel(defaults.model ?? null);
+    setEffort(defaults.reasoning_effort ?? "low");
     setInstructions(defaults.instructions ?? "");
     setCwdTemplate(defaults.cwd ?? "/state/workspaces/{session_id}");
     setSetupScript(defaults.setup_script ?? "");
   });
-  useEffect(() => applyBindingDefaults(), [bindingKey]);
+  useEffect(() => applyPresetDefaults(), [presetName, presetDefaults]);
 
   // No re-read after an action: the change reaches the API server, and the watch behind the
   // stream brings the sandbox's new state back on its own.
@@ -440,7 +481,7 @@ export function SandboxPage({
     const sessionId = crypto.randomUUID();
     const spec = fromJson(SessionSpecSchema, {
       harness,
-      cwd: cwdTemplate, // The Runner Gateway expands {session_id} to the Session ID.
+      cwd: cwdTemplate, // The app resolves {session_id} before it opens the Session.
       model,
       reasoningEffort: effort,
       instructions,
@@ -450,9 +491,15 @@ export function SandboxPage({
     setCreatingSession(true);
     setError(null);
     try {
-      const attached = await openSession(name, sessionId, spec, setupScript);
-      if (!attached.sessionId) throw new Error("Open returned without a Session ID");
-      await openThread(attached.sessionId, sessionId);
+      const opening = await openSession(name, sessionId, spec, setupScript);
+      if (!opening.sessionId) throw new Error("Open returned without a Session ID");
+      rememberOpen({ sessionId, state: opening.state, reason: opening.reason });
+      if (
+        opening.state === "DELIVERY_STATE_RUNNER_ADMITTED" &&
+        (threadBySession[sessionId] || (await findThread(sessionId)))
+      ) {
+        await openThread(sessionId, sessionId);
+      }
     } catch (reason: unknown) {
       // Outcome may be ambiguous. Do not replay Open or bootstrap, even in this tab.
       setError(`${displayableError(reason)} Check this attempt before starting another session.`);
@@ -466,15 +513,23 @@ export function SandboxPage({
     setCreatingSession(true);
     setError(null);
     try {
-      // The Thread's ID is the Session ID the attempt named; it appears once the runner reports the
-      // Session, including a launch that failed.
       const { sessionId } = pendingOpen;
       if (threadBySession[sessionId] || (await findThread(sessionId))) {
         await openThread(sessionId, sessionId);
       } else {
-        setError(
-          "The runner has not reported this session. Check later, or discard this attempt to start fresh; it will not be retried."
-        );
+        try {
+          const opening = await getSessionOpening(name, sessionId);
+          rememberOpen({ sessionId, state: opening.state, reason: opening.reason });
+          setError(`${openingStateLabel(opening.state)}${opening.reason ? `: ${opening.reason}` : "."}`);
+        } catch (reason: unknown) {
+          if (reason instanceof HttpError && (reason.status === 404 || reason.status === 503)) {
+            setError(
+              "No runner Thread or Dispatcher opening is visible yet. Check later; this attempt is never retried."
+            );
+          } else {
+            setError(displayableError(reason));
+          }
+        }
       }
     } catch (reason: unknown) {
       setError(displayableError(reason));
@@ -635,8 +690,9 @@ export function SandboxPage({
             {pendingOpen && (
               <Stack gap="xs">
                 <Text size="sm" role="status">
-                  Open attempt {pendingOpen.sessionId} may have succeeded. Check its status before starting another
-                  session. An unconfirmed attempt is never retried automatically.
+                  Open attempt {pendingOpen.sessionId}: {openingStateLabel(pendingOpen.state)}
+                  {pendingOpen.reason ? ` — ${pendingOpen.reason}` : ""}. Check before starting another session. An
+                  unconfirmed attempt is never retried automatically.
                 </Text>
                 <Group gap="xs">
                   <Button disabled={creatingSession} variant="light" onClick={() => void checkPendingOpen()}>
@@ -651,7 +707,7 @@ export function SandboxPage({
                       setError(null);
                     }}
                   >
-                    Discard attempt and allow a new session
+                    Forget attempt; it may still open
                   </Button>
                 </Group>
               </Stack>
@@ -659,7 +715,9 @@ export function SandboxPage({
             <Disclosure summary="Standing instructions" keepMounted>
               <Textarea
                 aria-label="Standing instructions"
-                description={inheritsDefaults ? "Inherited from this sandbox; editable for this thread" : undefined}
+                description={
+                  inheritsDefaults ? "From this Sandbox's configured preset; editable for this thread" : undefined
+                }
                 autosize
                 minRows={2}
                 value={instructions}

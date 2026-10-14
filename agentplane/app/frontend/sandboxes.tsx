@@ -19,18 +19,7 @@ import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertica
 import { type JSX, useEffect, useState } from "react";
 import { useSearchParams } from "react-router";
 
-import {
-  api,
-  displayableError,
-  models,
-  modelsForHarness,
-  harnessOptions,
-  type ModelCatalog,
-  type NewSandbox,
-  type SandboxPresetView,
-  type SandboxView,
-  type SessionDefaults,
-} from "./client";
+import { api, displayableError, type NewSandbox, type SandboxPresetView, type SandboxView } from "./client";
 import { Disclosure } from "./disclosure";
 import { ConfirmDelete, deletable, SuspendResume } from "./lifecycle";
 import { liveSandboxesUrl, useLive, type SandboxesSnapshot } from "./live";
@@ -45,13 +34,8 @@ const EMPTY_FORM: NewSandbox = {
   policy_sets: [],
   bootstrap: "",
 };
-const EMPTY_THREAD: SessionDefaults = {};
 // The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
 const PRESET_PARAM = "preset";
-
-function hasSessionDefaults(defaults: SessionDefaults): boolean {
-  return Object.values(defaults).some((value) => value !== undefined && value !== null && value !== "");
-}
 
 function StateBadge({ row }: { row: SandboxView }): JSX.Element {
   const summary = sandboxSummary(row);
@@ -68,10 +52,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [form, setForm] = useState<NewSandbox>(EMPTY_FORM);
   const [presets, setPresets] = useState<SandboxPresetView[]>([]);
   const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
-  const [thread, setThread] = useState<SessionDefaults>(EMPTY_THREAD);
-  const [modelCatalog, setModelCatalog] = useState<ModelCatalog | null>(null);
-  const modelOptions = thread.harness && modelCatalog ? modelsForHarness(modelCatalog, thread.harness) : [];
-  const reasoningEfforts = modelOptions.find((option) => option.model === thread.model)?.reasoning_efforts ?? [];
   const [templates, setTemplates] = useState<string[]>([]);
   // The PolicySets a new Sandbox may name; a preset pre-fills the pick and the operator edits it.
   const [policySets, setPolicySets] = useState<string[]>([]);
@@ -85,7 +65,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const placeholderName = placeholderSandboxName(selectedPreset ?? "sandbox", new Set(rows.map((row) => row.name)));
   const nameError = sandboxNameError(form.name || placeholderName);
 
-  /** Fill the form from a preset, or clear what one filled; every launch field stays editable. */
+  /** Fill the Sandbox creation fields from a preset; session defaults remain app configuration. */
   function pickPreset(preset: SandboxPresetView | null): void {
     setSelectedPreset(preset?.name ?? null);
     if (!preset) {
@@ -95,7 +75,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         policy_sets: [],
         bootstrap: "",
       }));
-      setThread(EMPTY_THREAD);
       return;
     }
     setForm((current) => ({
@@ -104,7 +83,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       policy_sets: preset.policy_sets,
       bootstrap: preset.bootstrap,
     }));
-    setThread(preset.session_defaults);
   }
 
   // The URL names a preset the form has not taken yet: once the catalog is here, take it.
@@ -127,24 +105,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     })();
   }, []);
 
-  useEffect(() => {
-    void models().then(setModelCatalog, (reason: unknown) => setError(displayableError(reason)));
-  }, []);
-
-  useEffect(() => {
-    if (!modelCatalog) return;
-    setThread((current) => {
-      if (!current.harness) return current;
-      const available = harnessOptions(modelCatalog).filter((option) => !option.disabled);
-      const harness = available.find((option) => option.value === current.harness)?.value ?? available[0]?.value;
-      if (!harness) return current;
-      const offered = modelsForHarness(modelCatalog, harness);
-      if (harness === current.harness && current.model && offered.some((option) => option.model === current.model))
-        return current;
-      return { ...current, harness, model: offered[0]?.model ?? null, reasoning_effort: undefined };
-    });
-  }, [modelCatalog, thread.harness, thread.model]);
-
   // No refresh after an action: the change reaches the API server, and the watch behind the
   // stream brings the new row back on its own.
   async function act(name: string, action: "suspend" | "resume" | "delete"): Promise<void> {
@@ -161,7 +121,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
       ...form,
       name: form.name || placeholderName,
       preset: selectedPreset ?? undefined,
-      session_defaults: hasSessionDefaults(thread) ? thread : undefined,
     };
     const { data, error: failure } = await api.POST("/sandboxes", {
       body,
@@ -170,7 +129,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     else {
       setForm(EMPTY_FORM);
       setSelectedPreset(null);
-      setThread(EMPTY_THREAD);
       const params = new URLSearchParams(searchParams);
       params.delete(PRESET_PARAM);
       setSearchParams(params, { replace: true });
@@ -201,7 +159,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         <Select
           clearable
           label="Preset"
-          description="Fills the template, policies and session defaults below"
+          description="Fills the template, policy sets, and bootstrap below; session defaults stay in app configuration"
           data={presets.map((preset) => ({ value: preset.name, label: preset.title }))}
           value={selectedPreset}
           onChange={(name) => {
@@ -242,14 +200,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           onChange={(picked) => setForm({ ...form, policy_sets: picked })}
           style={{ flex: "1 1 18rem" }}
         />
-        <Button
-          onClick={() => void create()}
-          disabled={
-            nameError !== null ||
-            !form.template ||
-            Boolean(selectedPreset && (!thread.model || !modelOptions.some((option) => option.model === thread.model)))
-          }
-        >
+        <Button onClick={() => void create()} disabled={nameError !== null || !form.template}>
           New sandbox
         </Button>
       </Group>
@@ -261,76 +212,6 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
         value={form.bootstrap}
         onChange={(event) => setForm({ ...form, bootstrap: event.currentTarget.value })}
       />
-      <Stack gap="xs">
-        <Text size="sm" fw={600}>
-          Session launch defaults · optional
-        </Text>
-        <Text size="xs" c="dimmed">
-          Used when this sandbox starts a runner session. A preset only fills these fields; each also works on its own.
-        </Text>
-        <Group align="flex-end">
-          <Select
-            label="Harness"
-            allowDeselect={false}
-            data={harnessOptions(modelCatalog)}
-            value={thread.harness ?? null}
-            onChange={(harness) =>
-              setThread({ ...thread, harness: (harness ?? undefined) as SessionDefaults["harness"] })
-            }
-          />
-          <Select
-            label="Model"
-            searchable
-            allowDeselect={false}
-            data={modelOptions.map((option) => ({ value: option.model, label: option.display_name }))}
-            value={thread.model ?? null}
-            onChange={(model) => {
-              const efforts = modelOptions.find((option) => option.model === model)?.reasoning_efforts ?? [];
-              setThread({
-                ...thread,
-                model,
-                reasoning_effort: efforts.includes(thread.reasoning_effort ?? "") ? thread.reasoning_effort : undefined,
-              });
-            }}
-            disabled={modelOptions.length === 0}
-            placeholder={modelCatalog ? "No models available" : "Loading models…"}
-            style={{ flex: "1 1 20rem" }}
-          />
-          {reasoningEfforts.length > 0 && (
-            <Select
-              label="Reasoning effort"
-              data={reasoningEfforts}
-              value={thread.reasoning_effort ?? null}
-              onChange={(effort) => setThread({ ...thread, reasoning_effort: effort ?? undefined })}
-            />
-          )}
-        </Group>
-        <TextInput
-          label="Working directory"
-          value={thread.cwd ?? ""}
-          onChange={(event) => setThread({ ...thread, cwd: event.currentTarget.value })}
-        />
-        <Disclosure summary="Thread setup script" keepMounted>
-          <Textarea
-            aria-label="Thread setup script"
-            description="Runs once in each new Thread's working directory, before its harness starts"
-            autosize
-            minRows={2}
-            value={thread.setup_script ?? ""}
-            onChange={(event) => setThread({ ...thread, setup_script: event.currentTarget.value })}
-          />
-        </Disclosure>
-        <Disclosure summary="Standing instructions" keepMounted>
-          <Textarea
-            aria-label="Standing instructions"
-            description="Edits apply to future threads in this sandbox"
-            autosize
-            minRows={3}
-            value={thread.instructions ?? ""}
-            onChange={(event) => setThread({ ...thread, instructions: event.currentTarget.value })}
-          />
-        </Disclosure>
-      </Stack>
       <Table>
         <Table.Thead>
           <Table.Tr>

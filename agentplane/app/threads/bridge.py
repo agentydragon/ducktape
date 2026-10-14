@@ -5,10 +5,11 @@ from __future__ import annotations
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.threads.runner_directory import RunnerDirectory
@@ -39,6 +40,10 @@ class DispatchNotFoundError(Exception):
     """The dispatch does not belong to the requested Thread."""
 
 
+class SessionOpeningNotFoundError(Exception):
+    """The opening is not for the requested Sandbox."""
+
+
 class RunnerAdmissionTimeoutError(Exception):
     """Command admission was not confirmed before the deadline; its outcome is uncertain."""
 
@@ -49,7 +54,7 @@ class RunnerAdmissionTimeoutError(Exception):
 class NewSession(BaseModel):
     model_config = ConfigDict(extra="forbid")
     spec: dict[str, object] = Field(
-        description="Explicit proto-JSON SessionSpec fields; Sandbox-bound defaults fill omitted fields."
+        description="Explicit proto-JSON SessionSpec fields; configured preset defaults fill omitted fields."
     )
     session_id: UUID = Field(
         description="A fresh UUID the client minted for this Session; a retry of the same Open repeats it."
@@ -65,32 +70,53 @@ class RunnerBridge:
         event_logs: EventLogStore,
         content: ContentStore,
         dispatcher: SessionDispatcherClient | None = None,
+        open_sessions_via_dispatcher: bool = False,
     ) -> None:
         self._runners = runners
         self._event_logs = event_logs
         self._content = content
         self._dispatcher = dispatcher
+        self._open_sessions_via_dispatcher = open_sessions_via_dispatcher
+        if open_sessions_via_dispatcher and dispatcher is None:
+            raise ValueError("Dispatcher OpenSession is enabled without a Session Dispatcher client")
 
     async def list_sessions(self, sandbox: str) -> list[runner_pb2.SessionSummary]:
         return await self._runners.client(sandbox).list_sessions()
 
     async def create_session(
-        self, sandbox: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
-    ) -> runner_pb2.Attached:
-        """Use the service's public ID; the app only materializes its Thread projection."""
+        self, sandbox: str, session_id: UUID, spec: runner_pb2.SessionSpec, setup_script: str | None = None
+    ) -> session_dispatcher_pb2.SessionOpening:
+        """Open a complete Session spec, through Dispatcher when its caller setting is enabled."""
+        if self._open_sessions_via_dispatcher:
+            assert self._dispatcher is not None
+            return await self._dispatcher.open_session(
+                sandbox=sandbox, session_id=str(session_id), spec=spec, setup_script=setup_script
+            )
         try:
             created = await self._runners.client(sandbox).create(
-                session_id=session_id, spec=spec, setup_script=setup_script
+                session_id=session_id,
+                spec=MessageToDict(spec, always_print_fields_with_no_presence=True),
+                setup_script=setup_script,
             )
         except (ValueError, ParseError) as error:
             raise MalformedMessageError(f"invalid session overrides: {error}") from error
-        public_id = created.session_id
-        thread_id = await self._event_logs.open(public_id)
-        if thread_id != UUID(public_id):
+        if created.session_id != str(session_id):
             raise ThreadStateError("service Session ID conflicts with the retained Thread identity")
-        attached = runner_pb2.Attached()
-        attached.CopyFrom(created.attached)
-        return attached
+        await self._event_logs.open(created.session_id)
+        return session_dispatcher_pb2.SessionOpening(
+            session_id=created.session_id,
+            sandbox=sandbox,
+            state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
+            attached=created.attached,
+        )
+
+    async def session_opening(self, sandbox: str, session_id: UUID) -> session_dispatcher_pb2.SessionOpening:
+        if self._dispatcher is None:
+            raise DispatcherNotConfiguredError("Session Dispatcher is not configured")
+        opening = await self._dispatcher.get_session_opening(str(session_id))
+        if opening.sandbox != sandbox:
+            raise SessionOpeningNotFoundError(str(session_id))
+        return opening
 
     async def resume_thread(
         self, thread_id: UUID, *, expected_harness: Harness | None, expected_cwd: str | None
@@ -198,6 +224,24 @@ async def list_sessions(bridge: Bridge, name: str) -> list[dict[str, object]]:
 
 
 @router.post("", status_code=status.HTTP_201_CREATED)
-async def create_session(bridge: Bridge, name: str, body: NewSession) -> dict[str, object]:
-    _parse(runner_pb2.SessionSpec(), body.spec)  # Validate without losing explicit empty overrides.
-    return MessageToDict(await bridge.create_session(name, body.session_id, body.spec, body.setup_script))
+async def create_session(request: Request, bridge: Bridge, name: str, body: NewSession) -> dict[str, object]:
+    services = request.app.state.services
+    sandbox = sandbox_view(await services.inventory.get(name))
+    try:
+        defaults = services.presets.defaults_for_sandbox(sandbox.preset)
+    except KeyError as error:
+        raise HTTPException(status.HTTP_409_CONFLICT, str(error)) from error
+
+    spec = _parse(
+        runner_pb2.SessionSpec(), defaults.model_dump(mode="json", exclude_none=True, exclude={"setup_script"})
+    )
+    spec = _parse(spec, body.spec)  # Request fields, including explicit empty strings, override the preset.
+    spec.cwd = spec.cwd.replace("{session_id}", str(body.session_id))
+    setup_script = body.setup_script if "setup_script" in body.model_fields_set else defaults.setup_script or None
+    opening = await bridge.create_session(name, body.session_id, spec, setup_script)
+    return MessageToDict(opening)
+
+
+@router.get("/{session_id}/opening")
+async def session_opening(bridge: Bridge, name: str, session_id: UUID) -> dict[str, object]:
+    return MessageToDict(await bridge.session_opening(name, session_id))

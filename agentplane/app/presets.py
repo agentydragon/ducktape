@@ -1,8 +1,7 @@
 """App-owned form presets.
 
-A preset is only a convenient collection of values the operator may choose individually. Kubernetes
-and the runner receive the selected concrete template, egress policies, bootstrap source, and SessionSpec
-fields, never a preset name to resolve later.
+A Sandbox preset also names the configured session defaults the app applies when opening new Sessions.
+Kubernetes stores only the preset label, concrete Sandbox template, policy sets, and bootstrap source.
 """
 
 from __future__ import annotations
@@ -57,7 +56,7 @@ class SandboxPresetView(BaseModel):
 
 
 class PresetCatalog(BaseModel):
-    """Validated app configuration, keyed by names the UI may expand into editable fields."""
+    """Validated app configuration keyed by the Sandbox label stored on each Sandbox."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -85,3 +84,12 @@ class PresetCatalog(BaseModel):
             )
             for name, preset in self.sandboxes.items()
         ]
+
+    def defaults_for_sandbox(self, name: str | None) -> SessionDefaults:
+        """Resolve launch defaults from the Sandbox's label, never from per-Sandbox state."""
+        if name is None:
+            return SessionDefaults()
+        preset = self.sandboxes.get(name)
+        if preset is None:
+            raise KeyError(f"Sandbox names preset {name!r}, but it is not in the app's preset catalog")
+        return self.threads[preset.thread_preset].defaults()

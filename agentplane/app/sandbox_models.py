@@ -58,7 +58,7 @@ class SandboxBinding(BaseModel):
 
 
 class NewSandbox(BaseModel):
-    """The concrete sandbox choices a caller makes after optionally applying a form preset."""
+    """Concrete Sandbox choices; session launch defaults live in the app preset catalog."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -66,9 +66,6 @@ class NewSandbox(BaseModel):
     template: str = Field(min_length=1, description="SandboxTemplate each of its incarnations starts from.")
     preset: str | None = Field(default=None, description="The preset the form's fields were taken from, if any.")
     policy_sets: list[str] = Field(default_factory=list, description="PolicySet names to bind.")
-    session_defaults: SessionDefaults | None = Field(
-        default=None, description="Reusable session defaults for future sessions in this Sandbox."
-    )
     bootstrap: str = Field(default="", max_length=65_536, description="Runner initialization script for this Sandbox.")
 
 

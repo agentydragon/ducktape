@@ -320,6 +320,7 @@ py_test(
         "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/runner:harness",
         "//agentplane/runner_gateway:client",
         "//agentplane/sandbox_service:client",

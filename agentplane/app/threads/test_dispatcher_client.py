@@ -7,7 +7,7 @@ import grpc
 import pytest_bazel
 
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_dispatcher_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, session_dispatcher_pb2
 
 # The mypy aspect adds generated protobuf stubs from the runtime dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -27,6 +27,12 @@ class Stub:
                 )
             ),
         )
+        self.opening = session_dispatcher_pb2.SessionOpening(
+            session_id="session-a",
+            sandbox="sandbox-a",
+            state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+            reason="sandbox is not Ready",
+        )
 
     async def _dispatch(self, name: str, request: Any, **kwargs: object) -> Any:
         self.calls.append((name, request, kwargs))
@@ -45,6 +51,8 @@ class Stub:
                 state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED, admission=self.admission
             ),
             "GetDispatch": session_dispatcher_pb2.GetDispatchResponse(dispatch=dispatch),
+            "OpenSession": session_dispatcher_pb2.OpenSessionResponse(opening=self.opening),
+            "GetSessionOpening": session_dispatcher_pb2.GetSessionOpeningResponse(opening=self.opening),
         }[name]
 
     def __getattr__(self, name: str) -> Any:
@@ -95,6 +103,23 @@ async def test_operations_keep_the_command_identity_and_use_the_dispatcher_audie
         assert fetched.command_id == "input"
         assert stub.calls[-1][0] == "GetDispatch"
         assert stub.calls[-1][1].command_id == "input"
+
+        spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, model="test-model")
+        opening = await client.open_session(sandbox="sandbox-a", session_id="session-a", spec=spec, setup_script="")
+        name, request, options = stub.calls[-1]
+        assert name == "OpenSession"
+        assert request.spec == spec
+        assert request.HasField("setup_script")
+        assert request.setup_script == ""
+        assert opening == stub.opening
+        assert options["metadata"] == (("authorization", "Bearer dispatcher-token"),)
+        assert options["timeout"] == 7
+
+        opening = await client.get_session_opening("session-a")
+        name, request, _ = stub.calls[-1]
+        assert name == "GetSessionOpening"
+        assert request.session_id == "session-a"
+        assert opening == stub.opening
     finally:
         await channel.close()
 

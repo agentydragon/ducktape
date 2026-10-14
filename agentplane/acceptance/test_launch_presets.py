@@ -8,7 +8,6 @@ import pytest_bazel
 
 from agentplane.acceptance.agent import Agent, runner_startup_retries
 from agentplane.acceptance.conftest import Sandboxes
-from agentplane.app.sandbox_models import SessionDefaults
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
@@ -34,25 +33,25 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     view = await sandbox(
         "accept-public-coder",
         template=preset.template,
+        preset=PUBLIC_CODER,
         policies=policies,
-        session_defaults=SessionDefaults(instructions=INSTRUCTIONS).over(preset.session_defaults),
         bootstrap=preset.bootstrap,
     )
+    assert view.preset == PUBLIC_CODER
     assert view.binding is not None
-    assert view.binding.session_defaults is not None
-    assert view.binding.session_defaults.instructions == INSTRUCTIONS
+    assert view.binding.session_defaults is None
 
     first_id = uuid4()
     async for attempt in runner_startup_retries():
         with attempt:
-            first = await client.create_session(view.name, first_id)
+            first = await client.create_session(view.name, first_id, overrides={"instructions": INSTRUCTIONS})
     assert (first.attached.spec.harness, first.attached.spec.model, first.attached.spec.reasoning_effort) == (
         runner_pb2.HARNESS_CODEX,
         preset.session_defaults.model,
         preset.session_defaults.reasoning_effort,
     )
-    # The Runner Gateway prepends its configured platform guidance to every session. The editable task
-    # instructions remain the exact final block; the Sandbox binding above stores only that edit.
+    # The Runner Gateway prepends its configured platform guidance to every session. The explicit
+    # Session instructions remain the exact final block and are not stored on the Sandbox.
     assert first.attached.spec.instructions.rsplit("\n\n", 1)[-1] == INSTRUCTIONS
 
     thread = await client.thread(UUID(first.attached.session_id))

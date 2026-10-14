@@ -29,6 +29,7 @@ const live = vi.hoisted(
           created_at: "2026-01-01T00:00:00Z",
           operating_mode: "Running",
           service_account: { namespace: "agentplane-test", name: "startup-test" },
+          preset: "test-preset",
           status: { conditions: [{ type: "Ready", status: "True" }] },
           phase: "Running",
           pod: {
@@ -82,6 +83,7 @@ class SilentEventSource extends EventTarget {
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
+let presetDefaults = {} as Record<string, unknown>;
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
@@ -89,6 +91,7 @@ afterEach(async () => {
   live.snapshot.threads = [];
   sessionStorage.clear();
   (live.snapshot.sandbox as SandboxView).binding = null;
+  presetDefaults = {};
 });
 afterAll(() => vi.unstubAllGlobals());
 
@@ -127,6 +130,20 @@ async function render(
     }
     if (path === "/sandboxes/form") {
       return Promise.resolve(Response.json({ policy_sets: [] }));
+    }
+    if (path === "/presets") {
+      return Promise.resolve(
+        Response.json([
+          {
+            name: "test-preset",
+            title: "Test preset",
+            template: "runner",
+            policy_sets: [],
+            session_defaults: presetDefaults,
+            bootstrap: "",
+          },
+        ])
+      );
     }
     const threadPath = /^\/threads\/([^/]+)$/.exec(path);
     if (threadPath && request.method === "GET") {
@@ -222,10 +239,7 @@ async function postedBody(sessions: Mock<(request: Request) => Promise<Response>
 }
 
 it("preserves a Sandbox reasoning default through model loading and submits it on later Thread launch", async () => {
-  (live.snapshot.sandbox as SandboxView).binding = {
-    bootstrap: "",
-    session_defaults: { harness: "HARNESS_CLAUDE", model: "test-model", reasoning_effort: "high" },
-  };
+  presetDefaults = { harness: "HARNESS_CLAUDE", model: "test-model", reasoning_effort: "high" };
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
   );
@@ -235,15 +249,12 @@ it("preserves a Sandbox reasoning default through model loading and submits it o
   expect((await postedBody(sessions)).spec.reasoningEffort).toBe("high");
 });
 
-it("uses the bound working directory template and setup script for later Threads", async () => {
-  (live.snapshot.sandbox as SandboxView).binding = {
-    bootstrap: "",
-    session_defaults: {
-      harness: "HARNESS_CLAUDE",
-      model: "test-model",
-      cwd: "/state/custom/{session_id}/work",
-      setup_script: "printf 'ready\\n'",
-    },
+it("uses the configured preset working directory template and setup script for later Threads", async () => {
+  presetDefaults = {
+    harness: "HARNESS_CLAUDE",
+    model: "test-model",
+    cwd: "/state/custom/{session_id}/work",
+    setup_script: "printf 'ready\\n'",
   };
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
@@ -271,11 +282,8 @@ it("shows an unspecified legacy setup as absent and a completed setup as complet
   });
 });
 
-it("lets a later Thread override the Sandbox reasoning default locally", async () => {
-  (live.snapshot.sandbox as SandboxView).binding = {
-    bootstrap: "",
-    session_defaults: { harness: "HARNESS_CLAUDE", model: "test-model", reasoning_effort: "high" },
-  };
+it("lets a later Thread override the preset reasoning default locally", async () => {
+  presetDefaults = { harness: "HARNESS_CLAUDE", model: "test-model", reasoning_effort: "high" };
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
     Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ detail: "stop" }, { status: 422 }))
   );
@@ -283,7 +291,7 @@ it("lets a later Thread override the Sandbox reasoning default locally", async (
   await choose("Reasoning effort", "medium");
   await act(async () => newSession().click());
   expect((await postedBody(sessions)).spec.reasoningEffort).toBe("medium");
-  expect((live.snapshot.sandbox as SandboxView).binding?.session_defaults?.reasoning_effort).toBe("high");
+  expect((await postedBody(sessions)).spec.reasoningEffort).toBe("medium");
 });
 
 /** Mantine portals a Menu's dropdown onto `document.body`, so its items live outside `container`. */
@@ -344,7 +352,11 @@ function button(label: string): HTMLButtonElement {
 function lostOpen(): Mock<(request: Request) => Promise<Response>> {
   return vi.fn((request: Request) =>
     Promise.resolve(
-      request.method === "GET" ? Response.json([]) : Response.json({ detail: "connection lost" }, { status: 503 })
+      new URL(request.url).pathname.endsWith("/opening")
+        ? Response.json({ detail: "no opening" }, { status: 404 })
+        : request.method === "GET"
+          ? Response.json([])
+          : Response.json({ detail: "connection lost" }, { status: 503 })
     )
   );
 }
@@ -357,7 +369,7 @@ it("does not retry an Open the runner has not reported", async () => {
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBe(first.session_id);
   await act(async () => button("Check Open status").click());
   expect(onOpenThread).not.toHaveBeenCalled();
-  expect(container.textContent).toContain("has not reported this session");
+  expect(container.textContent).toContain("No runner Thread or Dispatcher opening is visible yet");
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
   expect(fetchMock.mock.calls.map(([request]) => new URL(request.url).pathname)).toContain(
     `/threads/${first.session_id}`
@@ -391,7 +403,7 @@ it("reload retains only the Session ID, never the Open spec or bootstrap", async
   expect(newSession().disabled).toBe(true);
   await act(async () => button("Check Open status").click());
   expect(sessions.mock.calls.filter(([request]) => request.method === "POST")).toHaveLength(1);
-  await act(async () => button("Discard attempt").click());
+  await act(async () => button("Forget attempt").click());
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
   expect(newSession().disabled).toBe(false);
 });
@@ -400,7 +412,16 @@ it("opens the Session ID the service answers, which a service predating client I
   const publicId = "7af90050-01fd-423c-a3cb-c1f552b6cda7";
   live.snapshot.threads = [thread({ id: publicId })];
   const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
-    Promise.resolve(request.method === "GET" ? Response.json([]) : Response.json({ sessionId: publicId }))
+    Promise.resolve(
+      request.method === "GET"
+        ? Response.json([])
+        : Response.json({
+            sessionId: publicId,
+            sandbox: "startup-test",
+            state: "DELIVERY_STATE_RUNNER_ADMITTED",
+            attached: { sessionId: publicId },
+          })
+    )
   );
   const onOpenThread = await render(sessions);
   await act(async () => newSession().click());

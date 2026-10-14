@@ -7,7 +7,7 @@ import grpc
 from google.protobuf.message import Message
 
 from agentplane.grpc_calls import call_unary
-from agentplane.proto import command_pb2, session_dispatcher_pb2, session_dispatcher_pb2_grpc
+from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2, session_dispatcher_pb2_grpc
 
 # gazelle:include_dep @pypi//grpcio
 # gazelle:include_dep @pypi//protobuf
@@ -77,6 +77,21 @@ class SessionDispatcherClient:
             self.stub.GetDispatch, session_dispatcher_pb2.GetDispatchRequest(command_id=command_id)
         )
         return response.dispatch
+
+    async def open_session(
+        self, *, sandbox: str, session_id: str, spec: runner_pb2.SessionSpec, setup_script: str | None
+    ) -> session_dispatcher_pb2.SessionOpening:
+        request = session_dispatcher_pb2.OpenSessionRequest(session_id=session_id, sandbox=sandbox, spec=spec)
+        if setup_script is not None:
+            request.setup_script = setup_script
+        response = await self._unary(self.stub.OpenSession, request)
+        return response.opening
+
+    async def get_session_opening(self, session_id: str) -> session_dispatcher_pb2.SessionOpening:
+        response = await self._unary(
+            self.stub.GetSessionOpening, session_dispatcher_pb2.GetSessionOpeningRequest(session_id=session_id)
+        )
+        return response.opening
 
     async def _unary[ResponseT: Message](
         self, call: Callable[..., Awaitable[ResponseT]], request: Message

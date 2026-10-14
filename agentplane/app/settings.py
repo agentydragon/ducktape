@@ -76,6 +76,10 @@ class Settings(AppSettingsConfig):
         min_length=1,
         description="Optional Session Dispatcher gRPC host:port for Thread commands. Leave unset until the app image is pinned.",
     )
+    session_dispatcher_open_sessions: bool = Field(
+        default=False,
+        description="Send new Session openings to the Dispatcher. Enable only after the accepting app image is pinned.",
+    )
     runner_gateway_control_target: str = Field(
         min_length=1,
         description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "

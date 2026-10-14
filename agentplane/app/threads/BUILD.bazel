@@ -121,6 +121,7 @@ py_library(
         ":dispatcher_client",
         ":runner_directory",
         ":summaries",
+        "//agentplane/app:sandbox_models",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/app/threads/view:content",
         "//agentplane/proto:command_pb2",
@@ -141,6 +142,7 @@ py_library(
     deps = [
         "//agentplane:grpc_calls",
         "//agentplane/proto:command_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/proto:session_dispatcher_pb2_grpc",
         "@pypi//grpcio",
@@ -158,6 +160,7 @@ py_test(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/proto:session_dispatcher_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",

@@ -39,7 +39,7 @@ from agentplane.grpc_calls import dial
 from agentplane.grpc_serving import serving
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2
+from agentplane.proto import runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2, session_dispatcher_pb2
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
@@ -253,7 +253,7 @@ async def test_the_form_offers_the_namespace_policy_sets(client: httpx.AsyncClie
     }
 
 
-async def test_create_records_the_concrete_session_defaults_and_bootstrap(
+async def test_create_records_preset_label_and_bootstrap_without_per_sandbox_session_defaults(
     client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
     response = await client.post(
@@ -262,31 +262,24 @@ async def test_create_records_the_concrete_session_defaults_and_bootstrap(
             "name": "coder",
             "template": TEMPLATE,
             "policy_sets": ["packages"],
-            "session_defaults": {
-                "harness": "HARNESS_CODEX",
-                "model": "edited-model",
-                "cwd": "/state/workspaces/{session_id}",
-                "reasoning_effort": "medium",
-                "instructions": "extra instructions",
-            },
+            "preset": "public-coder",
             "bootstrap": "mkdir -p /state/workspaces",
         },
     )
 
     assert response.status_code == 201, response.text
     row = response.json()
-    assert row["binding"] == {
-        "session_defaults": {
-            "harness": "HARNESS_CODEX",
-            "model": "edited-model",
-            "cwd": "/state/workspaces/{session_id}",
-            "reasoning_effort": "medium",
-            "instructions": "extra instructions",
-            "setup_script": None,
-        },
-        "bootstrap": "mkdir -p /state/workspaces",
-    }
+    assert row["preset"] == "public-coder"
+    assert row["binding"] == {"bootstrap": "mkdir -p /state/workspaces"}
     assert custom_objects.objects[(SANDBOXES_PLURAL, row["name"])]["spec"]["policySets"] == ["packages"]
+
+
+async def test_create_rejects_per_sandbox_session_defaults(client: httpx.AsyncClient) -> None:
+    response = await client.post(
+        "/sandboxes", json={"name": "legacy-defaults", "template": TEMPLATE, "session_defaults": {"model": "old-model"}}
+    )
+
+    assert response.status_code == 422
 
 
 async def test_create_records_the_preset_it_was_made_from(
@@ -396,43 +389,53 @@ async def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_
             json={
                 "name": "coder",
                 "template": TEMPLATE,
-                "session_defaults": {
-                    "harness": "HARNESS_CODEX",
-                    "model": "sandbox-model",
-                    "cwd": "/state/workspaces/{session_id}",
-                    "reasoning_effort": "medium",
-                    "instructions": "preset instructions",
-                    "setup_script": "printf 'preset setup\\n'",
-                },
+                "preset": "public-coder",
                 "bootstrap": "mkdir -p /state/workspaces",
             },
         )
     ).json()
-    calls: list[tuple[str, object]] = []
+    calls: list[tuple[str, runner_pb2.SessionSpec]] = []
     setup_scripts: list[str | None] = []
 
     async def create_session(
-        name: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
-    ) -> runner_pb2.Attached:
+        name: str, session_id: UUID, spec: runner_pb2.SessionSpec, setup_script: str | None = None
+    ) -> session_dispatcher_pb2.SessionOpening:
         calls.append(("create", spec))
         setup_scripts.append(setup_script)
-        return runner_pb2.Attached(session_id=str(uuid4()))
+        return session_dispatcher_pb2.SessionOpening(session_id=str(session_id), sandbox=name)
 
     monkeypatch.setattr(bridge, "create_session", create_session)
 
+    session_id = uuid4()
     response = await client.post(
         f"/sandboxes/{created['name']}/sessions",
-        json={"session_id": str(uuid4()), "spec": {"model": "thread-model", "instructions": "thread instructions"}},
+        json={"session_id": str(session_id), "spec": {"model": "thread-model", "instructions": "thread instructions"}},
     )
 
     assert response.status_code == 201, response.text
-    assert calls == [("create", {"model": "thread-model", "instructions": "thread instructions"})]
+    assert len(calls) == 1
+    assert calls[0][0] == "create"
+    assert calls[0][1] == runner_pb2.SessionSpec(
+        harness=runner_pb2.HARNESS_CODEX,
+        model="thread-model",
+        cwd=f"/state/workspaces/{session_id}",
+        reasoning_effort="medium",
+        instructions="thread instructions",
+    )
     assert setup_scripts == [None]
+    second_id = uuid4()
     cleared = await client.post(
-        f"/sandboxes/{created['name']}/sessions", json={"session_id": str(uuid4()), "spec": {}, "setup_script": ""}
+        f"/sandboxes/{created['name']}/sessions", json={"session_id": str(second_id), "spec": {}, "setup_script": ""}
     )
     assert cleared.status_code == 201, cleared.text
     assert setup_scripts == [None, ""]
+    assert calls[1][1] == runner_pb2.SessionSpec(
+        harness=runner_pb2.HARNESS_CODEX,
+        model="test-codex-model",
+        cwd=f"/state/workspaces/{second_id}",
+        reasoning_effort="medium",
+        instructions="preset instructions",
+    )
 
 
 @pytest.mark.parametrize("model_catalog", [CODEX_ONLY], indirect=True)
@@ -468,10 +471,10 @@ async def test_direct_session_launch_leaves_platform_instructions_to_service(
     captured: list[dict[str, object]] = []
 
     async def create_session(
-        name: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
-    ) -> runner_pb2.Attached:
-        captured.append(spec)
-        return runner_pb2.Attached(session_id=str(uuid4()))
+        name: str, session_id: UUID, spec: runner_pb2.SessionSpec, setup_script: str | None = None
+    ) -> session_dispatcher_pb2.SessionOpening:
+        captured.append({"harness": runner_pb2.Harness.Name(spec.harness), "cwd": spec.cwd, "model": spec.model})
+        return session_dispatcher_pb2.SessionOpening(session_id=str(session_id), sandbox=name)
 
     monkeypatch.setattr(bridge, "create_session", create_session)
     response = await client.post(
@@ -492,8 +495,8 @@ async def test_service_launch_failure_preserves_uncertainty(
     status_code: int,
 ) -> None:
     async def failed_create(
-        name: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
-    ) -> runner_pb2.Attached:
+        name: str, session_id: UUID, spec: runner_pb2.SessionSpec, setup_script: str | None = None
+    ) -> session_dispatcher_pb2.SessionOpening:
         raise error_type("test upstream failure")
 
     monkeypatch.setattr(bridge, "create_session", failed_create)
@@ -509,14 +512,13 @@ async def test_create_session_answers_the_service_id(
 ) -> None:
     """The client's Session ID reaches the bridge; the answer carries the ID the service confirmed."""
     requested = uuid4()
-    public_id = str(uuid4())
-    received: list[tuple[str, UUID, dict[str, object], str | None]] = []
+    received: list[tuple[str, UUID, runner_pb2.SessionSpec, str | None]] = []
 
     async def create_session(
-        sandbox: str, session_id: UUID, spec: dict[str, object], setup_script: str | None = None
-    ) -> runner_pb2.Attached:
+        sandbox: str, session_id: UUID, spec: runner_pb2.SessionSpec, setup_script: str | None = None
+    ) -> session_dispatcher_pb2.SessionOpening:
         received.append((sandbox, session_id, spec, setup_script))
-        return runner_pb2.Attached(session_id=public_id)
+        return session_dispatcher_pb2.SessionOpening(session_id=str(session_id), sandbox=sandbox)
 
     monkeypatch.setattr(bridge, "create_session", create_session)
     path = "/sandboxes/live/sessions"
@@ -524,8 +526,8 @@ async def test_create_session_answers_the_service_id(
         path, json={"session_id": str(requested), "spec": {"cwd": "/w/{session_id}"}, "setup_script": "bootstrap"}
     )
     assert created.status_code == 201, created.text
-    assert created.json()["sessionId"] == public_id
-    assert received == [("live", requested, {"cwd": "/w/{session_id}"}, "bootstrap")]
+    assert created.json()["sessionId"] == str(requested)
+    assert received == [("live", requested, runner_pb2.SessionSpec(cwd=f"/w/{requested}"), "bootstrap")]
     assert (await client.post(path, json={"session_id": "not-a-uuid", "spec": {}})).status_code == 422
 
 

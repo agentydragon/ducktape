@@ -95,7 +95,6 @@ py_test(
         ":agent",
         ":conftest",
         "//:conftest",
-        "//agentplane/app:sandbox_models",
         "//agentplane/app/testing:client",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",

@@ -19,7 +19,7 @@ import pytest
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.acceptance.ollama_warmup import warm_ollama
-from agentplane.app.sandbox_models import NewSandbox, SandboxView, SessionDefaults, sandbox_is_ready
+from agentplane.app.sandbox_models import NewSandbox, SandboxView, sandbox_is_ready
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
@@ -168,19 +168,13 @@ async def sandbox(client: Client) -> AsyncIterator[Sandboxes]:
         *,
         template: str | None = None,
         policies: list[str] | None = None,
-        session_defaults: SessionDefaults | None = None,
+        preset: str | None = None,
         bootstrap: str = "",
     ) -> SandboxView:
         if template is None:
             template = POD_TEMPLATE
         view = await client.create_sandbox(
-            NewSandbox(
-                name=name,
-                template=template,
-                policy_sets=policies or [],
-                session_defaults=session_defaults,
-                bootstrap=bootstrap,
-            )
+            NewSandbox(name=name, template=template, preset=preset, policy_sets=policies or [], bootstrap=bootstrap)
         )
         created.append((view.name, view.uid))
         return await wait_until_running(client, view.name)

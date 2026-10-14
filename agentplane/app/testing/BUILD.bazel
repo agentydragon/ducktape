@@ -208,6 +208,7 @@ py_library(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/sandboxes:egress_views",
         "@pypi//httpx",
         "@pypi//protobuf",

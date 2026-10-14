@@ -188,7 +188,13 @@ async def async_main(settings: Settings) -> None:
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         runners = RunnerDirectory(live, gateway)
         session_openings = SessionOpenings(session_openings_client, event_logs, retry_interval_s=1)
-        bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher)
+        bridge = RunnerBridge(
+            runners=runners,
+            event_logs=event_logs,
+            content=content,
+            dispatcher=dispatcher,
+            open_sessions_via_dispatcher=settings.session_dispatcher_open_sessions,
+        )
 
         decisions = DecisionsClient(admin_http)
         app = create_app(
