@@ -1,6 +1,6 @@
 # Sandbox and Session control: who owns what
 
-Status: **decided; see [Decisions](#decisions) for when each was settled. How a sealed journal is reopened (D3) is proposed below and awaits the operator; idle suspension waits on it.**
+Status: **decided; see [Decisions](#decisions) for when each was settled. Idle suspension waits on the sealed-journal reopen (D3) being built.**
 
 Scope: the responsibilities split across the services and custom resources that run a Sandbox (Pod
 or VM) and deliver work to the Sessions in it. This covers the control Service, readiness and
@@ -213,7 +213,7 @@ marker names the incarnation it was entered in:
   removed before any call is accepted, and the runner starts unquiesced.
 - **Journals.** Each Session's journal sealed at its final cursor in the earlier incarnation. The
   new incarnation continues it after that cursor with an entry recording that it resumed;
-  [Reopening a sealed journal](#reopening-a-sealed-journal) proposes how.
+  [Reopening a sealed journal](#reopening-a-sealed-journal) decides how.
 - **Outside the runner.** Runner facts on the Lease are valid only while its `pod-uid` names the incarnation:
   the gateway's `accept()` (`connection_records.py`) rebuilds the Lease with only `pod-uid` and `runner-boot-id` on every
   accepted connection, and the controller's `readRunnerFacts` (`runner_facts.go`) accepts facts only while `pod-uid`
@@ -280,7 +280,7 @@ suspend needs none of it: a running setup is busy, so the conditional `Quiesce` 
 
 ### Reopening a sealed journal
 
-**Proposed, not decided.** A resumed Sandbox cannot run any Session today, and idle suspension, or any suspend not
+**Decided (operator, 2026-10-14): choice 1.** A resumed Sandbox cannot run any Session today, and idle suspension, or any suspend not
 followed by a delete, waits on this.
 
 **What "sealed" is after a quiesce.** One fact in several places, only the last keyed to an incarnation:
@@ -318,7 +318,7 @@ incarnation, so the ingress cannot tell a continuation from a runner that wrongl
 3. **A new journal file per incarnation.** Rejected: cursors restart, so History Service cursors and every reader's
    position would need an incarnation component.
 
-**Recommendation: 1.** It matches `SESSION_INCARNATIONS` ("its seal ends that incarnation, not the Session"), keeps
+**Why 1.** It matches `SESSION_INCARNATIONS` ("its seal ends that incarnation, not the Session"), keeps
 the invariant that makes `Quiesced` safe, and option 2 would need option 1's path for existing seals anyway.
 
 **Transitions the sequence must cover.**
@@ -822,6 +822,7 @@ sequenceDiagram
 | The Dispatcher wakes a suspended Sandbox by patching `spec.running` and `spec.wakeGeneration` itself             | Decided | 2026-10-14 | D4             |
 | Requesters write `spec`; the controller writes `status`                                                          | Decided | 2026-10-14 | Lifecycle      |
 | Removing the finalizer by hand is the only break-glass; there is no force-seal                                   | Decided | 2026-10-13 | Lifecycle      |
+| A seal belongs to the incarnation that sealed it; a new incarnation reopens the journal                          | Decided | 2026-10-14 | D3             |
 | Names: Session Dispatcher, `OpenSession` (kept), `Quiesce`, `Quiesced`, `Draining`, `Flushing`                   | Decided | 2026-10-13 | below          |
 | The queue holds about 1,000 queued commands per Session; past that, `RESOURCE_EXHAUSTED`                         | Decided | 2026-10-14 | D4             |
 | Dispatch rows are kept while their Sandbox exists                                                                | Decided | 2026-10-14 | D4             |
