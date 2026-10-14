@@ -6,7 +6,8 @@ the objects without editing their spec.
 
 from collections.abc import AsyncIterator, Set
 
-from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Sandbox
+from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest
+from agentplane.proto.sandboxes_pb2 import Sandbox
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.subjects import ServiceAccountRef
 

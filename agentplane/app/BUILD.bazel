@@ -1480,6 +1480,7 @@ py_library(
     deps = [
         "//agentplane:subjects",
         "//agentplane/proto:sandbox_service_pb2",
+        "//agentplane/proto:sandboxes_pb2",
         "//agentplane/sandboxes:inventory",
         "@pypi//protobuf",
     ],
