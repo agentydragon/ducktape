@@ -1129,7 +1129,7 @@ command ID, a reply lost across an incarnation boundary is redelivered to the ne
 (`THREAD_SUCCESSOR_DELIVERY`), delivery is first-in first-out per Session, `InterruptTurn` bypasses the queue and
 `StopRunnerSession` goes ahead of it, cancelling the inputs queued before it; those end `CANCELLED_IN_DISPATCHER` with reason `stopped`. An `InterruptTurn`
 is not stored: its outcome is its RPC response. A message for a deleted Session or a failed delivery ends in a
-terminal state with a reason and a time to live; when the Sandbox CR's deletion arrives on the
+terminal state with a reason, which the Dispatcher keeps while its Sandbox exists (operator, 2026-10-13 PDT; a different policy may come later); when the Sandbox CR's deletion arrives on the
 watch, queued commands end `FAILED` (reason `sandbox_deleted`) and delivering ones `UNKNOWN`. A queued command
 has no TTL; a Session holds at most about 1,000 queued commands, and a send past that fails
 `RESOURCE_EXHAUSTED`. The Dispatcher is a required door for senders. Replicas shard Sandboxes by a per-Sandbox Lease
