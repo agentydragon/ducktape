@@ -5,10 +5,14 @@
 {
   pkgs,
   pkgsUnstable,
+  osConfig ? null,
   ...
 }:
 let
   offlineProvider = "rugged-offline";
+  routerEnabled =
+    if osConfig == null then false else osConfig.ducktape.localLlm.llamaRouter.enable or false;
+  backendLabel = if routerEnabled then "llama.cpp router" else "Ollama";
   offlineModels = {
     qwen3_4b = {
       id = "qwen3:4b-instruct-2507-q4_K_M";
@@ -30,6 +34,13 @@ let
       context = 131072;
       output = 4096;
       toolCall = true;
+    };
+    qwen35_0_8b_long_256k_experimental = {
+      id = "qwen3.5:0.8b-long-256k-b256";
+      name = "Qwen3.5 0.8B Q8 (256k router experimental; tools unverified)";
+      context = 262144;
+      output = 4096;
+      toolCall = false;
     };
     gemma4_e4b = {
       id = "gemma4:e4b";
@@ -55,6 +66,13 @@ let
   };
   offlineConfigFor =
     key: model:
+    let
+      modelsForPicker =
+        if routerEnabled then
+          offlineModels
+        else
+          builtins.removeAttrs offlineModels [ "qwen35_0_8b_long_256k_experimental" ];
+    in
     builtins.toFile "rugged-opencode-offline-${key}.json" (
       builtins.toJSON {
         "$schema" = "https://opencode.ai/config.json";
@@ -81,7 +99,7 @@ let
         };
         provider.${offlineProvider} = {
           npm = "@ai-sdk/openai-compatible";
-          name = "Rugged local Ollama";
+          name = if routerEnabled then "Rugged local llama.cpp router" else "Rugged local Ollama";
           options = {
             baseURL = "http://127.0.0.1:11436/v1";
             timeout = false;
@@ -100,12 +118,27 @@ let
                   inherit (rosterModel) context output;
                 };
               };
-            }) (builtins.attrValues offlineModels)
+            }) (builtins.attrValues modelsForPicker)
           );
         };
       }
     );
   offlineConfigs = builtins.mapAttrs offlineConfigFor offlineModels;
+  qwen35SelectorCase =
+    if routerEnabled then
+      ''
+        qwen3.5-0.8b-long-256k-experimental)
+          selected_model="${offlineModels.qwen35_0_8b_long_256k_experimental.id}"
+          selected_config="${offlineConfigs.qwen35_0_8b_long_256k_experimental}"
+          ;;
+      ''
+    else
+      ''
+        qwen3.5-0.8b-long-256k-experimental)
+          echo "Qwen3.5 0.8B requires the rugged llama.cpp router backend to be enabled" >&2
+          exit 2
+          ;;
+      '';
 
   offlineCommand = pkgs.writeShellApplication {
     name = "rugged-opencode-offline-inner";
@@ -128,6 +161,7 @@ let
           selected_model="${offlineModels.gemma4_e2b_long_128k_experimental.id}"
           selected_config="${offlineConfigs.gemma4_e2b_long_128k_experimental}"
           ;;
+        ${qwen35SelectorCase}
         gemma4-e4b)
           selected_model="${offlineModels.gemma4_e4b.id}"
           selected_config="${offlineConfigs.gemma4_e4b}"
@@ -159,7 +193,7 @@ let
         "$OPENCODE_CONFIG"
 
       set +e
-      if [[ "''${1:-}" == acp ]]; then
+      if [[ "''${1:-}" == acp || "''${1:-}" == models ]]; then
         ${pkgsUnstable.opencode}/bin/opencode "$@"
       else
         ${pkgsUnstable.opencode}/bin/opencode --model "$selected_route" --agent local-build "$@"
@@ -243,8 +277,8 @@ let
         ${offlineCommand}/bin/rugged-opencode-offline-inner
         "$@"
       )
-      # TODO: Consider optional network isolation that still permits host-loopback Ollama.
-      echo "Local OpenCode: using host loopback Ollama port $backend_port; network access is not isolated." >&2
+      # TODO: Consider optional network isolation that still permits the selected local backend.
+      echo "Local OpenCode: using host loopback ${backendLabel} port $backend_port; network access is not isolated." >&2
       if "''${bwrap_args[@]}"; then
         exit 0
       else
@@ -255,10 +289,10 @@ let
 in
 {
   ducktape.opencode.providers = {
-    # Gemma 4 on local Intel iGPU via upstream Ollama/Vulkan.
+    # On-device model endpoint; the router is mutually exclusive with Ollama.
     rugged = {
       npm = "@ai-sdk/openai-compatible";
-      name = "Rugged local Ollama";
+      name = if routerEnabled then "Rugged local llama.cpp router" else "Rugged local Ollama";
       options.baseURL = "http://127.0.0.1:11436/v1";
       models."gemma4:e2b-it-qat" = {
         name = "Gemma 4 E2B QAT (32k context; rugged iGPU)";

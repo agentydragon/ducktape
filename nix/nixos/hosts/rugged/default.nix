@@ -37,6 +37,7 @@ in
     ./foxconn-wwan.nix
     ./nebula-underlay-refresh.nix
     ./local_llm_arc.nix
+    ./local_llm_router.nix
     ./local_llm_bearer_proxy.nix
     ./local_llm_npu.nix
     ./gpu-debug.nix
@@ -96,6 +97,7 @@ in
     numCtx = 131072;
     numBatch = 128;
   };
+  ducktape.localLlm.llamaRouter.enable = false;
   ducktape.localLlm.bearerProxy.enable = true;
 
   # Keep the llama.cpp service disabled until its own GGUF models and bounded

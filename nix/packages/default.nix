@@ -2,6 +2,7 @@
 {
   lib,
   pkgs,
+  pkgsUnstable,
   artifacts,
 }:
 let
@@ -493,6 +494,10 @@ rec {
   npu-compiler-libs = pkgs.callPackage ./npu-compiler-libs.nix { };
   openvino-npu = pkgs.callPackage ./openvino-npu.nix { inherit npu-compiler-libs; };
   llama-cpp-openvino = pkgs.callPackage ./llama-cpp-openvino.nix { inherit openvino-npu; };
+  # Standalone llama.cpp v0.6.0/b11429 from the pinned unstable input, built
+  # with Vulkan. Ollama embeds b11351 with LLAMA_SUBPROCESS disabled; these
+  # backend versions are not benchmark-equivalent.
+  llama-router = pkgsUnstable.llama-cpp.override { vulkanSupport = true; };
   prettier = pkgs.callPackage ./prettier/prettier.nix { };
   bazel-diff = pkgs.callPackage ./bazel-diff.nix { };
   # Anthropic CLI (`ant`): Claude API / Managed Agents control plane. Not in

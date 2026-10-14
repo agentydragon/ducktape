@@ -316,6 +316,7 @@
               bbr
               cpap-gateway-health
               llama-cpp-openvino
+              llama-router
               ;
           };
           modules = [
@@ -362,6 +363,7 @@
         inherit
           lib
           pkgs
+          pkgsUnstable
           artifacts
           ;
       };

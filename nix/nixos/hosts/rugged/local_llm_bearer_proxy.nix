@@ -1,4 +1,4 @@
-# Authenticated OpenAI-compatible access to rugged's loopback-only Ollama service.
+# Authenticated OpenAI-compatible access to rugged's loopback-only local inference service.
 {
   config,
   lib,
@@ -9,7 +9,7 @@ let
   mesh = builtins.fromJSON (builtins.readFile ../../../../nebula-mesh.json);
   listenAddress = mesh.hosts.rugged.nebula_ip;
   listenPort = 18080; # cdk8s EndpointSlice targets this listener for LiteLLM.
-  ollamaPort = 11436;
+  backendPort = 11436;
 in
 {
   options.ducktape.localLlm.bearerProxy = {
@@ -19,8 +19,9 @@ in
   config = lib.mkIf cfg.enable {
     assertions = [
       {
-        assertion = config.ducktape.localLlm.ollamaUpstream.enable;
-        message = "ducktape.localLlm.bearerProxy requires ducktape.localLlm.ollamaUpstream";
+        assertion =
+          config.ducktape.localLlm.ollamaUpstream.enable || config.ducktape.localLlm.llamaRouter.enable;
+        message = "ducktape.localLlm.bearerProxy requires an enabled local inference backend";
       }
     ];
 
@@ -52,7 +53,7 @@ in
           limit_except GET {
             deny all;
           }
-          proxy_pass http://127.0.0.1:${toString ollamaPort};
+          proxy_pass http://127.0.0.1:${toString backendPort};
           proxy_http_version 1.1;
           proxy_set_header Host $host;
           proxy_set_header Authorization "";
@@ -66,7 +67,7 @@ in
           limit_except POST {
             deny all;
           }
-          proxy_pass http://127.0.0.1:${toString ollamaPort};
+          proxy_pass http://127.0.0.1:${toString backendPort};
           proxy_http_version 1.1;
           proxy_set_header Host $host;
           proxy_set_header Authorization "";

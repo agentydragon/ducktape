@@ -84,12 +84,11 @@ can still be used when the host is offline, but the interactive agent itself is
 not network-isolated. The separate `offline_exec` helper retains its network
 namespace. Ordinary OpenCode profiles keep their existing configuration.
 
-Every offline-profile config exposes six tested Ollama models in OpenCode's
-model picker, with the actual serving context in each display name. The five
-selectable base models are prefetched by the rugged host generation; the
-experimental 131,072-context Gemma alias is declared separately. Qwen3 4B
-remains the default. Qwen3.5 0.8B is also added to host prefetch as a cache
-prerequisite for separate router evaluation; it is not an OpenCode profile yet.
+With the default Ollama backend, every offline-profile config exposes six
+models in OpenCode's picker: five base models and the experimental 131,072-context
+Gemma alias. The router-enabled profile adds Qwen3.5 0.8B as a seventh,
+experimental entry. The rugged host generation prefetches all six unique base
+tags; Qwen3 4B remains the default.
 
 After activating that Home Manager change and caching the model, run it from
 the project directory:
@@ -125,14 +124,54 @@ The project toolchain and dependencies must also be available locally. The
 verified task uses a frozen Python standard-library test suite; this does not
 establish that ducktape's usual remote Bazel workflow works without a network.
 
-The Qwen3.5 cache preparation uses two host generations. First activate the
-host configuration with Ollama enabled; its prefetch unit fetches any missing
-declared base tags and the model blobs stay in Ollama's persistent cache. The
-llama.cpp router remains disabled during this step. A later router activation
-is mutually exclusive with Ollama on port 11436 and reads that same cache; do
-not switch until the required tags are present and the router service account
-can read their blobs. The new base-tag prefetch does not qualify a context size
-or enable a Qwen3.5 picker entry.
+The router remains disabled by default. To prepare its cache, first activate the
+host configuration with Ollama enabled; the declared prefetch unit ensures all
+six unique base tags are cached: Qwen3 4B, Gemma E2B, Gemma E4B, Qwen2.5-Coder
+7B, Qwen3 8B, and Qwen3.5 0.8B. The Gemma 128k alias shares the E2B base.
+Router activation materializes links to those existing Ollama blobs while
+keeping the blob cache read-only. It does not download models, change blob
+permissions, or require manual `ollama pull` commands. The router reuses the
+persistent `ollama` service identity because the cache files are created with a
+restrictive umask. Switch Ollama to the mutually-exclusive router on port 11436
+only after the prefetch generation has activated and all six bases are present.
+
+When `ducktape.localLlm.llamaRouter.enable` is true, the offline OpenCode model
+picker includes the six existing entries plus `Qwen3.5 0.8B Q8 (256k router
+experimental; tools unverified)`. Select the latter explicitly with:
+
+```bash
+RUGGED_OPENCODE_MODEL=qwen3.5-0.8b-long-256k-experimental \
+  rugged-opencode-offline run "..."
+```
+
+List the local choices and context/output limits with
+`rugged-opencode-offline models rugged-offline --verbose`.
+
+Its configured alias is `qwen3.5:0.8b-long-256k-b256`, with 262,144 allocated
+context and a 4,096-token output budget. This is not the model's 163,840-context,
+q4_0-KV/FA-on Ollama qualification: the 262k standalone-router profile has not yet
+passed a long request, and tool calling has not been verified. The earlier
+successful 134,993-token Ollama request used a process-wide q4_0 KV cache and
+Flash Attention on; its memory profile does not transfer to this backend.
+
+A temporary standalone llama.cpp 0.6.0 router (upstream revision b11429) was
+started on a separate loopback port with all seven presets listed but unloaded.
+It loaded the default Qwen3 4B alias with 32,768 context, F16 KV, Flash
+Attention off, one parallel slot, reasoning off, and speculative decoding off.
+A small OpenAI chat request called `read_file` for `main.py`; after a simulated
+tool result, the model returned a correct summary. The request succeeded after
+llama.cpp logged that object-form `tool_choice` had the wrong type and was
+ignored, so this demonstrates a voluntary call and follow-up, not forced
+tool-choice compatibility. This run did not exercise Gemma or Qwen3.5 presets,
+sequential model eviction, or long-context processing. Available host memory
+fell below the 8 GiB guard during the Qwen4 smoke; the router was stopped and no
+router process or iGPU allocation remained, but available memory stayed below
+the guard amid concurrent host workloads. The optional backend is therefore
+kept disabled; do not switch the host until all picker profiles needed in use
+have passed runtime and memory checks.
+
+The new base-tag prefetch is only cache preparation: it does not qualify a
+context size or establish coding quality for Qwen3.5.
 
 The tool-discovery failure came from combining deprecated `agent.tools` settings
 with permissions: the resulting trailing wildcard denial suppressed all tools.

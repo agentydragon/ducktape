@@ -14,7 +14,7 @@ let
   toTOML = (pkgs.formats.toml { }).generate;
 
   ducktapePackages = import ../packages {
-    inherit lib pkgs;
+    inherit lib pkgs pkgsUnstable;
     artifacts = ducktape-artifacts;
   };
   # The nixos-26.05 channel still packages the October 2025 Pop Shell snapshot,
