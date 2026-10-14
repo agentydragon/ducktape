@@ -91,10 +91,11 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 `status.incarnation` names the Pod the runner runs in and its UID: the Sandbox's Pod, or its VMI's
 virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunning`) or the VMI runs
 (`VMRunning`). Otherwise it is False, with reason `Stopped`, `Starting`, `Stopping`, `PodEnded`,
-`VMEnded`, `Quiescing`, `Deleting`,
+`VMEnded`, `SuspendPending`, `Quiescing`, `Deleting`,
 `TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `ServiceAccountConflict`,
 `PolicyBindingConflict`, `PodConflict` or `VMConflict` (a Pod or VM of the Sandbox's name that
-it does not control).
+it does not control). `SuspendPending` holds a suspend while the runner's bootstrap is still running, so the
+suspend never interrupts it; a delete does not wait.
 
 `WorkloadReady` is True while the Sandbox runs and the incarnation Pod is Ready (`PodReady`).
 Otherwise it is False with `PodNotReady` when everything runs but the Pod is not Ready, and else

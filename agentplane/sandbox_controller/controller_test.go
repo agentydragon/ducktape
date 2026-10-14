@@ -720,6 +720,50 @@ func publishQuiesceStage(t *testing.T, c client.Client, stage string) {
 	}
 }
 
+func publishBootstrap(t *testing.T, c client.Client, state string) {
+	t.Helper()
+	var lease coordinationv1.Lease
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + "-runner"}, &lease); err != nil {
+		t.Fatal(err)
+	}
+	lease.Annotations[BootstrapAnnotation] = state
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSuspensionWaitsForARunningBootstrapAndThenQuiesces(t *testing.T) {
+	for _, finished := range []string{"succeeded", "failed"} {
+		t.Run(finished, func(t *testing.T) {
+			r, c := runningWithRunner(t)
+			publishBootstrap(t, c, "running")
+			setRunning(t, c, false)
+			reconcileOnce(t, r)
+			if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 || getPod(t, c) == nil || runningReason(t, c) != "SuspendPending" {
+				t.Fatalf("quiesce calls = %d, Running reason = %s, want 0 and SuspendPending with the Pod kept", calls, runningReason(t, c))
+			}
+			if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "SuspendPending" {
+				t.Errorf("Ready = %s/%s, want False/SuspendPending", got.Status, got.Reason)
+			}
+			publishBootstrap(t, c, finished)
+			reconcileOnce(t, r)
+			if runningReason(t, c) != "Quiescing" {
+				t.Errorf("Running reason = %s once the bootstrap %s, want Quiescing", runningReason(t, c), finished)
+			}
+		})
+	}
+}
+
+func TestDeletionDoesNotWaitForARunningBootstrap(t *testing.T) {
+	r, c := runningWithRunner(t)
+	publishBootstrap(t, c, "running")
+	deleteSandbox(t, c)
+	reconcileOnce(t, r)
+	if calls := r.Quiescer.(*fakeQuiescer).calls; calls == 0 {
+		t.Error("a delete waited for the bootstrap instead of quiescing")
+	}
+}
+
 func TestAQuiescedStageSealsTheSandboxWithoutAskingTheRunner(t *testing.T) {
 	r, c := runningWithRunner(t)
 	publishQuiesceStage(t, c, "quiesced")

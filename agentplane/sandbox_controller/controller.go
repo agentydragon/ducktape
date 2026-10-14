@@ -311,7 +311,27 @@ func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *Sandbox, w 
 	if err != nil || runner == "" || runner != string(pod.UID) {
 		return nil, err
 	}
+	if !sandbox.quiescing() {
+		if held, err := r.holdSuspendForBootstrap(ctx, sandbox, runner); held != nil || err != nil {
+			return held, err
+		}
+	}
 	return r.quiesce(ctx, sandbox, runner), nil
+}
+
+// holdSuspendForBootstrap holds a suspend that has not begun quiescing while the incarnation's bootstrap
+// runs: quiescing would interrupt it, and an interrupted bootstrap is terminal. The runner's next
+// bootstrap fact enqueues the Sandbox, so no retry is set. A delete does not come here.
+func (r *Reconciler) holdSuspendForBootstrap(ctx context.Context, sandbox *Sandbox, runner string) (*unready, error) {
+	lease, err := r.runnerLease(ctx, sandbox)
+	if err != nil {
+		return nil, err
+	}
+	facts, err := readRunnerFacts(&lease, runner)
+	if err != nil || facts.Bootstrap != BootstrapRunning {
+		return nil, err
+	}
+	return &unready{reason: "SuspendPending", message: "the Sandbox's bootstrap is running; the suspend waits for it"}, nil
 }
 
 // quiesce asks the runner of the Pod with this UID to seal every Session and, once the ingress has
