@@ -232,6 +232,25 @@ async def test_seal_ends_committed_history_and_is_sticky(engine: AsyncEngine) ->
         )
 
 
+async def test_reopening_a_seal_needs_a_snapshot_that_reaches_it(engine: AsyncEngine) -> None:
+    store = Store(engine)
+    session_id = uuid4()
+    await store.bind_writer(session_id, WRITER)
+    await store.append(session_id, [entry(1), entry(2)])
+    await store.record_feed_state(
+        session_id,
+        history_service_pb2.SessionFeedState(
+            attached=runner_pb2.Attached(session_id=str(session_id), last_cursor=2),
+            sealed=runner_pb2.Sealed(cursor=2, incarnation_uid="test-incarnation-1"),
+        ),
+    )
+    with pytest.raises(HistoryConflictError, match="follow the seal"):
+        await store.reopen_sealed(session_id, "test-incarnation-2", announced_cursor=1)
+    assert (await store.reopen_sealed(session_id, "test-incarnation-1", announced_cursor=2)).seal is not None
+    assert (await store.reopen_sealed(session_id, "test-incarnation-2", announced_cursor=2)).seal is None
+    assert not (await store.read_page(session_id)).feed_state.HasField("sealed")
+
+
 async def test_a_pushed_session_stores_its_snapshot_under_the_public_id(engine: AsyncEngine) -> None:
     store = Store(engine)
     session_id = uuid4()

@@ -229,6 +229,11 @@ it, under its own token audience, and a historyless client needs only it.
    and the journal's last cursor. Every call announces again; the first the ingress accepts adds
    the Session to its index of Sessions. The ingress answers with an `Acknowledgement` of what it
    has already committed for the Session, cursor zero for a new one.
+   **Deviation:** `Attached.incarnation_uid` and `Sealed.incarnation_uid` name the incarnation that
+   announced and the one that sealed. A Session whose seal names another incarnation, or none, and whose
+   announcement reaches the seal's cursor, is reopened: the ingress drops the seal, acknowledges the seal's
+   cursor as unsealed and takes entries from the next cursor. The incarnation that sealed gets its seal
+   back, and an announcement without a UID never reopens.
 3. **Entries.** The runner then sends the journal's `EventEntry`s after that acknowledgement's
    cursor, replayed and then live, reading the journal in pages as the stream drains. Once the
    journal is sealed and every entry through the seal is sent, it sends `sealed` and nothing more.

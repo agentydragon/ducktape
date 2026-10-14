@@ -59,9 +59,13 @@ def entry(cursor: int, text: str = "journal") -> event_log_pb2.EventEntry:
     )
 
 
-def announce(session_id: UUID, last_cursor: int = 0) -> runner_ingress_pb2.PushFrame:
+def announce(
+    session_id: UUID, last_cursor: int = 0, *, incarnation_uid: str | None = None
+) -> runner_ingress_pb2.PushFrame:
     return runner_ingress_pb2.PushFrame(
-        announce=runner_pb2.Attached(session_id=str(session_id), last_cursor=last_cursor)
+        announce=runner_pb2.Attached(
+            session_id=str(session_id), last_cursor=last_cursor, incarnation_uid=incarnation_uid
+        )
     )
 
 
@@ -69,8 +73,8 @@ def entries(*cursors: int, text: str = "journal") -> list[runner_ingress_pb2.Pus
     return [runner_ingress_pb2.PushFrame(entry=entry(cursor, text)) for cursor in cursors]
 
 
-def sealed(cursor: int) -> runner_ingress_pb2.PushFrame:
-    return runner_ingress_pb2.PushFrame(sealed=runner_pb2.Sealed(cursor=cursor))
+def sealed(cursor: int, *, incarnation_uid: str | None = None) -> runner_ingress_pb2.PushFrame:
+    return runner_ingress_pb2.PushFrame(sealed=runner_pb2.Sealed(cursor=cursor, incarnation_uid=incarnation_uid))
 
 
 @asynccontextmanager
@@ -176,6 +180,39 @@ async def test_resume_replays_exact_duplicates_and_continues_after_a_restart(eng
         # A sealed Session takes nothing more: the announcement is answered and the call ends.
         call = await push(stub, [announce(session_id, last_cursor=3)])
         await call.acknowledged(3, sealed=True)
+        assert await call.call.read() is grpc.aio.EOF
+
+
+@pytest.mark.parametrize("sealing_incarnation", [None, "test-incarnation-1"])
+async def test_a_later_incarnation_continues_a_sealed_journal(
+    engine: AsyncEngine, sealing_incarnation: str | None
+) -> None:
+    session_id = uuid4()
+    async with ingress(engine) as stub:
+        call = await push(
+            stub, [announce(session_id, last_cursor=2), *entries(1, 2), sealed(2, incarnation_uid=sealing_incarnation)]
+        )
+        await call.acknowledged(2, sealed=True)
+        call = await push(stub, [announce(session_id, last_cursor=3, incarnation_uid="test-incarnation-2")])
+        await call.acknowledged(2)
+        await call.send(*entries(3))
+        await call.acknowledged(3)
+        await call.send(sealed(3, incarnation_uid="test-incarnation-2"))
+        await call.acknowledged(3, sealed=True)
+    assert await committed(engine, session_id) == ["journal 1", "journal 2", "journal 3"]
+    page = await Store(engine).read_page(session_id)
+    assert (page.feed_state.sealed.cursor, page.feed_state.sealed.incarnation_uid) == (3, "test-incarnation-2")
+
+
+async def test_the_incarnation_that_sealed_a_journal_gets_the_seal_back(engine: AsyncEngine) -> None:
+    session_id = uuid4()
+    async with ingress(engine) as stub:
+        call = await push(
+            stub, [announce(session_id, last_cursor=1), *entries(1), sealed(1, incarnation_uid="test-incarnation-1")]
+        )
+        await call.acknowledged(1, sealed=True)
+        call = await push(stub, [announce(session_id, last_cursor=1, incarnation_uid="test-incarnation-1")])
+        await call.acknowledged(1, sealed=True)
         assert await call.call.read() is grpc.aio.EOF
 
 

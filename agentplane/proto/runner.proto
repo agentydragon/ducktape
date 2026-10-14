@@ -91,6 +91,9 @@ message Attached {
   string active_turn_id = 5;
   SetupState setup_state = 6;
   LaunchOutcome launch_outcome = 7;
+  // The UID of the incarnation (the Pod or VM launcher Pod) whose runner took this snapshot. Absent from a
+  // runner that predates the field.
+  optional string incarnation_uid = 8;
 }
 
 // Every session in the runner's state directory. Session ids are client-chosen, so this is how a
@@ -153,4 +156,7 @@ message QuiesceResponse {
 // The session's journal is final: every entry through `cursor` precedes this message.
 message Sealed {
   uint64 cursor = 1;
+  // The incarnation that sealed the journal. Absent from a seal written before the field: it counts as an
+  // earlier incarnation's, so a later one may continue the journal.
+  optional string incarnation_uid = 2;
 }

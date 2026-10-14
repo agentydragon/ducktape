@@ -95,7 +95,7 @@ class _Frames:
 
 
 def _acknowledgement(checkpoint: Checkpoint) -> runner_ingress_pb2.Acknowledgement:
-    return runner_ingress_pb2.Acknowledgement(cursor=checkpoint.cursor, sealed=checkpoint.sealed)
+    return runner_ingress_pb2.Acknowledgement(cursor=checkpoint.cursor, sealed=checkpoint.seal is not None)
 
 
 def _session_id(announce: runner_pb2.Attached) -> UUID:
@@ -171,8 +171,13 @@ class RunnerIngressService(runner_ingress_pb2_grpc.RunnerIngressServicer):
                 raise RefusedError(grpc.StatusCode.INVALID_ARGUMENT, "the first frame is not an announcement")
             session_id = _session_id(first.announce)
             checkpoint = await self.resources.history.bind_writer(session_id, writer)
+            if checkpoint.seal is not None and first.announce.HasField("incarnation_uid"):
+                # An incarnation other than the one that sealed continues the journal; the same one gets the seal back.
+                checkpoint = await self.resources.history.reopen_sealed(
+                    session_id, first.announce.incarnation_uid, first.announce.last_cursor
+                )
             yield _acknowledgement(checkpoint)
-            if checkpoint.sealed:
+            if checkpoint.seal is not None:
                 return
             journal = _Journal(self.resources.history, session_id, first.announce, checkpoint)
             await journal.commit()

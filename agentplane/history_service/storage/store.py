@@ -50,8 +50,8 @@ class Writer:
 @dataclass(frozen=True)
 class Checkpoint:
     cursor: int
-    # The seal at `cursor` is committed; nothing more is accepted.
-    sealed: bool
+    # The seal at `cursor`, once committed: nothing more is accepted from its own incarnation.
+    seal: runner_pb2.Sealed | None
 
 
 @dataclass(frozen=True)
@@ -174,6 +174,31 @@ class Store:
             if appended:
                 await notify(session, Channel.HISTORY)
             return row.last_cursor
+
+    async def reopen_sealed(self, session_id: UUID, incarnation_uid: str, announced_cursor: int) -> Checkpoint:
+        """Drop the seal of an earlier incarnation so `incarnation_uid` can continue the journal.
+
+        Only a seal that names a different incarnation (or none) is dropped, and only when it ends the committed
+        history and the announced snapshot is not behind it; the same incarnation's seal is left as it is, which
+        also makes a repeat a no-op.
+        """
+        async with self._sessions.begin() as session:
+            row = await session.scalar(select(SessionHistory).where(SessionHistory.id == session_id).with_for_update())
+            if row is None:
+                raise HistoryNotFoundError(session_id)
+            checkpoint = _checkpoint(row)
+            if checkpoint.seal is None or (
+                checkpoint.seal.HasField("incarnation_uid") and checkpoint.seal.incarnation_uid == incarnation_uid
+            ):
+                return checkpoint
+            if checkpoint.seal.cursor != row.last_cursor or announced_cursor < checkpoint.seal.cursor:
+                raise HistoryConflictError("the continuation does not follow the seal")
+            assert row.feed_state is not None
+            feed = history_service_pb2.SessionFeedState.FromString(row.feed_state)
+            feed.ClearField("sealed")
+            row.feed_state = feed.SerializeToString(deterministic=True)
+            await notify(session, Channel.HISTORY)
+            return _checkpoint(row)
 
     async def record_feed_state(self, session_id: UUID, feed: history_service_pb2.SessionFeedState) -> None:
         """Record only a covered runner snapshot; delayed copiers cannot rewind it or drop a seal."""
@@ -338,10 +363,10 @@ class Store:
 
 
 def _checkpoint(row: SessionHistory) -> Checkpoint:
-    sealed = row.feed_state is not None and history_service_pb2.SessionFeedState.FromString(row.feed_state).HasField(
-        "sealed"
+    feed = None if row.feed_state is None else history_service_pb2.SessionFeedState.FromString(row.feed_state)
+    return Checkpoint(
+        cursor=row.last_cursor, seal=feed.sealed if feed is not None and feed.HasField("sealed") else None
     )
-    return Checkpoint(cursor=row.last_cursor, sealed=sealed)
 
 
 async def _settled_range(session: AsyncSession, session_id: UUID, cursor: int) -> SessionEventSettledRange | None:
