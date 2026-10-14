@@ -80,9 +80,9 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     history_pod = resource("Deployment", history_service.NAME)["spec"]["template"]["spec"]
     history_migration = one(history_pod["initContainers"])
     assert {"name": "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL", "valueFrom": history_secret} in history_migration["env"]
-    # The app reads the cluster, and writes only the operator's PolicyBindings.
+    # The app reads the cluster, and writes only the operator's PolicyBindings and Sandboxes.
     for rule in resource("Role", app.NAME)["rules"]:
-        if rule["resources"] != ["policybindings"]:
+        if rule["resources"] not in (["policybindings"], ["sandboxes"]):
             assert set(rule["verbs"]) <= {"get", "list", "watch"}
     backend_config = yaml.safe_load(resource("ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
     gateway_config = yaml.safe_load(resource("ConfigMap", f"{runner_gateway.NAME}-config")["data"]["config.yaml"])

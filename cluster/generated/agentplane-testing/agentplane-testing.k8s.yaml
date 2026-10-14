@@ -3173,6 +3173,14 @@ rules:
     verbs:
       - create
       - delete
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxes
+    verbs:
+      - create
+      - patch
+      - delete
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

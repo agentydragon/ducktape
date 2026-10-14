@@ -138,6 +138,8 @@ class App(Construct):
                 ),
                 # The operator's grants from the sandbox page, created and revoked by the app itself.
                 RolePolicyRule(resources=[custom_resource(GROUP, "policybindings")], verbs=["create", "delete"]),
+                # Sandboxes the operator creates, edits and deletes from the app.
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["create", "patch", "delete"]),
             ],
         )
         RoleBinding(
