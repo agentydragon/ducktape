@@ -85,8 +85,10 @@ in
   # pulls once each base model is cached and refreshes aliases from their Modelfiles.
   ducktape.localLlm.ollamaUpstream.models = [
     "qwen3:4b-instruct-2507-q4_K_M"
-    "gemma4:e4b"
     "gemma4:e2b-it-qat"
+    "gemma4:e4b"
+    "qwen2.5-coder:7b"
+    "qwen3:8b"
   ];
   ducktape.localLlm.ollamaUpstream.aliases."gemma4:e2b-it-qat-long-128k-b128" = {
     from = "gemma4:e2b-it-qat";

@@ -1,23 +1,57 @@
-# Rugged offline coding harness and local coding samples
+# Rugged local coding harness and model samples
 
-This run records a local-only OpenCode profile, an isolated end-to-end coding
+This run records a local-model OpenCode profile, an isolated end-to-end coding
 task, and a fixed HumanEval+ comparison cohort. It is a workstation sample, not
 a full HumanEval+ leaderboard result or a Terminal-Bench score.
 
-## Offline OpenCode profile
+## Local OpenCode profile
 
 The Home Manager host module `nix/home/hosts/rugged-opencode.nix` adds the
 `rugged-opencode-offline` command. It copies a minimal OpenCode config into a
 fresh writable home, disables plugins and MCP, disables delegation, and permits
-only local file and shell tools. OpenCode runs inside `bubblewrap
---unshare-net`; its only model connection is a temporary mode-0600 Unix socket
-forwarded to one fixed host-loopback Ollama port. Set
-`RUGGED_OPENCODE_BACKEND_PORT` to override the default `11436`. The command
-expects Ollama and the selected model to be available before it starts.
-`RUGGED_OPENCODE_MODEL` selects from the declared `qwen3-4b`, `gemma4-e2b`,
-`gemma4-e4b`, or `gemma4-e2b-long-128k-experimental` profiles; Qwen remains
-the default. Tool use is enabled for E4B only after the successful 3-repeat
-probe below.
+only local file and shell tools. It connects directly to host-loopback Ollama;
+`RUGGED_OPENCODE_BACKEND_PORT` selects the port and defaults to `11436`. Local
+Ollama remains usable without external connectivity, but the interactive
+launcher does not isolate OpenCode's network access. A source TODO tracks
+possible optional isolation that still permits host-loopback access. The
+command expects Ollama and the selected model to be available before it starts.
+Every generated config contains all six tested Ollama models, so OpenCode's
+in-app model picker can switch between them. Display names include the backend
+context allocation. `RUGGED_OPENCODE_MODEL` still chooses the starting model
+and keeps `qwen3-4b` as its default. Verified tool support is enabled for Qwen3
+4B, Gemma 4 E2B, Gemma 4 E4B, and the 128k alias. The speed-only Qwen2.5
+Coder 7B and Qwen3 8B profiles display “tools unverified” and set
+`tool_call=false` model metadata. The Qwen3 8B mock check still observed six
+local tool schemas in the request, so this metadata does not prevent agent tool
+calls; those candidates remain unverified for tool use.
+
+Picker entries describe routes; they do not pull weights or guarantee that a
+tag is currently cached. The rugged NixOS host declares prefetch for all five
+tested base tags below. Applying that host generation downloads missing models
+while network access is available; subsequent launcher runs can use the cached
+models without external connectivity. The experimental 128k alias is created
+separately from the Gemma E2B base by the serving change in PR #10491. Before
+switching models, check `OLLAMA_HOST=http://127.0.0.1:11436 ollama list` for the
+selected tag and alias.
+
+| Selector                            | Ollama model ID                    | Context | Tool-call status      |
+| ----------------------------------- | ---------------------------------- | ------: | --------------------- |
+| `qwen3-4b`                          | `qwen3:4b-instruct-2507-q4_K_M`    |  32,768 | verified              |
+| `gemma4-e2b`                        | `gemma4:e2b-it-qat`                |  32,768 | verified              |
+| `gemma4-e2b-long-128k-experimental` | `gemma4:e2b-it-qat-long-128k-b128` | 131,072 | short tool smoke only |
+| `gemma4-e4b`                        | `gemma4:e4b`                       |  32,768 | verified              |
+| `qwen2.5-coder-7b`                  | `qwen2.5-coder:7b`                 |  32,768 | unverified            |
+| `qwen3-8b`                          | `qwen3:8b`                         |  32,768 | unverified            |
+
+The OpenVINO NPU and LiteRT models remain outside this picker because this
+launcher only connects to the Ollama backend.
+
+The six-profile roster was read from OpenCode's actual model registry with
+`opencode models rugged-offline --verbose --pure`; the captured output is
+`results/model-picker/opencode-models-verbose.txt`. A mock-only check verifies
+the roster and selected route through the built launcher without invoking a
+model. It reached a mock listener on the configured host-loopback port; see
+`results/model-picker/direct-loopback-mock-checks.json`.
 
 The experimental long-context profile routes to the serving alias
 `gemma4:e2b-it-qat-long-128k-b128` with 131,072 context and a 4,096-token
@@ -30,7 +64,7 @@ OpenAI-compatible requests returned HTTP 200 with the server using F16 KV,
 flash attention off, context 131,072, and batch 128. The separate long
 retrieval trial processed 124,005 uncached input tokens but passed only one of
 three exact-retrieval checks, so this profile is experimental and is not a
-quality recommendation. Existing profiles and the default are unchanged.
+quality recommendation. The default and existing selector names are unchanged.
 
 The actual launcher passed a mock OpenAI-compatible wire check. The recorded
 request carried `reasoning_effort: none`, temperature `0.2`, `top_p: 0.95`,

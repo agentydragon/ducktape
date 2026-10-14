@@ -1,0 +1,300 @@
+rugged-offline/gemma4:e2b-it-qat
+{
+  "id": "gemma4:e2b-it-qat",
+  "api": {
+    "id": "gemma4:e2b-it-qat",
+    "npm": "@ai-sdk/openai-compatible",
+    "url": ""
+  },
+  "status": "active",
+  "name": "Gemma 4 E2B QAT (32k context; tool use verified)",
+  "providerID": "rugged-offline",
+  "capabilities": {
+    "temperature": true,
+    "reasoning": false,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "options": {},
+  "limit": {
+    "context": 32768,
+    "output": 8192
+  },
+  "headers": {},
+  "family": "",
+  "release_date": "",
+  "variants": {}
+}
+rugged-offline/gemma4:e2b-it-qat-long-128k-b128
+{
+  "id": "gemma4:e2b-it-qat-long-128k-b128",
+  "api": {
+    "id": "gemma4:e2b-it-qat-long-128k-b128",
+    "npm": "@ai-sdk/openai-compatible",
+    "url": ""
+  },
+  "status": "active",
+  "name": "Gemma 4 E2B QAT (128k experimental; retrieval 1/3)",
+  "providerID": "rugged-offline",
+  "capabilities": {
+    "temperature": true,
+    "reasoning": false,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "options": {},
+  "limit": {
+    "context": 131072,
+    "output": 4096
+  },
+  "headers": {},
+  "family": "",
+  "release_date": "",
+  "variants": {}
+}
+rugged-offline/gemma4:e4b
+{
+  "id": "gemma4:e4b",
+  "api": {
+    "id": "gemma4:e4b",
+    "npm": "@ai-sdk/openai-compatible",
+    "url": ""
+  },
+  "status": "active",
+  "name": "Gemma 4 E4B (32k context; tool use verified)",
+  "providerID": "rugged-offline",
+  "capabilities": {
+    "temperature": true,
+    "reasoning": false,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "options": {},
+  "limit": {
+    "context": 32768,
+    "output": 4096
+  },
+  "headers": {},
+  "family": "",
+  "release_date": "",
+  "variants": {}
+}
+rugged-offline/qwen2.5-coder:7b
+{
+  "id": "qwen2.5-coder:7b",
+  "api": {
+    "id": "qwen2.5-coder:7b",
+    "npm": "@ai-sdk/openai-compatible",
+    "url": ""
+  },
+  "status": "active",
+  "name": "Qwen2.5 Coder 7B (32k context; tools unverified)",
+  "providerID": "rugged-offline",
+  "capabilities": {
+    "temperature": true,
+    "reasoning": false,
+    "attachment": false,
+    "toolcall": false,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "options": {},
+  "limit": {
+    "context": 32768,
+    "output": 4096
+  },
+  "headers": {},
+  "family": "",
+  "release_date": "",
+  "variants": {}
+}
+rugged-offline/qwen3:4b-instruct-2507-q4_K_M
+{
+  "id": "qwen3:4b-instruct-2507-q4_K_M",
+  "api": {
+    "id": "qwen3:4b-instruct-2507-q4_K_M",
+    "npm": "@ai-sdk/openai-compatible",
+    "url": ""
+  },
+  "status": "active",
+  "name": "Qwen3 4B Instruct (32k context; tool use verified)",
+  "providerID": "rugged-offline",
+  "capabilities": {
+    "temperature": true,
+    "reasoning": false,
+    "attachment": false,
+    "toolcall": true,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "options": {},
+  "limit": {
+    "context": 32768,
+    "output": 4096
+  },
+  "headers": {},
+  "family": "",
+  "release_date": "",
+  "variants": {}
+}
+rugged-offline/qwen3:8b
+{
+  "id": "qwen3:8b",
+  "api": {
+    "id": "qwen3:8b",
+    "npm": "@ai-sdk/openai-compatible",
+    "url": ""
+  },
+  "status": "active",
+  "name": "Qwen3 8B (32k context; tools unverified)",
+  "providerID": "rugged-offline",
+  "capabilities": {
+    "temperature": true,
+    "reasoning": false,
+    "attachment": false,
+    "toolcall": false,
+    "input": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "output": {
+      "text": true,
+      "audio": false,
+      "image": false,
+      "video": false,
+      "pdf": false
+    },
+    "interleaved": false
+  },
+  "cost": {
+    "input": 0,
+    "output": 0,
+    "cache": {
+      "read": 0,
+      "write": 0
+    }
+  },
+  "options": {},
+  "limit": {
+    "context": 32768,
+    "output": 4096
+  },
+  "headers": {},
+  "family": "",
+  "release_date": "",
+  "variants": {}
+}

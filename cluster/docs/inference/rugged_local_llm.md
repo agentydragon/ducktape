@@ -71,15 +71,23 @@ for other experiments; it supplies no throughput result. Nix/build preparation
 overlapped parts of these initial probes. Do not use that interruption to infer a
 model limit or compare the short-prompt mean as a controlled backend benchmark.
 
-### Offline coding harness
+### Local coding harness
 
-The dedicated `rugged-opencode-offline` Home Manager command in
-[PR #10458](https://github.com/agentydragon/ducktape/pull/10458) uses a fresh home
-directory, a minimal OpenCode configuration, and only local file and shell tools.
-It runs in a network namespace with a Unix-socket bridge to the loopback Ollama
-endpoint. The repository remains writable; Git metadata is read-only. With the
-model already cached, this supports editing and testing without external network
-access. Ordinary OpenCode profiles keep their existing configuration.
+The dedicated `rugged-opencode-offline` Home Manager command introduced by
+[PR #10458](https://github.com/agentydragon/ducktape/pull/10458) uses a fresh
+home directory, a minimal OpenCode configuration, and only local file and shell
+tools.
+The repository remains writable; Git metadata is read-only. The current launcher
+connects directly to host-loopback Ollama (default port `11436`, overridable with
+`RUGGED_OPENCODE_BACKEND_PORT`) and keeps host network access. A cached local model
+can still be used when the host is offline, but the interactive agent itself is
+not network-isolated. The separate `offline_exec` helper retains its network
+namespace. Ordinary OpenCode profiles keep their existing configuration.
+
+Every offline-profile config exposes six tested Ollama models in OpenCode's
+model picker, with the actual serving context in each display name. The five
+base models are prefetched by the rugged host generation; the experimental
+131,072-context Gemma alias is declared separately. Qwen3 4B remains the default.
 
 After activating that Home Manager change and caching the model, run it from
 the project directory:
@@ -113,8 +121,9 @@ The dedicated profile uses permissions alone, with a wildcard denial followed by
 explicit local-tool grants. Wire inspection of the built launcher confirmed six
 tools, temperature 0.2, top-p 0.95, and reasoning disabled.
 
-For a stronger offline check, a temporary Ollama server and the built launcher
-both ran inside an outer network namespace. The backend used Vulkan with all
+The archived fully isolated task run predates the current launcher networking
+change. In that run, a temporary Ollama server and the built launcher both ran
+inside an outer network namespace. The backend used Vulkan with all
 37 Qwen3 4B layers offloaded; a public TCP connection failed with network
 unreachable. The real JSONL-transform task from the frozen PR #7910 fixture ran
 for about 77 seconds and exercised reads, edits, and shell tests. Its final
@@ -132,9 +141,9 @@ interrupted during its edit/test loop; it is censored, not a completed failure.
 The next bounded continuation completed in **178.6 seconds**, and the independent
 verifier passed **4/4 original tests**, with their SHA-256 unchanged. Both backend
 and agent were again network-isolated, with all 37 layers on the Vulkan device.
-This establishes a successful offline coding repair with test feedback. It is
-not a first-attempt success, and summing only the initial 77 seconds and this
-continuation would omit the intervening attempts. Full outputs, workspace
+That archived run establishes a successful isolated coding repair with test
+feedback. It is not a first-attempt success, and summing only the initial 77
+seconds and this continuation would omit the intervening attempts. Full outputs, workspace
 snapshots, hashes, and verifier results are retained in the
 [frozen task run](runs/2026-10-13_rugged_coding/smoke_7910/).
 

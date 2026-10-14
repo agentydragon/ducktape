@@ -31,23 +31,57 @@ socat come from the repository Nix environment. For an offline proof that
 includes the model server, start the cached server inside the same outer
 network namespace as the launcher, as the rugged run script does.
 
-On Rugged, the existing `rugged-opencode-offline` launcher accepts an explicit
-experimental long-context selector:
+The interactive `rugged-opencode-offline` launcher uses host networking and
+connects directly to Ollama on loopback. The word “offline” describes its local
+model route; the launcher does not isolate OpenCode from other network access.
+`offline_exec` and the historical fully isolated task runner retain their
+network-isolation behavior.
+
+On Rugged, the `rugged-opencode-offline` provider exposes six tested Ollama
+models in OpenCode's model picker. The display names include the backend
+context allocation. `RUGGED_OPENCODE_MODEL` still chooses the starting model
+and keeps `qwen3-4b` as its default; for example:
 
 ```bash
 RUGGED_OPENCODE_MODEL=gemma4-e2b-long-128k-experimental rugged-opencode-offline
 ```
 
-It routes to the serving alias `gemma4:e2b-it-qat-long-128k-b128` and advertises
-131,072 context tokens with a 4,096-token output limit. The alias is prepared
-with 131,072 context and batch 128. Match the qualification run by setting
+The model roster and capability labels are:
+
+| Selector                            | Ollama model ID                    | Context | Tool calls            |
+| ----------------------------------- | ---------------------------------- | ------: | --------------------- |
+| `qwen3-4b`                          | `qwen3:4b-instruct-2507-q4_K_M`    |  32,768 | verified              |
+| `gemma4-e2b`                        | `gemma4:e2b-it-qat`                |  32,768 | verified              |
+| `gemma4-e2b-long-128k-experimental` | `gemma4:e2b-it-qat-long-128k-b128` | 131,072 | short tool smoke only |
+| `gemma4-e4b`                        | `gemma4:e4b`                       |  32,768 | verified              |
+| `qwen2.5-coder-7b`                  | `qwen2.5-coder:7b`                 |  32,768 | unverified            |
+| `qwen3-8b`                          | `qwen3:8b`                         |  32,768 | unverified            |
+
+The two speed-only candidates remain selectable with `tool_call=false` in
+their OpenCode model metadata. A Qwen3 8B mock request still carried the six
+local agent-tool schemas, so this metadata does not prevent a generated tool
+call; successful tool use remains unverified. OpenVINO NPU and LiteRT models
+are not in this Ollama-only picker because this launcher has no route to those
+separate backends.
+
+The picker does not pull weights or prove that a tag is cached. Rugged's
+NixOS host declares prefetch for the five tested base tags in the table;
+applying that generation downloads missing weights while network access is
+available, after which local launcher runs can stay offline. The experimental
+128k alias is created separately from its Gemma E2B base by serving PR #10491.
+Check `OLLAMA_HOST=http://127.0.0.1:11436 ollama list` before selecting a
+model, especially the alias.
+
+The experimental selector routes to `gemma4:e2b-it-qat-long-128k-b128` and
+advertises 131,072 context tokens with a 4,096-token output limit. The alias is
+prepared with 131,072 context and batch 128. Match the qualification run by setting
 `OLLAMA_KV_CACHE_TYPE=f16` and `OLLAMA_FLASH_ATTENTION=0` on the Ollama service
 before loading the model; the offline launcher does not configure server-wide
 settings. This remains an experiment:
 the long retrieval trial processed 124,005 uncached input tokens, but only one
 of three exact-retrieval checks passed. A large accepted context therefore does
-not imply reliable long-context coding. The normal selector and model profiles
-remain unchanged. Details are tracked in the
+not imply reliable long-context coding. The default selector remains Qwen 4B.
+Details are tracked in the
 [Rugged local-model report](../../../cluster/docs/inference/rugged_local_llm.md).
 
 The built launcher passed both a mock-wire check and a short live tool

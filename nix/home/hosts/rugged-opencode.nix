@@ -12,31 +12,45 @@ let
   offlineModels = {
     qwen3_4b = {
       id = "qwen3:4b-instruct-2507-q4_K_M";
-      name = "Qwen3 4B Instruct (rugged iGPU, offline profile)";
+      name = "Qwen3 4B Instruct (32k context; tool use verified)";
       context = 32768;
       output = 4096;
       toolCall = true;
     };
     gemma4_e2b = {
       id = "gemma4:e2b-it-qat";
-      name = "Gemma 4 E2B QAT (rugged iGPU, offline profile)";
-      context = 131072;
+      name = "Gemma 4 E2B QAT (32k context; tool use verified)";
+      context = 32768;
       output = 8192;
       toolCall = true;
     };
     gemma4_e2b_long_128k_experimental = {
       id = "gemma4:e2b-it-qat-long-128k-b128";
-      name = "Gemma 4 E2B QAT 128k Experimental (rugged iGPU, offline profile)";
+      name = "Gemma 4 E2B QAT (128k experimental; retrieval 1/3)";
       context = 131072;
       output = 4096;
       toolCall = true;
     };
     gemma4_e4b = {
       id = "gemma4:e4b";
-      name = "Gemma 4 E4B (rugged iGPU, offline profile)";
+      name = "Gemma 4 E4B (32k context; tool use verified)";
       context = 32768;
       output = 4096;
       toolCall = true;
+    };
+    qwen2_5_coder_7b = {
+      id = "qwen2.5-coder:7b";
+      name = "Qwen2.5 Coder 7B (32k context; tools unverified)";
+      context = 32768;
+      output = 4096;
+      toolCall = false;
+    };
+    qwen3_8b = {
+      id = "qwen3:8b";
+      name = "Qwen3 8B (32k context; tools unverified)";
+      context = 32768;
+      output = 4096;
+      toolCall = false;
     };
   };
   offlineConfigFor =
@@ -67,32 +81,37 @@ let
         };
         provider.${offlineProvider} = {
           npm = "@ai-sdk/openai-compatible";
-          name = "Rugged offline Ollama";
+          name = "Rugged local Ollama";
           options = {
-            baseURL = "http://127.0.0.1:11437/v1";
+            baseURL = "http://127.0.0.1:11436/v1";
             timeout = false;
             headerTimeout = false;
             chunkTimeout = false;
           };
-          models.${model.id} = {
-            inherit (model) name;
-            reasoning = false;
-            temperature = true;
-            tool_call = model.toolCall;
-            limit = {
-              inherit (model) context output;
-            };
-          };
+          models = builtins.listToAttrs (
+            map (rosterModel: {
+              name = rosterModel.id;
+              value = {
+                inherit (rosterModel) name;
+                reasoning = false;
+                temperature = true;
+                tool_call = rosterModel.toolCall;
+                limit = {
+                  inherit (rosterModel) context output;
+                };
+              };
+            }) (builtins.attrValues offlineModels)
+          );
         };
       }
     );
   offlineConfigs = builtins.mapAttrs offlineConfigFor offlineModels;
 
-  offlineNamespaceCommand = pkgs.writeShellApplication {
-    name = "rugged-opencode-offline-namespace";
+  offlineCommand = pkgs.writeShellApplication {
+    name = "rugged-opencode-offline-inner";
     runtimeInputs = [
       pkgs.coreutils
-      pkgs.socat
+      pkgs.gnused
       pkgsUnstable.opencode
     ];
     text = ''
@@ -113,24 +132,31 @@ let
           selected_model="${offlineModels.gemma4_e4b.id}"
           selected_config="${offlineConfigs.gemma4_e4b}"
           ;;
+        qwen2.5-coder-7b)
+          selected_model="${offlineModels.qwen2_5_coder_7b.id}"
+          selected_config="${offlineConfigs.qwen2_5_coder_7b}"
+          ;;
+        qwen3-8b)
+          selected_model="${offlineModels.qwen3_8b.id}"
+          selected_config="${offlineConfigs.qwen3_8b}"
+          ;;
         *)
           echo "unsupported local model selector: $RUGGED_OPENCODE_MODEL" >&2
           exit 2
           ;;
       esac
       selected_route="${offlineProvider}/$selected_model"
+      backend_port="''${RUGGED_OPENCODE_BACKEND_PORT:-11436}"
+      if [[ ! "$backend_port" =~ ^[0-9]+$ ]] || (( backend_port < 1 || backend_port > 65535 )); then
+        echo "invalid RUGGED_OPENCODE_BACKEND_PORT: $backend_port" >&2
+        exit 2
+      fi
 
       mkdir -p "$(dirname "$OPENCODE_CONFIG")"
       cp "$selected_config" "$OPENCODE_CONFIG"
-
-      ${pkgs.socat}/bin/socat TCP-LISTEN:11437,bind=127.0.0.1,reuseaddr,fork UNIX-CONNECT:/tmp/offline-bridge/backend.sock >/dev/null 2>&1 &
-      relay_pid=$!
-      trap 'kill "$relay_pid" 2>/dev/null || true; wait "$relay_pid" 2>/dev/null || true' EXIT
-      ${pkgs.coreutils}/bin/sleep 0.1
-      kill -0 "$relay_pid" 2>/dev/null || {
-        echo "namespace loopback inference relay exited during startup" >&2
-        exit 1
-      }
+      ${pkgs.gnused}/bin/sed -i \
+        "s|http://127.0.0.1:11436/v1|http://127.0.0.1:$backend_port/v1|g" \
+        "$OPENCODE_CONFIG"
 
       set +e
       ${pkgsUnstable.opencode}/bin/opencode --model "$selected_route" --agent local-build "$@"
@@ -146,7 +172,6 @@ let
       pkgs.bubblewrap
       pkgs.coreutils
       pkgs.git
-      pkgs.socat
     ];
     text = ''
       if [[ -z "''${PWD:-}" ]]; then
@@ -155,34 +180,11 @@ let
       fi
       workspace="$(pwd -P)"
       backend_port="''${RUGGED_OPENCODE_BACKEND_PORT:-11436}"
-      bridge_dir="$(mktemp -d "''${TMPDIR:-/tmp}"/rugged-opencode-bridge.XXXXXX)"
-      chmod 700 "$bridge_dir"
-
-      trap 'kill "''${relay_pid:-}" 2>/dev/null || true; wait "''${relay_pid:-}" 2>/dev/null || true; rm -rf -- "$bridge_dir"' EXIT
-
-      ${pkgs.socat}/bin/socat \
-        "UNIX-LISTEN:$bridge_dir/backend.sock,fork,unlink-early,mode=600" \
-        "TCP:127.0.0.1:$backend_port" \
-        >/dev/null 2>&1 &
-      relay_pid=$!
-      for _ in {1..50}; do
-        [[ -S "$bridge_dir/backend.sock" ]] && break
-        kill -0 "$relay_pid" 2>/dev/null || {
-          echo "loopback inference relay exited during startup" >&2
-          exit 1
-        }
-        sleep 0.1
-      done
-      [[ -S "$bridge_dir/backend.sock" ]] || {
-        echo "loopback inference relay did not create its Unix socket" >&2
-        exit 1
-      }
 
       git_dir="$(git -C "$workspace" rev-parse --absolute-git-dir 2>/dev/null || true)"
       git_common_dir="$(git -C "$workspace" rev-parse --path-format=absolute --git-common-dir 2>/dev/null || true)"
       bwrap_args=(
         ${pkgs.bubblewrap}/bin/bwrap
-        --unshare-net
         --ro-bind / /
         --dev /dev
         --proc /proc
@@ -197,8 +199,6 @@ let
         --dir /tmp/offline-home/.local
         --dir /tmp/offline-home/.local/share
         --dir /tmp/offline-home/.local/state
-        --dir /tmp/offline-bridge
-        --ro-bind "$bridge_dir/backend.sock" /tmp/offline-bridge/backend.sock
       )
       if [[ -n "$git_dir" && -n "$git_common_dir" ]]; then
         bwrap_args+=(
@@ -223,6 +223,7 @@ let
         --setenv OPENCODE_CONFIG /tmp/offline-home/.config/opencode/opencode.json
         --setenv OPENCODE_DISABLE_AUTOUPDATE 1
         --setenv GIT_OPTIONAL_LOCKS 0
+        --setenv RUGGED_OPENCODE_BACKEND_PORT "$backend_port"
         --setenv RUGGED_OPENCODE_MODEL "''${RUGGED_OPENCODE_MODEL:-qwen3-4b}"
       )
       if [[ -n "$git_dir" && -n "$git_common_dir" ]]; then
@@ -235,10 +236,11 @@ let
       bwrap_args+=(
         --chdir /tmp/offline-workspace
         --
-        ${offlineNamespaceCommand}/bin/rugged-opencode-offline-namespace
+        ${offlineCommand}/bin/rugged-opencode-offline-inner
         "$@"
       )
-      echo "Offline OpenCode: external network denied; only host loopback port $backend_port is bridged." >&2
+      # TODO: Consider optional network isolation that still permits host-loopback Ollama.
+      echo "Local OpenCode: using host loopback Ollama port $backend_port; network access is not isolated." >&2
       if "''${bwrap_args[@]}"; then
         exit 0
       else
@@ -255,7 +257,7 @@ in
       name = "Rugged local Ollama";
       options.baseURL = "http://127.0.0.1:11436/v1";
       models."gemma4:e2b-it-qat" = {
-        name = "Gemma 4 E2B QAT (rugged iGPU)";
+        name = "Gemma 4 E2B QAT (32k context; rugged iGPU)";
         reasoning = false;
         # Tool calls work (cluster/docs/inference/rugged_local_llm.md), but with
         # a real $HOME OpenCode's ~16k-token first prompt needs ~50 s of prefill
@@ -263,7 +265,7 @@ in
         # with a minimal environment by default.
         tool_call = false;
         limit = {
-          context = 131072;
+          context = 32768;
           output = 8192;
         };
       };
@@ -294,8 +296,7 @@ in
   };
 
   # This dedicated command has its own minimal OpenCode config and a fresh HOME,
-  # denies external networking, and bridges only the configured loopback Ollama
-  # port through a temporary Unix socket. Shared OpenCode providers, skills, and
-  # MCP servers remain owned by the normal profile.
+  # while connecting directly to host-loopback Ollama. Shared OpenCode providers,
+  # skills, and MCP servers remain owned by the normal profile.
   home.packages = [ offlineLauncher ];
 }

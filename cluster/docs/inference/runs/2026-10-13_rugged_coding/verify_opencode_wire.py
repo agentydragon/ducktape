@@ -17,6 +17,22 @@ RUN_DIR = Path(__file__).resolve().parent
 SMOKE_DIR = RUN_DIR / "smoke_7910"
 EVAL_DIR = Path(__file__).resolve().parents[5] / "x" / "local_llm" / "eval"
 OPENCODE = "/nix/store/0j2gmj4zx6xac1iipzy9m3ybh6wwkh6p-opencode-1.19.0/bin/opencode"
+MODEL_PROFILES = {
+    "qwen3-4b": "qwen3:4b-instruct-2507-q4_K_M",
+    "gemma4-e2b": "gemma4:e2b-it-qat",
+    "gemma4-e2b-long-128k-experimental": "gemma4:e2b-it-qat-long-128k-b128",
+    "gemma4-e4b": "gemma4:e4b",
+    "qwen2.5-coder-7b": "qwen2.5-coder:7b",
+    "qwen3-8b": "qwen3:8b",
+}
+EXPECTED_ROSTER = {
+    "qwen3:4b-instruct-2507-q4_K_M": (32768, 4096, True, "32k"),
+    "gemma4:e2b-it-qat": (32768, 8192, True, "32k"),
+    "gemma4:e2b-it-qat-long-128k-b128": (131072, 4096, True, "128k"),
+    "gemma4:e4b": (32768, 4096, True, "32k"),
+    "qwen2.5-coder:7b": (32768, 4096, False, "32k"),
+    "qwen3:8b": (32768, 4096, False, "32k"),
+}
 
 
 class MockHandler(BaseHTTPRequestHandler):
@@ -103,31 +119,56 @@ def main() -> int:
     parser.add_argument("--launcher", type=Path, help="exercise a built rugged-opencode-offline launcher")
     parser.add_argument("--workspace", type=Path, help="writable workspace for the built launcher")
     parser.add_argument("--profile-config", type=Path, help="generated OpenCode JSON for the selected profile")
-    parser.add_argument("--backend-port", type=int, help="fixed host-loopback port forwarded to the mock server")
+    parser.add_argument(
+        "--backend-port", type=int, default=0, help="host-loopback port; 0 chooses an available mock port"
+    )
     parser.add_argument(
         "--selector",
-        choices=("qwen3-4b", "gemma4-e2b", "gemma4-e2b-long-128k-experimental", "gemma4-e4b"),
+        choices=tuple(MODEL_PROFILES),
         default="qwen3-4b",
         help="local model profile passed to the built launcher",
     )
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=False)
 
-    expected_models = {
-        "qwen3-4b": ("qwen3:4b-instruct-2507-q4_K_M", 32768, 4096),
-        "gemma4-e2b": ("gemma4:e2b-it-qat", 131072, 8192),
-        "gemma4-e2b-long-128k-experimental": ("gemma4:e2b-it-qat-long-128k-b128", 131072, 4096),
-        "gemma4-e4b": ("gemma4:e4b", 32768, 4096),
-    }
-    expected_model, expected_context, expected_output = expected_models[args.selector]
+    expected_model = MODEL_PROFILES[args.selector]
+    expected_context, expected_output, expected_tool_call, _ = EXPECTED_ROSTER[expected_model]
     config_checks: dict[str, object] = {}
     if args.launcher is not None:
         if args.backend_port is None or args.workspace is None or args.profile_config is None:
             parser.error("--launcher requires --backend-port, --workspace, and --profile-config")
         config = json.loads(args.profile_config.read_text())
         configured_model = config["model"]
-        profile = config["provider"]["rugged-offline"]["models"][expected_model]
+        provider = config["provider"]["rugged-offline"]
+        profiles = provider["models"]
+        profile = profiles[expected_model]
         configured_limits = profile["limit"]
+        roster_details = {}
+        roster_valid = set(profiles) == set(EXPECTED_ROSTER)
+        for model_id, (context, output, tool_call, context_label) in EXPECTED_ROSTER.items():
+            model_profile = profiles.get(model_id)
+            if model_profile is None:
+                roster_valid = False
+                continue
+            limits = model_profile.get("limit", {})
+            display_name = model_profile.get("name", "")
+            roster_details[model_id] = {
+                "display_name": display_name,
+                "context_limit": limits.get("context"),
+                "expected_context_limit": context,
+                "output_limit": limits.get("output"),
+                "expected_output_limit": output,
+                "tool_call": model_profile.get("tool_call"),
+                "expected_tool_call": tool_call,
+                "context_label": context_label,
+                "context_label_matches": context_label in display_name.lower(),
+            }
+            roster_valid = roster_valid and (
+                limits.get("context") == context
+                and limits.get("output") == output
+                and model_profile.get("tool_call") is tool_call
+                and context_label in display_name.lower()
+            )
         config_checks = {
             "config_model": configured_model,
             "expected_config_model": f"rugged-offline/{expected_model}",
@@ -136,17 +177,23 @@ def main() -> int:
             "output_limit": configured_limits.get("output"),
             "expected_output_limit": expected_output,
             "tool_call": profile.get("tool_call"),
+            "provider_base_url": provider["options"].get("baseURL"),
+            "model_picker_roster": roster_details,
+            "model_picker_roster_valid": roster_valid,
         }
         if (
             configured_model != config_checks["expected_config_model"]
             or configured_limits.get("context") != expected_context
             or configured_limits.get("output") != expected_output
-            or profile.get("tool_call") is not True
+            or profile.get("tool_call") is not expected_tool_call
+            or provider["options"].get("baseURL") != "http://127.0.0.1:11436/v1"
+            or not roster_valid
         ):
             raise RuntimeError(f"generated model profile does not match selector: {config_checks}")
 
-    mock_port = args.backend_port if args.launcher is not None else 0
+    mock_port = args.backend_port if args.launcher is not None and args.backend_port > 0 else 0
     server = ThreadingHTTPServer(("127.0.0.1", mock_port), MockHandler)
+    backend_port = server.server_address[1]
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     fixture_workspace = SMOKE_DIR / "jsonl-transform"
@@ -162,11 +209,7 @@ def main() -> int:
             "Built offline OpenCode launcher wire verification",
             "Reply exactly mock-wire-ok.",
         ]
-        env = {
-            **os.environ,
-            "RUGGED_OPENCODE_BACKEND_PORT": str(args.backend_port),
-            "RUGGED_OPENCODE_MODEL": args.selector,
-        }
+        env = {**os.environ, "RUGGED_OPENCODE_BACKEND_PORT": str(backend_port), "RUGGED_OPENCODE_MODEL": args.selector}
     else:
         command = [
             sys.executable,
@@ -235,6 +278,8 @@ def main() -> int:
         "tool_count": len(tools),
         "tool_names": tool_names,
         "response_seen": "mock-wire-ok" in completed.stdout,
+        "mock_server_host": "127.0.0.1",
+        "mock_server_port": server.server_address[1],
     }
     (args.output_dir / "checks.json").write_text(json.dumps(checks, indent=2) + "\n")
     print(json.dumps(checks, indent=2))
@@ -245,7 +290,7 @@ def main() -> int:
         or request.get("reasoning_effort") != "none"
         or request.get("temperature") != 0.2
         or request.get("top_p") != 0.95
-        or not {"read", "write", "edit", "bash", "glob", "grep"}.issubset(tool_names)
+        or (expected_tool_call and not {"read", "write", "edit", "bash", "glob", "grep"}.issubset(tool_names))
     ):
         return 1
     return 0
