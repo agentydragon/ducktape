@@ -8,7 +8,7 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.policy_sets import POLICY_SETS_PLURAL
-from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest
+from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest
 from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandboxes.errors import InvalidSandboxError, SandboxNotFoundError, UnknownPolicySetError
 from agentplane.sandboxes.inventory import SandboxInventory

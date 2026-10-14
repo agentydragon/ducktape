@@ -79,7 +79,7 @@ class SandboxService(sandbox_service_pb2_grpc.SandboxServiceServicer):
 
     @override
     async def CreateSandbox(
-        self, request: sandbox_service_pb2.CreateSandboxRequest, context: grpc.aio.ServicerContext
+        self, request: sandboxes_pb2.CreateSandboxRequest, context: grpc.aio.ServicerContext
     ) -> sandboxes_pb2.Sandbox:
         async with errors(context), asyncio.timeout(self.resources.lifecycle_timeout_s):
             principal = await self.resources.authenticate(context)

@@ -1,4 +1,4 @@
-"""Browser HTTP schemas; Sandbox Service itself uses its generated protobuf messages."""
+"""Browser HTTP schemas and their translation to shared Sandbox protobuf messages."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from uuid import UUID
 from google.protobuf.json_format import MessageToDict, ParseDict
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from agentplane.proto import sandbox_service_pb2, sandboxes_pb2
+from agentplane.proto import sandboxes_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.subjects import ServiceAccountRef
@@ -138,5 +138,5 @@ def sandbox_is_ready(view: SandboxView) -> bool:
     )
 
 
-def create_request(value: NewSandbox) -> sandbox_service_pb2.CreateSandboxRequest:
-    return ParseDict(value.model_dump(mode="json", exclude_none=True), sandbox_service_pb2.CreateSandboxRequest())
+def create_request(value: NewSandbox) -> sandboxes_pb2.CreateSandboxRequest:
+    return ParseDict(value.model_dump(mode="json", exclude_none=True), sandboxes_pb2.CreateSandboxRequest())

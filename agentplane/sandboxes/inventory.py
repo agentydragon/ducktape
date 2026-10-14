@@ -22,8 +22,7 @@ from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.proto import runner_pb2
-from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest
-from agentplane.proto.sandboxes_pb2 import Sandbox
+from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest, Sandbox
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.sandboxes.console import stream_console
 from agentplane.sandboxes.errors import (
