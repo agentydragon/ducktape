@@ -74,6 +74,18 @@ async def test_a_deleting_sandbox_is_sealed_then_marked(runner: ScriptedRunner, 
     assert condition["status"] == "True"
 
 
+async def test_a_runner_not_yet_quiesced_is_asked_again_before_the_sandbox_is_marked(
+    runner: ScriptedRunner, cluster: Cluster
+) -> None:
+    mark_deleting(cluster)
+    first = await runner.next(runner_pb2.QuiesceRequest)
+    first.outcome.set_result(runner_pb2.QuiesceResponse(stage=runner_pb2.QUIESCE_STAGE_FLUSHING))
+    second = await runner.next(runner_pb2.QuiesceRequest)
+    assert sealed_condition(cluster) is None
+    second.outcome.set_result(runner_pb2.QuiesceResponse(stage=runner_pb2.QUIESCE_STAGE_QUIESCED))
+    await cluster.fake.wait_for(lambda: sealed_condition(cluster) is not None)
+
+
 async def test_a_deleting_sandbox_no_runner_connected_to_is_marked_without_a_seal(
     cluster: Cluster, leases: ConnectionLeases, sessions: SessionRegistry
 ) -> None:

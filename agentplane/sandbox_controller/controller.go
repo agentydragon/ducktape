@@ -319,6 +319,9 @@ func (r *Reconciler) seal(ctx context.Context, sandbox *Sandbox, runner string) 
 	if err != nil {
 		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: sealRetry}
 	}
+	if result.Quiescing {
+		return &unready{reason: "Quiescing", message: "the runner has not finished quiescing", retryAfter: sealRetry}
+	}
 	if len(result.Unflushed) > 0 {
 		return &unready{reason: "Quiescing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: sealRetry}
 	}

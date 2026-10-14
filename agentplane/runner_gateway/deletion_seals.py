@@ -11,6 +11,7 @@ from tenacity import AsyncRetrying, before_sleep_log, retry_if_not_exception_typ
 
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
+from agentplane.proto import runner_pb2
 from agentplane.runner_gateway.destinations import DestinationUnavailableError
 from agentplane.runner_gateway.sealing import Sealing
 from agentplane.sandbox_resource import Sandbox
@@ -120,6 +121,10 @@ class DeletionSeals:
                     sealed = await self._sealing.seal(
                         namespace=metadata.namespace, name=metadata.name, sandbox_uid=metadata.uid
                     )
+                    if sealed.HasField("stage") and sealed.stage != runner_pb2.QUIESCE_STAGE_QUIESCED:
+                        raise SealNotFlushedError(
+                            f"{metadata.name}: runner is {runner_pb2.QuiesceStage.Name(sealed.stage)}"
+                        )
                     if unflushed := [s.session_id for s in sealed.sessions if not s.flushed]:
                         raise SealNotFlushedError(f"{metadata.name}: ingress has not acknowledged {unflushed=}")
                     await self._report(sandbox, f"{len(sealed.sessions)} Sessions sealed")

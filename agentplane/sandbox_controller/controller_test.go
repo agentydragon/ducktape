@@ -728,6 +728,17 @@ func TestResumingWhileTheRunnerQuiescesFinishesTheQuiesceFirst(t *testing.T) {
 	}
 }
 
+func TestARunnerThatHasNotFinishedQuiescingIsNotTakenForQuiesced(t *testing.T) {
+	r, c := runningWithRunner(t)
+	sealer := r.Sealer.(*fakeSealer)
+	sealer.result = SealResult{Quiescing: true}
+	setRunning(t, c, false)
+	reconcileOnce(t, r)
+	if sealed := getSandbox(t, c).Status.QuiescedIncarnation; sealed != nil || getPod(t, c) == nil {
+		t.Fatal("a quiesce that is still draining was recorded as final and the Pod removed")
+	}
+}
+
 func TestDeletingASuspendedSealedSandboxAsksNoRunner(t *testing.T) {
 	r, c := runningWithRunner(t)
 	setRunning(t, c, false)

@@ -21,7 +21,10 @@ const sealTimeout = 30 * time.Second
 
 // SealResult is a runner's answer to a seal.
 type SealResult struct {
-	Sessions int
+	// The runner says its quiesce is not final yet. False for a runner that does not report a stage,
+	// whose `Quiesce` blocks until Unflushed says the rest.
+	Quiescing bool
+	Sessions  int
 	// Sessions the runner's ingress has not acknowledged the seal of yet.
 	Unflushed []string
 }
@@ -65,7 +68,10 @@ func (g GatewaySealer) Seal(ctx context.Context, sandbox *Sandbox) (SealResult, 
 	if err != nil {
 		return SealResult{}, fmt.Errorf("quiescing %s through %s: %w", sandbox.Name, target, err)
 	}
-	result := SealResult{Sessions: len(response.GetSessions())}
+	result := SealResult{
+		Quiescing: response.Stage != nil && response.GetStage() != runnerpb.QuiesceStage_QUIESCE_STAGE_QUIESCED,
+		Sessions:  len(response.GetSessions()),
+	}
 	for _, session := range response.GetSessions() {
 		if !session.GetFlushed() {
 			result.Unflushed = append(result.Unflushed, session.GetSessionId())

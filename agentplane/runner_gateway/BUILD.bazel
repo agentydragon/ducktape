@@ -464,6 +464,7 @@ py_library(
         ":sealing",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
+        "//agentplane/proto:runner_pb2",
         "//util:kubernetes",
         "//util:kubernetes_watch",
         "@pypi//tenacity",
