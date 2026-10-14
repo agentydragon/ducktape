@@ -118,6 +118,7 @@ class Sandbox(_Wire):
     def sessions_sealed(self) -> bool:
         return any(c.type == QUIESCED and c.status is ConditionStatus.TRUE for c in self.status.conditions)
 
+    @property
     def ready_condition(self) -> Condition | None:
         """The controller's reason for Ready or its current scheduling/start blocker."""
         return next((c for c in self.status.conditions if c.type == READY), None)
