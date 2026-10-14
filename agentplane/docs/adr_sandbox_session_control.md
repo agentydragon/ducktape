@@ -1,6 +1,6 @@
 # Sandbox and Session control: who owns what
 
-Status: **decided; see [Decisions](#decisions) for when each was settled.**
+Status: **decided; see [Decisions](#decisions) for when each was settled. How a sealed journal is reopened (D3) is still to be designed, and idle suspension waits on it.**
 
 Scope: the responsibilities split across the services and custom resources that run a Sandbox (Pod
 or VM) and deliver work to the Sessions in it. This covers the control Service, readiness and
@@ -543,7 +543,7 @@ name is free again after delete: otherwise a Sandbox deleted and recreated under
 would look, on relist, like the same Sandbox, and the old queue would be delivered into the new one.
 
 **Dispatch rows are kept while their Sandbox exists.** Decided (operator, 2026-10-14): for now no row is deleted while
-its Sandbox exists, since it is comparatively little data, and he is open to a different policy later. A row serves the
+its Sandbox exists, since it is comparatively little data, and a different policy may come later. A row serves the
 sender (status reads and `command_id` idempotency on a retried RPC) and the `OpenSession` window above, so a retried
 `OpenSession` or command always finds its record for as long as the Sandbox lasts. Candidates for a later policy:
 delete terminal rows after a window, or once the History Service has them. Design default, not the operator's ruling:
