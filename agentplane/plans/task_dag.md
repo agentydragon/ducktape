@@ -670,6 +670,12 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE[In progress: our own Sandbox resource]
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
+    AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
+    SESSION_INCARNATIONS -. related .-> AGENT_RESUME_NOTICE
+    SESSION_REVIVE -. related .-> AGENT_RESUME_NOTICE
+    SANDBOX_IDLE_EXPIRY -. related .-> AGENT_RESUME_NOTICE
+    RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
+    BOOTSTRAP_PROGRESS_CONTRACT[Candidate: the Sandbox bootstrap runs when the runner starts, section 6] -. related .-> AGENT_RESUME_NOTICE
     INCARNATION_UID_REQUIRED[Blocked: the runner rejects a Welcome without the incarnation UID]
     RUNNER_FACTS_ON_LEASE[Candidate: the runner publishes stage, idle and boot facts on the connection Lease]
     RUNNER_BUSY_TRACKING[Candidate: the runner knows whether the Sandbox is busy]
@@ -955,6 +961,24 @@ terminated, and the runner treats an interrupted Session setup as resumable. Tes
 revival after a long stop, a refused incompatible state PVC, and concurrent revive requests.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
+### `AGENT_RESUME_NOTICE` — tell agents when their Sandbox was suspended and resumed
+
+**Unscheduled; operator, 2026-10-13 PDT: it would be good.** An agent whose Sandbox was suspended and
+resumed learns nothing of it: its tool processes are gone, a terminal or background process it started
+no longer runs, and whether its workspace survived depends on where it lived (the state PVC is kept; a
+VM-local disk is not, until `VM_RAM_SUSPEND`). Tell the agent when a new incarnation of its Sandbox
+started, how long it was down, what was kept (state PVC, workspace) and what was lost (processes,
+terminals). The runner knows the incarnation change; what survives is a fact of the Sandbox's kind and
+volumes, and which processes the old incarnation left running depends on who owns terminals and
+background processes (the open part of `RUNNER_BUSY_TRACKING`). Open: whether the notice is a runner
+platform instruction added at harness start, an event the History Service folds into the Session, or a
+message through the Dispatcher; and the wording agents act on. Test a suspend and resume with a
+background process, a terminal and workspace files, and a crash restart (no suspend) that reads
+differently.
+
+Related: `SESSION_INCARNATIONS`, `SESSION_REVIVE`, `SANDBOX_IDLE_EXPIRY`, `BOOTSTRAP_PROGRESS_CONTRACT`
+(section 6).
 
 ### `INCARNATION_UID_REQUIRED` — the runner rejects a `Welcome` without the incarnation UID
 
