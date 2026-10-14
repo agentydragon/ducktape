@@ -61,6 +61,7 @@ go_test(
         "//agentplane/policy_controller",
         "@io_k8s_api//coordination/v1:coordination",
         "@io_k8s_api//core/v1:core",
+        "@io_k8s_apimachinery//pkg/api/equality",
         "@io_k8s_apimachinery//pkg/api/errors",
         "@io_k8s_apimachinery//pkg/api/meta",
         "@io_k8s_apimachinery//pkg/api/resource",

@@ -3,10 +3,13 @@ package sandboxcontroller
 import (
 	"context"
 	"errors"
+	"slices"
 	"testing"
 
 	corev1 "k8s.io/api/core/v1"
+	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	kubevirtv1 "kubevirt.io/api/core/v1"
@@ -32,6 +35,34 @@ func testVMTemplate(image string) *SandboxTemplate {
 		},
 	}
 	return template
+}
+
+// testWorkspaceVMTemplate is testVMTemplate with the workspace disk a PVC the controller creates
+// instead of a DataVolume the VM does.
+func testWorkspaceVMTemplate(image string) *SandboxTemplate {
+	template := testVMTemplate(image)
+	template.Spec.VM.DataVolumeTemplates = nil
+	volumes := &template.Spec.VM.Template.Spec.Volumes
+	*volumes = slices.DeleteFunc(*volumes, func(v kubevirtv1.Volume) bool { return v.Name == workspaceVolume })
+	template.Spec.WorkspaceVolume = &WorkspaceVolume{Name: workspaceVolume, Claim: corev1.PersistentVolumeClaimSpec{
+		AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+		Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{
+			corev1.ResourceStorage: resource.MustParse("2Gi"),
+		}},
+	}}
+	return template
+}
+
+func getWorkspacePVC(t *testing.T, c client.Client) *corev1.PersistentVolumeClaim {
+	t.Helper()
+	var pvc corev1.PersistentVolumeClaim
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: WorkspaceVolumeName(sandboxName)}, &pvc); err != nil {
+		if apierrors.IsNotFound(err) {
+			return nil
+		}
+		t.Fatal(err)
+	}
+	return &pvc
 }
 
 func getVM(t *testing.T, c client.Client) *kubevirtv1.VirtualMachine {
@@ -296,5 +327,97 @@ func TestVMTemplateWithoutKubeVirtStaysUnreadyAndCreatesNothing(t *testing.T) {
 	}
 	if reason := runningReason(t, c); reason != "KubeVirtMissing" {
 		t.Errorf("Running reason = %s, want KubeVirtMissing", reason)
+	}
+}
+
+func TestWorkspaceVolumeIsAPVCOfTheSandboxAttachedToTheVM(t *testing.T) {
+	template := testWorkspaceVMTemplate("test-guest:v1")
+	r, c := newReconciler(t, true, template)
+	reconcileOnce(t, r)
+
+	pvc := getWorkspacePVC(t, c)
+	if pvc == nil {
+		t.Fatal("no workspace PVC")
+	}
+	if !metav1.IsControlledBy(pvc, getSandbox(t, c)) || pvc.Labels[SandboxLabel] != sandboxName {
+		t.Errorf("workspace PVC owners %v, labels %v; the Sandbox must own it and the cache select it by label", pvc.OwnerReferences, pvc.Labels)
+	}
+	if pvc.OwnerReferences[0].BlockOwnerDeletion == nil || *pvc.OwnerReferences[0].BlockOwnerDeletion {
+		t.Error("the workspace PVC's owner reference blocks the Sandbox's deletion")
+	}
+	if !apiequality.Semantic.DeepEqual(pvc.Spec, template.Spec.WorkspaceVolume.Claim) {
+		t.Errorf("workspace PVC spec = %v, want the template's claim", pvc.Spec)
+	}
+	vm := getVM(t, c)
+	if v := volume(vm, workspaceVolume); v == nil || v.PersistentVolumeClaim == nil || v.PersistentVolumeClaim.ClaimName != pvc.Name {
+		t.Errorf("VM workspace volume = %v, want the workspace PVC", v)
+	}
+	if len(vm.Spec.DataVolumeTemplates) != 0 {
+		t.Errorf("VM DataVolume templates = %v, want none", vm.Spec.DataVolumeTemplates)
+	}
+}
+
+func TestHaltedVMKeepsItsWorkspaceVolume(t *testing.T) {
+	r, c := newReconciler(t, true, testWorkspaceVMTemplate("test-guest:v1"))
+	reconcileOnce(t, r)
+	pvc := getWorkspacePVC(t, c)
+	pvc.Annotations = map[string]string{"test.example/marker": "kept"}
+	if err := c.Update(context.Background(), pvc); err != nil {
+		t.Fatal(err)
+	}
+
+	setRunning(t, c, false)
+	reconcileOnce(t, r)
+	setRunning(t, c, true)
+	reconcileOnce(t, r)
+
+	if pvc := getWorkspacePVC(t, c); pvc == nil || pvc.Annotations["test.example/marker"] != "kept" {
+		t.Errorf("workspace PVC after stop and start = %v, want the one from before", pvc)
+	}
+	if v := volume(getVM(t, c), workspaceVolume); v == nil || v.PersistentVolumeClaim == nil {
+		t.Errorf("restarted VM workspace volume = %v, want the PVC", v)
+	}
+}
+
+func TestWorkspaceVolumeTheSandboxDoesNotOwnIsNotUsed(t *testing.T) {
+	stale := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{
+		Namespace: namespace, Name: WorkspaceVolumeName(sandboxName),
+	}}
+	r, c := newReconciler(t, true, testWorkspaceVMTemplate("test-guest:v1"), stale)
+	reconcileOnce(t, r)
+	if getVM(t, c) != nil {
+		t.Fatal("started a VM on a previous Sandbox's workspace")
+	}
+	if reason := runningReason(t, c); reason != "WorkspaceVolumeConflict" {
+		t.Errorf("Running reason = %s, want WorkspaceVolumeConflict", reason)
+	}
+}
+
+func TestTemplateDefiningTheWorkspaceVolumeItselfIsRefused(t *testing.T) {
+	template := testWorkspaceVMTemplate("test-guest:v1")
+	template.Spec.VM.Template.Spec.Volumes = append(template.Spec.VM.Template.Spec.Volumes, kubevirtv1.Volume{
+		Name:         workspaceVolume,
+		VolumeSource: kubevirtv1.VolumeSource{EmptyDisk: &kubevirtv1.EmptyDiskSource{Capacity: resource.MustParse("1Gi")}},
+	})
+	r, c := newReconciler(t, true, template)
+	reconcileOnce(t, r)
+	if getVM(t, c) != nil || getWorkspacePVC(t, c) != nil {
+		t.Fatal("started a VM, or made a workspace PVC, for a template that defines the workspace volume itself")
+	}
+	if reason := runningReason(t, c); reason != "TemplateInvalid" {
+		t.Errorf("Running reason = %s, want TemplateInvalid", reason)
+	}
+}
+
+func TestPodTemplateWithAWorkspaceVolumeIsRefused(t *testing.T) {
+	template := testTemplate("test-image:v1")
+	template.Spec.WorkspaceVolume = testWorkspaceVMTemplate("test-guest:v1").Spec.WorkspaceVolume
+	r, c := newReconciler(t, true, template)
+	reconcileOnce(t, r)
+	if getPod(t, c) != nil {
+		t.Fatal("started a Pod from a template that sets a workspace volume")
+	}
+	if reason := runningReason(t, c); reason != "TemplateInvalid" {
+		t.Errorf("Running reason = %s, want TemplateInvalid", reason)
 	}
 }

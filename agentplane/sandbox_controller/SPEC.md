@@ -35,8 +35,8 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   either never changes a running Pod or VM, its kind included.
 - Each Pod and VM carries the spec rendered from the template when it started
   (`agentplane.allegedly.works/rendered-spec`), for diffing against what the template renders now.
-- A template that does not exist, sets neither or both kinds, or defines the state volume itself,
-  starts nothing.
+- A template that does not exist, sets neither or both kinds, sets a workspace volume without `vm`, or
+  defines the state volume or its workspace volume itself, starts nothing.
 
 ## VMs
 
@@ -46,10 +46,15 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 - Each start of a halted VM sets its spec from the template as it is then; its disks stay.
 - The guest gets the state PVC as a virtiofs filesystem named after the template's state volume.
 - Each of the template's DataVolume templates is named `<sandbox>-<name>`, and the template's
-  volumes naming it follow. Those disks, the VM-local workspace among them, belong to the VM: they
-  outlive stops and go with the VM.
-- Starting a Sandbox whose template is now a Pod deletes its VM, and with it those disks, before
-  the Pod starts; the state PVC stays.
+  volumes naming it follow. Those disks belong to the VM: they outlive stops and go with the VM.
+- A template's `workspaceVolume` is the VM's own disk as a PVC, `<sandbox>-workspace`, created from the
+  template's claim when the VM first starts and controlled by the Sandbox like the state PVC: it
+  outlives stops, kind switches and the VM, and goes by garbage collection with the Sandbox. The VM's
+  volume of the workspace volume's name is that PVC, and the template's disk of that name sets how the
+  guest sees it. A Sandbox never uses a PVC of that name it does not control, and reports
+  `WorkspaceVolumeConflict` instead.
+- Starting a Sandbox whose template is now a Pod deletes its VM, and with it its DataVolume disks,
+  before the Pod starts; the state and workspace PVCs stay.
 - The VM, its VMI and its virt-launcher Pod carry the Sandbox label. The controller does not set
   the launcher's ServiceAccount: KubeVirt sets one only from a volume the guest could read, so the
   namespace's launcher admission sets the Sandbox's.
@@ -96,7 +101,7 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 virt-launcher Pod. The `Running` condition is True while the Pod runs (`PodRunning`) or the VMI runs
 (`VMRunning`). Otherwise it is False, with reason `Stopped`, `Starting`, `Stopping`, `PodEnded`,
 `VMEnded`, `SuspendPending`, `Quiescing`, `Deleting`,
-`TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `ServiceAccountConflict`,
+`TemplateNotFound`, `TemplateInvalid`, `StateVolumeConflict`, `WorkspaceVolumeConflict`, `ServiceAccountConflict`,
 `PolicyBindingConflict`, `PodConflict` or `VMConflict` (a Pod or VM of the Sandbox's name that
 it does not control). `SuspendPending` holds a suspend while the runner's bootstrap is still running, so the
 suspend never interrupts it; a delete does not wait.

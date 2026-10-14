@@ -32,12 +32,22 @@ type StateVolume struct {
 	Claim corev1.PersistentVolumeClaimSpec `json:"claim"`
 }
 
+// WorkspaceVolume is a VM's own disk, held by a PVC of the Sandbox's that the controller creates:
+// the VM's volume of this name is that PVC, and the template's disk of the same name sets how the
+// guest sees it.
+type WorkspaceVolume struct {
+	Name  string                           `json:"name"`
+	Claim corev1.PersistentVolumeClaimSpec `json:"claim"`
+}
+
 // SandboxTemplateSpec sets the Sandbox's kind: exactly one of Pod and VM.
 type SandboxTemplateSpec struct {
 	Pod *corev1.PodTemplateSpec `json:"pod,omitempty"`
 	// VM is the VirtualMachine's spec; the controller sets its run strategy from spec.running.
 	VM          *kubevirtv1.VirtualMachineSpec `json:"vm,omitempty"`
 	StateVolume StateVolume                    `json:"stateVolume"`
+	// WorkspaceVolume is set only with VM.
+	WorkspaceVolume *WorkspaceVolume `json:"workspaceVolume,omitempty"`
 }
 
 // +kubebuilder:object:root=true

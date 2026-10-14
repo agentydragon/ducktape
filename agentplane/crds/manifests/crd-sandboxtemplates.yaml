@@ -65,3 +65,20 @@ spec:
                       description: A PersistentVolumeClaimSpec for the state PVC.
                       type: object
                       x-kubernetes-preserve-unknown-fields: true
+                workspaceVolume:
+                  description: >-
+                    Only with vm: the VM's own disk, held by a PVC of the Sandbox's that the
+                    controller creates when it starts the VM and the Sandbox keeps until it is
+                    deleted. The VM's volume of this name is that PVC; the template does not define
+                    the volume, and its disk of this name sets how the guest sees it.
+                  type: object
+                  required: [name, claim]
+                  properties:
+                    name:
+                      description: The VM volume the controller fills with the workspace PVC.
+                      type: string
+                      minLength: 1
+                    claim:
+                      description: A PersistentVolumeClaimSpec for the workspace PVC.
+                      type: object
+                      x-kubernetes-preserve-unknown-fields: true
