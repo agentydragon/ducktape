@@ -259,20 +259,6 @@ func TestConnectionDropIsToleratedUntilTheLeaseLapsesPastTheGrace(t *testing.T) 
 	}
 }
 
-func TestControllerWithoutLeasesReportsReadyFromTheWorkloadAlone(t *testing.T) {
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
-	r.Leases = nil
-	reconcileOnce(t, r)
-	setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
-	reconcileOnce(t, r)
-	if got := getReadyCondition(t, c); got.Status != metav1.ConditionTrue {
-		t.Errorf("Ready = %s/%s, want True without a connection to check", got.Status, got.Reason)
-	}
-	if meta.FindStatusCondition(getSandbox(t, c).Status.Conditions, RunnerConnected) != nil {
-		t.Error("RunnerConnected is reported with no Leases to read")
-	}
-}
-
 func TestSandboxThatIsNotRunningIsNotReadyForTheSameReason(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
@@ -623,18 +609,6 @@ func TestDeletionLeavesAStateVolumeTheSandboxDoesNotOwn(t *testing.T) {
 	var sandbox Sandbox
 	if err := c.Get(context.Background(), sandboxKey, &sandbox); !apierrors.IsNotFound(err) {
 		t.Fatalf("a Sandbox with nothing to seal or delete is still present: %v", err)
-	}
-}
-
-func TestDeletionWithoutAQuiescerWaitsForTheRunnerGateway(t *testing.T) {
-	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
-	r.Quiescer, r.Leases = nil, nil
-	reconcileOnce(t, r)
-	deleteSandbox(t, c)
-	reconcileOnce(t, r)
-	reconcileOnce(t, r)
-	if getPod(t, c) == nil {
-		t.Fatal("the Pod went before anything sealed the Sessions")
 	}
 }
 

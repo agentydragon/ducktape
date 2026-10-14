@@ -370,7 +370,7 @@ No routing record is kept: runners dial out, so nothing is routed inbound.
 
 ## Lifecycle operations
 
-Status: **built.** The Runner Gateway makes every Session call and teardown's seal through the
+Status: **built.** The Runner Gateway makes every Session call through the
 control stream (`runner_gateway/lifecycle_control.py`). A runner fails `OpenSession` for a Session it created but could not
 start; asked again, it confirms the Session and starts the stopped harness. The App and the Notification
 Service reach the holder through the control Service (`control_target`, a required setting).

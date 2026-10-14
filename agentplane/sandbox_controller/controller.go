@@ -34,14 +34,13 @@ const (
 	// readiness, which says nothing of whether the runner has connected to the Runner Gateway.
 	WorkloadReady = "WorkloadReady"
 	// True while the incarnation's runner holds a live connection to the Runner Gateway, read from the
-	// Gateway's Lease for the Sandbox. Absent from a controller not configured with Leases.
+	// Gateway's Lease for the Sandbox.
 	RunnerConnected = "RunnerConnected"
 	// True when the Sandbox can take work: WorkloadReady and RunnerConnected. The lifecycle phase is
 	// separate.
 	Ready = "Ready"
-	// Set True on a deleting Sandbox, by this controller or the Runner Gateway, once its runner has
-	// sealed every Session and the ingress has acknowledged each seal; nothing of the Sandbox is
-	// deleted before, unless no runner ever connected.
+	// Set True on a deleting Sandbox once its runner has sealed every Session and the ingress has
+	// acknowledged each seal; nothing of the Sandbox is deleted before, unless no runner ever connected.
 	Quiesced = "Quiesced"
 	// On the Pod or the VirtualMachine and its VMI and virt-launcher Pod, the state PVC, the
 	// ServiceAccount and the PolicyBinding: the Sandbox they belong to.
@@ -80,11 +79,7 @@ type Reconciler struct {
 	// Whether the cluster serves KubeVirt's API. Without it VM Sandboxes stay unready and Pod
 	// Sandboxes are unaffected.
 	KubeVirt bool
-	// Seals a deleting Sandbox's Sessions through its runner. Without one, deletion waits for the
-	// Runner Gateway to set Quiesced.
-	//
-	// CLEANUP(added 2026-10-13): Make Quiescer and Leases required once the manifests pass the quiescer
-	// flags in every environment and the Runner Gateway no longer sets Quiesced.
+	// Seals a Sandbox's Sessions through its runner before it stops or is deleted.
 	Quiescer Quiescer
 	// Reads the Lease the Runner Gateway writes for each connection, and, set up with a manager, watches
 	// them: a new connection, or a runner reconnecting, enqueues its Sandbox.
@@ -231,7 +226,7 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 	// nor has one whose runner never connected, which is not sealed, only has nothing to seal.
 	needsQuiesce := own && !sandbox.sessionsQuiesced()
 	var runner string
-	if needsQuiesce && r.Quiescer != nil {
+	if needsQuiesce {
 		var err error
 		if runner, err = r.unquiescedRunner(ctx, sandbox); err != nil {
 			return w, nil, err
@@ -244,9 +239,6 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 		w, blocked, err := r.converge(ctx, sandbox, w, true, nil)
 		if err != nil || blocked != nil {
 			return w, blocked, err
-		}
-		if r.Quiescer == nil {
-			return w, &unready{reason: "Quiescing", message: "waiting for the Runner Gateway to seal every Session"}, nil
 		}
 		blocked = r.quiesce(ctx, sandbox, runner)
 		if blocked.retryAfter == 0 {
@@ -307,7 +299,7 @@ func (r *Reconciler) unquiescedRunner(ctx context.Context, sandbox *Sandbox) (st
 // to seal, and seals them. An incarnation whose runner never connected has none.
 func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *Sandbox, w workload) (*unready, error) {
 	pod := w.incarnation()
-	if r.Quiescer == nil || pod == nil {
+	if pod == nil {
 		return nil, nil
 	}
 	runner, err := r.unquiescedRunner(ctx, sandbox)
@@ -580,19 +572,13 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workl
 	workloadReady := workloadReadyCondition(sandbox, condition, w.incarnation())
 	meta.SetStatusCondition(&status.Conditions, workloadReady)
 	ready := workloadReady
-	var recheck time.Duration
-	if r.Leases == nil {
-		meta.RemoveStatusCondition(&status.Conditions, RunnerConnected)
-	} else {
-		connected, after, err := r.runnerConnectedCondition(ctx, sandbox, workloadReady, w.incarnation())
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		meta.SetStatusCondition(&status.Conditions, connected)
-		recheck = after
-		if workloadReady.Status == metav1.ConditionTrue {
-			ready = connected
-		}
+	connected, recheck, err := r.runnerConnectedCondition(ctx, sandbox, workloadReady, w.incarnation())
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	meta.SetStatusCondition(&status.Conditions, connected)
+	if workloadReady.Status == metav1.ConditionTrue {
+		ready = connected
 	}
 	ready.Type = Ready
 	meta.SetStatusCondition(&status.Conditions, ready)
@@ -722,19 +708,17 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&corev1.Pod{}, bySandboxLabel).
 		Watches(&corev1.PersistentVolumeClaim{}, bySandboxLabel).
 		Watches(&SandboxTemplate{}, byTemplate)
-	if r.Leases != nil {
-		// A connection's Lease is the Sandbox's by owner reference. Renewals only move the renew time,
-		// so only a different runner Pod, a new connection or a change in the facts the runner
-		// publishes enqueues.
-		setup = setup.Watches(&coordinationv1.Lease{},
-			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &Sandbox{}),
-			builder.WithPredicates(predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
-				previous, current := e.ObjectOld.(*coordinationv1.Lease), e.ObjectNew.(*coordinationv1.Lease)
-				return previous.Annotations[PodUIDAnnotation] != current.Annotations[PodUIDAnnotation] ||
-					leaseTransitions(previous) != leaseTransitions(current) ||
-					runnerFactsChanged(previous, current)
-			}}))
-	}
+	// A connection's Lease is the Sandbox's by owner reference. Renewals only move the renew time,
+	// so only a different runner Pod, a new connection or a change in the facts the runner
+	// publishes enqueues.
+	setup = setup.Watches(&coordinationv1.Lease{},
+		handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &Sandbox{}),
+		builder.WithPredicates(predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
+			previous, current := e.ObjectOld.(*coordinationv1.Lease), e.ObjectNew.(*coordinationv1.Lease)
+			return previous.Annotations[PodUIDAnnotation] != current.Annotations[PodUIDAnnotation] ||
+				leaseTransitions(previous) != leaseTransitions(current) ||
+				runnerFactsChanged(previous, current)
+		}}))
 	if r.KubeVirt {
 		setup = setup.Owns(&kubevirtv1.VirtualMachine{}).Watches(&kubevirtv1.VirtualMachineInstance{}, bySandboxLabel)
 	}

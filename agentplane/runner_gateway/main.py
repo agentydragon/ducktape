@@ -16,7 +16,6 @@ from agentplane.grpc_serving import add_health, serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner_gateway import runner_proxy
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases, ConnectionRecords
-from agentplane.runner_gateway.deletion_seals import DeletionSeals
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.grpc_api import Resources, add_service
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
@@ -116,14 +115,6 @@ async def gateway(
             background(
                 leases.watch(k8s_client.CoordinationV1Api(api), settings.sandbox_namespace, resync_seconds=300).run(),
                 name="runner-connection-leases",
-            )
-        )
-        await stack.enter_async_context(
-            background(
-                DeletionSeals(custom_objects, namespace=settings.sandbox_namespace, sealing=resources.sealing).run(
-                    resync_seconds=300
-                ),
-                name="deletion-seals",
             )
         )
         yield resources

@@ -77,7 +77,6 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   acknowledged each seal, so history holds every Session through its seal before its state goes.
   A stopped Sandbox runs once more to seal only if the runner that last connected is not the one
   recorded in `status.quiescedIncarnation`; one sealed when it was suspended is deleted as it is.
-  (A controller not configured to seal always runs it once more and waits for the gateway.)
 - Then the Pod or VM is deleted, then, once it and any VMI are gone, the finalizer clears and the
   PVC goes with the Sandbox.
 - A Sandbox without a state PVC of its own never had a runner, so nothing is sealed.

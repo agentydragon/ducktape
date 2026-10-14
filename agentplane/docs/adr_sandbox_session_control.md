@@ -31,15 +31,14 @@ not redesign storage, the History Service, or policy.
 - **Sandbox Controller** (Go, `sandbox_controller/`): state PVC, Pod or VM, ServiceAccount, `PolicyBinding`, launch
   ConfigMap, finalizer, and the `{sandbox}-control` Service. It drives quiesce: it calls `Runner.Quiesce` through the
   gateway's runner proxy and records `status.quiescedIncarnation` on any quiesce and sets `Quiesced` on a deleting Sandbox only (`finalize`), beside the older sealed names. It
-  reads the connection Lease's facts. `Ready` is `WorkloadReady` AND `RunnerConnected`. `QuiesceResponse.stage` has a
-  reader in the controller and one in the gateway's deletion seal.
+  reads the connection Lease's facts. `Ready` is `WorkloadReady` AND `RunnerConnected`. `QuiesceResponse.stage` has
+  one reader, the controller.
 - **Runner Gateway** (`runner_gateway/`): the `RunnerControl.Connect` listener and the proxy of the runner's `Runner`
   service. It creates, per Sandbox, a Lease (holder, epoch, liveness) and an EndpointSlice pointing at the holding
   replica (`connection_records.py`), owned by the Sandbox, and writes the runner's published quiesce stage and bootstrap result onto the Lease. It no longer creates the `<sandbox>-control` Service
   (its `services` RBAC rule stays until the controller's image is pinned). It still wraps `Runner` with Session registry, readiness checks
   (`destinations.py`) and a database, and its API promises that session and command RPCs never provision, resume or
-  wake a Sandbox. It also quiesces a deleting Sandbox itself (`sealing.py`, `deletion_seals.py`): a second actor, and a
-  second reader of the runner's quiesce response, beside the controller.
+  wake a Sandbox.
 - **Sandbox Service** (`sandbox_service/`): writes a Sandbox's desired state for the app and serves reads and the VM
   console; the Notification Service uses it only to read one Sandbox. It is to be removed (D4).
 - **Runner**: harnesses, journal, command admission, `Quiesce` (a durable lameduck keyed to the incarnation UID,
@@ -251,15 +250,14 @@ Lease and per-Session data stays out of Kubernetes. The runner already serves `Q
 `Seal`, so the controller already calls it and reads an empty `Unflushed` as "flushed" before it deletes the Pod.
 The hazard is therefore not the rename but changing what `Quiesce` returns under the same name: a non-blocking
 runner met by a reader of the old shape yields `Unflushed == []`, and the Pod is deleted before the ingress
-acknowledges anything. Two readers have that shape, the controller and the gateway's deletion seal.
+acknowledges anything. One reader has that shape, the controller.
 
 Rollout, reader before writer:
 
 1. `QuiesceResponse` gains a `stage` field, and the controller reads both shapes (landed).
-2. The gateway's deletion seal is retired, so the controller is the only reader.
+2. The gateway's deletion seal is retired, so the controller is the only reader (landed).
 3. Only then does the runner's `Quiesce` stop blocking. The runner is the writer: the runner image and the VM
-   guest's runner wheel (`nix/artifact-pins.json`, pinned separately) move only after the controller is pinned and
-   the gateway's deletion seal is retired.
+   guest's runner wheel (`nix/artifact-pins.json`, pinned separately) move only after the controller is pinned.
 
 The legacy shape carries a removal node.
 
@@ -526,8 +524,7 @@ Sandbox; it resolves the full `SessionSpec` at launch from the preset label and 
 overrides, if they are ever needed, would go in an app database table keyed by Sandbox UID.
 
 **The Dispatcher watches the Sandbox CR.** It learns a Sandbox's state through the shared
-`util.kubernetes_watch.ListWatch` on `sandboxes`, as the app (`app/live.py`) and the gateway
-(`runner_gateway/deletion_seals.py`) already do, reading the `Ready` condition with its reason and
+`util.kubernetes_watch.ListWatch` on `sandboxes`, as the app (`app/live.py`) already does, reading the `Ready` condition with its reason and
 `status.incarnation`. Its ServiceAccount gets one `get/list/watch` rule on `sandboxes`, and its one write is the wake (`spec.running`, `wakeGeneration`) through the helper.
 
 **The Dispatcher never creates Sandboxes.** The Sandbox named in `OpenSession` must exist; a missing one

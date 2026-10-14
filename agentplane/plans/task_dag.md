@@ -884,7 +884,7 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 **Unscheduled; operator, 2026-10-13 PDT: a later TODO.** Our `Sandbox` resource binds two concerns
 together. One is what Agent Sandbox did, plus VM support: a template, a Pod or VM per incarnation,
 and a state volume that stays. The other is specific to our runner running inside: sealing a
-Session's journal before the incarnation goes (`CONTROLLER_SEALS`). Separated,
+Session's journal before the incarnation goes. Separated,
 the first could be reused without the runner. Decide where the line falls (resource, controller or package) and what each side owns. A
 layered pair, a Sandbox and a runner that runs inside one, is the direction the control design
 (`docs/adr_sandbox_session_control.md`) points to: seal, runner connectivity and idle suspension
@@ -1357,13 +1357,11 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 ```mermaid
 flowchart TD
     APP_SESSION_DEFAULTS[Candidate: the app sends complete Session specs]
-    CONTROLLER_SEALS[Candidate: the Sandbox controller seals]
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
     APP_SESSION_DEFAULTS --> GATEWAY_WRAPPER_RETIRE
-    CONTROLLER_SEALS --> GATEWAY_WRAPPER_RETIRE
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
 ```
 
@@ -1386,15 +1384,6 @@ but the Dispatcher can open a Session or send work, so the proxy's per-method po
 the Dispatcher's account alone. `InterruptTurn`, `StopRunnerSession` and the reads stay open to the callers
 that have them. Order: every other caller has moved to the Dispatcher, then the policy narrows.
 
-### `CONTROLLER_SEALS` — the Sandbox controller seals
-
-**Candidate; the controller's quiescer code and its cdk8s wiring have landed.** What remains, once
-the flags are live in every environment: the controller's `Quiescer` and
-`Leases` become required, and `runner_gateway/deletion_seals.py`, `sealing.py` and the gateway's
-write to Sandboxes go.
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
 ### `RUNNER_COMMAND_RPCS` — `DeliverCommand` goes once nothing calls it
 
 **Blocked on `GATEWAY_WRAPPER_RETIRE`; operator, 2026-10-13 PDT: one RPC per command rather than one
@@ -1413,7 +1402,7 @@ migration and `Command` stays as that event's field type.
 **Blocked on the nodes above.** The app and the Notification Service
 call `Runner` through the proxy and ask the History Service where a Session runs. Delete the
 `RunnerGateway` service and proto, its client, `session_registry.py`, `destinations.py`,
-`sealing.py`, `session_lifecycle.py` and `wire.py`. This makes
+`session_lifecycle.py` and `wire.py`. This makes
 `GATEWAY_CLIENT_SPLIT` and `SANDBOX_DATABASE_RENAME` moot; delete them here.
 
 ### `GATEWAY_DATABASE_DROP` — drop the `sandbox_commands` database

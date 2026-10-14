@@ -32,7 +32,7 @@ func main() {
 	namespace := flag.String("namespace", "", "where the Sandboxes, their templates, Pods and state PVCs live")
 	metricsAddress := flag.String("metrics-bind-address", ":8080", "where Prometheus metrics are served")
 	probeAddress := flag.String("health-probe-bind-address", ":8081", "where /healthz and /readyz are served")
-	gatewayTarget := flag.String("runner-gateway-target", "", "when set, the controller seals deleting Sandboxes through the Runner Gateway at this address for one Sandbox, a template of {sandbox} and {namespace}: the Sandbox's own control Service")
+	gatewayTarget := flag.String("runner-gateway-target", "", "where the controller quiesces a Sandbox's runner through the Runner Gateway, for one Sandbox, a template of {sandbox} and {namespace}: the Sandbox's own control Service")
 	gatewayTokenFile := flag.String("runner-gateway-token-file", "", "the projected ServiceAccount token the Runner Gateway accepts from this controller")
 	flag.Parse()
 	ctrl.SetLogger(zap.New())
@@ -47,8 +47,8 @@ func run(namespace, metricsAddress, probeAddress string, quiescer sandboxcontrol
 	if namespace == "" {
 		return errors.New("--namespace is required")
 	}
-	if (quiescer.Target == "") != (quiescer.TokenFile == "") {
-		return errors.New("--runner-gateway-target and --runner-gateway-token-file go together")
+	if quiescer.Target == "" || quiescer.TokenFile == "" {
+		return errors.New("--runner-gateway-target and --runner-gateway-token-file are required")
 	}
 	scheme := runtime.NewScheme()
 	if err := clientgoscheme.AddToScheme(scheme); err != nil {
@@ -87,14 +87,12 @@ func run(namespace, metricsAddress, probeAddress string, quiescer sandboxcontrol
 	} else {
 		ctrl.Log.WithName("sandbox-controller").Info("KubeVirt's API is not served: VM Sandboxes stay unready")
 	}
-	if quiescer.Target != "" {
-		// Only the Runner Gateway's connection Leases, not the leader election Lease.
-		connection, err := labels.NewRequirement(sandboxcontroller.ConnectionLabel, selection.Equals, []string{"true"})
-		if err != nil {
-			return err
-		}
-		byObject[&coordinationv1.Lease{}] = cache.ByObject{Label: labels.NewSelector().Add(*connection)}
+	// Only the Runner Gateway's connection Leases, not the leader election Lease.
+	connection, err := labels.NewRequirement(sandboxcontroller.ConnectionLabel, selection.Equals, []string{"true"})
+	if err != nil {
+		return err
 	}
+	byObject[&coordinationv1.Lease{}] = cache.ByObject{Label: labels.NewSelector().Add(*connection)}
 	mgr, err := ctrl.NewManager(config, ctrl.Options{
 		Scheme:                 scheme,
 		Metrics:                metricsserver.Options{BindAddress: metricsAddress},
@@ -111,10 +109,7 @@ func run(namespace, metricsAddress, probeAddress string, quiescer sandboxcontrol
 	if err != nil {
 		return err
 	}
-	reconciler := &sandboxcontroller.Reconciler{Client: mgr.GetClient(), KubeVirt: kubeVirt, Now: time.Now}
-	if quiescer.Target != "" {
-		reconciler.Quiescer, reconciler.Leases = quiescer, mgr.GetClient()
-	}
+	reconciler := &sandboxcontroller.Reconciler{Client: mgr.GetClient(), KubeVirt: kubeVirt, Quiescer: quiescer, Leases: mgr.GetClient(), Now: time.Now}
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return err
 	}

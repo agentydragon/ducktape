@@ -81,7 +81,7 @@ flowchart TB
     hist_db -.->|staging: WAL archive, on-demand base backups| outside
 
     ss -->|Sandboxes| k8s
-    gw -->|control EndpointSlices, Leases; Quiesced on deleting Sandboxes| k8s
+    gw -->|control EndpointSlices, Leases| k8s
     hs -->|ingest, fold, read| hist_db
     notif -->|Sandbox reads| k8s
     dispatcher -->|Sandbox watch| k8s
@@ -129,7 +129,7 @@ flowchart TB
   `egress` and `notifications`; the Sandbox Service has none. Only the history database is drawn.
 - **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle and egress
   grants; the Runner Gateway owns everything that talks to a runner: Sessions, commands and the
-  runner control stream, and the seal that holds a Sandbox's deletion until its Sessions are sealed.
+  runner control stream. The Sandbox Controller holds a Sandbox's deletion until its Sessions are sealed.
   They run as separate Deployments with their own accounts.
 
 Status, open work and design gates: [`plans/`](plans/README.md). Implemented contracts:
