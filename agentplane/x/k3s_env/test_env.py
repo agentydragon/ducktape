@@ -363,6 +363,14 @@ def test_stack_comes_up() -> None:
                         "logs", "-l", selector, "-n", render.NAMESPACE, "--all-containers", "--tail=60", check=False
                     )
                     print(f"--- {selector}\n{logs}")
+                print(
+                    "--- harness files\n",
+                    k3s.kubectl(
+                        "exec", "-n", render.NAMESPACE, "-c", "runner", "pod/" + k3s.kubectl("get", "pod", "-n", render.NAMESPACE, "-l", "agentplane.allegedly.works/sandbox=smoke", "-o", "jsonpath={.items[0].metadata.name}"),
+                        "--", "sh", "-c", "ls -laL /bin/claude /bin/codex; ls -la /opt/harnesses /opt/harnesses/claude; ls -la /lib64",
+                        check=False,
+                    ),
+                )  # fmt: skip
                 raise
         print("memory:", _run("free", "-m"))
         print("answer:", answer)
