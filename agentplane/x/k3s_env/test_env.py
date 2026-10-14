@@ -351,12 +351,12 @@ def test_stack_comes_up() -> None:
             ).strip()
             try:
                 answer = asyncio.run(_run_turn(f"http://{app_ip}:8080", token))
-            except httpx.HTTPStatusError as error:
-                # The status line alone does not say why the app refused.
-                print("refused:", error.response.text)
+            except httpx.HTTPStatusError, AssertionError:
+                # The error alone does not say which hop refused.
                 for selector in (
                     "app.kubernetes.io/name=agentplane-app",
                     "app.kubernetes.io/name=agentplane-runner-gateway",
+                    "app.kubernetes.io/name=agentplane-llm-ingress",
                     "agentplane.allegedly.works/sandbox=smoke",
                 ):
                     logs = k3s.kubectl(
@@ -364,13 +364,9 @@ def test_stack_comes_up() -> None:
                     )
                     print(f"--- {selector}\n{logs}")
                 print(
-                    "--- harness files\n",
-                    k3s.kubectl(
-                        "exec", "-n", render.NAMESPACE, "-c", "runner", "pod/" + k3s.kubectl("get", "pod", "-n", render.NAMESPACE, "-l", "agentplane.allegedly.works/sandbox=smoke", "-o", "jsonpath={.items[0].metadata.name}"),
-                        "--", "sh", "-c", "find /opt/harnesses -maxdepth 4 | head -60",
-                        check=False,
-                    ),
-                )  # fmt: skip
+                    "--- LiteLLM from the host\n",
+                    _run("curl", "-sS", "-m", "20", "-I", f"https://{render.LITELLM_EXTERNAL_HOST}/", check=False),
+                )
                 raise
         print("memory:", _run("free", "-m"))
         print("answer:", answer)
