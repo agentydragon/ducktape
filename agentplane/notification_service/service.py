@@ -196,11 +196,13 @@ class Service:
         current = await self.store.notice(claim, prepare=False)
         if current is None or current.command_id != notice.command_id or current.confirmed or current.error:
             return
+        # Preserve the legacy gateway order: a stopped harness means there was no send
+        # attempt, so an acknowledgement before resume can still suppress this notice.
+        if dispatcher is None and (live is None or live.harness_state != runner_pb2.HARNESS_STATE_RUNNING):
+            return
         if not current.admitted and (current.attempted or await self.store.attempt(claim, current)):
             # Its admission and confirmation are copied by a later claim, once the History Service has them.
             if dispatcher is None:
-                if live.harness_state != runner_pb2.HARNESS_STATE_RUNNING:
-                    return
                 await self.gateway.command(
                     runner.destination,
                     claim.session_id,

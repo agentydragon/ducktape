@@ -276,6 +276,7 @@ py_test(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:history_service_pb2",
+        "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandboxes_pb2",
         "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/runner_gateway:client",
