@@ -49,6 +49,7 @@ def stored(session_id: str) -> runner_pb2.SessionSpec:
     return spec
 
 
+# Long liveness: a test gateway and runner share one event loop, so a stall on a loaded runner must not expire the stream.
 TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=5, backoff_initial_s=0.01, backoff_max_s=0.05)
 
 type Service = runner_control_pb2_grpc.RunnerAsyncStub
