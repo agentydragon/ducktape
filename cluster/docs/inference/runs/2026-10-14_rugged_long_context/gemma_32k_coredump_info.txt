@@ -1,0 +1,199 @@
+           PID: 832297 (llama-server)
+           UID: 1000 (agentydragon)
+           GID: 100 (users)
+        Signal: 6 (ABRT)
+     Timestamp: Wed 2026-10-14 01:15:38 PDT (2min 6s ago)
+  Command Line: /nix/store/845p22skhnydsa22k9c7fq5sgi22pxli-ollama-0.40.2/lib/ollama/llama-server --model /tmp/ducktape-rugged-models/blobs/sha256-3646b4c147cd235a44d91df1546d3b7d8e29b547dbe4e1f80856419aa455e6fd --port 36219 --host 127.0.0.1 --no-webui --offline -c 131072 -np 1 --log-verbosity 4 --no-log-prefix --no-log-timestamps --no-jinja --chat-template chatml --mmproj /tmp/ducktape-rugged-models/blobs/sha256-58c187648007cab392bd5678b87e862c3e8794017deb945feea2cf256195e96a --cache-type-k f16 --cache-type-v f16 --flash-attn on -b 2048 -ub 2048 --context-shift --keep 4
+    Executable: /nix/store/845p22skhnydsa22k9c7fq5sgi22pxli-ollama-0.40.2/lib/ollama/llama-server
+ Control Group: /user.slice/user-1000.slice/user@1000.service/app.slice/app-org.gnome.Terminal.slice/vte-spawn-47a88d20-5411-443c-afa3-5dce2ad925cc.scope
+          Unit: user@1000.service
+     User Unit: vte-spawn-47a88d20-5411-443c-afa3-5dce2ad925cc.scope
+         Slice: user-1000.slice
+     Owner UID: 1000 (agentydragon)
+       Boot ID: [redacted host identifier]
+    Machine ID: [redacted host identifier]
+      Hostname: rugged
+       Storage: [local systemd coredump present; binary not included]
+  Size on Disk: 82.3M
+       Message: Process 832297 (llama-server) of user 1000 dumped core.
+
+                Module libxml2.so.16 without build-id.
+                Module libz.so.1 without build-id.
+                Module libffi.so.8 without build-id.
+                Module libXdmcp.so.6 without build-id.
+                Module libXau.so.6 without build-id.
+                Module libexpat.so.1 without build-id.
+                Module libdisplay-info.so.4 without build-id.
+                Module libxcb-keysyms.so.1 without build-id.
+                Module libxshmfence.so.1 without build-id.
+                Module libxcb-shm.so.0 without build-id.
+                Module libxcb-randr.so.0 without build-id.
+                Module libxcb-sync.so.1 without build-id.
+                Module libxcb-xfixes.so.0 without build-id.
+                Module libxcb-present.so.0 without build-id.
+                Module libxcb-dri3.so.0 without build-id.
+                Module libX11-xcb.so.1 without build-id.
+                Module libxcb.so.1 without build-id.
+                Module libzstd.so.1 without build-id.
+                Module libdrm.so.2 without build-id.
+                Module libvulkan.so.1 without build-id.
+                Module libggml-vulkan.so without build-id.
+                Module libggml-cpu-alderlake.so without build-id.
+                Module libgcc_s.so.1 without build-id.
+                Module libstdc++.so.6 without build-id.
+                Module libggml-base.so.0 without build-id.
+                Module libggml.so.0 without build-id.
+                Module libllama.so.0 without build-id.
+                Module libmtmd.so.0 without build-id.
+                Module libllama-common.so.0 without build-id.
+                Module libllama-server-impl.so without build-id.
+                Module llama-server without build-id.
+                Stack trace of thread 832297:
+                #0  0x00007a907a8a192c __pthread_kill_implementation (libc.so.6 + 0xa192c)
+                #1  0x00007a907a8428be raise (libc.so.6 + 0x428be)
+                #2  0x00007a907a82943f abort (libc.so.6 + 0x2943f)
+                #3  0x00007a907acb7192 _ZN9__gnu_cxx27__verbose_terminate_handlerEv.cold (libstdc++.so.6 + 0xb7192)
+                #4  0x00007a907c19789b _ZL23ggml_uncaught_exceptionv (libggml-base.so.0 + 0x3289b)
+                #5  0x00007a907acc9b7a _ZN10__cxxabiv111__terminateEPFvvE (libstdc++.so.6 + 0xc9b7a)
+                #6  0x00007a907acb6d0d _ZSt9terminatev (libstdc++.so.6 + 0xb6d0d)
+                #7  0x00007a907acb6d24 __cxa_rethrow.cold (libstdc++.so.6 + 0xb6d24)
+                #8  0x00007a907142bd81 _ZN30vk_queue_handle_unsynchronized6submitEN2vk10ArrayProxyIKNS0_10SubmitInfoEEENS0_5FenceE.cold (libggml-vulkan.so + 0x2bd81)
+                #9  0x00007a907148ac9f _Z19ggml_vk_synchronizeP23ggml_backend_vk_context (libggml-vulkan.so + 0x8ac9f)
+                #10 0x00007a907148b928 _ZL27ggml_backend_vk_synchronizeP12ggml_backend (libggml-vulkan.so + 0x8b928)
+                #11 0x00007a907c19dede ggml_backend_sched_synchronize (libggml-base.so.0 + 0x38ede)
+                #12 0x00007a907b210454 _ZN13llama_context11synchronizeEv (libllama.so.0 + 0x210454)
+                #13 0x00007a907bf766c6 _ZN19server_context_impl12update_slotsEv (libllama-server-impl.so + 0x1766c6)
+                #14 0x00007a907bf13ca8 _ZN12server_queue10start_loopEl (libllama-server-impl.so + 0x113ca8)
+                #15 0x00007a907bec8fe7 _Z12llama_serverR13common_paramsiPPc (libllama-server-impl.so + 0xc8fe7)
+                #16 0x00007a907beca7d0 _Z12llama_serveriPPc (libllama-server-impl.so + 0xca7d0)
+                #17 0x00007a907a82b391 __libc_start_call_main (libc.so.6 + 0x2b391)
+                #18 0x00007a907a82b4a8 __libc_start_main@@GLIBC_2.34 (libc.so.6 + 0x2b4a8)
+                #19 0x00005a3530ae9085 _start (llama-server + 0x1085)
+
+                Stack trace of thread 832299:
+                #0  0x00007a907a8a84f2 __syscall_cancel_arch (libc.so.6 + 0xa84f2)
+                #1  0x00007a907a89bfe9 __GI___futex_abstimed_wait_cancelable64 (libc.so.6 + 0x9bfe9)
+                #2  0x00007a907a89ec54 pthread_cond_wait@@GLIBC_2.3.2 (libc.so.6 + 0x9ec54)
+                #3  0x00007a907baff39c _ZNSt6thread11_State_implINS_8_InvokerISt5tupleIJZN10common_log6resumeEvEUlvE_EEEEE6_M_runEv (libllama-common.so.0 + 0x2ff39c)
+                #4  0x00007a907acf94c6 execute_native_thread_routine (libstdc++.so.6 + 0xf94c6)
+                #5  0x00007a907a89f7d1 start_thread (libc.so.6 + 0x9f7d1)
+                #6  0x00007a907a92bb1c __clone3 (libc.so.6 + 0x12bb1c)
+
+                Stack trace of thread 832300:
+                #0  0x00007a907a8a84f2 __syscall_cancel_arch (libc.so.6 + 0xa84f2)
+                #1  0x00007a907a89bfe9 __GI___futex_abstimed_wait_cancelable64 (libc.so.6 + 0x9bfe9)
+                #2  0x00007a907a89f0e4 pthread_cond_clockwait@GLIBC_2.30 (libc.so.6 + 0x9f0e4)
+                #3  0x00007a907bf8ea41 _ZN22stream_session_manager7gc_loopEv (libllama-server-impl.so + 0x18ea41)
+                #4  0x00007a907acf94c6 execute_native_thread_routine (libstdc++.so.6 + 0xf94c6)
+                #5  0x00007a907a89f7d1 start_thread (libc.so.6 + 0x9f7d1)
+                #6  0x00007a907a92bb1c __clone3 (libc.so.6 + 0x12bb1c)
+
+                Stack trace of thread 832302:
+                #0  0x00007a907a8a84f2 __syscall_cancel_arch (libc.so.6 + 0xa84f2)
+                #1  0x00007a907a89bfe9 __GI___futex_abstimed_wait_cancelable64 (libc.so.6 + 0x9bfe9)
+                #2  0x00007a907a89ec54 pthread_cond_wait@@GLIBC_2.3.2 (libc.so.6 + 0x9ec54)
+                #3  0x00007a907c074f1d _ZN7httplib10ThreadPool6workerEb (libllama-server-impl.so + 0x274f1d)
+                #4  0x00007a907acf94c6 execute_native_thread_routine (libstdc++.so.6 + 0xf94c6)
+                #5  0x00007a907a89f7d1 start_thread (libc.so.6 + 0x9f7d1)
+                #6  0x00007a907a92bb1c __clone3 (libc.so.6 + 0x12bb1c)
+
+                Stack trace of thread 832301:
+                #0  0x00007a907a8a84f2 __syscall_cancel_arch (libc.so.6 + 0xa84f2)
+                #1  0x00007a907a89bfe9 __GI___futex_abstimed_wait_cancelable64 (libc.so.6 + 0x9bfe9)
+                #2  0x00007a907a89ec54 pthread_cond_wait@@GLIBC_2.3.2 (libc.so.6 + 0x9ec54)
+                #3  0x00007a906bd87f59 cnd_wait (libvulkan_intel.so + 0x587f59)
+                #4  0x00007a906bd69fbc util_queue_thread_func (libvulkan_intel.so + 0x569fbc)
+                #5  0x00007a906bd87ec8 impl_thrd_routine (libvulkan_intel.so + 0x587ec8)
+                #6  0x00007a907a89f7d1 start_thread (libc.so.6 + 0x9f7d1)
+                #7  0x00007a907a92bb1c __clone3 (libc.so.6 + 0x12bb1c)
+
+                Stack trace of thread 832306:
+                #0  0x00007a907a8a84f2 __syscall_cancel_arch (libc.so.6 + 0xa84f2)
+                #1  0x00007a907a89bfe9 __GI___futex_abstimed_wait_cancelable64 (libc.so.6 + 0x9bfe9)
+                #2  0x00007a907a89ec54 pthread_cond_wait@@GLIBC_2.3.2 (libc.so.6 + 0x9ec54)
+                #3  0x00007a907c074f1d _ZN7httplib10ThreadPool6workerEb (libllama-server-impl.so + 0x274f1d)
+                #4  0x00007a907acf94c6 execute_native_thread_routine (libstdc++.so.6 + 0xf94c6)
+                #5  0x00007a907a89f7d1 start_thread (libc.so.6 + 0x9f7d1)
+                #6  0x00007a907a92bb1c __clone3 (libc.so.6 + 0x12bb1c)
+
+                Stack trace of thread 832303:
+                #0  0x00007a907a8a84f2 __syscall_cancel_arch (libc.so.6 + 0xa84f2)
+                #1  0x00007a907a89bfe9 __GI___futex_abstimed_wait_cancelable64 (libc.so.6 + 0x9bfe9)
+                #2  0x00007a907a89ec54 pthread_cond_wait@@GLIBC_2.3.2 (libc.so.6 + 0x9ec54)
+                #3  0x00007a907c074f1d _ZN7httplib10ThreadPool6workerEb (libllama-server-impl.so + 0x274f1d)
+                #4  0x00007a907acf94c6 execute_native_thread_routine (libstdc++.so.6 + 0xf94c6)
+                #5  0x00007a907a89f7d1 start_thread (libc.so.6 + 0x9f7d1)
+                #6  0x00007a907a92bb1c __clone3 (libc.so.6 + 0x12bb1c)
+
+                Stack trace of thread 832304:
+                #0  0x00007a907a8a84f2 __syscall_cancel_arch (libc.so.6 + 0xa84f2)
+                #1  0x00007a907a89bfe9 __GI___futex_abstimed_wait_cancelable64 (libc.so.6 + 0x9bfe9)
+                #2  0x00007a907a89ec54 pthread_cond_wait@@GLIBC_2.3.2 (libc.so.6 + 0x9ec54)
+                #3  0x00007a907c074f1d _ZN7httplib10ThreadPool6workerEb (libllama-server-impl.so + 0x274f1d)
+                #4  0x00007a907acf94c6 execute_native_thread_routine (libstdc++.so.6 + 0xf94c6)
+                #5  0x00007a907a89f7d1 start_thread (libc.so.6 + 0x9f7d1)
+                #6  0x00007a907a92bb1c __clone3 (libc.so.6 + 0x12bb1c)
+
+                Stack trace of thread 832305:
+                #0  0x00007a907a8a84f2 __syscall_cancel_arch (libc.so.6 + 0xa84f2)
+                #1  0x00007a907a89bfe9 __GI___futex_abstimed_wait_cancelable64 (libc.so.6 + 0x9bfe9)
+                #2  0x00007a907a89ec54 pthread_cond_wait@@GLIBC_2.3.2 (libc.so.6 + 0x9ec54)
+                #3  0x00007a907c074f1d _ZN7httplib10ThreadPool6workerEb (libllama-server-impl.so + 0x274f1d)
+                #4  0x00007a907acf94c6 execute_native_thread_routine (libstdc++.so.6 + 0xf94c6)
+                #5  0x00007a907a89f7d1 start_thread (libc.so.6 + 0x9f7d1)
+                #6  0x00007a907a92bb1c __clone3 (libc.so.6 + 0x12bb1c)
+
+                Stack trace of thread 832307:
+                #0  0x00007a907a8a84f2 __syscall_cancel_arch (libc.so.6 + 0xa84f2)
+                #1  0x00007a907a89bfe9 __GI___futex_abstimed_wait_cancelable64 (libc.so.6 + 0x9bfe9)
+                #2  0x00007a907a89ec54 pthread_cond_wait@@GLIBC_2.3.2 (libc.so.6 + 0x9ec54)
+                #3  0x00007a907c074f1d _ZN7httplib10ThreadPool6workerEb (libllama-server-impl.so + 0x274f1d)
+                #4  0x00007a907acf94c6 execute_native_thread_routine (libstdc++.so.6 + 0xf94c6)
+                #5  0x00007a907a89f7d1 start_thread (libc.so.6 + 0x9f7d1)
+                #6  0x00007a907a92bb1c __clone3 (libc.so.6 + 0x12bb1c)
+
+                Stack trace of thread 832308:
+                #0  0x00007a907a8a84f2 __syscall_cancel_arch (libc.so.6 + 0xa84f2)
+                #1  0x00007a907a89bfe9 __GI___futex_abstimed_wait_cancelable64 (libc.so.6 + 0x9bfe9)
+                #2  0x00007a907a89ec54 pthread_cond_wait@@GLIBC_2.3.2 (libc.so.6 + 0x9ec54)
+                #3  0x00007a907c074f1d _ZN7httplib10ThreadPool6workerEb (libllama-server-impl.so + 0x274f1d)
+                #4  0x00007a907acf94c6 execute_native_thread_routine (libstdc++.so.6 + 0xf94c6)
+                #5  0x00007a907a89f7d1 start_thread (libc.so.6 + 0x9f7d1)
+                #6  0x00007a907a92bb1c __clone3 (libc.so.6 + 0x12bb1c)
+
+                Stack trace of thread 832316:
+                #0  0x00007a907a8a84f2 __syscall_cancel_arch (libc.so.6 + 0xa84f2)
+                #1  0x00007a907a89bfe9 __GI___futex_abstimed_wait_cancelable64 (libc.so.6 + 0x9bfe9)
+                #2  0x00007a907a89ec54 pthread_cond_wait@@GLIBC_2.3.2 (libc.so.6 + 0x9ec54)
+                #3  0x00007a906bd87f59 cnd_wait (libvulkan_intel.so + 0x587f59)
+                #4  0x00007a906bd69fbc util_queue_thread_func (libvulkan_intel.so + 0x569fbc)
+                #5  0x00007a906bd87ec8 impl_thrd_routine (libvulkan_intel.so + 0x587ec8)
+                #6  0x00007a907a89f7d1 start_thread (libc.so.6 + 0x9f7d1)
+                #7  0x00007a907a92bb1c __clone3 (libc.so.6 + 0x12bb1c)
+
+                Stack trace of thread 832340:
+                #0  0x00007a907a8a84f2 __syscall_cancel_arch (libc.so.6 + 0xa84f2)
+                #1  0x00007a907a89bfe9 __GI___futex_abstimed_wait_cancelable64 (libc.so.6 + 0x9bfe9)
+                #2  0x00007a907a89ec54 pthread_cond_wait@@GLIBC_2.3.2 (libc.so.6 + 0x9ec54)
+                #3  0x00007a907aa4f6c4 ggml_graph_compute_secondary_thread (libggml-cpu-alderlake.so + 0x1e6c4)
+                #4  0x00007a907a89f7d1 start_thread (libc.so.6 + 0x9f7d1)
+                #5  0x00007a907a92bb1c __clone3 (libc.so.6 + 0x12bb1c)
+
+                Stack trace of thread 832355:
+                #0  0x00007a907a8a84f2 __syscall_cancel_arch (libc.so.6 + 0xa84f2)
+                #1  0x00007a907a89bfe9 __GI___futex_abstimed_wait_cancelable64 (libc.so.6 + 0x9bfe9)
+                #2  0x00007a907a89ec54 pthread_cond_wait@@GLIBC_2.3.2 (libc.so.6 + 0x9ec54)
+                #3  0x00007a907bf13a2d _ZN12server_queue11worker_loopEv (libllama-server-impl.so + 0x113a2d)
+                #4  0x00007a907acf94c6 execute_native_thread_routine (libstdc++.so.6 + 0xf94c6)
+                #5  0x00007a907a89f7d1 start_thread (libc.so.6 + 0x9f7d1)
+                #6  0x00007a907a92bb1c __clone3 (libc.so.6 + 0x12bb1c)
+
+                Stack trace of thread 832309:
+                #0  0x00007a907a8a84f2 __syscall_cancel_arch (libc.so.6 + 0xa84f2)
+                #1  0x00007a907a92df38 accept4 (libc.so.6 + 0x12df38)
+                #2  0x00007a907c059333 _ZN7httplib6Server15listen_internalEv (libllama-server-impl.so + 0x259333)
+                #3  0x00007a907bed1285 _ZNSt6thread11_State_implINS_8_InvokerISt5tupleIJZN19server_http_context5startEvEUlvE_EEEEE6_M_runEv (libllama-server-impl.so + 0xd1285)
+                #4  0x00007a907acf94c6 execute_native_thread_routine (libstdc++.so.6 + 0xf94c6)
+                #5  0x00007a907a89f7d1 start_thread (libc.so.6 + 0x9f7d1)
+                #6  0x00007a907a92bb1c __clone3 (libc.so.6 + 0x12bb1c)
+                ELF object binary architecture: AMD x86-64

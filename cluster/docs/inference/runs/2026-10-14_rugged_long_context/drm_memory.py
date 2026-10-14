@@ -28,22 +28,34 @@ def process_drm_memory(pid: int) -> dict:
         old = clients.setdefault(client_id, {})
         for key, value in measurements.items():
             old[key] = max(old.get(key, 0), value)
+    totals = {}
+    for field in ("resident-gtt", "total-gtt", "resident-memory", "total-memory"):
+        key = f"drm-{field}_kib"
+        if any(key in measurements for measurements in clients.values()):
+            totals[field.replace("-", "_") + "_kib"] = sum(
+                measurements.get(key, 0) for measurements in clients.values()
+            )
     return {
         "pid": pid,
         "available": bool(clients),
         "clients": [{"client_id": client_id, **fields} for client_id, fields in sorted(clients.items())],
-        "resident_gtt_kib": sum(fields.get("drm-resident-gtt_kib", 0) for fields in clients.values()),
-        "total_gtt_kib": sum(fields.get("drm-total-gtt_kib", 0) for fields in clients.values()),
+        **totals,
     }
 
 
 def ollama_runner_drm_memory(server_pid: int) -> list[dict]:
     try:
-        children = Path(f"/proc/{server_pid}/task/{server_pid}/children").read_text().split()
+        tasks = list(Path(f"/proc/{server_pid}/task").iterdir())
     except FileNotFoundError, PermissionError:
         return []
+    children = set()
+    for task in tasks:
+        try:
+            children.update((task / "children").read_text().split())
+        except FileNotFoundError, PermissionError:
+            continue
     result = []
-    for child in children:
+    for child in sorted(children):
         try:
             if Path(f"/proc/{child}/comm").read_text().strip() == "llama-server":
                 result.append(process_drm_memory(int(child)))

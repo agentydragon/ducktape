@@ -181,6 +181,7 @@ def run_request(
     server_pid: int,
     deadline: datetime,
     max_output_tokens: int = 256,
+    num_batch: int | None = None,
 ) -> dict:
     body = {
         "model": model,
@@ -190,6 +191,8 @@ def run_request(
         "messages": [{"role": "user", "content": prompt}],
         "options": {"num_ctx": num_ctx, "num_predict": max_output_tokens, "temperature": 0, "seed": 20261014},
     }
+    if num_batch is not None:
+        body["options"]["num_batch"] = num_batch
     request_bytes = json.dumps(body).encode()
     stop = threading.Event()
     watcher = threading.Thread(
@@ -205,6 +208,8 @@ def run_request(
         with urllib.request.urlopen(req, timeout=2700) as response:
             for line in response:
                 event = json.loads(line)
+                if "error" in event:
+                    raise RuntimeError(f"Ollama stream error: {event['error']}")
                 chunk = event.get("message", {}).get("content", "")
                 if chunk:
                     if first_token is None:
@@ -240,6 +245,7 @@ def main() -> None:
     parser.add_argument("--base", default="http://127.0.0.1:11510")
     parser.add_argument("--model", default="qwen3:4b-instruct-2507-q4_K_M")
     parser.add_argument("--num-ctx", type=int, default=131072)
+    parser.add_argument("--num-batch", type=int)
     parser.add_argument("--targets", default="32000,64000,124000")
     parser.add_argument("--minimum-available-gib", type=float, default=8.0)
     parser.add_argument("--server-pid", type=int, required=False)
@@ -256,6 +262,7 @@ def main() -> None:
         manifest = {
             "model": args.model,
             "num_ctx_requested": args.num_ctx,
+            "num_batch_requested": args.num_batch,
             "targets": [metadata for _, _, metadata in prompts],
             "tokenizer_sha256": sha256(args.tokenizer.read_bytes()),
             "generated_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
@@ -285,6 +292,7 @@ def main() -> None:
                 args.server_pid,
                 deadline,
                 max_output_tokens=4,
+                num_batch=args.num_batch,
             )
         except Exception as exc:
             log_jsonl(
@@ -318,6 +326,7 @@ def main() -> None:
                 minimum_available_kib,
                 args.server_pid,
                 deadline,
+                num_batch=args.num_batch,
             )
         except Exception as exc:
             log_jsonl(

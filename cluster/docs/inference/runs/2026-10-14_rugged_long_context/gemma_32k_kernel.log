@@ -1,0 +1,4 @@
+2026-10-14T01:15:38-07:00 rugged kernel: xe 0000:00:02.0: [drm] Tile0: GT0: Timedout job: seqno=2407, lrc_seqno=2407, guc_id=3, flags=0x0 in llama-server [832297]
+2026-10-14T01:15:38-07:00 rugged kernel: xe 0000:00:02.0: [drm] Xe device coredump has been created
+2026-10-14T01:15:38-07:00 rugged kernel: xe 0000:00:02.0: [drm] Check your /sys/class/drm/card0/device/devcoredump/data
+2026-10-14T01:15:38-07:00 rugged kernel: xe 0000:00:02.0: [drm] Xe device coredump has been deleted.
