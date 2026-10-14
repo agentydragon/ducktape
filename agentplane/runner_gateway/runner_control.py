@@ -5,6 +5,7 @@ Contract: `agentplane/docs/runner_control.md`.
 """
 
 import asyncio
+import contextlib
 import logging
 from collections.abc import AsyncIterator
 from dataclasses import dataclass
@@ -17,7 +18,12 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
 from agentplane.proto import grpc_tunnel_pb2, runner_control_pb2, runner_control_pb2_grpc
-from agentplane.runner_gateway.connection_records import ConnectionRecords, ConnectionSupersededError, RecordOwner
+from agentplane.runner_gateway.connection_records import (
+    ConnectionRecords,
+    ConnectionSupersededError,
+    RecordOwner,
+    fact_annotations,
+)
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl, RunnerConnection
 from agentplane.sandbox_service.errors import SandboxNotFoundError
 from agentplane.sandbox_service.reader import SandboxReader
@@ -194,6 +200,10 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         started = last_touch = last_frame = loop.time()
         last_frame_at = datetime.now(UTC)
         writing = asyncio.Lock()
+        facts: runner_control_pb2.RunnerFacts | None = None
+        # Set when a fact that others wait on changes, so the Lease is written now and not at the next
+        # renewal, which carries busy and idle.
+        urgent = asyncio.Event()
 
         async def send(frame: runner_control_pb2.ServiceFrame) -> None:
             async with writing, asyncio.timeout(self.timing.liveness_s):
@@ -203,12 +213,26 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
             await send(runner_control_pb2.ServiceFrame(call=tunneled))
 
         async def read(connection: RunnerConnection) -> None:
-            nonlocal last_frame, last_frame_at
+            nonlocal last_frame, last_frame_at, facts
             async for frame in frames:
                 last_frame, last_frame_at = loop.time(), datetime.now(UTC)
                 match frame.WhichOneof("frame"):
                     case "heartbeat":
                         pass
+                    case "facts":
+                        try:
+                            fact_annotations(frame.facts)
+                        except KeyError as error:
+                            raise _StreamClosedError(
+                                grpc.StatusCode.INVALID_ARGUMENT, f"unknown runner fact value {error}"
+                            ) from error
+                        previous = facts or runner_control_pb2.RunnerFacts()
+                        if (previous.quiesce_stage, previous.bootstrap) != (
+                            frame.facts.quiesce_stage,
+                            frame.facts.bootstrap,
+                        ):
+                            urgent.set()
+                        facts = frame.facts
                     case "reply":
                         connection.tunnel.answer(frame.reply)
                     case kind:
@@ -217,15 +241,17 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         async def keep_alive() -> None:
             nonlocal last_touch
             while True:
-                await asyncio.sleep(self.timing.heartbeat_s)
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(urgent.wait(), self.timing.heartbeat_s)
                 now = loop.time()
                 if now - last_frame > self.timing.liveness_s:
                     raise _StreamClosedError(grpc.StatusCode.UNAVAILABLE, "no frame from the runner")
                 if now - started > self.timing.max_age_s:
                     raise _StreamClosedError(grpc.StatusCode.UNAVAILABLE, "maximum connection age reached")
-                if now - last_touch >= self.timing.touch_s:
+                if urgent.is_set() or now - last_touch >= self.timing.touch_s:
+                    urgent.clear()
                     try:
-                        await self.records.renew(peer.record_owner, epoch=epoch, seen_at=last_frame_at)
+                        await self.records.renew(peer.record_owner, epoch=epoch, seen_at=last_frame_at, facts=facts)
                     except ConnectionSupersededError as error:
                         raise _StreamClosedError(grpc.StatusCode.ABORTED, "superseded by a newer connection") from error
                     # Revocation: the Pod or Sandbox behind this connection may have changed.

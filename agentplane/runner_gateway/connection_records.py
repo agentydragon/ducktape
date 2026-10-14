@@ -21,14 +21,23 @@ from more_itertools import one
 from tenacity import AsyncRetrying, retry_if_exception, stop_after_attempt
 
 from agentplane.crd_group import GROUP
+from agentplane.proto import runner_control_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
+
+# gazelle:include_dep @pypi//protobuf
 
 logger = logging.getLogger(__name__)
 
 POD_UID_ANNOTATION = f"{GROUP}/pod-uid"
 RUNNER_BOOT_ID_ANNOTATION = f"{GROUP}/runner-boot-id"
 CONNECTION_EPOCH_ANNOTATION = f"{GROUP}/connection-epoch"
+# The runner's published facts, on the Lease only while the connection that reported them holds it.
+QUIESCE_STAGE_ANNOTATION = f"{GROUP}/quiesce-stage"
+BUSY_ANNOTATION = f"{GROUP}/busy"
+IDLE_SINCE_ANNOTATION = f"{GROUP}/idle-since"
+BOOTSTRAP_ANNOTATION = f"{GROUP}/bootstrap"
+_FACT_ANNOTATIONS = (QUIESCE_STAGE_ANNOTATION, BUSY_ANNOTATION, IDLE_SINCE_ANNOTATION, BOOTSTRAP_ANNOTATION)
 # Selects the Leases the cache holds; other controllers keep Leases in the Sandbox namespace too.
 CONNECTION_LABEL = f"{GROUP}/runner-connection"
 LEASE_DURATION_S = 30
@@ -39,6 +48,39 @@ CONTROL_PORT = "grpc"
 _SLICE_MANAGER = "agentplane-runner-gateway"
 # Concurrent accepts and renewals on one Sandbox conflict on `resourceVersion`; each retry re-reads.
 _CONFLICT_ATTEMPTS = 5
+
+
+_QUIESCE_STAGES = {
+    runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING: "draining",
+    runner_control_pb2.RunnerFacts.QUIESCE_STAGE_FLUSHING: "flushing",
+    runner_control_pb2.RunnerFacts.QUIESCE_STAGE_QUIESCED: "quiesced",
+}
+_BOOTSTRAPS = {
+    runner_control_pb2.RunnerFacts.BOOTSTRAP_RUNNING: "running",
+    runner_control_pb2.RunnerFacts.BOOTSTRAP_SUCCEEDED: "succeeded",
+    runner_control_pb2.RunnerFacts.BOOTSTRAP_FAILED: "failed",
+    runner_control_pb2.RunnerFacts.BOOTSTRAP_INTERRUPTED: "interrupted",
+}
+
+
+def fact_annotations(facts: runner_control_pb2.RunnerFacts) -> dict[str, str]:
+    """The Lease annotations for the facts a runner reported; a fact it left unset has none.
+
+    Raises `KeyError` for an enum value this gateway does not know, as a runner newer than the gateway
+    would send.
+    """
+    annotations: dict[str, str] = {}
+    if facts.quiesce_stage != runner_control_pb2.RunnerFacts.QUIESCE_STAGE_UNSPECIFIED:
+        annotations[QUIESCE_STAGE_ANNOTATION] = _QUIESCE_STAGES[facts.quiesce_stage]
+    match facts.WhichOneof("activity"):
+        case "busy":
+            annotations[BUSY_ANNOTATION] = "true"
+        case "idle":
+            annotations[BUSY_ANNOTATION] = "false"
+            annotations[IDLE_SINCE_ANNOTATION] = facts.idle.since.ToDatetime(tzinfo=UTC).isoformat()
+    if facts.bootstrap != runner_control_pb2.RunnerFacts.BOOTSTRAP_UNSPECIFIED:
+        annotations[BOOTSTRAP_ANNOTATION] = _BOOTSTRAPS[facts.bootstrap]
+    return annotations
 
 
 class ConnectionSupersededError(Exception):
@@ -229,8 +271,11 @@ class ConnectionRecords:
         await self._point_control_endpoints(owner, epoch=epoch)
         return epoch
 
-    async def renew(self, owner: RecordOwner, *, epoch: int, seen_at: datetime) -> None:
-        """Record liveness for the connection holding `epoch`, or learn that it no longer does."""
+    async def renew(
+        self, owner: RecordOwner, *, epoch: int, seen_at: datetime, facts: runner_control_pb2.RunnerFacts | None
+    ) -> None:
+        """Record liveness and the runner's facts for the connection holding `epoch`, or learn that it
+        no longer does."""
         async for attempt in _retrying_conflicts():
             with attempt:
                 try:
@@ -242,6 +287,14 @@ class ConnectionRecords:
                 if lease.spec.holder_identity != self._holder.pod_name or lease.spec.lease_transitions != epoch:
                     raise ConnectionSupersededError(owner.name)
                 lease.spec.renew_time = _micro_time(seen_at)
+                annotations = {
+                    key: value
+                    for key, value in (lease.metadata.annotations or {}).items()
+                    if key not in _FACT_ANNOTATIONS
+                }
+                if facts is not None:
+                    annotations |= fact_annotations(facts)
+                lease.metadata.annotations = annotations
                 await self._coordination.replace_namespaced_lease(owner.lease_name, self._namespace, lease)
 
     async def _ensure_control_service(self, owner: RecordOwner) -> None:

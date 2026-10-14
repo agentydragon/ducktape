@@ -998,7 +998,7 @@ second rebases. Readers of the new code (the Session Dispatcher) land after it.
 
 ### `RUNNER_FACTS_ON_LEASE` — the runner publishes stage, busy and boot facts on the connection Lease
 
-**Blocked on `QUIESCE_INCARNATION_KEY`, which gives the Lease the incarnation UID.** The one
+**In progress; the gateway writes what a runner sends (`RunnerFacts` frame, Lease annotations); the runner does not send yet, and the controller reader is the Sandbox controller lane's.** The one
 transport several nodes share: the runner reports facts on the control stream, and the gateway
 replica holding the connection writes them as annotations on the Sandbox-owned connection Lease,
 on transitions only and stamped with the incarnation UID, clearing them when a different
@@ -1008,6 +1008,9 @@ facts ride the regular 15-second renewal write, so they add no etcd writes. The
 runner republishes its stage on reconnect so a gateway rollout loses nothing. A first-connection
 annotation, persisted, tells `NeverRan` (a Sandbox whose runner has not connected yet) from a runner
 that is down. Order: the controller reads the annotations before the gateway starts writing them.
+Remaining: the runner publishes its quiesce stage and bootstrap result, then busy and idle, which
+need the runner to track what counts as busy (a turn, a command, a background process, an attached
+terminal) and does not yet.
 
 ### `SEAL_RENAME` — Seal, Sealed and Sealing get names that say which fact they mean
 
