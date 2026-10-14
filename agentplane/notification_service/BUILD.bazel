@@ -240,6 +240,7 @@ py_test(
     name = "test_api",
     size = "medium",
     srcs = ["test_api.py"],
+    requires_docker = True,
     deps = [
         ":api",
         ":conftest",
@@ -261,6 +262,7 @@ py_test(
     name = "test_service",
     size = "medium",
     srcs = ["test_service.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":db",
@@ -296,6 +298,7 @@ py_test(
     name = "test_store",
     size = "medium",
     srcs = ["test_store.py"],
+    requires_docker = True,
     deps = [
         ":conftest",
         ":database_migrate",
@@ -421,6 +424,7 @@ py_test(
     name = "test_wakeups",
     size = "medium",
     srcs = ["test_wakeups.py"],
+    requires_docker = True,
     deps = [
         ":channels",
         ":conftest",
