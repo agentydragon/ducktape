@@ -671,8 +671,7 @@ flowchart TD
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: the Sandbox bootstrap runs when the runner starts, section 6] -. related .-> AGENT_RESUME_NOTICE
     INCARNATION_UID_REQUIRED[Blocked: the runner rejects a Welcome without the incarnation UID]
     RUNNER_FACTS_ON_LEASE[Candidate: the runner publishes stage, idle and boot facts on the connection Lease]
-    RUNNER_BUSY_TRACKING[Candidate: the runner knows whether the Sandbox is busy]
-    RUNNER_BUSY_TRACKING --> SANDBOX_IDLE_EXPIRY
+    RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: the controller stops reading the blocking Quiesce shape]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
@@ -906,7 +905,7 @@ Firecracker with the runner as init.
 
 ### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes suspend
 
-**Blocked on `SESSION_INCARNATIONS`, `RUNNER_SEAL_PER_INCARNATION`, `RUNNER_FACTS_ON_LEASE`, `RUNNER_BUSY_TRACKING` and `QUIESCE_WITHOUT_POLLING`; operator,
+**Blocked on `SESSION_INCARNATIONS`, `RUNNER_SEAL_PER_INCARNATION`, `RUNNER_FACTS_ON_LEASE` and `QUIESCE_WITHOUT_POLLING`; operator,
 2026-10-11 and 2026-10-13 PDT.** An idle runner Sandbox suspends: it is sealed,
 then the Pod or VM goes, freeing memory and compute, and the Sandbox, its ServiceAccount, bindings
 and state PVC stay, so `SESSION_REVIVE` resumes it on the same PVC. Nothing deletes a Sandbox on
@@ -916,8 +915,8 @@ workspace depends on `WORKSPACE_VOLUME`. Idle is a Sandbox-level fact: every Ses
 is idle. The control design (`docs/adr_sandbox_session_control.md`) puts the policy in the Sandbox
 controller: `spec.idleSuspendAfter`, a timer the controller measures from the `idleSince`
 fact the runner publishes (`RUNNER_FACTS_ON_LEASE`), so it needs no History Service and
-survives a controller restart. Busy covers a turn, a command, a background or durable process and an
-attached terminal or console, or a Sandbox is suspended under a running job. The controller's idle timer does not edit the spec: it
+survives a controller restart. Busy covers a delivery under way, the bootstrap, a turn, a command and a setup script. A background or
+durable process or an attached terminal does not count (operator, 2026-10-14), so a suspend ends them (`RUNNER_BUSY_TRACKING`). The controller's idle timer does not edit the spec: it
 writes `status.suspendedBy: Idle` with the `spec.wakeGeneration` it suspended at, and the shared wake helper
 (`SANDBOX_WRITE_HELPER`) sets `running = true` and bumps `wakeGeneration` for both causes (operator, 2026-10-14: the shape stays). The
 controller publishes the effective mode once in status, and every reader of `spec.running` (controller
@@ -998,8 +997,8 @@ no longer runs, and whether its workspace survived depends on where it lived (th
 VM-local disk is not, until `VM_RAM_SUSPEND`). Tell the agent when a new incarnation of its Sandbox
 started, how long it was down, what was kept (state PVC, workspace) and what was lost (processes,
 terminals). The runner knows the incarnation change; what survives is a fact of the Sandbox's kind and
-volumes, and which processes the old incarnation left running depends on who owns terminals and
-background processes (the open part of `RUNNER_BUSY_TRACKING`). Open: whether the notice is a runner
+volumes, and a suspend ends background processes and terminals, which do not count as busy
+(`RUNNER_BUSY_TRACKING`). Open: whether the notice is a runner
 platform instruction added at harness start, an event the History Service folds into the Session, or a
 message through the Dispatcher; and the wording agents act on. Test a suspend and resume with a
 background process, a terminal and workspace files, and a crash restart (no suspend) that reads
@@ -1026,7 +1025,7 @@ connect; what is left is moving them to a runner-only `RunnerHeartbeat` on `Runn
 replica holding the connection writes them as annotations on the Sandbox-owned connection Lease,
 stamped with the incarnation UID, clearing them when a different incarnation connects. Facts: the
 seal stage (draining, flushing, sealed), when the Sandbox last went idle (`idleSince`, set only
-while no Session is busy and no background process or attached terminal runs; there is no `busy`
+while no delivery, bootstrap, turn, command or setup script is busy; there is no `busy`
 fact) for `SANDBOX_IDLE_EXPIRY`, and the bootstrap result (`BOOTSTRAP_PROGRESS_CONTRACT`), and the Sessions whose setup is still running, which
 holds a suspend back (`Ready` False with reason `SuspendPending`, `SANDBOX_IDLE_EXPIRY`). The
 gateway writes stage transitions to the Lease at once and coalesces only `idleSince` into the
@@ -1034,18 +1033,16 @@ regular 15-second renewal write, so it adds no etcd writes. The runner republish
 reconnect so a gateway rollout loses nothing. A first-connection
 annotation, persisted, tells `NeverRan` (a Sandbox whose runner has not connected yet) from a runner
 that is down. Order: the controller reads the annotations before the gateway starts writing them.
-Remaining: busy and idle, which
-need the runner to track what counts as busy (a turn, a command, a background process, an attached
-terminal) and does not yet.
 
 ### `RUNNER_BUSY_TRACKING` — the runner counts terminals and background processes as busy
 
-**Candidate; asked for by the Gateway runner proxy lane, 2026-10-13 PDT.** The runner publishes
-`idle_since` (`RunnerFacts`), busy while a delivery is under way, the bootstrap runs, or any Session
-has a turn, an unfinished command or a setup script. Remaining: a background or durable process or an
-attached terminal or console also makes the Sandbox busy. The runner does not supervise these, so who
-reports them (the harness adapters, the VM console) is open. Test an
-attached terminal that detaches, a background process that outlives a turn, and a runner restart.
+**Unscheduled; operator, 2026-10-14: not now, an open TODO that may be looked at later.** The runner
+publishes `idle_since` (`RunnerFacts`), busy while a delivery is under way, the bootstrap runs, or any
+Session has a turn, an unfinished command or a setup script. A background or durable process or an
+attached terminal or console does not make the Sandbox busy, so an idle suspend ends them. The runner
+does not supervise these, so who would report them (the harness adapters, the VM console) is open.
+Test an attached terminal that detaches, a background process that outlives a turn, and a runner
+restart. `AGENT_RESUME_NOTICE` tells the agent what a suspend ended.
 
 ### `QUIESCE_LEGACY_SHAPE_REMOVAL` — the controller stops reading the blocking `Quiesce` shape
 
