@@ -198,6 +198,18 @@ prompts with 32,768 total context allocated. An earlier live service default of 
 a full 128k prompt; the current service default is 32,768. Input, chat formatting,
 tool definitions, history, and generated output share the context budget.
 
+The OpenCode client path was checked separately from inference in
+[PR #10508](https://github.com/agentydragon/ducktape/pull/10508). Through ACP,
+both requests captured by a mock backend preserved the exact 487,500-byte
+fixture (123,997 tokens under the Gemma tokenizer), including its beginning,
+middle, and end. They selected the 131,072-context Gemma alias with a 4,096-token
+output limit. This establishes delivery of that fixture through the client;
+the mock's synthetic usage counts establish neither total input tokens nor
+model execution. In contrast, `opencode run --file` explicitly capped its
+initial attachment read at 50 KB and instructed the agent to continue at
+line 518. That is a file-reading/paging boundary, not silent server context
+truncation; whether the model follows the paging instruction was not tested.
+
 Qwen3-4B-Instruct-2507 declares
 [262,144 positions](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507/blob/main/config.json).
 Its observed 32k F16 KV allocation is 4608 MiB. Scaling to 128k gives 18 GiB
