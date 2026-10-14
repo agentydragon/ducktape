@@ -14,6 +14,7 @@ from agentplane.action_service.mcp_settings import McpClientMetadataSettings, Mc
 from agentplane.action_service.oauth_settings import OAuthSettings
 from agentplane.action_service.operator_oidc_settings import OperatorOidcSettings
 from agentplane.action_service.push_settings import WebPushSettings
+from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
 from util.yaml_file_settings import YamlFileSettings
 
@@ -52,6 +53,7 @@ class Settings(YamlFileSettings):
     )
 
     database_url: str = Field(description="Action Service-owned PostgreSQL database URL.")
+    log_levels: LogLevels
     host: str = "127.0.0.1"
     port: int = 8080
     token_audience: str = Field(min_length=1, description="Accepted projected-token audience of Sandbox callers.")

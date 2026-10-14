@@ -54,8 +54,9 @@ class ActionServer(uvicorn.Server):
 
 
 def main() -> None:
-    configure_logging()
-    asyncio.run(async_main(Settings()))
+    settings = Settings()
+    configure_logging(settings.log_levels)
+    asyncio.run(async_main(settings))
 
 
 async def async_main(settings: Settings) -> None:

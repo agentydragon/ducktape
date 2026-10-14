@@ -32,8 +32,9 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    configure_logging()
-    asyncio.run(async_main(Settings()), loop_factory=PinnedDialEventLoop)
+    settings = Settings()
+    configure_logging(settings.log_levels)
+    asyncio.run(async_main(settings), loop_factory=PinnedDialEventLoop)
 
 
 async def async_main(settings: Settings) -> None:

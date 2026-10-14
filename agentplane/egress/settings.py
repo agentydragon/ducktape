@@ -9,6 +9,7 @@ from typing import ClassVar
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.log_levels import LogLevels
 from util.yaml_file_settings import YamlFileSettings
 
 
@@ -53,6 +54,7 @@ class Settings(YamlFileSettings):
         "caller's own identity on; a credential naming an audience absent from it resolves to nothing.",
     )
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")
+    log_levels: LogLevels
 
     resync_seconds: int = Field(default=300, gt=0, description="Watch lifetime; every kind is relisted this often.")
     database_url: str = Field(repr=False, description="Shared diagnostic PostgreSQL database; migrated separately.")

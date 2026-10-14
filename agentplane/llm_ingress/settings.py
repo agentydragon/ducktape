@@ -7,6 +7,7 @@ from pydantic import Field, SecretStr
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.llm_ingress.models import ModelConfig
+from agentplane.log_levels import LogLevels
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
 
@@ -36,6 +37,7 @@ class Settings(YamlFileSettings):
     )
     litellm_url: HttpEndpointUrl = Field(description="Internal LiteLLM base URL.")
     litellm_key: SecretStr = Field(description="The one server-held LiteLLM virtual key.")
+    log_levels: LogLevels
     host: str = Field(default="0.0.0.0", description="Listener bind address.")
     port: int = Field(default=8080, description="Listener port.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")

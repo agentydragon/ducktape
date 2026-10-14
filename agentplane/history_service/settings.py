@@ -8,6 +8,7 @@ from typing import ClassVar
 from pydantic import BaseModel, ConfigDict, Field
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
 from util.yaml_file_settings import YamlFileSettings
 
@@ -45,6 +46,7 @@ class Settings(YamlFileSettings):
     reader_accounts: frozenset[ServiceAccountRef] = Field(min_length=1)
     token_audience: str = Field(min_length=1)
     request_timeout_s: float = Field(default=15, gt=0, le=60)
+    log_levels: LogLevels
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     kubeconfig: Path | None = None

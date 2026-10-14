@@ -1417,6 +1417,7 @@ py_library(
         ":action_federation_settings",
         ":model_catalog",
         ":presets",
+        "//agentplane:log_levels",
         "//agentplane/sandbox_service:kubernetes_grants",
         "//util:urls",
         "//util:yaml_file_settings",

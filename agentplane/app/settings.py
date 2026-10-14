@@ -11,6 +11,7 @@ from pydantic_settings import SettingsConfigDict
 from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPreset, ThreadPreset
+from agentplane.log_levels import LogLevels
 from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
@@ -85,6 +86,7 @@ class Settings(AppSettingsConfig):
         description="Seconds the app waits for the Runner Gateway to return the runner's durable "
         "command admission receipt. Keep above its runner_admission_ack_timeout_s setting.",
     )
+    log_levels: LogLevels
     host: str = Field(default="127.0.0.1", description="Bind address.")
     port: int = Field(default=8080, description="Bind port.")
     kubeconfig: Path | None = Field(default=None, description="Kubeconfig to use; omit for in-cluster.")

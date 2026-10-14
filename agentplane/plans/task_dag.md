@@ -462,7 +462,6 @@ app/Sandbox Service database changes requires its own migration safety review.
 ```mermaid
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
-    SERVICE_LOG_FLAGS[Unscheduled: logging flags in the services]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
     ISOLATED_ACCEPTANCE_CI[Unscheduled: acceptance tests in their own CI workflow]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
@@ -512,12 +511,6 @@ an alternative, and fold the Action tiles into the surfaces `ACTION_SURFACES_DES
 frontend a custom frontend for Claude Code web sessions: show their conversations and send them
 messages, by shimming the web interface's control protocol. Builds on the viewer and syncer under
 `devinfra/` and the reverse-engineering in `agentydragon/gaffer-private`.
-
-### `SERVICE_LOG_FLAGS` — logging flags in the services
-
-**Unscheduled; operator, 2026-10-12 PDT: would welcome it.** `agentplane/service_process.py` fixes
-every service at `INFO`. A setting for the level, per logger where it helps (request logging in the
-app, the gRPC clients), lets a debugging session turn detail up on one Deployment without an image.
 
 ### `ISOLATED_ACCEPTANCE_CI` — acceptance tests in their own CI workflow
 

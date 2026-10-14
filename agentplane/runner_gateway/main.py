@@ -144,8 +144,9 @@ async def serve(settings: Settings) -> None:
 
 
 def main() -> None:
-    configure_logging()
-    asyncio.run(serve(Settings()))
+    settings = Settings()
+    configure_logging(settings.log_levels)
+    asyncio.run(serve(settings))
 
 
 if __name__ == "__main__":

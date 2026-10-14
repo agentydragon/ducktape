@@ -7,6 +7,7 @@ from typing import Annotated, ClassVar
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, SecretStr
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.log_levels import LogLevels
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
 
@@ -156,6 +157,7 @@ class Settings(YamlFileSettings):
     stale_inbox_confirmation_s: PositiveSeconds = Field(
         default=30, le=3600, description="Seconds between first and confirming unavailable UID-pinned Sandbox lookup."
     )
+    log_levels: LogLevels
     host: str = "0.0.0.0"
     port: int = Field(default=8080, ge=1, le=65535)
     github: GitHubSettings | None = Field(

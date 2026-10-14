@@ -53,6 +53,7 @@ py_library(
     ],
     deps = [
         ":models",
+        "//agentplane:log_levels",
         "//util:urls",
         "//util:yaml_file_settings",
         "@pypi//pydantic",
