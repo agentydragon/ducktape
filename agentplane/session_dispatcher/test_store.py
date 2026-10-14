@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.session_dispatcher.db import SessionOpening
 from agentplane.session_dispatcher.models import DeliveryState, Reason
 from agentplane.session_dispatcher.store import (
@@ -18,6 +18,7 @@ from agentplane.session_dispatcher.store import (
     QueueFullError,
     SandboxOwner,
 )
+from agentplane.session_dispatcher.terminal_broadcast import TerminalBroadcast
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -28,8 +29,8 @@ QUEUE_CAP = 3
 
 
 @pytest.fixture
-def store(engine: AsyncEngine) -> DispatchStore:
-    return DispatchStore(engine, queue_cap=QUEUE_CAP)
+def store(engine: AsyncEngine, terminal_broadcast: TerminalBroadcast) -> DispatchStore:
+    return DispatchStore(engine, queue_cap=QUEUE_CAP, terminal_broadcast=terminal_broadcast)
 
 
 def submit(command_id: str, text: str = "hello") -> command_pb2.Command:
@@ -169,10 +170,10 @@ async def test_a_deleted_sandbox_ends_its_commands_and_takes_its_rows(store: Dis
         )
     assert await store.list_sandbox_uids() == {SANDBOX_UID, UUID(int=2)}
     ended = await store.end_sandbox(SANDBOX_UID)
-    assert {row.command_id: row.state for row in ended} == {
-        "queued": DeliveryState.FAILED,
-        "delivering": DeliveryState.UNKNOWN,
-        "admitted": DeliveryState.UNKNOWN,
+    assert {event.dispatch.command_id: event.dispatch.state for event in ended} == {
+        "queued": session_dispatcher_pb2.DELIVERY_STATE_FAILED,
+        "delivering": session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
+        "admitted": session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
     }
     assert [row.command_id for row in await store.list_dispatches(sandbox_name=SANDBOX)] == ["other-sandbox"]
     assert await store.list_sandbox_uids() == {UUID(int=2)}

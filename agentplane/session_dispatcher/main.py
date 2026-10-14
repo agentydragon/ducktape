@@ -20,6 +20,7 @@ from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxWatch
 from agentplane.session_dispatcher.settings import Settings
 from agentplane.session_dispatcher.store import DispatchStore
+from agentplane.session_dispatcher.terminal_broadcast import TerminalBroadcast
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 
@@ -33,10 +34,13 @@ async def serve(settings: Settings) -> None:
             make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=6, max_overflow=2
         )
         stack.push_async_callback(engine.dispose)
-        store = DispatchStore(engine, queue_cap=settings.max_queued_per_session)
+        ended = EndedDispatches()
+        terminal_broadcast = TerminalBroadcast(engine.url, ended)
+        store = DispatchStore(engine, queue_cap=settings.max_queued_per_session, terminal_broadcast=terminal_broadcast)
         async with (
             k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
             store.wakeups.listener.listen(),
+            terminal_broadcast.listener.listen(),
         ):
             custom_objects = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api))
             inventory = SandboxInventory(
@@ -52,7 +56,6 @@ async def serve(settings: Settings) -> None:
                 token_file=settings.runner_token_file,
                 request_timeout_s=settings.runner_request_timeout_s,
             )
-            ended = EndedDispatches()
             server = grpc.aio.server()
             add_health(server)
             add_service(

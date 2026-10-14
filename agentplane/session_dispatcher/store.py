@@ -3,7 +3,7 @@
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import ColumnElement, delete, exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -13,7 +13,10 @@ from agentplane.postgres.wakeups import notify
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.session_dispatcher.channels import Channel, create_wakeups
 from agentplane.session_dispatcher.db import Dispatch, SandboxOwnership, SessionOpening
+from agentplane.session_dispatcher.ended_dispatches import TerminalEvent
 from agentplane.session_dispatcher.models import LIVE_STATES, DeliveryState, Operation, Reason, operation_of
+from agentplane.session_dispatcher.snapshots import describe_dispatch
+from agentplane.session_dispatcher.terminal_broadcast import TerminalBroadcast
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -50,8 +53,9 @@ class SandboxOwner:
 
 
 class DispatchStore:
-    def __init__(self, engine: AsyncEngine, *, queue_cap: int) -> None:
+    def __init__(self, engine: AsyncEngine, *, queue_cap: int, terminal_broadcast: TerminalBroadcast) -> None:
         self.queue_cap = queue_cap
+        self.terminal_broadcast = terminal_broadcast
         self.wakeups = create_wakeups(engine.url)
         self.sessions = async_sessionmaker(engine, expire_on_commit=False)
 
@@ -516,11 +520,10 @@ class DispatchStore:
             current.holder_identity,
         ) == (owner.generation, owner.lease_uid, owner.lease_transitions, owner.holder_identity)
 
-    async def end_sandbox(self, sandbox_uid: UUID) -> list[Dispatch]:
+    async def end_sandbox(self, sandbox_uid: UUID) -> list[TerminalEvent]:
         """The Sandbox is gone, and its rows are kept only as long as it exists: what never reached its
         runner fails, what did or may have has an outcome nobody can read any more, and then every
-        row of the Sandbox is deleted. Returns the rows this ended, as they ended, for the streams
-        watching them."""
+        row of the Sandbox is deleted. Returns the exact terminal snapshots broadcast to active streams."""
         async with self.sessions.begin() as session:
             # Match worker settlement's lock order: owner row, then delivery rows.
             await session.scalar(
@@ -545,13 +548,15 @@ class DispatchStore:
             rows = list(
                 await session.scalars(select(Dispatch).where(Dispatch.position.in_(ended)).order_by(Dispatch.position))
             )
+            events = [TerminalEvent(str(uuid4()), describe_dispatch(row)) for row in rows]
+            await self.terminal_broadcast.notify(session, events)
             deleted = await session.execute(delete(Dispatch).where(for_sandbox).returning(Dispatch.position))
             await session.execute(delete(SessionOpening).where(SessionOpening.sandbox_uid == sandbox_uid))
             await session.execute(delete(SandboxOwnership).where(SandboxOwnership.sandbox_uid == sandbox_uid))
             if deleted.first() is not None:
                 await notify(session, Channel.DISPATCH)
             session.expunge_all()
-            return rows
+            return events
 
     async def list_sandbox_uids(self) -> set[UUID]:
         """The Sandboxes that rows are stored for."""

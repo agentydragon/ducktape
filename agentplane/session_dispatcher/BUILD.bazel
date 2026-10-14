@@ -75,6 +75,7 @@ py_library(
         ":models",
         ":runner_client",
         ":sandboxes",
+        ":snapshots",
         ":store",
         "//agentplane:grpc_servicer",
         "//agentplane:subjects",
@@ -99,6 +100,7 @@ py_library(
         ":sandboxes",
         ":settings",
         ":store",
+        ":terminal_broadcast",
         "//agentplane:grpc_serving",
         "//agentplane:service_process",
         "//agentplane/sandboxes:inventory",
@@ -171,7 +173,10 @@ py_library(
     deps = [
         ":channels",
         ":db",
+        ":ended_dispatches",
         ":models",
+        ":snapshots",
+        ":terminal_broadcast",
         "//agentplane/postgres:wakeups",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
@@ -191,6 +196,7 @@ py_library(
         ":runner_client",
         ":sandboxes",
         ":store",
+        ":terminal_broadcast",
         "//agentplane:background_task",
         "//agentplane:grpc_serving",
         "//agentplane/proto:runner_control_pb2_grpc",
@@ -229,6 +235,7 @@ py_test(
         "//agentplane:sandbox_resource",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/session_dispatcher/testing:sandbox_status",
         "//agentplane/session_dispatcher/testing:scripted_runner",
@@ -251,10 +258,12 @@ py_test(
         ":db",
         ":models",
         ":store",
+        ":terminal_broadcast",
         "//:conftest",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
@@ -333,6 +342,7 @@ py_test(
         ":runner_client",
         ":sandboxes",
         ":store",
+        ":terminal_broadcast",
         "//:conftest",
         "//agentplane:grpc_calls",
         "//agentplane:grpc_serving",
@@ -355,7 +365,48 @@ py_test(
 py_library(
     name = "ended_dispatches",
     srcs = ["ended_dispatches.py"],
-    deps = [":db"],
+    deps = ["//agentplane/proto:session_dispatcher_pb2"],
+)
+
+py_library(
+    name = "snapshots",
+    srcs = ["snapshots.py"],
+    deps = [
+        ":db",
+        ":models",
+        "//agentplane/proto:session_dispatcher_pb2",
+    ],
+)
+
+py_library(
+    name = "terminal_broadcast",
+    srcs = ["terminal_broadcast.py"],
+    deps = [
+        ":ended_dispatches",
+        ":models",
+        "//agentplane/postgres:listener",
+        "//agentplane/proto:session_dispatcher_pb2",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_terminal_broadcast",
+    srcs = ["test_terminal_broadcast.py"],
+    deps = [
+        ":conftest",
+        ":ended_dispatches",
+        ":models",
+        ":terminal_broadcast",
+        "//:conftest",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
 )
 
 py_test(

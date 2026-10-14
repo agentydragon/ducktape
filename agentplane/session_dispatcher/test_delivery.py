@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane import sandbox_resource
 from agentplane.background_task import background
-from agentplane.proto import command_pb2, runner_pb2
+from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.session_dispatcher import delivery as delivery_module
 from agentplane.session_dispatcher.channels import Channel
@@ -612,8 +612,8 @@ async def test_a_deleted_sandbox_ends_its_commands_for_the_streams_and_takes_its
     with ended.subscribe(published) as ends:
         cluster.fake.delete(sandbox_resource.SANDBOXES_PLURAL, SANDBOX)
         await published.wait()
-    assert [(row.command_id, row.state, row.reason) for row in ends] == [
-        ("orphaned", DeliveryState.FAILED, Reason.SANDBOX_DELETED)
+    assert [(event.dispatch.command_id, event.dispatch.state, event.dispatch.reason) for event in ends.events] == [
+        ("orphaned", session_dispatcher_pb2.DELIVERY_STATE_FAILED, Reason.SANDBOX_DELETED)
     ]
     assert not await store.list_dispatches(session_id=SESSION)
 

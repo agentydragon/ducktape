@@ -31,9 +31,11 @@ and Notification Service still send through the Runner Gateway pending their cut
 - **Queue**: no TTL; at most `max_queued_per_session` queued commands per Session, then
   `RESOURCE_EXHAUSTED`. A command for a Sandbox that does not exist is refused `NOT_FOUND` and stores nothing.
 - **Sandbox deleted** (seen on the Sandbox watch): queued commands end `FAILED` (`sandbox_deleted`), delivering
-  ones and admitted inputs `UNKNOWN`, which the open `WatchDispatches` streams are handed; the Sandbox's
-  Dispatches are deleted in the same step, so a later read or watch is `NOT_FOUND`/empty. A stream on another
-  replica is not handed them.
+  ones and admitted inputs `UNKNOWN`. The Dispatcher publishes their exact protobuf snapshots through
+  transactional PostgreSQL notifications in bounded chunks, in the same transaction that deletes the rows,
+  so active `WatchDispatches` streams on any connected replica receive them. A listener disconnect, reconnect
+  gap or incomplete event fails active streams with `UNAVAILABLE`; terminal events have no durable replay,
+  so a later read or watch is `NOT_FOUND`/empty.
 - **Retention**: a Sandbox's Dispatches are kept as long as it exists. Other policies may come later.
 - **Replica ownership**: a per-Sandbox Lease assigns delivery scheduling ownership. Its PostgreSQL
   generation fences stale claims, settlements and recovery. The Runner Gateway's separate connection
@@ -55,9 +57,6 @@ Sandboxes) or a retry deadline. Each replica also renews its owned Leases every 
 
 ## Deviations and gaps
 
-- Deleted-Sandbox terminal events are handed only to streams on the replica that processed the deletion.
-  Cross-replica terminal broadcasts and increasing the active replica count are separate rollout gates in
-  [`task_dag.md`](../plans/task_dag.md).
 - `HARNESS_CONFIRMED` has no writer, so inputs stay `RUNNER_ADMITTED`.
 - Any account in `caller_accounts` may send to any Sandbox.
 

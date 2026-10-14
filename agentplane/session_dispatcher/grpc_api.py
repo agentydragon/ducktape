@@ -14,11 +14,12 @@ from sqlalchemy.exc import SQLAlchemyError
 from agentplane.grpc_servicer import Abort, ServicerResources, status_mapping
 from agentplane.proto import command_pb2, session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.session_dispatcher.channels import Channel
-from agentplane.session_dispatcher.db import Dispatch, SessionOpening
+from agentplane.session_dispatcher.db import Dispatch
 from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
-from agentplane.session_dispatcher.models import DeliveryState, Operation, Reason
+from agentplane.session_dispatcher.models import DeliveryState, Reason
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxNotFoundError, SandboxWatch, delivery_blocker
+from agentplane.session_dispatcher.snapshots import describe_dispatch, describe_opening, describe_state
 from agentplane.session_dispatcher.store import (
     CommandConflictError,
     DispatchNotFoundError,
@@ -33,23 +34,6 @@ from agentplane.subjects import ServiceAccountRef
 # gazelle:include_dep @pypi//grpcio
 
 logger = logging.getLogger(__name__)
-
-_OPERATIONS = {
-    Operation.SUBMIT_INPUT: session_dispatcher_pb2.OPERATION_SUBMIT_INPUT,
-    Operation.CHANGE_MODEL: session_dispatcher_pb2.OPERATION_CHANGE_MODEL,
-    Operation.CHANGE_REASONING_EFFORT: session_dispatcher_pb2.OPERATION_CHANGE_REASONING_EFFORT,
-    Operation.STOP_RUNNER_SESSION: session_dispatcher_pb2.OPERATION_STOP_RUNNER_SESSION,
-}
-_STATES = {
-    DeliveryState.QUEUED_IN_DISPATCHER: session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
-    DeliveryState.DELIVERING_TO_RUNNER: session_dispatcher_pb2.DELIVERY_STATE_DELIVERING_TO_RUNNER,
-    DeliveryState.RUNNER_ADMITTED: session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
-    DeliveryState.HARNESS_CONFIRMED: session_dispatcher_pb2.DELIVERY_STATE_HARNESS_CONFIRMED,
-    DeliveryState.NO_OP: session_dispatcher_pb2.DELIVERY_STATE_NO_OP,
-    DeliveryState.FAILED: session_dispatcher_pb2.DELIVERY_STATE_FAILED,
-    DeliveryState.CANCELLED_IN_DISPATCHER: session_dispatcher_pb2.DELIVERY_STATE_CANCELLED_IN_DISPATCHER,
-    DeliveryState.UNKNOWN: session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
-}
 
 
 @dataclass(frozen=True)
@@ -85,44 +69,12 @@ errors = status_mapping(
 )
 
 
-def describe_dispatch(row: Dispatch) -> session_dispatcher_pb2.Dispatch:
-    dispatch = session_dispatcher_pb2.Dispatch(
-        command_id=row.command_id,
-        session_id=row.session_id,
-        sandbox=row.sandbox_name,
-        sandbox_uid=str(row.sandbox_uid),
-        operation=_OPERATIONS[row.operation],
-        state=_STATES[row.state],
-        reason=row.reason,
-    )
-    if row.admission is not None:
-        dispatch.admission.CopyFrom(row.admission)
-    dispatch.created_at.FromDatetime(row.created_at)
-    dispatch.updated_at.FromDatetime(row.updated_at)
-    return dispatch
-
-
-def describe_opening(row: SessionOpening) -> session_dispatcher_pb2.SessionOpening:
-    opening = session_dispatcher_pb2.SessionOpening(
-        session_id=row.session_id,
-        sandbox=row.sandbox_name,
-        sandbox_uid=str(row.sandbox_uid),
-        state=_STATES[row.state],
-        reason=row.reason,
-    )
-    if row.attached is not None:
-        opening.attached.CopyFrom(row.attached)
-    opening.created_at.FromDatetime(row.created_at)
-    opening.updated_at.FromDatetime(row.updated_at)
-    return opening
-
-
-def _in_scope(scope: session_dispatcher_pb2.DispatchFilter, row: Dispatch) -> bool:
+def _in_scope(scope: session_dispatcher_pb2.DispatchFilter, row: session_dispatcher_pb2.Dispatch) -> bool:
     match scope.WhichOneof("scope"):
         case "session_id":
             return row.session_id == scope.session_id
         case "sandbox":
-            return row.sandbox_name == scope.sandbox
+            return row.sandbox == scope.sandbox
         case _:
             return False
 
@@ -238,7 +190,9 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
             if sandbox is None:
                 raise SandboxNotFoundError(request.sandbox)
             if (blocker := delivery_blocker(sandbox)) is not None:
-                return session_dispatcher_pb2.InterruptTurnResponse(state=_STATES[DeliveryState.NO_OP], reason=blocker)
+                return session_dispatcher_pb2.InterruptTurnResponse(
+                    state=describe_state(DeliveryState.NO_OP), reason=blocker
+                )
             try:
                 admission = await self.resources.runner.deliver(
                     request.sandbox,
@@ -251,10 +205,10 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
                 if error.code() is not grpc.StatusCode.FAILED_PRECONDITION:
                     raise
                 return session_dispatcher_pb2.InterruptTurnResponse(
-                    state=_STATES[DeliveryState.NO_OP], reason=Reason.NOTHING_RUNNING
+                    state=describe_state(DeliveryState.NO_OP), reason=Reason.NOTHING_RUNNING
                 )
             return session_dispatcher_pb2.InterruptTurnResponse(
-                state=_STATES[DeliveryState.RUNNER_ADMITTED], admission=admission
+                state=describe_state(DeliveryState.RUNNER_ADMITTED), admission=admission
             )
 
     @override
@@ -336,18 +290,19 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
             ):
                 while True:
                     changed.clear()
+                    if ended.failure is not None:
+                        await context.abort(grpc.StatusCode.UNAVAILABLE, ended.failure)
                     async with asyncio.timeout(self.resources.request_timeout_s):
                         rows = await self._list(request.filter)
                     # Deleted with their Sandbox, so they come by hand and are not read again.
-                    rows += [row for row in ended if _in_scope(request.filter, row)]
-                    ended.clear()
-                    for row in rows:
+                    snapshots = [describe_dispatch(row) for row in rows]
+                    snapshots += [event.dispatch for event in ended.events if _in_scope(request.filter, event.dispatch)]
+                    ended.events.clear()
+                    for row in snapshots:
                         if written.get(row.command_id) == (row.state, row.reason):
                             continue
                         async with asyncio.timeout(self.resources.request_timeout_s):
-                            await context.write(
-                                session_dispatcher_pb2.WatchDispatchesResponse(dispatch=describe_dispatch(row))
-                            )
+                            await context.write(session_dispatcher_pb2.WatchDispatchesResponse(dispatch=row))
                         written[row.command_id] = (row.state, row.reason)
                     lease = asyncio.timeout_at(deadline)
                     try:

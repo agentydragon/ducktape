@@ -18,6 +18,7 @@ from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxWatch
 from agentplane.session_dispatcher.store import DispatchStore
+from agentplane.session_dispatcher.terminal_broadcast import TerminalBroadcast
 from agentplane.session_dispatcher.testing.scripted_runner import ScriptedRunner
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.kubernetes import CustomObjectsClient
@@ -39,9 +40,9 @@ database_template, db_url = migrated_database_fixtures(RUNNER, drivername="postg
 
 
 @pytest.fixture
-async def store(engine: AsyncEngine) -> AsyncIterator[DispatchStore]:
-    store = DispatchStore(engine, queue_cap=100)
-    async with store.wakeups.listener.listen():
+async def store(engine: AsyncEngine, terminal_broadcast: TerminalBroadcast) -> AsyncIterator[DispatchStore]:
+    store = DispatchStore(engine, queue_cap=100, terminal_broadcast=terminal_broadcast)
+    async with store.wakeups.listener.listen(), terminal_broadcast.listener.listen():
         yield store
 
 
@@ -75,6 +76,11 @@ async def sandboxes(cluster: SandboxCluster) -> AsyncIterator[SandboxWatch]:
 @pytest.fixture
 def ended() -> EndedDispatches:
     return EndedDispatches()
+
+
+@pytest.fixture
+def terminal_broadcast(engine: AsyncEngine, ended: EndedDispatches) -> TerminalBroadcast:
+    return TerminalBroadcast(engine.url, ended)
 
 
 @pytest.fixture

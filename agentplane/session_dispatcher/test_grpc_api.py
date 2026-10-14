@@ -3,6 +3,7 @@ command stays where the API left it."""
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
+from uuid import UUID
 
 import grpc
 import pytest
@@ -20,6 +21,7 @@ from agentplane.session_dispatcher.grpc_api import Resources, add_service
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxWatch
 from agentplane.session_dispatcher.store import DispatchStore
+from agentplane.session_dispatcher.terminal_broadcast import TerminalBroadcast
 from agentplane.session_dispatcher.testing.sandbox_status import set_sandbox
 from agentplane.session_dispatcher.testing.scripted_runner import ScriptedRunner
 from agentplane.subjects import ServiceAccountRef
@@ -45,6 +47,7 @@ async def stub(
     sandboxes: SandboxWatch,
     runner_client: RunnerClient,
     ended: EndedDispatches,
+    terminal_broadcast: TerminalBroadcast,
 ) -> AsyncIterator[Dispatcher]:
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
@@ -58,7 +61,7 @@ async def stub(
         pod_uid="test-other-caller-uid",
         audiences=(AUDIENCE,),
     )
-    store = DispatchStore(engine, queue_cap=QUEUE_CAP)
+    store = DispatchStore(engine, queue_cap=QUEUE_CAP, terminal_broadcast=terminal_broadcast)
     resources = Resources(
         principals=cluster.build_principal_resolver(AUDIENCE),
         caller_accounts=frozenset({OWNER, OTHER_CALLER}),
@@ -74,6 +77,7 @@ async def stub(
     add_service(resources, server)
     async with (
         store.wakeups.listener.listen(),
+        terminal_broadcast.listener.listen(),
         serving(server, "127.0.0.1:0", grace_s=0) as port,
         dial(f"127.0.0.1:{port}") as channel,
     ):
@@ -160,7 +164,7 @@ async def test_a_command_for_a_sandbox_that_does_not_exist_is_refused_and_stores
 
 
 async def test_only_authenticated_configured_callers_can_mark_work_wake_eligible(
-    stub: Dispatcher, engine: AsyncEngine
+    stub: Dispatcher, engine: AsyncEngine, terminal_broadcast: TerminalBroadcast
 ) -> None:
     # The flag is derived from TokenReview identity and server configuration, never from RPC input.
     await stub.SubmitInput(
@@ -170,7 +174,7 @@ async def test_only_authenticated_configured_callers_can_mark_work_wake_eligible
         pb.SubmitInputRequest(command_id="other-send", session_id="other-session", sandbox=SANDBOX, text="hello"),
         metadata=(("authorization", f"Bearer {OTHER_CALLER_TOKEN}"),),
     )
-    store = DispatchStore(engine, queue_cap=QUEUE_CAP)
+    store = DispatchStore(engine, queue_cap=QUEUE_CAP, terminal_broadcast=terminal_broadcast)
     assert (await store.get_dispatch("app-send")).wake_eligible
     assert not (await store.get_dispatch("other-send")).wake_eligible
 
@@ -195,6 +199,45 @@ async def test_a_watch_shows_a_session_dispatches_and_each_change_to_them(stub: 
     await stub.CancelDispatch(pb.CancelDispatchRequest(command_id="a"), metadata=BEARER)
     changed = await anext(events)
     assert (changed.dispatch.command_id, changed.dispatch.state) == ("a", pb.DELIVERY_STATE_CANCELLED_IN_DISPATCHER)
+    watch.cancel()
+
+
+async def test_a_deleted_sandbox_reaches_a_watch_on_another_replica(stub: Dispatcher, engine: AsyncEngine) -> None:
+    queued = await submit(stub, "terminal")
+    watch = stub.WatchDispatches(
+        pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=SESSION)), metadata=BEARER
+    )
+    assert (await anext(watch)).dispatch == queued
+
+    other_replica_ended = EndedDispatches()
+    other_replica_broadcast = TerminalBroadcast(engine.url, other_replica_ended)
+    other_replica_store = DispatchStore(engine, queue_cap=QUEUE_CAP, terminal_broadcast=other_replica_broadcast)
+    async with other_replica_broadcast.listener.listen():
+        terminal_events = await other_replica_store.end_sandbox(UUID(SANDBOX_UID))
+        assert len(terminal_events) == 1
+        terminal = await anext(watch)
+
+    assert terminal.dispatch.command_id == "terminal"
+    assert terminal.dispatch.state == pb.DELIVERY_STATE_FAILED
+    assert terminal.dispatch.reason == "sandbox_deleted"
+    watch.cancel()
+
+
+async def test_a_watch_fails_explicitly_when_its_terminal_listener_reconnects(
+    stub: Dispatcher, terminal_broadcast: TerminalBroadcast
+) -> None:
+    await submit(stub, "listener-gap")
+    watch = stub.WatchDispatches(
+        pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=SESSION)), metadata=BEARER
+    )
+    assert (await anext(watch)).dispatch.command_id == "listener-gap"
+    connection = terminal_broadcast.listener._connection
+    assert connection is not None
+    connection.terminate()
+    with pytest.raises(grpc.aio.AioRpcError) as failed:
+        async with asyncio.timeout(5):
+            await anext(watch)
+    assert failed.value.code() is grpc.StatusCode.UNAVAILABLE
     watch.cancel()
 
 
@@ -228,9 +271,11 @@ async def test_a_session_opening_is_stored_and_its_id_is_the_idempotency_key(stu
     assert refused.value.code() is grpc.StatusCode.ALREADY_EXISTS
 
 
-async def test_an_authenticated_app_opening_is_wake_eligible(stub: Dispatcher, engine: AsyncEngine) -> None:
+async def test_an_authenticated_app_opening_is_wake_eligible(
+    stub: Dispatcher, engine: AsyncEngine, terminal_broadcast: TerminalBroadcast
+) -> None:
     await stub.OpenSession(pb.OpenSessionRequest(session_id=SESSION, sandbox=SANDBOX), metadata=BEARER)
-    store = DispatchStore(engine, queue_cap=QUEUE_CAP)
+    store = DispatchStore(engine, queue_cap=QUEUE_CAP, terminal_broadcast=terminal_broadcast)
     assert (await store.get_opening(SESSION)).wake_eligible
 
 
