@@ -55,6 +55,7 @@ def test_pod_runner_templates_declare_and_mount_directory_tree_workspaces(
     names = ["runner", *(["runner-ducktape"] if namespace == "agentplane-staging" else [])]
     for name in names:
         spec = templates[name]["spec"]
+        assert spec["stateVolume"]["layout"] == {"type": "DirectoryTree"}
         state_claim = spec["stateVolume"]["claim"]
         assert spec["workspaceVolume"] == {
             "name": "workspace",
@@ -66,6 +67,19 @@ def test_pod_runner_templates_declare_and_mount_directory_tree_workspaces(
         assert {"name": "workspace", "mountPath": "/state/workspaces"} in runner["volumeMounts"]
         # The controller binds this separately declared claim to each Sandbox.
         assert "workspace" not in {volume["name"] for volume in pod["volumes"]}
+
+
+def test_all_runner_templates_declare_directory_tree_state(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    for namespace, docs in agentplane_manifests.items():
+        templates = [doc for doc in docs if doc["kind"] == "SandboxTemplate"]
+        expected = {"runner", "runner-vm"}
+        if namespace == "agentplane-staging":
+            expected.add("runner-ducktape")
+        assert {template["metadata"]["name"] for template in templates} == expected
+        for template in templates:
+            assert template["spec"]["stateVolume"]["layout"] == {"type": "DirectoryTree"}
 
 
 def test_sandbox_sidecars_project_the_notifications_audience(

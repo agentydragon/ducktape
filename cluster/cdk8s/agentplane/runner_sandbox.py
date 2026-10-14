@@ -279,6 +279,7 @@ class RunnerTemplate(Construct):
         )
         state_volume = {
             "name": _STATE_VOLUME_NAME,
+            "layout": {"type": "DirectoryTree"},
             "claim": {
                 # The bulk tier, and the only one a sandbox can have: OVH's `tier=ssd` nodes are
                 # control-plane, and a sandbox is not getting that toleration. Node-local, so a sandbox

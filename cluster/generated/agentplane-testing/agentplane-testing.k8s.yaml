@@ -4286,6 +4286,8 @@ spec:
           name: platform-instructions
   stateVolume:
     name: state
+    layout:
+      type: DirectoryTree
     claim:
       storageClassName: local-path-ovh-hdd
       accessModes:
@@ -4662,6 +4664,8 @@ spec:
             name: trust
   stateVolume:
     name: state
+    layout:
+      type: DirectoryTree
     claim:
       storageClassName: local-path-ovh-hdd
       accessModes:
