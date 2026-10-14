@@ -187,6 +187,24 @@ class SandboxInventory(SandboxReader):
         await self._set_running(name, True, uid=uid)
 
     @_retry_on_conflict
+    async def wake_for_send(self, name: str, *, uid: str) -> bool:
+        """Request the shared guarded resume only when this Sandbox explicitly allows send wakes.
+
+        `False` means the durable command should stay queued. A true result can still be waiting for
+        the controller to create a Ready incarnation; callers must continue watching the Sandbox.
+        """
+        sandbox = await self._incarnation(name, uid=uid)
+        if sandbox.metadata.deletion_timestamp is not None:
+            raise SandboxTearingDownError(name)
+        if not sandbox.spec.wake_on_send:
+            return False
+        if sandbox.running_reason() == "Quiescing":
+            raise SandboxQuiescingError(name)
+        if sandbox.operating_mode is OperatingMode.SUSPENDED:
+            await self._request_resume(sandbox, name=name, uid=uid)
+        return True
+
+    @_retry_on_conflict
     async def begin_teardown(self, name: str, *, uid: str) -> None:
         """Start deleting a suspended Sandbox, which deletes its volume and everything on it. A running
         one is refused, so the irreversible step is a deliberate second one for a browser and for an
@@ -221,10 +239,16 @@ class SandboxInventory(SandboxReader):
             raise SandboxTearingDownError(name)
         if running and sandbox.running_reason() == "Quiescing":
             raise SandboxQuiescingError(name)
-        spec: dict[str, object] = {"running": running}
-        # An idle-suspended Sandbox stays stopped until its wake generation moves past the one it stopped at.
-        if running and sandbox.operating_mode is OperatingMode.SUSPENDED:
-            spec["wakeGeneration"] = sandbox.spec.wake_generation + 1
+        if running:
+            if sandbox.operating_mode is OperatingMode.SUSPENDED:
+                await self._request_resume(sandbox, name=name, uid=uid)
+                return
+            if sandbox.spec.running:
+                return
+            # The status can lag the desired stop, but a resume still has to change desired state.
+            spec: dict[str, object] = {"running": True}
+        else:
+            spec = {"running": False}
         # Guarded, so that a concurrent delete is never answered by a stale read's mode.
         await self._custom_objects.patch_namespaced_custom_object(
             GROUP,
@@ -233,6 +257,29 @@ class SandboxInventory(SandboxReader):
             sandbox_resource.SANDBOXES_PLURAL,
             name,
             {"metadata": {"uid": uid, "resourceVersion": sandbox.metadata.resource_version}, "spec": spec},
+            _content_type=_MERGE_PATCH,
+        )
+
+    async def _request_resume(self, sandbox: sandbox_resource.Sandbox, *, name: str, uid: str) -> None:
+        """Apply the wake verb to an already-read suspended Sandbox; caller owns conflict retry."""
+        if sandbox.running_reason() == "Quiescing":
+            raise SandboxQuiescingError(name)
+        idle_still_suspended = (
+            sandbox.status.suspended_by == "Idle"
+            and sandbox.status.suspended_at_wake_generation == sandbox.spec.wake_generation
+        )
+        if sandbox.spec.running and not idle_still_suspended:
+            return
+        await self._custom_objects.patch_namespaced_custom_object(
+            GROUP,
+            VERSION,
+            self._namespace,
+            sandbox_resource.SANDBOXES_PLURAL,
+            name,
+            {
+                "metadata": {"uid": uid, "resourceVersion": sandbox.metadata.resource_version},
+                "spec": {"running": True, "wakeGeneration": sandbox.spec.wake_generation + 1},
+            },
             _content_type=_MERGE_PATCH,
         )
 

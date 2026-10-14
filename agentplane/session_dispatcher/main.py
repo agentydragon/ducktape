@@ -10,6 +10,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.grpc_serving import add_health, serving
+from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.service_process import configure_logging, kubernetes_configuration, until_terminated
 from agentplane.session_dispatcher.delivery import Delivery
 from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
@@ -36,10 +37,12 @@ async def serve(settings: Settings) -> None:
             k8s_client.ApiClient(await kubernetes_configuration(settings.kubeconfig)) as api,
             store.wakeups.listener.listen(),
         ):
+            custom_objects = cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api))
+            inventory = SandboxInventory(
+                namespace=settings.namespace, custom_objects=custom_objects, core_v1=k8s_client.CoreV1Api(api)
+            )
             sandboxes = SandboxWatch(
-                cast(CustomObjectsClient, k8s_client.CustomObjectsApi(api)),
-                namespace=settings.namespace,
-                resync_seconds=settings.sandbox_resync_seconds,
+                custom_objects, namespace=settings.namespace, resync_seconds=settings.sandbox_resync_seconds
             )
             runner = RunnerClient(
                 control_target=settings.runner_control_target,
@@ -64,6 +67,7 @@ async def serve(settings: Settings) -> None:
                     ended=ended,
                     request_timeout_s=settings.request_timeout_s,
                     watch_lease_s=settings.watch_lease_s,
+                    wake_caller_accounts=settings.wake_caller_accounts,
                 ),
                 server,
             )
@@ -71,7 +75,9 @@ async def serve(settings: Settings) -> None:
             # none is worse than a restart.
             async with asyncio.TaskGroup() as workers:
                 watching = workers.create_task(sandboxes.run(), name="sandbox-watch")
-                delivering = workers.create_task(Delivery(store, sandboxes, runner, ended).run(), name="delivery")
+                delivering = workers.create_task(
+                    Delivery(store, sandboxes, runner, ended, inventory).run(), name="delivery"
+                )
                 async with serving(server, f"{settings.host}:{settings.port}", grace_s=5):
                     await until_terminated()
                 watching.cancel()

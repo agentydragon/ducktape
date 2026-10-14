@@ -7,10 +7,18 @@ from contextlib import suppress
 from uuid import UUID
 
 import grpc
+from kubernetes_asyncio.client import ApiException
 from sqlalchemy.exc import SQLAlchemyError
 from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception_type, wait_exponential
 
 from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.sandbox_resource import Sandbox
+from agentplane.sandboxes.errors import (
+    SandboxNotFoundError as InventorySandboxNotFoundError,
+    SandboxQuiescingError,
+    SandboxTearingDownError,
+)
+from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.session_dispatcher.channels import Channel
 from agentplane.session_dispatcher.db import Dispatch, SessionOpening
 from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
@@ -33,17 +41,35 @@ def _opening_key(session_id: str) -> str:
     return f"opening:{session_id}"
 
 
+def _incarnation_uid(sandbox: Sandbox) -> str | None:
+    return None if sandbox.status.incarnation is None else str(sandbox.status.incarnation.uid)
+
+
+def _awaiting_new_incarnation(sandbox: Sandbox, wake_from_incarnation: str | None) -> bool:
+    """A send-triggered resume cannot deliver into the incarnation that was stopped or sealed."""
+    if wake_from_incarnation is None:
+        return False
+    incarnation = _incarnation_uid(sandbox)
+    return incarnation is None or (wake_from_incarnation != "" and incarnation == wake_from_incarnation)
+
+
 class Delivery:
     """Runs on the Dispatcher's one active replica. A command moves when its Dispatch row, its
     Sandbox or, after an unreachable runner, a backoff says it may; nothing polls."""
 
     def __init__(
-        self, store: DispatchStore, sandboxes: SandboxWatch, runner: RunnerClient, ended: EndedDispatches
+        self,
+        store: DispatchStore,
+        sandboxes: SandboxWatch,
+        runner: RunnerClient,
+        ended: EndedDispatches,
+        inventory: SandboxInventory,
     ) -> None:
         self.ended = ended
         self.store = store
         self.sandboxes = sandboxes
         self.runner = runner
+        self.inventory = inventory
         self._changed = asyncio.Event()
         # Sessions with a delivery under way: one at a time keeps a Session's commands in order.
         self._delivering: set[str] = set()
@@ -106,6 +132,12 @@ class Delivery:
             if sandbox is None or sandbox.metadata.uid != head.sandbox_uid:
                 # Its deletion reaches `_end_gone`.
                 continue
+            if sandbox.metadata.deletion_timestamp is not None:
+                await self.store.note_waiting(head.command_id, Reason.SANDBOX_DELETED)
+                continue
+            if _awaiting_new_incarnation(sandbox, head.wake_from_incarnation):
+                await self.store.note_waiting(head.command_id, Reason.SANDBOX_RESUMING)
+                continue
             if (blocker := delivery_blocker(sandbox)) is not None:
                 if blocker is Reason.SANDBOX_SUSPENDED and head.operation is Operation.STOP_RUNNER_SESSION:
                     await self.store.settle(
@@ -114,6 +146,8 @@ class Delivery:
                         to=DeliveryState.NO_OP,
                         reason=blocker,
                     )
+                elif blocker is Reason.SANDBOX_SUSPENDED and head.wake_eligible:
+                    await self._wake_for_send(head.command_id, sandbox)
                 else:
                     await self.store.note_waiting(head.command_id, blocker)
                 continue
@@ -186,8 +220,17 @@ class Delivery:
             if sandbox is None or sandbox.metadata.uid != opening.sandbox_uid:
                 # Its deletion reaches `_end_gone`.
                 continue
+            if sandbox.metadata.deletion_timestamp is not None:
+                await self.store.note_opening_waiting(opening.session_id, Reason.SANDBOX_DELETED)
+                continue
+            if _awaiting_new_incarnation(sandbox, opening.wake_from_incarnation):
+                await self.store.note_opening_waiting(opening.session_id, Reason.SANDBOX_RESUMING)
+                continue
             if (blocker := delivery_blocker(sandbox)) is not None:
-                await self.store.note_opening_waiting(opening.session_id, blocker)
+                if blocker is Reason.SANDBOX_SUSPENDED and opening.wake_eligible:
+                    await self._wake_for_opening(opening, sandbox)
+                else:
+                    await self.store.note_opening_waiting(opening.session_id, blocker)
                 continue
             incarnation = sandbox.status.incarnation.uid if sandbox.status.incarnation is not None else None
             if self._refused.get(sandbox.metadata.uid, "") == incarnation:
@@ -195,6 +238,54 @@ class Delivery:
                 continue
             self._delivering.add(opening.session_id)
             deliveries.create_task(self._deliver_opening(opening, incarnation), name=f"open-{opening.session_id}")
+
+    async def _wake_for_send(self, command_id: str, sandbox: Sandbox) -> None:
+        if not sandbox.spec.wake_on_send:
+            await self.store.note_waiting(command_id, Reason.WAKE_ON_SEND_DISABLED)
+            return
+        if not await self.store.note_waking(command_id, incarnation=_incarnation_uid(sandbox)):
+            return
+        await self._request_sandbox_wake(
+            key=command_id,
+            sandbox_name=sandbox.metadata.name,
+            sandbox_uid=sandbox.metadata.uid,
+            notify=lambda reason: self.store.note_waiting(command_id, reason),
+        )
+
+    async def _wake_for_opening(self, opening: SessionOpening, sandbox: Sandbox) -> None:
+        if not sandbox.spec.wake_on_send:
+            await self.store.note_opening_waiting(opening.session_id, Reason.WAKE_ON_SEND_DISABLED)
+            return
+        if not await self.store.note_opening_waking(opening.session_id, incarnation=_incarnation_uid(sandbox)):
+            return
+        await self._request_sandbox_wake(
+            key=_opening_key(opening.session_id),
+            sandbox_name=sandbox.metadata.name,
+            sandbox_uid=sandbox.metadata.uid,
+            notify=lambda reason: self.store.note_opening_waiting(opening.session_id, reason),
+        )
+
+    async def _request_sandbox_wake(
+        self, *, key: str, sandbox_name: str, sandbox_uid: UUID, notify: Callable[[Reason], Awaitable[None]]
+    ) -> None:
+        try:
+            if not await self.inventory.wake_for_send(sandbox_name, uid=str(sandbox_uid)):
+                await notify(Reason.WAKE_ON_SEND_DISABLED)
+                return
+        except SandboxQuiescingError:
+            await notify(Reason.SANDBOX_RESUMING)
+            return
+        except SandboxTearingDownError, InventorySandboxNotFoundError:
+            await notify(Reason.SANDBOX_DELETED)
+            return
+        except ApiException:
+            self._delay_retry(key)
+            logger.warning(
+                "Sandbox wake request unavailable for %s; queued work will retry", sandbox_name, exc_info=True
+            )
+            await notify(Reason.DELIVERY_UNAVAILABLE)
+            return
+        await notify(Reason.SANDBOX_RESUMING)
 
     async def _deliver_opening(self, opening: SessionOpening, incarnation: str | None) -> None:
         key = _opening_key(opening.session_id)

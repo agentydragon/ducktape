@@ -36,7 +36,9 @@ class Reason(StrEnum):
 
     SANDBOX_DELETED = "sandbox_deleted"
     SANDBOX_SUSPENDED = "sandbox_suspended"
+    SANDBOX_RESUMING = "sandbox_resuming"
     SANDBOX_NOT_READY = "sandbox_not_ready"
+    WAKE_ON_SEND_DISABLED = "wake_on_send_disabled"
     RUNNER_REFUSED_WORK = "runner_refused_work"
     DELIVERY_UNAVAILABLE = "delivery_unavailable"
     DISPATCHER_RESTARTED = "dispatcher_restarted"

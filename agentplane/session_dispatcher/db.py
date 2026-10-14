@@ -32,6 +32,9 @@ class Dispatch(Base):
     sandbox_name: Mapped[str]
     # The Sandbox the command was queued for: a Sandbox recreated under its name is another one.
     sandbox_uid: Mapped[UUID]
+    wake_eligible: Mapped[bool] = mapped_column(default=False)
+    # Null until the Dispatcher requested a wake; empty string records a wake before any incarnation existed.
+    wake_from_incarnation: Mapped[str | None]
     # Queried by the queue cap and by a stop, which the command carries too.
     operation: Mapped[Operation] = mapped_column(StringBackedStrEnumColumn(Operation))
     command: Mapped[command_pb2.Command] = mapped_column(ProtobufColumn(command_pb2.Command))
@@ -50,6 +53,9 @@ class SessionOpening(Base):
     session_id: Mapped[str] = mapped_column(primary_key=True)
     sandbox_name: Mapped[str]
     sandbox_uid: Mapped[UUID]
+    wake_eligible: Mapped[bool] = mapped_column(default=False)
+    # Null until the Dispatcher requested a wake; empty string records a wake before any incarnation existed.
+    wake_from_incarnation: Mapped[str | None]
     spec: Mapped[runner_pb2.SessionSpec] = mapped_column(ProtobufColumn(runner_pb2.SessionSpec))
     setup_script: Mapped[str | None]
     state: Mapped[DeliveryState] = mapped_column(StringBackedStrEnumColumn(DeliveryState))

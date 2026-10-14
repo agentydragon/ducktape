@@ -67,6 +67,9 @@ type SandboxSpec struct {
 	// Template names a SandboxTemplate in the Sandbox's namespace, read again at every start.
 	Template string `json:"template"`
 	Running  bool   `json:"running"`
+	// WakeOnSend allows authenticated user and notification sends to resume a stopped Sandbox.
+	// Omitted is false so older Sandbox manifests keep wake-on-send disabled.
+	WakeOnSend bool `json:"wakeOnSend,omitempty"`
 	// WakeGeneration is bumped by whoever wakes the Sandbox. An idle-suspended Sandbox runs again once it
 	// differs from the generation it was suspended at.
 	WakeGeneration int64 `json:"wakeGeneration,omitempty"`

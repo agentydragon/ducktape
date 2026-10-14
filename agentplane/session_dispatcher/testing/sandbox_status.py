@@ -4,15 +4,27 @@ from agentplane import sandbox_resource
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 
 
-def set_sandbox(cluster: SandboxCluster, *, ready: bool, incarnation: str = "pod-1", running: bool = True) -> None:
+def set_sandbox(
+    cluster: SandboxCluster,
+    *,
+    ready: bool,
+    incarnation: str = "pod-1",
+    running: bool = True,
+    wake_on_send: bool = False,
+    deleting: bool = False,
+) -> None:
     """The Sandbox as the controller reports it."""
     stored = cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]
     reason = "Ready" if ready else ("Starting" if running else sandbox_resource.STOPPED)
+    metadata = {**stored["metadata"]}
+    if deleting:
+        metadata["deletionTimestamp"] = "2026-10-14T00:00:00Z"
     cluster.fake.put(
         sandbox_resource.SANDBOXES_PLURAL,
         {
             **stored,
-            "spec": {**stored["spec"], "running": running},
+            "metadata": metadata,
+            "spec": {**stored["spec"], "running": running, "wakeOnSend": wake_on_send},
             "status": {
                 "incarnation": {"name": "test-pod", "uid": incarnation},
                 "conditions": [

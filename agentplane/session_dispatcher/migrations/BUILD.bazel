@@ -6,6 +6,7 @@ filegroup(
         "env.py",
         "//agentplane/session_dispatcher/migrations/versions:0001_dispatch.py",
         "//agentplane/session_dispatcher/migrations/versions:0002_session_opening.py",
+        "//agentplane/session_dispatcher/migrations/versions:0003_wake_eligible.py",
     ],
     visibility = ["//agentplane/session_dispatcher:__pkg__"],
 )

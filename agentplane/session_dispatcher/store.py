@@ -44,7 +44,13 @@ class DispatchStore:
         self.sessions = async_sessionmaker(engine, expire_on_commit=False)
 
     async def enqueue(
-        self, *, session_id: str, sandbox_name: str, sandbox_uid: UUID, command: command_pb2.Command
+        self,
+        *,
+        session_id: str,
+        sandbox_name: str,
+        sandbox_uid: UUID,
+        command: command_pb2.Command,
+        wake_eligible: bool = False,
     ) -> Dispatch:
         """Store `command` as queued; a stop first cancels what its Session has queued. A repeat of the same command returns the stored row."""
         operation = operation_of(command)
@@ -80,6 +86,8 @@ class DispatchStore:
                 session_id=session_id,
                 sandbox_name=sandbox_name,
                 sandbox_uid=sandbox_uid,
+                wake_eligible=wake_eligible and operation is not Operation.STOP_RUNNER_SESSION,
+                wake_from_incarnation=None,
                 operation=operation,
                 command=command,
                 state=DeliveryState.QUEUED_IN_DISPATCHER,
@@ -93,6 +101,33 @@ class DispatchStore:
             await notify(session, Channel.DISPATCH)
             return row
 
+    async def note_waking(self, command_id: str, *, incarnation: str | None) -> bool:
+        """Persist the incarnation that must end before a queued command can be delivered."""
+        value = "" if incarnation is None else incarnation
+        async with self.sessions.begin() as session:
+            updated = await session.execute(
+                update(Dispatch)
+                .where(
+                    Dispatch.command_id == command_id,
+                    Dispatch.state == DeliveryState.QUEUED_IN_DISPATCHER,
+                    Dispatch.wake_from_incarnation.is_(None),
+                )
+                .values(wake_from_incarnation=value, updated_at=datetime.now(UTC))
+                .returning(Dispatch.position)
+            )
+            if updated.first() is not None:
+                await notify(session, Channel.DISPATCH)
+                return True
+            return bool(
+                await session.scalar(
+                    select(
+                        exists().where(
+                            Dispatch.command_id == command_id, Dispatch.state == DeliveryState.QUEUED_IN_DISPATCHER
+                        )
+                    )
+                )
+            )
+
     async def open_session(
         self,
         *,
@@ -101,6 +136,7 @@ class DispatchStore:
         sandbox_uid: UUID,
         spec: runner_pb2.SessionSpec,
         setup_script: str | None,
+        wake_eligible: bool = False,
     ) -> SessionOpening:
         """Store a Session's opening as queued, or return the stored one when `session_id` was opened in
         the same Sandbox with the same request."""
@@ -121,6 +157,8 @@ class DispatchStore:
                 session_id=session_id,
                 sandbox_name=sandbox_name,
                 sandbox_uid=sandbox_uid,
+                wake_eligible=wake_eligible,
+                wake_from_incarnation=None,
                 spec=spec,
                 setup_script=setup_script,
                 state=DeliveryState.QUEUED_IN_DISPATCHER,
@@ -133,6 +171,34 @@ class DispatchStore:
             await session.flush()
             await notify(session, Channel.DISPATCH)
             return opening
+
+    async def note_opening_waking(self, session_id: str, *, incarnation: str | None) -> bool:
+        """Persist the incarnation that must end before a queued Session opening can be delivered."""
+        value = "" if incarnation is None else incarnation
+        async with self.sessions.begin() as session:
+            updated = await session.execute(
+                update(SessionOpening)
+                .where(
+                    SessionOpening.session_id == session_id,
+                    SessionOpening.state == DeliveryState.QUEUED_IN_DISPATCHER,
+                    SessionOpening.wake_from_incarnation.is_(None),
+                )
+                .values(wake_from_incarnation=value, updated_at=datetime.now(UTC))
+                .returning(SessionOpening.session_id)
+            )
+            if updated.first() is not None:
+                await notify(session, Channel.DISPATCH)
+                return True
+            return bool(
+                await session.scalar(
+                    select(
+                        exists().where(
+                            SessionOpening.session_id == session_id,
+                            SessionOpening.state == DeliveryState.QUEUED_IN_DISPATCHER,
+                        )
+                    )
+                )
+            )
 
     async def get_opening(self, session_id: str) -> SessionOpening:
         async with self.sessions() as session:

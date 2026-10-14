@@ -22,6 +22,10 @@ class Settings(YamlFileSettings):
     caller_accounts: frozenset[ServiceAccountRef] = Field(
         min_length=1, description="ServiceAccounts that may send commands."
     )
+    wake_caller_accounts: frozenset[ServiceAccountRef] = Field(
+        default_factory=frozenset,
+        description="Authenticated callers whose pending user or notification work may wake a Sandbox.",
+    )
     token_audience: str = Field(min_length=1, description="The audience callers' bearers carry for the Dispatcher.")
     runner_control_target: str = Field(
         min_length=1, description="Where a Sandbox's runner is reached, as a template of `{sandbox}` and `{namespace}`."

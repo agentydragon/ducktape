@@ -27,6 +27,7 @@ from agentplane.session_dispatcher.store import (
     OpeningConflictError,
     QueueFullError,
 )
+from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -60,6 +61,12 @@ class Resources(ServicerResources):
     request_timeout_s: float
     # How long one WatchDispatches stream lasts before the caller reconnects.
     watch_lease_s: float
+    wake_caller_accounts: frozenset[ServiceAccountRef] = frozenset()
+
+    def __post_init__(self) -> None:
+        super().__post_init__()
+        if not self.wake_caller_accounts <= self.caller_accounts:
+            raise ValueError("wake callers must also be authenticated Dispatcher callers")
 
 
 # No bearer, database or cluster detail reaches clients.
@@ -131,13 +138,12 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
         self.resources = resources
 
     @asynccontextmanager
-    async def request(self, context: grpc.aio.ServicerContext) -> AsyncIterator[None]:
+    async def request(self, context: grpc.aio.ServicerContext) -> AsyncIterator[ServiceAccountRef]:
         async with errors(context), asyncio.timeout(self.resources.request_timeout_s):
-            await self.resources.authenticate(context)
-            yield
+            yield await self.resources.authenticate(context)
 
     async def _enqueue(
-        self, *, command_id: str, session_id: str, sandbox: str, command: command_pb2.Command
+        self, *, command_id: str, session_id: str, sandbox: str, command: command_pb2.Command, caller: ServiceAccountRef
     ) -> session_dispatcher_pb2.Dispatch:
         _require(command_id=command_id, session_id=session_id, sandbox=sandbox)
         current = self.resources.sandboxes.get_sandbox(sandbox)
@@ -145,7 +151,11 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
             raise SandboxNotFoundError(sandbox)
         return describe_dispatch(
             await self.resources.store.enqueue(
-                session_id=session_id, sandbox_name=sandbox, sandbox_uid=current.metadata.uid, command=command
+                session_id=session_id,
+                sandbox_name=sandbox,
+                sandbox_uid=current.metadata.uid,
+                command=command,
+                wake_eligible=caller in self.resources.wake_caller_accounts,
             )
         )
 
@@ -153,7 +163,7 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
     async def SubmitInput(
         self, request: session_dispatcher_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
     ) -> session_dispatcher_pb2.SubmitInputResponse:
-        async with self.request(context):
+        async with self.request(context) as caller:
             return session_dispatcher_pb2.SubmitInputResponse(
                 dispatch=await self._enqueue(
                     command_id=request.command_id,
@@ -162,6 +172,7 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
                     command=command_pb2.Command(
                         command_id=request.command_id, submit_input=command_pb2.SubmitInput(text=request.text)
                     ),
+                    caller=caller,
                 )
             )
 
@@ -169,7 +180,7 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
     async def ChangeModel(
         self, request: session_dispatcher_pb2.ChangeModelRequest, context: grpc.aio.ServicerContext
     ) -> session_dispatcher_pb2.ChangeModelResponse:
-        async with self.request(context):
+        async with self.request(context) as caller:
             return session_dispatcher_pb2.ChangeModelResponse(
                 dispatch=await self._enqueue(
                     command_id=request.command_id,
@@ -178,6 +189,7 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
                     command=command_pb2.Command(
                         command_id=request.command_id, change_model=command_pb2.ChangeModel(model=request.model)
                     ),
+                    caller=caller,
                 )
             )
 
@@ -185,7 +197,7 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
     async def ChangeReasoningEffort(
         self, request: session_dispatcher_pb2.ChangeReasoningEffortRequest, context: grpc.aio.ServicerContext
     ) -> session_dispatcher_pb2.ChangeReasoningEffortResponse:
-        async with self.request(context):
+        async with self.request(context) as caller:
             return session_dispatcher_pb2.ChangeReasoningEffortResponse(
                 dispatch=await self._enqueue(
                     command_id=request.command_id,
@@ -195,6 +207,7 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
                         command_id=request.command_id,
                         change_reasoning_effort=command_pb2.ChangeReasoningEffort(effort=request.effort),
                     ),
+                    caller=caller,
                 )
             )
 
@@ -202,7 +215,7 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
     async def StopRunnerSession(
         self, request: session_dispatcher_pb2.StopRunnerSessionRequest, context: grpc.aio.ServicerContext
     ) -> session_dispatcher_pb2.StopRunnerSessionResponse:
-        async with self.request(context):
+        async with self.request(context) as caller:
             return session_dispatcher_pb2.StopRunnerSessionResponse(
                 dispatch=await self._enqueue(
                     command_id=request.command_id,
@@ -211,6 +224,7 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
                     command=command_pb2.Command(
                         command_id=request.command_id, stop_runner_session=command_pb2.StopRunnerSession()
                     ),
+                    caller=caller,
                 )
             )
 
@@ -247,7 +261,7 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
     async def OpenSession(
         self, request: session_dispatcher_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
     ) -> session_dispatcher_pb2.OpenSessionResponse:
-        async with self.request(context):
+        async with self.request(context) as caller:
             _require(session_id=request.session_id, sandbox=request.sandbox)
             current = self.resources.sandboxes.get_sandbox(request.sandbox)
             if current is None:
@@ -260,6 +274,7 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
                         sandbox_uid=current.metadata.uid,
                         spec=request.spec,
                         setup_script=request.setup_script if request.HasField("setup_script") else None,
+                        wake_eligible=caller in self.resources.wake_caller_accounts,
                     )
                 )
             )

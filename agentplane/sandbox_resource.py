@@ -76,6 +76,8 @@ class SessionDefaults(_Wire):
 class Spec(_Wire):
     template: str
     running: bool = False
+    # Absent is the rollout-safe, disabled value; only an explicit true enables send wakes.
+    wake_on_send: bool = False
     wake_generation: int = 0
     policy_sets: Set[str] = frozenset()
     session_defaults: SessionDefaults | None = None
@@ -94,6 +96,8 @@ class Status(_Wire):
     # CLEANUP(added 2026-10-14): Make this required once the Sandbox Controller image that publishes it
     #   is pinned, and drop the `spec.running` fallback in `Sandbox.operating_mode`.
     operating_mode: OperatingMode | None = None
+    suspended_by: str | None = None
+    suspended_at_wake_generation: int | None = None
     conditions: list[Condition] = Field(default_factory=list)
 
 

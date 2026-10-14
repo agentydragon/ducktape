@@ -2,7 +2,7 @@
 the fake API server."""
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 import grpc
 import pytest
@@ -32,14 +32,20 @@ SESSION = "test-session"
 
 @pytest.fixture(autouse=True)
 async def delivery(
-    store: DispatchStore, sandboxes: SandboxWatch, runner_client: RunnerClient, ended: EndedDispatches
+    store: DispatchStore,
+    sandboxes: SandboxWatch,
+    runner_client: RunnerClient,
+    ended: EndedDispatches,
+    cluster: SandboxCluster,
 ) -> AsyncIterator[Delivery]:
-    delivery = Delivery(store, sandboxes, runner_client, ended)
+    delivery = Delivery(store, sandboxes, runner_client, ended, cluster.inventory)
     async with background(delivery.run(), name="delivery"):
         yield delivery
 
 
-async def enqueue(store: DispatchStore, sandboxes: SandboxWatch, command_id: str, *, stop: bool = False) -> None:
+async def enqueue(
+    store: DispatchStore, sandboxes: SandboxWatch, command_id: str, *, stop: bool = False, wake_eligible: bool = False
+) -> None:
     sandbox = sandboxes.get_sandbox(SANDBOX)
     assert sandbox is not None
     command = command_pb2.Command(command_id=command_id)
@@ -47,7 +53,13 @@ async def enqueue(store: DispatchStore, sandboxes: SandboxWatch, command_id: str
         command.stop_runner_session.SetInParent()
     else:
         command.submit_input.text = command_id
-    await store.enqueue(session_id=SESSION, sandbox_name=SANDBOX, sandbox_uid=sandbox.metadata.uid, command=command)
+    await store.enqueue(
+        session_id=SESSION,
+        sandbox_name=SANDBOX,
+        sandbox_uid=sandbox.metadata.uid,
+        command=command,
+        wake_eligible=wake_eligible,
+    )
 
 
 async def wait_for(store: DispatchStore, command_id: str, state: DeliveryState, reason: str | None = None) -> Dispatch:
@@ -58,6 +70,17 @@ async def wait_for(store: DispatchStore, command_id: str, state: DeliveryState, 
             row = await store.get_dispatch(command_id)
             if (row.state, row.reason) == (state, reason):
                 return row
+            await changed.wait()
+
+
+async def wait_for_sandbox(sandboxes: SandboxWatch, predicate: Callable[[sandbox_resource.Sandbox], bool]) -> None:
+    changed = asyncio.Event()
+    with sandboxes.changed.subscribe(changed):
+        while True:
+            changed.clear()
+            sandbox = sandboxes.get_sandbox(SANDBOX)
+            if sandbox is not None and predicate(sandbox):
+                return
             await changed.wait()
 
 
@@ -131,7 +154,7 @@ async def test_a_command_the_runner_refuses_fails_with_its_status(
     assert row.admission is None
 
 
-async def open_session(store: DispatchStore, sandboxes: SandboxWatch) -> None:
+async def open_session(store: DispatchStore, sandboxes: SandboxWatch, *, wake_eligible: bool = False) -> None:
     sandbox = sandboxes.get_sandbox(SANDBOX)
     assert sandbox is not None
     await store.open_session(
@@ -140,6 +163,7 @@ async def open_session(store: DispatchStore, sandboxes: SandboxWatch) -> None:
         sandbox_uid=sandbox.metadata.uid,
         spec=runner_pb2.SessionSpec(),
         setup_script=None,
+        wake_eligible=wake_eligible,
     )
 
 

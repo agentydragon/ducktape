@@ -26,6 +26,11 @@
           "type": "boolean",
           "default": false
         },
+        "wakeOnSend": {
+          "description": "Whether authenticated user and notification sends may resume this Sandbox. Omitted or false keeps it suspended and leaves eligible sends queued.",
+          "type": "boolean",
+          "default": false
+        },
         "wakeGeneration": {
           "description": "Bumped by whoever wakes the Sandbox. A Sandbox the controller suspended for idleness runs again once this differs from the generation it was suspended at.",
           "type": "integer",
