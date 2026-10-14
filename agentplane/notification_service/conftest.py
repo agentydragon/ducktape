@@ -49,16 +49,6 @@ dispatcher_database_template, dispatcher_db_url = migrated_database_fixtures(
 
 
 @pytest.fixture
-async def dispatcher_engine(
-    dispatcher_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones
-) -> AsyncIterator[AsyncEngine]:
-    async with managed_async_engine(
-        create_async_engine(database_clones.clone(dispatcher_database_template, drivername="postgresql+asyncpg"))
-    ) as engine:
-        yield engine
-
-
-@pytest.fixture
 def sandbox_service_db_url(service_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
     return database_clones.clone(service_database_template, drivername="postgresql+asyncpg")
 

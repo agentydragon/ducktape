@@ -144,7 +144,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
     sandbox_service_db_url: str,
-    dispatcher_engine: AsyncEngine,
+    dispatcher_db_url: str,
     busy: bool,
     failed_before_rpc: bool,
 ) -> None:
@@ -211,7 +211,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 audiences=("test-app-sandbox-service",),
             )
             dispatcher_settings = DispatcherSettings(
-                database_url=str(dispatcher_engine.url),
+                database_url=dispatcher_db_url,
                 namespace=cluster.inventory.namespace,
                 caller_accounts=frozenset({delegate}),
                 token_audience="test-notifications",
