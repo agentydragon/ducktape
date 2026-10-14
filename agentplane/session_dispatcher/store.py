@@ -3,6 +3,7 @@
 from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from typing import cast
 from uuid import UUID, uuid4
 
 from sqlalchemy import ColumnElement, delete, exists, func, select, update
@@ -347,8 +348,13 @@ class DispatchStore:
                 return None
             count = await session.scalar(select(func.count()).where(*account, WakeAttempt.attempted_at > window_start))
             if count is not None and count >= WAKE_LIMIT:
-                oldest = await session.scalar(
-                    select(func.min(WakeAttempt.attempted_at)).where(*account, WakeAttempt.attempted_at > window_start)
+                oldest = cast(
+                    datetime | None,
+                    await session.scalar(
+                        select(func.min(WakeAttempt.attempted_at)).where(
+                            *account, WakeAttempt.attempted_at > window_start
+                        )
+                    ),
                 )
                 if oldest is None:
                     raise RuntimeError("wake budget is full without a recorded attempt")
