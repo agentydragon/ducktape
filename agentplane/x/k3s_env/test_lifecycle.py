@@ -28,6 +28,24 @@ def stack() -> Iterator[Stack]:
         yield running
 
 
+async def wait_until_gone(client: Client, name: str) -> None:
+    """Deletion is asynchronous: the Sandbox reads as Quiescing and Tearing down until it is removed."""
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(TRANSITION_SECONDS),
+        wait=wait_fixed(2),
+        retry=retry_if_exception_type(AssertionError),
+        reraise=True,
+    ):
+        with attempt:
+            try:
+                view = await client.sandbox(name)
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code != HTTPStatus.NOT_FOUND:
+                    raise
+                return
+            raise AssertionError(f"{name} is still {view.phase}")
+
+
 async def create_running(stack: Stack, client: Client, name: str, *, bootstrap: str = "") -> SandboxView:
     """Sandboxes are not removed afterwards: the stack is discarded with the action."""
     await client.create_sandbox(NewSandbox(name=name, template=POD_TEMPLATE, bootstrap=bootstrap))
@@ -102,16 +120,7 @@ async def test_delete_removes_the_sandbox(stack: Stack, client: Client) -> None:
     await client.suspend_sandbox(name)
     await wait_until_suspended(client, name)
     await client.delete_sandbox(name)
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(TRANSITION_SECONDS),
-        wait=wait_fixed(2),
-        retry=retry_if_exception_type(AssertionError),
-        reraise=True,
-    ):
-        with attempt:
-            with pytest.raises(httpx.HTTPStatusError) as gone:
-                await client.sandbox(name)
-            assert gone.value.response.status_code == HTTPStatus.NOT_FOUND
+    await wait_until_gone(client, name)
 
 
 if __name__ == "__main__":
