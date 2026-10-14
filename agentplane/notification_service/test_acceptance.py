@@ -206,7 +206,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 username=f"system:serviceaccount:{delegate.namespace}:{delegate.name}",
                 pod_name="notifications-runner-client",
                 pod_uid="notifications-runner-client-uid",
-                audiences=("test-app-sandbox-service",),
+                audiences=("test-notifications",),
             )
             dispatcher_settings = DispatcherSettings(
                 database_url=dispatcher_db_url,
