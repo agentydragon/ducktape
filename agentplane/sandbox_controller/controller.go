@@ -589,7 +589,8 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workl
 	meta.SetStatusCondition(&status.Conditions, bootstrapped)
 	if workloadReady.Status == metav1.ConditionTrue {
 		ready = connected
-		if connected.Status == metav1.ConditionTrue {
+		// Unknown does not gate: a runner that predates the bootstrap fact never reports one.
+		if connected.Status == metav1.ConditionTrue && bootstrapped.Status == metav1.ConditionFalse {
 			ready = bootstrapped
 		}
 	}
