@@ -516,6 +516,15 @@ It supersedes the closed NPU-only draft #7112. Its initially failing manifest
 check was resolved by regenerating the manifests.
 
 Temporary nginx authentication/routing checks and generated LiteLLM adapter
-checks pass. NixOS activation and a real cluster-to-rugged request are still
-pending: the current session cannot use passwordless sudo. The live endpoints
-remain loopback-only and this PR is not evidence of deployed cluster access.
+checks pass, but the live proxy did not start after activation on October 14 at
+08:27 UTC. Its journal reports permission denied opening the rendered bearer
+configuration: the file was root-owned mode 0400, while NixOS runs both nginx's
+pre-start check and master as user `nginx`. No listener was present on port 18080.
+
+The host module now gives the rendered template to the configured nginx user
+and group, retaining mode 0400. The underlying token secret remains root-only.
+Nix evaluation verifies the template owner matches the service user, and a
+non-root nginx configuration check passed with the actual template and a dummy
+token in an owner-readable-only fixture. Applying this ownership change and
+verifying a real cluster-to-rugged request remain pending; this session cannot
+use passwordless sudo. These checks do not establish deployed cluster access.
