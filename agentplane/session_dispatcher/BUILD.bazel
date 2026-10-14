@@ -48,6 +48,7 @@ py_library(
         ":db",
         ":ended_dispatches",
         ":models",
+        ":ownership",
         ":runner_client",
         ":sandboxes",
         ":store",
@@ -93,6 +94,7 @@ py_library(
         ":delivery",
         ":ended_dispatches",
         ":grpc_api",
+        ":ownership",
         ":runner_client",
         ":sandboxes",
         ":settings",
@@ -218,6 +220,7 @@ py_test(
         ":delivery",
         ":ended_dispatches",
         ":models",
+        ":ownership",
         ":runner_client",
         ":sandboxes",
         ":store",
@@ -229,11 +232,13 @@ py_test(
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/session_dispatcher/testing:sandbox_status",
         "//agentplane/session_dispatcher/testing:scripted_runner",
+        "//agentplane/testing:fake_apiserver",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 
@@ -376,6 +381,37 @@ py_test(
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "ownership",
+    srcs = ["ownership.py"],
+    deps = [
+        ":store",
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_test(
+    name = "test_ownership",
+    srcs = ["test_ownership.py"],
+    deps = [
+        ":conftest",
+        ":models",
+        ":ownership",
+        ":store",
+        "//:conftest",
+        "//agentplane:sandbox_resource",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
         "@pypi//pytest_bazel",
     ],
 )

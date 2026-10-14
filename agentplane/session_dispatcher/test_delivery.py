@@ -3,11 +3,14 @@ the fake API server."""
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
+from datetime import UTC, datetime, timedelta
 
 import grpc
 import pytest
 import pytest_bazel
+from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiException
+from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane import sandbox_resource
 from agentplane.background_task import background
@@ -19,11 +22,13 @@ from agentplane.session_dispatcher.db import Dispatch
 from agentplane.session_dispatcher.delivery import Delivery
 from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.models import DeliveryState, Reason
+from agentplane.session_dispatcher.ownership import SandboxOwnershipLeases
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxWatch
 from agentplane.session_dispatcher.store import DispatchStore
 from agentplane.session_dispatcher.testing.sandbox_status import set_sandbox
 from agentplane.session_dispatcher.testing.scripted_runner import ScriptedRunner
+from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -39,7 +44,10 @@ async def delivery(
     ended: EndedDispatches,
     cluster: SandboxCluster,
 ) -> AsyncIterator[Delivery]:
-    delivery = Delivery(store, sandboxes, runner_client, ended, cluster.inventory)
+    ownership = SandboxOwnershipLeases(
+        k8s_client.CoordinationV1Api(cluster.api), store, namespace=SANDBOX_NAMESPACE, holder_identity="test-dispatcher"
+    )
+    delivery = Delivery(store, sandboxes, runner_client, ended, cluster.inventory, ownership)
     async with background(delivery.run(), name="delivery"):
         yield delivery
 
@@ -152,6 +160,82 @@ async def test_a_session_commands_reach_a_ready_runner_in_order(
         row = await wait_for(store, command_id, DeliveryState.RUNNER_ADMITTED)
         assert row.admission is not None
     assert runner[0].calls == [("SubmitInput", "first"), ("SubmitInput", "second")]
+
+
+async def test_a_peer_replica_insert_wakes_the_sandbox_owner(
+    store: DispatchStore,
+    sandboxes: SandboxWatch,
+    cluster: SandboxCluster,
+    runner: tuple[ScriptedRunner, str],
+    engine: AsyncEngine,
+) -> None:
+    set_sandbox(cluster, ready=True)
+    peer = DispatchStore(engine, queue_cap=100)
+    sandbox = sandboxes.get_sandbox(SANDBOX)
+    assert sandbox is not None
+    async with peer.wakeups.listener.listen():
+        await peer.enqueue(
+            session_id=SESSION,
+            sandbox_name=SANDBOX,
+            sandbox_uid=sandbox.metadata.uid,
+            command=command_pb2.Command(command_id="peer-insert", submit_input=command_pb2.SubmitInput(text="peer")),
+        )
+        await wait_for(store, "peer-insert", DeliveryState.RUNNER_ADMITTED)
+    assert runner[0].calls == [("SubmitInput", "peer-insert")]
+
+
+async def test_a_wake_retry_rechecks_ownership_after_failover(
+    store: DispatchStore,
+    sandboxes: SandboxWatch,
+    cluster: SandboxCluster,
+    delivery: Delivery,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    await delivery._sync_ownership()
+    sandbox = sandboxes.get_sandbox(SANDBOX)
+    assert sandbox is not None
+    stale_owner = delivery._owners[sandbox.metadata.uid]
+    coordination = k8s_client.CoordinationV1Api(cluster.api)
+
+    calls: list[str] = []
+
+    async def wake(name: str, *, uid: str) -> bool:
+        calls.append(f"{name}:{uid}")
+        raise ApiException(status=500)
+
+    monkeypatch.setattr(cluster.inventory, "wake_for_send", wake)
+
+    async def notified(reason: Reason) -> None:
+        del reason
+
+    await delivery._request_sandbox_wake(
+        key="stale-wake",
+        sandbox_name=sandbox.metadata.name,
+        sandbox_uid=sandbox.metadata.uid,
+        owner=stale_owner,
+        notify=notified,
+    )
+    assert calls == [f"{sandbox.metadata.name}:{sandbox.metadata.uid}"]
+
+    lease = await coordination.read_namespaced_lease(
+        f"dispatcher-{sandbox.metadata.uid.hex}", SANDBOX_NAMESPACE
+    )
+    lease.spec.renew_time = datetime.now(UTC) - timedelta(seconds=60)
+    await coordination.replace_namespaced_lease(lease.metadata.name, SANDBOX_NAMESPACE, lease)
+    successor = SandboxOwnershipLeases(
+        coordination, store, namespace=SANDBOX_NAMESPACE, holder_identity="successor"
+    )
+    assert await successor.acquire(SANDBOX, sandbox.metadata.uid) is not None
+
+    # A later retry from the old task revalidates the Lease and stops after takeover.
+    await delivery._request_sandbox_wake(
+        key="stale-wake",
+        sandbox_name=sandbox.metadata.name,
+        sandbox_uid=sandbox.metadata.uid,
+        owner=stale_owner,
+        notify=notified,
+    )
+    assert calls == [f"{sandbox.metadata.name}:{sandbox.metadata.uid}"]
 
 
 async def test_a_command_waits_for_the_sandbox_to_be_ready(
@@ -341,6 +425,7 @@ async def test_a_wake_marker_survives_dispatcher_restart_before_the_patch(
     runner_client: RunnerClient,
     ended: EndedDispatches,
     cluster: SandboxCluster,
+    delivery: Delivery,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     set_sandbox(cluster, ready=False, running=False, wake_on_send=True)
@@ -363,7 +448,8 @@ async def test_a_wake_marker_survives_dispatcher_restart_before_the_patch(
     await asyncio.sleep(0)
 
     monkeypatch.setattr(cluster.inventory, "wake_for_send", original_wake)
-    restarted = Delivery(store, sandboxes, runner_client, ended, cluster.inventory)
+    restarted = Delivery(store, sandboxes, runner_client, ended, cluster.inventory, delivery.ownership)
+    await restarted._sync_ownership()
     async with asyncio.TaskGroup() as tasks:
         if opening:
             await restarted._start_openings(tasks)

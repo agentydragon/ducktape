@@ -16,6 +16,7 @@ from agentplane.session_dispatcher.store import (
     NotCancellableError,
     OpeningConflictError,
     QueueFullError,
+    SandboxOwner,
 )
 
 # gazelle:include_dep @pypi//protobuf
@@ -45,6 +46,28 @@ async def enqueue(
     return (
         await store.enqueue(session_id=session_id, sandbox_name=SANDBOX, sandbox_uid=sandbox_uid, command=command)
     ).state
+
+
+async def owner_token(
+    store: DispatchStore,
+    *,
+    sandbox_uid: UUID = SANDBOX_UID,
+    lease_uid: str = "lease-1",
+    lease_transitions: int = 1,
+    holder_identity: str = "dispatcher-1",
+    expected_generation: int | None = None,
+) -> SandboxOwner:
+    if expected_generation is None:
+        expected_generation = await store.ownership_generation(sandbox_uid)
+    owner = await store.claim_sandbox_owner(
+        sandbox_uid,
+        lease_uid=lease_uid,
+        lease_transitions=lease_transitions,
+        holder_identity=holder_identity,
+        expected_generation=expected_generation,
+    )
+    assert owner is not None
+    return owner
 
 
 async def test_a_repeated_command_is_the_same_dispatch_and_another_payload_conflicts(store: DispatchStore) -> None:
@@ -83,18 +106,26 @@ async def test_a_session_has_one_head_and_none_while_an_earlier_command_is_in_fl
     await enqueue(store, submit("a"))
     await enqueue(store, submit("b"))
     await enqueue(store, submit("other"), session_id="other-session")
+    owner = await owner_token(store)
     assert [row.command_id for row in await store.heads()] == ["a", "other"]
-    await store.settle("a", from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.DELIVERING_TO_RUNNER)
+    await store.settle(
+        "a", owner=owner, from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.DELIVERING_TO_RUNNER
+    )
     assert [row.command_id for row in await store.heads()] == ["other"]
-    await store.settle("a", from_states={DeliveryState.DELIVERING_TO_RUNNER}, to=DeliveryState.RUNNER_ADMITTED)
+    await store.settle(
+        "a", owner=owner, from_states={DeliveryState.DELIVERING_TO_RUNNER}, to=DeliveryState.RUNNER_ADMITTED
+    )
     assert [row.command_id for row in await store.heads()] == ["b", "other"]
 
 
 async def test_settle_leaves_a_dispatch_that_already_moved_alone(store: DispatchStore) -> None:
     await enqueue(store, submit("a"))
+    owner = await owner_token(store)
     await store.cancel("a")
     assert (
-        await store.settle("a", from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.DELIVERING_TO_RUNNER)
+        await store.settle(
+            "a", owner=owner, from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.DELIVERING_TO_RUNNER
+        )
         is None
     )
     assert (await store.get_dispatch("a")).state is DeliveryState.CANCELLED_IN_DISPATCHER
@@ -102,7 +133,10 @@ async def test_settle_leaves_a_dispatch_that_already_moved_alone(store: Dispatch
 
 async def test_only_a_queued_command_is_cancelled(store: DispatchStore) -> None:
     await enqueue(store, submit("a"))
-    await store.settle("a", from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.DELIVERING_TO_RUNNER)
+    owner = await owner_token(store)
+    await store.settle(
+        "a", owner=owner, from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.DELIVERING_TO_RUNNER
+    )
     with pytest.raises(NotCancellableError):
         await store.cancel("a")
     with pytest.raises(DispatchNotFoundError):
@@ -118,12 +152,17 @@ async def test_a_deleted_sandbox_ends_its_commands_and_takes_its_rows(store: Dis
         session_id="model-admitted",
     )
     await enqueue(store, submit("other-sandbox"), session_id="other", sandbox_uid=UUID(int=2))
+    owner = await owner_token(store)
     await store.settle(
-        "delivering", from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.DELIVERING_TO_RUNNER
+        "delivering",
+        owner=owner,
+        from_states={DeliveryState.QUEUED_IN_DISPATCHER},
+        to=DeliveryState.DELIVERING_TO_RUNNER,
     )
     for command_id in ("admitted", "model-admitted"):
         await store.settle(
             command_id,
+            owner=owner,
             from_states={DeliveryState.QUEUED_IN_DISPATCHER},
             to=DeliveryState.RUNNER_ADMITTED,
             admission=event_log_pb2.EventEntry(),
@@ -166,8 +205,9 @@ async def test_a_session_opens_once_and_its_opening_goes_before_its_commands(sto
     ):
         with pytest.raises(OpeningConflictError):
             await conflict
+    owner = await owner_token(store)
     await store.settle_opening(
-        SESSION, from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.RUNNER_ADMITTED
+        SESSION, owner=owner, from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.RUNNER_ADMITTED
     )
     assert [row.command_id for row in await store.heads()] == ["first"]
 
@@ -185,12 +225,48 @@ async def test_a_deleted_sandbox_ends_its_openings_and_takes_them(store: Dispatc
         await store.get_opening(SESSION)
 
 
-async def test_a_call_in_flight_when_the_dispatcher_stopped_is_queued_again(store: DispatchStore) -> None:
+async def test_failover_recovery_is_scoped_and_stale_holders_cannot_settle_or_reclaim(store: DispatchStore) -> None:
     await enqueue(store, submit("a"))
-    await store.settle("a", from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.DELIVERING_TO_RUNNER)
-    await store.reset_delivering()
-    row = await store.get_dispatch("a")
-    assert (row.state, row.reason) == (DeliveryState.QUEUED_IN_DISPATCHER, Reason.DISPATCHER_RESTARTED)
+    await enqueue(store, submit("other"), session_id="other", sandbox_uid=UUID(int=2))
+    old_owner = await owner_token(store)
+    other_owner = await owner_token(store, sandbox_uid=UUID(int=2), lease_uid="lease-2")
+    await store.settle(
+        "a", owner=old_owner, from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.DELIVERING_TO_RUNNER
+    )
+    await store.settle(
+        "other",
+        owner=other_owner,
+        from_states={DeliveryState.QUEUED_IN_DISPATCHER},
+        to=DeliveryState.DELIVERING_TO_RUNNER,
+    )
+
+    new_owner = await owner_token(
+        store, lease_transitions=2, holder_identity="dispatcher-2", expected_generation=old_owner.generation
+    )
+    assert (
+        await store.settle(
+            "a", owner=old_owner, from_states={DeliveryState.DELIVERING_TO_RUNNER}, to=DeliveryState.RUNNER_ADMITTED
+        )
+        is None
+    )
+    # The old process was paused after observing its Lease. A successor committed, so even a
+    # recreated Lease UID cannot make the old proof advance the DB generation.
+    assert (
+        await store.claim_sandbox_owner(
+            SANDBOX_UID,
+            lease_uid="recreated-lease-for-stale-owner",
+            lease_transitions=1,
+            holder_identity="dispatcher-1",
+            expected_generation=old_owner.generation,
+        )
+        is None
+    )
+    assert await store.recover_sandbox(old_owner) is False
+    assert await store.recover_sandbox(new_owner) is True
+    recovered = await store.get_dispatch("a")
+    untouched = await store.get_dispatch("other")
+    assert (recovered.state, recovered.reason) == (DeliveryState.QUEUED_IN_DISPATCHER, Reason.DISPATCHER_RESTARTED)
+    assert untouched.state is DeliveryState.DELIVERING_TO_RUNNER
 
 
 if __name__ == "__main__":

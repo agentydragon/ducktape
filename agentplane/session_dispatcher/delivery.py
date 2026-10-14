@@ -23,9 +23,10 @@ from agentplane.session_dispatcher.channels import Channel
 from agentplane.session_dispatcher.db import Dispatch, SessionOpening
 from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.models import DeliveryState, Operation, Reason
+from agentplane.session_dispatcher.ownership import LEASE_RENEW_INTERVAL_S, SandboxOwnershipLeases
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxWatch, delivery_blocker
-from agentplane.session_dispatcher.store import DispatchStore
+from agentplane.session_dispatcher.store import DispatchStore, SandboxOwner
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -54,8 +55,7 @@ def _awaiting_new_incarnation(sandbox: Sandbox, wake_from_incarnation: str | Non
 
 
 class Delivery:
-    """Runs on the Dispatcher's one active replica. A command moves when its Dispatch row, its
-    Sandbox or, after an unreachable runner, a backoff says it may; nothing polls."""
+    """Delivers work only for Sandboxes whose Lease and DB generation this replica owns."""
 
     def __init__(
         self,
@@ -64,12 +64,15 @@ class Delivery:
         runner: RunnerClient,
         ended: EndedDispatches,
         inventory: SandboxInventory,
+        ownership: SandboxOwnershipLeases,
     ) -> None:
         self.ended = ended
         self.store = store
         self.sandboxes = sandboxes
         self.runner = runner
         self.inventory = inventory
+        self.ownership = ownership
+        self._owners: dict[UUID, SandboxOwner] = {}
         self._changed = asyncio.Event()
         # Sessions with a delivery under way: one at a time keeps a Session's commands in order.
         self._delivering: set[str] = set()
@@ -81,7 +84,6 @@ class Delivery:
     async def run(self) -> None:
         """Deliver until cancelled."""
         await self.sandboxes.wait_synced()
-        await self.store.reset_delivering()
         with (
             self.store.wakeups.changes[Channel.DISPATCH].subscribe(self._changed),
             self.sandboxes.changed.subscribe(self._changed),
@@ -92,6 +94,7 @@ class Delivery:
                     # Cleared before reading: a change racing with the read is a wakeup.
                     self._changed.clear()
                     try:
+                        await self._sync_ownership()
                         await self._end_gone()
                         await self._start_openings(deliveries)
                         await self._start(deliveries)
@@ -99,9 +102,28 @@ class Delivery:
                         logger.warning("dispatch storage unavailable; retrying", exc_info=True)
                         await asyncio.sleep(5)
                         continue
+                    timeout = self._next_retry_in()
+                    timeout = LEASE_RENEW_INTERVAL_S if timeout is None else min(timeout, LEASE_RENEW_INTERVAL_S)
                     with suppress(TimeoutError):
-                        async with asyncio.timeout(self._next_retry_in()):
+                        async with asyncio.timeout(timeout):
                             await self._changed.wait()
+
+    async def _sync_ownership(self) -> None:
+        """Renew live Leases, take expired ones, and recover only newly owned Sandbox work."""
+        live = self.sandboxes.all_sandboxes()
+        live_uids = {sandbox.metadata.uid for sandbox in live}
+        for sandbox in live:
+            uid = sandbox.metadata.uid
+            owner = await self.ownership.acquire(sandbox.metadata.name, uid)
+            if owner is None:
+                self._owners.pop(uid, None)
+                continue
+            previous = self._owners.get(uid)
+            self._owners[uid] = owner
+            if previous != owner and not await self.store.recover_sandbox(owner):
+                self._owners.pop(uid, None)
+        for uid in self._owners.keys() - live_uids:
+            self._owners.pop(uid, None)
 
     async def _end_vanished(self) -> None:
         """Sandboxes deleted while this process was down: the first listing is complete."""
@@ -138,9 +160,12 @@ class Delivery:
                 # Its deletion reaches `_end_gone`.
                 self._clear_retry(head.command_id)
                 continue
+            owner = self._owners.get(head.sandbox_uid)
+            if owner is None:
+                continue
             if sandbox.metadata.deletion_timestamp is not None:
                 self._clear_retry(head.command_id)
-                await self.store.note_waiting(head.command_id, Reason.SANDBOX_DELETED)
+                await self.store.note_waiting(head.command_id, Reason.SANDBOX_DELETED, owner=owner)
                 continue
             awaiting_new_incarnation = _awaiting_new_incarnation(sandbox, head.wake_from_incarnation)
             blocker = delivery_blocker(sandbox)
@@ -157,35 +182,36 @@ class Delivery:
                 if head.wake_eligible:
                     # The marker is persisted before the patch for crash safety. Reissue the guarded,
                     # idempotent patch until the desired state changes or a new incarnation appears.
-                    await self._wake_for_send(head.command_id, sandbox)
+                    await self._wake_for_send(head.command_id, sandbox, owner)
                 else:
-                    await self.store.note_waiting(head.command_id, Reason.SANDBOX_RESUMING)
+                    await self.store.note_waiting(head.command_id, Reason.SANDBOX_RESUMING, owner=owner)
                 continue
             if blocker is not None:
                 if blocker is Reason.SANDBOX_SUSPENDED and head.operation is Operation.STOP_RUNNER_SESSION:
                     self._clear_retry(head.command_id)
                     await self.store.settle(
                         head.command_id,
+                        owner=owner,
                         from_states={DeliveryState.QUEUED_IN_DISPATCHER},
                         to=DeliveryState.NO_OP,
                         reason=blocker,
                     )
                 elif blocker is Reason.SANDBOX_SUSPENDED and head.wake_eligible:
-                    await self._wake_for_send(head.command_id, sandbox)
+                    await self._wake_for_send(head.command_id, sandbox, owner)
                 else:
-                    await self.store.note_waiting(head.command_id, blocker)
+                    await self.store.note_waiting(head.command_id, blocker, owner=owner)
                 continue
             incarnation = sandbox.status.incarnation.uid if sandbox.status.incarnation is not None else None
             if self._refused.get(sandbox.metadata.uid, "") == incarnation:
-                await self.store.note_waiting(head.command_id, Reason.RUNNER_REFUSED_WORK)
+                await self.store.note_waiting(head.command_id, Reason.RUNNER_REFUSED_WORK, owner=owner)
                 continue
             self._delivering.add(head.session_id)
-            deliveries.create_task(self._deliver(head, incarnation), name=f"deliver-{head.command_id}")
+            deliveries.create_task(self._deliver(head, incarnation, owner), name=f"deliver-{head.command_id}")
 
-    async def _deliver(self, head: Dispatch, incarnation: str | None) -> None:
+    async def _deliver(self, head: Dispatch, incarnation: str | None, owner: SandboxOwner) -> None:
         try:
             claimed = await self._settle(
-                head, from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.DELIVERING_TO_RUNNER
+                head, owner, from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.DELIVERING_TO_RUNNER
             )
             if claimed is None:
                 return
@@ -193,11 +219,12 @@ class Delivery:
             try:
                 admission = await self.runner.deliver(head.sandbox_name, head.session_id, head.command)
             except grpc.aio.AioRpcError as error:
-                await self._refuse(head, incarnation, error)
+                await self._refuse(head, incarnation, owner, error)
                 return
             self._attempts.pop(head.command_id, None)
             await self._settle(
                 head,
+                owner,
                 from_states={DeliveryState.DELIVERING_TO_RUNNER},
                 to=DeliveryState.RUNNER_ADMITTED,
                 admission=admission,
@@ -206,7 +233,9 @@ class Delivery:
             self._delivering.discard(head.session_id)
             self._changed.set()
 
-    async def _refuse(self, head: Dispatch, incarnation: str | None, error: grpc.aio.AioRpcError) -> None:
+    async def _refuse(
+        self, head: Dispatch, incarnation: str | None, owner: SandboxOwner, error: grpc.aio.AioRpcError
+    ) -> None:
         """What the runner's status asks of the Dispatcher (docs/adr_sandbox_session_control.md)."""
         sending = {DeliveryState.DELIVERING_TO_RUNNER}
         match error.code():
@@ -214,18 +243,32 @@ class Delivery:
                 # Quiescing: delivered again once the Sandbox has resumed, which changes its incarnation.
                 self._refused[head.sandbox_uid] = incarnation
                 await self._settle(
-                    head, from_states=sending, to=DeliveryState.QUEUED_IN_DISPATCHER, reason=Reason.RUNNER_REFUSED_WORK
+                    head,
+                    owner,
+                    from_states=sending,
+                    to=DeliveryState.QUEUED_IN_DISPATCHER,
+                    reason=Reason.RUNNER_REFUSED_WORK,
                 )
             case grpc.StatusCode.UNAVAILABLE | grpc.StatusCode.DEADLINE_EXCEEDED:
                 self._delay_retry(head.command_id)
                 await self._settle(
-                    head, from_states=sending, to=DeliveryState.QUEUED_IN_DISPATCHER, reason=Reason.DELIVERY_UNAVAILABLE
+                    head,
+                    owner,
+                    from_states=sending,
+                    to=DeliveryState.QUEUED_IN_DISPATCHER,
+                    reason=Reason.DELIVERY_UNAVAILABLE,
                 )
             case grpc.StatusCode.FAILED_PRECONDITION if head.operation is Operation.STOP_RUNNER_SESSION:
-                await self._settle(head, from_states=sending, to=DeliveryState.NO_OP, reason=Reason.NOTHING_RUNNING)
+                await self._settle(
+                    head, owner, from_states=sending, to=DeliveryState.NO_OP, reason=Reason.NOTHING_RUNNING
+                )
             case code:
                 await self._settle(
-                    head, from_states=sending, to=DeliveryState.FAILED, reason=f"runner {code.name}: {error.details()}"
+                    head,
+                    owner,
+                    from_states=sending,
+                    to=DeliveryState.FAILED,
+                    reason=f"runner {code.name}: {error.details()}",
                 )
 
     def _delay_retry(self, key: str) -> None:
@@ -250,9 +293,12 @@ class Delivery:
                 # Its deletion reaches `_end_gone`.
                 self._clear_retry(key)
                 continue
+            owner = self._owners.get(opening.sandbox_uid)
+            if owner is None:
+                continue
             if sandbox.metadata.deletion_timestamp is not None:
                 self._clear_retry(key)
-                await self.store.note_opening_waiting(opening.session_id, Reason.SANDBOX_DELETED)
+                await self.store.note_opening_waiting(opening.session_id, Reason.SANDBOX_DELETED, owner=owner)
                 continue
             awaiting_new_incarnation = _awaiting_new_incarnation(sandbox, opening.wake_from_incarnation)
             blocker = delivery_blocker(sandbox)
@@ -267,55 +313,76 @@ class Delivery:
             self._retry_at.pop(key, None)
             if awaiting_new_incarnation:
                 if opening.wake_eligible:
-                    await self._wake_for_opening(opening, sandbox)
+                    await self._wake_for_opening(opening, sandbox, owner)
                 else:
-                    await self.store.note_opening_waiting(opening.session_id, Reason.SANDBOX_RESUMING)
+                    await self.store.note_opening_waiting(
+                        opening.session_id, Reason.SANDBOX_RESUMING, owner=owner
+                    )
                 continue
             if blocker is not None:
                 if blocker is Reason.SANDBOX_SUSPENDED and opening.wake_eligible:
-                    await self._wake_for_opening(opening, sandbox)
+                    await self._wake_for_opening(opening, sandbox, owner)
                 else:
-                    await self.store.note_opening_waiting(opening.session_id, blocker)
+                    await self.store.note_opening_waiting(opening.session_id, blocker, owner=owner)
                 continue
             incarnation = sandbox.status.incarnation.uid if sandbox.status.incarnation is not None else None
             if self._refused.get(sandbox.metadata.uid, "") == incarnation:
-                await self.store.note_opening_waiting(opening.session_id, Reason.RUNNER_REFUSED_WORK)
+                await self.store.note_opening_waiting(opening.session_id, Reason.RUNNER_REFUSED_WORK, owner=owner)
                 continue
             self._delivering.add(opening.session_id)
-            deliveries.create_task(self._deliver_opening(opening, incarnation), name=f"open-{opening.session_id}")
+            deliveries.create_task(
+                self._deliver_opening(opening, incarnation, owner), name=f"open-{opening.session_id}"
+            )
 
-    async def _wake_for_send(self, command_id: str, sandbox: Sandbox) -> None:
+    async def _wake_for_send(self, command_id: str, sandbox: Sandbox, owner: SandboxOwner) -> None:
         if not sandbox.spec.wake_on_send:
             self._clear_retry(command_id)
-            await self.store.note_waiting(command_id, Reason.WAKE_ON_SEND_DISABLED)
+            await self.store.note_waiting(command_id, Reason.WAKE_ON_SEND_DISABLED, owner=owner)
             return
-        if not await self.store.note_waking(command_id, incarnation=_incarnation_uid(sandbox)):
+        if not await self.store.note_waking(command_id, owner=owner, incarnation=_incarnation_uid(sandbox)):
             return
         await self._request_sandbox_wake(
             key=command_id,
             sandbox_name=sandbox.metadata.name,
             sandbox_uid=sandbox.metadata.uid,
-            notify=lambda reason: self.store.note_waiting(command_id, reason),
+            owner=owner,
+            notify=lambda reason: self.store.note_waiting(command_id, reason, owner=owner),
         )
 
-    async def _wake_for_opening(self, opening: SessionOpening, sandbox: Sandbox) -> None:
+    async def _wake_for_opening(
+        self, opening: SessionOpening, sandbox: Sandbox, owner: SandboxOwner
+    ) -> None:
         if not sandbox.spec.wake_on_send:
             self._clear_retry(_opening_key(opening.session_id))
-            await self.store.note_opening_waiting(opening.session_id, Reason.WAKE_ON_SEND_DISABLED)
+            await self.store.note_opening_waiting(
+                opening.session_id, Reason.WAKE_ON_SEND_DISABLED, owner=owner
+            )
             return
-        if not await self.store.note_opening_waking(opening.session_id, incarnation=_incarnation_uid(sandbox)):
+        if not await self.store.note_opening_waking(
+            opening.session_id, owner=owner, incarnation=_incarnation_uid(sandbox)
+        ):
             return
         await self._request_sandbox_wake(
             key=_opening_key(opening.session_id),
             sandbox_name=sandbox.metadata.name,
             sandbox_uid=sandbox.metadata.uid,
-            notify=lambda reason: self.store.note_opening_waiting(opening.session_id, reason),
+            owner=owner,
+            notify=lambda reason: self.store.note_opening_waiting(opening.session_id, reason, owner=owner),
         )
 
     async def _request_sandbox_wake(
-        self, *, key: str, sandbox_name: str, sandbox_uid: UUID, notify: Callable[[Reason], Awaitable[None]]
+        self,
+        *,
+        key: str,
+        sandbox_name: str,
+        sandbox_uid: UUID,
+        owner: SandboxOwner,
+        notify: Callable[[Reason], Awaitable[None]],
     ) -> None:
         try:
+            if self._owners.get(sandbox_uid) != owner or not await self.ownership.still_owns(owner):
+                self._owners.pop(sandbox_uid, None)
+                return
             if not await self.inventory.wake_for_send(sandbox_name, uid=str(sandbox_uid)):
                 self._clear_retry(key)
                 await notify(Reason.WAKE_ON_SEND_DISABLED)
@@ -324,7 +391,7 @@ class Delivery:
             self._clear_retry(key)
             await notify(Reason.SANDBOX_RESUMING)
             return
-        except SandboxTearingDownError, InventorySandboxNotFoundError:
+        except (SandboxTearingDownError, InventorySandboxNotFoundError):
             self._clear_retry(key)
             await notify(Reason.SANDBOX_DELETED)
             return
@@ -342,12 +409,15 @@ class Delivery:
         self._retry_at.pop(key, None)
         self._attempts.pop(key, None)
 
-    async def _deliver_opening(self, opening: SessionOpening, incarnation: str | None) -> None:
+    async def _deliver_opening(
+        self, opening: SessionOpening, incarnation: str | None, owner: SandboxOwner
+    ) -> None:
         key = _opening_key(opening.session_id)
         try:
             claimed = await self._retry_storage(
                 lambda: self.store.settle_opening(
                     opening.session_id,
+                    owner=owner,
                     from_states={DeliveryState.QUEUED_IN_DISPATCHER},
                     to=DeliveryState.DELIVERING_TO_RUNNER,
                 )
@@ -360,49 +430,50 @@ class Delivery:
                     opening.sandbox_name, opening.session_id, opening.spec, opening.setup_script
                 )
             except grpc.aio.AioRpcError as error:
-                await self._refuse_opening(opening, incarnation, error)
+                await self._refuse_opening(opening, incarnation, owner, error)
                 return
             self._attempts.pop(key, None)
-            await self._settle_opening(opening, DeliveryState.RUNNER_ADMITTED, attached=attached)
+            await self._settle_opening(opening, owner, DeliveryState.RUNNER_ADMITTED, attached=attached)
         finally:
             self._delivering.discard(opening.session_id)
             self._changed.set()
 
     async def _refuse_opening(
-        self, opening: SessionOpening, incarnation: str | None, error: grpc.aio.AioRpcError
+        self, opening: SessionOpening, incarnation: str | None, owner: SandboxOwner, error: grpc.aio.AioRpcError
     ) -> None:
         match error.code():
             case grpc.StatusCode.ABORTED:
                 self._refused[opening.sandbox_uid] = incarnation
                 await self._settle_opening(
-                    opening, DeliveryState.QUEUED_IN_DISPATCHER, reason=Reason.RUNNER_REFUSED_WORK
+                    opening, owner, DeliveryState.QUEUED_IN_DISPATCHER, reason=Reason.RUNNER_REFUSED_WORK
                 )
             case grpc.StatusCode.UNAVAILABLE | grpc.StatusCode.DEADLINE_EXCEEDED:
                 self._delay_retry(_opening_key(opening.session_id))
                 await self._settle_opening(
-                    opening, DeliveryState.QUEUED_IN_DISPATCHER, reason=Reason.DELIVERY_UNAVAILABLE
+                    opening, owner, DeliveryState.QUEUED_IN_DISPATCHER, reason=Reason.DELIVERY_UNAVAILABLE
                 )
             case grpc.StatusCode.ALREADY_EXISTS:
                 # An earlier attempt created it and its reply was lost, or the runner holds another spec.
                 try:
                     exists = await self.runner.has_session(opening.sandbox_name, opening.session_id)
                 except grpc.aio.AioRpcError as listing:
-                    await self._refuse_opening(opening, incarnation, listing)
+                    await self._refuse_opening(opening, incarnation, owner, listing)
                     return
                 if exists:
-                    await self._settle_opening(opening, DeliveryState.RUNNER_ADMITTED)
+                    await self._settle_opening(opening, owner, DeliveryState.RUNNER_ADMITTED)
                 else:
                     await self._settle_opening(
-                        opening, DeliveryState.FAILED, reason=f"runner ALREADY_EXISTS: {error.details()}"
+                        opening, owner, DeliveryState.FAILED, reason=f"runner ALREADY_EXISTS: {error.details()}"
                     )
             case code:
                 await self._settle_opening(
-                    opening, DeliveryState.FAILED, reason=f"runner {code.name}: {error.details()}"
+                    opening, owner, DeliveryState.FAILED, reason=f"runner {code.name}: {error.details()}"
                 )
 
     async def _settle_opening(
         self,
         opening: SessionOpening,
+        owner: SandboxOwner,
         to: DeliveryState,
         *,
         reason: str | None = None,
@@ -411,6 +482,7 @@ class Delivery:
         await self._retry_storage(
             lambda: self.store.settle_opening(
                 opening.session_id,
+                owner=owner,
                 from_states={DeliveryState.DELIVERING_TO_RUNNER},
                 to=to,
                 reason=reason,
@@ -421,6 +493,7 @@ class Delivery:
     async def _settle(
         self,
         head: Dispatch,
+        owner: SandboxOwner,
         *,
         from_states: set[DeliveryState],
         to: DeliveryState,
@@ -429,7 +502,7 @@ class Delivery:
     ) -> Dispatch | None:
         return await self._retry_storage(
             lambda: self.store.settle(
-                head.command_id, from_states=from_states, to=to, reason=reason, admission=admission
+                head.command_id, owner=owner, from_states=from_states, to=to, reason=reason, admission=admission
             )
         )
 

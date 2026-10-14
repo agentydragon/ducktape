@@ -3,11 +3,12 @@
 The durable queue between senders and a Sandbox's runner. A sender stores a command and gets a
 `Dispatch` back at once; the Dispatcher delivers it through the Runner Gateway's runner proxy once the
 Sandbox is `Ready`, and the sender reads where it is. The manifests configure one active replica in
-staging and testing until `DISPATCHER_REPLICA_OWNERSHIP` lands; this is a temporary correctness limit
-because the delivery loop currently assumes one active owner. The app and Notification Service still
-send through the Runner Gateway pending their cutovers. Control design:
+staging and testing until `DISPATCHER_REPLICA_ACTIVATION` passes. The delivery loop shards work by
+per-Sandbox Lease and fences claims and settlements with a PostgreSQL ownership generation. The app
+and Notification Service still send through the Runner Gateway pending their cutovers. Control design:
 [ADR](../docs/adr_sandbox_session_control.md). Deployment and production-startup acceptance evidence is in
-[the acceptance report](debug/deployment_acceptance.md).
+[the acceptance report](debug/deployment_acceptance.md); replica-count activation remains gated in the
+[task DAG](../plans/task_dag.md).
 
 ## Contract
 
@@ -34,6 +35,10 @@ send through the Runner Gateway pending their cutovers. Control design:
   Dispatches are deleted in the same step, so a later read or watch is `NOT_FOUND`/empty. A stream on another
   replica is not handed them.
 - **Retention**: a Sandbox's Dispatches are kept as long as it exists. Other policies may come later.
+- **Replica ownership**: a per-Sandbox Lease assigns delivery scheduling ownership. Its PostgreSQL
+  generation fences stale claims, settlements and recovery. The Runner Gateway's separate connection
+  Lease still owns the runner stream; Dispatcher scheduling does not affect it. A new owner requeues
+  only that Sandbox's in-flight work, preserving at-least-once redelivery with the same command IDs.
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new
   incarnation; `UNAVAILABLE` and deadline retry with backoff; `FAILED_PRECONDITION` on a stop is `NO_OP`;
   anything else is `FAILED` with the runner's status. The runner deduplicates redelivery on `command_id`.
@@ -44,14 +49,14 @@ send through the Runner Gateway pending their cutovers. Control design:
   `InterruptTurn` and `StopRunnerSession` never wake. Per-sender rate and quota policy remains a separate
   follow-up and must be decided before this setting is enabled.
 
-Nothing polls: delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandbox change (the
-`ListWatch` on Sandboxes) or a retry deadline.
+Delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandbox change (the `ListWatch` on
+Sandboxes) or a retry deadline. Each replica also renews its owned Leases every ten seconds.
 
 ## Deviations and gaps
 
-- The delivery loop has no per-Sandbox Lease ownership. Deleted-Sandbox terminal events are handed only
-  to streams on the replica that processed the deletion. Multi-replica support is tracked in
-  [`DISPATCHER_REPLICA_OWNERSHIP`](../plans/task_dag.md).
+- Deleted-Sandbox terminal events are handed only to streams on the replica that processed the deletion.
+  Cross-replica terminal broadcasts and increasing the active replica count are separate rollout gates in
+  [`task_dag.md`](../plans/task_dag.md).
 - `HARNESS_CONFIRMED` has no writer, so inputs stay `RUNNER_ADMITTED`.
 - Any account in `caller_accounts` may send to any Sandbox.
 

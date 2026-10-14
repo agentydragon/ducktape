@@ -15,6 +15,7 @@ from agentplane.service_process import configure_logging, kubernetes_configurati
 from agentplane.session_dispatcher.delivery import Delivery
 from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.grpc_api import Resources, add_service
+from agentplane.session_dispatcher.ownership import SandboxOwnershipLeases
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxWatch
 from agentplane.session_dispatcher.settings import Settings
@@ -44,6 +45,7 @@ async def serve(settings: Settings) -> None:
             sandboxes = SandboxWatch(
                 custom_objects, namespace=settings.namespace, resync_seconds=settings.sandbox_resync_seconds
             )
+            ownership = SandboxOwnershipLeases(k8s_client.CoordinationV1Api(api), store, namespace=settings.namespace)
             runner = RunnerClient(
                 control_target=settings.runner_control_target,
                 namespace=settings.namespace,
@@ -76,7 +78,7 @@ async def serve(settings: Settings) -> None:
             async with asyncio.TaskGroup() as workers:
                 watching = workers.create_task(sandboxes.run(), name="sandbox-watch")
                 delivering = workers.create_task(
-                    Delivery(store, sandboxes, runner, ended, inventory).run(), name="delivery"
+                    Delivery(store, sandboxes, runner, ended, inventory, ownership).run(), name="delivery"
                 )
                 async with serving(server, f"{settings.host}:{settings.port}", grace_s=5):
                     await until_terminated()

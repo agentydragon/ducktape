@@ -63,3 +63,16 @@ class SessionOpening(Base):
     attached: Mapped[runner_pb2.Attached | None] = mapped_column(ProtobufColumn(runner_pb2.Attached))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class SandboxOwnership(Base):
+    """The database fence for the Dispatcher replica currently scheduling one Sandbox."""
+
+    __tablename__ = "sandbox_ownership"
+    sandbox_uid: Mapped[UUID] = mapped_column(primary_key=True)
+    # This is the settlement fence. It increases only after a Lease acquisition wins a DB CAS.
+    generation: Mapped[int] = mapped_column(BigInteger)
+    lease_uid: Mapped[str]
+    lease_transitions: Mapped[int]
+    holder_identity: Mapped[str]
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

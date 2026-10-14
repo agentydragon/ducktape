@@ -57,6 +57,10 @@ class SandboxWatch:
     def live_uids(self) -> set[UUID]:
         return {sandbox.metadata.uid for sandbox in self._sandboxes.values()}
 
+    def all_sandboxes(self) -> tuple[Sandbox, ...]:
+        """The current listed Sandboxes, for per-Sandbox delivery ownership reconciliation."""
+        return tuple(self._sandboxes.values())
+
     async def wait_synced(self) -> None:
         await self._synced.wait()
 
