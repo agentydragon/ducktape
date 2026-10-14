@@ -852,7 +852,7 @@ the selected explicit layouts before retiring the path; data drops stay in a sep
 
 ### `VM_GUEST_DECLARATIVE_STORAGE` — declarative guest disk initialization
 
-**In flight (`dag_burndown`, 2026-10-14; follows `WORKSPACE_VOLUME`).** The workspace mount remains a NixOS `fileSystems`
+**In flight (`dag_burndown`, 2026-10-14; draft [#10513](https://github.com/agentydragon/ducktape/pull/10513); follows `WORKSPACE_VOLUME`).** The workspace mount remains a NixOS `fileSystems`
 declaration; `systemd.tmpfiles` now owns directory mode, owner, default ACL and private home setup.
 The old formatting shell body is replaced by a small tested Python guard because NixOS
 `autoFormat` checks only for a recognizable filesystem, not that every byte is zero. Keep
