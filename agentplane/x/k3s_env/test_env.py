@@ -21,7 +21,6 @@ from pathlib import Path
 import httpx
 import pytest_bazel
 import yaml
-from more_itertools import one
 
 from agentplane.acceptance.agent import Agent
 from agentplane.acceptance.conftest import AUDIENCE, POD_TEMPLATE, TESTING_SERVICE_ACCOUNT, wait_until_running
@@ -145,7 +144,7 @@ class K3s:
             raise RuntimeError(f"k3s not ready (exit={process.poll()}): {ready}\n{self.log_path.read_text()[-6000:]}")
         self._serve_dns_and_api_on_node()
         # host-gw routes Pod traffic but does not translate it: without this, Pods cannot reach the internet.
-        iptables = one(self.data_dir.glob("data/*/bin/aux/iptables"))  # the copy k3s ships; the host has none
+        iptables = self.data_dir / "data/current/bin/aux/iptables"  # the copy k3s ships; the host has none
         _run(str(iptables), "-t", "nat", "-A", "POSTROUTING", "-s", POD_CIDR, "!", "-d", POD_CIDR, "-j", "MASQUERADE")
         return process
 
