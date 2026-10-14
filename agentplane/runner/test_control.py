@@ -11,6 +11,7 @@ from typing import cast
 import grpc
 import pytest
 import pytest_bazel
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from agentplane.proto import (
     command_pb2,
@@ -398,6 +399,26 @@ async def test_quiescing_again_returns_the_same_cursors_and_opening_is_refused(
     )
     assert not runner.sessions[RUNNING].running
     assert started == []
+
+
+async def test_a_conditional_quiesce_enters_lameduck_only_while_idle_since_the_token(
+    runner: Runner, gateway: Gateway, dial: Callable[[], Awaitable[Service]]
+) -> None:
+    service = await dial()
+    await gateway.control.wait_for_idleness(idle=True)
+    token = runner.facts().idle_since
+    stale = Timestamp(seconds=token.seconds - 1, nanos=token.nanos)
+    with runner.delivering():
+        assert await refusal(service.Quiesce(runner_pb2.QuiesceRequest(if_idle_since=token))) == (
+            grpc.StatusCode.ABORTED
+        )
+    assert await refusal(service.Quiesce(runner_pb2.QuiesceRequest(if_idle_since=stale))) == grpc.StatusCode.ABORTED
+    assert not runner.lameduck
+    # The delivery ended, so the Sandbox went idle again, later than `token`.
+    assert await refusal(service.Quiesce(runner_pb2.QuiesceRequest(if_idle_since=token))) == grpc.StatusCode.ABORTED
+    await service.Quiesce(runner_pb2.QuiesceRequest(if_idle_since=runner.facts().idle_since))
+    assert runner.lameduck
+    await service.Quiesce(runner_pb2.QuiesceRequest(if_idle_since=stale))
 
 
 Facts = runner_control_pb2.RunnerFacts

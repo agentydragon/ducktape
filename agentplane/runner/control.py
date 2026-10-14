@@ -12,6 +12,7 @@ from typing import override
 from uuid import uuid4
 
 import grpc
+from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.grpc_tunnel import local_server, relay
@@ -30,6 +31,7 @@ from agentplane.runner.runner import (
     InvalidRequestError,
     OpenError,
     Runner,
+    SandboxNotIdleError,
     SandboxQuiescedError,
     SessionUnknownError,
     SetupFailedError,
@@ -60,6 +62,8 @@ _REFUSALS: tuple[tuple[type[Exception] | tuple[type[Exception], ...], grpc.Statu
     (InvalidRequestError, grpc.StatusCode.INVALID_ARGUMENT),
     # The Sandbox is tearing down: the same call succeeds once it resumes.
     (SandboxQuiescedError, grpc.StatusCode.ABORTED),
+    # A conditional Quiesce found the Sandbox working: the caller resets its idle timer.
+    (SandboxNotIdleError, grpc.StatusCode.ABORTED),
     ((JournalSealedError, SetupFailedError, HarnessStoppedError, OpenError), grpc.StatusCode.FAILED_PRECONDITION),
     # The state volume failed; a retry may find it working.
     ((OSError, SQLAlchemyError), grpc.StatusCode.UNAVAILABLE),
@@ -147,7 +151,9 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
             session = await finish_command(self.runner.resume(request.session_id))
             return runner_control_pb2.ResumeSessionResponse(attached=_attached(session))
 
-    async def _quiesce(self, context: grpc.aio.ServicerContext) -> runner_pb2.QuiesceResponse:
+    async def _quiesce(
+        self, context: grpc.aio.ServicerContext, if_idle_since: Timestamp | None
+    ) -> runner_pb2.QuiesceResponse:
         async def quiesce(preceding: set[asyncio.Task[event_log_pb2.EventEntry]]) -> runner_pb2.QuiesceResponse:
             # Ordering only: an admission's outcome is its own call's to report.
             if preceding:
@@ -155,7 +161,10 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
             return await self.runner.quiesce()
 
         async with _refusals(context):
-            self.runner.enter_lameduck()
+            if if_idle_since is None:
+                self.runner.enter_lameduck()
+            else:
+                self.runner.enter_lameduck_if_idle_since(if_idle_since)
             self._quiescing = quiescing = asyncio.ensure_future(quiesce(set(self._admissions)))
             return await finish_command(quiescing)
 
@@ -173,7 +182,7 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
     async def Quiesce(
         self, request: runner_pb2.QuiesceRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.QuiesceResponse:
-        return await self._quiesce(context)
+        return await self._quiesce(context, request.if_idle_since if request.HasField("if_idle_since") else None)
 
     @override
     async def DeliverCommand(

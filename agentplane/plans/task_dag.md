@@ -993,10 +993,7 @@ terminal) and does not yet.
 `idle_since` (`RunnerFacts`), busy while a delivery is under way, the bootstrap runs, or any Session
 has a turn, an unfinished command or a setup script. Remaining: a background or durable process or an
 attached terminal or console also makes the Sandbox busy. The runner does not supervise these, so who
-reports them (the harness adapters, the VM console) is open. And the conditional `Quiesce` compare:
-`Quiesce` takes the `idle_since` it read, compares it directly before `enter_lameduck()` with no
-`await` between, and refuses when the Sandbox became busy since, so a `SubmitInput` that raced the
-idle decision is never admitted into a runner that is then torn down (`SANDBOX_IDLE_EXPIRY`). Test an
+reports them (the harness adapters, the VM console) is open. Test an
 attached terminal that detaches, a background process that outlives a turn, and a runner restart.
 
 ### `SEAL_RENAME` — Seal, Sealed and Sealing get names that say which fact they mean

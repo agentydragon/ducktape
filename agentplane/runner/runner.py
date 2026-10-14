@@ -53,6 +53,10 @@ class SandboxQuiescedError(OpenError):
     pass
 
 
+class SandboxNotIdleError(Exception):
+    pass
+
+
 class SetupFailedError(OpenError):
     """The session's setup failed or was interrupted, so it never resumes."""
 
@@ -373,6 +377,17 @@ class Runner:
     def enter_lameduck(self) -> None:
         """Durably refuse everything but draining operations, across runner restarts."""
         self.store.enter_lameduck()
+
+    def enter_lameduck_if_idle_since(self, token: Timestamp) -> None:
+        """Enter lameduck only if the runner is idle since `token`; a runner already in lameduck stays there.
+        No `await` may separate the compare from the entry."""
+        if self.lameduck:
+            return
+        if self._idle_since is None:
+            raise SandboxNotIdleError("the Sandbox is busy")
+        if self._idle_since.ToMicroseconds() != token.ToMicroseconds():
+            raise SandboxNotIdleError("the Sandbox's idle_since differs from if_idle_since")
+        self.enter_lameduck()
 
     def refuse_work(self) -> None:
         """Raise unless the runner still accepts new work; a sender retries after the Sandbox resumes."""

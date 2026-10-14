@@ -6,6 +6,8 @@ syntax = "proto3";
 
 package agentplane.proto.runner;
 
+import "google/protobuf/timestamp.proto";
+
 enum InitializationStream {
   INITIALIZATION_STREAM_UNSPECIFIED = 0;
   INITIALIZATION_STREAM_STDOUT = 1;
@@ -121,7 +123,13 @@ message SessionSeal {
   bool flushed = 3;
 }
 
-message QuiesceRequest {}
+message QuiesceRequest {
+  // The runner's `idle_since` as the caller last observed it. Absent: quiesce unconditionally. Present: a
+  // runner that is busy, or whose `idle_since` differs at microsecond precision, refuses with `ABORTED`
+  // instead of entering lameduck. Checked only on entry, so a repeat `Quiesce` on a runner already in
+  // lameduck succeeds whatever it carries.
+  optional google.protobuf.Timestamp if_idle_since = 1;
+}
 
 // How far a runner's quiesce has got. A reader treats any value other than `QUIESCE_STAGE_QUIESCED`,
 // one it does not know included, as not final.

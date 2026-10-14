@@ -131,6 +131,7 @@ proto_library(
     name = "runner_proto",
     srcs = ["runner.proto"],
     visibility = ["//visibility:public"],
+    deps = ["@protobuf//:timestamp_proto"],
 )
 
 py_proto_library_with_mypy_stubs(
