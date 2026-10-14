@@ -1,6 +1,6 @@
 """The deployed Dispatcher accepts authenticated app and notification senders."""
 
-from typing import Any
+from typing import Any, cast
 
 import pytest
 import pytest_bazel
@@ -155,7 +155,7 @@ def test_only_testing_app_config_enables_dispatcher_session_openings(
             for doc in agentplane_manifests[namespace]
             if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
         )
-        return yaml.safe_load(config["data"]["config.yaml"])
+        return cast(dict[str, Any], yaml.safe_load(config["data"]["config.yaml"]))
 
     assert app_config(testing.ENV.namespace)["session_dispatcher_open_sessions"] is True
     assert "session_dispatcher_open_sessions" not in app_config(staging.ENV.namespace)
