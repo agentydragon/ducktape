@@ -161,6 +161,7 @@ py_test(
         "//agentplane/proto:session_dispatcher_pb2",
         "@pypi//grpcio",
         "@pypi//pytest_bazel",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )
 

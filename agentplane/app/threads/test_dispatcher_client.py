@@ -57,7 +57,7 @@ async def test_operations_keep_the_command_identity_and_use_the_dispatcher_audie
     channel = grpc.aio.insecure_channel("localhost:1")
     client = SessionDispatcherClient(channel, token_file=token, request_timeout_s=7)
     stub = Stub()
-    client.stub = stub  # type: ignore[assignment]
+    client.stub = stub
     commands = [
         command_pb2.Command(command_id="input", submit_input=command_pb2.SubmitInput(text="hello")),
         command_pb2.Command(command_id="model", change_model=command_pb2.ChangeModel(model="next")),
