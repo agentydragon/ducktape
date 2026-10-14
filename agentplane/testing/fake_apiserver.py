@@ -348,11 +348,22 @@ def sandbox_uid(name: str) -> str:
     return f"uid-{SANDBOXES_PLURAL}-{name}"
 
 
+READY_CONDITION = {
+    "type": "Ready",
+    "status": "True",
+    "reason": "PodReady",
+    "message": "",
+    "lastTransitionTime": "2026-09-01T11:00:00Z",
+}
+
+
 def pod_for(fake: FakeApiServer, sandbox_name: str, *, pod_uid: str, ip: str) -> dict[str, Any]:
     """The Sandbox's Pod, controlled by the stored Sandbox and carrying `pod_uid` and `ip`, which the
     stored Sandbox reports as its incarnation as the Sandbox Controller would."""
     stored = fake.objects[SANDBOXES_PLURAL][sandbox_name]
-    stored.setdefault("status", {})["incarnation"] = {"name": sandbox_name, "uid": pod_uid}
+    status = stored.setdefault("status", {})
+    status["incarnation"] = {"name": sandbox_name, "uid": pod_uid}
+    status["conditions"] = [READY_CONDITION]
     owner = stored["metadata"]
     return {
         "apiVersion": "v1",

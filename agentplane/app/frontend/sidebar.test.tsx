@@ -50,7 +50,7 @@ function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxVie
     created_at: "2026-01-01T00:00:00Z",
     operating_mode: "Running",
     service_account: { namespace: "agentplane-test", name },
-    status: null,
+    status: { conditions: [{ type: "Ready", status: "True" }] },
     phase: "Running",
     pod: {
       name,
@@ -237,7 +237,12 @@ it("applies pushed renames and Sandbox state without marking a suspended harness
   await pushSnapshot(
     stream,
     snapshot([renamed], {
-      "test-sandbox": sandbox("test-sandbox", { operating_mode: "Suspended", phase: "Suspended", pod: null }),
+      "test-sandbox": sandbox("test-sandbox", {
+        operating_mode: "Suspended",
+        phase: "Suspended",
+        pod: null,
+        status: null,
+      }),
       "test-threadless": sandbox("test-threadless", { pod: null }),
     })
   );

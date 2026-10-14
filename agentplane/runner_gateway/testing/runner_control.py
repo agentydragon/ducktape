@@ -21,7 +21,7 @@ from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
 from agentplane.runner_gateway.testing.control_listener import RUNNER_TIMING, serve_runner_control
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
-from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
+from agentplane.testing.fake_apiserver import READY_CONDITION, SANDBOX_NAMESPACE, TokenVerdict
 
 # The control servicer stub names its messages; mypy reads stubs only from direct deps.
 # gazelle:include_dep //agentplane/proto:runner_control_pb2
@@ -41,7 +41,8 @@ def run_in_a_vm(cluster: Cluster) -> None:
     Sandbox and running as its ServiceAccount, and `RUNNER_TOKEN` is that Pod's runner's."""
     del cluster.fake.pods[SANDBOX]
     cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]["status"] = {
-        "incarnation": {"name": LAUNCHER_POD, "uid": LAUNCHER_POD_UID}
+        "incarnation": {"name": LAUNCHER_POD, "uid": LAUNCHER_POD_UID},
+        "conditions": [READY_CONDITION],
     }
     cluster.fake.pods[LAUNCHER_POD] = {
         "apiVersion": "v1",
