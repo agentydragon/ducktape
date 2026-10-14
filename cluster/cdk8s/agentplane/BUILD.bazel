@@ -587,6 +587,7 @@ py_library(
         ":sandbox_controller",
         ":sandbox_pod",
         ":sandbox_service",
+        ":session_dispatcher",
         "//agentplane:subjects",
         "//cluster/cdk8s:namespaces",
         "@pypi//cdk8s",
@@ -930,6 +931,32 @@ py_library(
 )
 
 py_library(
+    name = "session_dispatcher",
+    srcs = ["session_dispatcher.py"],
+    deps = [
+        ":database",
+        ":environment",
+        ":migrate_container",
+        ":service_workload",
+        "//agentplane:crd_group",
+        "//agentplane:subjects",
+        "//agentplane/session_dispatcher:settings",
+        "//cluster/cdk8s:api_resource",
+        "//cluster/cdk8s:cilium",
+        "//cluster/cdk8s:probes",
+        "//cluster/cdk8s:secret_ref",
+        "//cluster/cdk8s:service_ref",
+        "//cluster/cdk8s:settings_file",
+        "//cluster/cdk8s:token_reviewer_rbac",
+        "//cluster/cdk8s/providers/cilium:network_policy",
+        "//util:settings_contract",
+        "@pypi//cdk8s",
+        "@pypi//cdk8s_plus_34",
+        "@pypi//constructs",
+    ],
+)
+
+py_library(
     name = "sandbox_service",
     srcs = ["sandbox_service.py"],
     deps = [
@@ -967,6 +994,27 @@ py_test(
         ":runner_gateway",
         ":runner_sandbox",
         ":sandbox_service",
+        "//:conftest",
+        "@pypi//more_itertools",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_session_dispatcher",
+    # Like test_sandbox_service: synthesizes both environments and imports service Settings.
+    size = "medium",
+    srcs = ["test_session_dispatcher.py"],
+    data = ["@nodejs_linux_amd64//:bin/node"],
+    env = {"JSII_NODE": "$(rootpath @nodejs_linux_amd64//:bin/node)"},
+    deps = [
+        ":app",
+        ":conftest",
+        ":notifications",
+        ":runner_gateway",
+        ":session_dispatcher",
         "//:conftest",
         "@pypi//more_itertools",
         "@pypi//pytest",

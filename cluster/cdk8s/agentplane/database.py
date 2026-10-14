@@ -32,7 +32,7 @@ _CLUSTER_NAME = "postgres"
 # "app"/trajectory database needs no Database/role of its own.
 # `sandbox_commands` holds the Runner Gateway's command admission; `sandbox_service` is the
 # History Service's database, still under its old name: renaming it moves the data.
-_ROLE_NAMES = ["actions", "egress", "notifications", "sandbox_commands", "sandbox_service"]
+_ROLE_NAMES = ["actions", "egress", "notifications", "sandbox_commands", "sandbox_service", "session_dispatcher"]
 _ELECTRIC_ROLE = "electric"
 
 

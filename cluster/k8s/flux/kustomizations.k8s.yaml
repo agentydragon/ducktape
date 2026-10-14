@@ -3761,6 +3761,10 @@ spec:
       kind: Database
       name: sandbox-service
       namespace: agentplane-testing
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: session-dispatcher
+      namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
       name: agentplane-electric
@@ -3776,6 +3780,10 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: agentplane-sandbox-service
+      namespace: agentplane-testing
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-session-dispatcher
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
@@ -3965,6 +3973,10 @@ spec:
       kind: Database
       name: sandbox-service
       namespace: agentplane-staging
+    - apiVersion: postgresql.cnpg.io/v1
+      kind: Database
+      name: session-dispatcher
+      namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment
       name: agentplane-electric
@@ -3980,6 +3992,10 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: agentplane-sandbox-service
+      namespace: agentplane-staging
+    - apiVersion: apps/v1
+      kind: Deployment
+      name: agentplane-session-dispatcher
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment

@@ -1,5 +1,6 @@
 """The Deployment skeleton every Agentplane service shares: its own ServiceAccount, one container in
-the house Pod shape, the Service in front of it, and the environment's replica profile and PDB.
+the house Pod shape, the Service in front of it, and the environment's replica profile and PDB by
+default. A service can supply its own profile when its ownership model requires it.
 
 It builds into the caller's scope rather than a construct of its own: a Deployment's selector is
 its construct path (`cdk8s.io/metadata.addr`), and a selector cannot change on a live Deployment.
@@ -30,7 +31,7 @@ from constructs import Construct
 from more_itertools import one
 
 from cluster.cdk8s import node_scheduling, pod_policy
-from cluster.cdk8s.agentplane.environment import Environment
+from cluster.cdk8s.agentplane.environment import Environment, ReplicaProfile
 from cluster.cdk8s.forgejo_registry.pull_credentials import forgejo_images_creds_secret_ref
 from cluster.cdk8s.service_ref import ServiceRef
 
@@ -85,6 +86,7 @@ def add_service_workload(
     liveness: Probe,
     resources: ContainerResources,
     termination_grace: Duration,
+    replica_profile: ReplicaProfile | None = None,
     args: list[str] | None = None,
     env_variables: dict[str, EnvValue] | None = None,
     migrate: ContainerProps | None = None,
@@ -96,6 +98,7 @@ def add_service_workload(
     labels with the ServiceAccount, Deployment and PDB. Mount volumes into the returned container."""
     name = one({ref.name for ref in serves})
     labels = one({ref.pods for ref in serves}).selector
+    replicas = replica_profile or env.replicas
     # cdk8s_plus_34 defaults ServiceAccounts to automount_token=False; every service calls
     # TokenReview as itself.
     account = ServiceAccount(
@@ -106,9 +109,9 @@ def add_service_workload(
         "deployment",
         metadata=ApiObjectMetadata(name=name, namespace=env.namespace, labels=labels, annotations=annotations),
         pod_metadata=ApiObjectMetadata(labels=labels),
-        replicas=env.replicas.count,
-        strategy=env.replicas.strategy,
-        min_ready=env.replicas.min_ready,
+        replicas=replicas.count,
+        strategy=replicas.strategy,
+        min_ready=replicas.min_ready,
         termination_grace_period=termination_grace,
         service_account=account,
         # Independent of the ServiceAccount's own automount_token, and also False by default.
@@ -141,13 +144,13 @@ def add_service_workload(
         selector=deployment,
         ports=[ref.service_port() for ref in serves],
     )
-    if env.replicas.pdb_min_available is not None:
+    if replicas.pdb_min_available is not None:
         k8s.KubePodDisruptionBudget(
             scope,
             "pdb",
             metadata=k8s.ObjectMeta(name=name, namespace=env.namespace),
             spec=k8s.PodDisruptionBudgetSpec(
-                min_available=k8s.IntOrString.from_number(env.replicas.pdb_min_available),
+                min_available=k8s.IntOrString.from_number(replicas.pdb_min_available),
                 selector=k8s.LabelSelector(match_labels=labels),
             ),
         )

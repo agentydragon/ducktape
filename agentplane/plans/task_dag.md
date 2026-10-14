@@ -750,7 +750,8 @@ flowchart TD
     SANDBOX_SHARED_CODE_MOVE --> SANDBOX_SERVICE_REMOVE
     SANDBOX_SHARED_CODE_MOVE -. land first, then the helper is written once .-> SANDBOX_WRITE_HELPER
     APP_SANDBOX_WRITES --> SANDBOX_SERVICE_REMOVE
-    DISPATCHER_CORE --> DISPATCHER_DEPLOY[Blocked: the Session Dispatcher is deployed]
+    DISPATCHER_CORE --> DISPATCHER_DEPLOY[In flight: the Session Dispatcher is deployed]
+    DISPATCHER_CORE --> DISPATCHER_REPLICA_OWNERSHIP[Candidate: multiple replicas own disjoint Sandboxes]
     DISPATCHER_DEPLOY --> APP_SENDS_VIA_DISPATCHER
     DISPATCHER_DEPLOY --> NOTIFICATIONS_VIA_DISPATCHER
     SESSION_REVIVE --> DISPATCHER_WAKE_ON_SEND
@@ -1187,7 +1188,7 @@ services diagram (12 to 11 services). Code and manifests go together here, after
 ### `DISPATCHER_CORE` — the Session Dispatcher delivers to running Sandboxes
 
 **Candidate.** The service is in `session_dispatcher/` (README there) with its image, built and tested, and not
-deployed; it moves no sender and wakes nothing. What remains, in order:
+deployed; it moves no sender and wakes nothing. What remains:
 
 1. **Deploy it, after the image is pinned.** Deployment (one replica, `Recreate`), Service, database on the shared
    CNPG cluster with the migration init container, Role with `get/list/watch` on `sandboxes`, its account in the
@@ -1195,8 +1196,8 @@ deployed; it moves no sender and wakes nothing. What remains, in order:
 2. **`HARNESS_CONFIRMED` has no writer.** A command stays `RUNNER_ADMITTED` until a fact says it reached the model's
    context; decide which fact (the runner's journal, read from the Lease or the History Service) and settle `submit_input`
    rows on it.
-3. **Replicas shard Sandboxes by a per-Sandbox Lease** so each has one active owner; until then there is one active
-   replica.
+3. **Multiple replicas are a separate follow-up, `DISPATCHER_REPLICA_OWNERSHIP`.** Until it lands, deployment stays
+   at one active replica.
 4. **Authorization names which senders may send** (any `caller_accounts` entry may today); the sender kinds that may
    wake are `DISPATCHER_WAKE_ON_SEND`'s.
 5. **A command whose reply was lost across an incarnation boundary** is redelivered to the next incarnation
@@ -1205,17 +1206,38 @@ deployed; it moves no sender and wakes nothing. What remains, in order:
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
+### `DISPATCHER_REPLICA_OWNERSHIP` — multiple replicas own disjoint Sandboxes
+
+**Candidate; independently finishable from `DISPATCHER_DEPLOY` and sender cutovers.** The accepted control design
+shards Sandboxes among Dispatcher replicas with a per-Sandbox Lease. Until this node lands, `DISPATCHER_DEPLOY`
+keeps one active replica with `Recreate`; this is a temporary correctness limit, not the intended replica model.
+
+Implement per-Sandbox Lease ownership with stale-owner fencing so only the current holder delivers for a Sandbox or
+settles its work. Scope startup recovery to Sandboxes owned by that replica; starting or restarting one replica must
+not reset a live peer's in-flight commands. Keep PostgreSQL change notifications visible across replicas so the owner
+wakes for inserted or changed Dispatches, and make a deleted Sandbox's terminal Dispatch events reach
+`WatchDispatches` streams connected to any replica even though its rows are deleted. Preserve TokenReview caller
+authentication and Dispatcher operation while the integration app is unavailable. Add deterministic tests with at
+least two replicas sharing one database: competing or stale owners cannot deliver or settle the same command; a
+command inserted or changed wakes its owner; a deletion's terminal events reach a watcher on another replica; and
+failover, restart and rejoin recover queued or in-flight work without resetting a live owner's commands.
+
+Changing a manifest to more than one active replica is gated on this node. Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
 ### `DISPATCHER_DEPLOY` — the Session Dispatcher is deployed
 
-**Blocked on `DISPATCHER_CORE` merged and its image, and its migration image, pinned.** The service is
-built and tested but ships no manifests, so no sender can call it. The cdk8s generators add its
+**In flight (Codex, 2026-10-13):** `DISPATCHER_CORE` is merged, and the service and migration images are pinned
+in both environments. The cdk8s generators add its
 Deployment, its CNPG database and migration job, a Role with `get/list/watch` on `sandboxes`
 (`patch` joins it with `DISPATCHER_WAKE_ON_SEND`), the gateway's `caller_accounts` entry that lets the
 Dispatcher call the `Runner` proxy, the network policies both ways, and the Flux wiring; the README's
-services-and-traffic diagram marks it deployed. Image before config: no manifest, flag or required setting
-lands before the image that accepts it is pinned. Test that a Sandbox that becomes `Ready` receives a
-queued command through the deployed pair in `agentplane-testing`, and that a Dispatcher restart loses no
-queued command.
+services-and-traffic diagram shows the Dispatcher route with sender cutover pending. The sender paths
+remain on the Runner Gateway until the Dispatcher is accepted. Image before config: no manifest or
+required setting lands before the image that accepts it is pinned. After merge and Flux reconciliation,
+test in `agentplane-testing` that a
+queued command waits for `Ready` and then reaches the runner, that a Dispatcher restart preserves queued
+commands, and that the service path remains usable with the integration app unavailable. This PR has
+not been merged or reconciled, so those deployment checks remain outstanding.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 

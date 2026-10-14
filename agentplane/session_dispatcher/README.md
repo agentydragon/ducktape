@@ -2,9 +2,12 @@
 
 The durable queue between senders and a Sandbox's runner. A sender stores a command and gets a
 `Dispatch` back at once; the Dispatcher delivers it through the Runner Gateway's runner proxy once the
-Sandbox is `Ready`, and the sender reads where it is. Control design:
-[ADR](../docs/adr_sandbox_session_control.md). Not deployed yet; what remains is in
-[`DISPATCHER_CORE`](../plans/task_dag.md).
+Sandbox is `Ready`, and the sender reads where it is. The manifests configure one active replica in
+staging and testing until `DISPATCHER_REPLICA_OWNERSHIP` lands; this is a temporary correctness limit
+because the delivery loop currently assumes one active owner. The app and Notification Service still
+send through the Runner Gateway pending their cutovers. Control design:
+[ADR](../docs/adr_sandbox_session_control.md). Rollout acceptance is tracked in
+[`DISPATCHER_DEPLOY`](../plans/task_dag.md).
 
 ## Contract
 
@@ -40,7 +43,9 @@ Nothing polls: delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandb
 
 ## Deviations and gaps
 
-- One active replica: the delivery loop assumes it is the only one.
+- The delivery loop has no per-Sandbox Lease ownership. Deleted-Sandbox terminal events are handed only
+  to streams on the replica that processed the deletion. Multi-replica support is tracked in
+  [`DISPATCHER_REPLICA_OWNERSHIP`](../plans/task_dag.md).
 - `HARNESS_CONFIRMED` has no writer, so inputs stay `RUNNER_ADMITTED`.
 - Any account in `caller_accounts` may send to any Sandbox.
 

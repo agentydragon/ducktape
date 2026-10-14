@@ -213,6 +213,46 @@ spec:
 apiVersion: generators.external-secrets.io/v1alpha1
 kind: Password
 metadata:
+  name: postgres-session-dispatcher-generator
+  namespace: agentplane-testing
+spec:
+  allowRepeat: true
+  digits: 8
+  length: 40
+  noUpper: false
+  symbols: 0
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: postgres-session-dispatcher
+  namespace: agentplane-testing
+spec:
+  dataFrom:
+    - sourceRef:
+        generatorRef:
+          apiVersion: generators.external-secrets.io/v1alpha1
+          kind: Password
+          name: postgres-session-dispatcher-generator
+  refreshInterval: 8760h
+  target:
+    name: postgres-session-dispatcher
+    template:
+      data:
+        dbname: session_dispatcher
+        host: postgres-rw.agentplane-testing.svc
+        password: "{{ .password }}"
+        port: "5432"
+        uri: postgresql://session_dispatcher:{{ .password }}@postgres-rw.agentplane-testing.svc:5432/session_dispatcher
+        username: session_dispatcher
+      metadata:
+        labels:
+          cnpg.io/reload: "true"
+      type: kubernetes.io/basic-auth
+---
+apiVersion: generators.external-secrets.io/v1alpha1
+kind: Password
+metadata:
   name: postgres-electric-generator
   namespace: agentplane-testing
 spec:
@@ -300,6 +340,11 @@ spec:
           name: postgres-sandbox-service
       - ensure: present
         login: true
+        name: session_dispatcher
+        passwordSecret:
+          name: postgres-session-dispatcher
+      - ensure: present
+        login: true
         name: electric
         passwordSecret:
           name: postgres-electric
@@ -377,6 +422,18 @@ spec:
   databaseReclaimPolicy: delete
   name: sandbox_service
   owner: sandbox_service
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: session-dispatcher
+  namespace: agentplane-testing
+spec:
+  cluster:
+    name: postgres
+  databaseReclaimPolicy: delete
+  name: session_dispatcher
+  owner: session_dispatcher
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -1986,6 +2043,290 @@ spec:
 apiVersion: v1
 kind: ConfigMap
 metadata:
+  name: agentplane-session-dispatcher-config
+  namespace: agentplane-testing
+data:
+  config.yaml: |
+    namespace: agentplane-testing
+    caller_accounts:
+      - namespace: agentplane-testing
+        name: agentplane-app
+      - namespace: agentplane-testing
+        name: agentplane-notifications
+    token_audience: agentplane-session-dispatcher
+    runner_control_target: "{sandbox}-control.{namespace}.svc:8080"
+    runner_token_file: /var/run/secrets/agentplane-runner-gateway/token
+    port: 8080
+immutable: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: agentplane-session-dispatcher
+  namespace: agentplane-testing
+automountServiceAccountToken: true
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-session-dispatcher
+  name: agentplane-session-dispatcher
+  namespace: agentplane-testing
+spec:
+  minReadySeconds: 0
+  progressDeadlineSeconds: 600
+  replicas: 1
+  revisionHistoryLimit: 10
+  selector:
+    matchLabels:
+      cdk8s.io/metadata.addr: agentplane-session-dispatcher-deployment-c87227ec
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: agentplane-session-dispatcher
+        cdk8s.io/metadata.addr: agentplane-session-dispatcher-deployment-c87227ec
+    spec:
+      automountServiceAccountToken: true
+      containers:
+        - env:
+            - name: AGENTPLANE_SESSION_DISPATCHER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-session-dispatcher
+            - name: AGENTPLANE_SESSION_DISPATCHER_CONFIG_FILE
+              value: /etc/agentplane-session-dispatcher/config.yaml
+          image: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher:unset
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            failureThreshold: 3
+            grpc:
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 30
+          name: session-dispatcher
+          ports:
+            - containerPort: 8080
+              name: grpc
+              protocol: TCP
+          readinessProbe:
+            failureThreshold: 3
+            grpc:
+              port: 8080
+            initialDelaySeconds: 3
+            periodSeconds: 10
+          resources:
+            limits:
+              memory: 512Mi
+            requests:
+              cpu: 50m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+          volumeMounts:
+            - mountPath: /etc/agentplane-session-dispatcher
+              name: configmap-agentplane-session-dispatcher-config
+              readOnly: true
+            - mountPath: /var/run/secrets/agentplane-runner-gateway
+              name: runner-gateway-token
+              readOnly: true
+      dnsPolicy: ClusterFirst
+      hostNetwork: false
+      imagePullSecrets:
+        - name: forgejo-images-creds
+      initContainers:
+        - env:
+            - name: AGENTPLANE_SESSION_DISPATCHER_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  key: uri
+                  name: postgres-session-dispatcher
+          image: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher-migrate:unset
+          imagePullPolicy: Always
+          name: migrate
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              cpu: 25m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            privileged: false
+            readOnlyRootFilesystem: false
+            runAsNonRoot: true
+      nodeSelector:
+        topology.kubernetes.io/zone: hil-ovh
+      restartPolicy: Always
+      securityContext:
+        fsGroup: 1000
+        fsGroupChangePolicy: Always
+        runAsGroup: 1000
+        runAsNonRoot: true
+        runAsUser: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      serviceAccountName: agentplane-session-dispatcher
+      setHostnameAsFQDN: false
+      shareProcessNamespace: false
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - configMap:
+            name: agentplane-session-dispatcher-config
+          name: configmap-agentplane-session-dispatcher-config
+        - name: runner-gateway-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-runner-gateway
+                  expirationSeconds: 3600
+                  path: token
+---
+apiVersion: v1
+kind: Service
+metadata:
+  labels:
+    app.kubernetes.io/name: agentplane-session-dispatcher
+  name: agentplane-session-dispatcher
+  namespace: agentplane-testing
+spec:
+  externalIPs: []
+  ports:
+    - name: grpc
+      port: 8080
+      protocol: TCP
+      targetPort: 8080
+  selector:
+    cdk8s.io/metadata.addr: agentplane-session-dispatcher-deployment-c87227ec
+  type: ClusterIP
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: agentplane-testing-session-dispatcher-token-reviewer
+rules:
+  - apiGroups:
+      - authentication.k8s.io
+    resources:
+      - tokenreviews
+    verbs:
+      - create
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: agentplane-testing-session-dispatcher-token-reviewer
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: agentplane-testing-session-dispatcher-token-reviewer
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-session-dispatcher
+    namespace: agentplane-testing
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-session-dispatcher
+  namespace: agentplane-testing
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxes
+    verbs:
+      - get
+      - list
+      - watch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-session-dispatcher
+  namespace: agentplane-testing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-session-dispatcher
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-session-dispatcher
+    namespace: agentplane-testing
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-session-dispatcher
+  namespace: agentplane-testing
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+    - toEndpoints:
+        - matchLabels:
+            k8s:cnpg.io/cluster: postgres
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "5432"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-runner-gateway
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-session-dispatcher
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-app
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-notifications
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
   name: agentplane-runner-gateway-config
   namespace: agentplane-testing
 data:
@@ -1996,6 +2337,8 @@ data:
         name: agentplane-app
       - namespace: agentplane-testing
         name: agentplane-notifications
+      - namespace: agentplane-testing
+        name: agentplane-session-dispatcher
     token_audience: agentplane-runner-gateway
     sandbox_controller_account:
       namespace: agentplane-testing
@@ -2289,6 +2632,14 @@ spec:
     - fromEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-notifications
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - fromEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-session-dispatcher
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
         - ports:
