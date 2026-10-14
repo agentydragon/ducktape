@@ -41,8 +41,9 @@ send through the Runner Gateway pending their cutovers. Control design:
   wake, and the Sandbox must also have `spec.wakeOnSend: true`. Both fields default off. The Dispatcher
   stores the old incarnation before using the shared guarded resume helper, retries that helper after
   transient failures and restarts, and delivers only after a different incarnation becomes `Ready`.
-  `InterruptTurn` and `StopRunnerSession` never wake. Per-sender rate and quota policy remains a separate
-  follow-up and must be decided before this setting is enabled.
+  `InterruptTurn` and `StopRunnerSession` never wake. The initial policy is 10 wakes per minute per authenticated caller; shared,
+  retry-safe enforcement is still pending and must land before this setting is enabled. Rate and
+  algorithm tuning remain a later TODO; this policy does not expand the caller allowlist.
 
 Nothing polls: delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandbox change (the
 `ListWatch` on Sandboxes) or a retry deadline.

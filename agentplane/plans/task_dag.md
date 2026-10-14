@@ -16,6 +16,19 @@ A **capstone** closes an integrated contract, not another implementation. Solid 
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
+Dispatch assignments (Rai authorized, Codex reported, 2026-10-14):
+
+| Worker              | Assigned sequence; each successor retains its node's gates                                                                                                                                                                                                                   |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dispatcher`        | Finish app command sends (#10475); wake limits, selective revival and failure feedback; complete app Session defaults and Dispatcher creation/resume; app/wake/UI activation and direct sender removal.                                                                      |
+| `resume_acceptance` | Finish Pod/VM storage acceptance; separate concrete Sandbox cutoff PR; typed workspace template rollout; legacy DataVolume retirement.                                                                                                                                       |
+| `sandbox_service`   | Finish replica ownership (#10469) and terminal broadcast (#10478); notification activation and direct sender removal; Sandbox Service config removal and service retirement; replica activation and Gateway wrapper/RPC/database retirement as caller and image gates clear. |
+| Coordinator         | Isolated k3s measurements/CI work, integration review and DAG burn-down.                                                                                                                                                                                                     |
+
+These are assignments, not claims that gated work has started. Independent config changes can
+proceed while behavior PRs are under review. Publish drafts as soon as a branch has reviewable work,
+with remaining gates in the body; Rai merges each PR by hand. Storage acceptance remains the priority.
+
 ## 1. Session schema and identity follow-up
 
 ```mermaid
@@ -1078,7 +1091,8 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `SANDBOX_SERVICE_CONFIG_REMOVE` — stop configuring the retired Sandbox Service clients
 
-**Blocked on the #10466 app image being pinned in testing and staging.** Direct app lifecycle config
+**Assigned to the Sandbox Service worker; recheck the #10466 app image pin before config removal.**
+The accepting image was verified pinned in testing and staging on 2026-10-14. Direct app lifecycle config
 has rolled out; the optional-target receiver and conditional channel/health probe have merged.
 Remove the app's `sandbox_service_target`, token projection and obsolete network edge, and the
 Notification Service's unused `sandbox_service` config, token and egress rule. Check all remaining
@@ -1107,7 +1121,7 @@ two-replica evidence; terminal-event broadcast and manifest activation are separ
 
 ### `DISPATCHER_TERMINAL_BROADCAST` — deletion outcomes reach streams on every replica
 
-**In flight (Codex, 2026-10-14); separate PR from ownership.** A Sandbox deletion terminalizes and
+**In flight (Codex, 2026-10-14), draft #10478; separate PR from ownership.** A Sandbox deletion terminalizes and
 deletes its Dispatch/SessionOpening rows in one transaction. Broadcast exact terminal Dispatch
 snapshots through transactional PostgreSQL notifications, bounded into chunks and assembled before
 fanout. A listener gap or incomplete event must fail the affected watch explicitly; do not imply
@@ -1124,11 +1138,18 @@ and deletion events across replica boundaries without the app. Then remove the o
 singleton warnings from docs. This node finishes with the restriction gone, not merely a successful
 experiment; preserve the normal Lease renewal/fencing machinery.
 
-### `DISPATCHER_WAKE_ABUSE_LIMITS` — choose wake budgets before activation
+### `DISPATCHER_WAKE_ABUSE_LIMITS` — enforce the initial wake budget
 
-**Decision.** Review rates/per-sender quotas and authority for user and notification wakeups; no
-invented numeric limits. Keep agents unable to wake until their authority is reviewed. Drafting
-policy is independent of the defaults-off implementation; add its implementation node on decision.
+**Candidate; assigned to the Dispatcher worker. Operator, 2026-10-14: use an initial limit of
+10 wakes per minute and leave tuning for later.** Enforce the budget per authenticated caller,
+shared across Dispatcher replicas and restarts. Deduplicate retries of the same wake and test
+concurrent requests, limit exhaustion and recovery. Surface exhaustion explicitly; do not drop
+queued work or poll for budget availability. Preserve the existing wake allowlist and per-Sandbox
+policy; this decision does not authorize agent callers or change destination authorization.
+Keep wake activation off until enforcement and its accepting image are deployed.
+
+TODO: tune the rate and algorithm from observed use; initial numerical tuning is not an activation
+gate. Document the accounting window and which attempted wakes consume the budget in the implementation.
 
 ### `SELECTIVE_SESSION_REVIVAL` — resume only native Sessions with pending work
 
@@ -1205,7 +1226,8 @@ merely because command sends moved.
 
 ### `NOTIFICATIONS_VIA_DISPATCHER` — notifications send through the Session Dispatcher
 
-**Blocked on the #10465 Notification Service image being pinned in both environments.**
+**Assigned to the Sandbox Service worker; recheck the #10465 image pin before activation.**
+The accepting image was verified pinned in testing and staging on 2026-10-14.
 The optional sender implementation has merged; this node is the manifest activation and acceptance. The Notification Service sends its
 notices through the Session Dispatcher and keeps choosing when to deliver from its existing quiet window.
 It submits the already persisted notice ID and text, treats queued as
