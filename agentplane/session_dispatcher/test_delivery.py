@@ -130,14 +130,20 @@ async def test_a_command_the_runner_refuses_fails_with_its_status(
     assert row.admission is None
 
 
-async def test_commands_for_a_deleted_sandbox_fail(
+async def test_commands_for_a_deleted_sandbox_are_forgotten(
     store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster
 ) -> None:
     set_sandbox(cluster, ready=False)
     await enqueue(store, sandboxes, "orphaned")
     await wait_for(store, "orphaned", DeliveryState.QUEUED_IN_DISPATCHER, Reason.SANDBOX_NOT_READY)
     cluster.fake.delete(sandbox_resource.SANDBOXES_PLURAL, SANDBOX)
-    await wait_for(store, "orphaned", DeliveryState.FAILED, Reason.SANDBOX_DELETED)
+    changed = asyncio.Event()
+    with store.wakeups.changes[Channel.DISPATCH].subscribe(changed):
+        while True:
+            changed.clear()
+            if not await store.list_dispatches(session_id=SESSION):
+                break
+            await changed.wait()
 
 
 if __name__ == "__main__":

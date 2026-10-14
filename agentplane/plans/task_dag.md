@@ -1158,13 +1158,11 @@ deployed; it moves no sender and wakes nothing. What remains, in order:
    rows on it.
 3. **Replicas shard Sandboxes by a per-Sandbox Lease** so each has one active owner; until then there is one active
    replica.
-4. **Dispatch-row retention.** The operator's policy is to keep a terminal Dispatch while its Sandbox exists, and
-   rows are kept past the Sandbox's deletion today; decide whether they go with it.
-5. **Authorization names which senders may send** (any `caller_accounts` entry may today); the sender kinds that may
+4. **Authorization names which senders may send** (any `caller_accounts` entry may today); the sender kinds that may
    wake are `DISPATCHER_WAKE_ON_SEND`'s.
-6. **A command whose reply was lost across an incarnation boundary** is redelivered to the next incarnation
+5. **A command whose reply was lost across an incarnation boundary** is redelivered to the next incarnation
    (`THREAD_SUCCESSOR_DELIVERY`).
-7. **Poison commands** get no special handling yet.
+6. **Poison commands** get no special handling yet.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 

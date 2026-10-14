@@ -68,13 +68,13 @@ class Delivery:
 
     async def _end_vanished(self) -> None:
         """Sandboxes deleted while this process was down: the first listing is complete."""
-        for uid in await self.store.unfinished_sandbox_uids() - self.sandboxes.live_uids():
-            await self.store.end_sandbox(uid)
+        for uid in await self.store.list_sandbox_uids() - self.sandboxes.live_uids():
+            await self.store.forget_sandbox(uid)
 
     async def _end_gone(self) -> None:
         while self.sandboxes.gone:
             uid = next(iter(self.sandboxes.gone))
-            await self.store.end_sandbox(uid)
+            await self.store.forget_sandbox(uid)
             self.sandboxes.gone.discard(uid)
 
     def _next_retry_in(self) -> float | None:

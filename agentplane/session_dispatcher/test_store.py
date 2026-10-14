@@ -117,31 +117,20 @@ async def test_only_a_queued_command_is_cancelled(store: DispatchStore) -> None:
         await store.cancel("missing")
 
 
-async def test_a_deleted_sandbox_fails_what_was_queued_and_leaves_the_outcome_of_the_rest_unknown(
-    store: DispatchStore,
-) -> None:
-    for command_id in ("queued", "delivering", "admitted"):
-        await enqueue(store, submit(command_id), session_id=command_id)
+async def test_a_deleted_sandbox_takes_its_rows_with_it(store: DispatchStore) -> None:
+    await enqueue(store, submit("queued"), session_id="queued")
+    await enqueue(store, submit("admitted"), session_id="admitted")
     await enqueue(store, submit("other-sandbox"), session_id="other", sandbox_uid=UUID(int=2))
-    await store.settle(
-        "delivering", from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.DELIVERING_TO_RUNNER
-    )
     await store.settle(
         "admitted",
         from_states={DeliveryState.QUEUED_IN_DISPATCHER},
         to=DeliveryState.RUNNER_ADMITTED,
         admission=event_log_pb2.EventEntry(),
     )
-    assert await store.unfinished_sandbox_uids() == {SANDBOX_UID, UUID(int=2)}
-    await store.end_sandbox(SANDBOX_UID)
-    states = {row.command_id: row.state for row in await store.list_dispatches(sandbox_name=SANDBOX)}
-    assert states == {
-        "queued": DeliveryState.FAILED,
-        "delivering": DeliveryState.UNKNOWN,
-        "admitted": DeliveryState.UNKNOWN,
-        "other-sandbox": DeliveryState.QUEUED_IN_DISPATCHER,
-    }
-    assert await store.unfinished_sandbox_uids() == {UUID(int=2)}
+    assert await store.list_sandbox_uids() == {SANDBOX_UID, UUID(int=2)}
+    await store.forget_sandbox(SANDBOX_UID)
+    assert [row.command_id for row in await store.list_dispatches(sandbox_name=SANDBOX)] == ["other-sandbox"]
+    assert await store.list_sandbox_uids() == {UUID(int=2)}
 
 
 async def test_a_call_in_flight_when_the_dispatcher_stopped_is_queued_again(store: DispatchStore) -> None:

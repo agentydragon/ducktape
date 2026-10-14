@@ -4,7 +4,7 @@ from collections.abc import Collection
 from datetime import UTC, datetime
 from uuid import UUID
 
-from sqlalchemy import ColumnElement, exists, func, select, update
+from sqlalchemy import ColumnElement, delete, exists, func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
@@ -198,47 +198,19 @@ class DispatchStore:
                 reason=Reason.DISPATCHER_RESTARTED,
             )
 
-    async def end_sandbox(self, sandbox_uid: UUID) -> None:
-        """The Sandbox is gone: what never reached its runner failed, and what did or may have has an
-        outcome nobody can read any more. An admitted command with no model-context step is settled."""
+    async def forget_sandbox(self, sandbox_uid: UUID) -> None:
+        """The Sandbox is gone, and its rows are kept only as long as it exists."""
         async with self.sessions.begin() as session:
-            for_sandbox = Dispatch.sandbox_uid == sandbox_uid
-            await self._move(
-                session,
-                for_sandbox,
-                Dispatch.state == DeliveryState.QUEUED_IN_DISPATCHER,
-                to=DeliveryState.FAILED,
-                reason=Reason.SANDBOX_DELETED,
+            deleted = await session.execute(
+                delete(Dispatch).where(Dispatch.sandbox_uid == sandbox_uid).returning(Dispatch.position)
             )
-            await self._move(
-                session,
-                for_sandbox,
-                (Dispatch.state == DeliveryState.DELIVERING_TO_RUNNER)
-                | ((Dispatch.state == DeliveryState.RUNNER_ADMITTED) & (Dispatch.operation == Operation.SUBMIT_INPUT)),
-                to=DeliveryState.UNKNOWN,
-                reason=Reason.SANDBOX_DELETED,
-            )
+            if deleted.first() is not None:
+                await notify(session, Channel.DISPATCH)
 
-    async def unfinished_sandbox_uids(self) -> set[UUID]:
+    async def list_sandbox_uids(self) -> set[UUID]:
+        """The Sandboxes that rows are stored for."""
         async with self.sessions() as session:
-            return {
-                uid
-                for uid in (
-                    await session.scalars(
-                        select(Dispatch.sandbox_uid)
-                        .where(
-                            Dispatch.sandbox_uid.is_not(None),
-                            (Dispatch.state.in_(LIVE_STATES))
-                            | (
-                                (Dispatch.state == DeliveryState.RUNNER_ADMITTED)
-                                & (Dispatch.operation == Operation.SUBMIT_INPUT)
-                            ),
-                        )
-                        .distinct()
-                    )
-                ).all()
-                if uid is not None
-            }
+            return {uid for uid in await session.scalars(select(Dispatch.sandbox_uid).distinct()) if uid is not None}
 
     @staticmethod
     async def _move(session: AsyncSession, *where: ColumnElement[bool], to: DeliveryState, reason: Reason) -> None:
