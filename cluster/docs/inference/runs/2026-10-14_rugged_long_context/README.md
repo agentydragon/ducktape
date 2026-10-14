@@ -1,0 +1,21 @@
+# Rugged AC-powered NPU repeat and long-context capacity probe (2026-10-14)
+
+This is a bounded **diagnostic**, not a production configuration. It checks whether the local Qwen3 4B Ollama/Vulkan runtime can allocate a 131,072-token context and process prompts approaching that limit without silent truncation, while keeping enough memory available for the desktop. The [canonical rugged inference assessment](../../rugged_local_llm.md) owns operational recommendations.
+
+## Models and measurement contracts
+
+- NPU AC repeat: the same `Qwen2.5-Coder-1.5B-Instruct` INT4 OpenVINO IR and explicit `NPU` device used in the [NPU run](../2026-10-13_rugged_npu_openvino/README.md). The six [request files](ac_speed_requests/) are byte-for-byte copies of the Qwen3 4B requests in the AC GPU speed run; different model/tokenizers mean input-token counts need not match. Each request caps output at 256 tokens. This repeats throughput under AC power without redoing the 60-sample coding evaluation.
+- Long context: cached `qwen3:4b-instruct-2507-q4_K_M`, Ollama-reported model digest `0edcdef34593eac1aa2be9c7d06c432dcf81945adca5eca2f27662c18f168ba0`, GGUF blob SHA-256 `85e4a5b7b8ef0e48af0e8658f5aaab9c2324c76c1641493f4d1e25fce54b18b9`. [Qwen's source config](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507/blob/main/config.json) declares `max_position_embeddings=262144`, which is model capability, not observed host throughput. The exact [Ollama tag](https://ollama.com/library/qwen3:4b-instruct-2507-q4_K_M) is Q4_K_M.
+- `probe.py` deterministically creates independent ~32k, ~64k, and ~124k-token user-content ledgers with three codes at the start, middle, and end. [The manifest](results/qwen3-4b/prompt_manifest.json) pins source-tokenizer SHA-256, exact token counts, prompt hashes, and expected codes. Source tokenizer: `https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507/resolve/main/tokenizer.json`, SHA-256 `aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4`. Independent tokenization sizes the request; the Ollama [native `prompt_eval_count`](https://docs.ollama.com/api/chat) and runner logs establish what the server actually processed. The API also reports cached prompt tokens and nanosecond durations.
+
+The earlier 32k run allocated 4,608 MiB of **F16** KV for this model. Ollama [documents](https://docs.ollama.com/faq) that Flash Attention can run automatically and q8_0 KV uses roughly half the memory of F16. That suggests around 9 GiB of KV at 131,072 tokens, plus weights and compute buffers. This is an estimate until the actual runner log confirms the allocated context and K/V types. Larger [context allocation increases memory](https://docs.ollama.com/context-length); the model's advertised maximum alone does not prove this machine can load or process it.
+
+## Safety and interpretation
+
+Only a separate user-level Ollama server on `127.0.0.1:11510` uses `OLLAMA_FLASH_ATTENTION=1`, `OLLAMA_KV_CACHE_TYPE=q8_0`, and the existing cached model. The system service is untouched. The probe verifies the server PID and host before it can signal that temporary server. It samples `MemAvailable` and memory PSI every two seconds and terminates the temporary server if available memory drops below 8 GiB or the time budget expires. An 8k-context load first establishes whether this build really honors q8_0 on Vulkan. A subsequent tiny request at 131,072 checks allocation separately from processing a long prompt.
+
+`/api/ps.context_length` and a `131072 cells` runner log show allocation, but do **not** prove a 128k prompt was processed. For processing, compare the independently counted prompt with `prompt_eval_count`, `prompt_eval_cached_count`, the runner's `task.n_tokens`, and the returned codes. A censored request or a smaller count is reported as a limit of this run, never as successful 128k processing. Host `MemAvailable` is a different measure from Ollama's `size_vram`, process RSS, and physical GPU VRAM. The long-prompt latency includes any cache effects shown by the native cached-count field.
+
+## Raw results
+
+To be added after the shared inference slot. `npu_ac_results.jsonl`, `results/qwen3-4b/results.jsonl`, `memory_samples.jsonl`, and the temporary Ollama runner log are the primary records. All generated responses and native usage fields remain in the JSONL, with no manual success substitution.

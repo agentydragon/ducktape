@@ -1,0 +1,59 @@
+{
+  "model": "qwen3:4b-instruct-2507-q4_K_M",
+  "num_ctx_requested": 131072,
+  "targets": [
+    {
+      "target_content_tokens": 32000,
+      "content_tokens": 31984,
+      "line_count": 1176,
+      "expected_codes": {
+        "FIRST_KEY": "AB083F",
+        "MIDDLE_KEY": "05C842",
+        "LAST_KEY": "41A9CD"
+      },
+      "anchor_rows": {
+        "FIRST_KEY": 11,
+        "MIDDLE_KEY": 588,
+        "LAST_KEY": 1165
+      },
+      "prompt_sha256": "2d853def6d31c36e00623275fa5e8a079e09fa02d33eed7e3ad30633a719bcf0",
+      "prompt_bytes": 116611
+    },
+    {
+      "target_content_tokens": 64000,
+      "content_tokens": 63991,
+      "line_count": 2362,
+      "expected_codes": {
+        "FIRST_KEY": "AB083F",
+        "MIDDLE_KEY": "05C842",
+        "LAST_KEY": "41A9CD"
+      },
+      "anchor_rows": {
+        "FIRST_KEY": 23,
+        "MIDDLE_KEY": 1181,
+        "LAST_KEY": 2339
+      },
+      "prompt_sha256": "b347ba62ebc601ee57340005b99e395d48d0004230d6c397ec7fe388f6a60a7e",
+      "prompt_bytes": 233935
+    },
+    {
+      "target_content_tokens": 124000,
+      "content_tokens": 123982,
+      "line_count": 4582,
+      "expected_codes": {
+        "FIRST_KEY": "AB083F",
+        "MIDDLE_KEY": "05C842",
+        "LAST_KEY": "41A9CD"
+      },
+      "anchor_rows": {
+        "FIRST_KEY": 45,
+        "MIDDLE_KEY": 2291,
+        "LAST_KEY": 4537
+      },
+      "prompt_sha256": "da1a841a5508a2ecffa0e7cfdec824ca6f50730f7f227c28fb13b1239cf133c5",
+      "prompt_bytes": 453542
+    }
+  ],
+  "tokenizer_sha256": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+  "generated_at_utc": "2026-10-14T07:19:01Z"
+}
