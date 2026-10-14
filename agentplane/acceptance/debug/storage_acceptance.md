@@ -173,3 +173,25 @@ remained and storage usage returned to 5Gi/80Gi. The test artifact's `cleanup_co
 false because the exception interrupted its final evidence write, so the post-run inventory is the
 cleanup evidence. No retry or timeout change is included; fresh-format and retained-remount acceptance
 for the newer guest image remains open.
+
+### Bounded readiness diagnostic rerun
+
+A second VM-only `vm-raw` attempt ran on 2026-10-14 from source revision `be0cd7281a`, with the same
+controller and guest pins. The [BuildBuddy invocation](https://app.buildbuddy.io/invocation/a7fd30d1-fba8-49a4-b4f6-4676ea54be3b)
+failed at the existing 300-second `Ready` wait (pytest 355.38 seconds; Bazel test action 363.3 seconds).
+The diagnostic artifact records fixture `accept-storage-vm-raw-ce382d8b`, Sandbox UID
+`46c520ee-b521-4b89-b63b-0baf57cf79f0`, and the base `runner-vm` template's `RawDiskImage`/ext4
+workspace. Its state-volume layout was still omitted, so this run did not exercise the explicit
+`DirectoryTree` template declaration proposed separately.
+
+The VM and VMI reached `Running` and `Ready`, and the 5/5 launcher Pod became Ready. Sandbox
+`WorkloadReady` was true, but `RunnerConnected` stayed false with `NeverConnected`; `Bootstrapped`
+remained unknown with `BootstrapNotReported`. Thus this attempt stopped before fresh-format,
+remount, or retained-data checks and does not establish a storage-format failure. Fixture-scoped
+events include a temporary egress-sidecar readiness-probe connection refusal during startup, but
+the captured evidence does not establish its relationship to the missing runner connection. No
+in-guest service log was captured, so the reason the runner did not connect remains unresolved.
+
+Post-run reads confirmed the exact Sandbox, VM, VMI, launcher Pod, two PVCs, and matching PVs were
+absent; only `postgres-1` remained and storage usage returned to 5Gi/80Gi. No staging resources were
+changed, and no further acceptance run or timeout change is included.
