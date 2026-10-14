@@ -66,6 +66,12 @@ message SetupFinished {
 // The runner stopped before it observed a terminal exit. Reopening cannot rerun the script.
 message SetupInterrupted {}
 
+// A runner under another incarnation continued this Session's journal after the seal the earlier one
+// wrote. The next entries are the new incarnation's.
+message JournalReopened {
+  string incarnation_uid = 1;
+}
+
 // The emitting source has fsynced this exact Command and owns trying to process it. It does not
 // promise native delivery, model selection, interruption, or a timing category.
 message CommandAdmitted {
@@ -237,5 +243,6 @@ message Event {
     SetupFinished setup_finished = 27;
     SetupInterrupted setup_interrupted = 28;
     HarnessLaunchFailed harness_launch_failed = 29;
+    JournalReopened journal_reopened = 30;
   }
 }

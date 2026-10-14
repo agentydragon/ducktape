@@ -205,7 +205,7 @@ class ProjectionBatch:
     payload_writes: tuple[PayloadWrite, ...]
 
 
-_SILENT = frozenset({"native", "harness_stderr", "debug_checkpoint"})
+_SILENT = frozenset({"native", "harness_stderr", "debug_checkpoint", "journal_reopened"})
 _LIFECYCLE = frozenset(
     {
         "turn_started",

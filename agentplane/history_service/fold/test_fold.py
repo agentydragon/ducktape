@@ -518,5 +518,14 @@ def test_setup_output_and_failure_remain_visible_lifecycle_evidence() -> None:
     assert store.state.position.through_cursor == 3
 
 
+def test_a_reopened_journal_advances_the_projection_without_a_row() -> None:
+    store = Store()
+    result = store.apply(
+        [entry(1, event_pb2.Event(journal_reopened=event_pb2.JournalReopened(incarnation_uid="test-incarnation")))]
+    )
+    assert (result.lifecycle_upserts, result.item_upserts) == ((), ())
+    assert store.state.position.through_cursor == 1
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
