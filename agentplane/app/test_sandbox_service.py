@@ -23,7 +23,8 @@ from agentplane.runner.runner import Runner
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
-from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, authenticated_service, kubernetes
+from agentplane.sandbox_service.testing.connected_runner import authenticated_service
+from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, kubernetes
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 
 # gazelle:include_dep @pypi//protobuf

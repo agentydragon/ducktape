@@ -372,6 +372,7 @@ py_test(
         "//agentplane/runner/testing:scripted_model",
         "//agentplane/runner_gateway/testing:grpc_service",
         "//agentplane/runner_gateway/testing:resources",
+        "//agentplane/sandbox_service/testing:connected_runner",
         "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
