@@ -77,6 +77,11 @@ class Settings(AppSettingsConfig):
     runner_gateway_target: str = Field(
         min_length=1, description="The Runner Gateway's gRPC host:port, serving Sessions."
     )
+    session_dispatcher_target: str | None = Field(
+        default=None,
+        min_length=1,
+        description="Optional Session Dispatcher gRPC host:port for Thread commands. Leave unset until the app image is pinned.",
+    )
     runner_gateway_control_target: str = Field(
         min_length=1,
         description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
@@ -90,6 +95,11 @@ class Settings(AppSettingsConfig):
     runner_gateway_token_file: Path = Field(
         description="The rotating projected ServiceAccount token for the Runner Gateway audience."
     )
+    session_dispatcher_token_file: Path = Field(
+        default=Path("/var/run/secrets/agentplane-session-dispatcher/token"),
+        description="The rotating projected ServiceAccount token for the Session Dispatcher audience.",
+    )
+    session_dispatcher_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     history_service_token_file: Path = Path("/var/run/secrets/agentplane-history-service/token")
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)

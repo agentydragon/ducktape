@@ -121,6 +121,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         "//:node_modules/@bufbuild/protobuf",
+        "//agentplane/app/frontend:client",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
     ],
@@ -133,6 +134,7 @@ agentplane_vitest_test(
         ":local_commands",
         "//:node_modules/@bufbuild/protobuf",
         "//:node_modules/vitest",
+        "//agentplane/app/frontend:client",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_log_pb",
     ],

@@ -35,6 +35,7 @@ from agentplane.app.settings import Settings
 from agentplane.app.shutdown import Drain, drain_of
 from agentplane.app.system_status import SystemStatusChecker, grpc_health_probe, http_health_probe
 from agentplane.app.threads.bridge import RunnerBridge
+from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.history_watch import HistoryWatch, SessionOpenings
 from agentplane.app.threads.runner_directory import RunnerDirectory
@@ -123,6 +124,11 @@ async def async_main(settings: Settings) -> None:
             else nullcontext()
         ) as sandbox_service_channel,
         dial(settings.runner_gateway_target) as gateway_channel,
+        (
+            dial(settings.session_dispatcher_target)
+            if settings.session_dispatcher_target is not None
+            else nullcontext()
+        ) as dispatcher_channel,
         dial(settings.history_service_target) as history_health_channel,
         HistoryServiceClient(
             settings.history_service_target,
@@ -165,6 +171,15 @@ async def async_main(settings: Settings) -> None:
                 lifecycle_timeout_s=settings.sandbox_service_lifecycle_timeout_s,
             ),
         )
+        dispatcher = (
+            SessionDispatcherClient(
+                dispatcher_channel,
+                token_file=settings.session_dispatcher_token_file,
+                request_timeout_s=settings.session_dispatcher_request_timeout_s,
+            )
+            if settings.session_dispatcher_target is not None
+            else None
+        )
         # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
         # binding to the authenticated Sandbox, and where the owner reference cascades.
         action_policy = ActionPolicyInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects)
@@ -192,7 +207,7 @@ async def async_main(settings: Settings) -> None:
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         runners = RunnerDirectory(live, gateway)
         session_openings = SessionOpenings(session_openings_client, event_logs, retry_interval_s=1)
-        bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content)
+        bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher)
 
         decisions = DecisionsClient(admin_http)
         app = create_app(

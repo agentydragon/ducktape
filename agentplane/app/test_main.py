@@ -134,6 +134,8 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
     assert settings.sandbox_service_request_timeout_s == 20
     assert settings.sandbox_service_lifecycle_timeout_s == 310
     assert (settings.port, settings.token_audience) == (8080, "agentplane")
+    assert settings.session_dispatcher_target is None
+    assert str(settings.session_dispatcher_token_file) == "/var/run/secrets/agentplane-session-dispatcher/token"
     assert oidc.redirect_uri == "https://app.test.invalid/auth/callback"
     assert (
         oidc.server_metadata_url == "https://auth.test.invalid/application/o/test-app/.well-known/openid-configuration"

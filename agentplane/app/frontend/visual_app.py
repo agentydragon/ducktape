@@ -146,3 +146,6 @@ class AgentplaneFixture:
 
     async def build(self, scene: Scene) -> None:
         await self.page.evaluate("scene => window.agentplaneVisual[scene]()", scene)
+
+    async def remember_dispatch(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.rememberDispatch()")

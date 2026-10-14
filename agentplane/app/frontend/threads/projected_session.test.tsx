@@ -11,7 +11,15 @@ import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
 import { ItemKind, RecoveryDisposition } from "../../../proto/event_pb";
 import type * as ClientModule from "../client";
-import { command, getThread, models, resumeThread, type SandboxView, type ThreadView } from "../client";
+import {
+  command,
+  commandDispatch,
+  getThread,
+  models,
+  resumeThread,
+  type SandboxView,
+  type ThreadView,
+} from "../client";
 import { historyRows, rowKey } from "./history_rows";
 import { SandboxesLiveProvider, ThreadsLiveProvider, useRequiredThreadsLive } from "../live";
 import { LocalCommands } from "./local_commands";
@@ -37,6 +45,7 @@ import { TopbarContext } from "../topbar";
 vi.mock("../client", async (importOriginal) => ({
   ...(await importOriginal<typeof ClientModule>()),
   command: vi.fn(),
+  commandDispatch: vi.fn(),
   getThread: vi.fn(),
   models: vi.fn(),
   resumeThread: vi.fn(),
@@ -681,8 +690,8 @@ function admission(value: Command): EventEntry {
   });
 }
 
-async function admit(_threadId: string, value: Command): Promise<EventEntry> {
-  return admission(value);
+async function admit(_threadId: string, value: Command): Promise<{ kind: "admission"; admission: EventEntry }> {
+  return { kind: "admission", admission: admission(value) };
 }
 
 function sentIds(): string[] {
@@ -721,7 +730,40 @@ it("does not send a retained command whose admission it already holds", async ()
     [...pendingRow(container, "retained-admitted").querySelectorAll(".agentplane-command-light")].map((light) =>
       light.getAttribute("data-state")
     )
-  ).toEqual(["done", "done", "waiting"]);
+  ).toEqual(["done", "done", "done", "waiting"]);
+});
+
+it("shows a queued Dispatcher receipt and its waking reason without offering a retry", async () => {
+  const queued = message("queued-by-dispatcher");
+  new LocalCommands(THREAD.id).remember(queued);
+  vi.mocked(command).mockResolvedValue({
+    kind: "dispatch",
+    dispatch: {
+      commandId: queued.commandId,
+      sessionId: THREAD.id,
+      state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+      reason: "sandbox_resuming",
+      updatedAt: "2026-10-14T12:00:00Z",
+      admission: null,
+    },
+  });
+  vi.mocked(commandDispatch).mockResolvedValue({
+    commandId: queued.commandId,
+    sessionId: THREAD.id,
+    state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+    reason: "sandbox_resuming",
+    updatedAt: "2026-10-14T12:00:00Z",
+    admission: null,
+  });
+  const container = await render();
+  const row = pendingRow(container, queued.commandId);
+  expect(row.querySelector('[data-stage="queued"]')).not.toBeNull();
+  expect(progressLabel(container, queued.commandId)).toBe("Sandbox is starting; message is queued");
+  expect(
+    [...row.querySelectorAll(".agentplane-command-light")].map((light) => light.getAttribute("data-state"))
+  ).toEqual(["done", "done", "waiting", "future"]);
+  expect(buttonIn(row, "Retry")).toBeUndefined();
+  expect(buttonIn(row, "Cancel")).toBeUndefined();
 });
 
 it("opens compact command detail on touch and closes on blur or Escape", async () => {
@@ -730,7 +772,7 @@ it("opens compact command detail on touch and closes on blur or Escape", async (
   const progress = pendingRow(container, "touch").querySelector<HTMLElement>(".agentplane-command-progress");
   const indicator = progress?.querySelector<HTMLButtonElement>(".agentplane-command-progress-hit");
   expect(indicator?.getAttribute("aria-label")).toBeTruthy();
-  expect(progress?.querySelectorAll(".agentplane-command-light")).toHaveLength(3);
+  expect(progress?.querySelectorAll(".agentplane-command-light")).toHaveLength(4);
   expect(progress?.hasAttribute("data-touch-open")).toBe(false);
   const tap = () => {
     const event = new Event("pointerdown", { bubbles: true });
@@ -793,16 +835,16 @@ it("shows a delivery that outlives its deadline as unconfirmed and retriable", a
     )
     .mockImplementationOnce(admit);
   const container = await render();
-  expect(progressLabel(container, "hung")).toContain("Saved in browser · waiting for runner to accept");
+  expect(progressLabel(container, "hung")).toContain("Saved in browser · waiting for Dispatcher");
   expect(
     [...pendingRow(container, "hung").querySelectorAll(".agentplane-command-light")].map((light) =>
       light.getAttribute("data-state")
     )
-  ).toEqual(["done", "waiting", "future"]);
+  ).toEqual(["done", "waiting", "future", "future"]);
   expect(pendingRow(container, "hung").querySelectorAll("[data-state=waiting]")).toHaveLength(1);
 
   await act(async () => expire(new DOMException("signal timed out", "TimeoutError")));
-  expect(progressLabel(container, "hung")).toContain("Runner receipt unconfirmed");
+  expect(progressLabel(container, "hung")).toContain("Dispatcher receipt unconfirmed");
   expect(pendingRow(container, "hung").querySelector('[data-state="uncertain"]')).not.toBeNull();
   expect(progressLabel(container, "hung")).toContain("signal timed out");
   expect(sentIds()).toEqual(["hung"]);
@@ -817,7 +859,7 @@ it("leaves a command whose delivery reply was lost unconfirmed", async () => {
   new LocalCommands(THREAD.id).remember(message("lost"));
   vi.mocked(command).mockRejectedValueOnce(new Error("Command admission unconfirmed: 503"));
   const container = await render();
-  expect(progressLabel(container, "lost")).toBe("Runner receipt unconfirmed: Command admission unconfirmed: 503");
+  expect(progressLabel(container, "lost")).toBe("Dispatcher receipt unconfirmed: Command admission unconfirmed: 503");
 });
 
 it("redelivers an unconfirmed command when the browser comes back online", async () => {

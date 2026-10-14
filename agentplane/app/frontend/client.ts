@@ -281,10 +281,47 @@ export async function models(): Promise<ModelCatalog> {
 /** An explicit 4xx command rejection: unlike a lost reply, this is not an admission receipt. */
 export class CommandSubmissionRefused extends Error {}
 
+export interface DispatchReceipt {
+  commandId: string;
+  sessionId: string;
+  state: string;
+  reason?: string;
+  updatedAt?: string;
+  admission: EventEntry | null;
+}
+
+export type CommandSubmission =
+  { kind: "admission"; admission: EventEntry } | { kind: "dispatch"; dispatch: DispatchReceipt };
+
+function dispatchReceipt(value: unknown): DispatchReceipt {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error("Session Dispatcher returned an invalid Dispatch");
+  }
+  const row = value as Record<string, unknown>;
+  if (typeof row.commandId !== "string" || typeof row.sessionId !== "string" || typeof row.state !== "string") {
+    throw new Error("Session Dispatcher returned a Dispatch without its command, Session or state");
+  }
+  if (row.reason !== undefined && typeof row.reason !== "string") {
+    throw new Error("Session Dispatcher returned an invalid Dispatch reason");
+  }
+  if (row.updatedAt !== undefined && typeof row.updatedAt !== "string") {
+    throw new Error("Session Dispatcher returned an invalid Dispatch update time");
+  }
+  const admission = row.admission === undefined ? null : fromJson(EventEntrySchema, row.admission as JsonValue);
+  return {
+    commandId: row.commandId,
+    sessionId: row.sessionId,
+    state: row.state,
+    reason: row.reason as string | undefined,
+    updatedAt: row.updatedAt as string | undefined,
+    admission,
+  };
+}
+
 /** The runner's exact durable CommandAdmitted receipt; the app archive may still be catching up.
  * Replaying the same immutable command id/payload is safe after a lost response.
  */
-export async function command(threadId: string, message: Command): Promise<EventEntry> {
+export async function command(threadId: string, message: Command): Promise<CommandSubmission> {
   let result;
   try {
     result = await api.POST("/threads/{thread_id}/commands", {
@@ -300,16 +337,37 @@ export async function command(threadId: string, message: Command): Promise<Event
     const message = displayableError(error);
     // A lost server reply, timeout or transient error can happen after runner admission.
     // Treat only an explicit, non-timeout client rejection as a refusal.
-    if (response.status >= 400 && response.status < 500 && ![408, 429].includes(response.status)) {
+    if (response.status >= 400 && response.status < 500 && response.status !== 408) {
       throw new CommandSubmissionRefused(message);
     }
     throw new Error(`Command admission unconfirmed: ${message}`);
   }
   try {
-    return fromJson(EventEntrySchema, data as JsonValue);
+    const value = data as JsonValue;
+    if (typeof value === "object" && value !== null && "event" in value) {
+      return { kind: "admission", admission: fromJson(EventEntrySchema, value) };
+    }
+    return { kind: "dispatch", dispatch: dispatchReceipt(data) };
   } catch (cause) {
     throw new Error(`Command receipt could not be verified: ${displayableError(cause)}`, { cause });
   }
+}
+
+/** Read a queued command's current durable state. A removed Sandbox has no retained dispatch row. */
+export async function commandDispatch(threadId: string, commandId: string): Promise<DispatchReceipt> {
+  const result = await api.GET("/threads/{thread_id}/commands/{command_id}/dispatch", {
+    params: { path: { thread_id: threadId, command_id: commandId } },
+  });
+  if (result.error !== undefined && result.response.status === 404) {
+    return {
+      commandId,
+      sessionId: threadId,
+      state: "DELIVERY_STATE_UNKNOWN",
+      reason: "sandbox_deleted",
+      admission: null,
+    };
+  }
+  return dispatchReceipt(ok(result));
 }
 
 /**

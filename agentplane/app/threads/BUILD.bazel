@@ -118,6 +118,7 @@ py_library(
     name = "bridge",
     srcs = ["bridge.py"],
     deps = [
+        ":dispatcher_client",
         ":runner_directory",
         ":summaries",
         "//agentplane/app/threads/events:event_log",
@@ -125,11 +126,41 @@ py_library(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/runner:harness",
         "@pypi//fastapi",
         "@pypi//grpcio",
         "@pypi//protobuf",
         "@pypi//pydantic",
+    ],
+)
+
+py_library(
+    name = "dispatcher_client",
+    srcs = ["dispatcher_client.py"],
+    deps = [
+        "//agentplane:grpc_calls",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
+        "//agentplane/proto:session_dispatcher_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_test(
+    name = "test_dispatcher_client",
+    srcs = ["test_dispatcher_client.py"],
+    deps = [
+        ":dispatcher_client",
+        "//:conftest",
+        "//agentplane/app:conftest",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:event_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
+        "@pypi//grpcio",
+        "@pypi//pytest_bazel",
     ],
 )
 

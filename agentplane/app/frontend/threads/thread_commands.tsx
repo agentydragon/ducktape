@@ -2,7 +2,7 @@ import { Box, Button, Group, Paper, Stack, Text } from "@mantine/core";
 import { type Command } from "../../../proto/command_pb";
 import { type JSX, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
-import { command, CommandSubmissionRefused, displayableError } from "../client";
+import { command, commandDispatch, CommandSubmissionRefused, displayableError } from "../client";
 import { Body, UserInputBubble, pendingSentMessage } from "./thread_cards";
 import { CommandProgress, type CommandStage, type CommandSubject } from "./command_progress";
 import { EvidencePanel, EvidenceToggle, revealEvidenceOnTap } from "./thread_evidence";
@@ -66,7 +66,9 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
       };
       try {
         if (!navigator.onLine || !store.markAttempted(id)) return;
-        store.acknowledge(value.command, await command(threadId, value.command));
+        const result = await command(threadId, value.command);
+        if (result.kind === "admission") store.acknowledge(value.command, result.admission);
+        else store.acknowledgeDispatch(value.command, result.dispatch);
         settle(null);
       } catch (reason) {
         settle(
@@ -83,20 +85,56 @@ export function useProjectedCommands(threadId: string, entities: ThreadEntity[])
     },
     [store, threadId]
   );
-  // Deliver each retained command not yet seen admitted once on mount, and again when the browser
-  // comes back online after a failed attempt. An exact retry is safe: the server answers it from its
-  // archive once admitted, and the runner deduplicates by command id.
+  // Deliver each retained command with no server receipt once on mount. An exact retry is safe after
+  // a lost reply because the Dispatcher deduplicates by command ID.
   useEffect(() => {
-    for (const value of store.getSnapshot().commands) if (value.admission === null) void deliver(value);
+    for (const value of store.getSnapshot().commands)
+      if (value.admission === null && value.dispatch === null) void deliver(value);
   }, [deliver, store]);
   useEffect(() => {
     const redeliverFailed = () => {
       for (const value of store.getSnapshot().commands)
-        if (value.admission === null && (!value.attempted || errors.has(value.command.commandId))) void deliver(value);
+        if (
+          value.admission === null &&
+          value.dispatch === null &&
+          (!value.attempted || errors.has(value.command.commandId))
+        )
+          void deliver(value);
     };
     window.addEventListener("online", redeliverFailed);
     return () => window.removeEventListener("online", redeliverFailed);
   }, [deliver, errors, store]);
+  const pollingIds = local.commands
+    .filter(
+      (value) =>
+        value.dispatch?.state === "DELIVERY_STATE_QUEUED_IN_DISPATCHER" ||
+        value.dispatch?.state === "DELIVERY_STATE_DELIVERING_TO_RUNNER"
+    )
+    .map((value) => value.command.commandId)
+    .join(",");
+  useEffect(() => {
+    if (!pollingIds) return;
+    const ids = pollingIds.split(",");
+    let stopped = false;
+    let timer: number | undefined;
+    const poll = async () => {
+      await Promise.all(
+        ids.map(async (id) => {
+          try {
+            store.updateDispatch(id, await commandDispatch(threadId, id));
+          } catch {
+            // Keep the last durable state; a later poll retries this read without claiming failure.
+          }
+        })
+      );
+      if (!stopped) timer = window.setTimeout(() => void poll(), 1500);
+    };
+    void poll();
+    return () => {
+      stopped = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [pollingIds, store, threadId]);
   function submit(value: Command): boolean {
     try {
       void deliver(store.remember(value));
@@ -117,9 +155,31 @@ function subject(operation: string): CommandSubject {
   return "other";
 }
 
-function progressStage(outcome: string | null, admitted: boolean, issue?: CommandIssue): CommandStage {
+function progressStage(
+  outcome: string | null,
+  admitted: boolean,
+  dispatch?: LocalCommand["dispatch"],
+  issue?: CommandIssue
+): CommandStage {
   if (outcome === "effected" || outcome === "failed" || outcome === "noop") return outcome;
   if (admitted) return "admitted";
+  switch (dispatch?.state) {
+    case "DELIVERY_STATE_QUEUED_IN_DISPATCHER":
+      return "queued";
+    case "DELIVERY_STATE_DELIVERING_TO_RUNNER":
+      return "delivering";
+    case "DELIVERY_STATE_RUNNER_ADMITTED":
+    case "DELIVERY_STATE_HARNESS_CONFIRMED":
+      return "admitted";
+    case "DELIVERY_STATE_NO_OP":
+      return "noop";
+    case "DELIVERY_STATE_FAILED":
+      return "dispatch_failed";
+    case "DELIVERY_STATE_CANCELLED_IN_DISPATCHER":
+      return "cancelled";
+    case "DELIVERY_STATE_UNKNOWN":
+      return "unknown";
+  }
   return issue?.kind ?? "local";
 }
 
@@ -233,9 +293,14 @@ export function PendingInputMessages({
         const row = byId.get(id);
         const outcome = row && "outcome" in row.state ? row.state.outcome : null;
         const issue = row ? undefined : errors.get(id);
-        const admitted = row !== undefined || value.admission !== null;
-        const failed = outcome === "failed";
-        const noop = outcome === "noop";
+        const dispatchState = value.dispatch?.state;
+        const dispatchAdmitted =
+          dispatchState === "DELIVERY_STATE_RUNNER_ADMITTED" || dispatchState === "DELIVERY_STATE_HARNESS_CONFIRMED";
+        const admitted = row !== undefined || value.admission !== null || dispatchAdmitted;
+        const stage = progressStage(outcome, admitted, value.dispatch, issue);
+        const failed =
+          outcome === "failed" || stage === "dispatch_failed" || stage === "cancelled" || stage === "unknown";
+        const noop = outcome === "noop" || stage === "noop";
         const effected = outcome === "effected";
         const outcomeReason = row && "outcome" in row.state ? row.state.outcome_reason : null;
         return (
@@ -244,22 +309,22 @@ export function PendingInputMessages({
             commandId={id}
             text={value.command.operation.value.text}
             phase={failed ? "failed" : noop ? "noop" : effected ? "confirmed" : admitted ? "pending" : "local"}
-            pending={outcome === null}
+            pending={outcome === null && !failed && !noop}
             progress={
               effected ? undefined : (
                 <CommandOutcome
-                  stage={progressStage(outcome, admitted, issue)}
+                  stage={stage}
                   subject="input"
-                  reason={failed || noop ? outcomeReason : issue?.message}
+                  reason={failed || noop ? outcomeReason : (value.dispatch?.reason ?? issue?.message)}
                   local
                   unsent={!value.attempted}
                 />
               )
             }
             action={
-              !admitted && !value.attempted
+              !admitted && !value.attempted && value.dispatch === null
                 ? { label: "Cancel", onClick: () => store.cancelUnsent(id) }
-                : !admitted
+                : !admitted && value.dispatch === null
                   ? { label: "Retry", onClick: () => void deliver(value) }
                   : undefined
             }
@@ -321,6 +386,11 @@ function LocalControlRows({
         .map((value) => {
           const operation = value.command.operation;
           const admitted = value.admission !== null;
+          const settled =
+            value.dispatch !== null &&
+            !["DELIVERY_STATE_QUEUED_IN_DISPATCHER", "DELIVERY_STATE_DELIVERING_TO_RUNNER"].includes(
+              value.dispatch.state
+            );
           const issue = errors.get(value.command.commandId);
           return (
             <ControlCommandFrame key={value.command.commandId} id={value.command.commandId}>
@@ -335,13 +405,13 @@ function LocalControlRows({
                         : "Shut down harness"}
                 </Text>
                 <CommandOutcome
-                  stage={progressStage(null, admitted, issue)}
+                  stage={progressStage(null, admitted, value.dispatch, issue)}
                   subject={subject(operation.case ?? "")}
-                  reason={admitted ? undefined : issue?.message}
+                  reason={admitted ? undefined : (value.dispatch?.reason ?? issue?.message)}
                   local
                   unsent={!value.attempted}
                 />
-                {!admitted && (
+                {!admitted && !settled && value.dispatch === null && (
                   <Button
                     size="xs"
                     variant="subtle"

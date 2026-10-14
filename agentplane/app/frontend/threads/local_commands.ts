@@ -2,6 +2,7 @@ import { equals, fromJson, toJson, type JsonValue } from "@bufbuild/protobuf";
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
+import type { DispatchReceipt } from "../client";
 
 export interface LocalCommand {
   command: Command;
@@ -10,6 +11,8 @@ export interface LocalCommand {
   attempted: boolean;
   /** HTTP admission evidence can be ahead of the consumed Event prefix. It never advances it. */
   admission: EventEntry | null;
+  /** Dispatcher state is durable queue evidence, not proof of a harness effect. */
+  dispatch: DispatchReceipt | null;
 }
 
 export interface LocalCommandSnapshot {
@@ -30,10 +33,39 @@ function decode(text: string): LocalCommand {
   if (!command.commandId || !command.operation.case) throw new Error("Invalid locally retained Command");
   const admission = value.admission === null ? null : fromJson(EventEntrySchema, value.admission as JsonValue);
   if (admission) checkAdmission(command, admission);
+  let dispatch: DispatchReceipt | null = null;
+  if (value.dispatch !== undefined && value.dispatch !== null) {
+    if (typeof value.dispatch !== "object" || Array.isArray(value.dispatch)) {
+      throw new Error("Invalid locally retained Dispatcher state");
+    }
+    const row = value.dispatch as Record<string, unknown>;
+    if (
+      row.commandId !== command.commandId ||
+      typeof row.sessionId !== "string" ||
+      typeof row.state !== "string" ||
+      (row.reason !== undefined && typeof row.reason !== "string") ||
+      (row.updatedAt !== undefined && typeof row.updatedAt !== "string")
+    ) {
+      throw new Error("Invalid locally retained Dispatcher state");
+    }
+    const dispatchAdmission =
+      row.admission === undefined || row.admission === null
+        ? null
+        : fromJson(EventEntrySchema, row.admission as JsonValue);
+    if (dispatchAdmission) checkAdmission(command, dispatchAdmission);
+    dispatch = {
+      commandId: row.commandId,
+      sessionId: row.sessionId,
+      state: row.state,
+      reason: row.reason as string | undefined,
+      updatedAt: row.updatedAt as string | undefined,
+      admission: dispatchAdmission,
+    };
+  }
   if (value.attempted !== undefined && typeof value.attempted !== "boolean") {
     throw new Error("Invalid locally retained delivery state");
   }
-  return { submittedAt: value.submittedAt, attempted: value.attempted ?? true, command, admission };
+  return { submittedAt: value.submittedAt, attempted: value.attempted ?? true, command, admission, dispatch };
 }
 
 function encode(value: LocalCommand): string {
@@ -42,6 +74,16 @@ function encode(value: LocalCommand): string {
     attempted: value.attempted,
     command: toJson(CommandSchema, value.command),
     admission: value.admission ? toJson(EventEntrySchema, value.admission) : null,
+    dispatch: value.dispatch
+      ? {
+          commandId: value.dispatch.commandId,
+          sessionId: value.dispatch.sessionId,
+          state: value.dispatch.state,
+          reason: value.dispatch.reason,
+          updatedAt: value.dispatch.updatedAt,
+          admission: value.dispatch.admission ? toJson(EventEntrySchema, value.dispatch.admission) : null,
+        }
+      : null,
   });
 }
 
@@ -104,7 +146,13 @@ export class LocalCommands {
         `Wait for retained commands to finish before submitting another (maximum ${MAX_RETAINED_COMMANDS})`
       );
     }
-    const value: LocalCommand = { command, submittedAt: Date.now(), attempted: false, admission: null };
+    const value: LocalCommand = {
+      command,
+      submittedAt: Date.now(),
+      attempted: false,
+      admission: null,
+      dispatch: null,
+    };
     localStorage.setItem(this.key(command.commandId), encode(value));
     this.reload();
     return value;
@@ -116,7 +164,7 @@ export class LocalCommands {
     const raw = localStorage.getItem(key);
     if (raw === null) return false;
     const value = decode(raw);
-    if (value.admission) return false;
+    if (value.admission || value.dispatch) return false;
     if (!value.attempted) {
       localStorage.setItem(key, encode({ ...value, attempted: true }));
       this.reload();
@@ -162,6 +210,45 @@ export class LocalCommands {
       return;
     }
     this.reload();
+  }
+
+  acknowledgeDispatch(command: Command, dispatch: DispatchReceipt): void {
+    if (dispatch.commandId !== command.commandId) throw new Error("Dispatcher receipt has a different command id");
+    if (dispatch.admission) {
+      checkAdmission(command, dispatch.admission);
+      this.checkKnownAdmission(command, dispatch.admission);
+    }
+    const stored = localStorage.getItem(this.key(command.commandId));
+    // A replayed server row may already own the command while an HTTP status read is in flight.
+    if (stored === null) return;
+    const existing = decode(stored);
+    if (!equals(CommandSchema, existing.command, command)) throw new Error("Local command payload changed");
+    if (existing.dispatch?.updatedAt && dispatch.updatedAt) {
+      const previousUpdate = Date.parse(existing.dispatch.updatedAt);
+      const nextUpdate = Date.parse(dispatch.updatedAt);
+      if (Number.isFinite(previousUpdate) && Number.isFinite(nextUpdate) && nextUpdate < previousUpdate) return;
+    }
+    const admission = dispatch.admission ?? existing.admission;
+    try {
+      localStorage.setItem(this.key(command.commandId), encode({ ...existing, admission, dispatch }));
+    } catch (error) {
+      this.snapshot = {
+        commands: this.snapshot.commands.map((value) =>
+          value.command.commandId === command.commandId ? { ...value, admission, dispatch } : value
+        ),
+        inputEchoes: this.snapshot.inputEchoes,
+        error: String(error),
+      };
+      for (const listener of this.listeners) listener();
+      return;
+    }
+    this.reload();
+  }
+
+  updateDispatch(commandId: string, dispatch: DispatchReceipt): void {
+    const stored = localStorage.getItem(this.key(commandId));
+    if (stored === null) return;
+    this.acknowledgeDispatch(decode(stored).command, dispatch);
   }
 
   /** A matching admission transfers command ownership to the Event fold; input text stays until echoed. */

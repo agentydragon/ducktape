@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { CommandSchema, type Command } from "../../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../../proto/event_log_pb";
+import type { DispatchReceipt } from "../client";
 import { LocalCommands, MAX_RETAINED_COMMANDS } from "./local_commands";
 
 const COMMAND = create(CommandSchema, {
@@ -18,6 +19,21 @@ function admission(cursor = 9n, command: Command = COMMAND): EventEntry {
     origin: { sourceId: "runner", sequence: cursor },
     event: { observation: { case: "commandAdmitted", value: { command } } },
   });
+}
+
+function dispatch(
+  command: Command,
+  state: string,
+  updatedAt: string,
+  event: EventEntry | null = null
+): DispatchReceipt {
+  return {
+    commandId: command.commandId,
+    sessionId: "thread",
+    state,
+    updatedAt,
+    admission: event,
+  };
 }
 
 beforeEach(() => localStorage.clear());
@@ -222,4 +238,40 @@ it("keeps observed admission visible if persisting its receipt fails", () => {
   store.observePrefix([admission()]);
   expect(store.getSnapshot().commands).toEqual([]);
   unsubscribe();
+});
+
+it("persists Dispatcher queue state and accepts a newer retry transition without regressing on stale reads", () => {
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  store.markAttempted(COMMAND.commandId);
+  store.acknowledgeDispatch(COMMAND, dispatch(COMMAND, "DELIVERY_STATE_DELIVERING_TO_RUNNER", "2026-10-14T12:00:02Z"));
+  const restored = new LocalCommands("thread");
+  expect(restored.getSnapshot().commands[0].dispatch?.state).toBe("DELIVERY_STATE_DELIVERING_TO_RUNNER");
+
+  restored.updateDispatch(
+    COMMAND.commandId,
+    dispatch(COMMAND, "DELIVERY_STATE_QUEUED_IN_DISPATCHER", "2026-10-14T12:00:03Z")
+  );
+  expect(restored.getSnapshot().commands[0].dispatch?.state).toBe("DELIVERY_STATE_QUEUED_IN_DISPATCHER");
+  restored.updateDispatch(
+    COMMAND.commandId,
+    dispatch(COMMAND, "DELIVERY_STATE_DELIVERING_TO_RUNNER", "2026-10-14T12:00:01Z")
+  );
+  expect(restored.getSnapshot().commands[0].dispatch?.state).toBe("DELIVERY_STATE_QUEUED_IN_DISPATCHER");
+});
+
+it("checks admission included in a Dispatcher receipt and transfers the input to History replay", () => {
+  const store = new LocalCommands("thread");
+  store.remember(COMMAND);
+  const admitted = admission();
+  store.acknowledgeDispatch(
+    COMMAND,
+    dispatch(COMMAND, "DELIVERY_STATE_RUNNER_ADMITTED", "2026-10-14T12:00:02Z", admitted)
+  );
+  expect(new LocalCommands("thread").getSnapshot().commands[0].admission).toEqual(admitted);
+  store.observePrefix([admitted]);
+  expect(store.getSnapshot().commands).toEqual([]);
+  expect(store.getSnapshot().inputEchoes).toEqual([
+    { commandId: COMMAND.commandId, text: "  exact text\nsecond line  " },
+  ]);
 });

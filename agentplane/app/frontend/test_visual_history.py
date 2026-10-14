@@ -217,7 +217,7 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
     page = view.page
     input_row = page.locator('[data-command-id="progress-input"]')
     await expect(input_row.locator('[data-stage="admitted"]')).to_be_visible()
-    await expect(input_row.locator(".agentplane-command-light")).to_have_count(3)
+    await expect(input_row.locator(".agentplane-command-light")).to_have_count(4)
     detail = input_row.get_by_role("tooltip")
     await expect(detail).to_be_hidden()
     model_row = page.locator('[data-command-id="progress-model"]')
@@ -269,6 +269,24 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
         await applied_input.locator(".agentplane-user-bubble").hover()
     await expect(input_hit).to_have_css("opacity", "1")
     await view.capture(name=f"{view.capture_name}_applied_input", target=applied_input)
+
+
+@DESKTOP_AND_MOBILE
+async def test_dispatcher_queued_while_sandbox_resumes(
+    view: VisualPage, app: AgentplaneFixture, viewport: Viewport
+) -> None:
+    await app.build(Scene.PENDING_COMMANDS)
+    await app.remember_dispatch()
+    await app.mount_thread(RUNNING_THREAD)
+    await view.check(context="fixture ready")
+    page = view.page
+    row = page.locator('[data-command-id="queued-dispatch"]')
+    await expect(row).to_contain_text("Sandbox is starting; message is queued")
+    await expect(row.locator('[data-stage="queued"]')).to_be_visible()
+    await expect(row.locator(".agentplane-command-light")).to_have_count(4)
+    await expect(row.get_by_role("button", name="Retry")).to_have_count(0)
+    await expect(row.get_by_role("button", name="Cancel")).to_have_count(0)
+    await view.capture()
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])

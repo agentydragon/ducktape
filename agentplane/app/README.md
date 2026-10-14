@@ -134,17 +134,26 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 ### Replica-safe command delivery
 
 Any app replica relays `POST /threads/{id}/commands` (generated `Command` payloads with stable
-command ids) to the Runner Gateway's `SubmitCommand` through the Thread's Sandbox's control
-Service, which delivers it over the runner control stream and keeps no record of it
-([command admission](../runner_gateway/API.md#sessions-and-commands)). The runner serializes
-admission and deduplicates retries. HTTP success returns the runner's exact, durable
-`CommandAdmitted` receipt; it does not wait for the History Service to fold it and does not claim
-native execution. The Thread event stream and projected sync publish the archived entry and
-eventual outcome. Once the History Service has folded the admission, identical retries return that
-entry without contacting the gateway; until then the runner deduplicates the same id and payload,
-rejecting conflicting reuse. The app keeps no command queue. After an unconfirmed delivery the
-browser shows the command as unconfirmed until the Thread's history carries its admission, and it
-keeps Retry and never Cancel: an unconfirmed command may have reached the runner.
+command ids). While `session_dispatcher_target` is unset, the app relays commands to the Runner
+Gateway's `SubmitCommand` through the Thread's Sandbox control Service, which delivers over the
+runner control stream ([command admission](../runner_gateway/API.md#sessions-and-commands)). The
+runner serializes admission and deduplicates retries. HTTP success returns the runner's exact,
+durable `CommandAdmitted` receipt; it does not wait for the History Service to fold it or claim
+native execution. The Thread event stream and projected sync publish the archived entry and eventual
+outcome. After an unconfirmed delivery the browser keeps Retry and never Cancel, because the runner
+may have received it.
+
+When the optional Dispatcher target is configured on a pinned, accepting app image, the same
+endpoint stores the command in the Session Dispatcher and returns its durable `Dispatch`. The app
+reads later state at `GET /threads/{id}/commands/{command_id}/dispatch`; queued and delivering are
+distinct from runner admission, and neither admission nor `HARNESS_CONFIRMED` is presented as an
+effect. History remains the authority for command outcomes. The browser retains the command locally
+until History projects its admission or command row; the app adds no command queue. The Dispatcher
+setting is intentionally absent from deployment config until the receiving image and deployment
+acceptance gates pass.
+
+The app still uses Runner Gateway for Session listing, opening, resuming and any command traffic
+while the Dispatcher target is unset. Those paths have separate rollout and retirement gates.
 
 The app copies no runner events and folds none. Each runner pushes its Sessions' events to the
 History Service's ingress, and the History Service folds them under per-Session leases

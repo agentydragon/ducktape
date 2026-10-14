@@ -9,13 +9,14 @@ from fastapi import APIRouter, Depends, Request, status
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 from pydantic import BaseModel, ConfigDict, Field
 
+from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.events.event_log import EventLogStore, ThreadNotFoundError
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.summaries import FeedError
 from agentplane.app.threads.view.content import ContentStore
 
 # Not `runner_pb2`: that name is the runner's protocol here.
-from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.runner.harness import Harness
 
 # gazelle:include_dep @pypi//protobuf
@@ -28,6 +29,14 @@ class ThreadStateError(Exception):
 
 class MalformedMessageError(Exception):
     """A request body is not the proto-JSON of the message the route takes."""
+
+
+class DispatcherNotConfiguredError(Exception):
+    """The dispatch-status read is unavailable while the legacy command path is active."""
+
+
+class DispatchNotFoundError(Exception):
+    """The dispatch does not belong to the requested Thread."""
 
 
 class RunnerAdmissionTimeoutError(Exception):
@@ -49,10 +58,18 @@ class NewSession(BaseModel):
 
 
 class RunnerBridge:
-    def __init__(self, *, runners: RunnerDirectory, event_logs: EventLogStore, content: ContentStore) -> None:
+    def __init__(
+        self,
+        *,
+        runners: RunnerDirectory,
+        event_logs: EventLogStore,
+        content: ContentStore,
+        dispatcher: SessionDispatcherClient | None = None,
+    ) -> None:
         self._runners = runners
         self._event_logs = event_logs
         self._content = content
+        self._dispatcher = dispatcher
 
     async def list_sessions(self, sandbox: str) -> list[runner_pb2.SessionSummary]:
         return await self._runners.client(sandbox).list_sessions()
@@ -108,11 +125,14 @@ class RunnerBridge:
         # catch-up; its feed exposes that later, and a stale view remains non-authoritative.
         return await self._runners.client(sandbox).resume(session_id)
 
-    async def command(self, thread_id: UUID, command: command_pb2.Command) -> event_log_pb2.EventEntry:
-        """Return the runner's durable receipt; the app archive can catch up later.
+    async def command(
+        self, thread_id: UUID, command: command_pb2.Command, *, sandbox: str | None = None
+    ) -> event_log_pb2.EventEntry | session_dispatcher_pb2.Dispatch:
+        """Return a Dispatcher receipt or, before cutover, the runner's durable receipt.
 
         An exact retry already in the archive needs no runner, including when the Sandbox is
-        gone. Otherwise the runner deduplicates the unchanged id/payload in its journal.
+        gone. Otherwise the Dispatcher stores a durable queue entry; without its optional
+        configuration the runner deduplicates the unchanged id/payload in its journal.
         """
         if admitted := await self._content.admitted_command(thread_id, command):
             return admitted
@@ -121,11 +141,25 @@ class RunnerBridge:
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise ThreadStateError(f"runner history is rejected: {snapshot.end.message}")
-        runner = self._runners.client(await self._runners.sandbox_of(thread_id))
+        if self._dispatcher is not None:
+            target_sandbox = sandbox if sandbox is not None else await self._runners.sandbox_of(thread_id)
+            return await self._dispatcher.command(sandbox=target_sandbox, session_id=str(thread_id), command=command)
+        runner = self._runners.client(sandbox or await self._runners.sandbox_of(thread_id))
         try:
             return await self._runners.gateway.command(runner.destination, str(thread_id), command)
         except TimeoutError as error:
             raise RunnerAdmissionTimeoutError(command.command_id) from error
+
+    async def dispatch(self, thread_id: UUID, command_id: str) -> session_dispatcher_pb2.Dispatch:
+        """Read only this Thread's dispatch; a guessed ID for another Session stays hidden."""
+        if not await self._event_logs.exists(thread_id):
+            raise ThreadNotFoundError(thread_id)
+        if self._dispatcher is None:
+            raise DispatcherNotConfiguredError("Session Dispatcher is not configured")
+        dispatch = await self._dispatcher.get_dispatch(command_id)
+        if dispatch.session_id != str(thread_id):
+            raise DispatchNotFoundError(command_id)
+        return dispatch
 
     async def _session_sandbox(self, thread_id: UUID) -> str:
         if not await self._event_logs.exists(thread_id):

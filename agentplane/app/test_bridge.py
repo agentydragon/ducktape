@@ -39,7 +39,12 @@ from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.testing.history import SeededEventLogStore, register_gateway_session
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
-from agentplane.app.threads.bridge import RunnerAdmissionTimeoutError, RunnerBridge
+from agentplane.app.threads.bridge import (
+    DispatcherNotConfiguredError,
+    DispatchNotFoundError,
+    RunnerAdmissionTimeoutError,
+    RunnerBridge,
+)
 from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.history_watch import SessionOpenings
 from agentplane.app.threads.runner_directory import RunnerDirectory
@@ -54,7 +59,7 @@ from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntit
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.harness import Harness
 from agentplane.runner.runner import Runner
@@ -1088,6 +1093,66 @@ async def test_command_returns_runner_receipt_before_app_archive_catches_up(
     # The archive, not the runner, answers exact retries once it has caught up.
     assert await bridge.command(thread, command) == receipt
     assert called == 1
+
+
+async def test_dispatcher_command_path_queues_without_a_ready_runner_or_gateway_session_lookup(
+    runners: RunnerDirectory, event_logs: SeededEventLogStore, content: ContentStore, history: History
+) -> None:
+    thread = await event_logs.seed(SANDBOX, SESSION)
+    await history.open(thread)
+    queued = session_dispatcher_pb2.Dispatch(
+        command_id="queued-by-app",
+        session_id=str(thread),
+        sandbox=SANDBOX,
+        state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+        reason="sandbox_resuming",
+    )
+    calls: list[tuple[str, str, command_pb2.Command]] = []
+
+    class Dispatcher:
+        async def command(
+            self, *, sandbox: str, session_id: str, command: command_pb2.Command
+        ) -> session_dispatcher_pb2.Dispatch:
+            calls.append((sandbox, session_id, command))
+            return queued
+
+        async def get_dispatch(self, command_id: str) -> session_dispatcher_pb2.Dispatch:
+            assert command_id == queued.command_id
+            return queued
+
+    dispatcher = Dispatcher()
+    bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher)  # type: ignore[arg-type]
+    command = command_pb2.Command(
+        command_id=queued.command_id, submit_input=command_pb2.SubmitInput(text="wait while starting")
+    )
+    assert await bridge.command(thread, command, sandbox=SANDBOX) == queued
+    assert calls == [(SANDBOX, str(thread), command)]
+    assert await bridge.dispatch(thread, queued.command_id) == queued
+
+
+async def test_dispatch_status_cannot_be_read_through_another_thread(
+    runners: RunnerDirectory, event_logs: SeededEventLogStore, content: ContentStore, history: History
+) -> None:
+    thread = await event_logs.seed(SANDBOX, SESSION)
+    await history.open(thread)
+    leaked = session_dispatcher_pb2.Dispatch(
+        command_id="owned-by-another-thread",
+        session_id="another-session",
+        sandbox=SANDBOX,
+        state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+    )
+
+    class Dispatcher:
+        async def get_dispatch(self, _command_id: str) -> session_dispatcher_pb2.Dispatch:
+            return leaked
+
+    bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=Dispatcher())  # type: ignore[arg-type]
+    with pytest.raises(DispatchNotFoundError):
+        await bridge.dispatch(thread, leaked.command_id)
+
+    legacy = RunnerBridge(runners=runners, event_logs=event_logs, content=content)
+    with pytest.raises(DispatcherNotConfiguredError):
+        await legacy.dispatch(thread, leaked.command_id)
 
 
 @dataclass

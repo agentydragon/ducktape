@@ -876,7 +876,13 @@ async def thread_command(
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail="model is incompatible with this thread's harness"
         )
-    return MessageToDict(await bridge.command(thread_id, command))
+    return MessageToDict(await bridge.command(thread_id, command, sandbox=thread.sandbox))
+
+
+@threads.get("/{thread_id}/commands/{command_id}/dispatch")
+async def thread_command_dispatch(bridge: runner_bridge.Bridge, thread_id: UUID, command_id: str) -> dict[str, object]:
+    """Read the current Dispatcher state; it does not claim a runner or harness effect."""
+    return MessageToDict(await bridge.dispatch(thread_id, command_id))
 
 
 # A fold cursor is 64-bit and a JavaScript number is not, so it travels as a decimal
@@ -1016,6 +1022,8 @@ _ERROR_STATUS: dict[type[Exception], int] = {
     UnknownPolicySetError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     SandboxNotReachableError: status.HTTP_409_CONFLICT,
     runner_bridge.RunnerAdmissionTimeoutError: status.HTTP_504_GATEWAY_TIMEOUT,
+    runner_bridge.DispatcherNotConfiguredError: status.HTTP_503_SERVICE_UNAVAILABLE,
+    runner_bridge.DispatchNotFoundError: status.HTTP_404_NOT_FOUND,
     # The runner or the Sandbox's state refused a lifecycle request or a command: an unknown session.
     RefusedError: status.HTTP_409_CONFLICT,
     # The Thread's history or retained Session spec does not admit it: a spec mismatch.
@@ -1082,6 +1090,7 @@ def create_app(
             grpc.StatusCode.FAILED_PRECONDITION: 409,
             grpc.StatusCode.ALREADY_EXISTS: 409,
             grpc.StatusCode.INVALID_ARGUMENT: 422,
+            grpc.StatusCode.RESOURCE_EXHAUSTED: 429,
         }.get(error.code, 503)
         return JSONResponse({"detail": str(error)}, status_code=code)
 

@@ -14,7 +14,15 @@ import { createRoot } from "react-dom/client";
 
 import App from "../app";
 import { sampleConnection } from "../connections_fixture";
-import type { BindingView, Decision, McpLinkageView, PolicyView, SandboxView, ThreadView } from "../client";
+import type {
+  BindingView,
+  Decision,
+  DispatchReceipt,
+  McpLinkageView,
+  PolicyView,
+  SandboxView,
+  ThreadView,
+} from "../client";
 import type { ActionGroupView, ActionPolicyView, ActionRequestView } from "../actions/client";
 import type { DecisionsSnapshot, SandboxesSnapshot, SandboxSnapshot, ThreadsSnapshot, WatchHealth } from "../live";
 import type { InboxNoticeState } from "../thread_notices";
@@ -1834,6 +1842,27 @@ function rememberSettledCommands(): void {
   );
 }
 
+function rememberDispatch(): void {
+  const command = create(CommandSchema, {
+    commandId: "queued-dispatch",
+    operation: {
+      case: "submitInput",
+      value: { text: "Continue when the Sandbox is ready." },
+    },
+  });
+  const local = new LocalCommands(RUNNING_THREAD);
+  local.remember(command);
+  const dispatch: DispatchReceipt = {
+    commandId: command.commandId,
+    sessionId: RUNNING_THREAD,
+    state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+    reason: "sandbox_resuming",
+    updatedAt: ago(1_000),
+    admission: null,
+  };
+  local.acknowledgeDispatch(command, dispatch);
+}
+
 // One MCP server per row state the MCP servers page draws: linked and connected, a link whose token
 // lapsed while its refresh keeps failing, a refresh the provider refused, never linked, and
 // bearer-only backends that are up or unreachable.
@@ -2620,6 +2649,18 @@ routes.push(
         ? Response.json({ detail: "runner admission was not confirmed within 15 seconds" }, { status: 504 })
         : UNANSWERED,
   ],
+  [
+    "GET",
+    /^\/threads\/([0-9a-f-]+)\/commands\/([^/]+)\/dispatch$/,
+    (match) => ({
+      commandId: match[2],
+      sessionId: match[1],
+      sandbox: "pending-sandbox",
+      state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+      reason: "sandbox_resuming",
+      updatedAt: ago(1_000),
+    }),
+  ],
   ["GET", /^\/threads\/([0-9a-f-]+)\/observations$/, (match) => observationPage(match[1])],
   [
     "GET",
@@ -2994,6 +3035,7 @@ const visualHarness = {
   rememberPendingInput,
   rememberInputEcho,
   rememberSettledCommands,
+  rememberDispatch,
   completedRollout(): void {
     mapThread = (thread) =>
       thread.id === IDLE_THREAD
