@@ -1062,22 +1062,27 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 **Candidate; operator, 2026-10-13 PDT: the Sandbox Service goes away and requesters write the spec.** A shared
 library for the two requesters, the app and the Dispatcher: the UID- and resourceVersion-guarded
 `spec.running` patch; the `wakeGeneration` bump; an advisory, retryable refusal while the Sandbox is
-quiescing (the controller enforces it); create validation and idempotent create (today
-`sandbox_service/provisioning.py` and `inventory.py`); and the phase derivation (today
+quiescing (the controller enforces it) and of deleting a running Sandbox; create validation, the default
+policy sets on create and idempotent create (today `sandbox_service/provisioning.py` and `inventory.py`);
+and the phase derivation (today
 `sandbox_service/kubernetes_views.py`) as shared code. Cost: RBAC cannot narrow a patch to two fields, so
-the app and the Dispatcher can each write any field of any Sandbox, which no Service RPC allowed.
+the app and the Dispatcher can each write any field of any Sandbox, which no Service RPC allowed. The
+Dispatcher's ServiceAccount is meant to patch only `spec.running` and `spec.wakeGeneration`; RBAC alone
+cannot enforce that, so how it is narrowed (an admission policy, or accepted) is open.
 
 ### `APP_SANDBOX_WRITES` — the app creates, deletes, suspends and resumes Sandboxes itself
 
 **Blocked on `SANDBOX_WRITE_HELPER`.** The app does what it asks of the Sandbox Service through the
 Kubernetes API as the operator who asked, as it already does for `PolicyBinding`s: create, delete, suspend,
-resume, and the VM console through the KubeVirt console subresource. The app's Role gains `sandboxes`
-`create/patch/delete` and `virtualmachineinstances/console` `get`.
+resume, and it edits permissions (egress grants, policy views, templates) and reads the inventory with the
+derived phase. The app's Role gains `sandboxes` `create/patch/delete`. Open (operator): where the VM serial
+console (`sandbox_service/console.py`) lives, a small service or the app through the KubeVirt console
+subresource (`virtualmachineinstances/console` `get`).
 
 ### `NOTIFICATION_READS_SANDBOX_CR` — the Notification Service reads the Sandbox CR
 
 **Candidate; independent.** The Notification Service replaces its `GetSandbox` call with the shared
-`SandboxReader`, which reads the Sandbox CR.
+`SandboxReader`, which reads the Sandbox CR (the helper's read side).
 
 ### `SANDBOX_SERVICE_REMOVE` — remove the Sandbox Service
 
