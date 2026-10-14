@@ -1092,10 +1092,13 @@ renaming is deferred. No data deletion is bundled with this retirement.
 **In flight (coordinator, 2026-10-14): replica activation and testing acceptance.**
 #10469 (per-Sandbox ownership) and #10478 (cross-replica terminal broadcast) are merged.
 The Dispatcher image and schema migration 0004 are deployed in testing and staging; their health and
-pin gates are clear. Run two replicas on testing; verify ownership failover, queued delivery and
-deletion events across replica boundaries without the app. Then remove the one-replica limit and
-`Recreate` strategy in generated manifests, roll out testing before staging, and delete the temporary
-singleton warnings from docs. This node finishes with the restriction gone, not merely a successful
+pin gates are clear. Testing replica acceptance passed in invocation
+`46067206-22ee-4274-8215-99fb71fc8a1d`: queued work survived owner replacement, then reached runner
+admission; both replica streams received deletion outcomes without app HTTP calls. Testing was
+restored to one replica and its fixture storage removed; see
+[acceptance evidence](../session_dispatcher/debug/deployment_acceptance.md#passed-deployed-replica-failover-and-deletion-broadcast).
+#10505 removes the singleton override and uses the environment's normal replica strategy/PDB.
+Remaining: CI/manual merge and verify the staging two-replica rollout. This node finishes with the restriction gone, not merely a successful
 experiment; preserve the normal Lease renewal/fencing machinery.
 
 ### `DISPATCHER_WAKE_ABUSE_LIMITS` — enforce the initial wake budget

@@ -96,3 +96,31 @@ working-tree patch. The affected test and BUILD blobs match `e31d1a2e17`; source
 `f02a525a53ad033a5ee1d2afe1ccb82db0a2953c70bc40e12a52a50906f364d8`. The different remote base is not a
 claim that the whole invocation ran an unpatched `e31d1a2e17` checkout. No extra live run was used
 for this check, and multi-replica behavior remains separate.
+
+## Passed deployed replica failover and deletion broadcast
+
+On 2026-10-14, the `replicas` case passed in
+[invocation 46067206-22ee-4274-8215-99fb71fc8a1d](https://app.buildbuddy.io/invocation/46067206-22ee-4274-8215-99fb71fc8a1d):
+one test, 181.51 seconds of pytest. Its executed source matches commit `38bba78cd4`;
+`test_dispatcher_deployed.py` SHA-256 is
+`4c6701919a92cc21cb71ac6e319f7d56a5e576d235b610fcbd89c8329669c71d`.
+The deployed server was `devel-20261014194110-bce66fc` and its migration image was
+`devel-20261014190949-5a3ee1a`.
+
+The probe queued work for stopped Sandbox UID `9e99d2b7-a5f4-49da-a52c-b3b65e192d9f`, scaled testing
+from one Dispatcher replica to two, and deleted the known original owner Pod with UID precondition
+`3e718427-ad9c-4433-9a1f-1d572671d270`. A Lease watch observed a new holder and transition count 2.
+The queued command retained its creation timestamp across failover. After the fixture Sandbox
+started, opening and command `04d16668-cb13-4ac8-bf70-68dad21bda4d` reached runner admission,
+with the command recorded at journal cursor 9.
+
+After suspending that Sandbox, another queued command was observed by streams pinned to the two
+distinct Dispatcher Pods (`56142383-0c6a-4b5b-92db-a3b18fde56c6` and
+`23f250b5-e8c7-48e5-8425-6866b22cc69b`). Deleting the fixture delivered `FAILED / sandbox_deleted`
+to both streams. No model turn or app HTTP call was used; authentication used a token bound to an
+existing app Pod, not an app-issued credential. This does not claim that the app process was stopped.
+
+The artifact records `passed: true` and `cleanup_complete: true`. Subsequent API reads found no
+testing Sandboxes and only the shared `postgres-1` PVC. Testing returned to one Ready Dispatcher
+replica; staging remained one Ready replica. #10505 proposes staging activation; its reconciliation
+remains a separate rollout gate.
