@@ -75,6 +75,17 @@ endpoint. The repository remains writable; Git metadata is read-only. With the
 model already cached, this supports editing and testing without external network
 access. Ordinary OpenCode profiles keep their existing configuration.
 
+After activating that Home Manager change and caching the model, run it from
+the project directory:
+
+```bash
+rugged-opencode-offline run "Fix the failing tests, run them, and summarize the change."
+```
+
+The project toolchain and dependencies must also be available locally. The
+verified task uses a frozen Python standard-library test suite; this does not
+establish that ducktape's usual remote Bazel workflow works without a network.
+
 The tool-discovery failure came from combining deprecated `agent.tools` settings
 with permissions: the resulting trailing wildcard denial suppressed all tools.
 The dedicated profile uses permissions alone, with a wildcard denial followed by
@@ -90,6 +101,21 @@ independent verifier passed only **2 of 4 tests**: literal Unicode output and
 rejecting a string-valued `tags` field were wrong. The model claimed success,
 but that claim is not counted as a successful task. The initial failure and any
 verifier-guided repair are recorded separately from HumanEval+ scores.
+
+Two attempted repair continuations selected the original workspace path even
+though the launcher remaps the writable checkout to `/tmp/offline-workspace`.
+Their file-access failures were harness errors and are excluded from model
+quality claims. A subsequent attempt used the correct directory but was
+interrupted during its edit/test loop; it is censored, not a completed failure.
+
+The next bounded continuation completed in **178.6 seconds**, and the independent
+verifier passed **4/4 original tests**, with their SHA-256 unchanged. Both backend
+and agent were again network-isolated, with all 37 layers on the Vulkan device.
+This establishes a successful offline coding repair with test feedback. It is
+not a first-attempt success, and summing only the initial 77 seconds and this
+continuation would omit the intervening attempts. Full outputs, workspace
+snapshots, hashes, and verifier results are retained in the
+[frozen task run](runs/2026-10-13_rugged_coding/smoke_7910/).
 
 ### Earlier OpenCode readiness check
 
@@ -152,6 +178,19 @@ not a successful 128k execution or a quality result. A staged experiment must
 check actual cache type, accelerator placement, input counts, truncation, memory,
 prefill time, and retrieval before recommending it for agent use.
 
+Gemma 4 E2B is a more promising memory-fit candidate: its cached GGUF metadata
+declares 131,072 context, seven full-attention layers, 28 sliding-window layers
+with a 512-token window, one KV head, and shared KV layers. Ignoring sharing,
+the architecture suggests roughly 1.75 GiB of F16 KV for full-attention layers
+at 128k, plus sliding-window storage. Actual runtime allocation must still be
+measured. Google's [model card](https://ai.google.dev/gemma/docs/core/model_card_4)
+also declares 128k context for E2B and E4B.
+
+The 32k E2B runner log narrows that estimate: with shared KV layers it allocated
+only 192 MiB of F16 KV for three non-sliding layers, plus 18 MiB for 12 sliding
+layers. Linear allocation scaling suggests about 786 MiB at 128k. This improves
+the memory-fit outlook, but does not predict full-prompt processing time.
+
 The tested OpenVINO Qwen pipeline reserves 8192 input tokens plus 2048 response
 tokens; its longest completed diagnostic prompt so far was 4538 tokens.
 
@@ -204,10 +243,11 @@ a cross-backend memory Pareto claim.
 ## Repeated coding comparison protocol
 
 The 2026-10-13/14 campaign has a four-hour compute window. The plan's frozen
-Terminal-Bench tasks allow eight hours per attempt, so none can start within
-that window under the plan's deadline rule. This campaign instead uses a fixed
-HumanEval+ cohort and reports agent readiness separately; it supplies no
-Terminal-Bench score.
+Terminal-Bench tasks allow eight hours per attempt; its
+[next-run protocol](runs/2026-09-26_harbor_review/NEXT_RUN.md) prefers not starting
+a task whose full allowance exceeds the remaining budget. This campaign chose
+a fixed HumanEval+ cohort and reports agent readiness separately. It did not
+start Terminal-Bench and supplies no Terminal-Bench score.
 
 The cohort is 20 of HumanEval+'s 164 tasks, sampled before observing results
 with seed `20261013`, with three generations per task. EvalPlus **0.3.1** and
@@ -229,6 +269,28 @@ checks contaminated an initial Qwen speed batch; that batch is retained and
 excluded. Other workstation activity and swapping continued and are recorded
 with `vmstat`. These are practical working-host measurements, not clean
 hardware-throughput ceilings.
+
+### Completed coding cohorts
+
+| Candidate                               | Power   | Original tests | Original + augmented tests | Median request seconds | Median decode tok/s | Median generated tokens |
+| --------------------------------------- | ------- | -------------: | -------------------------: | ---------------------: | ------------------: | ----------------------: |
+| Qwen2.5-Coder 1.5B INT4, OpenVINO NPU   | Battery |          41/60 |                39/60 (65%) |                  15.00 |               13.12 |                   181.5 |
+| Qwen3 4B Instruct Q4_K_M, Ollama Vulkan | AC      |          57/60 |                54/60 (90%) |                   8.50 |               28.36 |                   209.5 |
+
+Both completed all 60 generations; neither scorer recorded a test timeout.
+Qwen3's generations all ended normally, rather than at the output cap. Its
+20 first-repeat requests had median latency 8.67 s and native prefill duration
+0.317 s. Including cached repeats lowers median prefill duration to 0.052 s;
+use the varied-prefix speed probes above for uncached prefill comparisons.
+Non-streaming Ollama responses do not provide an observed client TTFT.
+
+Qwen3's sampled peak driver-reported resident GTT was **7.477 GiB**
+(7,840,152 KiB), with process RSS high-water mark **1.985 GiB**. The two-second
+sampler deduplicates DRM clients by ID; these counters describe different
+memory views and are not added together. Sampling began after the first coding
+requests, so this is not a measured initialization peak. NPU peak RSS includes
+pipeline initialization; its configuration reserves 8192 input + 2048 output
+tokens, versus the GPU's 32,768 total allocation.
 
 ## Earlier agent behavior of Gemma 4 E2B
 
@@ -301,8 +363,16 @@ version/hash pins, and reproduction commands. It bounds the dormant llama.cpp
 service to 2048 context / one slot and supplies its loader path; that service
 remains disabled until tested through its own runtime and GGUF models.
 
-## Not covered
+## Cluster serving status
 
-- Coding evals and tool calling for models beyond Gemma 4 E2B; context beyond 32k tokens.
-- Exposure to the cluster: both endpoints bind loopback, and the NPU's bearer-token proxy on
-  `:18080` is disabled.
+[PR #10452](https://github.com/agentydragon/ducktape/pull/10452) replaces the stale
+NPU-only route with Ollama routes behind a Nebula-bound bearer proxy. It rotates
+the old effectively plaintext token into a SOPS-encrypted secret shared by the
+host and LiteLLM, disables Ollama cloud features, and keeps a single model and
+request active at a time. The proxy allows model discovery and chat completions;
+Ollama administration endpoints remain inaccessible through it.
+
+Temporary nginx authentication/routing checks and generated LiteLLM adapter
+checks pass. NixOS activation and a real cluster-to-rugged request are still
+pending: the current session cannot use passwordless sudo. The live endpoints
+remain loopback-only and this PR is not evidence of deployed cluster access.
