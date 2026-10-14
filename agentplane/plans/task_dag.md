@@ -680,7 +680,6 @@ flowchart TD
     SANDBOX_WRITE_HELPER[Candidate: one shared library writes a Sandbox's spec]
     APP_SANDBOX_WRITES[Blocked: the app creates, deletes, suspends and resumes Sandboxes itself]
     SANDBOX_SERVICE_REMOVE[Blocked: remove the Sandbox Service]
-    DISPATCHER_SESSION_LOOKUP[Candidate: a Session without a named Sandbox is found in the History Service]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     DISPATCHER_WAKE_ON_SEND[Blocked: a send wakes a suspended Sandbox]
     APP_SENDS_VIA_DISPATCHER[Blocked: the app sends through the Session Dispatcher]
@@ -1151,12 +1150,6 @@ queued command through the deployed pair in `agentplane-testing`, and that a Dis
 queued command.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
-### `DISPATCHER_SESSION_LOOKUP` — a Session without a named Sandbox
-
-`OpenSession` and the command RPCs take the Sandbox's name. When a caller omits it, the Dispatcher looks the
-Session up in the History Service; until the runner has pushed anything, its own `SessionOpening` is
-authoritative. Test a command for a Session whose opening is stored and one the History Service already holds.
 
 ### `DISPATCHER_WAKE_ON_SEND` — a send wakes a suspended Sandbox
 

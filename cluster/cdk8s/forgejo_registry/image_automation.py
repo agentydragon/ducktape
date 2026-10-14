@@ -58,6 +58,8 @@ IMAGES = (
     "agentplane-sandbox-build",
     "agentplane-sandbox-controller",
     "agentplane-sandbox-service",
+    "agentplane-session-dispatcher",
+    "agentplane-session-dispatcher-migrate",
     "aiquota-api",
     "airlock",
     "att-gateway-exporter",

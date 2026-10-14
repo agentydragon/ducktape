@@ -42,7 +42,6 @@ Nothing polls: delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandb
 
 - One active replica: the delivery loop assumes it is the only one.
 - `HARNESS_CONFIRMED` has no writer, so inputs stay `RUNNER_ADMITTED`.
-- Callers name the Sandbox; a Session with no Sandbox named is not looked up in the History Service.
 - Any account in `caller_accounts` may send to any Sandbox.
 
 ## Running

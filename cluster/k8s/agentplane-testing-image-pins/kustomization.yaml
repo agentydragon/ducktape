@@ -51,5 +51,10 @@ images:
   # The runner VM SandboxTemplate's containerDisk, which `images:` reaches through kustomizeconfig.
   - name: git.allegedly.works/ducktape-ci/agentplane-runner-vm
     newTag: devel-20261014042953-0064696 # {"$imagepolicy": "flux-system:agentplane-runner-vm:tag"}
+  # Bootstrap only: no workload references these yet; Flux replaces the tag with the one it scans.
+  - name: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher
+    newTag: devel-20261014000000-0000000 # {"$imagepolicy": "flux-system:agentplane-session-dispatcher:tag"}
+  - name: git.allegedly.works/ducktape-ci/agentplane-session-dispatcher-migrate
+    newTag: devel-20261014000000-0000000 # {"$imagepolicy": "flux-system:agentplane-session-dispatcher-migrate:tag"}
 configurations:
   - kustomizeconfig
