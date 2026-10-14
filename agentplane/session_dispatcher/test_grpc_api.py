@@ -128,13 +128,14 @@ async def test_a_sender_cancels_a_queued_command_once(stub: Dispatcher) -> None:
     assert missing.value.code() is grpc.StatusCode.NOT_FOUND
 
 
-async def test_a_command_for_a_sandbox_that_does_not_exist_has_failed(stub: Dispatcher) -> None:
-    failed = await submit(stub, "a", sandbox="no-such-sandbox")
-    assert (failed.state, failed.reason, failed.HasField("sandbox_uid")) == (
-        pb.DELIVERY_STATE_FAILED,
-        "sandbox_deleted",
-        False,
+async def test_a_command_for_a_sandbox_that_does_not_exist_is_refused_and_stores_nothing(stub: Dispatcher) -> None:
+    with pytest.raises(grpc.aio.AioRpcError) as refused:
+        await submit(stub, "a", sandbox="no-such-sandbox")
+    assert refused.value.code() is grpc.StatusCode.NOT_FOUND
+    listed = await stub.ListDispatches(
+        pb.ListDispatchesRequest(filter=pb.DispatchFilter(session_id=SESSION)), metadata=BEARER
     )
+    assert not listed.dispatches
 
 
 async def test_a_request_without_a_scope_or_an_id_is_invalid(stub: Dispatcher) -> None:

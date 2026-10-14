@@ -30,9 +30,8 @@ class Dispatch(Base):
     command_id: Mapped[str] = mapped_column(unique=True)
     session_id: Mapped[str]
     sandbox_name: Mapped[str]
-    # The Sandbox the command was queued for: a Sandbox recreated under its name is another one. None
-    # when no such Sandbox existed.
-    sandbox_uid: Mapped[UUID | None]
+    # The Sandbox the command was queued for: a Sandbox recreated under its name is another one.
+    sandbox_uid: Mapped[UUID]
     # Queried by the queue cap and by a stop, which the command carries too.
     operation: Mapped[Operation] = mapped_column(StringBackedStrEnumColumn(Operation))
     command: Mapped[command_pb2.Command] = mapped_column(ProtobufColumn(command_pb2.Command))

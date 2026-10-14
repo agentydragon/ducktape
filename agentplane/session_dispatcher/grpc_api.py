@@ -17,7 +17,7 @@ from agentplane.session_dispatcher.channels import Channel
 from agentplane.session_dispatcher.db import Dispatch
 from agentplane.session_dispatcher.models import DeliveryState, Operation, Reason
 from agentplane.session_dispatcher.runner_client import RunnerClient
-from agentplane.session_dispatcher.sandboxes import SandboxWatch, delivery_blocker
+from agentplane.session_dispatcher.sandboxes import SandboxNotFoundError, SandboxWatch, delivery_blocker
 from agentplane.session_dispatcher.store import (
     CommandConflictError,
     DispatchNotFoundError,
@@ -63,6 +63,7 @@ class Resources(ServicerResources):
 errors = status_mapping(
     Abort(CommandConflictError, (grpc.StatusCode.ALREADY_EXISTS, "command_id was used for other work")),
     Abort(QueueFullError, lambda error: (grpc.StatusCode.RESOURCE_EXHAUSTED, str(error))),
+    Abort(SandboxNotFoundError, (grpc.StatusCode.NOT_FOUND, "sandbox not found")),
     Abort(DispatchNotFoundError, (grpc.StatusCode.NOT_FOUND, "dispatch not found")),
     Abort(NotCancellableError, (grpc.StatusCode.FAILED_PRECONDITION, "delivery already began")),
     Abort(grpc.aio.AioRpcError, lambda error: (error.code(), f"runner: {error.details()}")),
@@ -78,7 +79,7 @@ def describe_dispatch(row: Dispatch) -> session_dispatcher_pb2.Dispatch:
         command_id=row.command_id,
         session_id=row.session_id,
         sandbox=row.sandbox_name,
-        sandbox_uid=None if row.sandbox_uid is None else str(row.sandbox_uid),
+        sandbox_uid=str(row.sandbox_uid),
         operation=_OPERATIONS[row.operation],
         state=_STATES[row.state],
         reason=row.reason,
@@ -111,12 +112,11 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
     ) -> session_dispatcher_pb2.Dispatch:
         _require(command_id=command_id, session_id=session_id, sandbox=sandbox)
         current = self.resources.sandboxes.get_sandbox(sandbox)
+        if current is None:
+            raise SandboxNotFoundError(sandbox)
         return describe_dispatch(
             await self.resources.store.enqueue(
-                session_id=session_id,
-                sandbox_name=sandbox,
-                sandbox_uid=None if current is None else current.metadata.uid,
-                command=command,
+                session_id=session_id, sandbox_name=sandbox, sandbox_uid=current.metadata.uid, command=command
             )
         )
 

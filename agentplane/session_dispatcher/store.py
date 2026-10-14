@@ -40,10 +40,9 @@ class DispatchStore:
         self.sessions = async_sessionmaker(engine, expire_on_commit=False)
 
     async def enqueue(
-        self, *, session_id: str, sandbox_name: str, sandbox_uid: UUID | None, command: command_pb2.Command
+        self, *, session_id: str, sandbox_name: str, sandbox_uid: UUID, command: command_pb2.Command
     ) -> Dispatch:
-        """Store `command` as queued, or as failed for a Sandbox that does not exist; a stop first
-        cancels what its Session has queued. A repeat of the same command returns the stored row."""
+        """Store `command` as queued; a stop first cancels what its Session has queued. A repeat of the same command returns the stored row."""
         operation = operation_of(command)
         async with self.sessions.begin() as session:
             # One writer per Session, so the cap and a stop's cancellation see every queued row.
@@ -58,24 +57,20 @@ class DispatchStore:
                     raise CommandConflictError(command.command_id)
                 return existing
             now = datetime.now(UTC)
-            if sandbox_uid is None:
-                state, reason = DeliveryState.FAILED, Reason.SANDBOX_DELETED
+            if operation is Operation.STOP_RUNNER_SESSION:
+                await session.execute(
+                    update(Dispatch)
+                    .where(Dispatch.session_id == session_id, Dispatch.state == DeliveryState.QUEUED_IN_DISPATCHER)
+                    .values(state=DeliveryState.CANCELLED_IN_DISPATCHER, reason=Reason.STOPPED, updated_at=now)
+                )
             else:
-                state, reason = DeliveryState.QUEUED_IN_DISPATCHER, None
-                if operation is Operation.STOP_RUNNER_SESSION:
-                    await session.execute(
-                        update(Dispatch)
-                        .where(Dispatch.session_id == session_id, Dispatch.state == DeliveryState.QUEUED_IN_DISPATCHER)
-                        .values(state=DeliveryState.CANCELLED_IN_DISPATCHER, reason=Reason.STOPPED, updated_at=now)
+                queued = await session.scalar(
+                    select(func.count()).where(
+                        Dispatch.session_id == session_id, Dispatch.state == DeliveryState.QUEUED_IN_DISPATCHER
                     )
-                else:
-                    queued = await session.scalar(
-                        select(func.count()).where(
-                            Dispatch.session_id == session_id, Dispatch.state == DeliveryState.QUEUED_IN_DISPATCHER
-                        )
-                    )
-                    if queued is not None and queued >= self.queue_cap:
-                        raise QueueFullError(f"session {session_id} holds {queued} queued commands, the cap")
+                )
+                if queued is not None and queued >= self.queue_cap:
+                    raise QueueFullError(f"session {session_id} holds {queued} queued commands, the cap")
             row = Dispatch(
                 command_id=command.command_id,
                 session_id=session_id,
@@ -83,8 +78,8 @@ class DispatchStore:
                 sandbox_uid=sandbox_uid,
                 operation=operation,
                 command=command,
-                state=state,
-                reason=reason,
+                state=DeliveryState.QUEUED_IN_DISPATCHER,
+                reason=None,
                 admission=None,
                 created_at=now,
                 updated_at=now,
@@ -198,8 +193,29 @@ class DispatchStore:
                 reason=Reason.DISPATCHER_RESTARTED,
             )
 
+    async def end_sandbox(self, sandbox_uid: UUID) -> None:
+        """The Sandbox is gone: what never reached its runner failed, and what did or may have has an
+        outcome nobody can read any more."""
+        async with self.sessions.begin() as session:
+            for_sandbox = Dispatch.sandbox_uid == sandbox_uid
+            await self._move(
+                session,
+                for_sandbox,
+                Dispatch.state == DeliveryState.QUEUED_IN_DISPATCHER,
+                to=DeliveryState.FAILED,
+                reason=Reason.SANDBOX_DELETED,
+            )
+            await self._move(
+                session,
+                for_sandbox,
+                (Dispatch.state == DeliveryState.DELIVERING_TO_RUNNER)
+                | ((Dispatch.state == DeliveryState.RUNNER_ADMITTED) & (Dispatch.operation == Operation.SUBMIT_INPUT)),
+                to=DeliveryState.UNKNOWN,
+                reason=Reason.SANDBOX_DELETED,
+            )
+
     async def forget_sandbox(self, sandbox_uid: UUID) -> None:
-        """The Sandbox is gone, and its rows are kept only as long as it exists."""
+        """Delete the rows of a gone Sandbox, which are kept only as long as it exists."""
         async with self.sessions.begin() as session:
             deleted = await session.execute(
                 delete(Dispatch).where(Dispatch.sandbox_uid == sandbox_uid).returning(Dispatch.position)
@@ -210,7 +226,7 @@ class DispatchStore:
     async def list_sandbox_uids(self) -> set[UUID]:
         """The Sandboxes that rows are stored for."""
         async with self.sessions() as session:
-            return {uid for uid in await session.scalars(select(Dispatch.sandbox_uid).distinct()) if uid is not None}
+            return set(await session.scalars(select(Dispatch.sandbox_uid).distinct()))
 
     @staticmethod
     async def _move(session: AsyncSession, *where: ColumnElement[bool], to: DeliveryState, reason: Reason) -> None:

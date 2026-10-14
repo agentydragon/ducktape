@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from uuid import UUID
 
@@ -30,7 +31,11 @@ class Delivery:
     """Runs on the Dispatcher's one active replica. A command moves when its Dispatch row, its
     Sandbox or, after an unreachable runner, a backoff says it may; nothing polls."""
 
-    def __init__(self, store: DispatchStore, sandboxes: SandboxWatch, runner: RunnerClient) -> None:
+    def __init__(
+        self, store: DispatchStore, sandboxes: SandboxWatch, runner: RunnerClient, *, forget_after_s: float
+    ) -> None:
+        # How long a deleted Sandbox's ended rows stay readable before they are deleted.
+        self.forget_after_s = forget_after_s
         self.store = store
         self.sandboxes = sandboxes
         self.runner = runner
@@ -38,7 +43,7 @@ class Delivery:
         # Sessions with a delivery under way: one at a time keeps a Session's commands in order.
         self._delivering: set[str] = set()
         # The incarnation that refused work, by Sandbox UID: no retry until the Sandbox changes it.
-        self._refused: dict[UUID | None, str | None] = {}
+        self._refused: dict[UUID, str | None] = {}
         self._attempts: dict[str, int] = {}
         self._retry_at: dict[str, float] = {}
 
@@ -46,17 +51,17 @@ class Delivery:
         """Deliver until cancelled."""
         await self.sandboxes.wait_synced()
         await self.store.reset_delivering()
-        await self._end_vanished()
         with (
             self.store.wakeups.changes[Channel.DISPATCH].subscribe(self._changed),
             self.sandboxes.changed.subscribe(self._changed),
         ):
             async with asyncio.TaskGroup() as deliveries:
+                await self._end_vanished(deliveries)
                 while True:
                     # Cleared before reading: a change racing with the read is a wakeup.
                     self._changed.clear()
                     try:
-                        await self._end_gone()
+                        await self._end_gone(deliveries)
                         await self._start(deliveries)
                     except SQLAlchemyError:
                         logger.warning("dispatch storage unavailable; retrying", exc_info=True)
@@ -66,16 +71,25 @@ class Delivery:
                         async with asyncio.timeout(self._next_retry_in()):
                             await self._changed.wait()
 
-    async def _end_vanished(self) -> None:
+    async def _end_vanished(self, deliveries: asyncio.TaskGroup) -> None:
         """Sandboxes deleted while this process was down: the first listing is complete."""
         for uid in await self.store.list_sandbox_uids() - self.sandboxes.live_uids():
-            await self.store.forget_sandbox(uid)
+            await self._end(uid, deliveries)
 
-    async def _end_gone(self) -> None:
+    async def _end_gone(self, deliveries: asyncio.TaskGroup) -> None:
         while self.sandboxes.gone:
             uid = next(iter(self.sandboxes.gone))
-            await self.store.forget_sandbox(uid)
+            await self._end(uid, deliveries)
             self.sandboxes.gone.discard(uid)
+
+    async def _end(self, sandbox_uid: UUID, deliveries: asyncio.TaskGroup) -> None:
+        """End the Sandbox's commands now, so a watcher reads why, and delete its rows after the grace."""
+        await self.store.end_sandbox(sandbox_uid)
+        deliveries.create_task(self._forget_later(sandbox_uid), name=f"forget-{sandbox_uid}")
+
+    async def _forget_later(self, sandbox_uid: UUID) -> None:
+        await asyncio.sleep(self.forget_after_s)
+        await self._retry_storage(lambda: self.store.forget_sandbox(sandbox_uid))
 
     def _next_retry_in(self) -> float | None:
         if not self._retry_at:
@@ -167,7 +181,15 @@ class Delivery:
         reason: str | None = None,
         admission: event_log_pb2.EventEntry | None = None,
     ) -> Dispatch | None:
-        """A transition the storage outage must not lose: the call it follows already happened."""
+        return await self._retry_storage(
+            lambda: self.store.settle(
+                head.command_id, from_states=from_states, to=to, reason=reason, admission=admission
+            )
+        )
+
+    @staticmethod
+    async def _retry_storage[T](write: Callable[[], Awaitable[T]]) -> T:
+        """A write the storage outage must not lose: the call or the deletion it follows already happened."""
         async for attempt in AsyncRetrying(
             retry=retry_if_exception_type(SQLAlchemyError),
             wait=wait_exponential(max=RETRY_MAX_S),
@@ -175,7 +197,5 @@ class Delivery:
             reraise=True,
         ):
             with attempt:
-                return await self.store.settle(
-                    head.command_id, from_states=from_states, to=to, reason=reason, admission=admission
-                )
+                return await write()
         raise AssertionError("unreachable: AsyncRetrying without a stop retries until it returns")

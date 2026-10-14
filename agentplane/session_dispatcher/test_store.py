@@ -38,11 +38,7 @@ def stop(command_id: str) -> command_pb2.Command:
 
 
 async def enqueue(
-    store: DispatchStore,
-    command: command_pb2.Command,
-    *,
-    session_id: str = SESSION,
-    sandbox_uid: UUID | None = SANDBOX_UID,
+    store: DispatchStore, command: command_pb2.Command, *, session_id: str = SESSION, sandbox_uid: UUID = SANDBOX_UID
 ) -> DeliveryState:
     return (
         await store.enqueue(session_id=session_id, sandbox_name=SANDBOX, sandbox_uid=sandbox_uid, command=command)
@@ -55,12 +51,6 @@ async def test_a_repeated_command_is_the_same_dispatch_and_another_payload_confl
     assert again.position == first.position
     with pytest.raises(CommandConflictError):
         await enqueue(store, submit("a", text="other"))
-
-
-async def test_a_command_for_a_sandbox_that_does_not_exist_has_failed(store: DispatchStore) -> None:
-    row = await store.enqueue(session_id=SESSION, sandbox_name=SANDBOX, sandbox_uid=None, command=submit("a"))
-    assert (row.state, row.reason) == (DeliveryState.FAILED, Reason.SANDBOX_DELETED)
-    assert await store.heads() == []
 
 
 async def test_a_session_queues_no_more_than_the_cap_and_a_stop_is_not_counted(store: DispatchStore) -> None:
@@ -117,17 +107,35 @@ async def test_only_a_queued_command_is_cancelled(store: DispatchStore) -> None:
         await store.cancel("missing")
 
 
-async def test_a_deleted_sandbox_takes_its_rows_with_it(store: DispatchStore) -> None:
-    await enqueue(store, submit("queued"), session_id="queued")
-    await enqueue(store, submit("admitted"), session_id="admitted")
+async def test_a_deleted_sandbox_ends_its_commands_and_then_its_rows_are_forgotten(store: DispatchStore) -> None:
+    for command_id in ("queued", "delivering", "admitted"):
+        await enqueue(store, submit(command_id), session_id=command_id)
+    await enqueue(
+        store,
+        command_pb2.Command(command_id="model-admitted", change_model=command_pb2.ChangeModel(model="test-model")),
+        session_id="model-admitted",
+    )
     await enqueue(store, submit("other-sandbox"), session_id="other", sandbox_uid=UUID(int=2))
     await store.settle(
-        "admitted",
-        from_states={DeliveryState.QUEUED_IN_DISPATCHER},
-        to=DeliveryState.RUNNER_ADMITTED,
-        admission=event_log_pb2.EventEntry(),
+        "delivering", from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.DELIVERING_TO_RUNNER
     )
+    for command_id in ("admitted", "model-admitted"):
+        await store.settle(
+            command_id,
+            from_states={DeliveryState.QUEUED_IN_DISPATCHER},
+            to=DeliveryState.RUNNER_ADMITTED,
+            admission=event_log_pb2.EventEntry(),
+        )
     assert await store.list_sandbox_uids() == {SANDBOX_UID, UUID(int=2)}
+    await store.end_sandbox(SANDBOX_UID)
+    states = {row.command_id: row.state for row in await store.list_dispatches(sandbox_name=SANDBOX)}
+    assert states == {
+        "queued": DeliveryState.FAILED,
+        "delivering": DeliveryState.UNKNOWN,
+        "admitted": DeliveryState.UNKNOWN,
+        "model-admitted": DeliveryState.RUNNER_ADMITTED,
+        "other-sandbox": DeliveryState.QUEUED_IN_DISPATCHER,
+    }
     await store.forget_sandbox(SANDBOX_UID)
     assert [row.command_id for row in await store.list_dispatches(sandbox_name=SANDBOX)] == ["other-sandbox"]
     assert await store.list_sandbox_uids() == {UUID(int=2)}

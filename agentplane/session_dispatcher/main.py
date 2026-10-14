@@ -68,7 +68,10 @@ async def serve(settings: Settings) -> None:
             # none is worse than a restart.
             async with asyncio.TaskGroup() as workers:
                 watching = workers.create_task(sandboxes.run(), name="sandbox-watch")
-                delivering = workers.create_task(Delivery(store, sandboxes, runner).run(), name="delivery")
+                delivering = workers.create_task(
+                    Delivery(store, sandboxes, runner, forget_after_s=settings.deleted_sandbox_grace_s).run(),
+                    name="delivery",
+                )
                 async with serving(server, f"{settings.host}:{settings.port}", grace_s=5):
                     await until_terminated()
                 watching.cancel()

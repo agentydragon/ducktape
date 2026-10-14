@@ -27,13 +27,14 @@ from agentplane.session_dispatcher.testing.scripted_runner import ScriptedRunner
 # gazelle:include_dep @pypi//grpcio
 
 SESSION = "test-session"
+GRACE_S = 1
 
 
 @pytest.fixture(autouse=True)
 async def delivery(
     store: DispatchStore, sandboxes: SandboxWatch, runner_client: RunnerClient
 ) -> AsyncIterator[Delivery]:
-    delivery = Delivery(store, sandboxes, runner_client)
+    delivery = Delivery(store, sandboxes, runner_client, forget_after_s=GRACE_S)
     async with background(delivery.run(), name="delivery"):
         yield delivery
 
@@ -130,13 +131,14 @@ async def test_a_command_the_runner_refuses_fails_with_its_status(
     assert row.admission is None
 
 
-async def test_commands_for_a_deleted_sandbox_are_forgotten(
+async def test_commands_for_a_deleted_sandbox_end_and_are_then_forgotten(
     store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster
 ) -> None:
     set_sandbox(cluster, ready=False)
     await enqueue(store, sandboxes, "orphaned")
     await wait_for(store, "orphaned", DeliveryState.QUEUED_IN_DISPATCHER, Reason.SANDBOX_NOT_READY)
     cluster.fake.delete(sandbox_resource.SANDBOXES_PLURAL, SANDBOX)
+    await wait_for(store, "orphaned", DeliveryState.FAILED, Reason.SANDBOX_DELETED)
     changed = asyncio.Event()
     with store.wakeups.changes[Channel.DISPATCH].subscribe(changed):
         while True:

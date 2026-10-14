@@ -8,7 +8,8 @@ import "agentplane/proto/event_log.proto";
 import "google/protobuf/timestamp.proto";
 
 // One RPC per command, mirroring the runner's. Each stores the command durably and answers with its
-// `Dispatch` in `DELIVERY_STATE_QUEUED_IN_DISPATCHER`; none waits for delivery. `command_id` is the
+// `Dispatch` in `DELIVERY_STATE_QUEUED_IN_DISPATCHER`, or fail `NOT_FOUND` for a Sandbox that does not exist;
+// none waits for delivery. `command_id` is the
 // idempotency key across all of them: a retry of the same operation and payload answers with the same
 // `Dispatch`, and the same ID under another operation or payload fails `ALREADY_EXISTS`.
 service SessionDispatcher {
@@ -54,9 +55,8 @@ message Dispatch {
   string command_id = 1;
   string session_id = 2;
   string sandbox = 3;  // the Sandbox's name
-  // The Sandbox this was queued for, which a recreated Sandbox of the same name is not. Absent when no
-  // such Sandbox existed.
-  optional string sandbox_uid = 4;
+  // The Sandbox this was queued for, which a recreated Sandbox of the same name is not.
+  string sandbox_uid = 4;
   Operation operation = 5;
   DeliveryState state = 6;
   optional string reason = 7;

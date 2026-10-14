@@ -22,6 +22,10 @@ def delivery_blocker(sandbox: Sandbox) -> Reason | None:
     return Reason.SANDBOX_NOT_READY
 
 
+class SandboxNotFoundError(Exception):
+    pass
+
+
 class SandboxWatch:
     def __init__(self, custom_objects: CustomObjectsClient, *, namespace: str, resync_seconds: int) -> None:
         self.changed = ChangeSignal()

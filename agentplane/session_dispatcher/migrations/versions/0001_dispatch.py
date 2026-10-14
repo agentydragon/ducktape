@@ -16,7 +16,7 @@ def upgrade() -> None:
         sa.Column("command_id", sa.String(), nullable=False, unique=True),
         sa.Column("session_id", sa.String(), nullable=False),
         sa.Column("sandbox_name", sa.String(), nullable=False),
-        sa.Column("sandbox_uid", sa.Uuid(), nullable=True),
+        sa.Column("sandbox_uid", sa.Uuid(), nullable=False),
         sa.Column("operation", sa.String(), nullable=False),
         sa.Column("command", sa.LargeBinary(), nullable=False),
         sa.Column("state", sa.String(), nullable=False),
