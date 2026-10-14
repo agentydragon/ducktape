@@ -111,7 +111,11 @@ class _Push:
                 await self.write(runner_ingress_pb2.PushFrame(entry=entry))
                 cursor = entry.cursor
         self.sealed_sent = True
-        await self.write(runner_ingress_pb2.PushFrame(sealed=runner_pb2.Sealed(cursor=cursor)))
+        await self.write(
+            runner_ingress_pb2.PushFrame(
+                sealed=runner_pb2.Sealed(cursor=cursor, incarnation_uid=self.session.journal.sealed_incarnation_uid)
+            )
+        )
         async with self.writing:
             await self.call.done_writing()
 

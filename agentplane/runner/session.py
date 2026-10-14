@@ -730,15 +730,15 @@ class Session:
             await process.stop()
             raise
 
-    async def seal(self) -> int:
+    async def seal(self, incarnation_uid: str | None) -> int:
         """Sandbox teardown: interrupt the active turn, stop setup and the harness, then make the journal
-        final at its cursor."""
+        final at its cursor for `incarnation_uid`."""
         async with self._lock:
             self._sealing = True
             self._tearing_down = True
         await self._shutdown()
         await self.stop()
-        return await self.journal.seal()
+        return await self.journal.seal(incarnation_uid)
 
     async def stop(self) -> None:
         """Runner shutdown: stop the harness without interrupting; the log records the exit."""
