@@ -298,15 +298,18 @@ plausible explanation, not a proven identical internal cause.
 
 Qwen3.5 provides another long-context path. Its [0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B/blob/main/config.json)
 and [4B](https://huggingface.co/Qwen/Qwen3.5-4B/blob/main/config.json) models declare
-262,144 positions. The following isolated Ollama 0.40.2 Vulkan runs used AC power,
-Flash Attention on, and an 8 GiB host-available-memory floor. A stopped request
-is a censored attempt, not evidence that the model rejected the advertised context.
+262,144 positions. The following isolated Ollama 0.40.2 Vulkan runs used Flash
+Attention on and an 8 GiB host-available-memory floor. The first three used AC
+power; both the native-context 0.8B tiny gates and long request used battery.
+A stopped request is a censored attempt, not evidence that the model rejected
+the advertised context.
 
 | Model weights | KV type | Allocated context | Native input | Observed result                                                                                                         |
 | ------------- | ------- | ----------------: | -----------: | ----------------------------------------------------------------------------------------------------------------------- |
 | 4B Q4_K_M     | q8_0    |           196,608 |      149,999 | Accepted; progressed through 56,320 tokens, then the host-memory guard stopped the isolated server.                     |
 | 4B Q4_K_M     | q4_0    |           163,840 |      149,999 | Accepted; progressed through 24,832 tokens, then the same guard stopped it. Unrelated local builds overlapped this run. |
 | 0.8B Q8_0     | q4_0    |           163,840 |      134,993 | **Completed without truncation; all three exact ledger codes recovered.**                                               |
+| 0.8B Q8_0     | q4_0    |           262,144 |      209,992 | Tiny load and API gates passed; long request was operator-censored after 140,544 processed tokens. No answer.           |
 
 The successful 0.8B request used the OpenAI-compatible `/v1/chat/completions`
 endpoint with a persisted context alias and batch/microbatch 256. Its
@@ -324,6 +327,16 @@ reports weaker long-context and agent scores than larger Qwen3.5 models under
 different, often thinking-mode settings; this local request requested
 non-thinking output and returned no reasoning field.
 
+The later native-context run accepted 209,992 prompt tokens through `/v1` but
+was canceled after 44 minutes 21 seconds of prefill because its measured tail
+rate projected beyond the planned 23:15 UTC stop. It produced no answer, so its
+three ledger codes were not scored; `truncated = 0` on the canceled runner slot
+does not prove full processing. The 8 GiB memory guard did not fire: sampled
+minimum host available memory was 8,697,956 KiB (8.30 GiB). Its primary q4_0
+KV allocated 864 MiB, draft F16 KV 512 MiB, and Vulkan compute reservation
+161 MiB. It used battery power throughout. This establishes native-context
+allocation and partial prefill, not a completed 210k-token request.
+
 F16-KV, Flash-Attention-off 0.8B tiny-load attempts were stopped by the same
 8 GiB guard before an answer at both the model's native 262,144 context and a
 163,840 context. At 262,144, primary F16 KV allocated 3,072 MiB, draft KV 512
@@ -332,7 +345,9 @@ available memory fell to 5,602,772 KiB. At 163,840, primary KV shrank to 1,920
 MiB but the compute reservation remained 3,453 MiB, and available memory fell
 to 8,190,240 KiB, just below the 8 GiB floor. All primary layers were on the
 GPU in both attempts. Flash Attention and KV type are process-wide Ollama 0.40.2
-settings, so the successful q4_0/Flash-Attention-on run is not qualified on
+settings; both differ between the q4_0/Flash-Attention-on and F16/Flash-Attention-off
+profiles, so the compute-buffer difference cannot be attributed to KV type alone.
+The successful q4_0/Flash-Attention-on run is not qualified on
 the existing Gemma F16/Flash-Attention-off service profile.
 
 The tested OpenVINO Qwen pipeline reserves 8192 input tokens plus 2048 response
