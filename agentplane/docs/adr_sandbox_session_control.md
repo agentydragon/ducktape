@@ -1,11 +1,11 @@
 # Sandbox and Session control: who owns what
 
-Status: **mostly decided; see [Decisions](#decisions) for what is settled, by whom and when, and for the questions
+Status: **mostly decided; see [Decisions](#decisions) for what is settled and when, and for the questions
 still open.** Where a fork below names a recommendation, it is the recommendation of the design lane, not a ruling.
 
 Scope: the responsibilities split across the services and custom resources that run a Sandbox (Pod
 or VM) and deliver work to the Sessions in it. This covers the control Service, readiness and
-runner health, sealing, suspension, the Session message queue, and where each fact lives. It does
+runner health, quiesce, suspension, the Session message queue, and where each fact lives. It does
 not redesign storage, the History Service, or policy.
 
 ## What has to happen
@@ -14,7 +14,7 @@ not redesign storage, the History Service, or policy.
    or VM. Kind (`pod` or `vm`) comes from the template.
 2. **Reach its runner.** Callers address `<sandbox>-control`; the replica holding the runner's
    dial-out connection answers.
-3. **Say what state it is in.** Created, starting, booting, connected, ready, sealing,
+3. **Say what state it is in.** Created, starting, booting, connected, ready, quiescing,
    suspended, tearing down, and why it is stuck when it is.
 4. **Quiesce** (today's "seal"; one operation, names in D3). Before a Pod or VM goes away (suspend or delete), stop admitting work,
    interrupt running turns, flush every Session's journal to the ingress, and only then stop it.
@@ -24,27 +24,27 @@ not redesign storage, the History Service, or policy.
 6. **Suspend idle Sandboxes.** Never delete on idleness.
 7. **Create a Session** that does not exist yet, from a client-minted ID.
 8. **Keep per-Session data out of Kubernetes**. Kubernetes holds Sandbox-level
-   facts, including transitional conditions such as sealed or unsealed; Session-level records live
+   facts, including transitional conditions such as quiesced or not; Session-level records live
    in a service database.
 
 ## Current state
 
 - **Sandbox Controller** (Go, `sandbox_controller/`): state PVC, Pod or VM, ServiceAccount, `PolicyBinding`, launch
   ConfigMap, finalizer, and the `{sandbox}-control` Service. It drives quiesce: it calls `Runner.Quiesce` through the
-  gateway's runner proxy and records `Quiesced` and `status.quiescedIncarnation` beside the older sealed names. It
+  gateway's runner proxy and records `status.quiescedIncarnation` on any quiesce and sets `Quiesced` on a deleting Sandbox only (`finalize`), beside the older sealed names. It
   reads the connection Lease's facts. `Ready` is `WorkloadReady` AND `RunnerConnected`. `QuiesceResponse.stage` has a
   reader in the controller and one in the gateway's deletion seal.
 - **Runner Gateway** (`runner_gateway/`): the `RunnerControl.Connect` listener and the proxy of the runner's `Runner`
   service. It creates, per Sandbox, a Lease (holder, epoch, liveness) and an EndpointSlice pointing at the holding
-  replica (`connection_records.py`), owned by the Sandbox. Its own creation of the `<sandbox>-control` Service is a
-  transitional duplicate of the controller's. It still wraps `Runner` with Session registry, readiness checks
+  replica (`connection_records.py`), owned by the Sandbox, and writes the runner's published quiesce stage and bootstrap result onto the Lease. It no longer creates the `<sandbox>-control` Service
+  (its `services` RBAC rule stays until the controller's image is pinned). It still wraps `Runner` with Session registry, readiness checks
   (`destinations.py`) and a database, and its API promises that session and command RPCs never provision, resume or
-  wake a Sandbox. It also seals a deleting Sandbox itself (`sealing.py`, `deletion_seals.py`): a second actor, and a
+  wake a Sandbox. It also quiesces a deleting Sandbox itself (`sealing.py`, `deletion_seals.py`): a second actor, and a
   second reader of the runner's quiesce response, beside the controller.
 - **Sandbox Service** (`sandbox_service/`): `CreateSandbox`, `SuspendSandbox`, `ResumeSandbox`, `DeleteSandbox`,
   grants. It writes the Sandbox's desired state and the controller validates it. It is to fold into the controller.
 - **Runner**: harnesses, journal, command admission, `Quiesce` (a durable lameduck keyed to the incarnation UID,
-  dropped on a `Welcome` carrying another). It starts the Sandbox's `bootstrap` at runner start, and `OpenSession`
+  dropped on a `Welcome` carrying another). It publishes its quiesce stage and bootstrap result on its heartbeat. It starts the Sandbox's `bootstrap` at runner start, and `OpenSession`
   still waits for it. The per-command RPCs refuse work in lameduck with `ABORTED`.
 - **History Service**: ingress (journals pushed by runners, acked by cursor), raw log, fold, reads; records which
   Sandbox wrote each Session. Folds `last_model_activity_at`.
@@ -108,12 +108,12 @@ headed for the app.
 
 ### D1. Who owns the per-Sandbox control Service
 
-Today the gateway creates the Service, the Lease and the EndpointSlice on the first connection. The
+A Sandbox's connection has three objects: the Service, the Lease and the EndpointSlice. The
 Service is static (name, port); the slice and Lease are the dynamic connection fact.
 
 | Option                                                                    | For                                                                                                                                              | Against                                                                                                              |
 | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
-| A. Gateway owns all three (today)                                         | One writer of connection state; nothing to coordinate                                                                                            | The gateway needs `create` on Services; the name appears only after a runner connects; a stale-owner replace dance   |
+| A. Gateway owns all three                                                 | One writer of connection state; nothing to coordinate                                                                                            | The gateway needs `create` on Services; the name appears only after a runner connects; a stale-owner replace dance   |
 | **B. Controller creates the Service; gateway writes the Lease and slice** | The Service exists, Sandbox-owned, from creation; before a runner connects the caller sees no endpoints, not a DNS failure; gateway RBAC shrinks | The controller and gateway must agree on name and port (one shared constant)                                         |
 | C. No per-Sandbox Service; any gateway replica forwards to the holder     | No Kubernetes object per connection; one address for callers                                                                                     | Adds a replica-to-replica hop and trust; reverses the operator's 2026-10-12 choice of a dialed-hostname Sandbox name |
 
@@ -231,9 +231,9 @@ marker names the incarnation it was entered in:
   new incarnation continues it after that cursor with an entry recording that it resumed; how a
   sealed journal is reopened and what the ingress does with the next cursor range is
   still to be defined, and the earlier incarnation's acknowledgement stays valid for it.
-- **Outside the runner** (the design; the runner's keyed marker above already exists). The Lease's stage annotation carries the incarnation UID it describes, and
-  the gateway clears the stage when it accepts a connection for a different incarnation, so a stale
-  `Quiesced` is never read for the new one. The controller's `quiescedIncarnation` is compared with
+- **Outside the runner.** Runner facts on the Lease are valid only while its `pod-uid` names the incarnation:
+  the gateway rebuilds the Lease without them when it accepts a connection for a different incarnation
+  (`readRunnerFacts` and `accept()` in `connection_records.py`), so a stale `Quiesced` is never read for the new one. The controller's `quiescedIncarnation` is compared with
   the current `status.incarnation`; after a resume they differ, which is what makes the new
   incarnation unquiesced there as well.
 
@@ -294,7 +294,7 @@ the wait is bounded by the setups already running; the runner needs no mode of i
 Dispatcher is the only caller of the runner's `OpenSession`. Today it is not: the gateway proxy lets every
 configured caller account call every method except `Quiesce` and `Seal`, and the gateway's own wrapper calls it
 too. So the gateway must authorize `OpenSession`, and the other methods that start or continue work, for the
-Dispatcher's account alone; that is a requirement of this design with its own task. A
+Dispatcher's account alone (`InterruptTurn`, `StopRunnerSession` and reads stay open); that is a requirement of this design with its own task. A
 setup that never ends makes the suspend wait forever and leaves delete working, which is intended. An automatic
 suspend needs none of it: a running setup is busy, so the conditional `Quiesce` refuses.
 
@@ -372,7 +372,7 @@ automatic suspend is conditional: `Quiesce` carries `if_idle_since`, the runner'
 and refuses when it differs or the runner is busy; the controller then resets its idle timer. Busy includes a delivery under way, marked at RPC entry before the first `await`: a `SubmitInput` between RPC entry and the journal write is already in the runner's set of admissions in flight, and the compare goes directly before lameduck entry with no `await` between. The two orderings are then exhaustive: a delivery precedes the compare and finds the runner busy, or follows lameduck entry and is refused. The token is checked
 only on entry: a repeat `Quiesce` that finds the runner already in lameduck for this incarnation succeeds
 whatever its token, because the controller re-issues `Quiesce` after a lost response. The token is opaque to the
-controller, which measures elapsed time from its first observation of each distinct token, so clock skew and a
+controller, and the runner compares it at the precision the Lease carries: the gateway writes `idle-since` through a datetime (`Timestamp.ToDatetime(...).isoformat()`), so at most microseconds, and a runner that published finer values would never match its own echoed token. The controller measures elapsed time from its first observation of each distinct token, so clock skew and a
 restarted runner cannot suspend early; after a controller restart it starts the timer on its first observation, and
 suspending up to one `idleSuspendAfter` later is acceptable. Operator suspend and delete are unconditional and carry
 no token. A message that arrives after the controller decided but before
@@ -432,21 +432,23 @@ that sends work to a Session (app composer, Notification Service, agent messagin
 Dispatcher's command RPCs, so there is one set of delivery semantics: accepted, then delivered, or failed
 with a reason. A second direct path for the same senders means "sometimes queued, sometimes an
 immediate error", which the suspended composer story cannot present. The runner proxy at the
-gateway stays the only runner surface, and system callers still use it directly: the Dispatcher itself,
-the controller's `Quiesce`, operator diagnostics and acceptance tests. Per-method authorization at the
+gateway stays the only runner surface. Only the Dispatcher starts or continues work (`OpenSession`, `ResumeSession`,
+`SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`); the controller alone calls `Quiesce`; `InterruptTurn`,
+`StopRunnerSession` and reads stay open to system callers and diagnostics. Tests and diagnostics that start work go through
+the Dispatcher. Per-method authorization at the
 gateway is where "only these callers may call `SubmitInput`" and the other start-or-continue-work methods is
 enforced; it is a policy edit, not a new path.
 
 What remains of the runner surface for direct use once the Dispatcher exists:
 
-| `Runner` method                                       | After the Dispatcher                                                             |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` | Dispatcher (senders); direct for system callers and tests                        |
-| `InterruptTurn`, `StopRunnerSession`                  | Dispatcher (senders); direct for system callers and tests; never wake a Sandbox  |
-| `OpenSession`                                         | Dispatcher (its own `OpenSession`); direct for system callers                    |
-| `ResumeSession`                                       | Dispatcher, as an internal step of each command RPC (the harness half of waking) |
-| `Quiesce`                                             | Sandbox Controller only                                                          |
-| `ListSessions`                                        | direct; reads need no wake                                                       |
+| `Runner` method                                       | After the Dispatcher                                                                  |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` | Dispatcher only                                                                       |
+| `InterruptTurn`, `StopRunnerSession`                  | Dispatcher (senders); direct for system callers; never wake a Sandbox                 |
+| `OpenSession`                                         | Dispatcher only                                                                       |
+| `ResumeSession`                                       | Dispatcher only, as an internal step of each command RPC (the harness half of waking) |
+| `Quiesce`                                             | Sandbox Controller only                                                               |
+| `ListSessions`                                        | direct; reads need no wake                                                            |
 
 A deployment with no Dispatcher is a valid reduced configuration, because the runner, gateway and controller do
 not depend on the Dispatcher. Idle policy is the controller's, so such a Sandbox still suspends when idle, and only
@@ -556,7 +558,7 @@ call that no code fixes; a few days of sender retry is the constraint.
 placement is passed or looked up. Placement lookup and the reading of final-cursor acks (already required
 for any suspend or delete) are the only touches. For idle policy the controller should not derive
 activity from history at all (below), so idle policy and the Dispatcher run with the History Service down, except
-that, as today, nothing can finish sealing while the ingress is down. An outage therefore stops a quiesce from
+that, as today, nothing can finish quiescing while the ingress is down. An outage therefore stops a quiesce from
 finishing, not messaging: a Sandbox keeps accepting messages until its quiesce enters lameduck. There is no
 ingress-health gate before an automatic suspend (accepted as a trade): an automatic
 quiesce started during a History Service outage can sit in lameduck, refusing new work, until the outage ends.
@@ -573,7 +575,7 @@ Recommend suspension uses the first: the runner publishes `idleSince`, absent wh
 (carried like other runner facts in D2), and the Sandbox Controller runs the timer against
 `spec.idleSuspendAfter`, then suspends through the D3 sequence. The timer is restartable because
 the facts live in the runner and Lease, not in controller memory. A message sent to an idle Sandbox
-that is about to suspend is safe: the suspend is conditional on the `idleSince` token (D3), and a sealing runner refuses
+that is about to suspend is safe: the suspend is conditional on the `idleSince` token (D3), and a quiescing runner refuses
 the message with a retryable code that the Dispatcher redelivers after resume. The Dispatcher keeps no pending mark
 and the controller reads nothing from it. The History Service's folded `last_model_activity_at` stays a separate timestamp for the UI and the notification quiet window.
 
@@ -635,20 +637,25 @@ stateDiagram-v2
     TEARING_DOWN --> [*]
 ```
 
-| Name used in this document    | Wire phase                           | Reasons                                                                   |
-| ----------------------------- | ------------------------------------ | ------------------------------------------------------------------------- |
-| Creating                      | `CREATING`                           | `Running` False                                                           |
-| Starting                      | `RUNNING` once an incarnation exists | `Running` False, `Starting`                                               |
-| Booting                       | `RUNNING`                            | `Ready` False while the runner connects and the bootstrap runs            |
-| Ready                         | `RUNNING`                            | `Ready` True                                                              |
-| Degraded                      | `RUNNING`                            | `Ready` False, `Degraded` (runner crash loop; nothing replaced)           |
-| BootstrapFailed               | `RUNNING`                            | `Ready` False, `BootstrapFailed` (terminal)                               |
-| SuspendPending                | `SUSPENDING`                         | `Ready` False, `SuspendPending`                                           |
-| Quiescing                     | `QUIESCING`                          | `Quiesced` False, `Draining` then `Flushing`                              |
-| Quiesced, workload going away | `SUSPENDING`                         | `Quiesced` True                                                           |
-| Suspended                     | `SUSPENDED`                          |                                                                           |
-| Resuming                      | `CREATING`                           | `Running` False, with what it waits on (node down or full, unschedulable) |
-| TearingDown                   | `TEARING_DOWN`                       |                                                                           |
+| Name used in this document    | Wire phase                                                                           | Reasons                                                                                        |
+| ----------------------------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
+| Creating                      | `CREATING` until the Pod or VM exists                                                | `Running` False, `Starting`                                                                    |
+| Starting                      | `RUNNING` once the Pod or VM exists (`status.incarnation` is set even while Pending) | `Running` False, `Starting`                                                                    |
+| Booting                       | `RUNNING`                                                                            | `Ready` False while the runner connects and the bootstrap runs                                 |
+| Ready                         | `RUNNING`                                                                            | `Ready` True                                                                                   |
+| Degraded                      | `RUNNING`                                                                            | `Ready` False, `Degraded` (runner crash loop; nothing replaced)                                |
+| BootstrapFailed               | `RUNNING`                                                                            | `Ready` False, `BootstrapFailed` (terminal)                                                    |
+| SuspendPending                | `SUSPENDING`                                                                         | `Ready` False, `SuspendPending`                                                                |
+| Quiescing                     | `QUIESCING`                                                                          | `Quiesced` False, `Draining` then `Flushing`                                                   |
+| Quiesced, workload going away | `SUSPENDING`                                                                         | `Quiesced` True                                                                                |
+| Suspended                     | `SUSPENDED`                                                                          |                                                                                                |
+| Resuming                      | `CREATING` until the Pod or VM exists, then `RUNNING`                                | `Running` False, `Starting`; an unschedulable or node-down resume is `RUNNING` with `Starting` |
+| TearingDown                   | `TEARING_DOWN`                                                                       |                                                                                                |
+
+`Starting`, `Stopped`, `Stopping`, `PodEnded`, `VMEnded`, `Sealing` and the conflict reasons exist today
+(`sandbox_controller/SPEC.md` § Status); this design adds `Booting`, `Degraded`, `Draining`, `Flushing`, `NeverRan`,
+`NotQuiesced` and `SuspendPending`. `_phase` keys `QUIESCING` on the `Running` reasons `Quiescing` and `Sealing`, not on
+`Quiesced`.
 
 `QUIESCING` covers a suspend drain as well as a deletion drain; the enum's comment claiming deletion only is wrong. A
 Sandbox in `QUIESCING` or `TEARING_DOWN` takes no new Sessions or commands and cannot be suspended or resumed. A
@@ -694,7 +701,7 @@ and `Idle`, and an operator hold (`spec.wakeOnSend: false`) is distinguishable f
 
 - Suspend and delete both run the D3 sequence; a suspended, already-quiesced Sandbox deletes without
   waking (`quiescedIncarnation`).
-- A wedged seal is cleared by removing the finalizer by hand. That is a break-glass force delete for broken Sandboxes only: it discards unflushed journals and the CR-owned state volume. No force-seal exists to build around.
+- A wedged quiesce is cleared by removing the finalizer by hand. That is a break-glass force delete for broken Sandboxes only: it discards unflushed journals and the CR-owned state volume. No force-seal exists to build around.
 - Spec update is suspend, then resume, which re-derives the spec from the current template. The
   rendered spec of each incarnation is stored on the Sandbox for diffing.
 
@@ -770,34 +777,34 @@ sequenceDiagram
 
 ## Decisions
 
-| Decision                                                                                                 | Status  | Date       | Where        |
-| -------------------------------------------------------------------------------------------------------- | ------- | ---------- | ------------ |
-| The Dispatcher is the required door for senders, with direct runner access for system callers            | Decided | 2026-10-14 | D4           |
-| The Dispatcher is its own service, not part of the gateway or the controller                             | Decided | 2026-10-13 | D4           |
-| Idle policy lives in the Sandbox Controller, declarative, from runner-reported idleness                  | Decided | 2026-10-13 | D4           |
-| The controller creates the `<sandbox>-control` Service                                                   | Decided | 2026-10-13 | D1           |
-| Runner facts reach the controller on the connection Lease's annotations                                  | Decided | 2026-10-13 | D2           |
-| Facts ride a runner-only `RunnerHeartbeat`, sent on change and on connect                                | Decided | 2026-10-14 | D2           |
-| Quiescing is one operation on the whole runner and interrupts inside it; the renames of D3               | Decided | 2026-10-13 | D3           |
-| Resume is refused while a Sandbox is quiescing                                                           | Decided | 2026-10-13 | D3           |
-| Automatic suspend is a conditional `Quiesce` carrying `if_idle_since`; no ingress-health gate            | Decided | 2026-10-14 | D3           |
-| Suspend waits for the bootstrap and every Session's setup; delete does not                               | Decided | 2026-10-13 | D3           |
-| A waiting suspend holds `Ready` False with `SuspendPending`                                              | Decided | 2026-10-14 | D3           |
-| Refusal codes: `ABORTED` for lameduck and a failed conditional `Quiesce`, `FAILED_PRECONDITION` terminal | Decided | 2026-10-14 | D3           |
-| `InterruptTurn` bypasses the queue; `StopRunnerSession` goes ahead of the line                           | Decided | 2026-10-14 | D3           |
-| Delivery state names (`QUEUED_IN_DISPATCHER` and the rest)                                               | Decided | 2026-10-14 | D4           |
-| `ChangeModel` and `ChangeReasoningEffort` start a stopped harness                                        | Decided | 2026-10-14 | D4           |
-| The Dispatcher watches the Sandbox CR; there is no `WatchSandboxes`                                      | Decided | 2026-10-14 | D4           |
-| `spec.wakeOnSend: false` holds a Sandbox suspended against wake-on-send and gates the feature            | Decided | 2026-10-13 | D4           |
-| Per-Session idle for the UI is a folded History Service field; the Sandbox aggregate rides the Lease     | Decided | 2026-10-13 | D4           |
-| Idle suspension is `status.suspendedBy: Idle` plus a `spec.wakeGeneration` bump to wake                  | Decided | 2026-10-14 | Lifecycle    |
-| The six wire phases stay; finer states are reasons on conditions                                         | Decided | 2026-10-14 | Lifecycle    |
-| Removing the finalizer by hand is the only break-glass; there is no force-seal                           | Decided | 2026-10-13 | Lifecycle    |
-| Names: Session Dispatcher, `OpenSession` (kept), `Quiesce`, `Quiesced`, `Draining`, `Flushing`           | Decided | 2026-10-13 | below        |
-| The queue holds about 1,000 queued commands per Session; past that, `RESOURCE_EXHAUSTED`                 | Decided | 2026-10-14 | D4           |
-| How long the Dispatcher keeps dispatch rows                                                              | Open    |            | D4           |
-| Queued commands have no TTL; a Sandbox gone from Kubernetes ends them as `FAILED`                        | Decided | 2026-10-14 | D4           |
-| The handling of poison commands                                                                          | Open    |            | Complexities |
+| Decision                                                                                                    | Status               | Date (UTC) | Where        |
+| ----------------------------------------------------------------------------------------------------------- | -------------------- | ---------- | ------------ |
+| The Dispatcher is the required door for senders; system callers keep `Quiesce`, interrupts, stops and reads | Decided              | 2026-10-14 | D4           |
+| The Dispatcher is its own service, not part of the gateway or the controller                                | Open (recommend yes) |            | D4           |
+| Idle policy lives in the Sandbox Controller, declarative, from runner-reported idleness                     | Open (recommend yes) |            | D4           |
+| The controller creates the `<sandbox>-control` Service                                                      | Decided              | 2026-10-13 | D1           |
+| Runner facts reach the controller on the connection Lease's annotations                                     | Decided              | 2026-10-13 | D2           |
+| Facts ride a runner-only `RunnerHeartbeat`, sent on change and on connect                                   | Decided              | 2026-10-14 | D2           |
+| Quiescing is one operation on the whole runner and interrupts inside it; the renames of D3                  | Decided              | 2026-10-13 | D3           |
+| Resume is refused while a Sandbox is quiescing                                                              | Decided              | 2026-10-13 | D3           |
+| Automatic suspend is a conditional `Quiesce` carrying `if_idle_since`; no ingress-health gate               | Decided              | 2026-10-14 | D3           |
+| Suspend waits for the bootstrap and every Session's setup; delete does not                                  | Decided              | 2026-10-13 | D3           |
+| A waiting suspend holds `Ready` False with `SuspendPending`                                                 | Decided              | 2026-10-14 | D3           |
+| Refusal codes: `ABORTED` for lameduck and a failed conditional `Quiesce`, `FAILED_PRECONDITION` terminal    | Decided              | 2026-10-14 | D3           |
+| `InterruptTurn` bypasses the queue; `StopRunnerSession` goes ahead of the line                              | Decided              | 2026-10-14 | D3           |
+| Delivery state names (`QUEUED_IN_DISPATCHER` and the rest)                                                  | Decided              | 2026-10-14 | D4           |
+| `ChangeModel` and `ChangeReasoningEffort` start a stopped harness                                           | Decided              | 2026-10-14 | D4           |
+| The Dispatcher watches the Sandbox CR; there is no `WatchSandboxes`                                         | Decided              | 2026-10-14 | D4           |
+| `spec.wakeOnSend: false` holds a Sandbox suspended against wake-on-send and gates the feature               | Decided              | 2026-10-13 | D4           |
+| Per-Session idle for the UI is a folded History Service field; the Sandbox aggregate rides the Lease        | Decided              | 2026-10-13 | D4           |
+| Idle suspension is `status.suspendedBy: Idle` plus a `spec.wakeGeneration` bump to wake                     | Decided              | 2026-10-14 | Lifecycle    |
+| The six wire phases stay; finer states are reasons on conditions                                            | Decided              | 2026-10-14 | Lifecycle    |
+| Removing the finalizer by hand is the only break-glass; there is no force-seal                              | Decided              | 2026-10-13 | Lifecycle    |
+| Names: Session Dispatcher, `OpenSession` (kept), `Quiesce`, `Quiesced`, `Draining`, `Flushing`              | Decided              | 2026-10-13 | below        |
+| The queue holds about 1,000 queued commands per Session; past that, `RESOURCE_EXHAUSTED`                    | Decided              | 2026-10-14 | D4           |
+| How long the Dispatcher keeps dispatch rows                                                                 | Open                 |            | D4           |
+| Queued commands have no TTL; a Sandbox gone from Kubernetes ends them as `FAILED`                           | Decided              | 2026-10-14 | D4           |
+| The handling of poison commands                                                                             | Open                 |            | Complexities |
 
 **Names.** Names already taken, so not used for the queue service: `inbox` is the Notification Service's (`inbox_id`,
 `InboxView`), `outbox` is the Action Service's (`action_outbox`), "mailbox" is the task DAG's word for an agent's
