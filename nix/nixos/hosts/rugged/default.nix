@@ -80,9 +80,12 @@ in
 
   # Local LLM inference (Arc GPU + NPU)
   ducktape.localLlm.ollamaUpstream.enable = true;
-  # Provisional serving choice: 3/3 native tool probes passed; pending the
-  # broader quality comparison. The prefetch unit skips pulls once cached.
-  ducktape.localLlm.ollamaUpstream.models = [ "qwen3:4b-instruct-2507-q4_K_M" ];
+  # Qualified local models for the shared 32k serving budget. The prefetch unit
+  # skips pulls once each model is cached.
+  ducktape.localLlm.ollamaUpstream.models = [
+    "qwen3:4b-instruct-2507-q4_K_M"
+    "gemma4:e4b"
+  ];
   ducktape.localLlm.bearerProxy.enable = true;
 
   # Keep the llama.cpp service disabled until its own GGUF models and bounded

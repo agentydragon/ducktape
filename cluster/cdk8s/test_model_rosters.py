@@ -69,12 +69,10 @@ def test_rugged_local_candidates_are_served_and_experiment_only() -> None:
     assert [route.id for route in RUGGED_LOCAL_CANDIDATE_ROUTES] == [
         "rugged-local/oai-chat/qwen3-4b-instruct-2507-q4-k-m",
         "rugged-local/oai-chat/gemma4-e4b",
-        "rugged-local/oai-chat/gemma4-e2b-it-qat",
     ]
     assert [route.upstream_model for route in RUGGED_LOCAL_CANDIDATE_ROUTES] == [
         "qwen3:4b-instruct-2507-q4_K_M",
         "gemma4:e4b",
-        "gemma4:e2b-it-qat",
     ]
     assert all(
         route.model.limits == TokenLimits(max_input_tokens=28_672, max_output_tokens=4_096)

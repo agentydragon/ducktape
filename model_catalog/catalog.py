@@ -512,18 +512,10 @@ RUGGED_LOCAL_GEMMA4_E4B = Route(
     upstream_model="gemma4:e4b",
     reasoning_efforts=("none",),
     default_reasoning_effort="none",
-    publish_limits=True,
-)
-RUGGED_LOCAL_GEMMA4_E2B_IT_QAT = Route(
-    Model("gemma4-e2b-it-qat", display_name="Gemma 4 E2B IT QAT", limits=_RUGGED_LOCAL_LIMITS),
-    RUGGED_LOCAL_OPENAI,
-    upstream_model="gemma4:e2b-it-qat",
-    reasoning_efforts=("none",),
-    default_reasoning_effort="none",
     supports_function_calling=True,
     publish_limits=True,
 )
-RUGGED_LOCAL_CANDIDATE_ROUTES = (RUGGED_LOCAL_QWEN3_4B, RUGGED_LOCAL_GEMMA4_E4B, RUGGED_LOCAL_GEMMA4_E2B_IT_QAT)
+RUGGED_LOCAL_CANDIDATE_ROUTES = (RUGGED_LOCAL_QWEN3_4B, RUGGED_LOCAL_GEMMA4_E4B)
 
 
 @dataclass(frozen=True)
