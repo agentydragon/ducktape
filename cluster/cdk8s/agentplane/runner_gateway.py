@@ -183,9 +183,6 @@ class RunnerGateway(Construct):
                 # Resolving a Session's Sandbox and its runner Pod.
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
-                # CLEANUP(added 2026-10-14): Remove this rule once the Runner Gateway image without the deletion
-                #   seal is pinned in every environment; the Sandbox Controller sets `Quiesced` itself.
-                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes/status")], verbs=["patch"]),
                 # Runner connection records, each owned by its Sandbox: the Lease every replica
                 # watches, and the EndpointSlice of the control Service its holder points at itself.
                 RolePolicyRule(

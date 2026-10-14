@@ -10,6 +10,10 @@ replicas, apart from the Sandbox Service and its RBAC. It reads Sandboxes
 It does not call the History Service, so Sessions, commands and lifecycle requests keep working
 while that service is down or rolling.
 
+The Sandbox Controller owns `Sandbox.status`, including the `Quiesced` condition. The Gateway reads
+Sandboxes and Pods, and writes only its per-Sandbox runner connection Leases and EndpointSlices; its
+Role has no `sandboxes/status` write permission.
+
 - `runner_control.py`, `lifecycle_control.py`, `connection_records.py`: the runner connection, and
   the commands and lifecycle requests the replica holding it sends on it.
 - `runner_proxy.py`: the runner's `Runner` service, forwarded unchanged to the runner through the

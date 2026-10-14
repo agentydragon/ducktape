@@ -1359,7 +1359,6 @@ flowchart TD
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
-    GATEWAY_STATUS_RBAC_REMOVE[Blocked: the gateway loses its Sandbox status write]
     APP_SESSION_DEFAULTS --> GATEWAY_WRAPPER_RETIRE
     APP_GATEWAY_SEND_REMOVE --> GATEWAY_WRAPPER_RETIRE
     NOTIFICATION_GATEWAY_SEND_REMOVE --> GATEWAY_WRAPPER_RETIRE
@@ -1387,13 +1386,6 @@ but the Dispatcher can open a Session or send work, so the proxy's per-method po
 `ChangeModel` and `ChangeReasoningEffort`, which start a stopped harness; operator, 2026-10-13 PDT) for
 the Dispatcher's account alone. `InterruptTurn`, `StopRunnerSession` and the reads stay open to the callers
 that have them. Order: every other caller has moved to the Dispatcher, then the policy narrows.
-
-### `GATEWAY_STATUS_RBAC_REMOVE` — the gateway loses its Sandbox status write
-
-**Blocked on the Runner Gateway image without the deletion seal pinned in every environment.** Remove the
-`sandboxes/status` `patch` rule from the gateway's Role in `cluster/cdk8s/agentplane/runner_gateway.py`
-and the `CLEANUP` beside it. The old image still patches `Quiesced` until its pin moves, so the rule goes
-only after that.
 
 ### `RUNNER_COMMAND_RPCS` — `DeliverCommand` goes once nothing calls it
 

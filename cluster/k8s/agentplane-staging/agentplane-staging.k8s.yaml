@@ -2626,12 +2626,6 @@ rules:
       - list
       - watch
   - apiGroups:
-      - agentplane.allegedly.works
-    resources:
-      - sandboxes/status
-    verbs:
-      - patch
-  - apiGroups:
       - coordination.k8s.io
     resources:
       - leases

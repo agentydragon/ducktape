@@ -109,6 +109,23 @@ def test_app_and_sandbox_service_are_independent(
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
+def test_runner_gateway_cannot_write_sandbox_status(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
+    role = one(
+        doc
+        for doc in agentplane_manifests[namespace]
+        if doc["kind"] == "Role" and doc["metadata"]["name"] == runner_gateway.NAME
+    )
+
+    sandbox_write_verbs = {"create", "update", "patch", "delete", "deletecollection"}
+    assert not any(
+        set(rule["resources"]) & {"sandboxes", "sandboxes/status"} and set(rule["verbs"]) & sandbox_write_verbs
+        for rule in role["rules"]
+    )
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
 def test_notifications_have_no_app_or_direct_runner_dependency(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
