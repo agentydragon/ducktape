@@ -80,11 +80,9 @@ in
   # Local LLM inference (Arc GPU + NPU)
   ducktape.localLlm.ollamaUpstream.enable = true;
 
-  # NPU service disabled 2026-09-17: real-hardware test found the NPU driver
-  # fails to initialize (silent CPU fallback) and the service has no
-  # --ctx-size cap, which combined to swap-thrash the whole machine into a
-  # ~4min apparent hang. See nix/debug/rugged/hw/llm_npu.md "Real-hardware status"
-  # before re-enabling.
+  # Keep the llama.cpp service disabled until its own GGUF models and bounded
+  # context are verified. The stock driver does execute NPU work with the
+  # correct Level Zero library paths; see the investigation linked below.
   ducktape.localLlm.npu.enable = false;
 
   # NPU kernel/userspace driver and firmware only, so Level Zero and OpenVINO

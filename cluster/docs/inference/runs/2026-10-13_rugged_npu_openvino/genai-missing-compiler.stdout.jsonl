@@ -1,0 +1,1 @@
+{"event": "setup", "model_path": "/tmp/rugged-npu-tinyllama-int4-ov", "openvino": "2026.4.1-22982-e213a147257-releases/2026/4", "openvino_genai": "2026.4.1.0-3408-ab01d1771e4", "devices": ["CPU", "NPU"], "npu_name": "Intel(R) AI Boost", "pid": 478187}

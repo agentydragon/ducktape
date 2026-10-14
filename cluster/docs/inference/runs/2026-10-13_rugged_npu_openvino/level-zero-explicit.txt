@@ -1,0 +1,201 @@
+Test version npu-linux-driver-dev-1.28.0.dev-0 on NixOS 26.05 (Yarara) (7.2.8)
+Note: Google Test filter = Driver.*:Device.*:Command*.*
+[==========] Running 55 tests from 10 test suites.
+[----------] Global test environment set-up.
+[----------] 12 tests from Command
+[ RUN      ] Command.CreateCloseAndDestroyList
+[       OK ] Command.CreateCloseAndDestroyList (0 ms)
+[ RUN      ] Command.CreateCloseResetAndDestroyList
+[       OK ] Command.CreateCloseResetAndDestroyList (0 ms)
+[ RUN      ] Command.CreateSynchronizeAndDestroyQueue
+[       OK ] Command.CreateSynchronizeAndDestroyQueue (0 ms)
+[ RUN      ] Command.CreateExecuteSynchronizeAndDestroyQueueErrorHandle
+[       OK ] Command.CreateExecuteSynchronizeAndDestroyQueueErrorHandle (0 ms)
+[ RUN      ] Command.CreateMultipleCommandQueuesUsingSameOrdinal
+[       OK ] Command.CreateMultipleCommandQueuesUsingSameOrdinal (1 ms)
+[ RUN      ] Command.CreateTwoCommandListUsingSameOrdinal
+[       OK ] Command.CreateTwoCommandListUsingSameOrdinal (0 ms)
+[ RUN      ] Command.PassTwoCommandListsToCommandQueueExecuteCommandLists
+[       OK ] Command.PassTwoCommandListsToCommandQueueExecuteCommandLists (55 ms)
+[ RUN      ] Command.SynchronizeCommandWithTimeoutBeingZero
+[       OK ] Command.SynchronizeCommandWithTimeoutBeingZero (24 ms)
+[ RUN      ] Command.SynchronizeCommandWithTimeoutBeingMaxUint64
+[       OK ] Command.SynchronizeCommandWithTimeoutBeingMaxUint64 (40 ms)
+[ RUN      ] Command.UseZeCommandQueueSynchronizeInLoop
+[       OK ] Command.UseZeCommandQueueSynchronizeInLoop (19 ms)
+[ RUN      ] Command.MultipleCommandQueueSubmissionStressTest
+[       OK ] Command.MultipleCommandQueueSubmissionStressTest (19 ms)
+[ RUN      ] Command.SynchronousCommandQueueSubmissionTest
+[       OK ] Command.SynchronousCommandQueueSubmissionTest (233 ms)
+[----------] 12 tests from Command (395 ms total)
+
+[----------] 9 tests from CommandTimestamp
+[ RUN      ] CommandTimestamp.AppendGlobalTimestampAndSynchronize
+[       OK ] CommandTimestamp.AppendGlobalTimestampAndSynchronize (55 ms)
+[ RUN      ] CommandTimestamp.AppendGlobalTimestampOffsetNotZeroAndSynchronize
+[       OK ] CommandTimestamp.AppendGlobalTimestampOffsetNotZeroAndSynchronize (59 ms)
+[ RUN      ] CommandTimestamp.AppendGlobalTimestampTwiceAndSynchronize
+[       OK ] CommandTimestamp.AppendGlobalTimestampTwiceAndSynchronize (61 ms)
+[ RUN      ] CommandTimestamp.AppendGlobalTimestampCloseListResetListAppendGlobalTimestampAndSynchronize
+[       OK ] CommandTimestamp.AppendGlobalTimestampCloseListResetListAppendGlobalTimestampAndSynchronize (18 ms)
+[ RUN      ] CommandTimestamp.AppendGlobalTimestampAndSynchronizeReuseCommandListAndRepeat
+[       OK ] CommandTimestamp.AppendGlobalTimestampAndSynchronizeReuseCommandListAndRepeat (17 ms)
+[ RUN      ] CommandTimestamp.TwoCommandQueusWithinSameGroupExecuteTimestampAndSynchronizePerQueue
+[       OK ] CommandTimestamp.TwoCommandQueusWithinSameGroupExecuteTimestampAndSynchronizePerQueue (15 ms)
+[ RUN      ] CommandTimestamp.ExecuteTimestampCopyAndTimestampCommands
+[       OK ] CommandTimestamp.ExecuteTimestampCopyAndTimestampCommands (22 ms)
+[ RUN      ] CommandTimestamp.TwoCommandQueusWithinSameGroupExecuteTimestampAndSynchronize
+[       OK ] CommandTimestamp.TwoCommandQueusWithinSameGroupExecuteTimestampAndSynchronize (64 ms)
+[ RUN      ] CommandTimestamp.CommandTimestampStressTest
+[       OK ] CommandTimestamp.CommandTimestampStressTest (5078 ms)
+[----------] 9 tests from CommandTimestamp (5393 ms total)
+
+[----------] 8 tests from CommandCopy
+[ RUN      ] CommandCopy.AppendMemoryCopyLocalToLocalAndSynchronize
+[       OK ] CommandCopy.AppendMemoryCopyLocalToLocalAndSynchronize (23 ms)
+[ RUN      ] CommandCopy.AppendMemoryCopyLocalToSystemAndSynchronize
+[       OK ] CommandCopy.AppendMemoryCopyLocalToSystemAndSynchronize (24 ms)
+[ RUN      ] CommandCopy.AppendMemoryCopySystemToLocalAndSynchronize
+[       OK ] CommandCopy.AppendMemoryCopySystemToLocalAndSynchronize (16 ms)
+[ RUN      ] CommandCopy.AppendMemoryCopySystemToSystemAndSynchronize
+[       OK ] CommandCopy.AppendMemoryCopySystemToSystemAndSynchronize (13 ms)
+[ RUN      ] CommandCopy.AppendMemoryCopyAndSynchronizeReuseCommandListAndRepeat
+[       OK ] CommandCopy.AppendMemoryCopyAndSynchronizeReuseCommandListAndRepeat (13 ms)
+[ RUN      ] CommandCopy.MultipleCopyOperationsUsingSameAllocatedMemory
+[       OK ] CommandCopy.MultipleCopyOperationsUsingSameAllocatedMemory (42 ms)
+[ RUN      ] CommandCopy.MultipleCopyOperationsWithinOneAllocatedMemory
+[       OK ] CommandCopy.MultipleCopyOperationsWithinOneAllocatedMemory (13 ms)
+[ RUN      ] CommandCopy.TwoCommandQueuesWithinSameGroupExecuteCopyAndSynchronize
+[       OK ] CommandCopy.TwoCommandQueuesWithinSameGroupExecuteCopyAndSynchronize (24 ms)
+[----------] 8 tests from CommandCopy (172 ms total)
+
+[----------] 1 test from CommandBarrier
+[ RUN      ] CommandBarrier.CopyCommandsUtilizeBarriers
+[       OK ] CommandBarrier.CopyCommandsUtilizeBarriers (13 ms)
+[----------] 1 test from CommandBarrier (13 ms total)
+
+[----------] 2 tests from CommandStress
+[ RUN      ] CommandStress.MultipleVPUCommandBuffers
+[       OK ] CommandStress.MultipleVPUCommandBuffers (13 ms)
+[ RUN      ] CommandStress.MultipleVPUJobs
+[       OK ] CommandStress.MultipleVPUJobs (19 ms)
+[----------] 2 tests from CommandStress (33 ms total)
+
+[----------] 6 tests from Device
+[ RUN      ] Device.GetProperties
+[       OK ] Device.GetProperties (0 ms)
+[ RUN      ] Device.GetZesDeviceAndProperties
+[       OK ] Device.GetZesDeviceAndProperties (0 ms)
+[ RUN      ] Device.GetZesEngineGetActivity
+[       OK ] Device.GetZesEngineGetActivity (0 ms)
+[ RUN      ] Device.GetPropertiesMutableCmdListDeviceIpVersion
+[       OK ] Device.GetPropertiesMutableCmdListDeviceIpVersion (0 ms)
+[ RUN      ] Device.GetGlobalTimestamps
+[       OK ] Device.GetGlobalTimestamps (1175 ms)
+[ RUN      ] Device.VerifySetWorkloadTypeApi
+[       OK ] Device.VerifySetWorkloadTypeApi (0 ms)
+[----------] 6 tests from Device (1176 ms total)
+
+[----------] 4 tests from Driver
+[ RUN      ] Driver.GetApiVersion
+[       OK ] Driver.GetApiVersion (0 ms)
+[ RUN      ] Driver.GetProperties
+[       OK ] Driver.GetProperties (0 ms)
+[ RUN      ] Driver.GetIpcProperties
+[       OK ] Driver.GetIpcProperties (0 ms)
+[ RUN      ] Driver.GetExtensionProperties
+[       OK ] Driver.GetExtensionProperties (0 ms)
+[----------] 4 tests from Driver (0 ms total)
+
+[----------] 4 tests from CommandQueuePriority
+[ RUN      ] CommandQueuePriority.createQueueWithDifferentPriority
+[       OK ] CommandQueuePriority.createQueueWithDifferentPriority (0 ms)
+[ RUN      ] CommandQueuePriority.executeCopyUsingDifferentPrioritySequentially
+[       OK ] CommandQueuePriority.executeCopyUsingDifferentPrioritySequentially (57 ms)
+[ RUN      ] CommandQueuePriority.executeCopyUsingDifferentPrioritySimultaneously
+[       OK ] CommandQueuePriority.executeCopyUsingDifferentPrioritySimultaneously (72 ms)
+[ RUN      ] CommandQueuePriority.executeManyLowPriorityJobsExpectHighPriorityJobCompletesFirst
+[       OK ] CommandQueuePriority.executeManyLowPriorityJobsExpectHighPriorityJobCompletesFirst (143 ms)
+[----------] 4 tests from CommandQueuePriority (274 ms total)
+
+[----------] 3 tests from CommandMemoryFill
+[ RUN      ] CommandMemoryFill.FillMemoryWithPattern/0
+[       OK ] CommandMemoryFill.FillMemoryWithPattern/0 (41 ms)
+[ RUN      ] CommandMemoryFill.FillMemoryWithPattern/1
+[       OK ] CommandMemoryFill.FillMemoryWithPattern/1 (39 ms)
+[ RUN      ] CommandMemoryFill.FillMemoryWithPattern/2
+[       OK ] CommandMemoryFill.FillMemoryWithPattern/2 (34 ms)
+[----------] 3 tests from CommandMemoryFill (115 ms total)
+
+[----------] 6 tests from CommandCopyPerf
+[ RUN      ] CommandCopyPerf.AppendMemoryCopy/1_Threads_SYSTEM_TO_SYSTEM_4096B_1_iterations
+
+Average Copy Command duration: 52307834 [ns]
+
+Minimum Copy Command execution time: 52307834 [ns]
+
+Maximum Copy Command execution time: 52307834 [ns]
+
+Average VPU device's timestamp value for Copy Command: 693 [VPU clock units]
+
+[       OK ] CommandCopyPerf.AppendMemoryCopy/1_Threads_SYSTEM_TO_SYSTEM_4096B_1_iterations (59 ms)
+[ RUN      ] CommandCopyPerf.AppendMemoryCopy/1_Threads_LOCAL_TO_LOCAL_4096B_1_iterations
+
+Average Copy Command duration: 11953944 [ns]
+
+Minimum Copy Command execution time: 11953944 [ns]
+
+Maximum Copy Command execution time: 11953944 [ns]
+
+Average VPU device's timestamp value for Copy Command: 648 [VPU clock units]
+
+[       OK ] CommandCopyPerf.AppendMemoryCopy/1_Threads_LOCAL_TO_LOCAL_4096B_1_iterations (18 ms)
+[ RUN      ] CommandCopyPerf.AppendMemoryCopy/4_Threads_SYSTEM_TO_SYSTEM_4096B_1_iterations
+
+Average Copy Command duration: 31044318 [ns]
+
+Minimum Copy Command execution time: 11301412 [ns]
+
+Maximum Copy Command execution time: 49140837 [ns]
+
+Average VPU device's timestamp value for Copy Command: 668 [VPU clock units]
+
+[       OK ] CommandCopyPerf.AppendMemoryCopy/4_Threads_SYSTEM_TO_SYSTEM_4096B_1_iterations (63 ms)
+[ RUN      ] CommandCopyPerf.AppendMemoryCopy/4_Threads_LOCAL_TO_LOCAL_4096B_1_iterations
+
+Average Copy Command duration: 42084885 [ns]
+
+Minimum Copy Command execution time: 9090971 [ns]
+
+Maximum Copy Command execution time: 54092904 [ns]
+
+Average VPU device's timestamp value for Copy Command: 692 [VPU clock units]
+
+[       OK ] CommandCopyPerf.AppendMemoryCopy/4_Threads_LOCAL_TO_LOCAL_4096B_1_iterations (69 ms)
+[ RUN      ] CommandCopyPerf.AppendMemoryCopy/8_Threads_SYSTEM_TO_SYSTEM_4096B_1_iterations
+
+Average Copy Command duration: 35066156 [ns]
+
+Minimum Copy Command execution time: 19673505 [ns]
+
+Maximum Copy Command execution time: 62918141 [ns]
+
+Average VPU device's timestamp value for Copy Command: 724 [VPU clock units]
+
+[       OK ] CommandCopyPerf.AppendMemoryCopy/8_Threads_SYSTEM_TO_SYSTEM_4096B_1_iterations (81 ms)
+[ RUN      ] CommandCopyPerf.AppendMemoryCopy/8_Threads_LOCAL_TO_LOCAL_4096B_1_iterations
+
+Average Copy Command duration: 34206380 [ns]
+
+Minimum Copy Command execution time: 15473348 [ns]
+
+Maximum Copy Command execution time: 55513736 [ns]
+
+Average VPU device's timestamp value for Copy Command: 826 [VPU clock units]
+
+[       OK ] CommandCopyPerf.AppendMemoryCopy/8_Threads_LOCAL_TO_LOCAL_4096B_1_iterations (75 ms)
+[----------] 6 tests from CommandCopyPerf (366 ms total)
+
+[----------] Global test environment tear-down
+[==========] 55 tests from 10 test suites ran. (7945 ms total)
+[  PASSED  ] 55 tests.

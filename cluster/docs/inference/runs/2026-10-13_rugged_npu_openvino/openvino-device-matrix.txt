@@ -1,0 +1,4 @@
+default LD_LIBRARY_PATH= -> ['CPU']
+loader_only LD_LIBRARY_PATH=/nix/store/dh158vr3svdcbjhv12fga184h5ww8kz2-level-zero-1.28.5/lib -> ['CPU']
+driver_only LD_LIBRARY_PATH=/run/opengl-driver/lib -> ['CPU']
+both LD_LIBRARY_PATH=/run/opengl-driver/lib:/nix/store/dh158vr3svdcbjhv12fga184h5ww8kz2-level-zero-1.28.5/lib -> ['CPU', 'NPU']

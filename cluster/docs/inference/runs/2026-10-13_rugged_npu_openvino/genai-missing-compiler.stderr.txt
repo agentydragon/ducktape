@@ -1,0 +1,10 @@
+Traceback (most recent call last):
+  File "/tmp/ducktape-worktrees/2026-10-13-rugged-npu/cluster/docs/inference/runs/2026-10-13_rugged_npu_openvino/bench.py", line 110, in <module>
+    main()
+  File "/tmp/ducktape-worktrees/2026-10-13-rugged-npu/cluster/docs/inference/runs/2026-10-13_rugged_npu_openvino/bench.py", line 56, in main
+    pipe = ov_genai.LLMPipeline(
+           ^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: Exception from src/inference/src/cpp/core.cpp:117:
+Exception from src/inference/src/dev/plugin.cpp:54:
+Exception from src/plugins/intel_npu/src/plugin/src/plugin_property_manager.cpp:732:
+Unsupported configuration key: NPU_MAX_TILES

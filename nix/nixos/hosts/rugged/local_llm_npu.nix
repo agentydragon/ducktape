@@ -72,12 +72,17 @@ in
         # Selects OpenVINO's NPU device; ggml-openvino defaults to CPU otherwise
         # (ggml/src/ggml-openvino/ggml-openvino-extra.cpp).
         GGML_OPENVINO_DEVICE = "NPU";
+        # The Level Zero loader discovers libze_intel_npu.so at runtime. On
+        # NixOS it lives in the graphics driver profile, outside the loader's
+        # default search path; without both directories, NPU discovery fails.
+        LD_LIBRARY_PATH = "${pkgs.level-zero}/lib:/run/opengl-driver/lib";
       };
       serviceConfig = {
         ExecStart = ''
           ${llama-cpp-openvino}/bin/llama-server \
             --host 127.0.0.1 --port ${toString llamaServerPort} \
             --models-dir ${models} \
+            --ctx-size 2048 --parallel 1 \
             --flash-attn on \
             --sleep-idle-seconds 300
         '';

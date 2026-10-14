@@ -1,51 +1,19 @@
-# Rugged NPU driver bump (research, 2026-10-13)
+# Rugged NPU driver and OpenVINO GenAI investigation (2026-10-13)
 
-Nothing was enabled, installed, or loaded. The only machine interaction was running `npu-umd-test` from existing `/nix/store` paths with `LD_LIBRARY_PATH` set in a single shell.
+Rugged's Intel AI Boost NPU **runs real inference on the active 1.28.0 driver**. The earlier `ZE_RESULT_ERROR_UNINITIALIZED` result was caused by library discovery, not evidence that the kernel driver could not execute NPU work. OpenVINO GenAI had a second, independent failure: its 2026.4.1 PyPI wheel omits the NPU compiler libraries. With the matching compiler libraries from Intel's archive, a pinned TinyLlama INT4 model compiled and generated on `device="NPU"`; the process held `/dev/accel/accel0` open. Raw commands and outputs are in [the run record](runs/2026-10-13_rugged_npu_openvino/README.md).
 
-## Current vs available
+The NPU driver is enabled on rugged, while `ducktape.localLlm.npu.enable` remains false. This investigation did not enable the llama.cpp service or activate a different system generation. The available 1.38.0 driver was tested from isolated Nix store paths only; its existence is not a reason to bump the working system driver.
 
-| Item               | rugged now                                                                                           | Upstream / nixpkgs                                                                                                                                                                                            |
-| ------------------ | ---------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `intel-npu-driver` | 1.28.0 (nixos-26.05 pin)                                                                             | **1.38.0** in both `nixpkgs-master` (`c0cbedf1fa`) and `nixpkgs-unstable` (`7fd4004d05`), the pins already in `flake.lock`. Upstream releases: 1.33.0 (2026-06-02), 1.35.0 (2026-07-24), 1.38.0 (2026-09-11). |
-| `level-zero`       | 1.28.5                                                                                               | 1.32.0 in master and unstable. Upstream 1.38.0 lists Level Zero 1.32.0 as its tested version.                                                                                                                 |
-| Kernel             | 7.2.8                                                                                                | Upstream validated 1.38.0 on 7.0.x.                                                                                                                                                                           |
-| Firmware           | `vpu_37xx/40xx/50xx_v1` from linux-firmware; the driver package also ships its own `firmware` output | 1.38.0 ships firmware dated 2026-08-20                                                                                                                                                                        |
-| OpenVINO           | built in-repo (`nix/packages/openvino-npu.nix`, `npu-compiler-libs.nix`)                             | 1.38.0 was validated with OpenVINO 2026.3.1 and compiler `npu_ud_2026_38_rc1`                                                                                                                                 |
+| Component                 | Active on rugged                                         | Isolated alternative tested                            |
+| ------------------------- | -------------------------------------------------------- | ------------------------------------------------------ |
+| NPU userspace driver      | `intel-npu-driver` 1.28.0 under `/run/opengl-driver/lib` | `intel-npu-driver` 1.38.0 from pinned `nixpkgs-master` |
+| Level Zero loader         | 1.28.5                                                   | 1.32.0                                                 |
+| OpenVINO GenAI diagnostic | 2026.4.1 wheel plus matching archive compiler libraries  | same diagnostic stack with the isolated 1.38.0 driver  |
 
-So **nixpkgs already has the bump**; no packaging work is needed. The bump is an override pulling `intel-npu-driver` and `level-zero` from `nixpkgs-master` into rugged's `hardware.cpu.intel.npu` stack.
+The stock 1.28.0 validation binary fails before running tests when its loader and driver libraries are absent from `LD_LIBRARY_PATH`. With both `${pkgs.level-zero}/lib` and `/run/opengl-driver/lib` present, **55/55** filtered driver, device, and command tests pass, including actual VPU command/copy tests. The isolated 1.38.0/1.32.0 pair passes **61/61** comparable tests. OpenVINO's `available_devices` changes from `['CPU']` to `['CPU', 'NPU']` only when both paths are present. This is why the dormant Nix service now declares those paths explicitly.
 
-## How the stack is wired (what a bump touches)
+The next failure occurs later, at GenAI pipeline compilation: `Unsupported configuration key: NPU_MAX_TILES`, with `NPU_COMPILER_VERSION=0`. The PyPI wheel contains the NPU plugin but lacks `libopenvino_intel_npu_compiler_loader.so` and `libopenvino_intel_npu_compiler.so`, matching [the upstream Linux-wheel report](https://github.com/openvinotoolkit/openvino/issues/36374). Supplying the exact-version libraries from the [official GenAI archive](https://docs.openvino.ai/2026/get-started/install-openvino/install-openvino-genai.html) changes `NPU_COMPILER_VERSION` to 524292 and makes `NPU_MAX_TILES` supported on **both** driver versions. Thus the observed compilation failure does not justify a driver upgrade.
 
-`hardware.cpu.intel.npu.enable = true` (nixos module in nixpkgs) adds:
+The successful 1.28.0 NPU run used [OpenVINO/TinyLlama-1.1B-Chat-v1.0-int4-ov](https://huggingface.co/OpenVINO/TinyLlama-1.1B-Chat-v1.0-int4-ov) at commit `72fd31b87453f00cb4dec2e92fa790c220d909bb`, `MAX_PROMPT_LEN=512`, `MIN_RESPONSE_LEN=128`, and greedy decoding. After one warmup, three short-prompt runs yielded **38.50, 38.77, 38.65 tokens/s**; three 368-token prompt runs yielded **38.87, 39.64, 39.35 tokens/s** for 32-token completions. Peak process RSS was **1,365,820 KiB** during model load; settled RSS was about **668 MiB**. The GenAI TTFT metric ranged **273–293 ms** after warmup. Because NPU prefill uses a static shape at this configuration, those data do not establish uncached prompt-processing tokens/s or scaling to long agent contexts. TinyLlama's response quality was poor, so these numbers establish device execution and throughput, not coding usefulness.
 
-- `pkgs.intel-npu-driver.validation` and `pkgs.level-zero` to `environment.systemPackages`
-- `pkgs.intel-npu-driver.firmware` to `hardware.firmware`
-- `pkgs.intel-npu-driver` to `hardware.graphics.extraPackages`, which links `libze_intel_npu.so` into `/run/opengl-driver/lib`
-
-The module reads `pkgs.intel-npu-driver`, so a bump means overlaying `pkgs.intel-npu-driver` and `pkgs.level-zero` with the master versions, for rugged only (host scope, not class-wide).
-The repo's OpenVINO packages must then be checked against the new driver, since the NPU compiler library and the driver are version-coupled.
-
-## Important finding: the "Level Zero doesn't init" diagnosis may be an environment issue
-
-`nix/debug/rugged/hw/npu.md` records `zeInitDrivers = ZE_RESULT_ERROR_UNINITIALIZED` with the stock 1.28.0 stack. Today the live system has `ducktape.localLlm.npu.enable = false`, so `/run/opengl-driver/lib` contains **no `libze_intel_npu.so`** at all (checked: zero matches for `npu|ze_`).
-
-Running the 1.28.0 validation binary with the driver's own `lib/` and level-zero's `lib/` on `LD_LIBRARY_PATH`:
-
-- `Driver.GetApiVersion` passes.
-- All the `Command*`, `CommandCopy`, `CommandStress`, `Context*`, and `Device.*` tests I saw pass, including `MultipleVPUCommandBuffers` and `MultipleVPUJobs`. These execute work on the NPU.
-- `Umd.ConfigurationCheck` fails, with an empty config list, so a config file the test expects is missing. That looks unrelated to execution.
-
-So with the correct library path, **1.28.0 can already run Level Zero command queues on this NPU**. I only saw the first ~40 results and did not capture the full pass/fail count.
-The earlier failure and the CPU fallback may therefore come from how the loader finds the driver (library path, ICD discovery) rather than from the 1.28.0 version.
-That is a hypothesis; I did not reproduce the original failure.
-
-## Suggested order for a later step (needs owner approval, changes system config)
-
-1. Re-enable only `hardware.cpu.intel.npu.enable` (driver and firmware, without the `rugged-npu-llm` service), rebuild, and run `npu-umd-test` and an OpenVINO `benchmark_app -d NPU`-style check to see if the stock 1.28.0 stack now works.
-2. If it does not, add the master `intel-npu-driver` 1.38.0 + `level-zero` 1.32.0 overlay for rugged and retest.
-3. Before re-enabling `rugged-npu-llm`, add the explicit `--ctx-size` / `--parallel` cap noted in `llm_npu.md`, and make the service fail instead of falling back to CPU (e.g. check the log for "device NPU is not available").
-
-## Open questions
-
-- Whether the repo's `npu-compiler-libs` / `openvino-npu` pin works with driver 1.38.0, or must move to the compiler build upstream lists for it (`npu_ud_2026_38_rc1`).
-- Whether llama.cpp's OpenVINO NPU backend loads Qwen3 at all with reasonable speed; the older Docker numbers (Llama 3.2 1B at 46.7 tok/s) are the only NPU measurements.
+The existing Nix-native llama.cpp/OpenVINO service is a distinct software path. Its compiler libraries are already built into `openvino-npu.nix`; the missing PyPI-wheel libraries do not prove that service is broken. Its GGUF models and long-context memory behavior still need direct verification before enabling it. The service now has an explicit 2,048-token context and one parallel slot to avoid the previous unbounded-context memory blowup; this conservative cap is only a starting point for a future live service test. A GenAI diagnostic wheel environment under `/tmp` is **not** a deployable service or a CPU fallback.

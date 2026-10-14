@@ -1,0 +1,10 @@
+Test version npu-linux-driver-dev-1.28.0.dev-0 on NixOS 26.05 (Yarara) (7.2.8)
+Note: Google Test filter = Driver.*:Device.*:Command*.*
+[==========] Running 55 tests from 10 test suites.
+[----------] Global test environment set-up.
+/build/source/validation/umd-test/testenv.hpp:92: Failure
+Expected equality of these values:
+  zeInitDrivers(&drvCount, nullptr, &initDriverDesc)
+    Which is: ZE_RESULT_ERROR_UNINITIALIZED (0x78000001)
+  ZE_RESULT_SUCCESS
+    Which is: ZE_RESULT_SUCCESS (0x0)

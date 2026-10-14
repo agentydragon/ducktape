@@ -1,0 +1,7 @@
+Traceback (most recent call last):
+  File "/tmp/ducktape-worktrees/2026-10-13-rugged-npu/cluster/docs/inference/runs/2026-10-13_rugged_npu_openvino/bench.py", line 110, in <module>
+    main()
+  File "/tmp/ducktape-worktrees/2026-10-13-rugged-npu/cluster/docs/inference/runs/2026-10-13_rugged_npu_openvino/bench.py", line 94, in main
+    "prefix_cache_hit_tokens": metrics.get_num_prefix_cache_hit_tokens(),
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'openvino_genai.py_openvino_genai.PerfMetrics' object has no attribute 'get_num_prefix_cache_hit_tokens'
