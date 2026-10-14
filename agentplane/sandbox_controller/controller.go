@@ -172,7 +172,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 	} else if gate == nil {
 		gate = launchGate
 	}
-	if blocked == nil && !sandbox.Spec.Running {
+	if blocked == nil && (!sandbox.Spec.Running || sandbox.quiescing()) {
 		if blocked, err = r.sealBeforeStop(ctx, &sandbox, w); err != nil {
 			return ctrl.Result{}, err
 		}

@@ -708,6 +708,26 @@ func TestResumingASealedIncarnationReplacesIt(t *testing.T) {
 	}
 }
 
+func TestResumingWhileTheRunnerQuiescesFinishesTheQuiesceFirst(t *testing.T) {
+	r, c := runningWithRunner(t)
+	sealer := r.Sealer.(*fakeSealer)
+	sealer.result = SealResult{Unflushed: []string{"session-1"}}
+	setRunning(t, c, false)
+	reconcileOnce(t, r)
+	setRunning(t, c, true)
+	reconcileOnce(t, r)
+	if meta.IsStatusConditionTrue(getSandbox(t, c).Status.Conditions, Ready) {
+		t.Fatal("a Sandbox whose runner refuses every Session read Ready while it was quiescing")
+	}
+
+	sealer.result = SealResult{Sessions: 1}
+	reconcileOnce(t, r)
+	reconcileOnce(t, r)
+	if pod := getPod(t, c); pod != nil && string(pod.UID) == "uid-pod" {
+		t.Fatal("the resumed Sandbox kept the incarnation whose runner quiesced")
+	}
+}
+
 func TestDeletingASuspendedSealedSandboxAsksNoRunner(t *testing.T) {
 	r, c := runningWithRunner(t)
 	setRunning(t, c, false)

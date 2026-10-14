@@ -104,6 +104,14 @@ func (s *Sandbox) quiescedIncarnation(uid string) bool {
 		(s.Status.QuiescedIncarnation != nil && *s.Status.QuiescedIncarnation == uid)
 }
 
+// quiescing reports whether the controller has begun quiescing the current incarnation's runner. A
+// runner that has entered lameduck refuses every Session for good, so a Sandbox resumed meanwhile
+// still waits for the quiesce to finish and replaces the incarnation, as for one resumed after it.
+func (s *Sandbox) quiescing() bool {
+	running := meta.FindStatusCondition(s.Status.Conditions, Running)
+	return running != nil && running.Reason == "Quiescing"
+}
+
 // +kubebuilder:object:root=true
 type Sandbox struct {
 	metav1.TypeMeta   `json:",inline"`
