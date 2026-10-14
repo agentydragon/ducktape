@@ -55,9 +55,6 @@ type RunnerFacts struct {
 
 // readRunnerFacts reads the facts the Lease holds for the incarnation with this UID. A Lease whose
 // `pod-uid` is another incarnation's holds none of its facts.
-//
-// Staged for the quiesce progress check, which reads Stage here instead of repeating the Quiesce
-// call; delete if that change is abandoned.
 func readRunnerFacts(lease *coordinationv1.Lease, incarnationUID string) (RunnerFacts, error) {
 	var facts RunnerFacts
 	annotations := lease.Annotations

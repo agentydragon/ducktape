@@ -680,6 +680,55 @@ func TestSuspensionWaitsForTheRunnerToSeal(t *testing.T) {
 	}
 }
 
+// publishQuiesceStage is the Runner Gateway recording the runner's quiesce stage on its Lease.
+func publishQuiesceStage(t *testing.T, c client.Client, stage string) {
+	t.Helper()
+	var lease coordinationv1.Lease
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + "-runner"}, &lease); err != nil {
+		t.Fatal(err)
+	}
+	lease.Annotations[QuiesceStageAnnotation] = stage
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestAQuiescedStageSealsTheSandboxWithoutAskingTheRunner(t *testing.T) {
+	r, c := runningWithRunner(t)
+	publishQuiesceStage(t, c, "quiesced")
+	setRunning(t, c, false)
+	reconcileOnce(t, r)
+	if sealed := getSandbox(t, c).Status.QuiescedIncarnation; sealed == nil || *sealed != "uid-pod" {
+		t.Fatalf("sealed incarnation = %v, want uid-pod", sealed)
+	}
+	if calls := r.Sealer.(*fakeSealer).calls; calls != 0 {
+		t.Errorf("asked a runner that reported itself quiesced %d times", calls)
+	}
+}
+
+func TestAQuiescingRunnerIsAskedAgainOnlyAtTheDeadline(t *testing.T) {
+	r, c := runningWithRunner(t)
+	sealer := r.Sealer.(*fakeSealer)
+	sealer.result = SealResult{Quiescing: true}
+	setRunning(t, c, false)
+	reconcileOnce(t, r)
+	if sealer.calls != 1 {
+		t.Fatalf("asked %d times before the runner reported a stage, want 1", sealer.calls)
+	}
+
+	publishQuiesceStage(t, c, "flushing")
+	result, err := r.Reconcile(context.Background(), request)
+	if err != nil || sealer.calls != 1 || result.RequeueAfter <= 0 || result.RequeueAfter > quiesceDeadline {
+		t.Fatalf("a runner reporting a stage is left alone until the deadline: calls=%d, %v, %v", sealer.calls, result, err)
+	}
+
+	r.Now = func() time.Time { return time.Now().Add(2 * quiesceDeadline) }
+	reconcileOnce(t, r)
+	if sealer.calls != 2 {
+		t.Errorf("asked %d times after the deadline, want 2", sealer.calls)
+	}
+}
+
 func TestSuspensionOfAnIncarnationNoRunnerConnectedFromSealsNothing(t *testing.T) {
 	r, c := runningWithRunner(t)
 	pod := getPod(t, c)

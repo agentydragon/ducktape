@@ -63,6 +63,9 @@ const (
 	templateIndex = "spec.template"
 	// How soon a seal that failed or is not yet acknowledged is asked again.
 	sealRetry = 2 * time.Second
+	// How long a runner that reports itself quiescing is left alone before the Quiesce call is
+	// repeated: its stage changes enqueue the Sandbox, so this covers a lost event or a stuck runner.
+	quiesceDeadline = time.Minute
 	// How soon a connection whose Lease has lapsed is looked at again: a renewal changes nothing the
 	// Lease watch enqueues on.
 	runnerLapsedPoll = 5 * time.Second
@@ -281,9 +284,16 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 // connectedRunner is the Pod UID of the runner that last connected for the Sandbox, which the Runner
 // Gateway records on the Sandbox's Lease, or "" if none ever did.
 func (r *Reconciler) connectedRunner(ctx context.Context, sandbox *Sandbox) (string, error) {
+	lease, err := r.runnerLease(ctx, sandbox)
+	return lease.Annotations[PodUIDAnnotation], err
+}
+
+// runnerLease reads the Lease the Runner Gateway writes for the Sandbox's runner connection; it is
+// empty if no runner ever connected.
+func (r *Reconciler) runnerLease(ctx context.Context, sandbox *Sandbox) (coordinationv1.Lease, error) {
 	var lease coordinationv1.Lease
 	err := r.Leases.Get(ctx, types.NamespacedName{Namespace: sandbox.Namespace, Name: sandbox.Name + "-runner"}, &lease)
-	return lease.Annotations[PodUIDAnnotation], client.IgnoreNotFound(err)
+	return lease, client.IgnoreNotFound(err)
 }
 
 // unsealedRunner is the Pod UID of the last connected runner if it still has Sessions to seal, or
@@ -314,7 +324,32 @@ func (r *Reconciler) sealBeforeStop(ctx context.Context, sandbox *Sandbox, w wor
 // acknowledged each seal, records it on the Sandbox's status for the caller to write. The returned
 // unready always says why the Sandbox is still held and has no retryAfter once the seal is recorded.
 // Seal is idempotent, so any failure is asked again.
+//
+// A runner that publishes its quiesce stage on the connection Lease is not asked again while it
+// reports one, and never once it reports `Quiesced`: its next stage enqueues the Sandbox.
+//
+// CLEANUP(added 2026-10-14): Remove the fixed `sealRetry` re-ask and the call's reading of a missing
+// stage once every runner publishes its stage (gateway, runner image and VM wheel pinned).
 func (r *Reconciler) seal(ctx context.Context, sandbox *Sandbox, runner string) *unready {
+	lease, err := r.runnerLease(ctx, sandbox)
+	if err != nil {
+		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: sealRetry}
+	}
+	facts, err := readRunnerFacts(&lease, runner)
+	if err != nil {
+		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: sealRetry}
+	}
+	switch facts.Stage {
+	case QuiesceQuiesced:
+		sandbox.Status.QuiescedIncarnation = &runner
+		return &unready{reason: "Quiescing", message: "the runner has quiesced every Session"}
+	case QuiesceDraining, QuiesceFlushing:
+		if running := meta.FindStatusCondition(sandbox.Status.Conditions, Running); running != nil && running.Reason == "Quiescing" {
+			if waited := r.Now().Sub(running.LastTransitionTime.Time); waited < quiesceDeadline {
+				return &unready{reason: "Quiescing", message: "the runner is quiescing", retryAfter: quiesceDeadline - waited}
+			}
+		}
+	}
 	result, err := r.Sealer.Seal(ctx, sandbox)
 	if err != nil {
 		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: sealRetry}
