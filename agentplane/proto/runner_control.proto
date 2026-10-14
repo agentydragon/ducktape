@@ -9,6 +9,7 @@ import "agentplane/proto/command.proto";
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/grpc_tunnel.proto";
 import "agentplane/proto/runner.proto";
+import "google/protobuf/timestamp.proto";
 
 // Served by the Runner Gateway; the runner opens one `Connect` stream and serves `Runner` on it.
 service RunnerControl {
@@ -56,6 +57,7 @@ message RunnerFrame {
     Hello hello = 1;  // first frame, exactly once
     Heartbeat heartbeat = 3;
     agentplane.proto.grpc_tunnel.Reply reply = 5;  // to a `call` on this stream
+    RunnerFacts facts = 6;
   }
   reserved 2, 4;
   reserved "receipt", "control_result";
@@ -87,6 +89,39 @@ message Welcome {
 }
 
 message Heartbeat {}
+
+// What the runner publishes about itself, for the Runner Gateway to record on the Sandbox's connection
+// Lease. The runner sends it after every `Welcome` and whenever a fact changes; each one replaces the
+// gateway's record of all of them.
+message RunnerFacts {
+  enum QuiesceStage {
+    QUIESCE_STAGE_UNSPECIFIED = 0;  // not quiescing
+    QUIESCE_STAGE_DRAINING = 1;     // refusing new work, stopping harnesses
+    QUIESCE_STAGE_FLUSHING = 2;     // journals final, ingress acknowledgements pending
+    QUIESCE_STAGE_QUIESCED = 3;     // every final cursor acknowledged
+  }
+  enum Bootstrap {
+    BOOTSTRAP_UNSPECIFIED = 0;  // the Sandbox has none, or it has not started
+    BOOTSTRAP_RUNNING = 1;
+    BOOTSTRAP_SUCCEEDED = 2;
+    BOOTSTRAP_FAILED = 3;
+    BOOTSTRAP_INTERRUPTED = 4;
+  }
+  // The whole Sandbox: busy while any Session runs a turn or command, or a background process or
+  // attached terminal runs.
+  message Busy {}
+  message Idle {
+    google.protobuf.Timestamp since = 1;
+  }
+
+  QuiesceStage quiesce_stage = 1;
+  // Unset where the runner reports no busy fact.
+  oneof activity {
+    Busy busy = 2;
+    Idle idle = 3;
+  }
+  Bootstrap bootstrap = 4;
+}
 
 message OpenSessionRequest {
   string session_id = 1;

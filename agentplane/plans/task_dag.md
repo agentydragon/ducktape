@@ -957,7 +957,7 @@ runner too old to know the field cannot meet a gateway that no longer sends it.
 
 ### `RUNNER_FACTS_ON_LEASE` — the runner publishes stage, idle and boot facts on the connection Lease
 
-**Candidate; the Lease already carries the incarnation UID.** The one
+**In progress; the gateway writes what a runner sends, and the controller reader is the Sandbox controller lane's.** The one
 transport several nodes share: the runner reports facts on the control stream in a runner-only `RunnerHeartbeat` on
 `RunnerFrame.heartbeat` (same field number as today), carrying optional `RunnerFacts`, sent on change and on the first `RunnerHeartbeat` after connect, and the gateway
 replica holding the connection writes them as annotations on the Sandbox-owned connection Lease,
@@ -971,6 +971,9 @@ regular 15-second renewal write, so it adds no etcd writes. The runner republish
 reconnect so a gateway rollout loses nothing. A first-connection
 annotation, persisted, tells `NeverRan` (a Sandbox whose runner has not connected yet) from a runner
 that is down. Order: the controller reads the annotations before the gateway starts writing them.
+Remaining: the runner publishes its quiesce stage and bootstrap result, then busy and idle, which
+need the runner to track what counts as busy (a turn, a command, a background process, an attached
+terminal) and does not yet.
 
 ### `RUNNER_BUSY_TRACKING` — the runner knows whether the Sandbox is busy
 

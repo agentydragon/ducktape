@@ -9,11 +9,16 @@ from uuid import UUID, uuid4
 import grpc
 import pytest
 import pytest_bazel
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc
 from agentplane.runner_gateway.connection_records import (
+    BOOTSTRAP_ANNOTATION,
+    BUSY_ANNOTATION,
     CONNECTION_EPOCH_ANNOTATION,
+    IDLE_SINCE_ANNOTATION,
     POD_UID_ANNOTATION,
+    QUIESCE_STAGE_ANNOTATION,
     RUNNER_BOOT_ID_ANNOTATION,
     ConnectionHolder,
     ConnectionLeases,
@@ -256,6 +261,83 @@ async def test_recreating_the_sandbox_ends_the_connection(
         # The Sandbox was deleted and recreated under its name while the old Pod stayed connected.
         cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"]["uid"] = str(uuid4())
         assert await status_of(call) == grpc.StatusCode.PERMISSION_DENIED
+
+
+def facts_frame(**fields: Any) -> runner_control_pb2.RunnerFrame:
+    return runner_control_pb2.RunnerFrame(facts=runner_control_pb2.RunnerFacts(**fields))
+
+
+def lease_annotations(cluster: Cluster) -> dict[str, str]:
+    annotations: dict[str, str] = cluster.fake.objects["leases"][OWNER.lease_name]["metadata"]["annotations"]
+    return annotations
+
+
+async def read_until_annotated(
+    call: grpc.aio.StreamStreamCall[runner_control_pb2.RunnerFrame, runner_control_pb2.ServiceFrame],
+    cluster: Cluster,
+    annotation: str,
+    value: str | None,
+) -> None:
+    """Read the service's heartbeats until the Lease's `annotation` is `value`, where None is absent."""
+    while lease_annotations(cluster).get(annotation) != value:
+        await read_frame(call)
+
+
+async def test_the_runners_facts_reach_the_lease_and_replace_the_last_ones(
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
+) -> None:
+    idle_since = Timestamp()
+    idle_since.FromJsonString("2026-10-14T01:02:03Z")
+    async with connect(listener) as call:
+        await call.write(HELLO)
+        assert (await read_frame(call)).HasField("welcome")
+        await call.write(
+            facts_frame(
+                quiesce_stage=runner_control_pb2.RunnerFacts.QUIESCE_STAGE_FLUSHING,
+                idle=runner_control_pb2.RunnerFacts.Idle(since=idle_since),
+                bootstrap=runner_control_pb2.RunnerFacts.BOOTSTRAP_SUCCEEDED,
+            )
+        )
+        await read_until_annotated(call, cluster, BOOTSTRAP_ANNOTATION, "succeeded")
+        assert lease_annotations(cluster) == {
+            POD_UID_ANNOTATION: "test-pod-uid",
+            RUNNER_BOOT_ID_ANNOTATION: "test-boot",
+            QUIESCE_STAGE_ANNOTATION: "flushing",
+            BUSY_ANNOTATION: "false",
+            IDLE_SINCE_ANNOTATION: "2026-10-14T01:02:03+00:00",
+            BOOTSTRAP_ANNOTATION: "succeeded",
+        }
+        await call.write(facts_frame(busy=runner_control_pb2.RunnerFacts.Busy()))
+        await read_until_annotated(call, cluster, BUSY_ANNOTATION, "true")
+        assert lease_annotations(cluster) == {
+            POD_UID_ANNOTATION: "test-pod-uid",
+            RUNNER_BOOT_ID_ANNOTATION: "test-boot",
+            BUSY_ANNOTATION: "true",
+        }
+
+
+async def test_a_new_connection_starts_without_the_last_ones_facts(
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
+) -> None:
+    async with connect(listener) as first:
+        await first.write(HELLO)
+        assert (await read_frame(first)).HasField("welcome")
+        await first.write(facts_frame(bootstrap=runner_control_pb2.RunnerFacts.BOOTSTRAP_FAILED))
+        await read_until_annotated(first, cluster, BOOTSTRAP_ANNOTATION, "failed")
+        async with connect(listener) as second:
+            await second.write(HELLO)
+            assert (await read_frame(second)).welcome.connection_epoch == 2
+            assert BOOTSTRAP_ANNOTATION not in lease_annotations(cluster)
+
+
+async def test_a_fact_value_the_gateway_does_not_know_closes_the_stream(
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub,
+) -> None:
+    async with connect(listener) as call:
+        await call.write(HELLO)
+        assert (await read_frame(call)).HasField("welcome")
+        await call.write(facts_frame(quiesce_stage=99))
+        assert await status_of(call) == grpc.StatusCode.INVALID_ARGUMENT
 
 
 if __name__ == "__main__":
