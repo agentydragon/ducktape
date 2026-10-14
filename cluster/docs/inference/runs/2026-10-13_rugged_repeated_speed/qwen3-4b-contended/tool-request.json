@@ -1,0 +1,30 @@
+{
+  "model": "qwen3:4b-instruct-2507-q4_K_M",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Call read_file to read main.py. Do not answer in prose."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "read_file",
+        "description": "Read a file",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "path": {
+              "type": "string"
+            }
+          },
+          "required": ["path"]
+        }
+      }
+    }
+  ],
+  "temperature": 0.2,
+  "reasoning_effort": "none",
+  "max_tokens": 128
+}

@@ -1,0 +1,17 @@
+{
+  "model": "gemma4:e4b",
+  "created_at": "2026-10-14T07:07:22.779621566Z",
+  "message": {
+    "role": "assistant",
+    "content": "This is a fascinating request! You've provided a long string of Greek letters, which seems to be a sequence of characters rather than a standard input for a topological sort.\n\nSince the core request is to implement **stable topological sorting**, I will focus on providing a robust, well-commented Python module for that algorithm.\n\nA topological sort requires a Directed Acyclic Graph (DAG). The stability requirement means that if two nodes have no dependency relationship (i.e., they are independent), their relative order in the output must be preserved based on their initial ordering in the input structure.\n\nI will use Kahn's algorithm, modified to ensure stability by using a priority queue (or sorting the ready nodes) based on their original index.\n\nHere is the complete Python module:\n\n```python\nimport collections\nfrom typing import Dict, List, Tuple, Set, Any\n\nclass TopologicalSortError(Exception):\n    \"\"\"Custom exception raised when a cycle is detected in the graph.\"\"\"\n    pass\n\ndef stable_topological_sort(graph: Dict[Any, List[Any]], initial_nodes: List[Any]) -\u003e List[Any]:\n    \"\"\"\n    Performs a stable topological sort on a Directed Acyclic Graph (DAG).\n\n"
+  },
+  "done": true,
+  "done_reason": "length",
+  "total_duration": 20238217056,
+  "load_duration": 2986667,
+  "prompt_eval_count": 473,
+  "prompt_eval_cached_count": 0,
+  "prompt_eval_duration": 1619827000,
+  "eval_count": 256,
+  "eval_duration": 18299077000
+}

@@ -1,0 +1,17 @@
+{
+  "model": "qwen3:8b",
+  "created_at": "2026-10-14T07:21:20.015991953Z",
+  "message": {
+    "role": "assistant",
+    "content": "# `topological_sort.py` – A Python Module for Stable Topological Sorting\n\nThis module provides a **stable topological sort** implementation using **Kahn's algorithm**. It includes:\n\n- A function `topological_sort` that performs the sort.\n- A `Graph` class to represent the graph.\n- Example usage and test cases.\n\n---\n\n## 📌 Overview\n\nTopological sorting is used to order the nodes of a **directed acyclic graph (DAG)** such that for every directed edge `u -\u003e v`, node `u` comes before node `v` in the ordering.\n\n**Stability** in this context means that if two nodes are not connected by an edge, their relative order is preserved as per their original input order.\n\n---\n\n## 📦 Module Code\n\n```python\n# topological_sort.py\n\nfrom collections import defaultdict, deque\nimport unittest\n\nclass Graph:\n    \"\"\"\n    A class to represent a directed graph.\n    \n    Attributes:\n        graph: A dictionary mapping nodes to their adjacent nodes.\n        in_degree: A dictionary mapping nodes to their in-degree.\n    \"\"\"\n    def __init__(self):\n        self.graph = defaultdict(list)\n        self.in_degree = defaultdict(int)\n\n    def add_edge(self, u,"
+  },
+  "done": true,
+  "done_reason": "length",
+  "total_duration": 38699485077,
+  "load_duration": 4318766,
+  "prompt_eval_count": 3725,
+  "prompt_eval_cached_count": 467,
+  "prompt_eval_duration": 15003280000,
+  "eval_count": 256,
+  "eval_duration": 20252252000
+}

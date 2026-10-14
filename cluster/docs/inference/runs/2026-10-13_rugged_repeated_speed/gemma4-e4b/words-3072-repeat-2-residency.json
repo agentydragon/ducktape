@@ -1,0 +1,22 @@
+{
+  "models": [
+    {
+      "name": "gemma4:e4b",
+      "model": "gemma4:e4b",
+      "size": 364107529,
+      "digest": "dc35e8d9c6061baa6f0fa870975ab6932e2542b579b13ea0f199fa4bb7300c9c",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "gemma4",
+        "families": ["gemma4"],
+        "parameter_size": "7.5B",
+        "quantization_level": "Q4_K_M"
+      },
+      "expires_at": "2026-10-13T23:46:34.883511439-07:00",
+      "size_vram": 364107529,
+      "context_length": 32768,
+      "runner": "llamacpp"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+{
+  "model": "gemma4:e2b-it-qat",
+  "created_at": "2026-10-14T07:22:31.114373392Z",
+  "message": {
+    "role": "assistant",
+    "content": "It seems like the input you provided is a very long, repetitive string of Greek letters, which doesn't immediately suggest a specific algorithm or problem context for a topological sort.\n\nHowever, you explicitly asked for a **well-commented Python module implementing stable topological sorting**.\n\nI will provide a robust implementation of **Kahn's Algorithm** for topological sorting, which is a standard and efficient approach. I will also include tests and examples to demonstrate its functionality.\n\n### Python Module: `topological_sort.py`\n\n```python\n\"\"\"\ntopological_sort.py\n\nA module providing functions for performing topological sorting on a directed graph.\n\nTopological sorting is an ordering of vertices in a Directed Acyclic Graph (DAG)\nsuch that for every directed edge u -\u003e v, vertex u comes before vertex v in the ordering.\n\"\"\"\n\nfrom collections import deque\nfrom typing import List, Dict, Tuple, Optional\n\nclass Graph:\n    \"\"\"\n    Represents a directed graph using an adjacency list.\n    \"\"\"\n    def __init__(self, num_vertices: int):\n        \"\"\"\n        Initializes a graph with a specified number of vertices (0 to num_vertices - 1).\n        \"\"\"\n        "
+  },
+  "done": true,
+  "done_reason": "length",
+  "total_duration": 8322930773,
+  "load_duration": 4679252,
+  "prompt_eval_count": 474,
+  "prompt_eval_cached_count": 0,
+  "prompt_eval_duration": 815088000,
+  "eval_count": 256,
+  "eval_duration": 7431655000
+}

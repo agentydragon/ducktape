@@ -1,0 +1,17 @@
+{
+  "model": "qwen3:8b",
+  "created_at": "2026-10-14T07:20:41.189547988Z",
+  "message": {
+    "role": "assistant",
+    "content": "# `topological_sort.py` - A Python Module for Stable Topological Sorting\n\nThis module provides a stable topological sort implementation using Kahn's algorithm. It includes:\n\n- A function `topological_sort` that performs the sort\n- A helper function `in_degree` to compute in-degrees\n- A test suite with examples\n- Comments explaining the implementation\n\n```python\n# topological_sort.py\n# A Python module for performing stable topological sorting on a directed acyclic graph (DAG)\n\nfrom collections import defaultdict, deque\nimport unittest\n\ndef topological_sort(graph):\n    \"\"\"\n    Perform a stable topological sort on a directed acyclic graph (DAG).\n    \n    Args:\n        graph: A dictionary where keys are nodes and values are lists of nodes that the key points to.\n    \n    Returns:\n        A list of nodes in topological order.\n    \n    Raises:\n        ValueError: If the graph has a cycle (not a DAG).\n    \"\"\"\n    # Step 1: Compute in-degrees for all nodes\n    in_degree = in_degree(graph)\n    \n    # Step 2: Initialize a queue with nodes of in-degree 0\n    queue = deque([node for node in graph if in_degree[node] == "
+  },
+  "done": true,
+  "done_reason": "length",
+  "total_duration": 70075937586,
+  "load_duration": 2797997,
+  "prompt_eval_count": 3725,
+  "prompt_eval_cached_count": 469,
+  "prompt_eval_duration": 21123543000,
+  "eval_count": 256,
+  "eval_duration": 47880197000
+}

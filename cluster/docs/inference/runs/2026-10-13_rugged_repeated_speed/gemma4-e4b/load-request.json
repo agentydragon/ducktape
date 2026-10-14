@@ -1,0 +1,18 @@
+{
+  "model": "gemma4:e4b",
+  "stream": false,
+  "think": false,
+  "keep_alive": "10m",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Reply with OK."
+    }
+  ],
+  "options": {
+    "num_ctx": 32768,
+    "num_predict": 4,
+    "temperature": 0,
+    "seed": 1
+  }
+}

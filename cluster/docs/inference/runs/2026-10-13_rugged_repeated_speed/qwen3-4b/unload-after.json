@@ -1,0 +1,7 @@
+{
+  "model": "qwen3:4b-instruct-2507-q4_K_M",
+  "created_at": "2026-10-14T06:34:16.900778507Z",
+  "response": "",
+  "done": true,
+  "done_reason": "unload"
+}

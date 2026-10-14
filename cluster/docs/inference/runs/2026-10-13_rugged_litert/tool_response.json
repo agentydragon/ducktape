@@ -1,0 +1,34 @@
+{
+  "id": "chatcmpl_20261014053642636250",
+  "object": "chat.completion",
+  "created": 1791956202,
+  "model": "gemma4-e2b-it,gpu,32000",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": null,
+        "tool_calls": [
+          {
+            "id": "call_20261014053642636250_0",
+            "type": "function",
+            "function": {
+              "name": "read_file",
+              "arguments": "{\"path\": \"main.py\"}"
+            }
+          }
+        ]
+      },
+      "finish_reason": "tool_calls"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 70,
+    "completion_tokens": 17,
+    "total_tokens": 87,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  }
+}

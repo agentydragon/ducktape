@@ -1,0 +1,17 @@
+{
+  "model": "qwen2.5-coder:7b",
+  "created_at": "2026-10-14T07:16:22.77464844Z",
+  "message": {
+    "role": "assistant",
+    "content": "Certainly! Below is a well-commented Python module for performing a stable topological sort on a directed acyclic graph (DAG). The module includes a function for the topological sort and a few test cases to demonstrate its usage.\n\n```python\nfrom collections import defaultdict, deque\n\ndef topological_sort(graph):\n    \"\"\"\n    Perform a stable topological sort on a directed acyclic graph (DAG).\n    \n    Args:\n    graph (dict): A dictionary representing the graph where keys are nodes and values are lists of adjacent nodes.\n    \n    Returns:\n    list: A list of nodes in topological order.\n    \n    Raises:\n    ValueError: If the graph contains a cycle.\n    \"\"\"\n    # Initialize in-degree dictionary and queue\n    in_degree = {node: 0 for node in graph}\n    queue = deque()\n    topological_order = []\n    \n    # Calculate in-degrees\n    for node, neighbors in graph.items():\n        for neighbor in neighbors:\n            in_degree[neighbor] += 1\n    \n    # Add nodes with zero in-degree to the queue\n    for node, degree in in_degree.items():\n        if degree == 0:\n            queue.append(node)\n    \n    # Process nodes in the queue\n    while queue:\n       "
+  },
+  "done": true,
+  "done_reason": "length",
+  "total_duration": 71983178771,
+  "load_duration": 3080070,
+  "prompt_eval_count": 3739,
+  "prompt_eval_cached_count": 489,
+  "prompt_eval_duration": 16698672999,
+  "eval_count": 256,
+  "eval_duration": 52312251000
+}

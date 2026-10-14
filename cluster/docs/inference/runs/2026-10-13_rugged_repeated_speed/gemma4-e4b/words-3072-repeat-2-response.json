@@ -1,0 +1,17 @@
+{
+  "model": "gemma4:e4b",
+  "created_at": "2026-10-14T06:36:34.883343Z",
+  "message": {
+    "role": "assistant",
+    "content": "This is a very long sequence of Greek letters! It appears to be a repetitive string of the Greek alphabet.\n\nSince the request is to implement **stable topological sorting**, I will provide a complete, well-commented Python module for that purpose. Topological sorting is an algorithm for ordering the vertices of a Directed Acyclic Graph (DAG) such that for every directed edge from vertex $u$ to vertex $v$, vertex $u$ comes before vertex $v$ in the ordering.\n\n**Stability** in topological sorting usually means that if two nodes have the same \"priority\" (e.g., they are ready to be processed at the same time, as in Kahn's algorithm), their relative order in the output should be consistent, often based on their initial labeling or insertion order.\n\nHere is the implementation:\n\n```python\nimport collections\nfrom typing import Dict, List, Tuple, Set\n\nclass TopologicalSortError(Exception):\n    \"\"\"Custom exception raised when a cycle is detected in the graph.\"\"\"\n    pass\n\ndef stable_topological_sort(graph: Dict[str, List[str]]) -\u003e List[str]:\n    \"\"\"\n    Performs a stable topological sort on a Directed Acyclic Graph (DAG) \n    "
+  },
+  "done": true,
+  "done_reason": "length",
+  "total_duration": 35876195149,
+  "load_duration": 2592927,
+  "prompt_eval_count": 3565,
+  "prompt_eval_cached_count": 0,
+  "prompt_eval_duration": 25413169000,
+  "eval_count": 256,
+  "eval_duration": 9865429000
+}

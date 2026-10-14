@@ -1,0 +1,22 @@
+{
+  "models": [
+    {
+      "name": "gemma4:e2b-it-qat",
+      "model": "gemma4:e2b-it-qat",
+      "size": 1819268873,
+      "digest": "07ea59a474013479c8b6b802bef095c40e964a1d776ba02f264c0e30e1aede0c",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "gemma4",
+        "families": ["gemma4"],
+        "parameter_size": "4.6B",
+        "quantization_level": "Q4_0"
+      },
+      "expires_at": "2026-10-14T00:32:14.022639191-07:00",
+      "size_vram": 1819268873,
+      "context_length": 32768,
+      "runner": "llamacpp"
+    }
+  ]
+}

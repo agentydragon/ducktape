@@ -1,0 +1,7 @@
+{
+  "model": "gemma4:e2b-it-qat",
+  "created_at": "2026-10-14T06:48:31.037574787Z",
+  "response": "",
+  "done": true,
+  "done_reason": "unload"
+}

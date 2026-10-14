@@ -1,0 +1,17 @@
+{
+  "model": "qwen3:4b-instruct-2507-q4_K_M",
+  "created_at": "2026-10-14T06:31:10.393401513Z",
+  "message": {
+    "role": "assistant",
+    "content": "Certainly! Below is a **well-commented Python module** that implements **stable topological sorting** of a directed acyclic graph (DAG), with comprehensive **tests**, **examples**, and **clear documentation**.\n\n---\n\n```python\n\"\"\"\nstable_topological_sort.py\n\nA module implementing stable topological sorting of a directed acyclic graph (DAG).\n\nTopological sorting orders the nodes of a DAG such that for every directed edge u → v,\nnode u comes before node v in the ordering.\n\nThis implementation ensures:\n- Stability: If two nodes are equivalent in the partial order (i.e., no dependency between them),\n  their relative order is preserved as in the input (i.e., the original order of nodes in the input list).\n- Correctness: Only works on DAGs (no cycles).\n- Efficiency: Uses Kahn's algorithm with a stable queue (using a list as a priority queue).\n\nNote: This is a *stable* topological sort — it preserves the relative order of nodes that are not connected by dependencies.\n\nUsage:\n    sorted_nodes = stable_topological_sort(graph, node_order)\n    where graph is a dict of {node: [dependencies]}\n    and node_order is a list of nodes in the input order (used to break ties).\n\n"
+  },
+  "done": true,
+  "done_reason": "length",
+  "total_duration": 12870639641,
+  "load_duration": 4089515,
+  "prompt_eval_count": 493,
+  "prompt_eval_cached_count": 3,
+  "prompt_eval_duration": 958160000,
+  "eval_count": 256,
+  "eval_duration": 11589276000
+}

@@ -1,0 +1,14 @@
+{
+  "model": "qwen3:4b-instruct-2507-q4_K_M",
+  "created_at": "2026-10-14T06:30:57.422353231Z",
+  "message": { "role": "assistant", "content": "OK" },
+  "done": true,
+  "done_reason": "stop",
+  "total_duration": 11419576853,
+  "load_duration": 10387206271,
+  "prompt_eval_count": 12,
+  "prompt_eval_cached_count": 0,
+  "prompt_eval_duration": 287421000,
+  "eval_count": 2,
+  "eval_duration": 737424000
+}

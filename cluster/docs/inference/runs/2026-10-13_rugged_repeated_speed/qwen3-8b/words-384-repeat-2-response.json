@@ -1,0 +1,17 @@
+{
+  "model": "qwen3:8b",
+  "created_at": "2026-10-14T06:42:30.549629387Z",
+  "message": {
+    "role": "assistant",
+    "content": "Here's a well-commented Python module that implements **stable topological sorting** using the **Kahn's algorithm**. This module includes:\n\n- A function for stable topological sort.\n- Comments explaining each step.\n- Example usage.\n- Unit tests using `unittest`.\n\n---\n\n### ✅ **Stable Topological Sort Module**\n\n```python\n# topological_sort.py\n# Author: Your Name\n# Description: Implements a stable topological sort using Kahn's algorithm.\n\nfrom collections import defaultdict, deque\nimport unittest\n\ndef stable_topological_sort(graph):\n    \"\"\"\n    Perform a stable topological sort on a directed acyclic graph (DAG).\n    \n    Args:\n        graph: A dictionary where keys are nodes and values are lists of nodes\n               that the key node points to (i.e., edges from key to each value).\n    \n    Returns:\n        A list of nodes in topological order.\n    \n    Raises:\n        ValueError: If the graph has a cycle (i.e., not a DAG).\n    \"\"\"\n    # Step 1: Build in-degree map\n    in_degree = defaultdict(int)\n    for node in graph:\n        for neighbor in graph[node]:\n            in_degree[neighbor] += 1\n\n    # Step 2: Initialize queue"
+  },
+  "done": true,
+  "done_reason": "length",
+  "total_duration": 56885931452,
+  "load_duration": 7426563,
+  "prompt_eval_count": 499,
+  "prompt_eval_cached_count": 5,
+  "prompt_eval_duration": 5284632000,
+  "eval_count": 256,
+  "eval_duration": 48280756000
+}

@@ -1,0 +1,415 @@
+{
+  "created_at": "2026-10-14T06:52:06.357260+00:00",
+  "conditions": "Battery, balanced power profile, concurrent workstation activity; initial explicitly contended Qwen batch excluded",
+  "models": {
+    "qwen3-4b": {
+      "prompt_word_groups": {
+        "384": {
+          "samples": 3,
+          "complete_three_repeats": true,
+          "metrics": {
+            "prompt_eval_count": {
+              "median": 492,
+              "min": 491,
+              "max": 493
+            },
+            "eval_count": {
+              "median": 256,
+              "min": 256,
+              "max": 256
+            },
+            "prefill_tokens_per_second": {
+              "median": 514.2583629826147,
+              "min": 503.2964897115763,
+              "max": 514.5278450363196
+            },
+            "decode_tokens_per_second": {
+              "median": 17.10645742707253,
+              "min": 15.899945617217256,
+              "max": 22.089386774462874
+            },
+            "total_duration": {
+              "median": 16604495530,
+              "min": 12870639641,
+              "max": 17624979192
+            },
+            "prompt_eval_duration": {
+              "median": 958160000,
+              "min": 954773000,
+              "max": 977555000
+            },
+            "eval_duration": {
+              "median": 14965109000,
+              "min": 11589276000,
+              "max": 16100684000
+            }
+          }
+        },
+        "3072": {
+          "samples": 3,
+          "complete_three_repeats": true,
+          "metrics": {
+            "prompt_eval_count": {
+              "median": 3717,
+              "min": 3717,
+              "max": 3718
+            },
+            "eval_count": {
+              "median": 256,
+              "min": 256,
+              "max": 256
+            },
+            "prefill_tokens_per_second": {
+              "median": 215.52567424958025,
+              "min": 210.8180215661675,
+              "max": 230.147359942917
+            },
+            "decode_tokens_per_second": {
+              "median": 10.493839685693105,
+              "min": 7.559288518583492,
+              "max": 10.785636279442523
+            },
+            "total_duration": {
+              "median": 47344842224,
+              "min": 41192847201,
+              "max": 62957363730
+            },
+            "prompt_eval_duration": {
+              "median": 17250845000,
+              "min": 16150522000,
+              "max": 17631320000
+            },
+            "eval_duration": {
+              "median": 24395265000,
+              "min": 23735271000,
+              "max": 33865621000
+            }
+          }
+        }
+      },
+      "load_request_total_seconds": 11.419576853,
+      "model_load_seconds": 10.387206271,
+      "ollama_size_vram_bytes": [7547576647],
+      "context_lengths": [32768]
+    },
+    "gemma4-e4b": {
+      "prompt_word_groups": {
+        "384": {
+          "samples": 3,
+          "complete_three_repeats": true,
+          "metrics": {
+            "prompt_eval_count": {
+              "median": 474,
+              "min": 473,
+              "max": 474
+            },
+            "eval_count": {
+              "median": 256,
+              "min": 256,
+              "max": 256
+            },
+            "prefill_tokens_per_second": {
+              "median": 318.9897849241659,
+              "min": 316.917498268009,
+              "max": 342.4405172152217
+            },
+            "decode_tokens_per_second": {
+              "median": 27.449842115156162,
+              "min": 20.19773742736211,
+              "max": 28.190311914789497
+            },
+            "total_duration": {
+              "median": 10928774670,
+              "min": 10771910052,
+              "max": 14190947943
+            },
+            "prompt_eval_duration": {
+              "median": 1485941000,
+              "min": 1384182000,
+              "max": 1492502000
+            },
+            "eval_duration": {
+              "median": 9326101000,
+              "min": 9081134000,
+              "max": 12674687000
+            }
+          }
+        },
+        "3072": {
+          "samples": 3,
+          "complete_three_repeats": true,
+          "metrics": {
+            "prompt_eval_count": {
+              "median": 3565,
+              "min": 3565,
+              "max": 3566
+            },
+            "eval_count": {
+              "median": 256,
+              "min": 256,
+              "max": 256
+            },
+            "prefill_tokens_per_second": {
+              "median": 139.83669819392568,
+              "min": 139.15912920570028,
+              "max": 140.28159966984046
+            },
+            "decode_tokens_per_second": {
+              "median": 25.077136684696736,
+              "min": 18.23112638664274,
+              "max": 25.949200992678573
+            },
+            "total_duration": {
+              "median": 36003816183,
+              "min": 35876195149,
+              "max": 40265945673
+            },
+            "prompt_eval_duration": {
+              "median": 25494023000,
+              "min": 25413169000,
+              "max": 25625340000
+            },
+            "eval_duration": {
+              "median": 10208502000,
+              "min": 9865429000,
+              "max": 14041919000
+            }
+          }
+        }
+      },
+      "load_request_total_seconds": 29.175473299,
+      "model_load_seconds": 22.108647027,
+      "ollama_size_vram_bytes": [364107529],
+      "context_lengths": [32768]
+    },
+    "qwen2.5-coder-7b": {
+      "prompt_word_groups": {
+        "384": {
+          "samples": 3,
+          "complete_three_repeats": true,
+          "metrics": {
+            "prompt_eval_count": {
+              "median": 513,
+              "min": 512,
+              "max": 514
+            },
+            "eval_count": {
+              "median": 256,
+              "min": 256,
+              "max": 256
+            },
+            "prefill_tokens_per_second": {
+              "median": 354.02023861793816,
+              "min": 332.61999072029056,
+              "max": 406.2642301372033
+            },
+            "decode_tokens_per_second": {
+              "median": 14.396232685859019,
+              "min": 11.565192493141977,
+              "max": 14.883921690106519
+            },
+            "total_duration": {
+              "median": 19327402103,
+              "min": 19044353605,
+              "max": 24293474524
+            },
+            "prompt_eval_duration": {
+              "median": 1446245000,
+              "min": 1262725000,
+              "max": 1545307000
+            },
+            "eval_duration": {
+              "median": 17782430000,
+              "min": 17199768000,
+              "max": 22135386000
+            }
+          }
+        },
+        "3072": {
+          "samples": 3,
+          "complete_three_repeats": true,
+          "metrics": {
+            "prompt_eval_count": {
+              "median": 3738,
+              "min": 3738,
+              "max": 3739
+            },
+            "eval_count": {
+              "median": 256,
+              "min": 256,
+              "max": 256
+            },
+            "prefill_tokens_per_second": {
+              "median": 253.96524377980433,
+              "min": 178.52492278128457,
+              "max": 259.13696990267596
+            },
+            "decode_tokens_per_second": {
+              "median": 13.710691554428232,
+              "min": 10.089890280720061,
+              "max": 14.184176321279573
+            },
+            "total_duration": {
+              "median": 34519734038,
+              "min": 33704510173,
+              "max": 46615166438
+            },
+            "prompt_eval_duration": {
+              "median": 14722487000,
+              "min": 14424804000,
+              "max": 20938253000
+            },
+            "eval_duration": {
+              "median": 18671560000,
+              "min": 18048281000,
+              "max": 25371931000
+            }
+          }
+        }
+      },
+      "load_request_total_seconds": 12.658905608,
+      "model_load_seconds": 9.865761959,
+      "ollama_size_vram_bytes": [6578881166],
+      "context_lengths": [32768]
+    },
+    "qwen3-8b": {
+      "prompt_word_groups": {
+        "384": {
+          "samples": 3,
+          "complete_three_repeats": true,
+          "metrics": {
+            "prompt_eval_count": {
+              "median": 500,
+              "min": 499,
+              "max": 501
+            },
+            "eval_count": {
+              "median": 256,
+              "min": 256,
+              "max": 256
+            },
+            "prefill_tokens_per_second": {
+              "median": 114.3864004635852,
+              "min": 94.42473950882483,
+              "max": 245.44662221845533
+            },
+            "decode_tokens_per_second": {
+              "median": 5.302319623992632,
+              "min": 5.2017772440898815,
+              "max": 5.867588782692153
+            },
+            "total_duration": {
+              "median": 51929340533,
+              "min": 48989880495,
+              "max": 56885931452
+            },
+            "prompt_eval_duration": {
+              "median": 4371149000,
+              "min": 2041177000,
+              "max": 5284632000
+            },
+            "eval_duration": {
+              "median": 48280756000,
+              "min": 43629506000,
+              "max": 49213949000
+            }
+          }
+        },
+        "3072": {
+          "samples": 3,
+          "complete_three_repeats": true,
+          "metrics": {
+            "prompt_eval_count": {
+              "median": 3725,
+              "min": 3725,
+              "max": 3726
+            },
+            "eval_count": {
+              "median": 256,
+              "min": 256,
+              "max": 256
+            },
+            "prefill_tokens_per_second": {
+              "median": 79.08291670789771,
+              "min": 79.0207653418869,
+              "max": 103.1395159318719
+            },
+            "decode_tokens_per_second": {
+              "median": 4.5523244168472425,
+              "min": 4.136973244933541,
+              "max": 6.044115098933783
+            },
+            "total_duration": {
+              "median": 108179042578,
+              "min": 92146397383,
+              "max": 109860096428
+            },
+            "prompt_eval_duration": {
+              "median": 47102461000,
+              "min": 36125824000,
+              "max": 47139508000
+            },
+            "eval_duration": {
+              "median": 56235008000,
+              "min": 42355249000,
+              "max": 61880990000
+            }
+          }
+        }
+      },
+      "load_request_total_seconds": 14.621691802,
+      "model_load_seconds": 13.713489345,
+      "ollama_size_vram_bytes": [9827034070],
+      "context_lengths": [32768]
+    },
+    "gemma4-e2b-qat": {
+      "prompt_word_groups": {
+        "384": {
+          "samples": 1,
+          "complete_three_repeats": false,
+          "metrics": {
+            "prompt_eval_count": {
+              "median": 474,
+              "min": 474,
+              "max": 474
+            },
+            "eval_count": {
+              "median": 256,
+              "min": 256,
+              "max": 256
+            },
+            "prefill_tokens_per_second": {
+              "median": 195.96105253409888,
+              "min": 195.96105253409888,
+              "max": 195.96105253409888
+            },
+            "decode_tokens_per_second": {
+              "median": 12.040844614452391,
+              "min": 12.040844614452391,
+              "max": 12.040844614452391
+            },
+            "total_duration": {
+              "median": 23708949704,
+              "min": 23708949704,
+              "max": 23708949704
+            },
+            "prompt_eval_duration": {
+              "median": 2418848000,
+              "min": 2418848000,
+              "max": 2418848000
+            },
+            "eval_duration": {
+              "median": 21260967000,
+              "min": 21260967000,
+              "max": 21260967000
+            }
+          }
+        }
+      },
+      "load_request_total_seconds": 17.720763725,
+      "model_load_seconds": 15.045265177,
+      "ollama_size_vram_bytes": [1819268873],
+      "context_lengths": [32768]
+    }
+  }
+}

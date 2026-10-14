@@ -1,0 +1,7 @@
+{
+  "model": "qwen2.5-coder:7b",
+  "created_at": "2026-10-14T07:10:11.659231941Z",
+  "response": "",
+  "done": true,
+  "done_reason": "unload"
+}

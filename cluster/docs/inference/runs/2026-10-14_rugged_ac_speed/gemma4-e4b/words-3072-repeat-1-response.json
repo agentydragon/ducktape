@@ -1,0 +1,17 @@
+{
+  "model": "gemma4:e4b",
+  "created_at": "2026-10-14T07:08:32.612680353Z",
+  "message": {
+    "role": "assistant",
+    "content": "This is a complex request. \"Stable topological sorting\" usually implies that if two nodes have no dependency relationship (i.e., they are independent), their relative order in the output must be preserved based on their original input order.\n\nThe standard Kahn's algorithm for topological sorting is generally not inherently stable. To make it stable, we must ensure that when multiple nodes are ready to be processed (i.e., their in-degree is zero), we always select the one that appeared earliest in the input graph structure. This is achieved by using a **Min-Heap (Priority Queue)** keyed by the node's original index.\n\nHere is a complete, well-commented Python module implementing stable topological sorting.\n\n```python\nimport heapq\nfrom collections import defaultdict\nfrom typing import Dict, List, Tuple, Set, Any\n\nclass StableTopologicalSort:\n    \"\"\"\n    Implements a stable topological sorting algorithm (Kahn's algorithm variant).\n\n    Stability is maintained by using a min-heap prioritized by the node's \n    original index when multiple nodes have an in-degree of zero.\n    \"\"\"\n\n    def __init__(self):\n        \"\"\"Initializes the sorter.\"\"\"\n        pass\n\n    def sort"
+  },
+  "done": true,
+  "done_reason": "length",
+  "total_duration": 44721529758,
+  "load_duration": 4292111,
+  "prompt_eval_count": 3565,
+  "prompt_eval_cached_count": 0,
+  "prompt_eval_duration": 25320871000,
+  "eval_count": 256,
+  "eval_duration": 19038050000
+}

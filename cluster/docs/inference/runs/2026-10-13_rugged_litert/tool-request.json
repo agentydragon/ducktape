@@ -1,0 +1,17 @@
+{
+  "model": "gemma4-e2b-it,gpu,32000",
+  "messages": [{ "role": "user", "content": "Call read_file to read main.py. Do not answer in prose." }],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "read_file",
+        "description": "Read a file",
+        "parameters": { "type": "object", "properties": { "path": { "type": "string" } }, "required": ["path"] }
+      }
+    }
+  ],
+  "temperature": 0,
+  "reasoning_effort": "none",
+  "max_completion_tokens": 64
+}

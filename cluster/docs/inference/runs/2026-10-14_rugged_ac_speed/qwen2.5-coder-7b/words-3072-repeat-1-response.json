@@ -1,0 +1,17 @@
+{
+  "model": "qwen2.5-coder:7b",
+  "created_at": "2026-10-14T07:14:00.449995247Z",
+  "message": {
+    "role": "assistant",
+    "content": "Here is a Python module implementing a stable topological sorting algorithm using Kahn's algorithm. The algorithm is stable because it preserves the relative order of nodes with no incoming edges.\n\n```python\nfrom collections import deque, defaultdict\n\ndef topological_sort(graph):\n    \"\"\"\n    Perform a stable topological sort on a directed acyclic graph (DAG).\n    \n    Args:\n    graph (dict): A dictionary representing the graph where keys are nodes and values are lists of adjacent nodes.\n    \n    Returns:\n    list: A list of nodes in topological order.\n    \"\"\"\n    # Initialize the in-degree dictionary and the queue\n    in_degree = defaultdict(int)\n    queue = deque()\n    result = []\n    \n    # Calculate in-degrees and identify nodes with no incoming edges\n    for node in graph:\n        for neighbor in graph[node]:\n            in_degree[neighbor] += 1\n        if in_degree[node] == 0:\n            queue.append(node)\n    \n    # Process nodes in the queue\n    while queue:\n        node = queue.popleft()\n        result.append(node)\n        \n        # Decrease in-degree of adjacent nodes and add to queue if in-degree becomes zero\n        for neighbor in graph[node]:\n            in_degree[neighbor] -= 1\n"
+  },
+  "done": true,
+  "done_reason": "length",
+  "total_duration": 63099251446,
+  "load_duration": 2573297,
+  "prompt_eval_count": 3738,
+  "prompt_eval_cached_count": 490,
+  "prompt_eval_duration": 13378998000,
+  "eval_count": 256,
+  "eval_duration": 49295863000
+}

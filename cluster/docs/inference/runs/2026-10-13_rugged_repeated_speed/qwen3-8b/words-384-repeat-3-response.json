@@ -1,0 +1,17 @@
+{
+  "model": "qwen3:8b",
+  "created_at": "2026-10-14T06:43:19.736624215Z",
+  "message": {
+    "role": "assistant",
+    "content": "Here's a well-commented Python module that implements **stable topological sorting**. This module includes:\n\n- A function for **topological sorting** with **stability** (i.e., preserving the original order of nodes with equal in-degrees).\n- **Unit tests** using `unittest`.\n- **Examples** showing how to use the module.\n\n---\n\n### ✅ **Stable Topological Sort Module**\n\n```python\n# topological_sort.py\n\"\"\"\nModule for performing stable topological sorting on a directed acyclic graph (DAG).\n\nThis module provides a function to perform topological sorting with stability,\nensuring that nodes with equal in-degrees are sorted in the order they first appeared.\n\nAuthor: Your Name\nDate: 2025-04-05\n\"\"\"\n\nfrom collections import defaultdict, deque\nimport unittest\n\ndef stable_topological_sort(graph):\n    \"\"\"\n    Perform a stable topological sort on a directed acyclic graph (DAG).\n\n    Args:\n        graph: A dictionary where keys are nodes, and values are lists of nodes\n               that the key node points to (i.e., edges from key to each node in the list).\n\n    Returns:\n        A list of nodes in topological order.\n\n    Raises:\n"
+  },
+  "done": true,
+  "done_reason": "length",
+  "total_duration": 48989880495,
+  "load_duration": 29949753,
+  "prompt_eval_count": 500,
+  "prompt_eval_cached_count": 5,
+  "prompt_eval_duration": 4371149000,
+  "eval_count": 256,
+  "eval_duration": 43629506000
+}

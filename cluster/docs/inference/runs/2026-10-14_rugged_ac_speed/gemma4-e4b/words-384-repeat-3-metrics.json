@@ -1,0 +1,11 @@
+{
+  "prompt_eval_count": 474,
+  "prompt_eval_duration": 1551263000,
+  "eval_count": 256,
+  "eval_duration": 23007408000,
+  "total_duration": 24889328657,
+  "load_duration": 4345430,
+  "done_reason": "length",
+  "prefill_tokens_per_second": 305.5574715570474,
+  "decode_tokens_per_second": 11.126850969044405
+}

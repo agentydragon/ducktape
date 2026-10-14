@@ -1,0 +1,17 @@
+{
+  "model": "qwen3:8b",
+  "created_at": "2026-10-14T07:21:58.461970086Z",
+  "message": {
+    "role": "assistant",
+    "content": "# `topological_sort.py` - A Python Module for Stable Topological Sorting\n\nThis module provides a stable topological sort implementation using Kahn's algorithm. It includes:\n\n- A function for topological sorting of a directed acyclic graph (DAG)\n- A function for checking if a graph is a DAG\n- Example usage and test cases\n\n---\n\n## 📌 Module Overview\n\n### ✅ Features\n- **Stable sorting**: Nodes with equal in-degrees are sorted in the order they were first encountered.\n- **Cycle detection**: Returns `None` if the graph contains a cycle.\n- **Efficient**: Uses Kahn's algorithm with a priority queue for stable sorting.\n\n---\n\n## 📜 Module Code\n\n```python\nimport heapq\nfrom collections import defaultdict, deque\n\ndef topological_sort(graph):\n    \"\"\"\n    Perform a stable topological sort on a directed acyclic graph (DAG).\n    \n    Args:\n        graph: A dictionary where keys are nodes and values are lists of nodes.\n    \n    Returns:\n        A list of nodes in topological order, or None if a cycle is detected.\n    \"\"\"\n    # Step 1: Build in-degree map\n    in_degree = defaultdict(int)\n    for node in graph:\n        for neighbor"
+  },
+  "done": true,
+  "done_reason": "length",
+  "total_duration": 38323907303,
+  "load_duration": 4728012,
+  "prompt_eval_count": 3726,
+  "prompt_eval_cached_count": 468,
+  "prompt_eval_duration": 13859790000,
+  "eval_count": 256,
+  "eval_duration": 20984072000
+}

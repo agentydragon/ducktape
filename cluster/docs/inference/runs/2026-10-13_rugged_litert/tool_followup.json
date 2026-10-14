@@ -1,0 +1,24 @@
+{
+  "id": "chatcmpl_20261014053735925494",
+  "object": "chat.completion",
+  "created": 1791956255,
+  "model": "gemma4-e2b-it,gpu,32000",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "The printed integer is 42."
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 108,
+    "completion_tokens": 9,
+    "total_tokens": 117,
+    "completion_tokens_details": {
+      "reasoning_tokens": 0
+    }
+  }
+}

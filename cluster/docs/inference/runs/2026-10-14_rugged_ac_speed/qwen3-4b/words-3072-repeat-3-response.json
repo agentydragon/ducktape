@@ -1,0 +1,17 @@
+{
+  "model": "qwen3:4b-instruct-2507-q4_K_M",
+  "created_at": "2026-10-14T07:06:19.463779385Z",
+  "message": {
+    "role": "assistant",
+    "content": "Certainly! Below is a **well-commented, complete Python module** that implements **stable topological sorting** of a directed acyclic graph (DAG), with:\n\n- Clear documentation\n- Comprehensive tests\n- Examples\n- Stability guarantees (i.e., preserves the order of equal elements when multiple valid topological orders exist)\n\n---\n\n```python\n\"\"\"\nstable_topological_sort.py\n\nA module implementing stable topological sorting of a directed acyclic graph (DAG).\n\nTopological sorting orders the nodes of a DAG such that for every directed edge u → v,\nnode u appears before node v in the ordering.\n\nThis implementation ensures **stability**: when multiple valid topological orders exist,\nit preserves the relative order of nodes that are not connected by edges (i.e., it uses a stable queue).\n\nThis is achieved by using a **stable queue** (like a list) and processing nodes in a way that\ndoes not arbitrarily reorder equivalent nodes.\n\nNote: This is not the same as \"stable\" in the sense of sorting algorithms (like merge sort),\nbut rather that if two nodes are not connected, and one appears earlier in the input,\nit will appear earlier in the output — preserving input order for non-adjacent nodes.\n\nUsage:\n    result = stable_top"
+  },
+  "done": true,
+  "done_reason": "length",
+  "total_duration": 56262275668,
+  "load_duration": 3983264,
+  "prompt_eval_count": 3718,
+  "prompt_eval_cached_count": 468,
+  "prompt_eval_duration": 12838604000,
+  "eval_count": 256,
+  "eval_duration": 31626909000
+}

@@ -1,0 +1,22 @@
+{
+  "models": [
+    {
+      "name": "qwen2.5-coder:7b",
+      "model": "qwen2.5-coder:7b",
+      "size": 6578881166,
+      "digest": "dae161e27b0e90dd1856c8bb3209201fd6736d8eb66298e75ed87571486f4364",
+      "details": {
+        "parent_model": "",
+        "format": "gguf",
+        "family": "qwen2",
+        "families": ["qwen2"],
+        "parameter_size": "7.6B",
+        "quantization_level": "Q4_K_M"
+      },
+      "expires_at": "2026-10-13T23:49:17.971426812-07:00",
+      "size_vram": 6578881166,
+      "context_length": 32768,
+      "runner": "llamacpp"
+    }
+  ]
+}

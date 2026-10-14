@@ -1,0 +1,9 @@
+/sys/class/power_supply/AC/online=0
+/sys/class/power_supply/BAT0/capacity=91
+/sys/class/power_supply/BAT0/status=Discharging
+/sys/class/power_supply/BAT1/capacity=10
+/sys/class/power_supply/BAT1/status=Not charging
+/sys/class/power_supply/ucsi-source-psy-USBC000:001/online=0
+/sys/class/power_supply/ucsi-source-psy-USBC000:001/status=Not charging
+/sys/class/power_supply/ucsi-source-psy-USBC000:002/online=0
+/sys/class/power_supply/ucsi-source-psy-USBC000:002/status=Not charging
