@@ -3486,7 +3486,6 @@ data:
           - finance-aiquota-history
           - coinbase
           - forgejo-finance-agent
-          - plaid-pgweb
           - github-agentydragon-agent
           - github-clone
           - github-actions-logs
@@ -7809,6 +7808,31 @@ spec:
         name: plaid-finance-diagnostics-reader
       namespaces:
         - plaid-mcp
+    - type: egress
+      hosts:
+        - plaid-pgweb.plaid-mcp.svc.cluster.local
+      methods:
+        - GET
+      paths:
+        - /api/connection
+        - /api/info
+        - /api/objects
+        - /api/query
+        - /api/schemas
+        - /api/tables/**
+      clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
+    - type: egress
+      hosts:
+        - plaid-pgweb.plaid-mcp.svc.cluster.local
+      methods:
+        - POST
+      paths:
+        - /api/query
+      clusterInternal: true
+      credentialRef:
+        name: plaid-pgweb
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
@@ -10483,7 +10507,7 @@ metadata:
   name: plaid-pgweb
   namespace: agentplane-staging
 spec:
-  description: The HTTP Basic password of pgweb's `plaid` user (cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by ESO. Send it as HTTP Basic under that username. pgweb runs SQL as `plaid_ro`, a Postgres role that can only SELECT from the Plaid mirror -- every linked account's balances, transactions and holdings -- and `plaid-pgweb`'s rules present the password only on pgweb's query API.
+  description: The HTTP Basic password of pgweb's `plaid` user (cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by ESO. Send it as HTTP Basic under that username. pgweb runs SQL as `plaid_ro`, a Postgres role that can only SELECT from the Plaid mirror -- every linked account's balances, transactions and holdings -- and Agentplane's egress rules present the password only on pgweb's query API.
   source:
     secretRef:
       name: plaid-pgweb-auth

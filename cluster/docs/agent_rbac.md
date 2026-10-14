@@ -222,14 +222,14 @@ The logical profiles are distinct from the transport identities:
 | `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset |
 | `public-coder-agent/openclaw` ServiceAccount | Static OpenClaw Action caller; Action Service reads labeled ServiceAccount metadata here, while its policy binding and sets stay in `agentplane-staging` |
 
-The managed finance preset also selects the `plaid-diagnostics` PolicySet: a namespaced
-`plaid-mcp` RoleBinding for read-only control-plane metadata (Pods, Services,
-EndpointSlices, workloads, events, PVCs, and CNPG Cluster status). The Role excludes
-Secrets, ConfigMaps, Pod logs/exec and every mutation; financial SQL continues to use
-the existing pgweb `plaid_ro` read-only egress path. This grant diagnoses sync and
-Postgres health without treating the sensitive `plaid-mcp` namespace as globally
-agent-readable. It is a new-sandbox preset grant, not proof of current RBAC in an
-already-running sandbox.
+The managed finance preset selects the `plaid-diagnostics` PolicySet for both its pgweb
+`plaid_ro` read-only egress path and a namespaced `plaid-mcp` RoleBinding for read-only
+control-plane metadata (Pods, Services, EndpointSlices, workloads, events, PVCs, and CNPG
+Cluster status). The Role excludes Secrets, ConfigMaps, Pod logs/exec and every mutation.
+This grant diagnoses sync and Postgres health without treating the sensitive `plaid-mcp`
+namespace as globally agent-readable. It is a new-sandbox preset grant, not proof of current
+RBAC in an already-running sandbox. Other Haku and static callers keep their separate
+`plaid-pgweb` egress PolicySet and do not receive this diagnostics Role.
 
 **Intended relationship between the Haku and finance-agent presets.** Haku is the executive
 agent that directs the finance agent (Rai's finances are the finance agent's, and Haku

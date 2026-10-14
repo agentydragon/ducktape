@@ -636,17 +636,9 @@ def _buildbuddy(scope: Construct, *, namespace: str, credentials_namespace: str)
     )
 
 
-def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
-    _copy_secret(
-        scope,
-        "plaid-pgweb",
-        reader=reader,
-        credentials_namespace=credentials_namespace,
-        source_namespace=plaid_pgweb.AUTH.namespace,
-        source=plaid_pgweb.AUTH.name,
-        key=plaid_pgweb.AUTH_KEY,
-    )
-    credential = "plaid-pgweb"
+def plaid_pgweb_egress_rules() -> list[PolicySetSpecRules]:
+    """The read-only pgweb routes, reusable by the finance diagnostics PolicySet."""
+    credential = PLAID_PGWEB_POLICY
     host = plaid_pgweb.SERVICE.fqdn
     # pgweb's other API routes and its web UI stay unreachable. Its session routes (`connect`,
     # `disconnect`, `switchdb`) are POSTs, so POST is admitted on the query route alone.
@@ -660,6 +652,29 @@ def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, cr
         "/api/tables/**",
         # keep-sorted end
     ]
+    return [
+        _rule(credential, host, cluster_internal=True, method=PolicySetSpecRulesMethods.GET, paths=reads),
+        _rule(
+            credential,
+            host,
+            cluster_internal=True,
+            method=PolicySetSpecRulesMethods.POST,
+            paths=["/api/query"],
+        ),
+    ]
+
+
+def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
+    _copy_secret(
+        scope,
+        "plaid-pgweb",
+        reader=reader,
+        credentials_namespace=credentials_namespace,
+        source_namespace=plaid_pgweb.AUTH.namespace,
+        source=plaid_pgweb.AUTH.name,
+        key=plaid_pgweb.AUTH_KEY,
+    )
+    credential = PLAID_PGWEB_POLICY
     # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
     _present(
         scope,
@@ -671,14 +686,11 @@ def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, cr
             "(cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by "
             "ESO. Send it as HTTP Basic under that username. pgweb runs SQL as `plaid_ro`, a Postgres "
             "role that can only SELECT from the Plaid mirror -- every linked account's balances, "
-            "transactions and holdings -- and `plaid-pgweb`'s rules present the password only on pgweb's "
-            "query API."
+            "transactions and holdings -- and Agentplane's egress rules present the password only on "
+            "pgweb's query API."
         ),
         secret=plaid_pgweb.AUTH.name,
         key=plaid_pgweb.AUTH_KEY,
         target=_BASIC_PASSWORD,
-        rules=[
-            _rule(credential, host, cluster_internal=True, method=PolicySetSpecRulesMethods.GET, paths=reads),
-            _rule(credential, host, cluster_internal=True, method=PolicySetSpecRulesMethods.POST, paths=["/api/query"]),
-        ],
+        rules=plaid_pgweb_egress_rules(),
     )

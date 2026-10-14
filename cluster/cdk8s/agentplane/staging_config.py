@@ -185,7 +185,6 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
             FINANCE_AIQUOTA_HISTORY_POLICY,
             COINBASE_POLICY,
             FORGEJO_FINANCE_AGENT_POLICY,
-            PLAID_PGWEB_POLICY,
             GITHUB_AGENTYDRAGON_AGENT_POLICY,
             GITHUB_CLONE_POLICY,
             GITHUB_ACTIONS_LOGS_POLICY,

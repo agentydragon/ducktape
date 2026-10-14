@@ -44,7 +44,7 @@ from cluster.cdk8s.agentplane.egress_credentials import (
     EgressCredentials,
     credential_external_secret,
 )
-from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials
+from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials, plaid_pgweb_egress_rules
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
@@ -432,6 +432,7 @@ def chart(app: App) -> Chart:
             name: [catalog[grant] for grant in grants]
             for name, grants in {**agent_access_profiles.POLICY_SETS, TOOL_CONFIG_GRANT: (TOOL_CONFIG_GRANT,)}.items()
         },
+        additional_rules={"plaid-diagnostics": plaid_pgweb_egress_rules()},
     )
     reader = ServiceAccount(
         chart,

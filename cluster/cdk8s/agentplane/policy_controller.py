@@ -83,13 +83,23 @@ class PolicyController(Construct):
     set of catalog grants), and the alert on an overdue expiry."""
 
     def __init__(
-        self, scope: Construct, id: str, env: Environment, *, sets: Mapping[str, Sequence[KubernetesGrant]]
+        self,
+        scope: Construct,
+        id: str,
+        env: Environment,
+        *,
+        sets: Mapping[str, Sequence[KubernetesGrant]],
+        additional_rules: Mapping[str, Sequence[PolicySetSpecRules]] | None = None,
     ) -> None:
         super().__init__(scope, id)
         namespace = env.namespace
+        additional_rules = additional_rules or {}
         for name, grants in sorted(sets.items()):
             policy_set.PolicySet(
-                self, f"set-{name}", metadata=ApiObjectMetadata(name=name, namespace=namespace), rules=_rules(grants)
+                self,
+                f"set-{name}",
+                metadata=ApiObjectMetadata(name=name, namespace=namespace),
+                rules=[*_rules(grants), *additional_rules.get(name, ())],
             )
         endpoint = metrics(namespace)
         workload = add_service_workload(

@@ -175,8 +175,9 @@ TESTING_ACCESS = ("agentplane-testing-operator", "agentplane-testing-login")
 PUBLIC_INVENTORY = ("public-coder-node-read", "public-coder-cluster-metadata-read")
 HAKU_EXTRAS = ("cluster-diagnostics", "haku-sandbox-write")
 PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *PUBLIC_INVENTORY)
-# The Flux-owned PolicySets the Policy Controller expands, one per launch choice: a set's rules
-# are its catalog grants, with one RoleBinding rule per role across all its namespaces.
+# The Flux-owned PolicySets the Policy Controller expands, one per launch choice. Their Kubernetes
+# rules are catalog grants (one RoleBinding rule per role across its namespaces); staging may add
+# reviewed egress rules to a set when one selection should grant both capabilities.
 POLICY_SETS = {
     "shared-diagnostics": SHARED_DIAGNOSTICS,
     "testing-access": TESTING_ACCESS,
