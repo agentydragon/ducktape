@@ -905,19 +905,19 @@ py_library(
     ],
 )
 
-py_library(
-    name = "assert_blank_device",
-    srcs = ["assert_blank_device.py"],
-)
-
 py_test(
-    name = "test_assert_blank_device",
-    srcs = ["test_assert_blank_device.py"],
+    name = "test_workspace_disk",
+    srcs = ["test_workspace_disk.py"],
     deps = [
-        ":assert_blank_device",
         ":conftest",
+        ":workspace_disk",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
+)
+
+py_library(
+    name = "workspace_disk",
+    srcs = ["workspace_disk.py"],
 )

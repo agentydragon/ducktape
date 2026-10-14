@@ -38,6 +38,20 @@ acknowledged entry ([SPEC](SPEC.md#event-ingress)), so the outage delays history
   with the wire models and reuse the frame constructors and launch configuration in
   <../native/README.md>.
 
+## VM workspace disk
+
+The guest declares `/state/workspaces` in NixOS `fileSystems` and keeps the mount format fixed at
+ext4. `autoFormat` stays disabled: NixOS formats when `blkid` finds no filesystem, while this
+volume may be formatted only when `wipefs` finds no signatures and a full-device scan finds only
+zero bytes. `workspace_disk.py` enforces that first-use rule, then accepts later boots only for one
+ext4 signature with the `APWORKSPACE` label. Unknown signatures, non-zero unrecognized content,
+unexpected filesystems or labels, and inspection errors stop the mount instead of rewriting data.
+
+`systemd.tmpfiles` owns the mounted workspace directory's `agent:agent` ownership, setgid mode,
+default ACL and private `.home` directory. The mount and runtime directory policy stay in NixOS;
+the small initialization program exists for the stronger blank-disk check that `autoFormat` does
+not express.
+
 ## Tests
 
 Each test is one interaction script run against both harnesses, written against

@@ -66,59 +66,11 @@ let
     exec ${pkgs.util-linux}/sbin/agetty "''${autologin[@]}" --keep-baud 115200,57600,38400,9600 ttyS0 "''${TERM:-vt220}"
   '';
 
-  assertBlankDevice = pkgs.writeTextFile {
-    name = "agentplane-assert-blank-device";
+  workspaceDiskPreparation = pkgs.writeTextFile {
+    name = "agentplane-prepare-workspace";
     executable = true;
-    text = "#!${pkgs.python3}/bin/python3\n" + builtins.readFile ./assert_blank_device.py;
+    text = "#!${pkgs.python3}/bin/python3\n" + builtins.readFile ./workspace_disk.py;
   };
-
-  workspacePreparation = pkgs.writeShellScript "agentplane-prepare-workspace" ''
-    set -euo pipefail
-    device="${workspaceDevice}"
-    for _ in $(seq 1 60); do
-      [ -b "$device" ] && break
-      sleep 1
-    done
-    if [ ! -b "$device" ]; then
-      echo "KubeVirt workspace disk did not appear at $device" >&2
-      exit 1
-    fi
-    if type="$(blkid -p -s TYPE -o value "$device" 2>/dev/null)"; then
-      label="$(blkid -p -s LABEL -o value "$device" 2>/dev/null || true)"
-      signatures="$(wipefs --no-act --noheadings --output TYPE "$device")"
-      if [ "$type" != ext4 ] || [ "$label" != APWORKSPACE ] || [ "$signatures" != ext4 ]; then
-        echo "Refusing unexpected filesystem on the workspace disk ($type, label $label)" >&2
-        exit 1
-      fi
-      exit 0
-    else
-      status=$?
-      if [ "$status" -ne 2 ]; then
-        echo "Could not inspect the workspace disk (blkid status $status)" >&2
-        exit 1
-      fi
-    fi
-    if [ -n "$(wipefs --no-act --noheadings "$device")" ]; then
-      echo "Refusing unrecognized disk signatures on the workspace disk" >&2
-      exit 1
-    fi
-    # No known signature is not proof that the disk is empty. A CDI blank DataVolume is
-    # zero-filled, so only a disk that reads as zeros end to end is formatted; one that lost its
-    # filesystem but still holds data is left for a person to look at.
-    if ${assertBlankDevice} "$device"; then
-      :
-    else
-      status=$?
-      # 3 is NOT_BLANK_EXIT_CODE in assert_blank_device.py.
-      if [ "$status" -eq 3 ]; then
-        echo "Refusing to format a non-zero workspace disk without a recognized filesystem" >&2
-      else
-        echo "Could not verify the blank workspace disk (status $status)" >&2
-      fi
-      exit 1
-    fi
-    mkfs.ext4 -F -L APWORKSPACE "$device"
-  '';
 in
 {
   imports = [ ./../../nix/nixos/modules/vm-hardware.nix ];
@@ -210,6 +162,16 @@ in
     autoResize = false;
   };
 
+  # Ownership, the setgid mode and inherited harness access are persistent tmpfiles policy rather
+  # than imperative chown/chmod/setfacl commands. The service below reapplies it after the mount.
+  systemd.tmpfiles.rules = [
+    "d ${workspaceDir} 2770 ${agentUser} ${agentUser} -"
+    "z ${workspaceDir} 2770 ${agentUser} ${agentUser} -"
+    "a+ ${workspaceDir} - - - - d:user:${toString agentId}:rwx,d:group:${toString agentId}:rwx"
+    "d ${workspaceDir}/.home 0700 ${agentUser} ${agentUser} -"
+    "z ${workspaceDir}/.home 0700 ${agentUser} ${agentUser} -"
+  ];
+
   systemd.services.agentplane-config = {
     description = "Read the Agentplane public configuration, launch and trust disks";
     wantedBy = [ "local-fs.target" ];
@@ -284,7 +246,7 @@ in
       Type = "oneshot";
       RemainAfterExit = true;
     };
-    script = "${workspacePreparation}";
+    serviceConfig.ExecStart = "${workspaceDiskPreparation}";
   };
 
   systemd.services.agentplane-workspace = {
@@ -300,15 +262,8 @@ in
       Type = "oneshot";
       RemainAfterExit = true;
     };
-    # The runner, as root, creates each Session's working directory; the default ACL hands every
-    # new entry to the harness user. /state itself needs nothing: virtiofs makes everything 107.
-    script = ''
-      set -euo pipefail
-      chown ${agentUser}:${agentUser} ${workspaceDir}
-      chmod 2770 ${workspaceDir}
-      setfacl -m d:u:${agentUser}:rwx,d:g:${agentUser}:rwx ${workspaceDir}
-      install -d -m0700 -o ${agentUser} -g ${agentUser} ${workspaceDir}/.home
-    '';
+    # Reapply declarative directory and ACL rules only after the persistent workspace is mounted.
+    serviceConfig.ExecStart = "${pkgs.systemd}/bin/systemd-tmpfiles --create --prefix=${workspaceDir}";
   };
 
   systemd.services.agentplane-runner = {
