@@ -12,9 +12,7 @@ const (
 	// connection rewrites the whole set, so a different `pod-uid` means they describe another runner.
 	// `draining`, `flushing` or `quiesced`; absent while no quiesce is under way.
 	QuiesceStageAnnotation = "agentplane.allegedly.works/quiesce-stage"
-	// `true` while any Session is busy or a background process or attached terminal runs, else `false`.
-	BusyAnnotation = "agentplane.allegedly.works/busy"
-	// RFC 3339 time the Sandbox became idle; present only with `busy` `false`.
+	// RFC 3339 time the Sandbox became idle; absent while it is busy or the runner does not track it.
 	IdleSinceAnnotation = "agentplane.allegedly.works/idle-since"
 	// `running`, `succeeded`, `failed` or `interrupted`; absent when no bootstrap is configured or
 	// none has been reported.
@@ -50,9 +48,7 @@ const (
 // RunnerFacts is what the runner has published about its incarnation on the connection Lease.
 type RunnerFacts struct {
 	Stage QuiesceStage
-	// Nil until the runner has reported its activity.
-	Busy *bool
-	// Set only when Busy is false.
+	// Nil while the Sandbox is busy or the runner does not track activity.
 	IdleSince *time.Time
 	Bootstrap BootstrapState
 }
@@ -94,21 +90,7 @@ func readRunnerFacts(lease *coordinationv1.Lease, incarnationUID string) (Runner
 	default:
 		facts.Bootstrap = BootstrapStateUnrecognised
 	}
-	if busy, ok := annotations[BusyAnnotation]; ok {
-		switch busy {
-		case "true":
-			facts.Busy = new(bool)
-			*facts.Busy = true
-		case "false":
-			facts.Busy = new(bool)
-		default:
-			return RunnerFacts{}, fmt.Errorf("lease %s: annotation %s is %q, want true or false", lease.Name, BusyAnnotation, busy)
-		}
-	}
 	if since, ok := annotations[IdleSinceAnnotation]; ok {
-		if facts.Busy == nil || *facts.Busy {
-			return RunnerFacts{}, fmt.Errorf("lease %s: annotation %s without %s=false", lease.Name, IdleSinceAnnotation, BusyAnnotation)
-		}
 		idleSince, err := time.Parse(time.RFC3339, since)
 		if err != nil {
 			return RunnerFacts{}, fmt.Errorf("lease %s: annotation %s: %w", lease.Name, IdleSinceAnnotation, err)
@@ -122,7 +104,7 @@ func readRunnerFacts(lease *coordinationv1.Lease, incarnationUID string) (Runner
 // carry the same facts and are not changes.
 func runnerFactsChanged(previous, current *coordinationv1.Lease) bool {
 	for _, key := range []string{
-		PodUIDAnnotation, QuiesceStageAnnotation, BusyAnnotation, IdleSinceAnnotation, BootstrapAnnotation,
+		PodUIDAnnotation, QuiesceStageAnnotation, IdleSinceAnnotation, BootstrapAnnotation,
 	} {
 		if previous.Annotations[key] != current.Annotations[key] {
 			return true

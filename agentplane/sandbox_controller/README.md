@@ -60,7 +60,7 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   connection. A Sandbox with no connection Lease, the Runner Gateway's record that a runner ever
   connected, has nothing to seal and is deleted without `Quiesced`.
 - **`RunnerConnected` watches the Lease.** A new connection, a different runner Pod or a change in
-  the runner's published facts (quiesce stage, busy and idle-since, bootstrap state, valid only while
+  the runner's published facts (quiesce stage, idle-since, bootstrap state, valid only while
   the Lease's `pod-uid` is the incarnation's) enqueues the Sandbox; renewals do not. Time is not an
   event, so the moment a live connection would lapse, and a lapsed one, are requeued.
 - **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Sealing`. To give up on the seal,
