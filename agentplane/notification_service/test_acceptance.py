@@ -45,13 +45,8 @@ from agentplane.runner.runner import Runner
 from agentplane.runner.sandbox_launch import SandboxIdentity
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.runner_gateway.client import RunnerGatewayClient
-from agentplane.sandbox_service.testing.kubernetes import (
-    ACCOUNT,
-    SANDBOX,
-    SANDBOX_UID,
-    authenticated_service,
-    kubernetes,
-)
+from agentplane.sandbox_service.testing.connected_runner import authenticated_service
+from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, kubernetes
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
