@@ -14,23 +14,24 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.grpc_calls import RefusedError, ServiceError
 from agentplane.policy_sets import POLICY_SETS_PLURAL
-from agentplane.proto import runner_pb2, sandbox_service_pb2
-from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, SandboxDestination, SandboxPhase
+from agentplane.proto import runner_pb2, sandbox_service_pb2, sandboxes_pb2
+from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest
+from agentplane.proto.sandboxes_pb2 import SandboxDestination, SandboxPhase
 from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.testing.fake_inventory import (
+from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, service_client
+from agentplane.sandbox_service.testing.kubernetes import Cluster
+from agentplane.sandboxes.inventory import SandboxInventory
+from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
     egress_policy_set,
 )
-from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, service_client
-from agentplane.sandbox_service.testing.kubernetes import Cluster
-from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from util.kubernetes import CustomObjectsClient
@@ -106,7 +107,7 @@ async def test_create_writes_a_running_sandbox_with_its_whole_recipe(api: Sandbo
         template=TEMPLATE,
         policy_sets=["test-chosen-set"],
         bootstrap="printf ready",
-        session_defaults=sandbox_service_pb2.SessionDefaults(
+        session_defaults=sandboxes_pb2.SessionDefaults(
             harness=runner_pb2.HARNESS_CODEX, setup_script="true", instructions=""
         ),
     )
@@ -164,14 +165,12 @@ async def test_suspend_resume_and_delete_are_pinned_to_the_incarnation(api: Sand
         CreateSandboxRequest(name="test"),
         CreateSandboxRequest(name="test", template=TEMPLATE, bootstrap="x" * 65_537),
         CreateSandboxRequest(
-            name="test",
-            template=TEMPLATE,
-            session_defaults=sandbox_service_pb2.SessionDefaults(setup_script="x" * 65_537),
+            name="test", template=TEMPLATE, session_defaults=sandboxes_pb2.SessionDefaults(setup_script="x" * 65_537)
         ),
         CreateSandboxRequest(
             name="test",
             template=TEMPLATE,
-            session_defaults=sandbox_service_pb2.SessionDefaults(harness=runner_pb2.HARNESS_UNSPECIFIED),
+            session_defaults=sandboxes_pb2.SessionDefaults(harness=runner_pb2.HARNESS_UNSPECIFIED),
         ),
         CreateSandboxRequest(name="test", template=TEMPLATE, policy_sets=["test-missing-set"]),
         CreateSandboxRequest(name="test", template=TEMPLATE, preset="not a label value"),
@@ -221,7 +220,7 @@ async def test_manual_egress_grants_cross_the_service_boundary(api: SandboxServi
     with pytest.raises(ServiceError) as missing:
         await api.revoke_egress(name)
     assert missing.value.code is grpc.StatusCode.NOT_FOUND
-    stale = sandbox_service_pb2.Sandbox()
+    stale = sandboxes_pb2.Sandbox()
     stale.CopyFrom(view)
     stale.uid = str(uuid4())
     before = dict(case.custom.objects)

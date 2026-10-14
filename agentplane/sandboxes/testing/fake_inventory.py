@@ -15,7 +15,7 @@ from uuid import uuid4
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
-from agentplane.sandbox_service.egress_views import FLUX_KUSTOMIZATION_LABEL
+from agentplane.sandboxes.egress_views import FLUX_KUSTOMIZATION_LABEL
 
 NAMESPACE = "agentplane-test"
 TEMPLATE = "agentplane-test-runner"

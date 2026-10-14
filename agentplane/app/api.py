@@ -91,7 +91,7 @@ from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.egress_views import (
+from agentplane.sandboxes.egress_views import (
     BindingNotFoundError,
     BindingView,
     FluxOwnedBindingError,

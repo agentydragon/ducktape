@@ -9,15 +9,8 @@ import grpc
 from google.protobuf.message import Message
 
 from agentplane.grpc_calls import bearer, call_unary, dial
-from agentplane.proto import (
-    command_pb2,
-    event_log_pb2,
-    runner_gateway_pb2,
-    runner_gateway_pb2_grpc,
-    runner_pb2,
-    sandbox_service_pb2,
-)
-from agentplane.proto.sandbox_service_pb2 import SandboxDestination
+from agentplane.proto import command_pb2, event_log_pb2, runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2
+from agentplane.proto.sandboxes_pb2 import SandboxDestination
 from agentplane.runner_gateway import wire
 
 # gazelle:include_dep @pypi//protobuf
@@ -108,7 +101,7 @@ class RunnerGatewayClient:
             destination,
             lambda stub: stub.SubmitCommand,
             runner_gateway_pb2.SubmitCommandRequest(
-                destination=sandbox_service_pb2.SessionDestination(sandbox=destination, session_id=session_id),
+                destination=sandboxes_pb2.SessionDestination(sandbox=destination, session_id=session_id),
                 command=command,
             ),
             timeout_s=self.command_admission_timeout_s,
@@ -153,7 +146,7 @@ class SandboxRunner:
             self.destination,
             lambda stub: stub.ResumeSession,
             runner_gateway_pb2.ResumeSessionRequest(
-                destination=sandbox_service_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
+                destination=sandboxes_pb2.SessionDestination(sandbox=self.destination, session_id=session_id)
             ),
             timeout_s=self.control.lifecycle_timeout_s,
         )

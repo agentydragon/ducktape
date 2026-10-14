@@ -4,7 +4,7 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.proto.sandbox_service_pb2 import SandboxBinding
+from agentplane.proto.sandboxes_pb2 import SandboxBinding
 from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.runner_gateway.testing.runner_control import run_in_a_vm
 from agentplane.sandbox_resource import SANDBOXES_PLURAL

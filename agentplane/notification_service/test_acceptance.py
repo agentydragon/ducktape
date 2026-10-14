@@ -38,7 +38,7 @@ from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.store import Store
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
-from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
+from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.platform_instructions import render_platform_instructions
 from agentplane.runner.runner import Runner

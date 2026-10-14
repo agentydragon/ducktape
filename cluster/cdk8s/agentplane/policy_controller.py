@@ -27,7 +27,7 @@ from cdk8s_plus_34 import (
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
 
-from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant, RoleBindingGrant
+from agentplane.sandboxes.kubernetes_grants import KubernetesGrant, RoleBindingGrant
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.service_workload import add_service_workload

@@ -7,7 +7,7 @@ package agentplane.proto.runner_gateway;
 import "agentplane/proto/event_log.proto";
 import "agentplane/proto/command.proto";
 import "agentplane/proto/runner.proto";
-import "agentplane/proto/sandbox_service.proto";
+import "agentplane/proto/sandboxes.proto";
 import "google/protobuf/field_mask.proto";
 
 service RunnerGateway {
@@ -53,16 +53,16 @@ message FindSessionsRequest {
   }
 }
 
-message ListSessionsRequest { agentplane.proto.sandbox_service.SandboxDestination destination = 1; }
+message ListSessionsRequest { agentplane.proto.sandboxes.SandboxDestination destination = 1; }
 // Runner Sessions with a registered public Session, under their public IDs.
 message ListSessionsResponse { repeated agentplane.proto.runner.SessionSummary sessions = 1; }
 
-message ResumeSessionRequest { agentplane.proto.sandbox_service.SessionDestination destination = 1; }
+message ResumeSessionRequest { agentplane.proto.sandboxes.SessionDestination destination = 1; }
 message ResumeSessionResponse { agentplane.proto.runner.Attached attached = 1; }
 
 // The gateway checks that the Session runs in the Sandbox whose control Service the call reached.
 message SubmitCommandRequest {
-  agentplane.proto.sandbox_service.SessionDestination destination = 1;
+  agentplane.proto.sandboxes.SessionDestination destination = 1;
   agentplane.proto.command.Command command = 2;
 }
 message SubmitCommandResponse {
@@ -71,7 +71,7 @@ message SubmitCommandResponse {
 }
 
 message CreateSessionRequest {
-  agentplane.proto.sandbox_service.SandboxDestination sandbox = 1;
+  agentplane.proto.sandboxes.SandboxDestination sandbox = 1;
   agentplane.proto.runner.SessionSpec spec = 3;
   // A non-empty spec with no mask is the complete launch spec and setup_script the only setup
   // script: nothing inherits from the Sandbox.

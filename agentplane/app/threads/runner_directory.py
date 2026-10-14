@@ -5,7 +5,7 @@ from uuid import UUID
 from agentplane.app.live import LiveIndex
 from agentplane.app.sandbox_models import sandbox_is_ready
 from agentplane.app.threads.events.event_log import SessionNotRegisteredError
-from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
+from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxRunner
 from agentplane.sandboxes.errors import SandboxNotFoundError
 

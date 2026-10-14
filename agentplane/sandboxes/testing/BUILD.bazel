@@ -1,0 +1,17 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane:__subpackages__"],
+)
+
+py_library(
+    name = "fake_inventory",
+    testonly = True,
+    srcs = ["fake_inventory.py"],
+    deps = [
+        "//agentplane:sandbox_resource",
+        "//agentplane/sandboxes:egress_views",
+        "@pypi//kubernetes_asyncio",
+    ],
+)

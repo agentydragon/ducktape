@@ -10,7 +10,7 @@ from uuid import UUID
 from google.protobuf.json_format import MessageToDict, ParseDict
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
-from agentplane.proto import sandbox_service_pb2
+from agentplane.proto import sandbox_service_pb2, sandboxes_pb2
 from agentplane.runner.harness import Harness
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.subjects import ServiceAccountRef
@@ -122,9 +122,9 @@ class SandboxView(BaseModel):
     pod: PodView | None = None
 
 
-def sandbox_view(value: sandbox_service_pb2.Sandbox) -> SandboxView:
+def sandbox_view(value: sandboxes_pb2.Sandbox) -> SandboxView:
     data = MessageToDict(value, preserving_proto_field_name=True, always_print_fields_with_no_presence=True)
-    data["phase"] = SandboxPhase[sandbox_service_pb2.SandboxPhase.Name(value.phase).removeprefix("SANDBOX_PHASE_")]
+    data["phase"] = SandboxPhase[sandboxes_pb2.SandboxPhase.Name(value.phase).removeprefix("SANDBOX_PHASE_")]
     return SandboxView.model_validate(data)
 
 

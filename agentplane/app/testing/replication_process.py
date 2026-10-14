@@ -53,7 +53,7 @@ from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
-from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
+from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg

@@ -4,7 +4,7 @@ from uuid import UUID
 
 from google.protobuf.json_format import MessageToDict, ParseDict
 
-from agentplane.proto import runner_gateway_pb2, runner_pb2, sandbox_service_pb2
+from agentplane.proto import runner_gateway_pb2, runner_pb2, sandboxes_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -29,10 +29,7 @@ def launch_overrides(request: runner_gateway_pb2.CreateSessionRequest) -> dict[s
 
 
 def create_proto(
-    sandbox: sandbox_service_pb2.SandboxDestination,
-    session_id: UUID,
-    overrides: dict[str, object],
-    setup_script: str | None,
+    sandbox: sandboxes_pb2.SandboxDestination, session_id: UUID, overrides: dict[str, object], setup_script: str | None
 ) -> runner_gateway_pb2.CreateSessionRequest:
     fields = runner_pb2.SessionSpec.DESCRIPTOR.fields
     if any(

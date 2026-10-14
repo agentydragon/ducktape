@@ -13,7 +13,7 @@ from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.log_levels import LogLevels
-from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
+from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
 

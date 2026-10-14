@@ -40,7 +40,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.testing.fake_inventory import TEMPLATE, FakeAuthenticationV1Api
+from agentplane.sandboxes.testing.fake_inventory import TEMPLATE, FakeAuthenticationV1Api
 from util.net import bind_free_port
 from util.testing.asgi import serve_app, serve_app_in_loop
 from util.testing.mock_oidc import build_mock_oidc_app, generate_rsa_keypair

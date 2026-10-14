@@ -155,7 +155,7 @@ proto_library(
         ":command_proto",
         ":event_log_proto",
         ":runner_proto",
-        ":sandbox_service_proto",
+        ":sandboxes_proto",
         "@protobuf//:field_mask_proto",
     ],
 )
@@ -172,13 +172,26 @@ py_grpc_service_library(
 )
 
 proto_library(
+    name = "sandboxes_proto",
+    srcs = ["sandboxes.proto"],
+    deps = [
+        ":runner_proto",
+        "@protobuf//:struct_proto",
+        "@protobuf//:timestamp_proto",
+    ],
+)
+
+py_proto_library_with_mypy_stubs(
+    name = "sandboxes_pb2",
+    deps = [":sandboxes_proto"],
+)
+
+proto_library(
     name = "sandbox_service_proto",
     srcs = ["sandbox_service.proto"],
     deps = [
-        ":runner_proto",
+        ":sandboxes_proto",
         "@protobuf//:empty_proto",
-        "@protobuf//:struct_proto",
-        "@protobuf//:timestamp_proto",
     ],
 )
 

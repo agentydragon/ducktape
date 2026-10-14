@@ -24,7 +24,7 @@ from agentplane.egress import sidecar
 from agentplane.egress.resources import placeholder_of
 from agentplane.history_service.settings import RUNNER_INGRESS_AUDIENCE
 from agentplane.runner_gateway.settings import RUNNER_CONTROL_AUDIENCE
-from agentplane.sandbox_service.kubernetes_grants import RoleBindingGrant, RoleRef
+from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant, RoleRef
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import node_scheduling
 from cluster.cdk8s.agentplane import egress, notifications

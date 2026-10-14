@@ -9,7 +9,7 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP
-from agentplane.proto.sandbox_service_pb2 import (
+from agentplane.proto.sandboxes_pb2 import (
     OwnerReference,
     Sandbox,
     SandboxBinding,

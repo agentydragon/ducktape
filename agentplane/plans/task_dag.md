@@ -1097,18 +1097,16 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `SANDBOX_SHARED_CODE_MOVE` — what outlives the Sandbox Service leaves its package
 
-**Candidate; a pure move with no behavior change; the Policy bindings lane has the first step open.**
-`SANDBOX_SERVICE_REMOVE` is not a deletion yet: 51 Python files outside `agentplane/sandbox_service/`
-import it (21 of them production code), and most of what they import survives the Service. The open
-step moves `reader.py` (`SandboxReader`), `inventory.py` with its create validation, `kubernetes_views.py`,
-`errors.py` and `console.py` into a shared `agentplane/sandboxes/` package. Left after it:
-`egress_views.py` and `action_policy_views.py` (the app), `kubernetes_grants.py` (`app/settings.py` and five
-cdk8s generators), `provisioning.py`, the test fakes under `sandbox_service/testing/` (13, 9, 6, 3 and 3 test
-files), the shared messages in `agentplane/proto/sandbox_service.proto` beside the `SandboxService` RPCs
-(`SandboxDestination`, `SessionDestination`, `SandboxBinding`, `SessionDefaults`, `ServiceAccount`,
-`Sandbox`, `SandboxPhase`), the proto renamed for what it holds, and the remaining importers. Then
-`SANDBOX_WRITE_HELPER` and the removal start from a package that holds only the Service, and the removal is a
-deletion.
+**Candidate; a pure move with no behavior change.** Everything shared now lives in
+`agentplane/sandboxes/` and `agentplane/proto/sandboxes.proto`. What is left under
+`agentplane/sandbox_service/` is the Service itself and what serves only it: `provisioning.py`
+(its `Provisioning.egress` is read by the `GrantEgress` and `RevokeEgress` handlers, so it moves with
+the CLEANUP that removes them, or goes with the Service) and the test fakes that stand up the gRPC
+Service (`testing/backend`, `grpc_service`, `connected_runner`, `kubernetes`), which the gateway and
+app tests use until `SANDBOX_SERVICE_REMOVE` replaces them with the Kubernetes-backed fakes. When
+`GrantEgress` and `RevokeEgress` are gone, this node ends with whatever importers still name
+`agentplane.sandbox_service`; then `SANDBOX_WRITE_HELPER` and the removal start from a package that
+holds only the Service, and the removal is a deletion.
 
 ### `SANDBOX_WRITE_HELPER` — one shared library writes a Sandbox's spec
 

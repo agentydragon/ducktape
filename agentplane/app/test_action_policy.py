@@ -21,9 +21,9 @@ from agentplane.action_service.providers import BindingKind
 from agentplane.app.action_policy import ActionPolicyInventory, BindingProvenance
 from agentplane.app.conftest import operator_token
 from agentplane.policy_sets import ConditionStatus
-from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
-from agentplane.sandbox_service.egress_views import FLUX_KUSTOMIZATION_LABEL
-from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE
+from agentplane.sandboxes.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
+from agentplane.sandboxes.egress_views import FLUX_KUSTOMIZATION_LABEL
+from agentplane.sandboxes.testing.fake_inventory import NAMESPACE
 from agentplane.subjects import ServiceAccountRef
 
 LIVE = ServiceAccountRef(namespace=NAMESPACE, name="live")

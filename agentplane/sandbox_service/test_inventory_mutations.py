@@ -13,15 +13,9 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.proto.runner_pb2 import HARNESS_CODEX
-from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, SandboxPhase, SessionDefaults
+from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest
+from agentplane.proto.sandboxes_pb2 import SandboxPhase, SessionDefaults
 from agentplane.sandbox_resource import PRESET_LABEL, SANDBOXES_PLURAL, OperatingMode
-from agentplane.sandbox_service.testing.fake_inventory import (
-    TEMPLATE,
-    FakeCoreV1Api,
-    FakeCustomObjectsApi,
-    pod,
-    sandbox,
-)
 from agentplane.sandboxes.errors import (
     SandboxConflictError,
     SandboxNotFoundError,
@@ -31,6 +25,7 @@ from agentplane.sandboxes.errors import (
 )
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.kubernetes_views import CREATE_INTENT
+from agentplane.sandboxes.testing.fake_inventory import TEMPLATE, FakeCoreV1Api, FakeCustomObjectsApi, pod, sandbox
 from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf

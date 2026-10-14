@@ -3,12 +3,43 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = ["//agentplane:__subpackages__"])
 
 py_library(
+    name = "action_policy_views",
+    srcs = ["action_policy_views.py"],
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        "//agentplane:crd_group",
+        "//agentplane:policy_sets",
+        "//agentplane/action_service:policy_view",
+        "//agentplane/action_service/policies:registry",
+        "//agentplane/action_service/policies:resources",
+        "//util:kubernetes",
+        "@pypi//pydantic",
+    ],
+)
+
+py_library(
     name = "console",
     srcs = ["console.py"],
     deps = [
         ":errors",
         "@pypi//aiohttp",
         "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
+    name = "egress_views",
+    srcs = ["egress_views.py"],
+    visibility = ["//agentplane:__subpackages__"],
+    deps = [
+        ":errors",
+        "//agentplane:crd_group",
+        "//agentplane:policy_sets",
+        "//agentplane:sandbox_resource",
+        "//agentplane:subjects",
+        "//agentplane/egress:resources",
+        "//util:kubernetes",
+        "@pypi//pydantic",
     ],
 )
 
@@ -31,6 +62,7 @@ py_library(
         "//agentplane:subjects",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandbox_service_pb2",
+        "//agentplane/proto:sandboxes_pb2",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pydantic",
@@ -39,12 +71,22 @@ py_library(
 )
 
 py_library(
+    name = "kubernetes_grants",
+    srcs = ["kubernetes_grants.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s:__subpackages__",
+    ],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
     name = "kubernetes_views",
     srcs = ["kubernetes_views.py"],
     deps = [
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
-        "//agentplane/proto:sandbox_service_pb2",
+        "//agentplane/proto:sandboxes_pb2",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
     ],
@@ -57,7 +99,7 @@ py_library(
         ":errors",
         ":kubernetes_views",
         "//agentplane:sandbox_resource",
-        "//agentplane/proto:sandbox_service_pb2",
+        "//agentplane/proto:sandboxes_pb2",
         "//util:kubernetes",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",

@@ -9,15 +9,15 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.history_service.testing.fixtures import service_database_template
 from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.testing.fake_inventory import (
+from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
+from agentplane.sandbox_service.testing.kubernetes import Cluster, kubernetes
+from agentplane.sandboxes.inventory import SandboxInventory
+from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
     close_fake_api_clients,
 )
-from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
-from agentplane.sandbox_service.testing.kubernetes import Cluster, kubernetes
-from agentplane.sandboxes.inventory import SandboxInventory
 from util.kubernetes import CustomObjectsClient
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import (

@@ -8,17 +8,17 @@ import pytest
 import pytest_bazel
 
 from agentplane.egress.resources import TargetMethod
-from agentplane.proto.sandbox_service_pb2 import Sandbox, ServiceAccount
+from agentplane.proto.sandboxes_pb2 import Sandbox, ServiceAccount
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.egress_views import (
+from agentplane.sandboxes.egress_views import (
     BindingNotFoundError,
     CredentialView,
     FluxOwnedBindingError,
     SandboxOwnedBindingError,
     UnknownPolicyError,
 )
-from agentplane.sandbox_service.testing.fake_inventory import (
+from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
     FakeCustomObjectsApi,
     egress_credential,

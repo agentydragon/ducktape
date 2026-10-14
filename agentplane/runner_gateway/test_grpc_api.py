@@ -15,8 +15,15 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.grpc_calls import ServiceError, dial
-from agentplane.proto import command_pb2, runner_control_pb2, runner_gateway_pb2, runner_pb2, sandbox_service_pb2
-from agentplane.proto.sandbox_service_pb2 import SandboxDestination
+from agentplane.proto import (
+    command_pb2,
+    runner_control_pb2,
+    runner_gateway_pb2,
+    runner_pb2,
+    sandbox_service_pb2,
+    sandboxes_pb2,
+)
+from agentplane.proto.sandboxes_pb2 import SandboxDestination
 from agentplane.runner_gateway import wire
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.connection_records import ConnectionLeases
@@ -154,8 +161,8 @@ async def test_managed_open_expands_default_cwd_with_the_session_id(
     remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: Cluster
 ) -> None:
     cluster.set_binding(
-        sandbox_service_pb2.SandboxBinding(
-            session_defaults=sandbox_service_pb2.SessionDefaults(
+        sandboxes_pb2.SandboxBinding(
+            session_defaults=sandboxes_pb2.SessionDefaults(
                 harness=runner_pb2.HARNESS_CODEX, model="test-model", cwd="/state/workspaces/{session_id}"
             )
         )
@@ -169,8 +176,8 @@ async def test_complete_spec_opens_as_sent_and_inherits_nothing_from_the_sandbox
     remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: Cluster
 ) -> None:
     cluster.set_binding(
-        sandbox_service_pb2.SandboxBinding(
-            session_defaults=sandbox_service_pb2.SessionDefaults(
+        sandboxes_pb2.SandboxBinding(
+            session_defaults=sandboxes_pb2.SessionDefaults(
                 harness=runner_pb2.HARNESS_CLAUDE,
                 model="sandbox-default-model",
                 instructions="sandbox default instructions",
@@ -240,10 +247,7 @@ async def test_missing_invalid_or_duplicate_bearer_is_rejected(
 @pytest.mark.parametrize(
     ("change", "code"),
     [
-        (
-            {"owner": sandbox_service_pb2.ServiceAccount(namespace=SANDBOX_NAMESPACE, name="other")},
-            grpc.StatusCode.NOT_FOUND,
-        ),
+        ({"owner": sandboxes_pb2.ServiceAccount(namespace=SANDBOX_NAMESPACE, name="other")}, grpc.StatusCode.NOT_FOUND),
         ({"sandbox_uid": str(uuid4())}, grpc.StatusCode.NOT_FOUND),
     ],
 )
@@ -276,7 +280,7 @@ async def test_unlisted_callers_rejected_before_lookup(
         resources, caller_accounts=frozenset({ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="allowed-service")})
     )
     cluster.fake.objects[SANDBOXES_PLURAL].clear()
-    destination = sandbox_service_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
+    destination = sandboxes_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
     async with service(configured, cluster.provisioning) as target, dial(target) as channel:
         sandboxes = sandbox_client(channel, token_file, namespace=SANDBOX_NAMESPACE)
         remote = gateway_client(channel, token_file, command_admission_timeout_s=10, control_target=target)

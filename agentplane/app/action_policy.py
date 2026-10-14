@@ -24,8 +24,8 @@ from agentplane.action_service.providers import BindingKind
 from agentplane.app.action_federation import UpstreamFailure
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_SETS_PLURAL
-from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL, ActionPolicyReader
-from agentplane.sandbox_service.egress_views import FLUX_KUSTOMIZATION_LABEL
+from agentplane.sandboxes.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL, ActionPolicyReader
+from agentplane.sandboxes.egress_views import FLUX_KUSTOMIZATION_LABEL
 from agentplane.subjects import ServiceAccountRef
 
 

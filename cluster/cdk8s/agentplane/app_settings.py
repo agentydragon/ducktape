@@ -11,7 +11,7 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.settings import AppSettingsConfig
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_service.kubernetes_grants import KubernetesGrant
+from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 
 # The names of the objects other modules create. `settings()` below grants the public-coder
 # preset its baseline policies, so it refers to them; each comes from the module that creates the

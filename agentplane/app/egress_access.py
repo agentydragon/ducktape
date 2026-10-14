@@ -12,8 +12,8 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane import sandbox_resource
 from agentplane.app.action_policy import ActionPolicyInventory
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, PolicyBinding
-from agentplane.proto.sandbox_service_pb2 import Sandbox
-from agentplane.sandbox_service.egress_views import (
+from agentplane.proto.sandboxes_pb2 import Sandbox
+from agentplane.sandboxes.egress_views import (
     EGRESS_API,
     FLUX_KUSTOMIZATION_LABEL,
     BindingNotFoundError,

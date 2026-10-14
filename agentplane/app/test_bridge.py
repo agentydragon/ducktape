@@ -55,7 +55,7 @@ from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2
-from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
+from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.harness import Harness
 from agentplane.runner.runner import Runner
 from agentplane.runner.session import Session
@@ -65,7 +65,7 @@ from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.testing.control_listener import dialing
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import Endpoint, runner_bearer, seed_runner
-from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
+from agentplane.sandboxes.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 

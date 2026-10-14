@@ -11,10 +11,10 @@ from google.protobuf.empty_pb2 import Empty
 from google.protobuf.json_format import ParseError
 
 from agentplane.grpc_servicer import Abort, ServicerResources, status_mapping
-from agentplane.proto import sandbox_service_pb2, sandbox_service_pb2_grpc
-from agentplane.proto.sandbox_service_pb2 import Sandbox
-from agentplane.sandbox_service.egress_views import BindingNotFoundError, UnknownPolicyError
+from agentplane.proto import sandbox_service_pb2, sandbox_service_pb2_grpc, sandboxes_pb2
+from agentplane.proto.sandboxes_pb2 import Sandbox
 from agentplane.sandbox_service.provisioning import Provisioning
+from agentplane.sandboxes.egress_views import BindingNotFoundError, UnknownPolicyError
 from agentplane.sandboxes.errors import (
     InventoryError,
     SandboxConflictError,
@@ -70,7 +70,7 @@ class SandboxService(sandbox_service_pb2_grpc.SandboxServiceServicer):
     @override
     async def GetSandbox(
         self, request: sandbox_service_pb2.GetSandboxRequest, context: grpc.aio.ServicerContext
-    ) -> sandbox_service_pb2.Sandbox:
+    ) -> sandboxes_pb2.Sandbox:
         async with self.request(context):
             inventory = self.resources.provisioning.inventory
             if not request.name:
@@ -80,7 +80,7 @@ class SandboxService(sandbox_service_pb2_grpc.SandboxServiceServicer):
     @override
     async def CreateSandbox(
         self, request: sandbox_service_pb2.CreateSandboxRequest, context: grpc.aio.ServicerContext
-    ) -> sandbox_service_pb2.Sandbox:
+    ) -> sandboxes_pb2.Sandbox:
         async with errors(context), asyncio.timeout(self.resources.lifecycle_timeout_s):
             principal = await self.resources.authenticate(context)
             provisioning = self.resources.provisioning

@@ -75,9 +75,9 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner_gateway.client import RunnerGatewayClient
-from agentplane.sandbox_service.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, policy_binding, sandbox
+from agentplane.sandboxes.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
+from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, policy_binding, sandbox
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import (
     WorkloadPrincipal,

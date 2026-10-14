@@ -46,7 +46,7 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
-from agentplane.sandbox_service.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
+from agentplane.sandboxes.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
 from util.net import pick_free_port
 
 APP_ENVIRONMENT = {

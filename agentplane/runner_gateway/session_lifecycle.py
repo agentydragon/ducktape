@@ -5,7 +5,7 @@ from pathlib import PurePosixPath
 from google.protobuf.json_format import MessageToDict, ParseDict
 
 from agentplane.proto import runner_pb2
-from agentplane.proto.sandbox_service_pb2 import SandboxBinding
+from agentplane.proto.sandboxes_pb2 import SandboxBinding
 
 # gazelle:include_dep @pypi//protobuf
 

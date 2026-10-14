@@ -6,7 +6,8 @@ The app may select form presets, but this service owns what a new Sandbox is bou
 from collections.abc import Set
 from dataclasses import dataclass
 
-from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Sandbox
+from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest
+from agentplane.proto.sandboxes_pb2 import Sandbox
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.subjects import ServiceAccountRef

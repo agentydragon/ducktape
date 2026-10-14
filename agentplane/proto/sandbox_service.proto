@@ -3,18 +3,16 @@ syntax = "proto3";
 
 package agentplane.proto.sandbox_service;
 
-import "agentplane/proto/runner.proto";
+import "agentplane/proto/sandboxes.proto";
 import "google/protobuf/empty.proto";
-import "google/protobuf/struct.proto";
-import "google/protobuf/timestamp.proto";
 
 // Sandboxes and their egress grants; the Runner Gateway serves Sessions.
 service SandboxService {
   rpc ListSandboxes(google.protobuf.Empty) returns (ListSandboxesResponse);
-  rpc GetSandbox(GetSandboxRequest) returns (Sandbox);
+  rpc GetSandbox(GetSandboxRequest) returns (agentplane.proto.sandboxes.Sandbox);
   // Persist the Sandbox and return; the Sandbox Controller starts it.
   // Retry with the same name and exact choices while the Sandbox exists.
-  rpc CreateSandbox(CreateSandboxRequest) returns (Sandbox);
+  rpc CreateSandbox(CreateSandboxRequest) returns (agentplane.proto.sandboxes.Sandbox);
   rpc SuspendSandbox(SandboxRequest) returns (google.protobuf.Empty);
   rpc ResumeSandbox(SandboxRequest) returns (google.protobuf.Empty);
   // Starts teardown of a suspended Sandbox and returns; refused while it runs (FAILED_PRECONDITION).
@@ -34,47 +32,17 @@ service SandboxService {
   rpc StreamConsole(StreamConsoleRequest) returns (stream StreamConsoleResponse);
 }
 
-message ServiceAccount {
-  string namespace = 1;
-  string name = 2;
-}
-
-message SandboxDestination {
-  ServiceAccount owner = 1;
-  string sandbox = 2;
-  string sandbox_uid = 3;
-}
-
-message SessionDestination {
-  SandboxDestination sandbox = 1;
-  string session_id = 2;
-}
-
-message SandboxRequest { SandboxDestination destination = 1; }
+message SandboxRequest { agentplane.proto.sandboxes.SandboxDestination destination = 1; }
 message GetSandboxRequest { string name = 1; }
-message StreamConsoleRequest { SandboxDestination destination = 1; }
+message StreamConsoleRequest { agentplane.proto.sandboxes.SandboxDestination destination = 1; }
 message StreamConsoleResponse { bytes output = 1; }
-
-message SessionDefaults {
-  optional agentplane.proto.runner.Harness harness = 1;
-  optional string model = 2;
-  optional string cwd = 3;
-  optional string reasoning_effort = 4;
-  optional string instructions = 5;
-  optional string setup_script = 6;
-}
-
-message SandboxBinding {
-  SessionDefaults session_defaults = 1;
-  string bootstrap = 2;
-}
 
 message CreateSandboxRequest {
   string name = 1;
   string template = 2;
   reserved 3, 4, 5;
   reserved "egress_policies", "action_policy_sets", "kubernetes_grants";
-  SessionDefaults session_defaults = 6;
+  agentplane.proto.sandboxes.SessionDefaults session_defaults = 6;
   string bootstrap = 7;
   // PolicySet names to bind, beside the service's defaults.
   repeated string policy_sets = 8;
@@ -83,66 +51,11 @@ message CreateSandboxRequest {
   optional string preset = 9;
 }
 
-// Kubernetes names/status vocabulary is preserved, not recast as runner state.
-message OwnerReference {
-  string api_version = 1;
-  string kind = 2;
-  string name = 3;
-  string uid = 4;
-  bool controller = 5;
-}
-message SandboxPod {
-  string name = 1;
-  string namespace = 2;
-  string uid = 3;
-  bool deleting = 4;
-  repeated OwnerReference owner_references = 5;
-  google.protobuf.Struct status = 6;
-  optional string node_name = 7;
-}
-message Sandbox {
-  reserved 3, 6, 7, 10, 11, 12, 13, 17, 18, 19;
-  reserved "state", "conditions", "node_name", "kubernetes_grants", "kubernetes_grants_ready",
-      "kubernetes_grant_error", "launch_grants_pending", "initializing", "deleting", "teardown";
-
-  string name = 1;
-  string uid = 2;
-  google.protobuf.Timestamp created_at = 4;
-  string operating_mode = 5;
-  ServiceAccount service_account = 8;
-  SandboxBinding binding = 9;
-  SandboxPod pod = 14;
-  string namespace = 15;
-  google.protobuf.Struct status = 16;
-  SandboxPhase phase = 20;
-  optional string preset = 21;
-}
-
-// Where the Sandbox is in its lifecycle, derived from what the Sandbox Controller records: whether
-// deletion was asked for, whether it is to run, whether an incarnation exists, and whether its
-// Sessions are sealed. A Sandbox in QUIESCING or TEARING_DOWN takes no new Sessions or commands and
-// cannot be suspended or resumed; its Sessions can still be read until it is deleted.
-enum SandboxPhase {
-  SANDBOX_PHASE_UNSPECIFIED = 0;
-  // To run, and no incarnation exists yet.
-  SANDBOX_PHASE_CREATING = 1;
-  // To run, with an incarnation.
-  SANDBOX_PHASE_RUNNING = 2;
-  // Not to run, and its incarnation is still going.
-  SANDBOX_PHASE_SUSPENDING = 3;
-  // Not to run, and no incarnation exists; the state volume is kept.
-  SANDBOX_PHASE_SUSPENDED = 4;
-  // Being deleted, waiting for its runner to seal every Session and its ingress to acknowledge each
-  // seal. Stays here while the runner is unreachable, for the operator to decide.
-  SANDBOX_PHASE_QUIESCING = 5;
-  // Being deleted, every Session sealed: its Pod or VM and its state volume are being removed.
-  SANDBOX_PHASE_TEARING_DOWN = 6;
-}
-message ListSandboxesResponse { repeated Sandbox sandboxes = 1; }
+message ListSandboxesResponse { repeated agentplane.proto.sandboxes.Sandbox sandboxes = 1; }
 message ListTemplatesResponse { repeated string templates = 1; }
 
 message GrantEgressRequest {
-  SandboxDestination destination = 1;
+  agentplane.proto.sandboxes.SandboxDestination destination = 1;
   // PolicySet names to grant in the new binding.
   repeated string egress_policies = 2;
 }

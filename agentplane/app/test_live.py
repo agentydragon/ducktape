@@ -74,7 +74,7 @@ from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControl
 from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import seed_runner
-from agentplane.sandbox_service.testing.fake_inventory import (
+from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,

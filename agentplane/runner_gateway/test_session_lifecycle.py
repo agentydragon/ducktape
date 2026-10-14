@@ -1,7 +1,7 @@
 import pytest_bazel
 
 from agentplane.proto import runner_pb2
-from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SessionDefaults
+from agentplane.proto.sandboxes_pb2 import SandboxBinding, SessionDefaults
 from agentplane.runner_gateway.session_lifecycle import launch_spec
 
 # gazelle:include_dep @pypi//protobuf

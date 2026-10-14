@@ -9,7 +9,7 @@ from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
-from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination, ServiceAccount
+from agentplane.proto.sandboxes_pb2 import SandboxBinding, SandboxDestination, ServiceAccount
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandboxes.inventory import SandboxInventory

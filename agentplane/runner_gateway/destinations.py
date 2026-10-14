@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.proto.sandbox_service_pb2 import Sandbox, SandboxBinding, SandboxDestination, SandboxPhase
+from agentplane.proto.sandboxes_pb2 import Sandbox, SandboxBinding, SandboxDestination, SandboxPhase
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND, SANDBOX_LABEL, VMI_API_VERSION, VMI_KIND
 from agentplane.sandboxes.errors import SandboxTearingDownError
 from agentplane.sandboxes.reader import SandboxReader

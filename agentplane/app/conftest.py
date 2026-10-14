@@ -54,7 +54,7 @@ from agentplane.runner.testing.fixtures import config, endpoint, harness, model,
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import Endpoint, backend
-from agentplane.sandbox_service.testing.fake_inventory import (
+from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
     FakeAuthenticationV1Api,

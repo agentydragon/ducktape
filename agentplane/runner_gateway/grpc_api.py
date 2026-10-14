@@ -14,14 +14,8 @@ from google.protobuf.json_format import ParseError
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.grpc_servicer import Abort, ServicerResources, Status, status_mapping
-from agentplane.proto import (
-    runner_control_pb2,
-    runner_gateway_pb2,
-    runner_gateway_pb2_grpc,
-    runner_pb2,
-    sandbox_service_pb2,
-)
-from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxDestination
+from agentplane.proto import runner_control_pb2, runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2
+from agentplane.proto.sandboxes_pb2 import SandboxBinding, SandboxDestination
 from agentplane.runner_gateway import session_lifecycle, wire
 from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
@@ -133,7 +127,7 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 sessions.append(summary)
             return runner_gateway_pb2.ListSessionsResponse(sessions=sessions)
 
-    async def runner_session_id(self, destination: sandbox_service_pb2.SessionDestination) -> str:
+    async def runner_session_id(self, destination: sandboxes_pb2.SessionDestination) -> str:
         """The runner's ID for a Session registered in the destination's Sandbox incarnation."""
         session_id = parse_session_id(destination.session_id)
         await self.resources.sessions.require(

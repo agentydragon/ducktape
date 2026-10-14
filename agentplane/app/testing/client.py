@@ -30,7 +30,7 @@ from agentplane.app.threads.bridge import NewSession
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.egress.decisions import Decision
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
-from agentplane.sandbox_service.egress_views import BindingView
+from agentplane.sandboxes.egress_views import BindingView
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
