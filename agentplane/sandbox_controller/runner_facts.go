@@ -8,18 +8,17 @@ import (
 )
 
 const (
-	// On the Runner Gateway's Lease for a Sandbox: the incarnation UID the facts below describe. Written
-	// in the same update as any of them; facts stamped with another incarnation's UID, or unstamped,
-	// are not read.
-	RunnerFactsUIDAnnotation = "agentplane.allegedly.works/runner-facts-uid"
+	// The facts below are valid only while the Lease's `pod-uid` is the incarnation's: a new
+	// connection rewrites the whole set, so a different `pod-uid` means they describe another runner.
 	// `draining`, `flushing` or `quiesced`; absent while no quiesce is under way.
 	QuiesceStageAnnotation = "agentplane.allegedly.works/quiesce-stage"
 	// `true` while any Session is busy or a background process or attached terminal runs, else `false`.
 	BusyAnnotation = "agentplane.allegedly.works/busy"
 	// RFC 3339 time the Sandbox became idle; present only with `busy` `false`.
 	IdleSinceAnnotation = "agentplane.allegedly.works/idle-since"
-	// `succeeded` or `failed`; absent until the Sandbox bootstrap has finished.
-	BootstrapResultAnnotation = "agentplane.allegedly.works/bootstrap-result"
+	// `running`, `succeeded`, `failed` or `interrupted`; absent when no bootstrap is configured or
+	// none has been reported.
+	BootstrapAnnotation = "agentplane.allegedly.works/bootstrap"
 )
 
 // QuiesceStage is how far the runner has got in quiescing.
@@ -35,15 +34,17 @@ const (
 	QuiesceStageUnrecognised
 )
 
-// BootstrapResult is how the Sandbox bootstrap ended.
-type BootstrapResult int
+// BootstrapState is how far the Sandbox bootstrap has got.
+type BootstrapState int
 
 const (
-	BootstrapPending BootstrapResult = iota
+	BootstrapNone BootstrapState = iota
+	BootstrapRunning
 	BootstrapSucceeded
 	BootstrapFailed
-	// A result a newer runner publishes that this controller does not know.
-	BootstrapResultUnrecognised
+	BootstrapInterrupted
+	// A state a newer runner publishes that this controller does not know.
+	BootstrapStateUnrecognised
 )
 
 // RunnerFacts is what the runner has published about its incarnation on the connection Lease.
@@ -53,18 +54,18 @@ type RunnerFacts struct {
 	Busy *bool
 	// Set only when Busy is false.
 	IdleSince *time.Time
-	Bootstrap BootstrapResult
+	Bootstrap BootstrapState
 }
 
-// readRunnerFacts reads the facts the Lease holds for the incarnation with this UID. A Lease stamped
-// for another incarnation holds none of its facts.
+// readRunnerFacts reads the facts the Lease holds for the incarnation with this UID. A Lease whose
+// `pod-uid` is another incarnation's holds none of its facts.
 //
 // Staged for the quiesce progress check, which reads Stage here instead of repeating the Quiesce
 // call; delete if that change is abandoned.
 func readRunnerFacts(lease *coordinationv1.Lease, incarnationUID string) (RunnerFacts, error) {
 	var facts RunnerFacts
 	annotations := lease.Annotations
-	if incarnationUID == "" || annotations[RunnerFactsUIDAnnotation] != incarnationUID {
+	if incarnationUID == "" || annotations[PodUIDAnnotation] != incarnationUID {
 		return facts, nil
 	}
 	switch annotations[QuiesceStageAnnotation] {
@@ -79,15 +80,19 @@ func readRunnerFacts(lease *coordinationv1.Lease, incarnationUID string) (Runner
 	default:
 		facts.Stage = QuiesceStageUnrecognised
 	}
-	switch annotations[BootstrapResultAnnotation] {
+	switch annotations[BootstrapAnnotation] {
 	case "":
-		facts.Bootstrap = BootstrapPending
+		facts.Bootstrap = BootstrapNone
+	case "running":
+		facts.Bootstrap = BootstrapRunning
 	case "succeeded":
 		facts.Bootstrap = BootstrapSucceeded
 	case "failed":
 		facts.Bootstrap = BootstrapFailed
+	case "interrupted":
+		facts.Bootstrap = BootstrapInterrupted
 	default:
-		facts.Bootstrap = BootstrapResultUnrecognised
+		facts.Bootstrap = BootstrapStateUnrecognised
 	}
 	if busy, ok := annotations[BusyAnnotation]; ok {
 		switch busy {
@@ -117,7 +122,7 @@ func readRunnerFacts(lease *coordinationv1.Lease, incarnationUID string) (Runner
 // carry the same facts and are not changes.
 func runnerFactsChanged(previous, current *coordinationv1.Lease) bool {
 	for _, key := range []string{
-		RunnerFactsUIDAnnotation, QuiesceStageAnnotation, BusyAnnotation, IdleSinceAnnotation, BootstrapResultAnnotation,
+		PodUIDAnnotation, QuiesceStageAnnotation, BusyAnnotation, IdleSinceAnnotation, BootstrapAnnotation,
 	} {
 		if previous.Annotations[key] != current.Annotations[key] {
 			return true

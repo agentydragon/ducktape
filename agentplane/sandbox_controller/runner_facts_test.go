@@ -13,11 +13,11 @@ func factsLease(annotations map[string]string) *coordinationv1.Lease {
 }
 
 func TestFactsOfAnotherIncarnationAreNotRead(t *testing.T) {
-	for name, stamp := range map[string]map[string]string{
-		"stamped for an earlier incarnation": {RunnerFactsUIDAnnotation: "earlier-uid", QuiesceStageAnnotation: "quiesced"},
-		"unstamped":                          {QuiesceStageAnnotation: "quiesced"},
+	for name, annotations := range map[string]map[string]string{
+		"written for an earlier incarnation": {PodUIDAnnotation: "earlier-uid", QuiesceStageAnnotation: "quiesced"},
+		"no incarnation recorded":            {QuiesceStageAnnotation: "quiesced"},
 	} {
-		facts, err := readRunnerFacts(factsLease(stamp), "current-uid")
+		facts, err := readRunnerFacts(factsLease(annotations), "current-uid")
 		if err != nil {
 			t.Fatalf("%s: %v", name, err)
 		}
@@ -29,11 +29,11 @@ func TestFactsOfAnotherIncarnationAreNotRead(t *testing.T) {
 
 func TestFactsOfTheIncarnationAreRead(t *testing.T) {
 	facts, err := readRunnerFacts(factsLease(map[string]string{
-		RunnerFactsUIDAnnotation:  "current-uid",
-		QuiesceStageAnnotation:    "flushing",
-		BusyAnnotation:            "false",
-		IdleSinceAnnotation:       "2026-10-14T00:30:00Z",
-		BootstrapResultAnnotation: "succeeded",
+		PodUIDAnnotation:       "current-uid",
+		QuiesceStageAnnotation: "flushing",
+		BusyAnnotation:         "false",
+		IdleSinceAnnotation:    "2026-10-14T00:30:00Z",
+		BootstrapAnnotation:    "succeeded",
 	}), "current-uid")
 	if err != nil {
 		t.Fatal(err)
@@ -48,14 +48,14 @@ func TestFactsOfTheIncarnationAreRead(t *testing.T) {
 
 func TestUnrecognisedFactValuesAreNamedNotSkipped(t *testing.T) {
 	facts, err := readRunnerFacts(factsLease(map[string]string{
-		RunnerFactsUIDAnnotation:  "current-uid",
-		QuiesceStageAnnotation:    "rebooting",
-		BootstrapResultAnnotation: "partial",
+		PodUIDAnnotation:       "current-uid",
+		QuiesceStageAnnotation: "rebooting",
+		BootstrapAnnotation:    "partial",
 	}), "current-uid")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if facts.Stage != QuiesceStageUnrecognised || facts.Bootstrap != BootstrapResultUnrecognised {
+	if facts.Stage != QuiesceStageUnrecognised || facts.Bootstrap != BootstrapStateUnrecognised {
 		t.Errorf("facts = %+v", facts)
 	}
 }
@@ -67,7 +67,7 @@ func TestMalformedFactsAreErrors(t *testing.T) {
 		"idle since while busy":   {BusyAnnotation: "true", IdleSinceAnnotation: "2026-10-14T00:30:00Z"},
 		"idle since without busy": {IdleSinceAnnotation: "2026-10-14T00:30:00Z"},
 	} {
-		annotations[RunnerFactsUIDAnnotation] = "current-uid"
+		annotations[PodUIDAnnotation] = "current-uid"
 		if _, err := readRunnerFacts(factsLease(annotations), "current-uid"); err == nil {
 			t.Errorf("%s: no error", name)
 		}
@@ -75,11 +75,11 @@ func TestMalformedFactsAreErrors(t *testing.T) {
 }
 
 func TestOnlyFactsChangeTheLeaseWatchEnqueue(t *testing.T) {
-	renewed := factsLease(map[string]string{RunnerFactsUIDAnnotation: "uid", BusyAnnotation: "true"})
+	renewed := factsLease(map[string]string{PodUIDAnnotation: "uid", BusyAnnotation: "true"})
 	if runnerFactsChanged(renewed, renewed.DeepCopy()) {
 		t.Error("a renewal with the same facts counted as a change")
 	}
-	idle := factsLease(map[string]string{RunnerFactsUIDAnnotation: "uid", BusyAnnotation: "false"})
+	idle := factsLease(map[string]string{PodUIDAnnotation: "uid", BusyAnnotation: "false"})
 	if !runnerFactsChanged(renewed, idle) {
 		t.Error("a change of busy did not count")
 	}
