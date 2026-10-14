@@ -207,7 +207,8 @@ async def test_a_deleted_sandbox_reaches_a_watch_on_another_replica(stub: Dispat
     watch = stub.WatchDispatches(
         pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=SESSION)), metadata=BEARER
     )
-    assert (await anext(watch)).dispatch == queued
+    events = aiter(watch)
+    assert (await anext(events)).dispatch == queued
 
     other_replica_ended = EndedDispatches()
     other_replica_broadcast = TerminalBroadcast(engine.url, other_replica_ended)
@@ -215,7 +216,7 @@ async def test_a_deleted_sandbox_reaches_a_watch_on_another_replica(stub: Dispat
     async with other_replica_broadcast.listener.listen():
         terminal_events = await other_replica_store.end_sandbox(UUID(SANDBOX_UID))
         assert len(terminal_events) == 1
-        terminal = await anext(watch)
+        terminal = await anext(events)
 
     assert terminal.dispatch.command_id == "terminal"
     assert terminal.dispatch.state == pb.DELIVERY_STATE_FAILED
@@ -230,13 +231,14 @@ async def test_a_watch_fails_explicitly_when_its_terminal_listener_reconnects(
     watch = stub.WatchDispatches(
         pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=SESSION)), metadata=BEARER
     )
-    assert (await anext(watch)).dispatch.command_id == "listener-gap"
+    events = aiter(watch)
+    assert (await anext(events)).dispatch.command_id == "listener-gap"
     connection = terminal_broadcast.listener._connection
     assert connection is not None
     connection.terminate()
     with pytest.raises(grpc.aio.AioRpcError) as failed:
         async with asyncio.timeout(5):
-            await anext(watch)
+            await anext(events)
     assert failed.value.code() is grpc.StatusCode.UNAVAILABLE
     watch.cancel()
 

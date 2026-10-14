@@ -8,6 +8,8 @@ from dataclasses import dataclass, field
 
 from agentplane.proto import session_dispatcher_pb2
 
+# gazelle:include_dep @pypi//protobuf
+
 
 @dataclass(frozen=True)
 class TerminalEvent:

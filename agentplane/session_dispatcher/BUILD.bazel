@@ -365,7 +365,10 @@ py_test(
 py_library(
     name = "ended_dispatches",
     srcs = ["ended_dispatches.py"],
-    deps = ["//agentplane/proto:session_dispatcher_pb2"],
+    deps = [
+        "//agentplane/proto:session_dispatcher_pb2",
+        "@pypi//protobuf",
+    ],
 )
 
 py_library(
