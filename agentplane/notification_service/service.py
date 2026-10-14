@@ -152,7 +152,8 @@ class Service:
         # TODO: Observe command-scoped admission outcomes by command ID in the History Service, rather
         # than checkpointing the shared conversation journal.
         # The runner's journal or History Service watermark may be ahead of the copied cursor.
-        if self.dispatcher is None:
+        dispatcher = self.dispatcher
+        if dispatcher is None:
             live = first(
                 (session for session in await runner.list_sessions() if session.session_id == claim.session_id), None
             )
@@ -197,7 +198,7 @@ class Service:
             return
         if not current.admitted and (current.attempted or await self.store.attempt(claim, current)):
             # Its admission and confirmation are copied by a later claim, once the History Service has them.
-            if self.dispatcher is None:
+            if dispatcher is None:
                 if live.harness_state != runner_pb2.HARNESS_STATE_RUNNING:
                     return
                 await self.gateway.command(
@@ -208,7 +209,7 @@ class Service:
                     ),
                 )
             else:
-                dispatch = await self.dispatcher.submit_input(
+                dispatch = await dispatcher.submit_input(
                     sandbox=runner.destination.sandbox,
                     session_id=claim.session_id,
                     command_id=str(current.command_id),
