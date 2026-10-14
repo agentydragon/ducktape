@@ -58,7 +58,8 @@ per-Sandbox Lease and fences claims and settlements with a PostgreSQL ownership 
   that remains unready for ten minutes after its budgeted wake request becomes `FAILED`, with the
   Sandbox's current `Ready` condition reason and message recorded for the sender. The queue row is
   retained, and quota wait time does not count toward the deadline. The budget does not expand the
-  caller allowlist. Its initial rate and tuning remain a later TODO.
+  caller allowlist. The initial limit is ten wake attempts per minute per authenticated caller; tuning
+  remains a follow-up.
 
 Delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandbox change (the `ListWatch` on
 Sandboxes) or a retry deadline. Each replica also renews its owned Leases every ten seconds.
