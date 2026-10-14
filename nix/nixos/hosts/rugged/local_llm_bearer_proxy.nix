@@ -29,6 +29,12 @@ in
       key = "stringData/token";
     };
 
+    # NixOS runs nginx's configuration check and master as this unprivileged
+    # user, so the default root-only template cannot be included at startup.
+    sops.templates."rugged-local-llm-nginx.conf".owner = config.services.nginx.user;
+    sops.templates."rugged-local-llm-nginx.conf".group = config.services.nginx.group;
+    sops.templates."rugged-local-llm-nginx.conf".mode = "0400";
+
     sops.templates."rugged-local-llm-nginx.conf".content = ''
       map $http_authorization $rugged_local_llm_authorized {
         default 0;
