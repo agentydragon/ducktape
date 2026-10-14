@@ -1,4 +1,4 @@
-# Part C: NPU driver bump and Level Zero setup (research only, 2026-10-13)
+# Rugged NPU driver bump (research, 2026-10-13)
 
 Nothing was enabled, installed, or loaded. The only machine interaction was running `npu-umd-test` from existing `/nix/store` paths with `LD_LIBRARY_PATH` set in a single shell.
 

@@ -35,6 +35,8 @@ with their dated run records.
   with source/trust marks on every number.
 - <rugged_local_llm.md> — what runs offline on `rugged` (Ollama Vulkan, LiteRT-LM,
   NPU status), how to run it, and OpenCode tool-calling results with Gemma 4 E2B.
+  Also: <runs/2026-10-13_rugged_model_speed/README.md> (model speed/memory) and
+  <rugged_npu_driver.md> (NPU driver research).
 - <backend_comparison.md> — feature/format/API matrix across llama.cpp, Ollama,
   vLLM, SGLang, TensorRT-LLM, and the rest. Includes current cluster state
   and migration path. Decision document for picking what to run on wyrm2.

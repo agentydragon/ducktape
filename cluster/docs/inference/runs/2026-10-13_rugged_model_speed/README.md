@@ -1,8 +1,8 @@
-# Part B: candidate model speed and memory on rugged's Arc iGPU (2026-10-13)
+# Rugged candidate model speed (2026-10-13)
 
 Backend: upstream Ollama 0.40.2 Vulkan on the Arc 130V/140V, `num_ctx=32768`, one model loaded at a time, `think:false`, `num_predict=128`, single run per cell (indicative, not statistical).
 Run on a separate user-level Ollama instance (port 11500, scratch model dir) so the system service was untouched; the system service's model was idle.
-Method and script: see the README in this directory.
+Script: <bench.py>, run as `python3 -I bench.py MODEL NUM_CTX PROMPT_TOKENS,...`.
 
 | Model (Ollama tag, quant)                     | Weights | `size_vram` at 32k ctx         | Cold load   | Decode @0.5k prompt | Decode @21k prompt |
 | --------------------------------------------- | ------- | ------------------------------ | ----------- | ------------------- | ------------------ |
@@ -37,3 +37,17 @@ Prefill (prompt-processing) speed and time-to-answer by prompt size:
 - `gemma4:e4b` reports `size_vram` 0.27 GiB, which does not match its weights; Ollama's accounting for this model (multimodal projector, per-layer embeddings kept on the host) looks off. Treat its memory number as unreliable and check host RSS/`free` in a follow-up.
 - Gemma 4 E4B's first row has a low prefill number (104 tok/s) because it was measured right after the cold load.
 - No quality or tool-calling measurement of the new models yet. Part A's tool-call result applies to Gemma 4 E2B only.
+
+## Reproduce
+
+Run a second user-level Ollama on another port with a scratch model dir (the system service cannot pull through the sandbox proxy), unload the service's model first, and run one model at a time:
+
+```bash
+export OLLAMA_HOST=127.0.0.1:11500 OLLAMA_MODELS=<scratch dir> \
+       OLLAMA_IGPU_ENABLE=1 OLLAMA_CONTEXT_LENGTH=32768 OLLAMA_KEEP_ALIVE=2m
+ollama serve &
+ollama pull qwen3:4b-instruct-2507-q4_K_M   # likewise qwen2.5-coder:7b, qwen3:8b, gemma4:e4b
+python3 -I bench.py qwen3:4b-instruct-2507-q4_K_M 32768 500,4000,12000,24000
+```
+
+A 24k-token prompt takes about 5 minutes to prefill, so run long sizes in the background.

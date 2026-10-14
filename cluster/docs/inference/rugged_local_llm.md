@@ -66,6 +66,26 @@ reuse for sliding-window-attention models), so prefill alone takes about 50 s at
 to 300 tok/s, and the one such run produced no output in 10 minutes (not root-caused). With an
 empty `HOME` the first prompt is 6.9k tokens and follow-up turns reuse the cache.
 
+## Other models
+
+Speed and memory on the iGPU at `num_ctx=32768` (single runs; method, prefill table and caveats in
+<runs/2026-10-13_rugged_model_speed/README.md>):
+
+| Model                           | `size_vram` | Decode at 0.5k prompt | Decode at 21k prompt |
+| ------------------------------- | ----------: | --------------------: | -------------------: |
+| `qwen3:4b-instruct-2507-q4_K_M` |     7.0 GiB |            32.1 tok/s |           12.3 tok/s |
+| `gemma4:e4b`                    |    unclear¹ |            31.1 tok/s |           17.7 tok/s |
+| `qwen2.5-coder:7b`              |     6.1 GiB |            21.0 tok/s |           14.7 tok/s |
+| `qwen3:8b`                      |     9.2 GiB |            18.9 tok/s |            9.8 tok/s |
+
+¹ Ollama reports 0.27 GiB for `gemma4:e4b`, which does not match its weights.
+
+- No crash at prompts up to ~21k tokens with `num_ctx=32768` on any of the four. Above 32k and
+  the service's 131072 default remain untested.
+- Prefill is the cost: 400-600 tok/s at 0.5k falls to 65-90 tok/s at 21k, so a 21k first prompt
+  takes 4-6 minutes. Follow-up turns reuse the cache.
+- Speed only: tool-calling and coding quality of these models are not measured.
+
 ## Agent behavior of Gemma 4 E2B
 
 | Turn | Tool       | Outcome                              | Decode                 | Time         |
@@ -85,9 +105,9 @@ empty `HOME` the first prompt is 6.9k tokens and follow-up turns reuse the cache
 
 ## NPU
 
-Not a viable LLM backend yet.
+Not a viable LLM backend yet. Driver-bump research and next steps: <rugged_npu_driver.md>.
 
-- Level Zero `zeInitDrivers` returns `ZE_RESULT_ERROR_UNINITIALIZED`. With explicit store paths
+- Level Zero `zeInitDrivers` returns `ZE_RESULT_ERROR_UNINITIALIZED` with the stock environment. With explicit store paths
   for `level-zero` 1.28.5 and `intel-npu-driver` 1.28.0, `npu-umd-test` partly runs
   (`Driver.GetApiVersion` passes) but `ConfigurationCheck` fails, so nothing is confirmed to
   execute on the NPU.
@@ -99,7 +119,6 @@ Not a viable LLM backend yet.
 
 ## Not covered
 
-- Models beyond Gemma 4 E2B (Qwen3 4B/8B, Qwen2.5-Coder 7B and Gemma 4 E4B are the next candidates).
-- Coding evals, and context beyond 16k tokens.
+- Coding evals and tool calling for models beyond Gemma 4 E2B; context beyond 32k tokens.
 - Exposure to the cluster: both endpoints bind loopback, and the NPU's bearer-token proxy on
   `:18080` is disabled.
