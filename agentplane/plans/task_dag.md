@@ -18,12 +18,12 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized, Codex reported, 2026-10-14):
 
-| Worker              | Assigned sequence; each successor retains its node's gates                                                                                                                                                |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dispatcher`        | Wake limits, selective revival and failure feedback; complete app Session defaults and Dispatcher creation/resume; app/wake/UI activation and direct sender removal.                                      |
-| `resume_acceptance` | Separate concrete Sandbox cutoff PR; typed workspace template rollout; legacy DataVolume retirement.                                                                                                      |
-| `sandbox_service`   | Notification activation and direct sender removal; Sandbox Service config removal and service retirement; replica activation and Gateway wrapper/RPC/database retirement as caller and image gates clear. |
-| Coordinator         | Isolated k3s measurements/CI work, integration review and DAG burn-down.                                                                                                                                  |
+| Worker            | Assigned sequence; each successor retains its node's gates                                                                                                                                                |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `dispatcher`      | Wake limits, selective revival and failure feedback; complete app Session defaults and Dispatcher creation/resume; app/wake/UI activation and direct sender removal.                                      |
+| `dag_burndown`    | Typed workspace template rollout; legacy DataVolume retirement. Cutoff completed; evidence in #10493.                                                                                                     |
+| `sandbox_service` | Notification activation and direct sender removal; Sandbox Service config removal and service retirement; replica activation and Gateway wrapper/RPC/database retirement as caller and image gates clear. |
+| Coordinator       | Isolated k3s measurements/CI work, integration review and DAG burn-down.                                                                                                                                  |
 
 These are assignments, not claims that gated work has started. Independent config changes can
 proceed while behavior PRs are under review. Publish drafts as soon as a branch has reviewable work,
@@ -685,8 +685,7 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 flowchart TD
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
-    WORKSPACE_VOLUME[Blocked: roll out explicitly typed Sandbox-owned workspaces]
-    WORKSPACE_SANDBOX_CUTOFF[Blocked: separate PR drops existing Sandboxes for the storage cutoff]
+    WORKSPACE_VOLUME[Candidate: roll out explicitly typed Sandbox-owned workspaces]
     WORKSPACE_DATAVOLUME_RETIRE[Blocked: retire the old DataVolume workspace path]
     STATE_VOLUME_LAYOUT[Candidate: declare the state volume layout explicitly]
     VM_GUEST_DECLARATIVE_STORAGE[Candidate: declarative guest disk initialization]
@@ -714,7 +713,6 @@ flowchart TD
     HOSTED_THREAD_SURFACES[Blocked: show and revive stopped Sessions]
     VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
-    WORKSPACE_SANDBOX_CUTOFF --> WORKSPACE_VOLUME
     WORKSPACE_VOLUME -- old consumers gone and images pinned --> WORKSPACE_DATAVOLUME_RETIRE
     STATE_VOLUME_LAYOUT --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
@@ -753,7 +751,6 @@ flowchart TD
     DISPATCHER_WAKE_ABUSE_LIMITS --> DISPATCHER_WAKE_ACTIVATION
     SELECTIVE_SESSION_REVIVAL --> DISPATCHER_WAKE_ACTIVATION
     DISPATCHER_WAKE_FAILURE_FEEDBACK --> DISPATCHER_WAKE_ACTIVATION
-    WORKSPACE_SANDBOX_CUTOFF --> JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE
     INCARNATION_UID_REQUIRED --> JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE
     K3S_LIFECYCLE_SUITE[Candidate: k3s lifecycle integration suite]
     QUIESCE_WITHOUT_POLLING -. quiesce assertions .-> K3S_LIFECYCLE_SUITE
@@ -794,7 +791,8 @@ or the explicit layout contract for workspace PVCs.
 
 ### `WORKSPACE_VOLUME` — roll out explicitly typed Sandbox-owned workspaces
 
-**Blocked on `WORKSPACE_SANDBOX_CUTOFF`.** The implementation
+**Candidate.** The operator-directed existing Sandbox cutoff is complete;
+[cutoff evidence](workspace_cutoff.md) records the empty inventory verified on 2026-10-14. The implementation
 merged in #10440 adds explicit workspace layouts, retained PVC identity and attachment
 compatibility checks; [storage layouts](../docs/sandbox_storage.md) owns the contract. This node is
 the remaining template rollout, not another implementation of ownership. No deployed template
@@ -804,26 +802,16 @@ Fresh testing Pod DirectoryTree and VM RawDiskImage fixtures passed retained fil
 including a changed-claim refusal and halted VM-object replacement. The old DataVolume kept files
 through halt/start but lost its workspace on VM-object replacement. The selected paths and exact
 evidence are in [storage acceptance](../acceptance/debug/storage_acceptance.md); no staging run
-or existing-data cutoff has occurred.
+has been run. The existing-data cutoff is recorded separately below.
 
 Activate the selected layout only after its accepting controller image is pinned. A Pod's current
 workspace is under `/state/workspaces` on the state PVC; a VM's is a VM-owned DataVolume mounted
 over that path. Neither may be silently hidden by a new mount or adopted as an unclassified PVC.
-The operator accepts an incompatible cutoff dropping existing Sandboxes;
-`WORKSPACE_SANDBOX_CUTOFF` owns that separate data-drop PR. Do not require migration, a converter
+The operator-directed cutoff is recorded in [#10493](https://github.com/agentydragon/ducktape/pull/10493).
+Refresh the empty inventory before activation; old templates can still create new old-layout
+consumers, which require a separate disposition. Do not require migration, a converter
 or the future block provisioner. The losing workspace path is removed by
 `WORKSPACE_DATAVOLUME_RETIRE` after its callers are gone.
-
-### `WORKSPACE_SANDBOX_CUTOFF` — drop existing Sandboxes for the storage cutoff
-
-**Blocked on approval of the concrete resource/loss list and execution of the cutoff. Operator,
-2026-10-13 PDT: an incompatible cutoff dropping existing Sandboxes is acceptable.** Prepare a
-separate data-drop PR identifying affected Sandboxes and their state/workspace PVCs, the resulting
-loss of native harness state/workspaces, and the order of deletion and template activation. Rai
-merges it by hand; no auto-merge. Keep this out of #10440 and do not build tolerant adoption or a
-preservation migration for the old layout. Confirm old writers have stopped and owned PVC cleanup
-has completed before provisioning fresh workspaces. This approval is scoped to the storage cutoff,
-not routine deletion of idle Sandboxes.
 
 ### `WORKSPACE_DATAVOLUME_RETIRE` — retire the old DataVolume workspace path
 
@@ -831,7 +819,7 @@ not routine deletion of idle Sandboxes.
 superseded blank-DataVolume workspace template, controller support used only by that path and its
 obsolete tests/docs. Search all callers before removing generic DataVolume support. Gate removals
 on pinned caller images where applicable. Do not delete retained data as an incidental cleanup;
-existing data disposition belongs to `WORKSPACE_SANDBOX_CUTOFF`. Testing selected the retained
+completed existing-data disposition is recorded in [cutoff evidence](workspace_cutoff.md). Testing selected the retained
 Sandbox-owned RawDiskImage path; its evidence is linked above.
 
 ### `STATE_VOLUME_LAYOUT` — declare the state volume layout explicitly

@@ -14,8 +14,8 @@ stay out of scope.
 attachment compatibility. #10440 adds the declared workspace contract without activating it in
 deployed templates. [Testing storage acceptance](../acceptance/debug/storage_acceptance.md) records image-pin gating, the testing comparison
 with the current DataVolume path and selection of the retained path. `WORKSPACE_VOLUME` owns template
-activation after that acceptance and the cutoff. `WORKSPACE_SANDBOX_CUTOFF` owns
-the separately reviewed incompatible cutoff dropping existing Sandboxes, accepted by the operator;
+activation after that acceptance and the cutoff. The operator-directed incompatible cutoff is
+complete; [cutoff evidence](workspace_cutoff.md) records the empty inventory and remaining activation checks.
 `WORKSPACE_DATAVOLUME_RETIRE` owns removal of the losing path once consumers are gone. The guest
 shell-to-NixOS work is `VM_GUEST_DECLARATIVE_STORAGE`. Conversion is deferred to
 `VOLUME_LAYOUT_CONVERSION`, much later, and does not gate this rollout. A filesystem-backed raw
