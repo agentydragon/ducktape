@@ -10,6 +10,12 @@ manifest), makes Services headless (no kube-proxy means no ClusterIP) and genera
 `agentplane/x/k3s_rbe_spike`), imports the Bazel-built image tarballs, applies everything and reports
 per-Deployment readiness.
 
+The image list includes the Session Dispatcher and its migration image, matching the generated
+stack. Both tests remain manual; the model-free lifecycle target is the first candidate for CI.
+Its current-stack runtime is being measured before choosing performance changes. Earlier evidence
+from [#10414](https://github.com/agentydragon/ducktape/pull/10414) was 784 seconds for four lifecycle
+tests and 590 seconds for the model test; those timings predate Dispatcher deployment.
+
 ## Result
 
 Every Deployment of the stack except Dex (13, the app included) becomes Available and a pod Sandbox starts and runs a real Qwen turn through the app on one RBE action (about 10 minutes with the images

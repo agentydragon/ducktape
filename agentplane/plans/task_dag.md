@@ -516,7 +516,12 @@ messages, by shimming the web interface's control protocol. Builds on the viewer
 
 ### `ISOLATED_ACCEPTANCE_CI` — acceptance tests in their own CI workflow
 
-**Unscheduled; operator, 2026-10-12 PDT: eventually.** Today the deployed vertical tests under
+**In flight (Codex, operator direction 2026-10-14): refresh and measure the isolated k3s stack in parallel
+with the prioritized Pod/VM storage acceptance.** First restore current-stack image completeness,
+measure provisioning, image loading, service startup and test execution, and use that evidence to
+choose improvements. Then enable the model-free Pod/Dispatcher suite in CI. Real KubeVirt, Cilium
+and OIDC coverage remain explicit gaps; do not claim the reduced environment covers them.
+Today the deployed vertical tests under
 `agentplane/acceptance/` run by hand against the stateful `agentplane-testing` environment, and CI
 never runs them. Move them into their own CI workflow that runs in isolation, so the cluster no
 longer carries a stateful environment for them. Options named: an isolated part of the operator's
