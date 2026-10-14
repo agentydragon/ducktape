@@ -1,7 +1,11 @@
 # k3s environment spike
 
 Does the rendered `agentplane-testing` stack come up on a bare k3s in an RBE action (no Cilium, no
-kube-proxy)? Manual only: `bbr test //agentplane/x/k3s_env:test_env --test_output=all`.
+kube-proxy)? The model-free lifecycle target runs in the separate
+[`Agentplane k3s lifecycle` workflow](../../../.github/workflows/agentplane-k3s-lifecycle.yml) for
+relevant pull requests and can also be started with `workflow_dispatch`. Agents can still run it
+directly with `bbr test //agentplane/x/k3s_env:test_lifecycle --test_output=all`. The separate
+`test_env` model smoke remains manual and requires `LITELLM_QWEN_KEY`.
 
 `render.py` rewrites the generated manifest for a bare cluster: drops Cilium, Gateway API, Kyverno,
 Prometheus, cert-manager and External Secrets kinds, emulates the ExternalSecrets with random
@@ -11,7 +15,9 @@ manifest), makes Services headless (no kube-proxy means no ClusterIP) and genera
 per-Deployment readiness.
 
 The image list includes the Session Dispatcher and its migration image, matching the generated
-stack. Both tests remain manual; the model-free lifecycle target is the first candidate for CI.
+stack. The `test_lifecycle` target has no model credential dependency; the workflow only supplies
+the BuildBuddy credential needed to run Bazel remotely. The `test_env` target is the separate live
+model smoke and is not run by this workflow.
 The importer consumes the `oci_image` targets through `oci_layout_rloc`, combines their index
 descriptors with the rendered tags, and streams each distinct blob once. It does not materialize
 Docker-format `oci_load` tarballs.
@@ -35,9 +41,18 @@ Each run publishes `test.log`, `test.xml`, `k3s.log` and `lifecycle.prof` as tes
 
 The second run was 165.66 seconds (19%) shorter overall; image import was 83.45 seconds (16%) shorter.
 These are individual runs on shared RBE hosts, not a controlled benchmark or an estimate of steady-state
-CI latency. Image import still takes about 7.4 minutes and dominates setup. Inspect its containerd
-import/unpack work before changing test timeouts; the remaining setup cost includes deployment readiness.
-The next CI step remains the model-free target, with the bare-cluster coverage gaps below explicit.
+CI latency. Image import still takes about 7.4 minutes and dominates setup.
+
+**Performance TODO:** investigate containerd image import/unpack to reduce the current 444.97-second
+import portion of the 704.32-second four-test run (compared with the 869.98-second archive-import
+baseline). Keep the lifecycle assertions intact and do not raise the test timeout to mask the cost;
+the two shared-RBE measurements are observations, not a controlled speedup claim. Deployment readiness
+accounts for part of the remaining setup time.
+
+The separate workflow runs only the model-free lifecycle target. Its bare-cluster fixtures do not
+provide real KubeVirt, Cilium, ClusterIP routing or OIDC/Dex coverage, and this target is not
+Dispatcher multi-replica acceptance. Keep the `agentplane-testing` environment and fixture/spike
+cleanup as separate future work until those coverage gaps have an explicit owner and replacement.
 
 Earlier evidence from [#10414](https://github.com/agentydragon/ducktape/pull/10414) was 784 seconds for
 four lifecycle tests and 590 seconds for the model test; those timings predate Dispatcher deployment.
@@ -84,4 +99,5 @@ already in the cache), with the changes below. Breaks found on the way, in order
   instead of the cluster-internal Service.
 
 Not yet reached: Service port≠targetPort under headless Services (egress is 80→8082; only the agent-facing
-rules URL uses it) and Dex/OIDC public hostnames.
+rules URL uses it) and Dex/OIDC public hostnames. The k3s lifecycle tests use stub KubeVirt CRDs and no
+Cilium, so they do not validate those integrations or real external identity.

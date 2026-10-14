@@ -476,7 +476,7 @@ app/Sandbox Service database changes requires its own migration safety review.
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
-    ISOLATED_ACCEPTANCE_CI[Unscheduled: acceptance tests in their own CI workflow]
+    ISOLATED_ACCEPTANCE_CI[In flight: isolated k3s lifecycle CI]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
@@ -525,28 +525,38 @@ frontend a custom frontend for Claude Code web sessions: show their conversation
 messages, by shimming the web interface's control protocol. Builds on the viewer and syncer under
 `devinfra/` and the reverse-engineering in `agentydragon/gaffer-private`.
 
-### `ISOLATED_ACCEPTANCE_CI` — acceptance tests in their own CI workflow
+### `ISOLATED_ACCEPTANCE_CI` — isolated acceptance tiers and their coverage gaps
 
-**In flight (Codex, 2026-10-14), current-stack refresh #10467 and measured OCI import work.**
-Pod/VM storage acceptance remains the first priority. After measuring setup and improving the
-bottleneck, enable the model-free Pod/Dispatcher suite in CI. Real KubeVirt, Cilium and OIDC coverage
-remain explicit gaps. Today the deployed vertical tests under
-`agentplane/acceptance/` run by hand against the stateful `agentplane-testing` environment, and CI
-never runs them. Move them into their own CI workflow that runs in isolation, so the cluster no
-longer carries a stateful environment for them. Options named: an isolated part of the operator's
-cluster, GitHub's runners, or BuildBuddy's; and the cheap-experiments LiteLLM key or a new key
-provisioned for CI. Constraint: an agent can still run, inspect and step through the tests itself.
-The current candidate is k3s on RBE; measure setup/image import and lifecycle costs, then improve
-the measured bottleneck without weakening assertions or increasing timeouts. The k3s-on-RBE spike (`agentplane/x/k3s_rbe_spike`) shows a real kubelet runs in a
-BuildBuddy action, but with no ClusterIP Services, no KubeVirt and no Cilium, so tests that need
-those stay elsewhere. envtest covers only API-server behavior, not Pods, harnesses or LLM calls, so
-it does not replace these tests.
+**In flight (Codex, 2026-10-14; separate workflow #10502):** current-stack/import work is
+complete (#10467, #10482). The workflow runs `//agentplane/x/k3s_env:test_lifecycle` on relevant
+pull requests and supports manual `workflow_dispatch`, overriding the default CI exclusion of
+`manual` tests for this explicitly selected target. All four tests passed in the recorded run, but
+an RBE VM-pause failure and automatic retry consumed the outer workflow deadline; the workflow
+conclusion remains cancelled (see #10502 for invocation evidence). This is a model-free four-test
+Sandbox lifecycle tier on BuildBuddy RBE; it does not read a model key. Keep the target's direct
+`bbr test` invocation available to agents. The separate `test_env` Qwen smoke remains manual and
+is not part of this workflow.
+
+**Performance TODO:** the four-test OCI-layout run took 704.32 seconds versus 869.98 seconds for
+the earlier archive-import baseline; cProfile attributed 444.97 seconds of the current run to
+image import. These were individual shared-RBE runs, not a controlled benchmark. Investigate
+containerd import/unpack and deployment readiness before considering any broader CI use; preserve
+assertions and current timeout settings. See [the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
+
+This target is not Dispatcher two-replica acceptance and does not cover real KubeVirt, Cilium,
+ClusterIP routing or OIDC/Dex. The fixtures use stub KubeVirt CRDs and omit Cilium; the public
+Dex/OIDC path is not reached. Keep the stateful `agentplane-testing` environment until those gaps
+have explicit owners and usable replacement coverage; retiring it remains a separate reviewed
+operator change. The k3s-on-RBE spike (`agentplane/x/k3s_rbe_spike`) proves a real kubelet can run in
+a BuildBuddy action, while envtest covers only API-server behavior, not Pods or harnesses.
 
 ### `ISOLATED_TEST_SPIKES_RETIRE` — remove superseded isolated-test scaffolding
 
-**Blocked on `ISOLATED_ACCEPTANCE_CI` providing the maintained fixtures and entry points.** Move the
-retained k3s fixture/tests into their owning test package, then delete superseded `x/k3s_rbe_spike`
-and `x/k3s_env` entry points, image-loader paths, BUILD targets and old recipes. Keep any still-needed
+**Blocked on a separate fixture migration and coverage review.** The new workflow depends on the
+maintained `agentplane/x/k3s_env` fixture and its `test_lifecycle` target; do not remove them while
+CI invokes them. Move the retained tests into their owning package and update the workflow first,
+then delete superseded `x/k3s_rbe_spike` or `x/k3s_env` entry points, image-loader paths, BUILD
+targets and old recipes only when replacements cover the same contract. Keep any still-needed
 platform-specific fixture until its replacement covers the same contract. End with one documented
 local/CI invocation path per supported test tier.
 
