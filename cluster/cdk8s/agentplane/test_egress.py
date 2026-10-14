@@ -35,7 +35,7 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     GROCY_SF_READONLY_CREDENTIAL,
     HAKU_MAILBOX_POLICY,
     HOME_ASSISTANT_READONLY_CREDENTIAL,
-    PLAID_PGWEB_POLICY,
+    PLAID_PGWEB_CREDENTIAL,
 )
 from cluster.cdk8s.clickhouse import client
 from model_catalog.catalog import OLLAMA_QWEN_IQ4XS_128K, OLLAMA_QWEN_IQ4XS_256K
@@ -198,7 +198,7 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             AIQUOTA_READ_POLICY,
             FINANCE_AIQUOTA_HISTORY_POLICY,
             HAKU_MAILBOX_POLICY,
-            PLAID_PGWEB_POLICY,
+            PLAID_PGWEB_CREDENTIAL,
         }
         for doc in manifests
     )
@@ -262,19 +262,38 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     catalog = config["kubernetes_grants"]
     selected = _kubernetes_grants(config["sandbox_presets"][preset]["policy_sets"])
     credential_grants = (
-        {"coinbase-credentials", "spend-policy-config", "plaid-diagnostics"} if preset == "finance-agent" else set()
+        {"coinbase-credentials", "spend-policy-config", agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}
+        if preset == "finance-agent"
+        else set()
     )
     # Coinbase egress follows the Secret grant; haku-agent's egress PolicyBinding carries none.
     assert (COINBASE_POLICY in config["sandbox_presets"][preset]["policy_sets"]) == (preset == "finance-agent")
     assert COINBASE_POLICY not in _by_name(docs, "PolicyBinding", "haku-agent")["spec"]["policySets"]
     assert selected == _kubernetes_grants(config["sandbox_presets"]["public-coder"]["policy_sets"]) | credential_grants
-    haku = _kubernetes_grants(config["sandbox_presets"]["haku"]["policy_sets"])
+    haku_policy_sets = config["sandbox_presets"]["haku"]["policy_sets"]
+    haku = _kubernetes_grants(haku_policy_sets)
+    assert agent_access_profiles.PLAID_DIAGNOSTICS_POLICY in haku_policy_sets
+    assert agent_access_profiles.PLAID_DIAGNOSTICS_POLICY in _by_name(docs, "PolicyBinding", "claude-ai")["spec"][
+        "policySets"
+    ]
+    assert agent_access_profiles.PLAID_DIAGNOSTICS_POLICY in _by_name(docs, "PolicyBinding", "haku-agent")["spec"][
+        "policySets"
+    ]
+    assert not any(
+        doc["kind"] == "PolicySet" and doc["metadata"]["name"] == PLAID_PGWEB_CREDENTIAL for doc in docs
+    )
     assert (
         set(haku) - set(selected)
-        == {"cluster-diagnostics", "haku-sandbox-write", "coinbase-credentials"} - credential_grants
+        == {
+            "cluster-diagnostics",
+            "haku-sandbox-write",
+            "coinbase-credentials",
+            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY,
+        }
+        - credential_grants
     )
     assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"} | (
-        {"spend-policy-config", "plaid-diagnostics"} if preset == "finance-agent" else set()
+        {"spend-policy-config"} if preset == "finance-agent" else set()
     )
     assert {
         "agentplane-staging-metadata",

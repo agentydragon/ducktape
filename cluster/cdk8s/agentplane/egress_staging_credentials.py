@@ -66,7 +66,7 @@ GOOGLE_READONLY_POLICY = "google-readonly"
 ACTIVITYWATCH_READ_POLICY = "activitywatch-read"
 AIQUOTA_READ_POLICY = "aiquota-read"
 FINANCE_AIQUOTA_HISTORY_POLICY = "finance-aiquota-history"
-PLAID_PGWEB_POLICY = "plaid-pgweb"
+PLAID_PGWEB_CREDENTIAL = "plaid-pgweb"
 # Credentials whose egress rules ride in the Action PolicySets that approve the same system's
 # reads (actions_staging_policies.py), so a binding to one set grants both.
 GROCY_SF_READONLY_CREDENTIAL = "grocy-sf-readonly"
@@ -637,8 +637,8 @@ def _buildbuddy(scope: Construct, *, namespace: str, credentials_namespace: str)
 
 
 def plaid_pgweb_egress_rules() -> list[PolicySetSpecRules]:
-    """The read-only pgweb routes, reusable by the finance diagnostics PolicySet."""
-    credential = PLAID_PGWEB_POLICY
+    """Read-only pgweb routes shared by the Plaid diagnostics callers."""
+    credential = PLAID_PGWEB_CREDENTIAL
     host = plaid_pgweb.SERVICE.fqdn
     # pgweb's other API routes and its web UI stay unreachable. Its session routes (`connect`,
     # `disconnect`, `switchdb`) are POSTs, so POST is admitted on the query route alone.
@@ -674,13 +674,11 @@ def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, cr
         source=plaid_pgweb.AUTH.name,
         key=plaid_pgweb.AUTH_KEY,
     )
-    credential = PLAID_PGWEB_POLICY
-    # Keep this policy in sync with its backend grant in add_staging_egress_credentials.
-    _present(
+    _credential(
         scope,
-        PLAID_PGWEB_POLICY,
+        PLAID_PGWEB_CREDENTIAL,
         namespace=namespace,
-        credential=credential,
+        credential=PLAID_PGWEB_CREDENTIAL,
         description=(
             f"The HTTP Basic password of pgweb's `{plaid_pgweb.AUTH_USER}` user "
             "(cluster/cdk8s/plaid_mcp/pgweb.py), minted in plaid-mcp and copied into this namespace by "
@@ -692,5 +690,4 @@ def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, cr
         secret=plaid_pgweb.AUTH.name,
         key=plaid_pgweb.AUTH_KEY,
         target=_BASIC_PASSWORD,
-        rules=plaid_pgweb_egress_rules(),
     )

@@ -40,7 +40,6 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     FORGEJO_HAKU_POLICY,
     GOOGLE_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
-    PLAID_PGWEB_POLICY,
     grocy_sf_read_egress_rules,
     home_assistant_read_egress_rules,
 )
@@ -683,9 +682,10 @@ def add_staging_action_policies(scope: Construct) -> None:
     # API. `haku-mailbox` presents the JWT of Haku's own mailbox: JMAP reads and changes that one
     # mailbox and cannot send. It and `forgejo-haku` are Haku's credentials, bound here because
     # claude-ai is the connection Haku runs through (haku/TODO.md). `coinbase` presents nothing: the
-    # sandbox signs with the key above. `plaid-pgweb` presents pgweb's HTTP Basic password on its
-    # query API, so a sandbox of this caller's can run SQL over the Plaid mirror as `plaid_ro`,
-    # which can only SELECT (egress_staging_credentials.py).
+    # sandbox signs with the key above. `plaid-diagnostics` grants read-only control-plane metadata
+    # in plaid-mcp and presents pgweb's HTTP Basic password only on its query API, so a sandbox of
+    # this caller's can inspect sync health and run SQL over the Plaid mirror as `plaid_ro`, which
+    # can only SELECT (agent_access_profiles.py, egress_staging_credentials.py).
     # `agentplane-testing` presents nothing either: the acceptance suite brings its own app token.
     # `github-downloads` presents nothing either: public GitHub downloads, GET and HEAD only.
     # `github-clone` presents nothing either: the anonymous smart-HTTP git protocol
@@ -724,7 +724,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
             COINBASE_POLICY,
-            PLAID_PGWEB_POLICY,
+            access.PLAID_DIAGNOSTICS_POLICY,
             AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,
             GITHUB_CLONE_POLICY,
@@ -749,7 +749,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
-            PLAID_PGWEB_POLICY,
+            access.PLAID_DIAGNOSTICS_POLICY,
             AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,
             GITHUB_CLONE_POLICY,

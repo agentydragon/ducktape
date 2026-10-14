@@ -3455,7 +3455,6 @@ data:
           - aiquota-read
           - coinbase
           - haku-mailbox
-          - plaid-pgweb
           - github-clone
           - github-agentydragon-agent
           - github-actions-logs
@@ -3475,6 +3474,7 @@ data:
           - cluster-diagnostics
           - haku-sandbox-write
           - coinbase-credentials
+          - plaid-diagnostics
         thread_preset: haku-codex
       finance-agent:
         title: Finance agent
@@ -9249,7 +9249,7 @@ spec:
     - aiquota-read
     - haku-mailbox
     - coinbase
-    - plaid-pgweb
+    - plaid-diagnostics
     - agentplane-testing
     - github-downloads
     - github-clone
@@ -9286,7 +9286,7 @@ spec:
     - activitywatch-read
     - aiquota-read
     - haku-mailbox
-    - plaid-pgweb
+    - plaid-diagnostics
     - agentplane-testing
     - github-downloads
     - github-clone
@@ -10515,39 +10515,6 @@ spec:
   targets:
     - header: Authorization
       method: basicPassword
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  name: plaid-pgweb
-  namespace: agentplane-staging
-spec:
-  rules:
-    - type: egress
-      hosts:
-        - plaid-pgweb.plaid-mcp.svc.cluster.local
-      methods:
-        - GET
-      paths:
-        - /api/connection
-        - /api/info
-        - /api/objects
-        - /api/query
-        - /api/schemas
-        - /api/tables/**
-      clusterInternal: true
-      credentialRef:
-        name: plaid-pgweb
-    - type: egress
-      hosts:
-        - plaid-pgweb.plaid-mcp.svc.cluster.local
-      methods:
-        - POST
-      paths:
-        - /api/query
-      clusterInternal: true
-      credentialRef:
-        name: plaid-pgweb
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role

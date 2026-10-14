@@ -432,7 +432,7 @@ def chart(app: App) -> Chart:
             name: [catalog[grant] for grant in grants]
             for name, grants in {**agent_access_profiles.POLICY_SETS, TOOL_CONFIG_GRANT: (TOOL_CONFIG_GRANT,)}.items()
         },
-        additional_rules={"plaid-diagnostics": plaid_pgweb_egress_rules()},
+        additional_rules={agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: plaid_pgweb_egress_rules()},
     )
     reader = ServiceAccount(
         chart,

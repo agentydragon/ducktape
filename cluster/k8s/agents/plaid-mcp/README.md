@@ -71,7 +71,7 @@ sandbox -> agentplane-staging egress proxy -> plaid-pgweb (:8081) -> plaid-mcp-d
 ```
 
 pgweb is a stock PostgreSQL browser whose JSON API runs a query and returns its rows
-(`cluster/cdk8s/plaid_mcp/pgweb.py`). A sandbox bound to the `plaid-pgweb` egress policy
+(`cluster/cdk8s/plaid_mcp/pgweb.py`). A sandbox whose `plaid-diagnostics` PolicySet is bound
 sends a placeholder for the password and the proxy presents the real one, so the password
 never enters the sandbox:
 
@@ -83,8 +83,9 @@ curl -s -u plaid:agentplane-credential-plaid-pgweb \
 
 The answer is JSON (`columns`, `rows`, `stats`); `GET /api/query?format=csv&query=...` answers
 CSV. `/api/objects` lists the tables and views and `/api/tables/<name>` describes one. The
-policy admits those API routes only, and POST only on `/api/query`: pgweb's session routes
-and web UI stay unreachable.
+PolicySet admits those API routes only, and POST only on `/api/query`: pgweb's session routes
+and web UI stay unreachable. It also grants the separate read-only `plaid-mcp` control-plane Role
+documented in `cluster/docs/agent_rbac.md`.
 
 What keeps it read-only, strongest first: `plaid_ro` can only SELECT; the session is
 `--readonly`; pgweb refuses statements with write keywords. The last is a filter, not a
