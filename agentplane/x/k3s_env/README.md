@@ -12,7 +12,7 @@ per-Deployment readiness.
 
 ## Result
 
-Every Deployment of the stack except Dex (13, the app included) becomes Available and a pod Sandbox starts on one RBE action (about 10 minutes with the images
+Every Deployment of the stack except Dex (13, the app included) becomes Available and a pod Sandbox starts and runs a real Qwen turn through the app on one RBE action (about 10 minutes with the images
 already in the cache), with the changes below. Breaks found on the way, in order:
 
 - **Kernel sysctls:** the kubelet needs every `/proc/sys/kernel` entry present in the shadow copy, not only
@@ -31,6 +31,8 @@ already in the cache), with the changes below. Breaks found on the way, in order
   CoreDNS rewrites `postgres-rw.<ns>` to it. The operator and instance Pods also need the `KUBERNETES_SERVICE_*` env.
 - **No resource limits:** every container and the CNPG Cluster lose `resources.limits` (requests stay). The app's
   500m CPU limit throttled Python imports by about 14s each on the shared VM.
+- **Pod egress:** flannel `host-gw` does not translate Pod traffic, so the test adds a `MASQUERADE` rule for the Pod
+  CIDR using the `iptables` k3s ships; without it Pods resolve `litellm.allegedly.works` but cannot connect.
 - **Namespaces:** the manifest's Roles live in `litellm` and `ollama`, so empty ones are created.
 - **Dex dropped:** its config reaches the Pod through an ExternalSecret template (`regexReplaceAll`, `htpasswd`
   are External Secrets functions). `render.py` does not evaluate those, and the image's gomplate rejects them.
@@ -38,8 +40,10 @@ already in the cache), with the changes below. Breaks found on the way, in order
 
 - **Runner image:** the `runner` SandboxTemplate's image is Nix-built and private. `:runner_image` builds an
   equivalent from the runner plus the pinned Claude Code and Codex binaries at `/bin/claude` and `/bin/codex`
-  (debian-slim base, no toolbox), so the environment needs no registry credential. The test applies a `Sandbox`
-  on that template and asserts its Pod becomes Ready (both containers, 10 minutes end to end).
+  (debian-slim base, no toolbox), so the environment needs no registry credential. The harness links go in
+  `/usr/bin` (the base's `/bin` is a symlink to it) and name the canonical `+http_archive+` repo directories. The test
+  creates a `Sandbox` on that template through the app, opens a Claude session on the catalog's Qwen model and
+  asserts the turn completes; the reply is kept as the `answer.txt` test output.
 - **Storage classes:** the manifest's `local-path-ovh-hdd` does not exist on k3s, so every `storageClassName`
   becomes `local-path`; without it the Sandbox's state PVC never binds and the Pod stays Pending.
 - **LiteLLM:** `LITELLM_QWEN_KEY` (the Qwen-only key Terraform provisions as
@@ -48,5 +52,4 @@ already in the cache), with the changes below. Breaks found on the way, in order
   instead of the cluster-internal Service.
 
 Not yet reached: Service port≠targetPort under headless Services (egress is 80→8082; only the agent-facing
-rules URL uses it), Dex/OIDC public hostnames, and any test traffic: the Deployments are Available and the
-Sandbox Pod is Ready, but no session has run a turn.
+rules URL uses it) and Dex/OIDC public hostnames.
