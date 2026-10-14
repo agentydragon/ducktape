@@ -116,7 +116,14 @@ class Agent:
 
     @classmethod
     async def open(
-        cls, client: Client, *, sandbox: str, harness: runner_pb2.Harness, model: str, instructions: str = ""
+        cls,
+        client: Client,
+        *,
+        sandbox: str,
+        harness: runner_pb2.Harness,
+        model: str,
+        instructions: str = "",
+        cwd: str = WORKING_DIRECTORY,
     ) -> Agent:
         """Open a session, waiting out a runner that is up but not yet connected.
 
@@ -127,7 +134,7 @@ class Agent:
         is the proto's own default and opens the session the runner would open without the field.
         """
         spec = runner_pb2.SessionSpec(
-            harness=harness, cwd=WORKING_DIRECTORY, model=model, reasoning_effort="low", instructions=instructions
+            harness=harness, cwd=cwd, model=model, reasoning_effort="low", instructions=instructions
         )
         # Retry the same desired session even if an earlier Open reached the runner.
         session_id = uuid4()
