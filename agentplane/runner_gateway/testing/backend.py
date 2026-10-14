@@ -1,47 +1,35 @@
-"""Run the real authenticated service boundary over in-memory Kubernetes for consumer tests.
+"""Run the authenticated Runner Gateway over in-memory Kubernetes for consumer tests.
 
 The server has its own event loop, so a test can block on it (`wait_connected`) without starving gRPC.
-Only the endpoint and public client escape this fixture, never provisioning implementations.
+Only the endpoint and public client escape this fixture.
 """
 
-from collections.abc import AsyncIterator, Callable, Iterator, Set
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import cast
 from uuid import UUID
 
 import grpc
 from anyio.from_thread import start_blocking_portal
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane import sandbox_resource
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.testing.control_listener import control_plane, wait_connected
 from agentplane.runner_gateway.testing.grpc_service import gateway_client, service
 from agentplane.runner_gateway.testing.resources import build_resources
-from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.provisioning import Provisioning
-from agentplane.sandbox_service.testing.grpc_service import sandbox_client
 from agentplane.sandboxes.inventory import SandboxInventory
-from agentplane.sandboxes.testing.fake_inventory import (
-    NAMESPACE,
-    READY,
-    FakeCoreV1Api,
-    FakeCustomObjectsApi,
-    pod,
-    sandbox,
-)
+from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import fake_apiserver
 from agentplane.workload_auth.principal import POD_NAME_CLAIM, POD_UID_CLAIM, WorkloadPrincipalResolver
 from util.kubernetes import CustomObjectsClient
 from util.testing.sqlalchemy_engines import postgres_async_engine
 
-TOKEN = "test-consumer-sandbox-service-token"
-AUDIENCE = "test-consumer-sandbox-service"
+TOKEN = "test-consumer-runner-gateway-token"
+AUDIENCE = "test-consumer-runner-gateway"
 RUNNER_AUDIENCE = "test-consumer-runner-control"
 MANAGER = ServiceAccountRef(namespace=NAMESPACE, name="test-integration-app")
 _RUNNER_TOKEN_PREFIX = "test-runner-token-"
@@ -82,10 +70,6 @@ class Endpoint:
     control_target: str
     wait_connected: Callable[[UUID], None]
 
-    def sandboxes(self, channel: grpc.aio.Channel) -> SandboxServiceClient:
-        """The Sandbox Service's client over `channel`, which a test opens to `target`."""
-        return sandbox_client(channel, self.token_file, namespace=NAMESPACE)
-
     def gateway(self, channel: grpc.aio.Channel) -> RunnerGatewayClient:
         """The gateway's client over `channel`, which a test opens to `target`."""
         return gateway_client(channel, self.token_file, command_admission_timeout_s=20, control_target=self.target)
@@ -93,12 +77,7 @@ class Endpoint:
 
 @contextmanager
 def backend(
-    custom_objects: FakeCustomObjectsApi,
-    core: FakeCoreV1Api,
-    token_file: Path,
-    *,
-    database_url: str,
-    default_policy_sets: Set[str] = frozenset(),
+    custom_objects: FakeCustomObjectsApi, core: FakeCoreV1Api, token_file: Path, *, database_url: str
 ) -> Iterator[Endpoint]:
     token_file.write_text(TOKEN)
     custom = cast(CustomObjectsClient, custom_objects)
@@ -108,11 +87,6 @@ def backend(
         start_blocking_portal() as portal,
         portal.wrap_async_context_manager(postgres_async_engine(database_url)) as engine,
     ):
-        provisioning = Provisioning(
-            inventory,
-            EgressInventory(namespace=NAMESPACE, custom_objects=custom),
-            default_policy_sets=default_policy_sets,
-        )
         resources = build_resources(
             engine,
             principals=principals(AUDIENCE),
@@ -123,7 +97,7 @@ def backend(
             runner_admission_ack_timeout_s=15,
         )
         with (
-            portal.wrap_async_context_manager(service(resources, provisioning)) as target,
+            portal.wrap_async_context_manager(service(resources)) as target,
             portal.wrap_async_context_manager(connection_records_api()) as api,
             portal.wrap_async_context_manager(
                 control_plane(resources, principals=principals(RUNNER_AUDIENCE), api=api)
@@ -153,26 +127,3 @@ async def connection_records_api() -> AsyncIterator[k8s_client.ApiClient]:
         k8s_client.ApiClient(k8s_client.Configuration(host=f"http://127.0.0.1:{fake.port}")) as api,
     ):
         yield api
-
-
-def seed_runner(
-    custom: FakeCustomObjectsApi, core: FakeCoreV1Api, name: str
-) -> tuple[dict[str, Any], k8s_client.V1Pod]:
-    """Controller-shaped Sandbox and Pod, suitable for real destination authorization."""
-    raw = sandbox(name, conditions=READY)
-    running = pod(name, phase="Running", ready=True, ip="127.0.0.1")
-    running.metadata.namespace = NAMESPACE
-    running.metadata.uid = f"test-pod-{name}"
-    running.metadata.owner_references = [
-        k8s_client.V1OwnerReference(
-            api_version=sandbox_resource.SANDBOX_API_VERSION,
-            kind=sandbox_resource.SANDBOX_KIND,
-            name=name,
-            uid=raw["metadata"]["uid"],
-            controller=True,
-        )
-    ]
-    running.spec.service_account_name = name
-    custom.objects[(sandbox_resource.SANDBOXES_PLURAL, name)] = raw
-    core.pods[name] = running
-    return raw, running

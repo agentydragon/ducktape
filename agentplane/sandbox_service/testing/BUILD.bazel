@@ -19,33 +19,6 @@ py_library(
 )
 
 py_library(
-    name = "backend",
-    srcs = ["backend.py"],
-    deps = [
-        ":grpc_service",
-        "//agentplane:sandbox_resource",
-        "//agentplane:subjects",
-        "//agentplane/runner_gateway:client",
-        "//agentplane/runner_gateway:destinations",
-        "//agentplane/runner_gateway/testing:control_listener",
-        "//agentplane/runner_gateway/testing:grpc_service",
-        "//agentplane/runner_gateway/testing:resources",
-        "//agentplane/sandbox_service:client",
-        "//agentplane/sandbox_service:egress",
-        "//agentplane/sandbox_service:provisioning",
-        "//agentplane/sandboxes:inventory",
-        "//agentplane/sandboxes/testing:fake_inventory",
-        "//agentplane/testing:fake_apiserver",
-        "//agentplane/workload_auth:principal",
-        "//util:kubernetes",
-        "//util/testing:sqlalchemy_engines",
-        "@pypi//anyio",
-        "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-    ],
-)
-
-py_library(
     name = "service_provisioning",
     testonly = True,
     srcs = ["service_provisioning.py"],
@@ -54,29 +27,6 @@ py_library(
         "//agentplane/sandbox_service:provisioning",
         "//agentplane/sandboxes/testing:kubernetes",
         "//util:kubernetes",
-        "@pypi//kubernetes_asyncio",
-    ],
-)
-
-py_library(
-    name = "connected_runner",
-    srcs = ["connected_runner.py"],
-    deps = [
-        ":grpc_service",
-        ":service_provisioning",
-        "//agentplane:grpc_calls",
-        "//agentplane:subjects",
-        "//agentplane/runner",
-        "//agentplane/runner_gateway:client",
-        "//agentplane/runner_gateway:destinations",
-        "//agentplane/runner_gateway:grpc_api",
-        "//agentplane/runner_gateway/testing:control_listener",
-        "//agentplane/runner_gateway/testing:grpc_service",
-        "//agentplane/runner_gateway/testing:resources",
-        "//agentplane/sandbox_service:client",
-        "//agentplane/sandboxes/testing:kubernetes",
-        "//agentplane/testing:fake_apiserver",
-        "//util/testing:sqlalchemy_engines",
         "@pypi//kubernetes_asyncio",
     ],
 )

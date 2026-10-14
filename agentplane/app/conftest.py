@@ -26,6 +26,7 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore, SessionRow
+from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.replication_source import Placements
@@ -52,8 +53,8 @@ from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 # with the runner.
 from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
 from agentplane.runner_gateway.client import RunnerGatewayClient
-from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.testing.backend import Endpoint, backend
+from agentplane.runner_gateway.testing.backend import Endpoint, backend
+from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
     TEMPLATE,
@@ -62,6 +63,7 @@ from agentplane.sandboxes.testing.fake_inventory import (
     FakeCustomObjectsApi,
     close_fake_api_clients,
 )
+from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.electric_role import ensure_electric_role
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate, migrated_database_template
 from util.testing.postgres_fixtures import (
@@ -266,7 +268,7 @@ def bridge(
 
 
 @pytest.fixture
-def sandbox_endpoint(
+def gateway_endpoint(
     custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, tmp_path: Path, service_history_db_url: str
 ) -> Iterator[Endpoint]:
     with backend(custom_objects, core_v1, tmp_path / "sandbox-token", database_url=service_history_db_url) as endpoint:
@@ -274,20 +276,25 @@ def sandbox_endpoint(
 
 
 @pytest.fixture
-async def sandbox_channel(sandbox_endpoint: Endpoint) -> AsyncIterator[grpc.aio.Channel]:
-    """One channel to `sandbox_endpoint`, which serves both services, on this test's loop."""
-    async with dial(sandbox_endpoint.target) as channel:
+async def gateway_channel(gateway_endpoint: Endpoint) -> AsyncIterator[grpc.aio.Channel]:
+    async with dial(gateway_endpoint.target) as channel:
         yield channel
 
 
 @pytest.fixture
-def inventory(sandbox_endpoint: Endpoint, sandbox_channel: grpc.aio.Channel) -> SandboxServiceClient:
-    return sandbox_endpoint.sandboxes(sandbox_channel)
+def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> SandboxAccess:
+    return SandboxAccess(
+        SandboxInventory(
+            namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), core_v1=cast(CoreV1Api, core_v1)
+        ),
+        default_policy_sets=frozenset(),
+        caller=ServiceAccountRef(namespace=NAMESPACE, name="agentplane-app"),
+    )
 
 
 @pytest.fixture
-def gateway(sandbox_endpoint: Endpoint, sandbox_channel: grpc.aio.Channel) -> RunnerGatewayClient:
-    return sandbox_endpoint.gateway(sandbox_channel)
+def gateway(gateway_endpoint: Endpoint, gateway_channel: grpc.aio.Channel) -> RunnerGatewayClient:
+    return gateway_endpoint.gateway(gateway_channel)
 
 
 # The agent's credential, and what a test client carries: the app's other one is an OIDC session

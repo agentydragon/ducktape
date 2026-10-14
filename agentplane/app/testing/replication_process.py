@@ -35,6 +35,7 @@ from agentplane.app.identity import CallerIdentity, CallerKind, require_caller
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.model_test_data import TEST_REASONING_EFFORTS
 from agentplane.app.testing.replication_source import SANDBOX
 from agentplane.app.testing.system_status import answering_system_status
@@ -51,9 +52,9 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
-from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.testing.backend import seed_runner
-from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi
+from agentplane.sandboxes.inventory import SandboxInventory
+from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
+from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//asyncpg
@@ -224,8 +225,10 @@ async def _serve(
             ) as electric_http,
             httpx.AsyncClient(base_url="http://test-unused-notifications.invalid") as notifications_http,
         ):
-            inventory = SandboxServiceClient(
-                channel, namespace=NAMESPACE, token_file=token_file, request_timeout_s=10, lifecycle_timeout_s=10
+            inventory = SandboxAccess(
+                SandboxInventory(namespace=NAMESPACE, custom_objects=custom, core_v1=core),
+                default_policy_sets=frozenset(),
+                caller=ServiceAccountRef(namespace=NAMESPACE, name="agentplane-app"),
             )
             gateway = RunnerGatewayClient(
                 channel,

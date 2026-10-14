@@ -224,7 +224,7 @@ py_test(
         "//agentplane/runner:platform_instructions",
         "//agentplane/runner:sandbox_launch",
         "//agentplane/runner/testing:scripted_model",
-        "//agentplane/sandbox_service/testing:connected_runner",
+        "//agentplane/runner_gateway/testing:connected_runner",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/session_dispatcher:main",
         "//agentplane/session_dispatcher:settings",

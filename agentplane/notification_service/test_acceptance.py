@@ -47,7 +47,7 @@ from agentplane.runner.platform_instructions import render_platform_instructions
 from agentplane.runner.runner import Runner
 from agentplane.runner.sandbox_launch import SandboxIdentity
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
-from agentplane.sandbox_service.testing.connected_runner import authenticated_service
+from agentplane.runner_gateway.testing.connected_runner import authenticated_runner_gateway
 from agentplane.sandboxes.testing.kubernetes import (
     ACCOUNT,
     POD_UID,
@@ -188,7 +188,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
             httpx.AsyncClient(
                 transport=httpx.ASGITransport(app=action_api), base_url="http://actions.test"
             ) as action_http,
-            authenticated_service(
+            authenticated_runner_gateway(
                 cluster,
                 runner,
                 token_file,
@@ -196,7 +196,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 manager=delegate,
                 token="delegate-token",
                 audience="test-notifications",
-            ) as (_, remote),
+            ) as remote,
             ingest(sandbox_service_db_url, runner),
             history_service(sandbox_service_db_url, tmp_path / "history-token") as history,
             history_wakeups.listener.listen(),
