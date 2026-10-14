@@ -15,6 +15,7 @@ from cluster.cdk8s.agentplane import (
     runner_gateway,
     runner_sandbox,
     sandbox_service,
+    session_dispatcher,
 )
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
@@ -96,7 +97,10 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
         {"namespace": namespace, "name": app.NAME},
         {"namespace": namespace, "name": notifications.NAME},
     ]
-    assert gateway_config["caller_accounts"] == backend_config["caller_accounts"]
+    assert gateway_config["caller_accounts"] == [
+        *backend_config["caller_accounts"],
+        {"namespace": namespace, "name": session_dispatcher.NAME},
+    ]
     assert gateway_config["token_audience"] != backend_config["token_audience"]
     runner_policy = resource("CiliumNetworkPolicy", "agentplane-runner")["spec"]
     # Runners dial out; nothing connects to them.

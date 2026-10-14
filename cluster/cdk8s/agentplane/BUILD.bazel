@@ -994,6 +994,7 @@ py_test(
         ":runner_gateway",
         ":runner_sandbox",
         ":sandbox_service",
+        ":session_dispatcher",
         "//:conftest",
         "@pypi//more_itertools",
         "@pypi//pytest",
