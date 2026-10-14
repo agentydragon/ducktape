@@ -699,6 +699,7 @@ flowchart TD
     RUNNER_BUSY_TRACKING[Candidate: the runner knows whether the Sandbox is busy]
     RUNNER_BUSY_TRACKING --> SANDBOX_IDLE_EXPIRY
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
+    QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: the controller stops reading the blocking Quiesce shape]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     CONTROL_SERVICE_OWNER[Candidate: the controller creates the Sandbox's control Service]
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
@@ -738,6 +739,7 @@ flowchart TD
     RUNNER_FACTS_ON_LEASE --> SANDBOX_IDLE_EXPIRY
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
     SEAL_RENAME -. rename before the next sealing node lands .-> QUIESCE_WITHOUT_POLLING
+    SEAL_RENAME --> QUIESCE_LEGACY_SHAPE_REMOVAL
     RUNNER_FACTS_ON_LEASE -. carries the boot result .-> BOOTSTRAP_PROGRESS_CONTRACT
     DISPATCHER_CORE --> DISPATCHER_SESSION_CREATE
     BOOTSTRAP_PROGRESS_CONTRACT -. Ready may then include the bootstrap .-> DISPATCHER_SESSION_CREATE
@@ -914,9 +916,10 @@ controller: `spec.idleSuspendAfter`, a timer the controller measures from the `i
 fact the runner publishes (`RUNNER_FACTS_ON_LEASE`), so it needs no History Service and
 survives a controller restart. Busy covers a turn, a command, a background or durable process and an
 attached terminal or console, or a Sandbox is suspended under a running job. Automatic suspension is
-`Quiesce` with `if_idle_since`: the runner refuses it on a token mismatch or when busy, and there is
+`Quiesce` with `if_idle_since`: the runner refuses it on a token mismatch or when busy (`ABORTED`, as
+for a Sandbox already in lameduck; `FAILED_PRECONDITION` is terminal), and there is
 no ingress-health gate. Suspension waits for the Sandbox bootstrap and every
-Session's setup; deletion does not wait. A Sandbox that is quiescing refuses resume. Action Service boxes are `ACTION_BOX_IDLE_REAPER`'s, which
+Session's setup (running setups are a runner fact; the Sandbox is `Ready` False with reason `SuspendPending`); deletion does not wait. A Sandbox that is quiescing refuses resume. Action Service boxes are `ACTION_BOX_IDLE_REAPER`'s, which
 only ever deletes.
 
 ### `SESSION_INCARNATIONS` — a Session records its incarnations
@@ -951,13 +954,14 @@ runner too old to know the field cannot meet a gateway that no longer sends it.
 ### `RUNNER_FACTS_ON_LEASE` — the runner publishes stage, idle and boot facts on the connection Lease
 
 **Candidate; the Lease already carries the incarnation UID.** The one
-transport several nodes share: the runner reports facts on the control stream in the `Heartbeat`'s
-optional `RunnerFacts`, sent on change and on the first `Heartbeat` after connect, and the gateway
+transport several nodes share: the runner reports facts on the control stream in a runner-only `RunnerHeartbeat` on
+`RunnerFrame.heartbeat` (same field number as today), carrying optional `RunnerFacts`, sent on change and on the first `RunnerHeartbeat` after connect, and the gateway
 replica holding the connection writes them as annotations on the Sandbox-owned connection Lease,
 stamped with the incarnation UID, clearing them when a different incarnation connects. Facts: the
 seal stage (draining, flushing, sealed), when the Sandbox last went idle (`idleSince`, set only
 while no Session is busy and no background process or attached terminal runs; there is no `busy`
-fact) for `SANDBOX_IDLE_EXPIRY`, and the bootstrap result (`BOOTSTRAP_PROGRESS_CONTRACT`). The
+fact) for `SANDBOX_IDLE_EXPIRY`, and the bootstrap result (`BOOTSTRAP_PROGRESS_CONTRACT`), and the Sessions whose setup is still running, which
+holds a suspend back (`Ready` False with reason `SuspendPending`, `SANDBOX_IDLE_EXPIRY`). The
 gateway writes stage transitions to the Lease at once and coalesces only `idleSince` into the
 regular 15-second renewal write, so it adds no etcd writes. The runner republishes its facts on
 reconnect so a gateway rollout loses nothing. A first-connection
@@ -966,7 +970,7 @@ that is down. Order: the controller reads the annotations before the gateway sta
 
 ### `RUNNER_BUSY_TRACKING` — the runner knows whether the Sandbox is busy
 
-**Candidate; asked for by the Gateway runner proxy lane, 2026-10-13 PDT.** The Heartbeat's
+**Candidate; asked for by the Gateway runner proxy lane, 2026-10-13 PDT.** The `RunnerHeartbeat`'s
 `RunnerFacts` carries `idle_since`, but the runner tracks nothing that makes a Sandbox busy. The
 runner computes the whole-Sandbox idle time: busy while any Session runs a turn or a command, a
 background or durable process runs, or a terminal or console is attached; `idle_since` is set only
@@ -989,7 +993,16 @@ Sandbox status field is added beside the old, switched, then removed. Land it be
 `QUIESCE_WITHOUT_POLLING` and the rest of the sealing nodes, so they are written once; it
 conflicts with nearly all of them, which is fine, but the order saves work. `Quiesce` returns at
 lameduck entry and drops the cursors, so the controller reads `Quiesce` before the runner's `Seal`
-is renamed.
+is renamed. Rollout order: `QuiesceResponse.stage` is added; the controller image that reads both the
+legacy and the staged shape is pinned; the gateway's deletion seal goes (`CONTROLLER_SEALS`); then the
+runner's non-blocking `Quiesce` ships, the VM guest's runner wheel included in the pin order, since
+until then an empty unflushed list reads as flushed. Dropping the legacy shape is
+`QUIESCE_LEGACY_SHAPE_REMOVAL`.
+
+### `QUIESCE_LEGACY_SHAPE_REMOVAL` — the controller stops reading the blocking `Quiesce` shape
+
+**Blocked on the runner's non-blocking `Quiesce` pinned in every environment, the VM guest's wheel
+included.** Deletes the controller's legacy-shape read and the tombstone marking it.
 
 ### `QUIESCE_WITHOUT_POLLING` — the controller is told when a seal finishes
 
@@ -1030,8 +1043,8 @@ command, like the runner's. It accepts a message,
 persists it before it acknowledges the sender, delivers it through the gateway's runner proxy to a
 running Sandbox, and reports a delivery state the sender can read (operator, 2026-10-13 PDT; each name says where the command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`, `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED` with a reason, `CANCELLED_IN_DISPATCHER`, and `UNKNOWN` for a deleted Sandbox only; a quiesce refusal returns `DELIVERING_TO_RUNNER` to `QUEUED_IN_DISPATCHER`). The runner deduplicates on the
 command ID, a reply lost across an incarnation boundary is redelivered to the next incarnation
-(`THREAD_SUCCESSOR_DELIVERY`), delivery is first-in first-out per Session, and `StopRunnerSession`
-cancels the inputs queued before it. A message for a deleted Session or a failed delivery ends in a
+(`THREAD_SUCCESSOR_DELIVERY`), delivery is first-in first-out per Session, `InterruptTurn` bypasses the queue and
+`StopRunnerSession` goes ahead of it, cancelling the inputs queued before it. A message for a deleted Session or a failed delivery ends in a
 terminal state with a reason and a time to live; a command admitted but not dispatched when the
 Sandbox is torn down ends as `ended_by_teardown`. Replicas shard Sandboxes by a per-Sandbox Lease
 so each has one active owner. Authorization names which senders may send, and the sender kinds
@@ -1043,7 +1056,8 @@ anyone. Test duplicate sends, a sender that leaves, a deleted target and a refus
 
 **Blocked on `DISPATCHER_CORE`.** `OpenSession` with a client-minted Session ID is stored
 durably and made idempotent by the ID: a retry returns the same record, and the same ID in another
-Sandbox is refused. The service waits for the Sandbox to be ready and calls the runner's
+Sandbox is refused. `ALREADY_EXISTS` from the runner's `OpenSession` counts as opened once
+`ListSessions` confirms the Session. The service waits for the Sandbox to be ready and calls the runner's
 idempotent `OpenSession`. It needs the Sandbox's name, never an address; when a caller omits the
 Sandbox it looks the Session up in the History Service, and until the runner has pushed anything
 its own record is authoritative.
