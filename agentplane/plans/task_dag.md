@@ -732,8 +732,9 @@ flowchart TD
     SANDBOX_SHARED_CODE_MOVE --> SANDBOX_SERVICE_REMOVE
     SANDBOX_SHARED_CODE_MOVE -. land first, then the helper is written once .-> SANDBOX_WRITE_HELPER
     APP_SANDBOX_WRITES --> SANDBOX_SERVICE_REMOVE
-    DISPATCHER_CORE --> APP_SENDS_VIA_DISPATCHER
-    DISPATCHER_CORE --> NOTIFICATIONS_VIA_DISPATCHER
+    DISPATCHER_CORE --> DISPATCHER_DEPLOY[Blocked: the Session Dispatcher is deployed]
+    DISPATCHER_DEPLOY --> APP_SENDS_VIA_DISPATCHER
+    DISPATCHER_DEPLOY --> NOTIFICATIONS_VIA_DISPATCHER
     SESSION_REVIVE --> DISPATCHER_WAKE_ON_SEND
     APP_SENDS_VIA_DISPATCHER --> RUNNER_PROXY_SENDER_RESTRICT
     NOTIFICATIONS_VIA_DISPATCHER --> RUNNER_PROXY_SENDER_RESTRICT
@@ -1149,6 +1150,20 @@ anyone. Test duplicate sends, a sender that leaves, a deleted target and a refus
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
+### `DISPATCHER_DEPLOY` — the Session Dispatcher is deployed
+
+**Blocked on `DISPATCHER_CORE` merged and its image, and its migration image, pinned.** The service is
+built and tested but ships no manifests, so no sender can call it. The cdk8s generators add its
+Deployment, its CNPG database and migration job, a Role with `get/list/watch` on `sandboxes`
+(`patch` joins it with `DISPATCHER_WAKE_ON_SEND`), the gateway's `caller_accounts` entry that lets the
+Dispatcher call the `Runner` proxy, the network policies both ways, and the Flux wiring; the README's
+services-and-traffic diagram marks it deployed. Image before config: no manifest, flag or required setting
+lands before the image that accepts it is pinned. Test that a Sandbox that becomes `Ready` receives a
+queued command through the deployed pair in `agentplane-testing`, and that a Dispatcher restart loses no
+queued command.
+
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
 ### `DISPATCHER_SESSION_CREATE` — dispatched Session creation
 
 **Blocked on `DISPATCHER_CORE`.** `OpenSession` with a client-minted Session ID is stored
@@ -1175,7 +1190,7 @@ to a suspended Sandbox, one arriving while it seals, a failed revival and a resu
 
 ### `APP_SENDS_VIA_DISPATCHER` — the app sends through the Session Dispatcher
 
-**Blocked on `DISPATCHER_CORE`.** The composer and the app's other command sends call the Session
+**Blocked on `DISPATCHER_DEPLOY`.** The composer and the app's other command sends call the Session
 Dispatcher instead of `SubmitCommand`, showing its delivery states. The command-progress lights
 (`CommandProgress`: saved in browser, runner accepted, effect confirmed) gain a dispatch stage
 between the browser and the runner: queued in the Dispatcher (operator, 2026-10-13 PDT). It reads
@@ -1187,7 +1202,7 @@ sender moves.
 
 ### `NOTIFICATIONS_VIA_DISPATCHER` — notifications send through the Session Dispatcher
 
-**Blocked on `DISPATCHER_CORE`; operator, 2026-10-13 PDT.** The Notification Service sends its
+**Blocked on `DISPATCHER_DEPLOY`; operator, 2026-10-13 PDT.** The Notification Service sends its
 notices through the Session Dispatcher, and keeps choosing when to deliver from its own quiet window or
 from `SESSION_ACTIVITY_STREAM`. Parallel with `APP_SENDS_VIA_DISPATCHER`.
 
