@@ -721,6 +721,8 @@ py_test(
     deps = [
         ":conftest",
         ":notifications",
+        ":runner_gateway",
+        ":session_dispatcher",
         ":staging",
         "//:conftest",
         "@pypi//more_itertools",

@@ -5575,6 +5575,9 @@ data:
     history_service:
       target: agentplane-history-service.agentplane-testing.svc.cluster.local:8080
       token_file: /var/run/secrets/notifications/history
+    session_dispatcher:
+      target: agentplane-session-dispatcher.agentplane-testing.svc.cluster.local:8080
+      token_file: /var/run/secrets/notifications/dispatcher
 immutable: false
 ---
 apiVersion: v1
@@ -5727,6 +5730,10 @@ spec:
                   audience: agentplane-history-service
                   expirationSeconds: 3600
                   path: history
+              - serviceAccountToken:
+                  audience: agentplane-session-dispatcher
+                  expirationSeconds: 3600
+                  path: dispatcher
 ---
 apiVersion: v1
 kind: Service
@@ -5831,6 +5838,14 @@ spec:
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-history-service
+            k8s:io.kubernetes.pod.namespace: agentplane-testing
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-session-dispatcher
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
         - ports:

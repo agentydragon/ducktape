@@ -49,6 +49,8 @@ class Notifications(Construct):
         gateway_control_target: str,
         history: ServiceRef,
         history_audience: str,
+        dispatcher: ServiceRef,
+        dispatcher_audience: str,
         callers: list[Pods],
     ) -> None:
         """Any ServiceAccount in the namespace may call with its workload token, a Sandbox's through the
@@ -99,6 +101,10 @@ class Notifications(Construct):
                     "target": f"{history.fqdn}:{history.pod_port}",
                     "token_file": "/var/run/secrets/notifications/history",
                 },
+                "session_dispatcher": {
+                    "target": f"{dispatcher.fqdn}:{dispatcher.port.number}",
+                    "token_file": "/var/run/secrets/notifications/dispatcher",
+                },
                 "github": {"app_id": github.app_id} if github is not None else None,
             },
             supplied=supplied,
@@ -148,6 +154,7 @@ class Notifications(Construct):
                 "sandboxes": sandboxes_audience,
                 "gateway": gateway_audience,
                 "history": history_audience,
+                "dispatcher": dispatcher_audience,
             },
         )
         NetworkPolicy(
@@ -164,6 +171,7 @@ class Notifications(Construct):
                 sandboxes.egress(),
                 gateway.egress(),
                 history.egress(),
+                dispatcher.egress(),
                 database.egress(env.namespace),
             ],
         )

@@ -124,6 +124,8 @@ def environment_chart(app: App, env: Environment) -> Chart:
         gateway_control_target=runner_gateway.control_target(env.namespace),
         history=history_service.service(env.namespace),
         history_audience=history_service.TOKEN_AUDIENCE,
+        dispatcher=session_dispatcher.service(env.namespace),
+        dispatcher_audience=session_dispatcher.TOKEN_AUDIENCE,
         callers=[egress.proxy(env.namespace).pods, app_component.service(env.namespace).pods],
     )
     return chart
