@@ -222,6 +222,8 @@ async def sandbox_form(services: Services) -> SandboxForm:
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_sandbox(spec: NewSandbox, services: Services) -> SandboxView:
     """Create exactly the fields the caller selected; browser presets have already filled them."""
+    if spec.preset is not None and spec.preset not in services.presets.sandboxes:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_ENTITY, f"no preset named {spec.preset!r}")
     return sandbox_view(await services.inventory.create(create_request(spec)))
 
 

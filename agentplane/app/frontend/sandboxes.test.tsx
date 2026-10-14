@@ -146,6 +146,7 @@ it("pre-fills the preset's policy sets, hides picked sets, and sends the picks",
     expect.objectContaining({
       body: expect.objectContaining({
         template: "test-template",
+        preset: "test-preset",
         policy_sets: ["test-basic", "test-packages"],
         bootstrap: "mkdir -p /state/workspaces",
         session_defaults: expect.objectContaining({ harness: "HARNESS_CODEX", model: "test-codex-b" }),

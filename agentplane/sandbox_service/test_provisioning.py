@@ -174,6 +174,7 @@ async def test_suspend_resume_and_delete_are_pinned_to_the_incarnation(api: Sand
             session_defaults=sandbox_service_pb2.SessionDefaults(harness=runner_pb2.HARNESS_UNSPECIFIED),
         ),
         CreateSandboxRequest(name="test", template=TEMPLATE, policy_sets=["test-missing-set"]),
+        CreateSandboxRequest(name="test", template=TEMPLATE, preset="not a label value"),
     ],
     ids=[
         "empty-name",
@@ -184,6 +185,7 @@ async def test_suspend_resume_and_delete_are_pinned_to_the_incarnation(api: Sand
         "long-setup",
         "unsupported-harness",
         "unknown-policy-set",
+        "invalid-preset-label",
     ],
 )
 async def test_invalid_protobuf_create_does_not_mutate(

@@ -78,6 +78,9 @@ message CreateSandboxRequest {
   string bootstrap = 7;
   // PolicySet names to bind, beside the service's defaults.
   repeated string policy_sets = 8;
+  // The app's preset this Sandbox was made from, recorded as a label for the app to read back; the
+  // service and the controller never resolve it.
+  optional string preset = 9;
 }
 
 // Kubernetes names/status vocabulary is preserved, not recast as runner state.
@@ -112,6 +115,7 @@ message Sandbox {
   string namespace = 15;
   google.protobuf.Struct status = 16;
   SandboxPhase phase = 20;
+  optional string preset = 21;
 }
 
 // Where the Sandbox is in its lifecycle, derived from what the Sandbox Controller records: whether

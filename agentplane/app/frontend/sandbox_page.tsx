@@ -161,6 +161,7 @@ function StatusView({ sandbox }: { sandbox: SandboxView }): JSX.Element {
             Runs as ServiceAccount {sandbox.service_account.namespace}/{sandbox.service_account.name}, the subject its
             egress and action-policy bindings name.
           </Text>
+          {sandbox.preset && <Text size="sm">Made from preset {sandbox.preset}.</Text>}
           {sandbox.status && rawString(sandbox.status.phase) && (
             <Text size="sm">Sandbox status phase: {rawString(sandbox.status.phase)}</Text>
           )}

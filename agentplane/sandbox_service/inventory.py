@@ -117,7 +117,11 @@ class SandboxInventory(SandboxReader):
         body = {
             "apiVersion": sandbox_resource.SANDBOX_API_VERSION,
             "kind": sandbox_resource.SANDBOX_KIND,
-            "metadata": {"name": spec.name, "annotations": {CREATE_INTENT: self._intent(spec, caller)}},
+            "metadata": {
+                "name": spec.name,
+                "annotations": {CREATE_INTENT: self._intent(spec, caller)},
+                **({"labels": {sandbox_resource.PRESET_LABEL: spec.preset}} if spec.HasField("preset") else {}),
+            },
             "spec": {
                 "template": spec.template,
                 "running": True,

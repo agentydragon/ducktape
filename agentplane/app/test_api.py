@@ -285,6 +285,24 @@ async def test_create_records_the_concrete_session_defaults_and_bootstrap(
     assert custom_objects.objects[(SANDBOXES_PLURAL, row["name"])]["spec"]["policySets"] == ["packages"]
 
 
+async def test_create_records_the_preset_it_was_made_from(
+    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    response = await client.post(
+        "/sandboxes", json={"name": "from-preset", "template": TEMPLATE, "preset": "public-coder"}
+    )
+
+    assert response.status_code == 201, response.text
+    assert response.json()["preset"] == "public-coder"
+    assert (await client.get("/sandboxes/from-preset")).json()["preset"] == "public-coder"
+
+
+async def test_create_refuses_a_preset_the_app_does_not_have(client: httpx.AsyncClient) -> None:
+    response = await client.post("/sandboxes", json={"name": "no-such", "template": TEMPLATE, "preset": "missing"})
+
+    assert response.status_code == 422
+
+
 async def test_policy_sets_list_the_namespace_for_the_create_form(client: httpx.AsyncClient) -> None:
     sets = {policy_set["name"]: policy_set for policy_set in (await client.get("/action-policy/sets")).json()}
     assert {"github-reads", "github-writes", "broken-reads", "github"} <= set(sets)

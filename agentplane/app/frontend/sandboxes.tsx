@@ -160,6 +160,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     const body = {
       ...form,
       name: form.name || placeholderName,
+      preset: selectedPreset ?? undefined,
       session_defaults: hasSessionDefaults(thread) ? thread : undefined,
     };
     const { data, error: failure } = await api.POST("/sandboxes", {

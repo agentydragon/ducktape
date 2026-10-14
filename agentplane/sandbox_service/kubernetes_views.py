@@ -60,6 +60,7 @@ def sandbox_view(
         status=_struct(sandbox.status.model_dump(mode="json", by_alias=True, exclude_none=True)),
         service_account=ServiceAccount(namespace=metadata.namespace, name=metadata.name),
         binding=_binding(spec),
+        preset=metadata.labels.get(sandbox_resource.PRESET_LABEL),
         phase=_phase(sandbox),
         pod=_pod(pod, api_client=api_client) if pod is not None and sandbox.runs_in(pod) else None,
     )

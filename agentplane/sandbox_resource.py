@@ -32,6 +32,8 @@ QUIESCED = "Quiesced"
 RUNNING = "Running"
 # On a Sandbox's Pod, or its VM, VMI and virt-launcher Pod: the Sandbox's name.
 SANDBOX_LABEL = f"{GROUP}/sandbox"
+# On a Sandbox: the app preset it was made from. Only the app reads it.
+PRESET_LABEL = f"{GROUP}/preset"
 # A VM Sandbox's runner runs in its VMI's virt-launcher Pod, which the VMI controls.
 VMI_API_VERSION = "kubevirt.io/v1"
 VMI_KIND = "VirtualMachineInstance"
@@ -58,6 +60,7 @@ class ObjectMeta(_Wire):
     creation_timestamp: AwareDatetime
     deletion_timestamp: AwareDatetime | None = None
     annotations: dict[str, str] = Field(default_factory=dict)
+    labels: dict[str, str] = Field(default_factory=dict)
 
 
 class SessionDefaults(_Wire):

@@ -14,7 +14,7 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.proto.runner_pb2 import HARNESS_CODEX
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, SandboxPhase, SessionDefaults
-from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
+from agentplane.sandbox_resource import PRESET_LABEL, SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandbox_service.action_policy_views import UnknownPolicySetError
 from agentplane.sandbox_service.errors import (
     SandboxConflictError,
@@ -122,6 +122,22 @@ async def test_create_writes_a_running_sandbox_of_the_template(
         "sessionDefaults": {"harness": "HARNESS_CODEX", "model": "test-model"},
         "bootstrap": "printf boot",
     }
+
+
+async def test_create_records_the_preset_as_a_label_and_reads_it_back(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    spec = CreateSandboxRequest(name="from-preset", template=TEMPLATE, preset="test-preset")
+    view = await inventory.create(spec, policy_sets=set(), caller=CALLER)
+
+    assert custom_objects.objects[(SANDBOXES_PLURAL, "from-preset")]["metadata"]["labels"] == {
+        PRESET_LABEL: "test-preset"
+    }
+    assert view.preset == "test-preset"
+    bare = await inventory.create(
+        CreateSandboxRequest(name="bare", template=TEMPLATE), policy_sets=set(), caller=CALLER
+    )
+    assert not bare.HasField("preset")
 
 
 async def test_policy_sets_must_exist(inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi) -> None:

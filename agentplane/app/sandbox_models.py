@@ -64,6 +64,7 @@ class NewSandbox(BaseModel):
 
     name: SandboxName = Field(description="Kubernetes Sandbox CR name, unique in this namespace.")
     template: str = Field(min_length=1, description="SandboxTemplate each of its incarnations starts from.")
+    preset: str | None = Field(default=None, description="The preset the form's fields were taken from, if any.")
     policy_sets: list[str] = Field(default_factory=list, description="PolicySet names to bind.")
     session_defaults: SessionDefaults | None = Field(
         default=None, description="Reusable session defaults for future sessions in this Sandbox."
@@ -113,6 +114,7 @@ class SandboxView(BaseModel):
     binding: SandboxBinding | None = Field(
         default=None, description="The stored concrete session defaults and bootstrap selected for this Sandbox."
     )
+    preset: str | None = Field(default=None, description="The preset it was made from, when it was made from one.")
     phase: SandboxPhase = Field(
         description="Quiescing and Tearing down mean deletion was asked for: it seals and waits for its ingress, "
         "then is removed. A Sandbox in either takes no new work and cannot be suspended or resumed."
