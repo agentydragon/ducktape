@@ -30,7 +30,7 @@ History Service lags the runner's journal, so a retry never precedes an admissio
 
 Bazel targets: `:server`, `:migrate`, `:image`, `:migration_image`. The service needs its own PostgreSQL
 database, Actions, Runner Gateway and History Service endpoints, projected
-service-account tokens, and Kubernetes read access to Sandboxes and their Pods.
+service-account tokens, and Kubernetes read access to Sandboxes.
 
 Run the image-coupled migration before starting workers. Use published server/migration image tags
 and preserve existing staging data. `/healthz` reports process liveness; `/readyz` checks workers and

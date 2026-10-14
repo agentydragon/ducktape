@@ -166,11 +166,11 @@ async def test_stale_inbox_retires_after_persisted_recheck(
 ) -> None:
     claim, subscription = await _due_inbox(service, prepare_notice=prepare_notice)
     if reason == "not_found":
-        cast(AsyncMock, service.sandboxes.get).side_effect = SandboxNotFoundError("sandbox")
+        cast(AsyncMock, service.sandboxes.get_without_pod).side_effect = SandboxNotFoundError("sandbox")
     else:
         replacement = _matching_sandbox()
         replacement.uid = "replacement-uid"
-        cast(AsyncMock, service.sandboxes.get).return_value = replacement
+        cast(AsyncMock, service.sandboxes.get_without_pod).return_value = replacement
     assert await service.step()
     async with service.store.sessions() as session:
         pending = await session.get(Inbox, claim.id)
@@ -213,11 +213,11 @@ async def test_stale_inbox_retires_after_persisted_recheck(
 
 async def test_transient_missing_destination_can_recover_without_retirement(service: Service) -> None:
     claim, subscription = await _due_inbox(service)
-    cast(AsyncMock, service.sandboxes.get).side_effect = SandboxNotFoundError("sandbox")
+    cast(AsyncMock, service.sandboxes.get_without_pod).side_effect = SandboxNotFoundError("sandbox")
     assert await service.step()
     # Retry after the persisted deadline sees the *same* UID (including suspension).
-    cast(AsyncMock, service.sandboxes.get).side_effect = None
-    cast(AsyncMock, service.sandboxes.get).return_value = _matching_sandbox()
+    cast(AsyncMock, service.sandboxes.get_without_pod).side_effect = None
+    cast(AsyncMock, service.sandboxes.get_without_pod).return_value = _matching_sandbox()
     async with service.store.sessions.begin() as session:
         await session.execute(
             update(Inbox).where(Inbox.id == claim.id).values(next_attempt=datetime.now(UTC) - timedelta(seconds=1))
@@ -236,7 +236,7 @@ async def test_transient_missing_destination_can_recover_without_retirement(serv
 
 async def test_transient_lookup_and_owner_mismatch_cannot_confirm_staleness(service: Service) -> None:
     claim, subscription = await _due_inbox(service)
-    cast(AsyncMock, service.sandboxes.get).side_effect = SandboxNotFoundError("sandbox")
+    cast(AsyncMock, service.sandboxes.get_without_pod).side_effect = SandboxNotFoundError("sandbox")
     assert await service.step()
     async with service.store.sessions.begin() as session:
         await session.execute(
@@ -247,7 +247,7 @@ async def test_transient_lookup_and_owner_mismatch_cannot_confirm_staleness(serv
                 next_attempt=datetime.now(UTC) - timedelta(seconds=1),
             )
         )
-    cast(AsyncMock, service.sandboxes.get).side_effect = TimeoutError("backend offline")
+    cast(AsyncMock, service.sandboxes.get_without_pod).side_effect = TimeoutError("backend offline")
     assert await service.step()
     async with service.store.sessions() as session:
         pending = await session.get(Inbox, claim.id)
@@ -256,10 +256,10 @@ async def test_transient_lookup_and_owner_mismatch_cannot_confirm_staleness(serv
         assert pending.stale_check_at is not None
         assert pending.next_attempt is not None
         assert pending.next_attempt > datetime.now(UTC)
-    cast(AsyncMock, service.sandboxes.get).side_effect = None
+    cast(AsyncMock, service.sandboxes.get_without_pod).side_effect = None
     wrong_owner = _matching_sandbox()
     wrong_owner.service_account.name = "different-owner"
-    cast(AsyncMock, service.sandboxes.get).return_value = wrong_owner
+    cast(AsyncMock, service.sandboxes.get_without_pod).return_value = wrong_owner
     async with service.store.sessions.begin() as session:
         await session.execute(
             update(Inbox).where(Inbox.id == claim.id).values(next_attempt=datetime.now(UTC) - timedelta(seconds=1))
@@ -282,7 +282,7 @@ async def test_transient_lookup_and_owner_mismatch_cannot_confirm_staleness(serv
 )
 async def test_initial_lookup_failure_does_not_start_stale_confirmation(service: Service, failure: Exception) -> None:
     claim, subscription = await _due_inbox(service)
-    cast(AsyncMock, service.sandboxes.get).side_effect = failure
+    cast(AsyncMock, service.sandboxes.get_without_pod).side_effect = failure
     assert await service.step()
     async with service.store.sessions() as session:
         inbox = await session.get(Inbox, claim.id)

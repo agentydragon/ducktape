@@ -29,6 +29,15 @@ async def test_read_sandbox_without_mutation(cluster: Cluster) -> None:
     assert cluster.fake.objects == before
 
 
+async def test_sandbox_is_read_without_its_pod(cluster: Cluster) -> None:
+    view = await cluster.inventory.get_without_pod(SANDBOX)
+    assert view.uid == SANDBOX_UID
+    assert view.service_account.name == ACCOUNT
+    assert not view.HasField("pod")
+    with pytest.raises(SandboxNotFoundError):
+        await cluster.inventory.get_without_pod("test-missing")
+
+
 async def test_sandbox_is_read_with_its_session_defaults(cluster: Cluster) -> None:
     cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["spec"] |= {
         "sessionDefaults": {"harness": "HARNESS_CODEX", "model": "test-model", "setupScript": "printf setup"},

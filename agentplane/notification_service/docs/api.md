@@ -159,8 +159,8 @@ before accepting a subscription and on every source poll. Agent tokens are never
 The worker uses rotating, audience-specific projected service tokens. It is allowlisted at the Sandbox
 Service and at the Runner Gateway, which validates sandbox UID and account binding and owns all runner
 access, and is a History Service reader.
-Notification Kubernetes RBAC is TokenReview plus `get` on Sandboxes and Pods in the Sandbox namespace, which
-resolve a destination's UID and owner. Cilium allows egress proxy/app → notifications, the
+Notification Kubernetes RBAC is TokenReview plus `get` on Sandboxes in the Sandbox namespace, which
+resolves a destination's UID and owner. Cilium allows egress proxy/app → notifications, the
 staging GitHub webhook route → notifications, notifications → Actions/Sandbox Service/Runner Gateway/History
 Service/PostgreSQL/API server/GitHub API, and no notifications → runner path.
 

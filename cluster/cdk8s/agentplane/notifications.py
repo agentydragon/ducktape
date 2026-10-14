@@ -1,20 +1,8 @@
 """Notification-owned persistence and workload API; only the Runner Gateway reaches runners, and
 receipts are read from the History Service."""
 
-from typing import cast
-
 from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import (
-    ApiResource,
-    ContainerResources,
-    Cpu,
-    CpuResources,
-    IApiResource,
-    MemoryResources,
-    Role,
-    RoleBinding,
-    RolePolicyRule,
-)
+from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources, Role, RoleBinding, RolePolicyRule
 from constructs import Construct
 
 from agentplane.crd_group import GROUP
@@ -136,11 +124,8 @@ class Notifications(Construct):
             self,
             "role",
             metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
-            rules=[
-                # Resolving a destination: its Sandbox, and the incarnation's Pod that `SandboxReader` joins to it.
-                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"]),
-                RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get"]),
-            ],
+            # Resolving a destination reads its Sandbox, not the Pod.
+            rules=[RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"])],
         )
         RoleBinding(
             self,

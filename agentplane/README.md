@@ -82,7 +82,7 @@ flowchart TB
     ss -->|Sandboxes| k8s
     gw -->|control EndpointSlices, Leases; Quiesced on deleting Sandboxes| k8s
     hs -->|ingest, fold, read| hist_db
-    notif -->|Sandbox and Pod reads| k8s
+    notif -->|Sandbox reads| k8s
     notif -->|commands| gw
     notif -->|command receipts| hs
     notif --> actions

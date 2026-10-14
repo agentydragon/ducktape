@@ -107,7 +107,7 @@ class Service:
         if destination.namespace != self.sandboxes.namespace:
             raise DestinationRejectedError
         try:
-            sandbox = await self.sandboxes.get(destination.name)
+            sandbox = await self.sandboxes.get_without_pod(destination.name)
         except SandboxNotFoundError as error:
             raise StaleDestinationError("not_found") from error
         if sandbox.uid != destination.uid:
