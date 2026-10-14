@@ -453,6 +453,7 @@ py_test(
     deps = [
         ":conftest",
         "//:conftest",
+        "//agentplane:crd_group",
         "//agentplane:grpc_calls",
         "//agentplane:sandbox_resource",
         "//agentplane/proto:runner_pb2",
@@ -461,8 +462,10 @@ py_test(
         "//util:net",
         "//util/testing:undeclared_outputs",
         "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
     ],
 )

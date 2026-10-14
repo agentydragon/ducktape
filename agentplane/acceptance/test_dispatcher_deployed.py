@@ -4,12 +4,16 @@ import asyncio
 import json
 from collections.abc import AsyncIterator, Callable
 from contextlib import AsyncExitStack, asynccontextmanager
+from dataclasses import dataclass, field
 from uuid import uuid4
 
 import grpc
 import pytest
 import pytest_bazel
+import yaml
+from kubernetes_asyncio import client as k8s, config as k8s_config
 
+from agentplane.crd_group import GROUP, VERSION
 from agentplane.grpc_calls import dial
 from agentplane.proto import runner_pb2, session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
@@ -22,7 +26,19 @@ NAMESPACE = "agentplane-testing"
 SERVICE = "agentplane-session-dispatcher"
 BOUND_SECONDS = 300
 type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
-type Metadata = tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class Caller:
+    token: str = field(repr=False)
+
+    @property
+    def metadata(self) -> tuple[tuple[str, str], ...]:
+        return (("authorization", f"Bearer {self.token}"),)
+
+
+class DispatchFailedError(RuntimeError):
+    pass
 
 
 async def _kubectl(*args: str, body: dict[str, object] | None = None) -> str:
@@ -49,9 +65,21 @@ async def _kubectl(*args: str, body: dict[str, object] | None = None) -> str:
 
 
 async def _delete_pod(name: str, uid: str) -> None:
-    current = json.loads(await _kubectl("get", "pod", name, "-o", "json"))
-    assert current["metadata"]["uid"] == uid, "fixture caller Pod was replaced"
-    await _kubectl("delete", "pod", name, "--wait=true", "--timeout=45s")
+    await _delete("pod", name, uid)
+
+
+async def _delete(kind: str, name: str, uid: str) -> None:
+    configuration = k8s.Configuration()
+    await k8s_config.load_kube_config(client_configuration=configuration)
+    async with k8s.ApiClient(configuration) as api:
+        options = k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid))
+        if kind == "pod":
+            await k8s.CoreV1Api(api).delete_namespaced_pod(name, NAMESPACE, body=options)
+        else:
+            await k8s.CustomObjectsApi(api).delete_namespaced_custom_object(
+                GROUP, VERSION, NAMESPACE, "sandboxes", name, body=options
+            )
+    await _kubectl("wait", f"{kind}/{name}", "--for=delete", "--timeout=120s")
 
 
 async def _cleanup_sandbox(name: str, uid: str) -> None:
@@ -75,9 +103,7 @@ async def _cleanup_sandbox(name: str, uid: str) -> None:
         '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=Stopped',
         "--timeout=300s",
     )
-    current = json.loads(await _kubectl("get", "sandbox.agentplane.allegedly.works", name, "-o", "json"))
-    assert current["metadata"]["uid"] == uid, "fixture Sandbox was replaced"
-    await _kubectl("delete", "sandbox.agentplane.allegedly.works", name, "--wait=true", "--timeout=120s")
+    await _delete("sandbox.agentplane.allegedly.works", name, uid)
 
 
 @asynccontextmanager
@@ -110,17 +136,18 @@ async def _forward() -> AsyncIterator[str]:
 
 
 async def _dispatch_until(
-    stub: Dispatcher, metadata: Metadata, session: str, predicate: Callable[[pb.Dispatch], bool]
+    stub: Dispatcher, caller: Caller, session: str, predicate: Callable[[pb.Dispatch], bool]
 ) -> pb.Dispatch:
     stream = stub.WatchDispatches(
         pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=session)),
-        metadata=metadata,
+        metadata=caller.metadata,
         timeout=BOUND_SECONDS,
     )
     try:
         async for response in stream:
             row = response.dispatch
-            assert row.state not in (pb.DELIVERY_STATE_FAILED, pb.DELIVERY_STATE_UNKNOWN), row.reason
+            if row.state in (pb.DELIVERY_STATE_FAILED, pb.DELIVERY_STATE_UNKNOWN):
+                raise DispatchFailedError(f"{pb.DeliveryState.Name(row.state)}: {row.reason}")
             if predicate(row):
                 return row
     finally:
@@ -135,6 +162,11 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
     assert deployment["spec"]["replicas"] == 1
     assert deployment["spec"]["strategy"]["type"] == "Recreate"
     image = deployment["spec"]["template"]["spec"]["containers"][0]["image"]
+    service_config = json.loads(await _kubectl("get", "configmap", "agentplane-sandbox-service-config", "-o", "json"))
+    policies = yaml.safe_load(service_config["data"]["config.yaml"])["default_policy_sets"]
+    assert isinstance(policies, list)
+    assert policies
+    assert all(isinstance(name, str) and name for name in policies)
     suffix = uuid4().hex[:8]
     sandbox, caller, session, command = (
         f"accept-dispatch-{suffix}",
@@ -149,6 +181,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
         "session": session,
         "command": command,
         "passed": False,
+        "policy_sets": policies,
     }
     path = undeclared_outputs_dir() / "dispatcher-deployed.json"
     path.write_text(json.dumps(evidence, indent=2) + "\n")
@@ -166,6 +199,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                     "metadata": {"name": caller, "namespace": NAMESPACE},
                     "spec": {
                         "serviceAccountName": "agentplane-app",
+                        "imagePullSecrets": deployment["spec"]["template"]["spec"].get("imagePullSecrets", []),
                         "automountServiceAccountToken": False,
                         "restartPolicy": "Never",
                         "containers": [
@@ -195,7 +229,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             f"--bound-object-name={caller}",
             f"--bound-object-uid={caller_uid}",
         )
-        metadata = (("authorization", f"Bearer {token}"),)
+        authentication = Caller(token)
         created = json.loads(
             await _kubectl(
                 "create",
@@ -207,7 +241,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                     "apiVersion": SANDBOX_API_VERSION,
                     "kind": "Sandbox",
                     "metadata": {"name": sandbox, "namespace": NAMESPACE},
-                    "spec": {"template": "runner", "running": False},
+                    "spec": {"template": "runner", "running": False, "policySets": policies},
                 },
             )
         )
@@ -228,13 +262,15 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
         assert unauthenticated.value.code() == grpc.StatusCode.UNAUTHENTICATED
         queued = await stub.ChangeReasoningEffort(
             pb.ChangeReasoningEffortRequest(sandbox=sandbox, session_id=session, command_id=command, effort="low"),
-            metadata=metadata,
+            metadata=authentication.metadata,
             timeout=15,
         )
         assert queued.dispatch.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-        waiting = await _dispatch_until(stub, metadata, session, lambda row: row.reason == "sandbox_suspended")
+        waiting = await _dispatch_until(stub, authentication, session, lambda row: row.reason == "sandbox_suspended")
         assert waiting.sandbox_uid == uid
         evidence["waiting_reason"] = waiting.reason
+        caller_view = json.loads(await _kubectl("get", "pod", caller, "-o", "json"))
+        evidence["caller_phase"] = caller_view.get("status", {}).get("phase")
         path.write_text(json.dumps(evidence, indent=2) + "\n")
         # Opening blocks the Session's commands. Queue it after observing the command's own
         # suspended reason; it must still reach the runner before the setting change.
@@ -246,7 +282,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                     harness=runner_pb2.HARNESS_CODEX, model="chatgpt/oai-responses/gpt-6-luna", cwd="/workspace"
                 ),
             ),
-            metadata=metadata,
+            metadata=authentication.metadata,
             timeout=15,
         )
         assert opened.opening.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
@@ -258,15 +294,29 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             "-p",
             json.dumps({"metadata": {"uid": uid}, "spec": {"running": True, "wakeGeneration": 1}}),
         )
-        admitted = await _dispatch_until(
-            stub, metadata, session, lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED
-        )
+        try:
+            admitted = await _dispatch_until(
+                stub, authentication, session, lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED
+            )
+        except DispatchFailedError as error:
+            failed_opening = await stub.GetSessionOpening(
+                pb.GetSessionOpeningRequest(session_id=session), metadata=authentication.metadata, timeout=15
+            )
+            evidence.update(
+                {
+                    "failure": str(error),
+                    "opening_state": pb.DeliveryState.Name(failed_opening.opening.state),
+                    "opening_reason": failed_opening.opening.reason,
+                }
+            )
+            path.write_text(json.dumps(evidence, indent=2) + "\n")
+            raise
         assert admitted.command_id == command
         assert admitted.sandbox_uid == uid
         assert admitted.admission.event.command_admitted.command.command_id == command
         assert admitted.admission.event.command_admitted.command.change_reasoning_effort.effort == "low"
         opening = await stub.GetSessionOpening(
-            pb.GetSessionOpeningRequest(session_id=session), metadata=metadata, timeout=15
+            pb.GetSessionOpeningRequest(session_id=session), metadata=authentication.metadata, timeout=15
         )
         assert opening.opening.state == pb.DELIVERY_STATE_RUNNER_ADMITTED
         evidence.update(

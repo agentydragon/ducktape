@@ -38,3 +38,22 @@ bazelisk test //agentplane/acceptance:test_dispatcher_deployed \
 The test retains partial `dispatcher-deployed.json` evidence with `passed: false` until all service
 assertions pass, then adds `cleanup_complete` after its scoped cleanup. A readiness failure or an
 authorization refusal is a concrete gate, not a reason for blind reruns.
+
+## First probe: missing Sandbox defaults
+
+The first run at `24c6958c43` failed in [invocation cb5f8526-0074-4ddd-818f-916b7adacf0f](https://app.buildbuddy.io/invocation/cb5f8526-0074-4ddd-818f-916b7adacf0f)
+against Dispatcher `5df1aa9`. Pod-bound authentication and the suspended queue passed. Gateway logs
+at `2026-10-14T07:30:51.180Z` show `OpenSession` refused with `FAILED_PRECONDITION` because the LLM
+proxy model-config lookup returned HTTP 403; the subsequent command was `NOT_FOUND` because the
+Session had not been created. `Runner._create` resolves model configuration even without a model
+turn. The direct fixture CR had omitted the Sandbox Service's configured default PolicySets,
+`basic` and `inference-experiments`. This is probe setup failure, not evidence of a Dispatcher
+opening-order race or the unrelated historical rollout 403.
+
+Scoped cleanup removed that run's Sandbox, caller Pod and PVCs. The caller's short-lived token was
+bound to the deleted Pod and is revoked. A failure display included bearer text from a helper
+argument; the revised probe uses a credential holder with a redacted representation. It also
+parses exact deployed defaults, captures failed opening state/reason before cleanup, and uses API
+UID deletion preconditions. The caller Pod is an authentication binding object; its readiness is
+not a prerequisite for TokenReview, and the probe does not claim its process generated the RPCs.
+The corrected bounded run remains pending.
