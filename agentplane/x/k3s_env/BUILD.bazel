@@ -80,6 +80,8 @@ _IMAGES = {
     "runner_gateway_migrate": "//agentplane/runner_gateway/commands:migration_image",
     "sandbox_controller": "//agentplane/sandbox_controller:image",
     "sandbox_service": "//agentplane/sandbox_service:image",
+    "session_dispatcher": "//agentplane/session_dispatcher:image",
+    "session_dispatcher_migrate": "//agentplane/session_dispatcher:migration_image",
 }
 
 [
