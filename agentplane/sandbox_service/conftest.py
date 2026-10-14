@@ -10,7 +10,6 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane.history_service.testing.fixtures import service_database_template
 from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
-from agentplane.sandbox_service.testing.kubernetes import Cluster, kubernetes
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
@@ -18,6 +17,7 @@ from agentplane.sandboxes.testing.fake_inventory import (
     FakeCustomObjectsApi,
     close_fake_api_clients,
 )
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from util.kubernetes import CustomObjectsClient
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import (
@@ -37,8 +37,8 @@ async def close_fake_clients() -> AsyncIterator[None]:
 
 
 @pytest.fixture
-async def cluster() -> AsyncIterator[Cluster]:
-    async with kubernetes() as started:
+async def cluster() -> AsyncIterator[SandboxCluster]:
+    async with sandbox_cluster() as started:
         yield started
 
 

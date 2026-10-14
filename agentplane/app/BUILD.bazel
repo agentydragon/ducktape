@@ -1336,7 +1336,7 @@ py_test(
         "//agentplane/runner/testing:launches",
         "//agentplane/runner/testing:scripted_model",
         "//agentplane/sandbox_service/testing:connected_runner",
-        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
         "@pypi//asyncpg",
         "@pypi//grpcio",

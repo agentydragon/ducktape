@@ -1,4 +1,4 @@
-"""Real Kubernetes clients against a local API server, with no integration-app fixtures."""
+"""Agentplane Sandboxes and runner records against a local API server."""
 
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -10,8 +10,6 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
 from agentplane.proto.sandboxes_pb2 import SandboxBinding, SandboxDestination, ServiceAccount
-from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, FakeApiServer, fake_apiserver, pod_for
@@ -32,14 +30,10 @@ DESTINATION = SandboxDestination(
 
 
 @dataclass
-class Cluster:
+class SandboxCluster:
     fake: FakeApiServer
     api: k8s_client.ApiClient
-    provisioning: Provisioning
-
-    @property
-    def inventory(self) -> SandboxInventory:
-        return self.provisioning.inventory
+    inventory: SandboxInventory
 
     def set_binding(self, binding: SandboxBinding) -> None:
         spec = self.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]["spec"]
@@ -58,8 +52,8 @@ class Cluster:
 
 
 @asynccontextmanager
-async def kubernetes() -> AsyncIterator[Cluster]:
-    # Everything the service reads or writes through this server is in the Sandbox namespace.
+async def sandbox_cluster() -> AsyncIterator[SandboxCluster]:
+    """A local API server with one running Sandbox and its runner Pod."""
     async with fake_apiserver(
         dict.fromkeys((sandbox_resource.SANDBOXES_PLURAL, "leases", "services", "endpointslices"), SANDBOX_NAMESPACE)
     ) as fake:
@@ -90,12 +84,4 @@ async def kubernetes() -> AsyncIterator[Cluster]:
             inventory = SandboxInventory(
                 namespace=SANDBOX_NAMESPACE, custom_objects=custom, core_v1=k8s_client.CoreV1Api(api)
             )
-            yield Cluster(
-                fake,
-                api,
-                Provisioning(
-                    inventory,
-                    EgressInventory(namespace=SANDBOX_NAMESPACE, custom_objects=custom),
-                    default_policy_sets=frozenset(),
-                ),
-            )
+            yield SandboxCluster(fake, api, inventory)

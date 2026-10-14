@@ -12,7 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from agentplane.background_task import background
 from agentplane.grpc_serving import serving
 from agentplane.proto import runner_control_pb2_grpc
-from agentplane.sandbox_service.testing.kubernetes import Cluster, kubernetes
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.session_dispatcher.database_migrate import RUNNER
 from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.runner_client import RunnerClient
@@ -46,8 +46,8 @@ async def store(engine: AsyncEngine) -> AsyncIterator[DispatchStore]:
 
 
 @pytest.fixture
-async def cluster() -> AsyncIterator[Cluster]:
-    async with kubernetes() as cluster:
+async def cluster() -> AsyncIterator[SandboxCluster]:
+    async with sandbox_cluster() as cluster:
         yield cluster
 
 
@@ -61,7 +61,7 @@ async def runner() -> AsyncIterator[tuple[ScriptedRunner, str]]:
 
 
 @pytest.fixture
-async def sandboxes(cluster: Cluster) -> AsyncIterator[SandboxWatch]:
+async def sandboxes(cluster: SandboxCluster) -> AsyncIterator[SandboxWatch]:
     watch = SandboxWatch(
         cast(CustomObjectsClient, k8s_client.CustomObjectsApi(cluster.api)),
         namespace=SANDBOX_NAMESPACE,

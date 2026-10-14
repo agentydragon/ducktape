@@ -44,7 +44,8 @@ from agentplane.runner_gateway.testing.runner_control import (
 from agentplane.runner_gateway.testing.sessions import register_on_fake_sandbox, register_session
 from agentplane.sandbox_resource import QUIESCED, SANDBOXES_PLURAL
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, sandbox_client
-from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, DESTINATION, OWNER, SANDBOX, SANDBOX_UID, Cluster
+from agentplane.sandbox_service.testing.service_provisioning import service_provisioning
+from agentplane.sandboxes.testing.kubernetes import ACCOUNT, DESTINATION, OWNER, SANDBOX, SANDBOX_UID, SandboxCluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 
@@ -56,7 +57,7 @@ SPEC: dict[str, object] = {"harness": "HARNESS_CODEX", "model": "test-model", "c
 
 
 @pytest.fixture
-def resources(cluster: Cluster, engine: AsyncEngine, leases: ConnectionLeases) -> Resources:
+def resources(cluster: SandboxCluster, engine: AsyncEngine, leases: ConnectionLeases) -> Resources:
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
         pod_name="test-caller",
@@ -76,7 +77,7 @@ def resources(cluster: Cluster, engine: AsyncEngine, leases: ConnectionLeases) -
 
 
 @pytest.fixture
-async def peer(cluster: Cluster, resources: Resources) -> AsyncIterator[ScriptedRunner]:
+async def peer(cluster: SandboxCluster, resources: Resources) -> AsyncIterator[ScriptedRunner]:
     """A runner holding the Sandbox's control stream. Its connection ends with the test, or with the
     service when a test takes the runner's identity away."""
     runner = ScriptedRunner()
@@ -93,15 +94,15 @@ async def peer(cluster: Cluster, resources: Resources) -> AsyncIterator[Scripted
 
 
 @pytest.fixture
-async def remote(cluster: Cluster, resources: Resources, token_file: Path) -> AsyncIterator[RunnerGatewayClient]:
-    async with service_client(resources, token_file, cluster.provisioning) as client:
+async def remote(cluster: SandboxCluster, resources: Resources, token_file: Path) -> AsyncIterator[RunnerGatewayClient]:
+    async with service_client(resources, token_file, service_provisioning(cluster)) as client:
         yield client
 
 
 async def test_managed_open_uses_the_client_session_id_and_retries_on_the_runner(
-    cluster: Cluster, resources: Resources, token_file: Path, peer: ScriptedRunner
+    cluster: SandboxCluster, resources: Resources, token_file: Path, peer: ScriptedRunner
 ) -> None:
-    async with service_client(resources, token_file, cluster.provisioning) as remote:
+    async with service_client(resources, token_file, service_provisioning(cluster)) as remote:
         runner = remote.runner(DESTINATION)
         overrides: dict[str, object] = SPEC | {"cwd": "/state/{session_id}"}
         requested = uuid4()
@@ -129,12 +130,12 @@ async def test_managed_open_uses_the_client_session_id_and_retries_on_the_runner
 
 
 async def test_a_retry_after_a_lost_reply_delivers_the_command_again(
-    cluster: Cluster, resources: Resources, token_file: Path, peer: ScriptedRunner, engine: AsyncEngine
+    cluster: SandboxCluster, resources: Resources, token_file: Path, peer: ScriptedRunner, engine: AsyncEngine
 ) -> None:
     session_id = uuid4()
     await register_on_fake_sandbox(engine, session_id)
     command = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="hi"))
-    async with asyncio.timeout(10), service_client(resources, token_file, cluster.provisioning) as remote:
+    async with asyncio.timeout(10), service_client(resources, token_file, service_provisioning(cluster)) as remote:
         with pytest.raises(TimeoutError):
             await remote.command(DESTINATION, str(session_id), command)
         lost = (await peer.next(runner_control_pb2.DeliverCommandRequest)).request
@@ -158,7 +159,7 @@ async def test_open_requires_a_client_session_id(resources: Resources, token_fil
 
 
 async def test_managed_open_expands_default_cwd_with_the_session_id(
-    remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: Cluster
+    remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: SandboxCluster
 ) -> None:
     cluster.set_binding(
         sandboxes_pb2.SandboxBinding(
@@ -173,7 +174,7 @@ async def test_managed_open_expands_default_cwd_with_the_session_id(
 
 
 async def test_complete_spec_opens_as_sent_and_inherits_nothing_from_the_sandbox(
-    remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: Cluster
+    remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: SandboxCluster
 ) -> None:
     cluster.set_binding(
         sandboxes_pb2.SandboxBinding(
@@ -267,7 +268,7 @@ async def test_destination_authority_and_incarnation(
 
 @pytest.mark.parametrize("account_name", [ACCOUNT, "unlisted-service"])
 async def test_unlisted_callers_rejected_before_lookup(
-    resources: Resources, token_file: Path, cluster: Cluster, account_name: str
+    resources: Resources, token_file: Path, cluster: SandboxCluster, account_name: str
 ) -> None:
     # Owning the destination does not grant service access. The same allowlist gates all RPCs.
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
@@ -281,7 +282,7 @@ async def test_unlisted_callers_rejected_before_lookup(
     )
     cluster.fake.objects[SANDBOXES_PLURAL].clear()
     destination = sandboxes_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
-    async with service(configured, cluster.provisioning) as target, dial(target) as channel:
+    async with service(configured, service_provisioning(cluster)) as target, dial(target) as channel:
         sandboxes = sandbox_client(channel, token_file, namespace=SANDBOX_NAMESPACE)
         remote = gateway_client(channel, token_file, command_admission_timeout_s=10, control_target=target)
         for call, request in (
@@ -321,7 +322,7 @@ async def test_unlisted_callers_rejected_before_lookup(
     ],
 )
 async def test_invalid_command_is_not_submitted(
-    remote: RunnerGatewayClient, cluster: Cluster, command: command_pb2.Command
+    remote: RunnerGatewayClient, cluster: SandboxCluster, command: command_pb2.Command
 ) -> None:
     with pytest.raises(ServiceError) as rejected:
         await remote.command(DESTINATION, str(uuid4()), command)
@@ -331,7 +332,7 @@ async def test_invalid_command_is_not_submitted(
 
 @pytest.mark.parametrize("field", ["controller", "uid", "name", "kind", "apiVersion"])
 async def test_unverified_pod_owner_is_unavailable(
-    remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: Cluster, field: str
+    remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: SandboxCluster, field: str
 ) -> None:
     cluster.fake.pods[SANDBOX]["metadata"]["ownerReferences"][0][field] = (
         False if field == "controller" else "test-foreign"
@@ -344,7 +345,7 @@ async def test_unverified_pod_owner_is_unavailable(
 
 @pytest.mark.parametrize("condition", ["different-account", "suspended", "sealed-and-deleting"])
 async def test_unavailable_destination_does_not_contact_runner(
-    remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: Cluster, condition: str
+    remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: SandboxCluster, condition: str
 ) -> None:
     stored = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
     match condition:
@@ -370,7 +371,7 @@ async def test_unavailable_destination_does_not_contact_runner(
 
 
 async def test_session_sandboxes_answer_from_the_registry_including_deleted_sandboxes(
-    cluster: Cluster, resources: Resources, token_file: Path, engine: AsyncEngine
+    cluster: SandboxCluster, resources: Resources, token_file: Path, engine: AsyncEngine
 ) -> None:
     live_id, deleted_id, unknown_id = uuid4(), uuid4(), uuid4()
     await register_on_fake_sandbox(engine, live_id)
@@ -383,7 +384,7 @@ async def test_session_sandboxes_answer_from_the_registry_including_deleted_sand
     deleted = runner_gateway_pb2.SessionSandbox(
         session_id=str(deleted_id), sandbox_namespace=SANDBOX_NAMESPACE, sandbox="Deleted-Sandbox"
     )
-    async with service_client(resources, token_file, cluster.provisioning) as remote:
+    async with service_client(resources, token_file, service_provisioning(cluster)) as remote:
         got = await remote.session_sandboxes({str(live_id), str(deleted_id), str(unknown_id)})
         assert sorted(got, key=lambda found: found.session_id) == sorted(
             [live, deleted], key=lambda found: found.session_id

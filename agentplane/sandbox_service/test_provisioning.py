@@ -23,7 +23,6 @@ from agentplane.sandbox_service.egress import EgressInventory
 from agentplane.sandbox_service.grpc_api import Resources
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, service_client
-from agentplane.sandbox_service.testing.kubernetes import Cluster
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
@@ -32,6 +31,7 @@ from agentplane.sandboxes.testing.fake_inventory import (
     FakeCustomObjectsApi,
     egress_policy_set,
 )
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from util.kubernetes import CustomObjectsClient
@@ -72,7 +72,7 @@ def case() -> Case:
 
 @asynccontextmanager
 async def _client(
-    provisioning: Provisioning, cluster: Cluster, token_file: Path
+    provisioning: Provisioning, cluster: SandboxCluster, token_file: Path
 ) -> AsyncIterator[SandboxServiceClient]:
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{ADMIN.namespace}:{ADMIN.name}",
@@ -92,7 +92,7 @@ async def _client(
 
 
 @pytest.fixture
-async def api(case: Case, cluster: Cluster, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
+async def api(case: Case, cluster: SandboxCluster, token_file: Path) -> AsyncIterator[SandboxServiceClient]:
     async with _client(case.service, cluster, token_file) as client:
         yield client
 
@@ -197,7 +197,7 @@ async def test_invalid_protobuf_create_does_not_mutate(
     assert case.custom.objects == before
 
 
-async def test_authorization_precedes_creation(api: SandboxServiceClient, cluster: Cluster, case: Case) -> None:
+async def test_authorization_precedes_creation(api: SandboxServiceClient, cluster: SandboxCluster, case: Case) -> None:
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{ADMIN.namespace}:test-untrusted",
         pod_name="test-untrusted-pod",

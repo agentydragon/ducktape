@@ -20,7 +20,7 @@ from agentplane.runner_gateway.connection_records import ConnectionHolder, Conne
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
 from agentplane.runner_gateway.testing.control_listener import RUNNER_TIMING, serve_runner_control
-from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
+from agentplane.sandboxes.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, SandboxCluster
 from agentplane.testing.fake_apiserver import READY_CONDITION, SANDBOX_NAMESPACE, TokenVerdict
 
 # The control servicer stub names its messages; mypy reads stubs only from direct deps.
@@ -40,7 +40,7 @@ async def ignore_incarnation(incarnation_uid: str | None) -> None:
     del incarnation_uid
 
 
-def run_in_a_vm(cluster: Cluster) -> None:
+def run_in_a_vm(cluster: SandboxCluster) -> None:
     """`SANDBOX` as a VM Sandbox: its incarnation is its VMI's virt-launcher Pod, labelled with the
     Sandbox and running as its ServiceAccount, and `RUNNER_TOKEN` is that Pod's runner's."""
     del cluster.fake.pods[SANDBOX]
@@ -86,7 +86,7 @@ def attached(session_id: str, harness_state: runner_pb2.HarnessState) -> runner_
 
 @asynccontextmanager
 async def serve_replica_control(
-    cluster: Cluster, holder: ConnectionHolder, *, control: LifecycleControl, timing: ControlTiming
+    cluster: SandboxCluster, holder: ConnectionHolder, *, control: LifecycleControl, timing: ControlTiming
 ) -> AsyncIterator[str]:
     """Serve `holder`'s control listener, and yield the target the Sandbox's runner dials."""
     cluster.fake.tokens[RUNNER_TOKEN] = TokenVerdict(

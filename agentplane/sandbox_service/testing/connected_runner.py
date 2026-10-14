@@ -18,7 +18,8 @@ from agentplane.runner_gateway.testing.grpc_service import gateway_client, servi
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.grpc_service import sandbox_client
-from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, POD_UID, SANDBOX, SANDBOX_UID, Cluster
+from agentplane.sandbox_service.testing.service_provisioning import service_provisioning
+from agentplane.sandboxes.testing.kubernetes import ACCOUNT, POD_UID, SANDBOX, SANDBOX_UID, SandboxCluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from util.testing.sqlalchemy_engines import postgres_async_engine
@@ -29,7 +30,7 @@ _RUNNER_TOKEN = "test-app-runner-token"
 
 @asynccontextmanager
 async def authenticated_service(
-    cluster: Cluster,
+    cluster: SandboxCluster,
     runner: Runner,
     token_file: Path,
     *,
@@ -60,7 +61,7 @@ async def authenticated_service(
         )
         async with (
             runner_connected(cluster, resources, runner),
-            service(resources, cluster.provisioning) as target,
+            service(resources, service_provisioning(cluster)) as target,
             dial(target) as channel,
         ):
             yield (
@@ -75,7 +76,7 @@ async def authenticated_service(
 
 
 @asynccontextmanager
-async def runner_connected(cluster: Cluster, resources: Resources, runner: Runner) -> AsyncIterator[None]:
+async def runner_connected(cluster: SandboxCluster, resources: Resources, runner: Runner) -> AsyncIterator[None]:
     """`runner`, as `SANDBOX`'s, holds a control stream to the gateway `resources` back."""
     cluster.fake.tokens[_RUNNER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{ACCOUNT}",

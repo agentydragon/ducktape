@@ -10,7 +10,7 @@ py_library(
     srcs = ["sessions.py"],
     deps = [
         "//agentplane/runner_gateway/commands:db",
-        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
         "@pypi//sqlalchemy",
     ],
@@ -70,7 +70,7 @@ py_library(
         "//agentplane/runner_gateway:connection_records",
         "//agentplane/runner_gateway:lifecycle_control",
         "//agentplane/runner_gateway:runner_control",
-        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
         "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",

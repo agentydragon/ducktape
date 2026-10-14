@@ -36,7 +36,7 @@ from agentplane.runner_gateway.testing.runner_control import (
     serve_replica_control,
 )
 from agentplane.sandbox_resource import SANDBOX_KIND, SANDBOXES_PLURAL
-from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
+from agentplane.sandboxes.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, SandboxCluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 
 # gazelle:include_dep @pypi//protobuf
@@ -46,7 +46,7 @@ type Replica = Callable[[ConnectionHolder], AbstractAsyncContextManager[runner_c
 
 
 @pytest.fixture
-def replica(cluster: Cluster, leases: ConnectionLeases) -> Replica:
+def replica(cluster: SandboxCluster, leases: ConnectionLeases) -> Replica:
     """Start a channel listener as one gateway replica; replicas share the cluster."""
 
     @asynccontextmanager
@@ -71,7 +71,7 @@ async def listener(replica: Replica) -> AsyncIterator[runner_control_pb2_grpc.Ru
         yield stub
 
 
-def present_token_of(cluster: Cluster, account: str) -> None:
+def present_token_of(cluster: SandboxCluster, account: str) -> None:
     """The runner token authenticates as `account` from the Sandbox's Pod."""
     verdict = cluster.fake.tokens[RUNNER_TOKEN]
     cluster.fake.tokens[RUNNER_TOKEN] = replace(
@@ -131,7 +131,7 @@ def owners(obj: dict[str, Any]) -> list[tuple[str, str]]:
 
 
 async def test_accepting_records_the_connection_on_the_sandbox(
-    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: SandboxCluster
 ) -> None:
     async with connect(listener) as call:
         await call.write(HELLO)
@@ -152,7 +152,7 @@ async def test_accepting_records_the_connection_on_the_sandbox(
 
 
 async def test_a_runner_in_a_vm_connects(
-    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: SandboxCluster
 ) -> None:
     run_in_a_vm(cluster)
     async with connect(listener) as call:
@@ -161,7 +161,7 @@ async def test_a_runner_in_a_vm_connects(
 
 
 async def test_a_virt_launcher_pod_that_is_not_its_sandboxes_incarnation_is_refused(
-    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: SandboxCluster
 ) -> None:
     run_in_a_vm(cluster)
     cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["status"]["incarnation"]["uid"] = "test-other-launcher-uid"
@@ -170,7 +170,9 @@ async def test_a_virt_launcher_pod_that_is_not_its_sandboxes_incarnation_is_refu
         assert await status_of(call) == grpc.StatusCode.PERMISSION_DENIED
 
 
-async def test_a_connection_through_another_replica_supersedes_this_one(replica: Replica, cluster: Cluster) -> None:
+async def test_a_connection_through_another_replica_supersedes_this_one(
+    replica: Replica, cluster: SandboxCluster
+) -> None:
     async with replica(REPLICA) as this, replica(OTHER_REPLICA) as other, connect(this) as first:
         await first.write(HELLO)
         assert (await read_frame(first)).welcome.connection_epoch == 1
@@ -193,7 +195,7 @@ def owned_by_sandbox(name: str, **fields: Any) -> dict[str, Any]:
 
 
 async def test_an_older_epoch_never_overwrites_the_control_endpoints(
-    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: SandboxCluster
 ) -> None:
     # Written by a newer connection's owner that won the race to the EndpointSlice.
     newer: dict[str, Any] = {
@@ -228,7 +230,7 @@ async def test_an_older_epoch_never_overwrites_the_control_endpoints(
 )
 async def test_only_the_sandbox_pod_connects(
     listener: runner_control_pb2_grpc.RunnerControlAsyncStub,
-    cluster: Cluster,
+    cluster: SandboxCluster,
     token: str,
     account: str,
     code: grpc.StatusCode,
@@ -253,7 +255,7 @@ async def test_silent_runner_is_dropped(listener: runner_control_pb2_grpc.Runner
 
 
 async def test_recreating_the_sandbox_ends_the_connection(
-    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: SandboxCluster
 ) -> None:
     async with connect(listener) as call:
         await call.write(HELLO)
@@ -269,14 +271,14 @@ def facts_frame(**fields: Any) -> runner_control_pb2.RunnerFrame:
     )
 
 
-def lease_annotations(cluster: Cluster) -> dict[str, str]:
+def lease_annotations(cluster: SandboxCluster) -> dict[str, str]:
     annotations: dict[str, str] = cluster.fake.objects["leases"][OWNER.lease_name]["metadata"]["annotations"]
     return annotations
 
 
 async def read_until_annotated(
     call: grpc.aio.StreamStreamCall[runner_control_pb2.RunnerFrame, runner_control_pb2.ServiceFrame],
-    cluster: Cluster,
+    cluster: SandboxCluster,
     annotation: str,
     value: str | None,
 ) -> None:
@@ -286,7 +288,7 @@ async def read_until_annotated(
 
 
 async def test_the_runners_facts_reach_the_lease_and_replace_the_last_ones(
-    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: SandboxCluster
 ) -> None:
     idle_since = Timestamp()
     idle_since.FromJsonString("2026-10-14T01:02:03Z")
@@ -320,7 +322,7 @@ async def test_the_runners_facts_reach_the_lease_and_replace_the_last_ones(
 
 
 async def test_a_new_connection_starts_without_the_last_ones_facts(
-    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: Cluster
+    listener: runner_control_pb2_grpc.RunnerControlAsyncStub, cluster: SandboxCluster
 ) -> None:
     async with connect(listener) as first:
         await first.write(HELLO)

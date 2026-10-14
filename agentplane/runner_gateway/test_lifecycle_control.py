@@ -34,7 +34,7 @@ from agentplane.runner_gateway.testing.runner_control import (
 )
 from agentplane.runner_gateway.testing.sessions import register_on_fake_sandbox
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
-from agentplane.sandbox_service.testing.kubernetes import DESTINATION, SANDBOX_UID, Cluster
+from agentplane.sandboxes.testing.kubernetes import DESTINATION, SANDBOX_UID, SandboxCluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 
@@ -56,7 +56,7 @@ class Replica:
 
 @pytest.fixture
 def replica(
-    cluster: Cluster, engine: AsyncEngine, leases: ConnectionLeases
+    cluster: SandboxCluster, engine: AsyncEngine, leases: ConnectionLeases
 ) -> Callable[[ConnectionHolder], AbstractAsyncContextManager[Replica]]:
     """Start a replica; replicas share the cluster and the database."""
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(

@@ -23,7 +23,7 @@ from agentplane.runner_gateway.testing.runner_control import (
     connected,
     serve_replica_control,
 )
-from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster
+from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 
@@ -47,7 +47,7 @@ class Replica:
 
 @pytest.fixture
 def replica(
-    cluster: Cluster, leases: ConnectionLeases
+    cluster: SandboxCluster, leases: ConnectionLeases
 ) -> Callable[[ConnectionHolder], AbstractAsyncContextManager[Replica]]:
     for account, token in TOKENS.items():
         cluster.fake.tokens[token] = TokenVerdict(

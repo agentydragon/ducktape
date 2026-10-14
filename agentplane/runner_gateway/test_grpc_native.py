@@ -31,7 +31,7 @@ from agentplane.runner_gateway.testing.grpc_service import service_client
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.sandbox_service.testing.connected_runner import runner_connected
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
-from agentplane.sandbox_service.testing.kubernetes import DESTINATION, OWNER, Cluster
+from agentplane.sandboxes.testing.kubernetes import DESTINATION, OWNER, SandboxCluster
 from agentplane.testing.fake_apiserver import TokenVerdict
 
 # gazelle:include_dep @pypi//protobuf
@@ -41,7 +41,7 @@ AUDIENCE = "test-native-grpc"
 
 
 @pytest.fixture
-def resources(cluster: Cluster, runner: Runner, engine: AsyncEngine) -> Resources:
+def resources(cluster: SandboxCluster, runner: Runner, engine: AsyncEngine) -> Resources:
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
         pod_name="test-native-caller",
@@ -71,7 +71,7 @@ def config(config: RunnerConfig, bootstrap: str | None) -> RunnerConfig:
 
 
 @pytest.fixture(autouse=True)
-async def connected(cluster: Cluster, resources: Resources, runner: Runner) -> AsyncIterator[None]:
+async def connected(cluster: SandboxCluster, resources: Resources, runner: Runner) -> AsyncIterator[None]:
     async with runner_connected(cluster, resources, runner):
         yield
 
@@ -123,7 +123,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     token_file: Path,
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
-    cluster: Cluster,
+    cluster: SandboxCluster,
     workspace: Path,
     runner: Runner,
 ) -> None:

@@ -10,7 +10,7 @@ py_library(
     srcs = ["sandbox_status.py"],
     deps = [
         "//agentplane:sandbox_resource",
-        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/sandboxes/testing:kubernetes",
     ],
 )
 

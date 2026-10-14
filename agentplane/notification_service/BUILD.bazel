@@ -221,7 +221,7 @@ py_test(
         "//agentplane/runner/testing:scripted_model",
         "//agentplane/runner_gateway:client",
         "//agentplane/sandbox_service/testing:connected_runner",
-        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
         "//agentplane/workload_auth:principal",
         "@pypi//httpx",

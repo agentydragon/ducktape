@@ -1,10 +1,10 @@
 """A Sandbox in the fake API server as the controller would report it."""
 
 from agentplane import sandbox_resource
-from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster
+from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 
 
-def set_sandbox(cluster: Cluster, *, ready: bool, incarnation: str = "pod-1", running: bool = True) -> None:
+def set_sandbox(cluster: SandboxCluster, *, ready: bool, incarnation: str = "pod-1", running: bool = True) -> None:
     """The Sandbox as the controller reports it."""
     stored = cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]
     reason = "Ready" if ready else ("Starting" if running else sandbox_resource.STOPPED)

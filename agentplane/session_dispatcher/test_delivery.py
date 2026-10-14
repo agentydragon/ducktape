@@ -11,7 +11,7 @@ import pytest_bazel
 from agentplane import sandbox_resource
 from agentplane.background_task import background
 from agentplane.proto import command_pb2, runner_pb2
-from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster
+from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.session_dispatcher import delivery as delivery_module
 from agentplane.session_dispatcher.channels import Channel
 from agentplane.session_dispatcher.db import Dispatch
@@ -62,7 +62,7 @@ async def wait_for(store: DispatchStore, command_id: str, state: DeliveryState, 
 
 
 async def test_a_session_commands_reach_a_ready_runner_in_order(
-    store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster, runner: tuple[ScriptedRunner, str]
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster, runner: tuple[ScriptedRunner, str]
 ) -> None:
     set_sandbox(cluster, ready=True)
     await enqueue(store, sandboxes, "first")
@@ -74,7 +74,7 @@ async def test_a_session_commands_reach_a_ready_runner_in_order(
 
 
 async def test_a_command_waits_for_the_sandbox_to_be_ready(
-    store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster
 ) -> None:
     set_sandbox(cluster, ready=False)
     await enqueue(store, sandboxes, "waiting")
@@ -84,7 +84,7 @@ async def test_a_command_waits_for_the_sandbox_to_be_ready(
 
 
 async def test_a_stop_for_a_suspended_sandbox_has_nothing_to_stop(
-    store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster
 ) -> None:
     set_sandbox(cluster, ready=False, running=False)
     await enqueue(store, sandboxes, "stop", stop=True)
@@ -92,7 +92,7 @@ async def test_a_stop_for_a_suspended_sandbox_has_nothing_to_stop(
 
 
 async def test_a_quiescing_runner_is_not_asked_again_until_the_sandbox_has_a_new_incarnation(
-    store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster, runner: tuple[ScriptedRunner, str]
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster, runner: tuple[ScriptedRunner, str]
 ) -> None:
     set_sandbox(cluster, ready=True)
     runner[0].failures.append((grpc.StatusCode.ABORTED, "quiescing"))
@@ -109,7 +109,7 @@ async def test_a_quiescing_runner_is_not_asked_again_until_the_sandbox_has_a_new
 async def test_an_unreachable_runner_is_tried_again(
     store: DispatchStore,
     sandboxes: SandboxWatch,
-    cluster: Cluster,
+    cluster: SandboxCluster,
     runner: tuple[ScriptedRunner, str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -122,7 +122,7 @@ async def test_an_unreachable_runner_is_tried_again(
 
 
 async def test_a_command_the_runner_refuses_fails_with_its_status(
-    store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster, runner: tuple[ScriptedRunner, str]
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster, runner: tuple[ScriptedRunner, str]
 ) -> None:
     set_sandbox(cluster, ready=True)
     runner[0].failures.append((grpc.StatusCode.INVALID_ARGUMENT, "empty input"))
@@ -155,7 +155,7 @@ async def wait_for_opening(store: DispatchStore, state: DeliveryState, reason: s
 
 
 async def test_a_session_is_opened_before_its_commands_once_the_sandbox_is_ready(
-    store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster, runner: tuple[ScriptedRunner, str]
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster, runner: tuple[ScriptedRunner, str]
 ) -> None:
     set_sandbox(cluster, ready=False)
     await open_session(store, sandboxes)
@@ -168,7 +168,7 @@ async def test_a_session_is_opened_before_its_commands_once_the_sandbox_is_ready
 
 
 async def test_an_opening_the_runner_already_holds_is_opened_once_it_lists_the_session(
-    store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster, runner: tuple[ScriptedRunner, str]
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster, runner: tuple[ScriptedRunner, str]
 ) -> None:
     set_sandbox(cluster, ready=True)
     runner[0].failures.append((grpc.StatusCode.ALREADY_EXISTS, "created by an attempt whose reply was lost"))
@@ -178,7 +178,7 @@ async def test_an_opening_the_runner_already_holds_is_opened_once_it_lists_the_s
 
 
 async def test_an_opening_that_conflicts_with_the_runners_session_fails(
-    store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster, runner: tuple[ScriptedRunner, str]
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster, runner: tuple[ScriptedRunner, str]
 ) -> None:
     set_sandbox(cluster, ready=True)
     runner[0].failures.append((grpc.StatusCode.ALREADY_EXISTS, "another spec"))
@@ -187,7 +187,7 @@ async def test_an_opening_that_conflicts_with_the_runners_session_fails(
 
 
 async def test_a_deleted_sandbox_ends_its_commands_for_the_streams_and_takes_its_rows(
-    store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster, ended: EndedDispatches
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster, ended: EndedDispatches
 ) -> None:
     set_sandbox(cluster, ready=False)
     await enqueue(store, sandboxes, "orphaned")

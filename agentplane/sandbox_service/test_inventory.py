@@ -8,14 +8,14 @@ import pytest_bazel
 from agentplane.proto.runner_pb2 import HARNESS_CODEX
 from agentplane.proto.sandboxes_pb2 import SandboxBinding, SandboxPhase, SessionDefaults
 from agentplane.sandbox_resource import QUIESCED, SANDBOXES_PLURAL, OperatingMode
-from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.sandboxes.errors import SandboxNotFoundError
+from agentplane.sandboxes.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, SandboxCluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 
 # gazelle:include_dep @pypi//protobuf
 
 
-async def test_read_sandbox_without_mutation(cluster: Cluster) -> None:
+async def test_read_sandbox_without_mutation(cluster: SandboxCluster) -> None:
     before = deepcopy(cluster.fake.objects)
     view = await cluster.inventory.get(SANDBOX)
     assert view.uid == SANDBOX_UID
@@ -29,7 +29,7 @@ async def test_read_sandbox_without_mutation(cluster: Cluster) -> None:
     assert cluster.fake.objects == before
 
 
-async def test_sandbox_is_read_without_its_pod(cluster: Cluster) -> None:
+async def test_sandbox_is_read_without_its_pod(cluster: SandboxCluster) -> None:
     view = await cluster.inventory.get_without_pod(SANDBOX)
     assert view.uid == SANDBOX_UID
     assert view.service_account.name == ACCOUNT
@@ -38,7 +38,7 @@ async def test_sandbox_is_read_without_its_pod(cluster: Cluster) -> None:
         await cluster.inventory.get_without_pod("test-missing")
 
 
-async def test_sandbox_is_read_with_its_session_defaults(cluster: Cluster) -> None:
+async def test_sandbox_is_read_with_its_session_defaults(cluster: SandboxCluster) -> None:
     cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["spec"] |= {
         "sessionDefaults": {"harness": "HARNESS_CODEX", "model": "test-model", "setupScript": "printf setup"},
         "bootstrap": "printf boot",
@@ -51,7 +51,7 @@ async def test_sandbox_is_read_with_its_session_defaults(cluster: Cluster) -> No
     assert [sandbox.name for sandbox in await cluster.inventory.list_sandboxes()] == [SANDBOX]
 
 
-async def test_suspended_sandbox_is_not_resumed(cluster: Cluster) -> None:
+async def test_suspended_sandbox_is_not_resumed(cluster: SandboxCluster) -> None:
     cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["spec"]["running"] = False
     cluster.fake.pods.clear()
     before = deepcopy(cluster.fake.objects)
@@ -61,7 +61,7 @@ async def test_suspended_sandbox_is_not_resumed(cluster: Cluster) -> None:
     assert cluster.fake.objects == before
 
 
-async def test_missing_sandbox_is_not_created(cluster: Cluster) -> None:
+async def test_missing_sandbox_is_not_created(cluster: SandboxCluster) -> None:
     before = deepcopy(cluster.fake.objects)
     with pytest.raises(SandboxNotFoundError):
         await cluster.inventory.get("test-missing")
@@ -97,7 +97,7 @@ def running_because(reason: str) -> list[dict[str, str]]:
     ],
 )
 async def test_phase_follows_what_the_controller_records(
-    cluster: Cluster,
+    cluster: SandboxCluster,
     running: bool,
     incarnated: bool,
     deletion: bool,

@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.runner_gateway.commands.db import Session
-from agentplane.sandbox_service.testing.kubernetes import SANDBOX, SANDBOX_UID
+from agentplane.sandboxes.testing.kubernetes import SANDBOX, SANDBOX_UID
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 
 

@@ -6,25 +6,6 @@ package(
 )
 
 py_library(
-    name = "kubernetes",
-    testonly = True,
-    srcs = ["kubernetes.py"],
-    deps = [
-        "//agentplane:sandbox_resource",
-        "//agentplane:subjects",
-        "//agentplane/proto:sandboxes_pb2",
-        "//agentplane/sandbox_service:egress",
-        "//agentplane/sandbox_service:provisioning",
-        "//agentplane/sandboxes:inventory",
-        "//agentplane/testing:fake_apiserver",
-        "//agentplane/workload_auth:principal",
-        "//util:kubernetes",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
     name = "grpc_service",
     testonly = True,
     srcs = ["grpc_service.py"],
@@ -65,11 +46,24 @@ py_library(
 )
 
 py_library(
+    name = "service_provisioning",
+    testonly = True,
+    srcs = ["service_provisioning.py"],
+    deps = [
+        "//agentplane/sandbox_service:egress",
+        "//agentplane/sandbox_service:provisioning",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+    ],
+)
+
+py_library(
     name = "connected_runner",
     srcs = ["connected_runner.py"],
     deps = [
         ":grpc_service",
-        ":kubernetes",
+        ":service_provisioning",
         "//agentplane:grpc_calls",
         "//agentplane:subjects",
         "//agentplane/runner",
@@ -80,6 +74,7 @@ py_library(
         "//agentplane/runner_gateway/testing:grpc_service",
         "//agentplane/runner_gateway/testing:resources",
         "//agentplane/sandbox_service:client",
+        "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
         "//util/testing:sqlalchemy_engines",
         "@pypi//kubernetes_asyncio",

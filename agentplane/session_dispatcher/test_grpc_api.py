@@ -13,7 +13,7 @@ from agentplane.grpc_calls import dial
 from agentplane.grpc_serving import serving
 from agentplane.proto import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import Sandbox
-from agentplane.sandbox_service.testing.kubernetes import OWNER, SANDBOX, SANDBOX_UID, Cluster
+from agentplane.sandboxes.testing.kubernetes import OWNER, SANDBOX, SANDBOX_UID, SandboxCluster
 from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.grpc_api import Resources, add_service
 from agentplane.session_dispatcher.runner_client import RunnerClient
@@ -36,7 +36,11 @@ type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
 
 @pytest.fixture
 async def stub(
-    cluster: Cluster, engine: AsyncEngine, sandboxes: SandboxWatch, runner_client: RunnerClient, ended: EndedDispatches
+    cluster: SandboxCluster,
+    engine: AsyncEngine,
+    sandboxes: SandboxWatch,
+    runner_client: RunnerClient,
+    ended: EndedDispatches,
 ) -> AsyncIterator[Dispatcher]:
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
@@ -207,7 +211,7 @@ async def test_a_session_cannot_be_opened_in_a_sandbox_that_does_not_exist(stub:
 
 
 async def test_an_interrupt_is_delivered_to_a_ready_runner_and_otherwise_nothing_happens(
-    stub: Dispatcher, cluster: Cluster, runner: tuple[ScriptedRunner, str], sandboxes: SandboxWatch
+    stub: Dispatcher, cluster: SandboxCluster, runner: tuple[ScriptedRunner, str], sandboxes: SandboxWatch
 ) -> None:
     request = pb.InterruptTurnRequest(command_id="interrupt", session_id=SESSION, sandbox=SANDBOX, turn_id="test-turn")
     set_sandbox(cluster, ready=False)

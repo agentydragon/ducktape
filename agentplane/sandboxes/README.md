@@ -5,3 +5,5 @@ Runner Gateway, the app and the Notification Service. Kubernetes holds all Sandb
 reads a Sandbox and its Pod; `SandboxInventory` also creates (idempotently, by a recorded create intent),
 guards `spec.running` patches by UID and resourceVersion, and starts deletion of a suspended Sandbox;
 `kubernetes_views` derives a Sandbox's phase from its status.
+
+`testing/kubernetes.py` provides a local API server and a seeded `SandboxCluster` for integration tests.

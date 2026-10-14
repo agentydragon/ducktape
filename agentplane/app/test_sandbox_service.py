@@ -24,7 +24,7 @@ from agentplane.runner.testing import launches
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandbox_service.testing.connected_runner import authenticated_service
-from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster, kubernetes
+from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster, sandbox_cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 
 # gazelle:include_dep @pypi//protobuf
@@ -33,8 +33,8 @@ from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 
 
 @pytest.fixture
-async def cluster() -> AsyncIterator[Cluster]:
-    async with kubernetes() as started:
+async def cluster() -> AsyncIterator[SandboxCluster]:
+    async with sandbox_cluster() as started:
         yield started
 
 
@@ -45,13 +45,13 @@ def register_attached_sessions() -> bool:
 
 
 @pytest.fixture(autouse=True)
-async def discover(cluster: Cluster, live_index: LiveIndex) -> None:
+async def discover(cluster: SandboxCluster, live_index: LiveIndex) -> None:
     live_index.sandboxes[SANDBOX] = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
     live_index.pods[SANDBOX] = await k8s_client.CoreV1Api(cluster.api).read_namespaced_pod(SANDBOX, SANDBOX_NAMESPACE)
 
 
 async def test_production_bridge_archives_native_evidence_across_bounded_service_copies(
-    cluster: Cluster,
+    cluster: SandboxCluster,
     live_index: LiveIndex,
     tmp_path: Path,
     event_logs: SeededEventLogStore,
@@ -109,7 +109,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
 
 
 async def test_stopped_service_never_falls_back_to_reachable_runner(
-    cluster: Cluster, live_index: LiveIndex, tmp_path: Path, runner: Runner, service_history_db_url: str
+    cluster: SandboxCluster, live_index: LiveIndex, tmp_path: Path, runner: Runner, service_history_db_url: str
 ) -> None:
     async with authenticated_service(
         cluster, runner, tmp_path / "service-token", database_url=service_history_db_url

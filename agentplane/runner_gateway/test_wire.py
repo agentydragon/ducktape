@@ -6,7 +6,7 @@ import pytest
 import pytest_bazel
 
 from agentplane.runner_gateway import wire
-from agentplane.sandbox_service.testing.kubernetes import DESTINATION
+from agentplane.sandboxes.testing.kubernetes import DESTINATION
 
 
 def test_wire_preserves_explicit_empty_overrides() -> None:

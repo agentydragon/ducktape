@@ -46,7 +46,7 @@ from agentplane.runner.sandbox_launch import SandboxIdentity
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandbox_service.testing.connected_runner import authenticated_service
-from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, kubernetes
+from agentplane.sandboxes.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, sandbox_cluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -102,7 +102,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
         {"agentplane": echo_executor},
         dispatches=ChangeSignal(),
     )
-    async with action_service, kubernetes() as cluster, asyncio.timeout(60):
+    async with action_service, sandbox_cluster() as cluster, asyncio.timeout(60):
         for token, account in [("owner-token", owner), ("delegate-token", delegate), ("other-token", other)]:
             cluster.fake.tokens[token] = TokenVerdict(
                 username=f"system:serviceaccount:{account.namespace}:{account.name}",
