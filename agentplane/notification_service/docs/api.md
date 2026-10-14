@@ -156,13 +156,13 @@ or separate service endpoint. The request view exposes its owner to trusted read
 ordinary argument redaction. Notifications checks that owner against the authenticated subscriber
 before accepting a subscription and on every source poll. Agent tokens are never retained or forwarded.
 
-The worker uses rotating, audience-specific projected service tokens. It is allowlisted at the Sandbox
-Service and at the Runner Gateway, which validates sandbox UID and account binding and owns all runner
-access, and is a History Service reader.
+The worker uses rotating, audience-specific projected service tokens. It is allowlisted at the Runner
+Gateway, which validates sandbox UID and account binding and serves read-only Session validation, and
+is a History Service reader. Notice delivery goes through the Session Dispatcher.
 Notification Kubernetes RBAC is TokenReview plus `get` on Sandboxes in the Sandbox namespace, which
 resolves a destination's UID and owner. Cilium allows egress proxy/app → notifications, the
-staging GitHub webhook route → notifications, notifications → Actions/Sandbox Service/Runner Gateway/History
-Service/PostgreSQL/API server/GitHub API, and no notifications → runner path.
+staging GitHub webhook route → notifications, notifications → Actions/Runner Gateway/Session
+Dispatcher/History Service/PostgreSQL/API server/GitHub API, and no notifications → runner path.
 
 ## GitHub webhook ingestion and matching
 

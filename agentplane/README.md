@@ -89,8 +89,8 @@ flowchart TB
     dispatcher -.->|send wake: guarded Sandbox patch, gated off| k8s
     dispatcher -->|queued commands, state, terminal-event notifications| dispatcher_db
     dispatcher_db[(session_dispatcher DB)]
-    dispatcher -.->|per-command Runner RPCs through the runner proxy; sender cutover pending| gw
-    notif -->|queued SubmitInput; configured Dispatcher failures never fall back| dispatcher
+    dispatcher -->|per-command Runner RPCs through the runner proxy| gw
+    notif -->|every notice via SubmitInput; no direct Gateway fallback| dispatcher
     notif -->|command receipts| hs
     notif --> actions
     notif -->|REST| github

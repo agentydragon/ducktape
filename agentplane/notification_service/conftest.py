@@ -10,6 +10,7 @@ from agentplane.action_service.testing.fixtures import action_database_template,
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.fixtures import service_database_template
 from agentplane.notification_service.database_migrate import RUNNER
+from agentplane.notification_service.dispatcher_client import SessionDispatcherClient
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings, QuotaSettings
 from agentplane.notification_service.sources.actions import ActionServiceClient
@@ -20,6 +21,7 @@ from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandboxes.reader import SandboxReader
+from agentplane.session_dispatcher.database_migrate import RUNNER as DISPATCHER_MIGRATIONS
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
 from util.testing.postgres_fixtures import (
     database_clones,
@@ -38,6 +40,19 @@ from util.testing.sqlalchemy_engines import managed_async_engine
 # gazelle:include_dep @pypi//psycopg
 
 database_template, db_url = migrated_database_fixtures(RUNNER, drivername="postgresql+asyncpg")
+dispatcher_database_template, dispatcher_db_url = migrated_database_fixtures(
+    DISPATCHER_MIGRATIONS, drivername="postgresql+asyncpg"
+)
+
+
+@pytest.fixture
+async def dispatcher_engine(
+    dispatcher_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones
+) -> AsyncIterator[AsyncEngine]:
+    async with managed_async_engine(
+        create_async_engine(database_clones.clone(dispatcher_database_template, drivername="postgresql+asyncpg"))
+    ) as engine:
+        yield engine
 
 
 @pytest.fixture
@@ -70,6 +85,7 @@ def service(store: Store) -> Service:
         github=None,
         gateway=create_autospec(RunnerGatewayClient),
         history=create_autospec(HistoryServiceClient),
+        dispatcher=create_autospec(SessionDispatcherClient),
         notice_debounce=NoticeDebounceSettings(),
         stale_confirmation_s=30,
         operator_reader_account=None,

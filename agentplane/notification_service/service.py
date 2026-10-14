@@ -9,7 +9,6 @@ import aiohttp
 import grpc
 import httpx
 from kubernetes_asyncio import client as k8s_client
-from more_itertools import first
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -36,7 +35,7 @@ from agentplane.notification_service.sources.github.client import (
 from agentplane.notification_service.sources.github.source import GitHub
 from agentplane.notification_service.sources.github.state import RefreshDeferredError
 from agentplane.notification_service.store import ClaimLostError, ConflictError, QuotaError, Store
-from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.proto import event_log_pb2, session_dispatcher_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxRunner
 from agentplane.sandboxes.errors import SandboxNotFoundError
@@ -93,7 +92,7 @@ class Service:
         *,
         gateway: RunnerGatewayClient,
         history: HistoryServiceClient,
-        dispatcher: SessionDispatcherClient | None = None,
+        dispatcher: SessionDispatcherClient,
         notice_debounce: NoticeDebounceSettings,
         stale_confirmation_s: float,
         operator_reader_account: str | None,
@@ -152,18 +151,9 @@ class Service:
         # TODO: Observe command-scoped admission outcomes by command ID in the History Service, rather
         # than checkpointing the shared conversation journal.
         # The runner's journal or History Service watermark may be ahead of the copied cursor.
-        dispatcher = self.dispatcher
-        if dispatcher is None:
-            live = first(
-                (session for session in await runner.list_sessions() if session.session_id == claim.session_id), None
-            )
-            if live is None:
-                raise DestinationRejectedError
-            last_cursor = live.last_cursor
-        else:
-            # The Dispatcher can accept work while a Sandbox is suspended or its harness is stopped.
-            # History is the durable cursor watermark; the Dispatcher owns the delivery wait.
-            last_cursor = (await self.history.read_session_events(claim.session_id, limit=1)).last_cursor
+        # The Dispatcher can accept work while a Sandbox is suspended or its harness is stopped.
+        # History is the durable cursor watermark; the Dispatcher owns the delivery wait.
+        last_cursor = (await self.history.read_session_events(claim.session_id, limit=1)).last_cursor
         if last_cursor < notice.runner_cursor:
             raise ConflictError("runner cursor regressed")
         copied = notice.runner_cursor
@@ -196,36 +186,23 @@ class Service:
         current = await self.store.notice(claim, prepare=False)
         if current is None or current.command_id != notice.command_id or current.confirmed or current.error:
             return
-        # Preserve the legacy gateway order: a stopped harness means there was no send
-        # attempt, so an acknowledgement before resume can still suppress this notice.
-        if dispatcher is None and (live is None or live.harness_state != runner_pb2.HARNESS_STATE_RUNNING):
-            return
         if not current.admitted and (current.attempted or await self.store.attempt(claim, current)):
             # Its admission and confirmation are copied by a later claim, once the History Service has them.
-            if dispatcher is None:
-                await self.gateway.command(
-                    runner.destination,
-                    claim.session_id,
-                    command_pb2.Command(
-                        command_id=str(current.command_id), submit_input=command_pb2.SubmitInput(text=current.text)
-                    ),
-                )
-            else:
-                dispatch = await dispatcher.submit_input(
-                    sandbox=runner.destination.sandbox,
-                    session_id=claim.session_id,
-                    command_id=str(current.command_id),
-                    text=current.text,
-                )
-                if dispatch.state in {
-                    session_dispatcher_pb2.DELIVERY_STATE_NO_OP,
-                    session_dispatcher_pb2.DELIVERY_STATE_FAILED,
-                    session_dispatcher_pb2.DELIVERY_STATE_CANCELLED_IN_DISPATCHER,
-                    session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
-                }:
-                    state = session_dispatcher_pb2.DeliveryState.Name(dispatch.state)
-                    reason = dispatch.reason if dispatch.HasField("reason") else "no reason provided"
-                    await self.store.delivery_failed(claim, current, f"Dispatcher {state}: {reason}")
+            dispatch = await self.dispatcher.submit_input(
+                sandbox=runner.destination.sandbox,
+                session_id=claim.session_id,
+                command_id=str(current.command_id),
+                text=current.text,
+            )
+            if dispatch.state in {
+                session_dispatcher_pb2.DELIVERY_STATE_NO_OP,
+                session_dispatcher_pb2.DELIVERY_STATE_FAILED,
+                session_dispatcher_pb2.DELIVERY_STATE_CANCELLED_IN_DISPATCHER,
+                session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
+            }:
+                state = session_dispatcher_pb2.DeliveryState.Name(dispatch.state)
+                reason = dispatch.reason if dispatch.HasField("reason") else "no reason provided"
+                await self.store.delivery_failed(claim, current, f"Dispatcher {state}: {reason}")
 
     async def get_notice_due_at(self, claim: Inbox) -> datetime | None:
         pending = await self.store.get_pending_entry_times(claim)

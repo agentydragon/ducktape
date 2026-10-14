@@ -36,15 +36,13 @@ async def serve(settings: Settings) -> None:
             make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
         )
         stack.push_async_callback(engine.dispose)
-        dispatcher = None
-        if settings.session_dispatcher is not None:
-            dispatcher_channel = dial(settings.session_dispatcher.target)
-            stack.push_async_callback(dispatcher_channel.close)
-            dispatcher = SessionDispatcherClient(
-                dispatcher_channel,
-                token_file=settings.session_dispatcher.token_file,
-                request_timeout_s=settings.session_dispatcher.request_timeout_s,
-            )
+        dispatcher_channel = dial(settings.session_dispatcher.target)
+        stack.push_async_callback(dispatcher_channel.close)
+        dispatcher = SessionDispatcherClient(
+            dispatcher_channel,
+            token_file=settings.session_dispatcher.token_file,
+            request_timeout_s=settings.session_dispatcher.request_timeout_s,
+        )
         async with (
             k8s_client.ApiClient(await kubernetes_configuration(None)) as kube,
             httpx.AsyncClient(

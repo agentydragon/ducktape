@@ -701,11 +701,9 @@ flowchart TD
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: the controller stops reading the blocking Quiesce shape]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
-    SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
+    SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     SANDBOX_SERVICE_REMOVE[Blocked: remove the Sandbox Service]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
-    NOTIFICATIONS_VIA_DISPATCHER[Blocked: notifications send through the Session Dispatcher]
-    NOTIFICATION_GATEWAY_SEND_REMOVE[Blocked: remove the Notification Service's pre-activation gateway command path]
     RESUME_CREDENTIALS_VALID[Blocked: grants and tokens still valid after a long suspension]
     SUSPENDED_COMPOSER[Blocked: the composer stays enabled while a Session is suspended]
     THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
@@ -721,7 +719,6 @@ flowchart TD
     HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
-    NOTIFICATIONS_VIA_DISPATCHER --> SESSION_ACTIVITY_STREAM
     DISPATCHER_WAKE_ACTIVATION --> SUSPENDED_COMPOSER
     APP_DISPATCHER_ACTIVATION --> SUSPENDED_COMPOSER
     SESSION_REVIVE --> RESUME_CREDENTIALS_VALID
@@ -734,9 +731,7 @@ flowchart TD
     APP_SESSION_DEFAULTS --> APP_SESSION_OPEN_VIA_DISPATCHER
     APP_DISPATCHER_ACTIVATION --> APP_GATEWAY_SEND_REMOVE
     APP_SESSION_OPEN_VIA_DISPATCHER --> APP_GATEWAY_SEND_REMOVE
-    NOTIFICATIONS_VIA_DISPATCHER --> NOTIFICATION_GATEWAY_SEND_REMOVE
     APP_GATEWAY_SEND_REMOVE --> PROXY_START_METHODS_DISPATCHER_ONLY
-    NOTIFICATION_GATEWAY_SEND_REMOVE --> PROXY_START_METHODS_DISPATCHER_ONLY
     STATE_VOLUME_LAYOUT_ROLLOUT --> STATE_VOLUME_LAYOUT_FALLBACK_REMOVE
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE
     RUNNER_HEARTBEAT_SPLIT[Candidate: runner-only heartbeat type]
@@ -1022,14 +1017,13 @@ be exercised on `agentplane-testing` without a held-back flush.
 
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
-**Blocked on `NOTIFICATIONS_VIA_DISPATCHER`.** The History Service folds `idle_since` into
-`SessionSummary` (the turn and harness events that start and end idleness), and the app shows it.
-What is left is the second listener: the notification service reads the Session's summary after each
-`WatchSessionSummaries` notice and picks its own moment, so it delivers after a minute of idleness,
-at most ten minutes after the first pending entry, through `NOTIFICATIONS_VIA_DISPATCHER`. Its
-`NoticeDebounceSettings` quiet window stays about inbox entry times until then. `idle_since` is
-display and delivery timing: suspension reads the runner's busy facts (the connection Lease facts) and
-never this field. Per-Session idle times stay out of Kubernetes.
+**Unscheduled.** The History Service folds `idle_since` into `SessionSummary` (the turn and harness
+events that start and end idleness), and the app shows it. The notification service currently chooses
+when to deliver from its existing quiet window and sends every notice through the Session Dispatcher.
+What remains is a second listener: read the Session summary after each `WatchSessionSummaries` notice
+and choose to deliver after a minute of idleness, at most ten minutes after the first pending entry.
+`idle_since` is display and delivery timing: suspension reads the runner's busy facts (the connection
+Lease facts) and never this field. Per-Session idle times stay out of Kubernetes.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
@@ -1103,27 +1097,6 @@ ResumeSession branches; make Dispatcher configuration required. Delete obsolete 
 queue/progress adaptations and tests. Preserve independently used read-only Gateway credentials and
 routes until their callers migrate under `GATEWAY_WRAPPER_RETIRE`; do not delete all gateway access
 merely because command sends moved.
-
-### `NOTIFICATIONS_VIA_DISPATCHER` — notifications send through the Session Dispatcher
-
-**Assigned to the Sandbox Service worker; recheck the #10465 image pin before activation.**
-The accepting image was verified pinned in testing and staging on 2026-10-14.
-The optional sender implementation has merged; this node is the manifest activation and acceptance. The Notification Service sends its
-notices through the Session Dispatcher and keeps choosing when to deliver from its existing quiet window.
-It submits the already persisted notice ID and text, treats queued as
-acceptance rather than runner admission, and keeps reading admission/confirmation from History Service.
-The optional endpoint/token setting is code-first: pin an image that accepts the complete setting before
-adding it to the manifest. Once configured, a Dispatcher error never falls back to Runner Gateway.
-The app's separate send activation is tracked by `APP_DISPATCHER_ACTIVATION`; it is not a prerequisite
-for this Notification Service route.
-
-### `NOTIFICATION_GATEWAY_SEND_REMOVE` — remove the pre-activation gateway command path
-
-**Blocked on `NOTIFICATIONS_VIA_DISPATCHER` and healthy rollout of its Dispatcher config.** After the
-manifest routes sends to a pinned, accepting image, remove the old direct `SubmitCommand` branch and make
-the Dispatcher endpoint required. Keep Runner Gateway only for the Notification Service's read-only
-`ListSessions` validation. This cleanup must land before `PROXY_START_METHODS_DISPATCHER_ONLY` closes command
-RPC authorization to the Notification Service.
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
 
@@ -1285,7 +1258,6 @@ flowchart TD
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
     APP_SESSION_DEFAULTS --> GATEWAY_WRAPPER_RETIRE
     APP_GATEWAY_SEND_REMOVE --> GATEWAY_WRAPPER_RETIRE
-    NOTIFICATION_GATEWAY_SEND_REMOVE --> GATEWAY_WRAPPER_RETIRE
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
@@ -1300,7 +1272,7 @@ and `CreateSessionRequest` loses its field mask.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
-**Blocked on `APP_GATEWAY_SEND_REMOVE`, `NOTIFICATION_GATEWAY_SEND_REMOVE` and `GATEWAY_WRAPPER_RETIRE`,
+**Blocked on `APP_GATEWAY_SEND_REMOVE` and `GATEWAY_WRAPPER_RETIRE`,
 with their caller images pinned in both environments.** Today
 the gateway's runner proxy (`runner_gateway/runner_proxy.py`) lets every configured caller account call
 every runner method except `Quiesce` and `Seal`, and the gateway wrapper calls `OpenSession` too. The
@@ -1326,7 +1298,7 @@ migration and `Command` stays as that event's field type.
 
 ### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
 
-**Blocked on `APP_SESSION_DEFAULTS`, `APP_GATEWAY_SEND_REMOVE` and `NOTIFICATION_GATEWAY_SEND_REMOVE`.**
+**Blocked on `APP_SESSION_DEFAULTS` and `APP_GATEWAY_SEND_REMOVE`.**
 Audit and migrate every remaining wrapper read caller (including notification `ListSessions`) to
 History Service or the runner proxy, then pin those caller images before deleting the RPC receiver.
 App and notification command sends go through Dispatcher; read-only calls may use the proxy. Delete the

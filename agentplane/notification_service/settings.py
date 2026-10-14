@@ -67,7 +67,7 @@ class SandboxServiceSettings(BaseModel):
 
 class RunnerGatewaySettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    target: str = Field(description="Runner Gateway gRPC host:port for session access and runner commands.")
+    target: str = Field(description="Runner Gateway gRPC host:port for read-only session validation.")
     control_target: str = Field(
         description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
         "`{sandbox}-control.{namespace}.svc:8080`. Lifecycle calls go there, to the replica holding the "
@@ -153,8 +153,7 @@ class Settings(YamlFileSettings):
     #   requires the key, so the manifest may drop it only after this image is pinned.
     sandbox_service: SandboxServiceSettings | None = None
     runner_gateway: RunnerGatewaySettings
-    # Staged after the accepting image is pinned. Once set, notice sends use only this path.
-    session_dispatcher: SessionDispatcherSettings | None = None
+    session_dispatcher: SessionDispatcherSettings
     history_service: HistoryServiceSettings
     token_audience: str = Field(
         default=TOKEN_AUDIENCE, description="Audience required when TokenReview authenticates callers of this API."

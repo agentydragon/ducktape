@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import AsyncMock, create_autospec
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import aiohttp
@@ -305,7 +305,6 @@ async def _dispatcher_notice(service: Service) -> tuple[Inbox, SubscriptionView,
     await service.store.record(claim, source, events(1))
     notice = await service.store.notice(claim, prepare=True)
     assert notice is not None
-    service.dispatcher = create_autospec(SessionDispatcherClient, instance=True)
     cast(AsyncMock, service.history.read_session_events).return_value = history_service_pb2.ReadSessionEventsResponse(
         last_cursor=0
     )
@@ -329,32 +328,19 @@ def _sandbox_runner(harness_state: str = "HARNESS_STATE_RUNNING") -> SandboxRunn
     )
 
 
-async def test_stopped_gateway_harness_leaves_notice_unattempted_for_ack_before_resume(service: Service) -> None:
-    subscription = await service.store.subscribe(PRINCIPAL, BODY)
-    claim, source = await claimed(service.store)
-    await service.store.record(claim, source, events(1))
-    notice = await service.store.notice(claim, prepare=True)
-    assert notice is not None
+async def test_ack_before_dispatch_suppresses_notice_even_when_harness_is_stopped(service: Service) -> None:
+    claim, subscription, notice = await _dispatcher_notice(service)
     runner = _sandbox_runner("HARNESS_STATE_STOPPED")
-
-    await service.deliver(claim, runner, notice)
-
-    page = await service.store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
-    assert page.notice is not None
-    assert not page.notice.attempted
-    assert page.notice.error is None
-    cast(AsyncMock, runner.list_sessions).assert_awaited_once()
-
     await service.store.acknowledge(PRINCIPAL.account, subscription.inbox_id, notice.through_cursor)
-    cast(AsyncMock, runner.list_sessions).return_value = [
-        runner_pb2.SessionSummary(session_id=BODY.session_id, harness_state="HARNESS_STATE_RUNNING")
-    ]
+
     await service.deliver(claim, runner, notice)
 
     page = await service.store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
     assert page.notice is not None
     assert not page.notice.attempted
     assert page.notice.error == "suppressed: acknowledged before submission"
+    cast(AsyncMock, runner.list_sessions).assert_not_awaited()
+    cast(AsyncMock, service.dispatcher.submit_input).assert_not_awaited()
     cast(AsyncMock, service.gateway.command).assert_not_awaited()
 
 

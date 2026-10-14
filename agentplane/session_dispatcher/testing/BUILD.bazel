@@ -8,6 +8,10 @@ package(
 py_library(
     name = "sandbox_status",
     srcs = ["sandbox_status.py"],
+    visibility = [
+        "//agentplane/notification_service:__pkg__",
+        "//agentplane/session_dispatcher:__pkg__",
+    ],
     deps = [
         "//agentplane:sandbox_resource",
         "//agentplane/sandboxes/testing:kubernetes",

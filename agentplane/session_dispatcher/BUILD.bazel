@@ -18,6 +18,10 @@ py_library(
     name = "database_migrate",
     srcs = ["database_migrate.py"],
     data = ["//agentplane/session_dispatcher/migrations:files"],
+    visibility = [
+        "//agentplane/notification_service:__pkg__",
+        "//agentplane/session_dispatcher:__subpackages__",
+    ],
     deps = [
         ":db",
         "//util:db_migrations",
@@ -92,6 +96,10 @@ py_library(
 py_library(
     name = "main",
     srcs = ["main.py"],
+    visibility = [
+        "//agentplane/notification_service:__pkg__",
+        "//agentplane/session_dispatcher:__subpackages__",
+    ],
     deps = [
         ":delivery",
         ":ended_dispatches",
@@ -156,6 +164,7 @@ py_library(
     name = "settings",
     srcs = ["settings.py"],
     visibility = [
+        "//agentplane/notification_service:__pkg__",
         "//agentplane/session_dispatcher:__subpackages__",
         "//cluster/cdk8s/agentplane:__pkg__",
     ],

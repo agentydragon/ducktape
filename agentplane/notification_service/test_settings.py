@@ -41,6 +41,9 @@ runner_gateway:
 history_service:
   target: history:8080
   token_file: /tokens/history
+session_dispatcher:
+  target: dispatcher:8080
+  token_file: /tokens/dispatcher
 """)
     monkeypatch.setenv(Settings.config_file_env, str(path))
     return path
@@ -65,7 +68,9 @@ notice_debounce:
     assert str(settings.actions.url) == "http://actions/"
     assert settings.actions.token_file == Path("/tokens/actions")
     assert settings.runner_gateway.command_admission_timeout_s == 20
-    assert settings.session_dispatcher is None
+    assert settings.session_dispatcher == SessionDispatcherSettings(
+        target="dispatcher:8080", token_file=Path("/tokens/dispatcher"), request_timeout_s=15
+    )
     assert settings.stale_inbox_confirmation_s == 30
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__INBOXES_PER_ACCOUNT", "18")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__ACTIVE_SUBSCRIPTIONS_PER_INBOX", "36")
@@ -86,13 +91,23 @@ notice_debounce:
         Settings(_cli_parse_args=False)
 
 
-def test_dispatcher_configuration_is_optional_but_complete_when_present(settings_file: Path) -> None:
-    with settings_file.open("a") as file:
-        file.write("session_dispatcher:\n  target: dispatcher:8080\n")
+def test_dispatcher_configuration_is_required_and_complete(settings_file: Path) -> None:
+    configured = settings_file.read_text()
+    settings_file.write_text(
+        configured.replace("session_dispatcher:\n  target: dispatcher:8080\n  token_file: /tokens/dispatcher\n", "")
+    )
     with pytest.raises(ValidationError, match="Field required"):
         Settings(database_url="postgresql://unused", _cli_parse_args=False)
-    with settings_file.open("a") as file:
-        file.write("  token_file: /tokens/dispatcher\n  request_timeout_s: 8\n")
+
+    settings_file.write_text(configured.replace("  token_file: /tokens/dispatcher", ""))
+    with pytest.raises(ValidationError, match="Field required"):
+        Settings(database_url="postgresql://unused", _cli_parse_args=False)
+
+    settings_file.write_text(
+        configured.replace(
+            "  token_file: /tokens/dispatcher", "  token_file: /tokens/dispatcher\n  request_timeout_s: 8"
+        )
+    )
     settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
     assert settings.session_dispatcher == SessionDispatcherSettings(
         target="dispatcher:8080", token_file=Path("/tokens/dispatcher"), request_timeout_s=8

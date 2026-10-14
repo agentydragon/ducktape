@@ -1,9 +1,9 @@
 # Notification Service
 
 Standalone Actions and GitHub App subscriptions and durable session inboxes. The service reads Actions history,
-reads destination Sandboxes from their Sandbox resources, sends runner commands through the Runner Gateway, and
-reads command receipts from the Session's runner entries in the History Service. It does not depend on the integration app or connect
-directly to runners.
+reads destination Sandboxes from their Sandbox resources, validates Sessions through the read-only Runner Gateway,
+sends every runner notice through the Session Dispatcher, and reads command receipts from the Session's runner
+entries in the History Service. It does not depend on the integration app or connect directly to runners.
 
 Agents subscribe with an explicit destination/session and an idempotence key, then retrieve stored
 payloads when notified. Reads are non-destructive; acknowledgement explicitly advances the handled
@@ -29,7 +29,7 @@ History Service lags the runner's journal, so a retry never precedes an admissio
 ## Running and deployment
 
 Bazel targets: `:server`, `:migrate`, `:image`, `:migration_image`. The service needs its own PostgreSQL
-database, Actions, Runner Gateway and History Service endpoints, projected
+database, Actions, Runner Gateway, History Service and Session Dispatcher endpoints, projected
 service-account tokens, and Kubernetes read access to Sandboxes.
 
 Run the image-coupled migration before starting workers. Use published server/migration image tags
@@ -44,11 +44,16 @@ unknown keys fail startup. Environment variables override YAML using `__` for ne
 [settings.py](settings.py) defines the configuration fields and their descriptions.
 Configuration changes require a service restart.
 
-`actions` contains `url` and `token_file`; `runner_gateway` the Runner Gateway `target`, `control_target` and `token_file`;
-`history_service` its `target` and `token_file`. Each service checks its own token audience,
+`actions` contains `url` and `token_file`; `runner_gateway` the read-only session-validation `target`,
+`control_target` and `token_file`; `history_service` and `session_dispatcher` each contain a `target` and
+`token_file` (`request_timeout_s` is optional for both). The Dispatcher setting is required. Each service checks its own token audience,
 so each token file holds a token projected for that service. Token paths refer to rotating projected ServiceAccount tokens, not static secrets. Actions rereads its
 token file for each request. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed
 environment variable rather than putting the DSN in the ConfigMap.
+
+The service persists a notice's stable command ID before calling `SubmitInput`. A queued response means
+the Dispatcher owns the retry; it is not a runner-admission receipt. The service reads admission and
+confirmation from History Service, and a Dispatcher error never falls back to a direct Runner Gateway send.
 
 The deployment mounts validated settings from its ConfigMap. Roll the application image and configuration
 together because their structure is versioned with the code.
