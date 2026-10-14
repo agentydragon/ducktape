@@ -43,6 +43,10 @@ class AppSettingsConfig(YamlFileSettings):
         description="PolicySets every new Sandbox is bound to. The app creates, suspends, resumes and deletes "
         "Sandboxes through Kubernetes itself."
     )
+    session_dispatcher_open_sessions: bool = Field(
+        default=False,
+        description="Send new Session openings to the Dispatcher. Enable only after the accepting app image is pinned.",
+    )
     kubernetes_grants: dict[str, KubernetesGrant] = Field(
         default_factory=dict,
         description="The deployment's Kubernetes grant catalog, which the manifest generator expands into PolicySets.",
@@ -75,10 +79,6 @@ class Settings(AppSettingsConfig):
         default=None,
         min_length=1,
         description="Optional Session Dispatcher gRPC host:port for Thread commands. Leave unset until the app image is pinned.",
-    )
-    session_dispatcher_open_sessions: bool = Field(
-        default=False,
-        description="Send new Session openings to the Dispatcher. Enable only after the accepting app image is pinned.",
     )
     runner_gateway_control_target: str = Field(
         min_length=1,

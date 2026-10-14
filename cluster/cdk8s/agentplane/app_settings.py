@@ -51,8 +51,9 @@ def settings(
     public_coder_policy_sets: list[str],
     default_policy_sets: Set[str],
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
+    session_dispatcher_open_sessions: bool = False,
 ) -> AppSettingsConfig:
-    return AppSettingsConfig(
+    config = AppSettingsConfig(
         models=ModelCatalog(
             models=[
                 ModelOption(
@@ -107,4 +108,9 @@ def settings(
         # Asked for each sandbox's recent decisions; the page shows the rules alone when it does not answer.
         egress_admin_url=AnyHttpUrl(egress.admin(namespace).url),
         action_federation=action_federation,
+    )
+    return (
+        config.model_copy(update={"session_dispatcher_open_sessions": True})
+        if session_dispatcher_open_sessions
+        else config
     )
