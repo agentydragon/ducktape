@@ -9,6 +9,7 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from agentplane import sandbox_resource
 from agentplane.grpc_calls import dial
 from agentplane.grpc_serving import serving
 from agentplane.proto import session_dispatcher_pb2, session_dispatcher_pb2_grpc
@@ -250,6 +251,12 @@ async def test_an_interrupt_is_delivered_to_a_ready_runner_and_otherwise_nothing
     await wait_for_sandbox(sandboxes, lambda sandbox: not sandbox.ready)
     unready = await stub.InterruptTurn(request, metadata=BEARER)
     assert (unready.state, unready.reason) == (pb.DELIVERY_STATE_NO_OP, "sandbox_not_ready")
+    set_sandbox(cluster, ready=False, running=False, wake_on_send=True)
+    await wait_for_sandbox(sandboxes, lambda sandbox: sandbox.suspended and sandbox.spec.wake_on_send)
+    suspended = await stub.InterruptTurn(request, metadata=BEARER)
+    assert (suspended.state, suspended.reason) == (pb.DELIVERY_STATE_NO_OP, "sandbox_suspended")
+    assert cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]["spec"]["running"] is False
+    assert runner[0].calls == []
     set_sandbox(cluster, ready=True)
     await wait_for_sandbox(sandboxes, lambda sandbox: sandbox.ready)
     delivered = await stub.InterruptTurn(request, metadata=BEARER)

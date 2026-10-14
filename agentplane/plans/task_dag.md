@@ -699,7 +699,9 @@ flowchart TD
     APP_SANDBOX_WRITES[Blocked: the app creates, deletes, suspends and resumes Sandboxes itself]
     SANDBOX_SERVICE_REMOVE[Blocked: remove the Sandbox Service]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
-    DISPATCHER_WAKE_ON_SEND[Blocked: a send wakes a suspended Sandbox]
+    DISPATCHER_WAKE_ON_SEND[In flight: authenticated sends wake a suspended Sandbox]
+    DISPATCHER_WAKE_ABUSE_LIMITS[Decision: per-sender wake limits before enabling wake config]
+    DISPATCHER_WAKE_FAILURE_FEEDBACK[Blocked: bounded, visible outcome when a wake cannot restore a runner]
     APP_SENDS_VIA_DISPATCHER[Blocked: the app sends through the Session Dispatcher]
     NOTIFICATIONS_VIA_DISPATCHER[Blocked: notifications send through the Session Dispatcher]
     RUNNER_PROXY_SENDER_RESTRICT[Blocked: only system callers send to the runner directly]
@@ -1048,6 +1050,10 @@ template as it is now, possibly on a new image, and resume each harness as
 a new incarnation of the same Session and history. Incarnation N+1 is created only after N has fully
 terminated, and the runner treats an interrupted Session setup as resumable. Test
 revival after a long stop, a refused incompatible state PVC, and concurrent revive requests.
+The earlier requirement to revive only Sessions with pending work remains unverified: a Sandbox wake
+restores the runner workload, and the `DISPATCHER_WAKE_ON_SEND` two-send test does not exercise a dormant
+native Session. Inspect the runner's new-incarnation restore path and cover the selected behavior with
+both queued and dormant Sessions before claiming selective revival.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
@@ -1221,19 +1227,36 @@ not been merged or reconciled, so those deployment checks remain outstanding.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `DISPATCHER_WAKE_ON_SEND` — a send wakes a suspended Sandbox
+### `DISPATCHER_WAKE_ON_SEND` — authenticated sends wake an opted-in Sandbox
 
-**Blocked on `DISPATCHER_CORE`, `SESSION_REVIVE` and `SANDBOX_WRITE_HELPER`.** A message for a suspended Sandbox's
-Session resumes the Sandbox by patching the Sandbox CR with the shared wake helper, then delivers once `Ready` holds for the new
-incarnation, keying every attempt to the incarnation UID; a delivery refused by a sealing runner
-with `ABORTED` (the gateway flattens runner codes it does not list to `FAILED_PRECONDITION`, so it forwards this one) is redelivered after the resume. Which senders may wake: a user message and
-a notification, not an agent's message unless `AGENT_MESSAGE_RECEPTION` decides so. `InterruptTurn` and
-`StopRunnerSession` never wake a Sandbox; they are no-ops on a suspended one. Also here:
-rate limits and per-sender quotas, since a resume starts a Pod or VM and every harness; resuming
-only the Sessions that have pending work; a bounded wait with a visible reason when the volume's
-node is down or full; and `spec.wakeOnSend: false`, which holds a Sandbox suspended (sends queue
-and do not wake it) and doubles as the feature gate. Deletion beats everything. Test a message
-to a suspended Sandbox, one arriving while it seals, a failed revival and a resume storm.
+**In flight (Codex, 2026-10-14; [PR #10463](https://github.com/agentydragon/ducktape/pull/10463)).** The
+Dispatcher persists wake eligibility from the authenticated caller identity, never from the RPC payload, and
+only wakes when `spec.wakeOnSend: true`; both eligibility configuration and the Sandbox field default off. It
+uses the shared guarded resume helper and persists the old incarnation before patching, so a crash or transient
+API failure retries safely; delivery waits until a different incarnation is `Ready`. This covers authenticated
+`OpenSession` and user/notification commands. `InterruptTurn` and `StopRunnerSession` never wake, and deletion
+wins. Only durable queued command/opening rows trigger a Sandbox wake. Acceptance covers a pending send,
+concurrent sends sharing one wake, an `ABORTED` sealing reply and redelivery, default-off behavior, transient
+patch failure, and restart between recording the wake and patching. Before enabling configuration, pin the accepting Dispatcher image and the
+Sandbox Controller image carrying the `wakeOnSend` CRD schema, and apply the Dispatcher Sandbox `patch` grant
+([PR #10462](https://github.com/agentydragon/ducktape/pull/10462); merged and Flux-applied in testing and staging,
+parent-verified 2026-10-14). Sender cutover and deployment configuration remain separate.
+
+### `DISPATCHER_WAKE_ABUSE_LIMITS` — choose per-sender send-wake limits
+
+**Decision.** Resuming a Sandbox starts a Pod or VM and its harness, so a sender can impose substantial
+startup work. D4 leaves per-sender rates and quotas open; decide and test the budgets and exhaustion
+behavior for authenticated user and notification identities. This decision does not block landing the
+default-off receiver implementation, but it blocks enabling `wake_caller_accounts` or `spec.wakeOnSend: true`.
+Do not invent limits in the receiver or deployment configuration.
+
+### `DISPATCHER_WAKE_FAILURE_FEEDBACK` — bound and explain a wake that does not restore a runner
+
+**Blocked.** A successful resume patch can still wait indefinitely when the Sandbox Controller cannot
+restore a Ready incarnation, for example when its volume's node is unavailable or full. Choose a bounded
+wait and a visible queued reason for that capacity failure, and cover a failed revival. The default-off wake
+implementation keeps the current `SANDBOX_RESUMING` state while waiting; this follow-up does not block its
+code landing, but it must be resolved before treating wake behavior as complete.
 
 ### `APP_SENDS_VIA_DISPATCHER` — the app sends through the Session Dispatcher
 

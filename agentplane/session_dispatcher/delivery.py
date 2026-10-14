@@ -125,21 +125,45 @@ class Delivery:
 
     async def _start(self, deliveries: asyncio.TaskGroup) -> None:
         now = asyncio.get_running_loop().time()
-        for head in await self.store.heads():
-            if head.session_id in self._delivering or self._retry_at.get(head.command_id, 0) > now:
+        heads = await self.store.heads()
+        active = {head.command_id for head in heads}
+        for key in tuple(self._retry_at):
+            if not key.startswith("opening:") and key not in active:
+                self._clear_retry(key)
+        for head in heads:
+            if head.session_id in self._delivering:
                 continue
             sandbox = self.sandboxes.get_sandbox(head.sandbox_name)
             if sandbox is None or sandbox.metadata.uid != head.sandbox_uid:
                 # Its deletion reaches `_end_gone`.
+                self._clear_retry(head.command_id)
                 continue
             if sandbox.metadata.deletion_timestamp is not None:
+                self._clear_retry(head.command_id)
                 await self.store.note_waiting(head.command_id, Reason.SANDBOX_DELETED)
                 continue
-            if _awaiting_new_incarnation(sandbox, head.wake_from_incarnation):
-                await self.store.note_waiting(head.command_id, Reason.SANDBOX_RESUMING)
+            awaiting_new_incarnation = _awaiting_new_incarnation(sandbox, head.wake_from_incarnation)
+            blocker = delivery_blocker(sandbox)
+            wake_disabled = (
+                head.wake_eligible
+                and not sandbox.spec.wake_on_send
+                and (awaiting_new_incarnation or blocker is Reason.SANDBOX_SUSPENDED)
+            )
+            retry_at = self._retry_at.get(head.command_id)
+            if retry_at is not None and retry_at > now and not wake_disabled:
                 continue
-            if (blocker := delivery_blocker(sandbox)) is not None:
+            self._retry_at.pop(head.command_id, None)
+            if awaiting_new_incarnation:
+                if head.wake_eligible:
+                    # The marker is persisted before the patch for crash safety. Reissue the guarded,
+                    # idempotent patch until the desired state changes or a new incarnation appears.
+                    await self._wake_for_send(head.command_id, sandbox)
+                else:
+                    await self.store.note_waiting(head.command_id, Reason.SANDBOX_RESUMING)
+                continue
+            if blocker is not None:
                 if blocker is Reason.SANDBOX_SUSPENDED and head.operation is Operation.STOP_RUNNER_SESSION:
+                    self._clear_retry(head.command_id)
                     await self.store.settle(
                         head.command_id,
                         from_states={DeliveryState.QUEUED_IN_DISPATCHER},
@@ -212,21 +236,42 @@ class Delivery:
 
     async def _start_openings(self, deliveries: asyncio.TaskGroup) -> None:
         now = asyncio.get_running_loop().time()
-        for opening in await self.store.opening_heads():
+        openings = await self.store.opening_heads()
+        active = {_opening_key(opening.session_id) for opening in openings}
+        for key in tuple(self._retry_at):
+            if key.startswith("opening:") and key not in active:
+                self._clear_retry(key)
+        for opening in openings:
             key = _opening_key(opening.session_id)
-            if opening.session_id in self._delivering or self._retry_at.get(key, 0) > now:
+            if opening.session_id in self._delivering:
                 continue
             sandbox = self.sandboxes.get_sandbox(opening.sandbox_name)
             if sandbox is None or sandbox.metadata.uid != opening.sandbox_uid:
                 # Its deletion reaches `_end_gone`.
+                self._clear_retry(key)
                 continue
             if sandbox.metadata.deletion_timestamp is not None:
+                self._clear_retry(key)
                 await self.store.note_opening_waiting(opening.session_id, Reason.SANDBOX_DELETED)
                 continue
-            if _awaiting_new_incarnation(sandbox, opening.wake_from_incarnation):
-                await self.store.note_opening_waiting(opening.session_id, Reason.SANDBOX_RESUMING)
+            awaiting_new_incarnation = _awaiting_new_incarnation(sandbox, opening.wake_from_incarnation)
+            blocker = delivery_blocker(sandbox)
+            wake_disabled = (
+                opening.wake_eligible
+                and not sandbox.spec.wake_on_send
+                and (awaiting_new_incarnation or blocker is Reason.SANDBOX_SUSPENDED)
+            )
+            retry_at = self._retry_at.get(key)
+            if retry_at is not None and retry_at > now and not wake_disabled:
                 continue
-            if (blocker := delivery_blocker(sandbox)) is not None:
+            self._retry_at.pop(key, None)
+            if awaiting_new_incarnation:
+                if opening.wake_eligible:
+                    await self._wake_for_opening(opening, sandbox)
+                else:
+                    await self.store.note_opening_waiting(opening.session_id, Reason.SANDBOX_RESUMING)
+                continue
+            if blocker is not None:
                 if blocker is Reason.SANDBOX_SUSPENDED and opening.wake_eligible:
                     await self._wake_for_opening(opening, sandbox)
                 else:
@@ -241,6 +286,7 @@ class Delivery:
 
     async def _wake_for_send(self, command_id: str, sandbox: Sandbox) -> None:
         if not sandbox.spec.wake_on_send:
+            self._clear_retry(command_id)
             await self.store.note_waiting(command_id, Reason.WAKE_ON_SEND_DISABLED)
             return
         if not await self.store.note_waking(command_id, incarnation=_incarnation_uid(sandbox)):
@@ -254,6 +300,7 @@ class Delivery:
 
     async def _wake_for_opening(self, opening: SessionOpening, sandbox: Sandbox) -> None:
         if not sandbox.spec.wake_on_send:
+            self._clear_retry(_opening_key(opening.session_id))
             await self.store.note_opening_waiting(opening.session_id, Reason.WAKE_ON_SEND_DISABLED)
             return
         if not await self.store.note_opening_waking(opening.session_id, incarnation=_incarnation_uid(sandbox)):
@@ -270,12 +317,15 @@ class Delivery:
     ) -> None:
         try:
             if not await self.inventory.wake_for_send(sandbox_name, uid=str(sandbox_uid)):
+                self._clear_retry(key)
                 await notify(Reason.WAKE_ON_SEND_DISABLED)
                 return
         except SandboxQuiescingError:
+            self._clear_retry(key)
             await notify(Reason.SANDBOX_RESUMING)
             return
         except SandboxTearingDownError, InventorySandboxNotFoundError:
+            self._clear_retry(key)
             await notify(Reason.SANDBOX_DELETED)
             return
         except ApiException:
@@ -285,7 +335,12 @@ class Delivery:
             )
             await notify(Reason.DELIVERY_UNAVAILABLE)
             return
+        self._clear_retry(key)
         await notify(Reason.SANDBOX_RESUMING)
+
+    def _clear_retry(self, key: str) -> None:
+        self._retry_at.pop(key, None)
+        self._attempts.pop(key, None)
 
     async def _deliver_opening(self, opening: SessionOpening, incarnation: str | None) -> None:
         key = _opening_key(opening.session_id)

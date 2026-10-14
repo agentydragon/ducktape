@@ -37,6 +37,12 @@ send through the Runner Gateway pending their cutovers. Control design:
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new
   incarnation; `UNAVAILABLE` and deadline retry with backoff; `FAILED_PRECONDITION` on a stop is `NO_OP`;
   anything else is `FAILED` with the runner's status. The runner deduplicates redelivery on `command_id`.
+- **Send wake**: only work from authenticated identities listed in `wake_caller_accounts` may request a
+  wake, and the Sandbox must also have `spec.wakeOnSend: true`. Both fields default off. The Dispatcher
+  stores the old incarnation before using the shared guarded resume helper, retries that helper after
+  transient failures and restarts, and delivers only after a different incarnation becomes `Ready`.
+  `InterruptTurn` and `StopRunnerSession` never wake. Per-sender rate and quota policy remains a separate
+  follow-up and must be decided before this setting is enabled.
 
 Nothing polls: delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandbox change (the
 `ListWatch` on Sandboxes) or a retry deadline.
@@ -54,4 +60,6 @@ Nothing polls: delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandb
 Bazel targets: `:server`, `:migrate`, `:image`, `:migration_image`. Settings are the `Settings` class
 (`AGENTPLANE_SESSION_DISPATCHER_CONFIG_FILE`): its own PostgreSQL database, the namespace of the Sandboxes,
 the runner control target (`{sandbox}-control.{namespace}.svc:8080`) with a projected token the gateway admits,
-and the callers' accounts and audience. Run `:migrate` before starting; `grpc.health.v1` is served.
+and the callers' accounts and audience. `wake_caller_accounts` is optional and empty by default; configure it
+only after the accepting Dispatcher and Sandbox Controller images are pinned and Dispatcher Sandbox `patch`
+permission is reconciled. Run `:migrate` before starting; `grpc.health.v1` is served.

@@ -27,6 +27,11 @@ def set_sandbox(
             "spec": {**stored["spec"], "running": running, "wakeOnSend": wake_on_send},
             "status": {
                 "incarnation": {"name": "test-pod", "uid": incarnation},
+                "operatingMode": (
+                    sandbox_resource.OperatingMode.RUNNING.value
+                    if running
+                    else sandbox_resource.OperatingMode.SUSPENDED.value
+                ),
                 "conditions": [
                     {
                         "type": sandbox_resource.READY,

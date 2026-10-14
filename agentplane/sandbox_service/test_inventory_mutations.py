@@ -168,6 +168,7 @@ async def test_suspend_and_resume_patch_running(
     await inventory.suspend("live", uid=live.uid)
     suspended = await inventory.get("live")
     await inventory.resume("live", uid=live.uid)
+    await inventory.resume("live", uid=live.uid)
     resumed = await inventory.get("live")
 
     assert custom_objects.patches == [
@@ -191,6 +192,8 @@ async def test_published_operating_mode_overrides_spec_running(
     idle = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
     idle["status"]["operatingMode"] = "Suspended"
     idle["spec"]["wakeGeneration"] = 4
+    idle["status"]["suspendedBy"] = "Idle"
+    idle["status"]["suspendedAtWakeGeneration"] = 4
     custom_objects.objects[(SANDBOXES_PLURAL, "starting")]["status"]["operatingMode"] = "Running"
 
     live = await inventory.get("live")
@@ -206,15 +209,17 @@ async def test_resume_wakes_an_idle_suspended_sandbox_by_bumping_the_generation(
     idle = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
     idle["status"]["operatingMode"] = "Suspended"
     idle["spec"]["wakeGeneration"] = 4
+    idle["status"]["suspendedBy"] = "Idle"
+    idle["status"]["suspendedAtWakeGeneration"] = 4
     awake = custom_objects.objects[(SANDBOXES_PLURAL, "starting")]
     awake["status"]["operatingMode"] = "Running"
 
     await inventory.resume("live", uid=idle["metadata"]["uid"])
+    await inventory.resume("live", uid=idle["metadata"]["uid"])
     await inventory.resume("starting", uid=awake["metadata"]["uid"])
 
     assert [(name, body["spec"]) for _, name, body in custom_objects.patches] == [
-        ("live", {"running": True, "wakeGeneration": 5}),
-        ("starting", {"running": True}),
+        ("live", {"running": True, "wakeGeneration": 5})
     ]
 
 

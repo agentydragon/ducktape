@@ -87,6 +87,7 @@ flowchart TB
     hs -->|ingest, fold, read| hist_db
     notif -->|Sandbox reads| k8s
     dispatcher -->|Sandbox watch| k8s
+    dispatcher -.->|send wake: guarded Sandbox patch, gated off| k8s
     dispatcher -->|queued commands and delivery state| dispatcher_db
     dispatcher_db[(session_dispatcher DB)]
     dispatcher -.->|per-command Runner RPCs through the runner proxy; sender cutover pending| gw
