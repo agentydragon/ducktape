@@ -3141,6 +3141,12 @@ rules:
       - list
       - watch
   - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxtemplates
+    verbs:
+      - list
+  - apiGroups:
       - ""
     resources:
       - pods
@@ -3148,6 +3154,12 @@ rules:
       - get
       - list
       - watch
+  - apiGroups:
+      - subresources.kubevirt.io
+    resources:
+      - virtualmachineinstances/console
+    verbs:
+      - get
   - apiGroups:
       - agentplane.allegedly.works
     resources:

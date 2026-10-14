@@ -123,7 +123,14 @@ class App(Construct):
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
                 RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
+                # The app lists names to present in the operator's create form.
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxtemplates")], verbs=["list"]),
                 RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get", "list", "watch"]),
+                # The operator's console stream attaches to the Sandbox VM's serial console.
+                RolePolicyRule(
+                    resources=[custom_resource("subresources.kubevirt.io", "virtualmachineinstances/console")],
+                    verbs=["get"],
+                ),
                 RolePolicyRule(
                     resources=[
                         custom_resource(GROUP, resource)
