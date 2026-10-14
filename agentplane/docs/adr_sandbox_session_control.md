@@ -95,8 +95,8 @@ flowchart LR
     SC -- reads connectivity --> L
     Runner -- control stream --> GW
     Runner -- journal push --> HS
-    Runner -- busy / idle --> GW
-    SC -- idle timer from busy facts --> L
+    Runner -- Heartbeat with facts --> GW
+    SC -- idle timer from idleSince --> L
 ```
 
 | Component          | Owns                                                                                                                                                          | Does not own                                                        |
@@ -104,7 +104,7 @@ flowchart LR
 | Sandbox CR         | Desired state (`spec.running`, template), current facts (`status`: incarnation, `quiescedIncarnation`, conditions)                                            | Anything per Session                                                |
 | Sandbox Controller | Pod or VM, state volume, identity, the `<sandbox>-control` Service, quiesce sequencing, idle suspension, deletion, folding every layer's fact into conditions | Runner connection, Session records, queues                          |
 | Runner Gateway     | The runner connection and its authentication, the Lease and EndpointSlice, the proxy of `Runner`, per-method authorization                                    | Any Kubernetes object besides those two, Sessions, queues           |
-| Runner             | Harnesses, journal, admission, seal mechanics, busy state                                                                                                     | Policy about when to suspend                                        |
+| Runner             | Harnesses, journal, admission, seal mechanics, idle state                                                                                                     | Policy about when to suspend                                        |
 | History Service    | Event log, fold, Session directory including the writing Sandbox                                                                                              | Routing, waking, suspending                                         |
 | Session Dispatcher | The durable queue of messages and Session creations, wake-on-send, send-side authorization (who may wake), delivery states                                    | Sandbox objects (it asks the Sandbox Service), idle policy, history |
 
@@ -162,7 +162,7 @@ Transport for the gateway's and runner's facts:
 | Gateway writes the Sandbox's status                                           | Fewest hops                                                                                                                                                            | Two writers on one status; breaks "layers that act on CRs do not edit them"                                             |
 
 **Decided (operator, 2026-10-13): the Lease.** `RunnerConnected` is the Lease's liveness, and runner-reported facts
-(`Bootstrapped`, busy state, the quiesce stage of D3) ride its annotations, written on transition only. If the approved
+(`Bootstrapped`, `idleSince`, the quiesce stage of D3) ride its annotations. If the approved
 gRPC-health node is built, its output should still land as a fact the controller folds; the choice
 here is only the transport. A gateway rollout drops every connection at once; the controller must
 treat the reconnect window as connectivity lost, not as a Sandbox failure, and must not replace or
@@ -170,18 +170,25 @@ restart anything because of it (no automatic spec replacement, operator 2026-10-
 
 **etcd write cost of runner facts (accepted by the operator, 2026-10-13).** The gateway already renews every connected Sandbox's Lease every
 `touch_s` (15 s by default), so each connected Sandbox costs about four etcd writes a minute before this
-design adds anything. Runner facts therefore add no writes: the gateway holds the latest busy/idle and stage
-facts in memory and puts them on the Lease in the next scheduled renewal, so an annotation change rides a write
-that happens anyway. Busy/idle transitions can be frequent while an agent works (each turn ends and starts),
-which is why they are not written on their own; the controller needs `idleSince` only to minutes of
-precision, so up to one renewal interval of lag is harmless. The quiesce stage is rare and takes the same
-path. Cost on the reading side: the controller's Lease watch already sees a renewal event every 15 s per
+design adds anything. `idleSince` therefore adds no writes: the gateway holds the latest value in memory and
+puts it on the Lease in the next scheduled renewal, so the annotation change rides a write that happens
+anyway. `idleSince` changes whenever the runner goes idle, which can be frequent while an agent works, which
+is why it is not written on its own; the controller needs it only to minutes of precision, so up to one renewal
+interval of lag is harmless. The quiesce stage and the bootstrap result are rare and are written to the Lease
+at once. Cost on the reading side: the controller's Lease watch already sees a renewal event every 15 s per
 connected Sandbox and must filter on annotation or holder changes rather than reconcile on each. Rejected
 here: the controller subscribing to a gateway gRPC watch for idle. It saves no write that matters next to the
 renewals, and it needs the controller to find and track every gateway replica, resynchronise after a gateway
 or controller restart, and depend on the gateway being up to decide anything; the Lease is a record that
 outlives both. Revisit only if the renewal write rate itself becomes a problem, and then lengthen `touch_s`
 before adding a second channel.
+
+**How the runner's facts reach the gateway (decided by the operator, 2026-10-14): on `Heartbeat`, event driven.**
+The runner's facts (quiesce stage, `idleSince`, bootstrap result) ride the existing `Heartbeat` as
+`optional RunnerFacts facts`. The runner sends a Heartbeat immediately when a fact changes and with its first one
+after each connect, so nothing polls and a reconnect republishes. A gateway that predates the field ignores it
+(reader before writer). `idleSince` is published only while the runner is idle and is absent while it is busy,
+so there is no separate `busy` fact.
 
 ### D3. Quiescing is one operation; names say which stage a Sandbox is in
 
@@ -321,11 +328,15 @@ sequenceDiagram
     C->>C: Quiesced, record quiescedIncarnation, then delete Pod or VM
 ```
 
-Interruption is part of `Quiesce` rather than a second RPC: the runner already owns turn state, and
-a caller wanting "suspend only if still idle" is better served by a precondition on the suspend
-request (`if idle since T`) than by a drain phase to coordinate. It needs a deadline after which a
-turn that ignores the interrupt is stopped anyway, and a defined history entry showing a turn ended
-by teardown.
+Interruption is part of `Quiesce` rather than a second RPC: the runner already owns turn state. An
+automatic suspend is conditional (operator, 2026-10-14): `Quiesce` carries `if_idle_since`, the runner's own
+`idleSince` token as the controller last observed it. The runner compares it under the lock that enters lameduck
+and refuses when it differs or the runner is busy; the controller then resets its idle timer. Operator suspend
+and delete are unconditional and carry no token. A message that arrives after the controller decided but before
+lameduck therefore makes the runner busy, and the suspend is refused instead of draining a Sandbox with new work.
+
+An unconditional quiesce needs a deadline after which a turn that ignores the interrupt is stopped anyway, and a
+defined history entry showing a turn ended by teardown.
 
 **The controller is told, not polling.** Today the controller repeats `Seal` every few seconds
 until every Session reports flushed. Instead, `Quiesce` is called once and returns when the runner
@@ -443,8 +454,10 @@ Dispatcher alone until its runner pushes, so the Dispatcher's own record is auth
 placement is passed or looked up. Placement lookup and the reading of final-cursor acks (already required
 for any suspend or delete) are the only touches. For idle policy the controller should not derive
 activity from history at all (below), so idle policy and the Dispatcher run with the History Service down, except
-that, as today, nothing can finish sealing while the ingress is down. An outage therefore blocks
-suspension and deletion, not messaging.
+that, as today, nothing can finish sealing while the ingress is down. An outage therefore stops a quiesce from
+finishing, not messaging: a Sandbox keeps accepting messages until its quiesce enters lameduck. There is no
+ingress-health gate before an automatic suspend (operator, 2026-10-14, accepted as a trade): an automatic
+quiesce started during a History Service outage can sit in lameduck, refusing new work, until the outage ends.
 
 **Idle signal.** Two different things get called "last active":
 
@@ -454,16 +467,13 @@ suspension and deletion, not messaging.
 - _Last model activity_: a folded timestamp the UI and notification quiet-window read. The History
   Service owns it.
 
-Recommend suspension uses the first: the runner publishes `busy` and `idleSince` on transitions
+Recommend suspension uses the first: the runner publishes `idleSince`, absent while it is busy
 (carried like other runner facts in D2), and the Sandbox Controller runs the timer against
 `spec.idleSuspendAfter`, then suspends through the D3 sequence. The timer is restartable because
 the facts live in the runner and Lease, not in controller memory. A message sent to an idle Sandbox
-that is about to suspend is safe without a lock: the sealing runner refuses it with a retryable code
-and the Dispatcher redelivers after resume. To avoid pointless suspend-resume flapping the Dispatcher
-marks a Sandbox it holds pending messages for with a Lease the Dispatcher owns (one per Sandbox, the same one that
-shards ownership; the mark is an annotation on it, not a per-Session list and not an edit to the Sandbox) and the
-controller does not start an idle suspend while the mark is present and renewed. A Dispatcher that dies stops
-renewing, so the mark expires. `SESSION_ACTIVITY_STREAM` (the UI's activity facts) uses the same runner busy/idle definition (operator, 2026-10-13), so there is one definition of idle; the History Service's folded `last_model_activity_at` stays a separate timestamp for the UI and the notification quiet window.
+that is about to suspend is safe: the suspend is conditional on the `idleSince` token (D3), and a sealing runner refuses
+the message with a retryable code that the Dispatcher redelivers after resume. The Dispatcher keeps no pending mark
+and the controller reads nothing from it. `SESSION_ACTIVITY_STREAM` (the UI's activity facts) uses the same runner idle definition (operator, 2026-10-13), so there is one definition of idle; the History Service's folded `last_model_activity_at` stays a separate timestamp for the UI and the notification quiet window.
 
 **Per Session and per Sandbox (decided by the operator, 2026-10-13).** The UI shows the idle time of a _Session_; suspension needs the aggregate over _all Sessions_ in the Sandbox (operator, 2026-10-13). The runner computes both from the same per-Session facts: a Sandbox is busy while any Session is busy (or a background process or attached terminal runs), and its `idleSince` is when the last of them went idle. Only the Sandbox aggregate goes on the Lease. Per-Session idle times stay out of Kubernetes (the boundary in requirement 8): their number is unbounded, they change with every turn, and no controller decision needs them. The activity stream is the History Service's: it already folds the runner's events into `SessionSummary` (`last_turn_status`, `last_model_activity_at`) and serves `watch_session_summaries`, so a per-Session `idleSince`, derived from the turn start and end events it ingests, is one more folded field on that summary and the stream carries it to listeners (the UI, the notification service). It is display-only: suspension never reads it. A background process or attached terminal belongs to no Session, so it counts only in the Sandbox aggregate. While a Sandbox is suspended nothing new is ingested, so each Session reads idle since its last turn ended.
 
@@ -490,10 +500,9 @@ Sandbox Service stays the only writer of desired state.
 | Fact                                                                                                              | Home                                             |
 | ----------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | Desired running, template, incarnations, conditions, `quiescedIncarnation`, the rendered spec of each incarnation | Sandbox CR (Kubernetes)                          |
-| Runner connected, boot state, busy state                                                                          | Lease annotations (Kubernetes, Sandbox-level)    |
+| Runner connected, boot state, `idleSince`, quiesce stage                                                          | Lease annotations (Kubernetes, Sandbox-level)    |
 | Session events, directory, writing Sandbox, summaries                                                             | History Service database                         |
 | Queued messages, their delivery state, queued Session creations                                                   | Dispatcher database                              |
-| The pending mark (undelivered work for this Sandbox)                                                              | Dispatcher-owned Lease (Kubernetes)              |
 | Session journal and cursors                                                                                       | Runner volume, mirrored by the ingress           |
 | Per-Session seal cursors and flush state                                                                          | the quiesce response and the ingress, never a CR |
 
@@ -607,8 +616,8 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
 | Node                                                        | Where it lands                                                                                                                |
 | ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | `SESSION_QUEUE_DESIGN`, `SESSION_MESSAGE_QUEUE`             | Dispatcher; this document answers the new-service fork and the dependency questions                                           |
-| `SESSION_ACTIVITY_STREAM`                                   | Built on the runner's busy/idle facts, the same definition idle suspension uses (operator, 2026-10-13)                        |
-| `SANDBOX_IDLE_EXPIRY`                                       | Controller: `spec.idleSuspendAfter`, runner busy facts, the D3 sequence; gated on `SESSION_INCARNATIONS`                      |
+| `SESSION_ACTIVITY_STREAM`                                   | Built on the runner's idle definition, the same definition idle suspension uses (operator, 2026-10-13)                        |
+| `SANDBOX_IDLE_EXPIRY`                                       | Controller: `spec.idleSuspendAfter`, runner `idleSince`, the D3 sequence; gated on `SESSION_INCARNATIONS`                     |
 | `SESSION_REVIVE`, `SESSION_INCARNATIONS`                    | Controller starts the incarnation; History Service records it from the runner's announcement                                  |
 | `BOOTSTRAP_PROGRESS_CONTRACT`                               | Runner fact on the Lease, republished at each connect; `Bootstrapped` is part of `Ready`; `BootstrapFailed` is terminal       |
 | `CONTROLLER_SEALS`, `SANDBOX_LIFECYCLE`                     | Already the controller's; D3 adds the interrupt step                                                                          |
@@ -645,8 +654,8 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
 - **Failed or deleted targets.** A message for a deleted Sandbox or Session, a failed revival, a
   poison command: each needs a terminal state the sender can read, not a silent retry.
 - **History outage blocks suspend and delete.** Intended, since sealing waits for the ingress ack,
-  but it means idle Sandboxes keep running through the outage. The controller must back off, not retry
-  every few seconds per Sandbox.
+  and an automatic quiesce started during the outage can sit in lameduck until the History Service returns
+  (accepted, no ingress-health gate). The controller must back off, not retry every few seconds per Sandbox.
 - **Interrupt semantics.** A turn interrupted by teardown needs a history entry distinguishing it
   from a user interrupt, and a harness that ignores the interrupt needs the deadline in D3.
 - **VM RAM suspend.** If a VM keeps harness processes alive across suspend, "seal before suspend"
@@ -659,10 +668,10 @@ Each DAG node fits without reshaping the split. Node edits belong to the Plans b
 - **Credentials across suspension.** Egress grants, PolicyBindings and projected tokens must still
   be valid when a Sandbox resumes hours later; a resume that comes up with expired grants looks
   like a broken Sandbox.
-- **Time.** `idleSince` is measured on the runner; the controller should measure its own elapsed time
-  from observed transitions, so clock skew and a restarted runner cannot suspend early. After a controller
-  restart it has seen no transition, so it restarts the idle timer at start; suspending up to one
-  `idleSuspendAfter` later is acceptable.
+- **Time.** `idleSince` is an opaque token from the runner; the controller measures elapsed time from its first
+  observation of each distinct token, so clock skew and a restarted runner cannot suspend early. After a
+  controller restart it starts the timer on its first observation; suspending up to one `idleSuspendAfter` later
+  is acceptable.
 - **Why-not observability.** "Why hasn't my message arrived" needs per-message state (queued,
   waiting for Ready, delivering, delivered, unknown, failed with reason) readable by the sender and
   the same Sandbox conditions as above.
