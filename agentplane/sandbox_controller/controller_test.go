@@ -195,6 +195,59 @@ func TestSandboxIsReadyWhileItsPodIsReadyAndItsRunnerConnected(t *testing.T) {
 	}
 }
 
+func TestReadyWaitsForTheBootstrapAndStopsOnItsFailure(t *testing.T) {
+	for _, tc := range []struct {
+		name, fact, reason  string
+		bootstrapped, ready bool
+	}{
+		{"none reported", "", "BootstrapPending", false, false},
+		{"running", "running", "BootstrapRunning", false, false},
+		{"succeeded", "succeeded", "BootstrapSucceeded", true, true},
+		{"failed", "failed", "BootstrapFailed", false, false},
+		{"interrupted", "interrupted", "BootstrapFailed", false, false},
+		{"unknown state", "test-future-state", "BootstrapStateUnrecognised", false, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+			setBootstrap(t, c, "echo test-bootstrap")
+			reconcileOnce(t, r)
+			pod := getPod(t, c)
+			pod.UID = "uid-pod"
+			if err := c.Update(context.Background(), pod); err != nil {
+				t.Fatal(err)
+			}
+			setPodReady(t, c, getPod(t, c), corev1.ConditionTrue)
+			connect(t, c, "uid-pod")
+			if tc.fact != "" {
+				var lease coordinationv1.Lease
+				if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + "-runner"}, &lease); err != nil {
+					t.Fatal(err)
+				}
+				lease.Annotations[BootstrapAnnotation] = tc.fact
+				if err := c.Update(context.Background(), &lease); err != nil {
+					t.Fatal(err)
+				}
+			}
+			reconcileOnce(t, r)
+			bootstrapped, ready := getCondition(t, c, Bootstrapped), getReadyCondition(t, c)
+			if bootstrapped.Reason != tc.reason || (bootstrapped.Status == metav1.ConditionTrue) != tc.bootstrapped {
+				t.Errorf("Bootstrapped = %s/%s, want %v/%s", bootstrapped.Status, bootstrapped.Reason, tc.bootstrapped, tc.reason)
+			}
+			if (ready.Status == metav1.ConditionTrue) != tc.ready || (!tc.ready && ready.Reason != tc.reason) {
+				t.Errorf("Ready = %s/%s, want ready=%v with the bootstrap's reason", ready.Status, ready.Reason, tc.ready)
+			}
+		})
+	}
+}
+
+func TestSandboxWithoutABootstrapIsBootstrapped(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	if got := getCondition(t, c, Bootstrapped); got.Status != metav1.ConditionTrue || got.Reason != "NoBootstrap" {
+		t.Errorf("Bootstrapped = %s/%s, want True/NoBootstrap", got.Status, got.Reason)
+	}
+}
+
 func TestSandboxWhoseRunnerNeverConnectedIsNotReady(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
