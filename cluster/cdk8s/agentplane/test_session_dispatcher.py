@@ -8,18 +8,8 @@ import yaml
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
-from cluster.cdk8s.agentplane import (
-    app,
-    app_settings,
-    notifications,
-    runner_gateway,
-    session_dispatcher,
-    staging,
-    testing,
-)
+from cluster.cdk8s.agentplane import app, notifications, runner_gateway, session_dispatcher, staging, testing
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
-from cluster.cdk8s.model_selections import TESTING_APP_MODELS
-from model_catalog.catalog import GPT6_LUNA_RESPONSES
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
@@ -156,20 +146,19 @@ def test_dispatcher_deployment_and_sender_auth(
     )
 
 
-def test_testing_app_config_can_enable_dispatcher_session_openings() -> None:
-    current = testing.ENV.app_config
-    config = app_settings.settings(
-        namespace=testing.ENV.namespace,
-        models=TESTING_APP_MODELS,
-        thread_preset_codex_model=GPT6_LUNA_RESPONSES,
-        action_federation=current.action_federation,
-        public_coder_policy_sets=[],
-        default_policy_sets=current.default_policy_sets,
-        kubernetes_grants=current.kubernetes_grants,
-        session_dispatcher_open_sessions=True,
-    )
+def test_only_testing_app_config_enables_dispatcher_session_openings(
+    agentplane_manifests: dict[str, list[dict[str, Any]]],
+) -> None:
+    def app_config(namespace: str) -> dict[str, Any]:
+        config = one(
+            doc
+            for doc in agentplane_manifests[namespace]
+            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
+        )
+        return yaml.safe_load(config["data"]["config.yaml"])
 
-    assert config.model_dump(mode="json", exclude_unset=True)["session_dispatcher_open_sessions"] is True
+    assert app_config(testing.ENV.namespace)["session_dispatcher_open_sessions"] is True
+    assert "session_dispatcher_open_sessions" not in app_config(staging.ENV.namespace)
 
 
 if __name__ == "__main__":

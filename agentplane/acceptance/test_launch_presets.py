@@ -6,10 +6,10 @@ from uuid import UUID, uuid4
 
 import pytest_bazel
 
-from agentplane.acceptance.agent import Agent, runner_startup_retries
+from agentplane.acceptance.agent import RUNNER_ANSWERS_SECONDS, Agent
 from agentplane.acceptance.conftest import Sandboxes
 from agentplane.app.testing.client import Client
-from agentplane.proto import runner_pb2
+from agentplane.proto import runner_pb2, session_dispatcher_pb2
 from agentplane.runner.harness import Harness
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
@@ -42,9 +42,11 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     assert view.binding.session_defaults is None
 
     first_id = uuid4()
-    async for attempt in runner_startup_retries():
-        with attempt:
-            first = await client.create_session(view.name, first_id, overrides={"instructions": INSTRUCTIONS})
+    opening = await client.open_session(view.name, first_id, overrides={"instructions": INSTRUCTIONS})
+    assert opening.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
+    first = await client.wait_for_session_admission(
+        view.name, first_id, opening=opening, timeout_s=RUNNER_ANSWERS_SECONDS
+    )
     assert (first.attached.spec.harness, first.attached.spec.model, first.attached.spec.reasoning_effort) == (
         runner_pb2.HARNESS_CODEX,
         preset.session_defaults.model,
@@ -54,7 +56,7 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     # Session instructions remain the exact final block and are not stored on the Sandbox.
     assert first.attached.spec.instructions.rsplit("\n\n", 1)[-1] == INSTRUCTIONS
 
-    thread = await client.thread(UUID(first.attached.session_id))
+    thread = await client.wait_for_thread_projection(UUID(first.attached.session_id), timeout_s=RUNNER_ANSWERS_SECONDS)
     agent = Agent(client, thread_id=thread.id, cursor=first.last_cursor)
     turn = await agent.run(
         "Use a shell tool to read /state/workspaces/.agentplane-public-coder-ready, then briefly report its exact content."

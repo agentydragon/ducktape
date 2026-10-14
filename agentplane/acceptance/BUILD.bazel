@@ -97,6 +97,7 @@ py_test(
         "//:conftest",
         "//agentplane/app/testing:client",
         "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/runner:harness",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",

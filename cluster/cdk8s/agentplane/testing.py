@@ -169,6 +169,7 @@ ENV = Environment(
         action_federation=_ACTION_FEDERATION,
         public_coder_policy_sets=[],
         default_policy_sets=set(egress.DEFAULT_POLICIES),
+        session_dispatcher_open_sessions=True,
     ),
     settle_deltas=True,
     db=DbProps(instances=1, wal_archive=False),
