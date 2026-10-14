@@ -15,6 +15,10 @@ class SandboxConflictError(InventoryError):
     """A name belongs to another Create."""
 
 
+class InvalidSandboxError(InventoryError, ValueError):
+    """A Create request that names no valid Sandbox."""
+
+
 class SandboxRunningError(InventoryError):
     """Deletion is refused while the sandbox runs; the message is what the UI shows the operator."""
 

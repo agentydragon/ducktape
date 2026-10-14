@@ -66,6 +66,7 @@ from agentplane.app.operator_sessions import (
     request_session,
 )
 from agentplane.app.presets import PresetCatalog, SandboxPresetView
+from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.sandbox_models import NewSandbox, SandboxView, create_request, sandbox_is_ready, sandbox_view
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
 from agentplane.app.system_status import ComponentStatus, SystemStatusChecker
@@ -96,7 +97,15 @@ from agentplane.sandbox_service.egress_views import (
     FluxOwnedBindingError,
     SandboxOwnedBindingError,
 )
-from agentplane.sandboxes.errors import SandboxNotFoundError, SandboxRunningError, UnknownPolicySetError
+from agentplane.sandboxes.errors import (
+    ConsoleUnavailableError,
+    InvalidSandboxError,
+    SandboxConflictError,
+    SandboxNotFoundError,
+    SandboxRunningError,
+    SandboxTearingDownError,
+    UnknownPolicySetError,
+)
 from agentplane.sse import frame, sse_response
 from agentplane.subjects import ServiceAccountRef
 
@@ -119,7 +128,7 @@ class AppServices:
     names, so importing it would be a dependency cycle.
     """
 
-    inventory: SandboxServiceClient
+    inventory: SandboxServiceClient | SandboxAccess
     bridge: runner_bridge.RunnerBridge
     store: ThreadStore
     event_logs: EventLogStore
@@ -163,7 +172,7 @@ def _service[T](pick: Callable[[AppServices], T]) -> Any:
 
 
 Services = Annotated[AppServices, _service(lambda services: services)]
-Inventory = Annotated[SandboxServiceClient, _service(lambda services: services.inventory)]
+Inventory = Annotated[SandboxServiceClient | SandboxAccess, _service(lambda services: services.inventory)]
 Egress = Annotated[EgressAccess, _service(lambda services: services.egress)]
 EventLogs = Annotated[EventLogStore, _service(lambda services: services.event_logs)]
 Content = Annotated[ContentStore, _service(lambda services: services.content)]
@@ -321,6 +330,8 @@ async def sandbox_console_stream(
             if error.code != grpc.StatusCode.FAILED_PRECONDITION:
                 raise
             # A Pod Sandbox, a stopped VM or a console someone else holds: retrying will not help.
+            yield frame("unavailable", str(error))
+        except ConsoleUnavailableError as error:
             yield frame("unavailable", str(error))
 
     return _operator_relay(
@@ -992,6 +1003,9 @@ _ERROR_STATUS: dict[type[Exception], int] = {
     CommandIdConflictError: status.HTTP_409_CONFLICT,
     SandboxNotFoundError: status.HTTP_404_NOT_FOUND,
     SandboxRunningError: status.HTTP_409_CONFLICT,
+    SandboxConflictError: status.HTTP_409_CONFLICT,
+    SandboxTearingDownError: status.HTTP_409_CONFLICT,
+    InvalidSandboxError: status.HTTP_422_UNPROCESSABLE_CONTENT,
     BindingNotFoundError: status.HTTP_404_NOT_FOUND,
     FluxOwnedBindingError: status.HTTP_409_CONFLICT,
     SandboxOwnedBindingError: status.HTTP_409_CONFLICT,
@@ -1016,7 +1030,7 @@ def _detail_with_status(code: int) -> Callable[[Request, Exception], Awaitable[J
 
 
 def create_app(
-    inventory: SandboxServiceClient,
+    inventory: SandboxServiceClient | SandboxAccess,
     bridge: runner_bridge.RunnerBridge,
     store: ThreadStore,
     catalog: ModelCatalog,

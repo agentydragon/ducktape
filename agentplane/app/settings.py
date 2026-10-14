@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Set
 from pathlib import Path
 from typing import ClassVar
 
@@ -56,6 +57,11 @@ class Settings(AppSettingsConfig):
     sandbox_namespace: str = Field(
         description="Namespace whose Sandbox inventory the app observes. Separate from the app's own "
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
+    )
+    default_policy_sets: Set[str] | None = Field(
+        default=None,
+        description="PolicySets every new Sandbox is bound to. When set, the app creates, suspends, resumes "
+        "and deletes Sandboxes through Kubernetes itself rather than through the Sandbox Service.",
     )
     sandbox_service_target: str = Field(min_length=1, description="The Sandbox Service's gRPC host:port.")
     runner_gateway_target: str = Field(

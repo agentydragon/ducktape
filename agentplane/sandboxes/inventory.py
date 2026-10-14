@@ -25,6 +25,7 @@ from agentplane.proto import runner_pb2
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest, Sandbox
 from agentplane.sandboxes.console import stream_console
 from agentplane.sandboxes.errors import (
+    InvalidSandboxError,
     SandboxConflictError,
     SandboxNotFoundError,
     SandboxRunningError,
@@ -117,16 +118,16 @@ class SandboxInventory(SandboxReader):
     ) -> Sandbox:
         """Create what `spec` asks for, or return the Sandbox an earlier identical Create made."""
         if not re.fullmatch(r"[a-z0-9]([-a-z0-9]*[a-z0-9])?", spec.name) or len(spec.name) > 57 or not spec.template:
-            raise ValueError("valid name and template are required")
+            raise InvalidSandboxError("valid name and template are required")
         if spec.HasField("preset") and not re.fullmatch(r"[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?", spec.preset):
-            raise ValueError("preset must be a valid label value")
+            raise InvalidSandboxError("preset must be a valid label value")
         if max(len(spec.bootstrap), len(spec.session_defaults.setup_script)) > 65_536:
-            raise ValueError("script exceeds 65536 characters")
+            raise InvalidSandboxError("script exceeds 65536 characters")
         if spec.session_defaults.HasField("harness") and spec.session_defaults.harness not in (
             runner_pb2.HARNESS_CLAUDE,
             runner_pb2.HARNESS_CODEX,
         ):
-            raise ValueError("unsupported harness")
+            raise InvalidSandboxError("unsupported harness")
         existing = await self.retry(spec, caller=caller)
         if existing is not None:
             return existing

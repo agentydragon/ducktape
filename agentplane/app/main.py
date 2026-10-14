@@ -30,6 +30,7 @@ from agentplane.app.live import LiveIndex, watch_for
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog
+from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.settings import Settings
 from agentplane.app.shutdown import Drain, drain_of
 from agentplane.app.system_status import SystemStatusChecker, grpc_health_probe, http_health_probe
@@ -48,7 +49,9 @@ from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.service_process import configure_logging, kubernetes_configuration
+from agentplane.subjects import ServiceAccountRef
 from util.bazel.runfiles import get_required_path
 from util.kubernetes import CustomObjectsClient
 
@@ -124,12 +127,25 @@ async def async_main(settings: Settings) -> None:
         history.new_client() as history_watch_client,
         history.new_client() as session_openings_client,
     ):
-        inventory = SandboxServiceClient(
-            sandbox_service_channel,
-            namespace=settings.sandbox_namespace,
-            token_file=settings.sandbox_service_token_file,
-            request_timeout_s=settings.sandbox_service_request_timeout_s,
-            lifecycle_timeout_s=settings.sandbox_service_lifecycle_timeout_s,
+        # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
+        custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
+        core_v1 = CoreV1Api(api)
+        # CLEANUP(added 2026-10-14): Keep only the SandboxAccess branch, and make `default_policy_sets`
+        #   required, once the deployed manifests pass it everywhere.
+        inventory: SandboxServiceClient | SandboxAccess = (
+            SandboxServiceClient(
+                sandbox_service_channel,
+                namespace=settings.sandbox_namespace,
+                token_file=settings.sandbox_service_token_file,
+                request_timeout_s=settings.sandbox_service_request_timeout_s,
+                lifecycle_timeout_s=settings.sandbox_service_lifecycle_timeout_s,
+            )
+            if settings.default_policy_sets is None
+            else SandboxAccess(
+                SandboxInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects, core_v1=core_v1),
+                default_policy_sets=settings.default_policy_sets,
+                caller=ServiceAccountRef(namespace=settings.sandbox_namespace, name="agentplane-app"),
+            )
         )
         gateway = RunnerGatewayClient(
             gateway_channel,
@@ -143,15 +159,12 @@ async def async_main(settings: Settings) -> None:
                 lifecycle_timeout_s=settings.sandbox_service_lifecycle_timeout_s,
             ),
         )
-        # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
-        custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
         # In the Sandbox's namespace, not the app's: that is where the Action Service matches a
         # binding to the authenticated Sandbox, and where the owner reference cascades.
         action_policy = ActionPolicyInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects)
         egress = EgressAccess(
             namespace=settings.sandbox_namespace, custom_objects=custom_objects, action_policy=action_policy
         )
-        core_v1 = CoreV1Api(api)
         live = LiveIndex(
             freshness=Freshness(stale_after_seconds=settings.resync_seconds * STALE_AFTER_CYCLES), core_v1=core_v1
         )
