@@ -87,6 +87,21 @@ factory instead of a raw-dict escape hatch -- worth doing sometime, not urgent.
 Done: `providers/kyverno` targets `v2beta1` (or offers it alongside `v1`), and
 `preconditions` has a typed factory built from the real `any`/`all` shape.
 
+## PolicySet composition and controller RBAC
+
+`agent_access_profiles.POLICY_SETS` supplies Kubernetes grants while
+`agentplane/staging.py` passes egress rules for those same sets through
+`PolicyController.additional_rules`. "Additional" obscures that these are ordinary rules in
+one PolicySet. Give each PolicySet one obvious declaration for its full rule intent.
+
+Evaluate whether the controller should bind only Agentplane-managed Roles through a dedicated
+namespace and narrowly scoped `bind` authority, or through another enforceable ownership or
+selection mechanism such as labels. Keep unrelated/pre-existing Roles outside the controller's
+binding authority.
+
+Done: Kubernetes and egress rules have one clear per-set declaration, and the controller can
+bind only the selected Agentplane-managed Roles with minimal, auditable authority.
+
 ## Extract only when another caller needs it
 
 A second Haku deployment may justify Environment props. Namespace-default charts may
