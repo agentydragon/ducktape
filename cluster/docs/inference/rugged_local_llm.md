@@ -137,7 +137,7 @@ only after the prefetch generation has activated and all six bases are present.
 
 When `ducktape.localLlm.llamaRouter.enable` is true, the offline OpenCode model
 picker includes the six existing entries plus `Qwen3.5 0.8B Q8 (256k router
-experimental; tools unverified)`. Select the latter explicitly with:
+experimental; tool smoke passed)`. Select the latter explicitly with:
 
 ```bash
 RUGGED_OPENCODE_MODEL=qwen3.5-0.8b-long-256k-experimental \
@@ -150,7 +150,7 @@ List the local choices and context/output limits with
 Its configured alias is `qwen3.5:0.8b-long-256k-b256`, with 262,144 allocated
 context and a 4,096-token output budget. This is not the model's 163,840-context,
 q4_0-KV/FA-on Ollama qualification: the 262k standalone-router profile has not yet
-passed a long request, and tool calling has not been verified. The earlier
+passed a long request. A tiny tool-call/result smoke passed as described below. The earlier
 successful 134,993-token Ollama request used a process-wide q4_0 KV cache and
 Flash Attention on; its memory profile does not transfer to this backend.
 
@@ -169,6 +169,38 @@ router process or iGPU allocation remained, but available memory stayed below
 the guard amid concurrent host workloads. The optional backend is therefore
 kept disabled; do not switch the host until all picker profiles needed in use
 have passed runtime and memory checks.
+
+After memory recovered, a follow-up on the same standalone build completed
+Gemma's 131,072-context tiny request and switched directly to Qwen3.5 0.8B at
+262,144 context. Gemma returned `READY`; Qwen produced the exact
+`read_file(main.py)` call with string-form `tool_choice: required` and correctly
+summarized a simulated result as `main returns 42.` The respective child
+arguments preserved F16 KV/Flash Attention off/batch 128 and q4_0 KV/Flash
+Attention on/batch 256. Both used one slot, reasoning off, and no speculative
+decoding. Each post-request model snapshot showed exactly one loaded model;
+switching to Qwen evicted Gemma. Sampled minimum host available memory was
+9,908,064 KiB (9.45 GiB), peak deduplicated router GPU-resident GTT was
+6,484,528 KiB (6.18 GiB), and maximum full memory PSI avg10 was 18.05%.
+Neither guard fired, and the router exited cleanly. These are short compatibility
+and switching checks, not a completed 262k-input request or a coding benchmark.
+
+A second short run on AC switched from Qwen3 4B to Gemma 128k and then Gemma
+E4B 32k. Both Gemma profiles completed the exact `read_file(main.py)` call and
+correctly reported 42 after the simulated tool result. Each model snapshot
+showed one loaded model, and process samples observed at most one child.
+Minimum available memory was 10.13 GiB and maximum full PSI avg10 was 6.15%;
+neither guard fired. GPU memory measurements were unavailable for this run
+(the sampler returned zero, which must not be interpreted as zero GPU usage).
+The test router and its listener were stopped afterward. Short router checks
+now cover the default Qwen3 4B, Gemma 128k, E4B 32k, and Qwen3.5 256k profiles;
+the other picker profiles and long inputs still need standalone qualification.
+
+As of the follow-up, the live host still had its older Ollama generation, only
+Qwen3 4B and Gemma E2B cached, and nginx failed. Activating the merged Ollama
+generation is required to populate all six bases and apply the nginx secret
+ownership fix before a router switch. NixOS activation also installs the inline
+Home Manager launcher. No live host activation or authenticated cluster
+end-to-end verification was performed in these router checks.
 
 The new base-tag prefetch is only cache preparation: it does not qualify a
 context size or establish coding quality for Qwen3.5.
