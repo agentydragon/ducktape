@@ -623,7 +623,7 @@ its setup output and outcome reach history as `SetupStarted`/`SetupOutput`/`Setu
 The Sandbox bootstrap (the launch file's, once per Sandbox) starts when the runner starts, but
 nothing shows its output or progress, and an `OpenSession` that meets it still running waits for it,
 which the Runner Gateway's `open_session` (`runner_gateway/session_lifecycle.py`) holds until the
-script exits. Remaining: the controller adds a `Bootstrapped` condition and includes it in `Ready`, adds the terminal `BootstrapFailed`, and holds a suspend until the bootstrap ends. A successful bootstrap stays the precondition of
+script exits. Remaining: a suspend waits for the bootstrap to succeed or fail. A successful bootstrap stays the precondition of
 opening a Session: an `OpenSession` that meets a bootstrap still running is refused with a retryable
 code, and one that meets a failed or interrupted bootstrap is refused for good (use a new Sandbox). A failed or interrupted bootstrap
 is a Sandbox state of its own, `BootstrapFailed` (operator, 2026-10-13 PDT): terminal, never retried,
@@ -972,12 +972,12 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `RUNNER_SEAL_PER_INCARNATION` — the runner keys its seal to the incarnation and reopens
 
-**Candidate; operator, 2026-10-13 PDT: a seal belongs to the incarnation that sealed it.** The History Service accepts the continuation and `Attached` carries the incarnation UID. Remaining: a runner under a different
-UID than the one that sealed treats the seal as ended, reopens the journal and appends an entry recording
-the resume, so `ensure_running` and `IngressPusher.track` accept the Session again. Seals on disk without a UID
+**Candidate; operator, 2026-10-13 PDT: a seal belongs to the incarnation that sealed it.** The History Service accepts the continuation and `Attached` carries the incarnation UID. The History Service folds the resume entry (`JournalReopened`). Remaining: a runner under a different
+UID than the one that sealed treats the seal as ended, reopens the journal and appends that entry, so `ensure_running` and `IngressPusher.track` accept the Session again. Seals on disk without a UID
 count as an earlier incarnation's. The lameduck marker keeps its own incarnation key. Test a suspend and
 resume on the same state volume (on `agentplane-testing`) with a Session that has history, an unacknowledged tail at the seal, and
-a seal written before the UID existed.
+a seal written before the UID existed. The runner's side ships once the History Service image that folds the
+entry is pinned; after it merges only this test is left.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
