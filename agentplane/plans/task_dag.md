@@ -678,7 +678,7 @@ flowchart TD
     QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: the controller stops reading the blocking Quiesce shape]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
-    DISPATCHER_CORE[Blocked: the Session Dispatcher delivers to running Sandboxes]
+    DISPATCHER_CORE[Candidate: the Session Dispatcher delivers to running Sandboxes]
     SANDBOX_SHARED_CODE_MOVE[Candidate: what outlives the Sandbox Service leaves its package]
     SANDBOX_WRITE_HELPER[Candidate: one shared library writes a Sandbox's spec]
     APP_SANDBOX_WRITES[Blocked: the app creates, deletes, suspends and resumes Sandboxes itself]
@@ -713,7 +713,6 @@ flowchart TD
     SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Blocked: idle runner Sandboxes suspend]
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
     HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
-    RUNNER_COMMAND_RPCS[Candidate: one Runner RPC per command, section 12] --> DISPATCHER_CORE
     MULTIAGENT_MODEL[Decision: identities and authority vocabulary, section 3] -. who may send and wake .-> DISPATCHER_CORE
     AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. offline behavior .-> DISPATCHER_CORE
     RUNNER_FACTS_ON_LEASE --> QUIESCE_WITHOUT_POLLING
@@ -1101,7 +1100,7 @@ services). Code and manifests go together here, after the pin.
 
 ### `DISPATCHER_CORE` — the Session Dispatcher delivers to running Sandboxes
 
-**Blocked on `RUNNER_COMMAND_RPCS`.** A new service with its own database and
+**Candidate; the runner's per-command RPCs are on devel and the proxy admits them.** A new service with its own database and
 the one job of delivery, proposed in `docs/adr_sandbox_session_control.md`. Its own API is one RPC per
 command, like the runner's. It accepts a message,
 persists it before it acknowledges the sender, delivers it through the gateway's runner proxy to a
@@ -1329,7 +1328,8 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 flowchart TD
     APP_SESSION_DEFAULTS[Candidate: the app sends complete Session specs]
     CONTROLLER_SEALS[Candidate: the Sandbox controller seals]
-    RUNNER_COMMAND_RPCS[Candidate: one Runner RPC per command]
+    RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
+    GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
     APP_SESSION_DEFAULTS --> GATEWAY_WRAPPER_RETIRE
@@ -1368,28 +1368,18 @@ gateway's write to Sandboxes go.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `RUNNER_COMMAND_RPCS` — one `Runner` RPC per command
+### `RUNNER_COMMAND_RPCS` — `DeliverCommand` goes once nothing calls it
 
-**Candidate; operator, 2026-10-13 PDT: name commands one RPC each rather than one RPC taking a
-union.** `DeliverCommand` takes `Command`, a `oneof` of `SubmitInput`, `ChangeModel`,
-`InterruptTurn`, `StopRunnerSession` and `ChangeReasoningEffort`, so every caller, the proxy's
-per-method authorization and the Session Dispatcher see one method for five operations. Each
-operation gets its own `Runner` RPC, named for it and taking the Session ID, the `command_id` and
-its own fields; each returns the journal's `CommandAdmitted` entry as `DeliverCommand` does.
-Idempotency carries over per RPC: the same `command_id` with the same payload returns the existing
-admission, and the same `command_id` under another operation or payload fails `ALREADY_EXISTS`, so a
-`command_id` stays unique across all of them. Delivery states are unchanged: they describe the
-admission, not the method. The journal's `CommandAdmitted` event still stores the `Command` message
-as written, so stored history needs no migration. The Session Dispatcher and the proxy's
-authorization are written against the new methods and never see `DeliverCommand`.
-
-Reader before writer, with no shim left behind: the runner serves the new RPCs beside
-`DeliverCommand`, and the gateway proxy admits them (its per-method policy names methods), both
-images pinned in every environment, including the VM guest's runner wheel; then callers move
-(`RunnerGateway`'s `SubmitCommand` path goes with `GATEWAY_WRAPPER_RETIRE` and needs no split);
-then `DeliverCommand`, `Command` as a request type and the policy entry are deleted once no pinned
-caller image sends it. `DISPATCHER_CORE` forwards through the new RPCs, so it waits for this node
-and is written once.
+**Blocked on `GATEWAY_WRAPPER_RETIRE`; operator, 2026-10-13 PDT: one RPC per command rather than one
+taking a union.** The runner serves `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`,
+`InterruptTurn` and `StopRunnerSession` beside `DeliverCommand`, and the proxy admits every method of
+`Runner` (it builds its method set from the service descriptor). The only caller left of
+`DeliverCommand` is the Runner Gateway's `SubmitCommand` path, which goes with
+`GATEWAY_WRAPPER_RETIRE` and needs no split. Then `DeliverCommand`, `Command` as a request type and
+`DeliverCommandRequest`/`DeliverCommandResponse` are deleted from `runner_control.proto` once no
+pinned caller image sends it (the VM guest's runner wheel is a reader of the new RPCs, not a caller).
+The journal's `CommandAdmitted` event keeps storing the `Command` message, so stored history needs no
+migration and `Command` stays as that event's field type.
 
 ### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
 
