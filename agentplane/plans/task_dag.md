@@ -708,10 +708,9 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE[In progress: our own Sandbox resource]
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
-    QUIESCE_INCARNATION_KEY[In progress: the sealed marker belongs to one incarnation]
     INCARNATION_UID_REQUIRED[Blocked: the runner rejects a Welcome without the incarnation UID]
     QUIESCE_INTERRUPT[Candidate: refuse at entry and interrupt turns before sealing]
-    RUNNER_FACTS_ON_LEASE[Blocked: the runner publishes stage, busy and boot facts on the connection Lease]
+    RUNNER_FACTS_ON_LEASE[Candidate: the runner publishes stage, busy and boot facts on the connection Lease]
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     CONTROL_SERVICE_OWNER[Candidate: the controller creates the Sandbox's control Service]
@@ -750,10 +749,6 @@ flowchart TD
     RUNNER_COMMAND_RPCS[Candidate: one Runner RPC per command, section 12] --> DISPATCHER_CORE
     MULTIAGENT_MODEL[Decision: identities and authority vocabulary, section 3] -. who may send and wake .-> DISPATCHER_CORE
     AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. offline behavior .-> DISPATCHER_CORE
-    QUIESCE_INCARNATION_KEY --> CONTROLLER_SEALS
-    QUIESCE_INCARNATION_KEY --> RUNNER_FACTS_ON_LEASE
-    QUIESCE_INCARNATION_KEY --> INCARNATION_UID_REQUIRED
-    QUIESCE_INCARNATION_KEY --> QUIESCE_WITHOUT_POLLING
     RUNNER_FACTS_ON_LEASE --> QUIESCE_WITHOUT_POLLING
     RUNNER_FACTS_ON_LEASE --> SANDBOX_IDLE_EXPIRY
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
@@ -950,7 +945,7 @@ from which the History Service records it, and its seal ends that incarnation, n
 the kept volume the runner journal and its cursors simply continue; the next incarnation journals
 that it resumed after a seal.
 
-Open piece (`SANDBOX_IDLE_EXPIRY` waits for it, since a sealed journal cannot restart today): `QUIESCE_INCARNATION_KEY` lets a new incarnation's runner accept work, but a journal the earlier
+Open piece (`SANDBOX_IDLE_EXPIRY` waits for it, since a sealed journal cannot restart today): the runner's per-incarnation seal marker lets a new incarnation's runner accept work, but a journal the earlier
 incarnation sealed stays sealed. This node decides how such a journal is reopened and what the ingress
 does with the next cursor range.
 
@@ -963,23 +958,9 @@ a new incarnation of the same Session and history. Incarnation N+1 is created on
 terminated, and the runner treats an interrupted Session setup as resumable. Test
 revival after a long stop, a refused incompatible state PVC, and concurrent revive requests.
 
-### `QUIESCE_INCARNATION_KEY` — the sealed marker belongs to one incarnation
-
-**In progress; its own PR, found by the control design.** The runner records "sealed" as an empty
-marker file under its state directory, which is the state volume and outlives the incarnation, so a
-resumed Sandbox's runner would refuse every new and resumed Session. The gateway's `Welcome` carries
-the incarnation's UID (the Pod, or a VM's virt-launcher Pod); the runner writes the marker with the UID
-it last saw and removes it on a `Welcome` with a different one, before it accepts any call. A `Welcome`
-without a UID keeps today's behavior, so a runner pinned before the gateway keeps working. A runner
-restart inside an incarnation stays sealed; a new incarnation starts unsealed. The Lease's stage
-annotation carries the same UID. The gateway, the runner image and the VM guest's runner wheel pin
-independently, so pin order does not matter here; `INCARNATION_UID_REQUIRED` takes the tolerance out
-later. The sealer flags in the manifests (`CONTROLLER_SEALS`) wait for this,
-or a resumed Sandbox would refuse work. How a sealed journal is reopened is `SESSION_INCARNATIONS`'s.
-
 ### `INCARNATION_UID_REQUIRED` — the runner rejects a `Welcome` without the incarnation UID
 
-**Blocked on `QUIESCE_INCARNATION_KEY` landing and the gateway image that sends the UID pinned in
+**Blocked on the gateway image that sends the UID pinned in
 every environment, and in the VM guest's runner wheel pin.** Removes the missing-UID tolerance: a
 `Welcome` without a UID ends the stream, and the `None` path in the runner store's incarnation
 adoption (marked by its `CLEANUP` tombstone) goes. Pin ordering is not relied on before this; afterwards a
@@ -993,12 +974,11 @@ the one seal operation: refuse everything but draining operations from the start
 code a sender reads as "retry after resume"; interrupt active turns through the command protocol,
 wait up to a deadline, then stop the harnesses; record in history that teardown ended the turn, so
 it reads differently from a user's interrupt. Nothing is live, since the sealer flags are not in
-the manifests. It edits the same runner store code as `QUIESCE_INCARNATION_KEY`; whichever lands
-second rebases. Readers of the new code (the Session Dispatcher) land after it.
+the manifests. Readers of the new code (the Session Dispatcher) land after it.
 
 ### `RUNNER_FACTS_ON_LEASE` — the runner publishes stage, busy and boot facts on the connection Lease
 
-**Blocked on `QUIESCE_INCARNATION_KEY`, which gives the Lease the incarnation UID.** The one
+**Candidate; the Lease already carries the incarnation UID.** The one
 transport several nodes share: the runner reports facts on the control stream, and the gateway
 replica holding the connection writes them as annotations on the Sandbox-owned connection Lease,
 on transitions only and stamped with the incarnation UID, clearing them when a different
@@ -1026,7 +1006,7 @@ is renamed.
 
 ### `QUIESCE_WITHOUT_POLLING` — the controller is told when a seal finishes
 
-**Blocked on `QUIESCE_INCARNATION_KEY` and `RUNNER_FACTS_ON_LEASE`.** The controller repeats the
+**Blocked on `RUNNER_FACTS_ON_LEASE`.** The controller repeats the
 seal call every few seconds until every Session reports flushed. Instead it calls once; the call
 returns when the runner has entered lameduck; the controller reacts to the Lease stage events. It
 re-issues the idempotent call when a Sandbox should be sealing but its Lease shows no stage, and a
@@ -1297,7 +1277,7 @@ and `CreateSessionRequest` loses its field mask.
 one's image is pinned in every environment. First, cdk8s passes the controller `--runner-gateway-target`
 and `--runner-gateway-token-file` (a projected token for audience `token_audience`), admits the
 controller to the gateway, and sets `sandbox_controller_account` on the gateway; the controller's
-`Sealer` and `Leases` become required. This step waits for `QUIESCE_INCARNATION_KEY`: with the
+`Sealer` and `Leases` become required. This step waits for the runner image with the per-incarnation seal marker to be pinned: with the
 sealer on, a resumed Sandbox's runner would otherwise find the old incarnation's marker. Then `runner_gateway/deletion_seals.py`, `sealing.py` and the
 gateway's write to Sandboxes go.
 
