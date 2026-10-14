@@ -509,6 +509,64 @@ version/hash pins, and reproduction commands. It bounds the dormant llama.cpp
 service to 2048 context / one slot and supplies its loader path; that service
 remains disabled until tested through its own runtime and GGUF models.
 
+## Colibri Qwen3-Coder SSD-streaming smoke
+
+[PR #10503](https://github.com/agentydragon/ducktape/pull/10503) adds the Nix
+package for Colibri 2.0.0, pinned to upstream source commit
+`bf2442915d6e3dd4cdfd2eb9c2a3d2aa44a25850` (repository commit `dbebf99592`).
+The tested checkpoint was `JustVugg/Qwen3-Coder-30B-A3B-colibri-int4` at
+revision `d839110a17d31b4e6fa9f3d973b751f779b6b9c6`.
+
+On 2026-10-14, a temporary loopback `coli serve` used context 1024, `--cap 8`,
+one queue/KV slot, and the CPU runtime. The checkpoint reported 128 experts and
+`top_k=8`; no routing-pruning options were set. A forced `read_file` request
+returned HTTP 200 in **243.2 s**. Usage was 322 prompt and 28 completion tokens.
+It generated one valid call for the exact
+path below; the harness did not execute the tool or send a follow-up request,
+so this verifies tool-call generation, not a completed tool roundtrip. The
+scratch file contained `cedar-93017`. No decode rate is inferred from total
+request time; this run has no engine phase timings. The package supports
+Vulkan, but this smoke collected no GPU measurements.
+
+```json
+{
+  "model": "qwen3-coder-30b-a3b-colibri",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Use the read_file tool to read /tmp/colibri-smoke/marker.txt. Do not guess the contents. Make exactly one read_file tool call."
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "read_file",
+        "description": "Read a UTF-8 text file by absolute path.",
+        "parameters": {
+          "type": "object",
+          "properties": { "path": { "type": "string" } },
+          "required": ["path"],
+          "additionalProperties": false
+        }
+      }
+    }
+  ],
+  "tool_choice": { "type": "function", "function": { "name": "read_file" } },
+  "max_tokens": 64,
+  "temperature": 0
+}
+```
+
+The startup log reported 6.1 s to load resident weights and RSS of 2.96 GiB
+after load; peak RSS was not sampled. Linux `/proc/<pid>/io` `read_bytes` was
+3,393,306,624 before the request and reached 189,934,206,976 while it ran: at
+least **186.5 GB** of additional physical reads. The process exited before a
+final counter sample, so this is a lower bound, not a total-I/O measurement.
+This bounded CPU smoke supports
+SSD-streaming feasibility; it does not establish GPU behavior, throughput, or
+agent-task quality.
+
 ## Cluster serving status
 
 [PR #10452](https://github.com/agentydragon/ducktape/pull/10452) replaces the stale
