@@ -1,0 +1,26 @@
+{
+  "model": "gemma4:e2b-it-qat",
+  "num_ctx_requested": 131072,
+  "num_batch_requested": 128,
+  "targets": [
+    {
+      "target_content_tokens": 32000,
+      "content_tokens": 31976,
+      "line_count": 1264,
+      "expected_codes": {
+        "FIRST_KEY": "AB083F",
+        "MIDDLE_KEY": "05C842",
+        "LAST_KEY": "41A9CD"
+      },
+      "anchor_rows": {
+        "FIRST_KEY": 12,
+        "MIDDLE_KEY": 632,
+        "LAST_KEY": 1252
+      },
+      "prompt_sha256": "331a4441256247c566462098bca583e9bc41e72ffceaf806a4dc340aa7d173fd",
+      "prompt_bytes": 125281
+    }
+  ],
+  "tokenizer_sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+  "generated_at_utc": "2026-10-14T08:43:56Z"
+}

@@ -151,16 +151,23 @@ def monitor(
     server_pid: int,
     base: str,
     deadline: datetime,
+    pressure_consecutive: int,
+    pressure_threshold_pct: float,
 ) -> None:
+    pressure_samples = 0
     while not stop.is_set():
         snapshot = host_snapshot()
         log_jsonl(path, {"stage": stage, "runner_drm": ollama_runner_drm_memory(server_pid), **snapshot})
         reason = None
         if snapshot["MemAvailable_kib"] < minimum_available_kib:
             reason = "low_memory_threshold"
-        elif snapshot["memory_full_avg10_pct"] >= 10:
+        elif snapshot["memory_full_avg10_pct"] >= pressure_threshold_pct:
+            pressure_samples += 1
+        else:
+            pressure_samples = 0
+        if reason is None and pressure_samples >= pressure_consecutive:
             reason = "memory_pressure_threshold"
-        elif datetime.now(UTC) >= deadline:
+        if reason is None and datetime.now(UTC) >= deadline:
             reason = "deadline"
         if reason:
             log_jsonl(path, {"stage": stage, "event": reason, **snapshot})
@@ -182,6 +189,8 @@ def run_request(
     deadline: datetime,
     max_output_tokens: int = 256,
     num_batch: int | None = None,
+    pressure_consecutive: int = 1,
+    pressure_threshold_pct: float = 10,
 ) -> dict:
     body = {
         "model": model,
@@ -196,7 +205,19 @@ def run_request(
     request_bytes = json.dumps(body).encode()
     stop = threading.Event()
     watcher = threading.Thread(
-        target=monitor, args=(stop, monitor_path, stage, minimum_available_kib, server_pid, base, deadline), daemon=True
+        target=monitor,
+        args=(
+            stop,
+            monitor_path,
+            stage,
+            minimum_available_kib,
+            server_pid,
+            base,
+            deadline,
+            pressure_consecutive,
+            pressure_threshold_pct,
+        ),
+        daemon=True,
     )
     watcher.start()
     start = time.perf_counter()
@@ -248,11 +269,17 @@ def main() -> None:
     parser.add_argument("--num-batch", type=int)
     parser.add_argument("--targets", default="32000,64000,124000")
     parser.add_argument("--minimum-available-gib", type=float, default=8.0)
+    parser.add_argument("--pressure-consecutive", type=int, default=1)
+    parser.add_argument("--pressure-threshold-pct", type=float, default=10)
     parser.add_argument("--server-pid", type=int, required=False)
     parser.add_argument("--deadline-utc", default="2026-10-14T08:30:00Z")
     parser.add_argument("--prepare-only", action="store_true")
     parser.add_argument("--load-only", action="store_true")
     args = parser.parse_args()
+    if args.pressure_consecutive < 1:
+        raise ValueError("--pressure-consecutive must be positive")
+    if not 0 < args.pressure_threshold_pct <= 100:
+        raise ValueError("--pressure-threshold-pct must be in (0, 100]")
     args.output.mkdir(parents=True, exist_ok=True)
     prompts = []
     if not args.load_only:
@@ -293,6 +320,8 @@ def main() -> None:
                 deadline,
                 max_output_tokens=4,
                 num_batch=args.num_batch,
+                pressure_consecutive=args.pressure_consecutive,
+                pressure_threshold_pct=args.pressure_threshold_pct,
             )
         except Exception as exc:
             log_jsonl(
@@ -309,7 +338,7 @@ def main() -> None:
         if snapshot["MemAvailable_kib"] < minimum_available_kib:
             log_jsonl(args.output / "results.jsonl", {"stage": stage, "event": "skipped_low_memory", **snapshot})
             break
-        if snapshot["memory_full_avg10_pct"] >= 10:
+        if snapshot["memory_full_avg10_pct"] >= args.pressure_threshold_pct:
             log_jsonl(args.output / "results.jsonl", {"stage": stage, "event": "skipped_memory_pressure", **snapshot})
             break
         if datetime.now(UTC) >= deadline:
@@ -327,6 +356,8 @@ def main() -> None:
                 args.server_pid,
                 deadline,
                 num_batch=args.num_batch,
+                pressure_consecutive=args.pressure_consecutive,
+                pressure_threshold_pct=args.pressure_threshold_pct,
             )
         except Exception as exc:
             log_jsonl(

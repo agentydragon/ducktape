@@ -7,12 +7,12 @@ def process_drm_memory(pid: int) -> dict:
     clients: dict[str, dict] = {}
     try:
         descriptors = list(Path(f"/proc/{pid}/fdinfo").iterdir())
-    except FileNotFoundError, PermissionError:
+    except OSError:
         return {"pid": pid, "available": False, "clients": []}
     for descriptor in descriptors:
         try:
             fields = dict(line.split(":", 1) for line in descriptor.read_text().splitlines() if ":" in line)
-        except FileNotFoundError, PermissionError:
+        except OSError:
             continue
         client_id = fields.get("drm-client-id", "").strip()
         if not client_id:
@@ -46,19 +46,19 @@ def process_drm_memory(pid: int) -> dict:
 def ollama_runner_drm_memory(server_pid: int) -> list[dict]:
     try:
         tasks = list(Path(f"/proc/{server_pid}/task").iterdir())
-    except FileNotFoundError, PermissionError:
+    except OSError:
         return []
     children = set()
     for task in tasks:
         try:
             children.update((task / "children").read_text().split())
-        except FileNotFoundError, PermissionError:
+        except OSError:
             continue
     result = []
     for child in sorted(children):
         try:
             if Path(f"/proc/{child}/comm").read_text().strip() == "llama-server":
                 result.append(process_drm_memory(int(child)))
-        except FileNotFoundError, PermissionError:
+        except OSError:
             continue
     return result
