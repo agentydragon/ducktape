@@ -124,7 +124,6 @@ def test_notifications_have_no_app_or_direct_runner_dependency(
         "agentplane-egress",
         runner_gateway.TOKEN_AUDIENCE,
         history_service.TOKEN_AUDIENCE,
-        session_dispatcher.TOKEN_AUDIENCE,
     }
     notification_settings = yaml.safe_load(
         resource("ConfigMap", f"{notifications.NAME}-settings")["data"]["settings.yaml"]
