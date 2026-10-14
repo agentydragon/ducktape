@@ -622,7 +622,7 @@ its setup output and outcome reach history as `SetupStarted`/`SetupOutput`/`Setu
 The Sandbox bootstrap (the launch file's, once per Sandbox) starts when the runner starts, but
 nothing shows its output or progress, and an `OpenSession` that meets it still running waits for it,
 which the Runner Gateway's `open_session` (`runner_gateway/session_lifecycle.py`) holds until the
-script exits. Expose its progress and result. A successful bootstrap stays the precondition of
+script exits. Remaining: the controller adds a `Bootstrapped` condition and includes it in `Ready`, adds the terminal `BootstrapFailed`, and holds a suspend until the bootstrap ends. A successful bootstrap stays the precondition of
 opening a Session: an `OpenSession` that meets a bootstrap still running is refused with a retryable
 code, and one that meets a failed or interrupted bootstrap is refused for good (use a new Sandbox). A failed or interrupted bootstrap
 is a Sandbox state of its own, `BootstrapFailed` (operator, 2026-10-13 PDT): terminal, never retried,
@@ -707,11 +707,9 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
     SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Blocked: idle runner Sandboxes suspend]
-    HS_ACCEPTS_CONTINUATION[Candidate: the History Service accepts a continuation past a seal] -- HS image pinned --> ATTACHED_INCARNATION_UID
-    ATTACHED_INCARNATION_UID[Blocked: Attached carries the incarnation UID] -- runner image and VM wheel pinned --> RUNNER_SEAL_PER_INCARNATION
-    HS_ACCEPTS_CONTINUATION -- HS image pinned --> RUNNER_SEAL_PER_INCARNATION[Blocked: the runner keys its seal to the incarnation and reopens]
+    RUNNER_SEAL_PER_INCARNATION[Candidate: the runner keys its seal to the incarnation and reopens]
     RUNNER_SEAL_PER_INCARNATION --> SANDBOX_IDLE_EXPIRY
-    HS_ACCEPTS_CONTINUATION -. related .-> SESSION_INCARNATIONS
+    RUNNER_SEAL_PER_INCARNATION -. related .-> SESSION_INCARNATIONS
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
     HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
     MULTIAGENT_MODEL[Decision: identities and authority vocabulary, section 3] -. who may send and wake .-> DISPATCHER_CORE
@@ -936,42 +934,17 @@ from which the History Service records it, and its seal ends that incarnation, n
 the kept volume the runner journal and its cursors simply continue; the next incarnation journals
 that it resumed after a seal.
 
-The reopening of a sealed journal is `HS_ACCEPTS_CONTINUATION`, `ATTACHED_INCARNATION_UID` and `RUNNER_SEAL_PER_INCARNATION`.
+The reopening of a sealed journal is `RUNNER_SEAL_PER_INCARNATION`; the History Service accepts the continuation and `Attached` carries the incarnation UID.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
-### `HS_ACCEPTS_CONTINUATION` — the History Service accepts a continuation past a seal
-
-**Candidate; operator, 2026-10-13 PDT: a seal belongs to the incarnation that sealed it.** A resumed
-Sandbox cannot run any Session today, and `SANDBOX_IDLE_EXPIRY` waits on this chain. The History Service
-stores the seal in the Session's feed state with the incarnation UID that sealed it, and `Push` accepts a
-push whose UID differs from the seal's when `last_cursor` equals the seal's cursor, then replaces the
-seal. `Attached` gains an optional incarnation UID (the field `SESSION_INCARNATIONS` needs anyway); a
-frame without it behaves as today, so this node is the reader and ships first. A seal already stored
-has no UID and counts as an earlier incarnation's, so Sandboxes suspended today can resume. The rows
-and the acknowledgement it writes follow the ADR's section "Reopening a sealed journal".
-
-Gate: the History Service image with this change is pinned before `ATTACHED_INCARNATION_UID` or
-`RUNNER_SEAL_PER_INCARNATION` ships (image before config).
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
-### `ATTACHED_INCARNATION_UID` — `Attached` carries the incarnation UID
-
-**Blocked on `HS_ACCEPTS_CONTINUATION` pinned.** The runner sends its incarnation UID in `Attached`
-(the Pod or VM UID it announces today on the connection). Nothing else changes: the ingress still sees
-a sealed Session as sealed. Gate: the runner image and the VM guest's runner wheel (`nix/artifact-pins.json`,
-pinned separately) carry the UID before `RUNNER_SEAL_PER_INCARNATION` ships, so a reopen never reaches
-the ingress without one.
 
 ### `RUNNER_SEAL_PER_INCARNATION` — the runner keys its seal to the incarnation and reopens
 
-**Blocked on `HS_ACCEPTS_CONTINUATION` and `ATTACHED_INCARNATION_UID`, both pinned.** The runner's journal
-`Seal` row and its per-Session acknowledgement file record the incarnation UID that sealed. A runner under
-a different UID treats the seal as ended, reopens the journal and appends an entry recording the resume,
-so `ensure_running` and `IngressPusher.track` accept the Session again. Seals on disk without a UID
+**Candidate; operator, 2026-10-13 PDT: a seal belongs to the incarnation that sealed it.** The History Service accepts the continuation and `Attached` carries the incarnation UID. Remaining: a runner under a different
+UID than the one that sealed treats the seal as ended, reopens the journal and appends an entry recording
+the resume, so `ensure_running` and `IngressPusher.track` accept the Session again. Seals on disk without a UID
 count as an earlier incarnation's. The lameduck marker keeps its own incarnation key. Test a suspend and
-resume on the same state volume with a Session that has history, an unacknowledged tail at the seal, and
+resume on the same state volume (on `agentplane-testing`) with a Session that has history, an unacknowledged tail at the seal, and
 a seal written before the UID existed.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
