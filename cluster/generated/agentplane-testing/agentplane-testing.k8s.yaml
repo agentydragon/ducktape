@@ -5341,6 +5341,40 @@ spec:
     cdk8s.io/metadata.addr: agentplane-notifications-deployment-c8c45f99
   type: ClusterIP
 ---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: agentplane-notifications
+  namespace: agentplane-testing
+rules:
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxes
+    verbs:
+      - get
+  - apiGroups:
+      - ""
+    resources:
+      - pods
+    verbs:
+      - get
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: agentplane-notifications
+  namespace: agentplane-testing
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: agentplane-notifications
+subjects:
+  - apiGroup: ""
+    kind: ServiceAccount
+    name: agentplane-notifications
+    namespace: agentplane-testing
+---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:

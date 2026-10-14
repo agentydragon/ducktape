@@ -1,10 +1,23 @@
 """Notification-owned persistence and workload API; only the Runner Gateway reaches runners, and
 receipts are read from the History Service."""
 
+from typing import cast
+
 from cdk8s import ApiObjectMetadata, Duration, Size
-from cdk8s_plus_34 import ContainerResources, Cpu, CpuResources, MemoryResources
+from cdk8s_plus_34 import (
+    ApiResource,
+    ContainerResources,
+    Cpu,
+    CpuResources,
+    IApiResource,
+    MemoryResources,
+    Role,
+    RoleBinding,
+    RolePolicyRule,
+)
 from constructs import Construct
 
+from agentplane.crd_group import GROUP
 from agentplane.notification_service.settings import TOKEN_AUDIENCE, Settings
 from agentplane.workload_auth.audience import WORKLOAD_TOKEN_AUDIENCE
 from cluster.cdk8s import cilium
@@ -12,6 +25,7 @@ from cluster.cdk8s.agentplane import database
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
+from cluster.cdk8s.api_resource import custom_resource
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, Entity, NetworkPolicy
 from cluster.cdk8s.secret_ref import SecretRef
@@ -118,6 +132,22 @@ class Notifications(Construct):
             termination_grace=Duration.seconds(30),
             migrate=migrate_init_container(f"{_IMAGE}-migrate:unset", name="migrate", env_variables=variables),
         )
+        Role(
+            self,
+            "role",
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
+            rules=[
+                # Resolving a destination: its Sandbox, and the incarnation's Pod that `SandboxReader` joins to it.
+                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get"]),
+                RolePolicyRule(resources=[cast(IApiResource, ApiResource.PODS)], verbs=["get"]),
+            ],
+        )
+        RoleBinding(
+            self,
+            "rolebinding",
+            metadata=ApiObjectMetadata(name=NAME, namespace=env.namespace),
+            role=Role.from_role_name(self, "role-ref", NAME),
+        ).add_subjects(workload.account)
         if github is not None:
             secret = SecretRef(namespace=env.namespace, name=github.secret_name)
             for field, key in [("private_key", "private-key"), ("webhook_secret", "webhook-secret")]:
