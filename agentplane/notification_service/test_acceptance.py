@@ -74,7 +74,7 @@ async def running_dispatcher(
     cluster: SandboxCluster, *, settings: DispatcherSettings, monkeypatch: pytest.MonkeyPatch, caller_token_file: Path
 ) -> AsyncIterator[SessionDispatcherClient]:
     """Run the production Dispatcher against the fake cluster and connected Gateway fixture."""
-    set_sandbox(cluster, ready=True, incarnation=POD_UID)
+    set_sandbox(cluster, ready=True, incarnation=POD_UID, pod_name=SANDBOX)
     synced = asyncio.Event()
 
     class ObservedSandboxWatch(dispatcher_main.SandboxWatch):

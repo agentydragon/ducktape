@@ -9,6 +9,7 @@ def set_sandbox(
     *,
     ready: bool,
     incarnation: str = "pod-1",
+    pod_name: str = "test-pod",
     running: bool = True,
     wake_on_send: bool = False,
     deleting: bool = False,
@@ -26,7 +27,7 @@ def set_sandbox(
             "metadata": metadata,
             "spec": {**stored["spec"], "running": running, "wakeOnSend": wake_on_send},
             "status": {
-                "incarnation": {"name": "test-pod", "uid": incarnation},
+                "incarnation": {"name": pod_name, "uid": incarnation},
                 "operatingMode": (
                     sandbox_resource.OperatingMode.RUNNING.value
                     if running
