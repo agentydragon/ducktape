@@ -252,6 +252,10 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 )
                 native = remote.runner(destination)
                 session_id = (await native.create(session_id=uuid4(), spec=MessageToDict(spec))).session_id
+                # Codex starts with a model turn before it accepts runner input. Let that startup
+                # turn settle before opening a journal batch to seed unrelated backlog entries.
+                if spec.harness == runner_pb2.HARNESS_CODEX:
+                    await model.reply(await model.request(), Text("Ready for notifications"))
 
                 async def history_caught_up() -> None:
                     # Delivery reads entries from the History Service, which copies them behind the runner.
@@ -323,16 +327,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 }
                 assert "client_key" not in subscription
                 assert (await agent.post("/v1/subscriptions", json=body)).json() == subscription
-                initial = None
-                if busy:
-                    await remote.command(
-                        destination,
-                        session_id,
-                        command_pb2.Command(
-                            command_id="initial", submit_input=command_pb2.SubmitInput(text="Do other work")
-                        ),
-                    )
-                    initial = await model.request()
                 # Seed the real journal past one worker replay batch. The send path is exercised
                 # through Dispatcher below; unrelated backlog entries need no Gateway RPCs.
                 history_cursor = 0
@@ -346,6 +340,16 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         if history_cursor > 128:
                             break
                 assert history_cursor > 128
+                initial = None
+                if busy:
+                    await remote.command(
+                        destination,
+                        session_id,
+                        command_pb2.Command(
+                            command_id="initial", submit_input=command_pb2.SubmitInput(text="Do other work")
+                        ),
+                    )
+                    initial = await model.request()
                 original = SessionDispatcherClient.submit_input
                 lost = False
                 notice_sent = False
