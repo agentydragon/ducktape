@@ -521,6 +521,12 @@ Session directory when they do not. A Session that is only queued for creation i
 Dispatcher alone until its runner pushes, so the `OpenSession` dispatch row is authoritative until the History
 Service's directory has the Session.
 
+**The queue is bounded.** Decided (operator, 2026-10-14): the Dispatcher holds at most about 1,000
+`QUEUED_IN_DISPATCHER` commands per Session and refuses to enqueue past that, with `RESOURCE_EXHAUSTED` and a detail
+naming the Session and the cap. No code in `agentplane/` uses `RESOURCE_EXHAUSTED` yet, so the code is unclaimed. The
+cap counts queued commands only: delivered and terminal rows do not count, `InterruptTurn` is never stored, and
+`StopRunnerSession` is exempt so a full queue can still be cleared.
+
 **How long dispatch rows are kept (open).** A row serves the sender (status reads and `command_id` idempotency on a
 retried RPC) and the `OpenSession` window above. Redelivery of an already-admitted command resolves from the runner's
 journal, which is keyed by `command_id` (`runner/session.py`, `journal.get`), and history lives in the History Service,
@@ -738,6 +744,10 @@ sequenceDiagram
   | B. Optional sender `expire_after` with a Dispatcher default; expiry is `FAILED`, reason named | A default has to be chosen; an expired command may already have woken the Sandbox |
   | C. B plus an attempt cap on `DELIVERING_TO_RUNNER` returning to `QUEUED_IN_DISPATCHER`        | A cap is another number; lameduck `ABORTED` refusals must not count against it    |
 
+  The cap bounds the backlog but not its age: a Sandbox that cannot resume holds up to 1,000 commands per Session
+  indefinitely under A, so A is no longer unbounded in size, only in time. B and C stay worthwhile because they give
+  the sender a terminal answer instead of a full queue.
+
   Recommend C. A refusal with a terminal code (`FAILED_PRECONDITION`) already fails the dispatch at once; the cap covers
   a command that repeatedly loses its call or kills the harness. `StopRunnerSession` never expires.
 
@@ -778,6 +788,7 @@ sequenceDiagram
 | The six wire phases stay; finer states are reasons on conditions                                         | Decided | 2026-10-14 | Lifecycle    |
 | Removing the finalizer by hand is the only break-glass; there is no force-seal                           | Decided | 2026-10-13 | Lifecycle    |
 | Names: Session Dispatcher, `OpenSession` (kept), `Quiesce`, `Quiesced`, `Draining`, `Flushing`           | Decided | 2026-10-13 | below        |
+| The queue holds about 1,000 queued commands per Session; past that, `RESOURCE_EXHAUSTED`                 | Decided | 2026-10-14 | D4           |
 | How long the Dispatcher keeps dispatch rows                                                              | Open    |            | D4           |
 | A message TTL and the handling of poison commands                                                        | Open    |            | Complexities |
 
