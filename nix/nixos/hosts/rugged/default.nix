@@ -87,6 +87,11 @@ in
   # before re-enabling.
   ducktape.localLlm.npu.enable = false;
 
+  # NPU kernel/userspace driver and firmware only, so Level Zero and OpenVINO
+  # can be tested on the device without the LLM service. Doc:
+  # cluster/docs/inference/rugged_npu_driver.md
+  hardware.cpu.intel.npu.enable = true;
+
   # Separate btrfs subvolumes for containerd and local-path-provisioner storage.
   # Create them before first boot with:
   #   sudo mount -t btrfs /dev/mapper/cryptroot /mnt/btrfs-root
@@ -224,7 +229,11 @@ in
   users.users.${username} = {
     shell = pkgs.zsh;
     # Allow reading system logs without sudo (systemd-journal group)
-    extraGroups = [ "systemd-journal" ];
+    # render: /dev/accel/* access for the NPU
+    extraGroups = [
+      "systemd-journal"
+      "render"
+    ];
     openssh.authorizedKeys.keys = with keys; [
       iguana
       wyrm2
