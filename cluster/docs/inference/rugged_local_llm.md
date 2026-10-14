@@ -366,6 +366,32 @@ requests, so this is not a measured initialization peak. NPU peak RSS includes
 pipeline initialization; its configuration reserves 8192 input + 2048 output
 tokens, versus the GPU's 32,768 total allocation.
 
+### Published quality results (not reproduced locally)
+
+For further candidates, the agreed validation scope is local inference, actual
+context/truncation checks, tiny-N needle-in-haystack retrieval, and applicable
+tool-use smokes. Needle probes check end-to-end context integrity, not model
+quality: combine retrieval with native token counts and truncation logs. A failed
+needle alone is not evidence that the stack truncated the prompt. Full coding benchmarks need not be rerun: published evaluations inform
+expected capability, with the provenance and configuration differences retained.
+The completed local cohorts above remain measurements of this setup.
+
+| Model                  | Publisher-reported evaluation              |         Score | Source                                                                              |
+| ---------------------- | ------------------------------------------ | ------------: | ----------------------------------------------------------------------------------- |
+| Qwen3 4B Instruct 2507 | LiveCodeBench v6 (2025-02 through 2025-05) |          35.1 | [Qwen model card](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507#performance)   |
+| Qwen3 4B Instruct 2507 | Aider-Polyglot                             |          12.9 | [Qwen model card](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507#performance)   |
+| Qwen3 4B Instruct 2507 | BFCL-v3                                    |          61.9 | [Qwen model card](https://huggingface.co/Qwen/Qwen3-4B-Instruct-2507#performance)   |
+| Gemma 4 E2B / E4B      | LiveCodeBench v6                           | 44.0% / 52.0% | [Google model card](https://huggingface.co/google/gemma-4-E2B-it#benchmark-results) |
+| Gemma 4 E2B / E4B      | MRCR v2, eight needles, 128k average       | 19.1% / 25.4% | [Google model card](https://huggingface.co/google/gemma-4-E2B-it#benchmark-results) |
+
+Sources checked October 14, 2026. These are publisher reports for the named
+instruction-tuned models, **not reproduced rugged results**. Weight/cache
+quantization, reasoning mode, runtime, sampling, prompt templates, and benchmark
+subsets may differ. Our Gemma tests disable reasoning; the external table is not
+a matched non-thinking experiment. Neither the published scores nor a successful
+needle smoke guarantees long-context coding-agent quality. Do not combine these
+scores with the local HumanEval+ fractions into one ranking.
+
 ### Observed Pareto tradeoffs
 
 For the two completed AC GPU coding cohorts, neither candidate dominates:
