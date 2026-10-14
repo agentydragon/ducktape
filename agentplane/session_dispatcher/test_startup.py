@@ -3,7 +3,9 @@
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 import pytest_bazel
@@ -11,7 +13,7 @@ from kubernetes_asyncio import client as k8s
 
 from agentplane.grpc_calls import dial
 from agentplane.proto import runner_pb2, session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
-from agentplane.sandboxes.testing.kubernetes import OWNER, SANDBOX, SandboxCluster
+from agentplane.sandboxes.testing.kubernetes import OWNER, SANDBOX, SANDBOX_UID, SandboxCluster
 from agentplane.session_dispatcher import main as dispatcher_main
 from agentplane.session_dispatcher.settings import Settings
 from agentplane.session_dispatcher.testing.sandbox_status import set_sandbox
@@ -30,7 +32,7 @@ METADATA = (("authorization", f"Bearer {TOKEN}"),)
 type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
 
 
-async def test_service_restart_retains_and_delivers_queued_work_without_an_app(
+async def test_service_restart_after_lease_expiry_retains_queued_work_without_an_app(
     cluster: SandboxCluster,
     db_url: str,
     runner: tuple[ScriptedRunner, str],
@@ -102,6 +104,16 @@ async def test_service_restart_retains_and_delivers_queued_work_without_an_app(
         ).dispatch
         assert queued.state == pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER
         assert runner[0].calls == []
+
+    # A stopped process no longer renews its scheduling Lease. Model the expiry instead of waiting
+    # out the production lease duration before allowing the replacement to take ownership.
+    coordination = k8s.CoordinationV1Api(cluster.api)
+    lease_name = f"dispatcher-{UUID(SANDBOX_UID).hex}"
+    lease = await coordination.read_namespaced_lease(lease_name, OWNER.namespace)
+    lease.spec.renew_time = datetime.now(UTC) - timedelta(seconds=60)
+    duration = lease.spec.lease_duration_seconds or 30
+    assert lease.spec.renew_time + timedelta(seconds=duration) <= datetime.now(UTC)
+    await coordination.replace_namespaced_lease(lease_name, OWNER.namespace, lease)
 
     async with running() as restarted:
         retained = (
