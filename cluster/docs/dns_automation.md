@@ -18,6 +18,11 @@ public target IPs. These explicit names take precedence over the wildcard.
 With `upsert-only`, deleting an HTTPRoute does not remove its DNS record;
 record deletion needs a separately reviewed policy change or cleanup.
 
+**Gotcha:** ExternalDNS creates no record at a name that already holds any record of a
+managed type (A, AAAA, CNAME, MX, TXT) without its ownership marker, and its log only
+says "All records are already up to date". A hand-made record at a hostname therefore
+blocks that HTTPRoute's A record: delete it, or move it into `static-records`.
+
 ExternalDNS uses the dedicated IAM user `cluster-external-dns` with record
 permissions limited to these hosted zones. Its key is stored in a separate SOPS
 Secret and is not shared with Terraform's registrar-capable credential. The

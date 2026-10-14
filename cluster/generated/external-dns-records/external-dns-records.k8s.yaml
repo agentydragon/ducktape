@@ -47,3 +47,8 @@ spec:
       recordType: TXT
       targets:
         - '"v=DMARC1; p=reject; adkim=s; aspf=s"'
+    - dnsName: agentydragon.com
+      recordTTL: 300
+      recordType: TXT
+      targets:
+        - '"openai-domain-verification=dv-hLPhfjhb8mcMp3uqUVJDmbEV"'

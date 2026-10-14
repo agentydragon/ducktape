@@ -84,7 +84,7 @@ def external_dns(chart: Chart, directory: RenderedDirectory, external_secrets_op
 
 
 def records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
-    """The six static endpoints that do not come from HTTPRoutes."""
+    """The static endpoints that do not come from HTTPRoutes."""
     chart = Chart(app, f"{NAME}-records", disable_resource_name_hashes=True)
     public_nodes = mesh.public_kubernetes_nodes().values()
     gateway_ips = sorted({ip for node in public_nodes if (ip := node.public_ip) is not None})
@@ -117,6 +117,14 @@ def records_chart(app: App, mesh: nebula_mesh.Mesh) -> Chart:
                     record_type="TXT",
                     record_ttl=300,
                     targets=['"v=DMARC1; p=reject; adkim=s; aspf=s"'],
+                ),
+                # ExternalDNS creates no record at a name holding any record it does not own, so this
+                # TXT must be ours for the apex-redirect HTTPRoute's agentydragon.com A record to exist.
+                DnsEndpointSpecEndpoints(
+                    dns_name="agentydragon.com",
+                    record_type="TXT",
+                    record_ttl=300,
+                    targets=['"openai-domain-verification=dv-hLPhfjhb8mcMp3uqUVJDmbEV"'],
                 ),
             ]
         ),
