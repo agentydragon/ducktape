@@ -1134,8 +1134,9 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 ### `APP_SANDBOX_WRITES` — the app creates, deletes, suspends and resumes Sandboxes itself
 
 **Blocked until the generated direct-path config is applied and the app rollout is healthy in both
-environments.** The guarded app image is currently pinned in testing and staging. As the requesting operator, the app creates, deletes,
-suspends and resumes Sandboxes through the Kubernetes API, and reads inventory with the derived phase.
+environments.** The guarded app image is currently pinned in testing and staging. As the requesting
+operator, the app creates, deletes, suspends and resumes Sandboxes through the Kubernetes API, and
+reads inventory with the derived phase.
 The shared `SandboxInventory` supplies the guarded running-state patch, retryable refusal while an
 incarnation is quiescing, create validation/idempotency and phase derivation. The app also edits egress
 grants, reads policy views and templates, and streams the VM serial console through KubeVirt's console
@@ -1155,8 +1156,11 @@ the Role, each marked by a `CLEANUP` tombstone), the Notification Service's `san
 and its egress rule) and the Notification Service's place among the Service's callers (the
 `notification_service/docs/api.md` and `sandbox_service/README.md` sentences that name it), the app's
 gRPC fallback, health probe, target/token settings and ServiceAccount token projection, and update the
-README services diagram (12 to 11 services). Drop manifest config before removing its settings readers.
-Code and manifests go together here, after the caller images are pinned.
+README services diagram (12 to 11 services). First make the app's Sandbox Service target optional
+and skip its connection in direct mode while the old config remains. Then remove the Service target
+and token from app manifests and Notification's unused `sandbox_service` key; after those manifests
+roll out, remove their settings readers and clients. Delete the Service only after the direct-path
+config rollout and all remaining caller images are confirmed.
 
 ### `DISPATCHER_CORE` — the Session Dispatcher delivers to running Sandboxes
 

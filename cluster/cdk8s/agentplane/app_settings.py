@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Set
 from pathlib import Path
 
 from pydantic import AnyHttpUrl
@@ -48,7 +49,7 @@ def settings(
     thread_preset_codex_model: Route,
     action_federation: ActionFederationSettings,
     public_coder_policy_sets: list[str],
-    default_policy_sets: list[str],
+    default_policy_sets: Set[str],
     kubernetes_grants: dict[str, KubernetesGrant] | None = None,
 ) -> AppSettingsConfig:
     return AppSettingsConfig(

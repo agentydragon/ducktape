@@ -94,7 +94,7 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
             SSH_READS_SET,
             *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["public-coder"]),
         ],
-        default_policy_sets=sorted(DEFAULT_POLICIES),
+        default_policy_sets=set(DEFAULT_POLICIES),
         kubernetes_grants={TOOL_CONFIG_GRANT: tool_config_grant(namespace), **agent_access_profiles.catalog()},
     )
     # The "haku" and "finance-agent" launch presets live only here, not in app_settings.py:
