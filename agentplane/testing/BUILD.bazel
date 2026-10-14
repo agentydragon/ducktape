@@ -12,6 +12,7 @@ package(
         "//agentplane/notification_service:__pkg__",
         "//agentplane/runner_gateway:__subpackages__",
         "//agentplane/sandbox_service:__subpackages__",
+        "//agentplane/session_dispatcher:__pkg__",
     ],
 )
 

@@ -47,6 +47,7 @@ flowchart TB
         actions[Action Service]
         policy[Policy Controller]
         sandboxctl[Sandbox Controller]
+        dispatcher[Session Dispatcher, not yet deployed]
     end
     subgraph sandbox[Sandbox Pod]
         runner[Runner + native drivers]
@@ -83,6 +84,8 @@ flowchart TB
     gw -->|control EndpointSlices, Leases; Quiesced on deleting Sandboxes| k8s
     hs -->|ingest, fold, read| hist_db
     notif -->|Sandbox reads| k8s
+    dispatcher -->|Sandbox watch| k8s
+    dispatcher -->|per-command Runner RPCs through the runner proxy| gw
     notif -->|commands| gw
     notif -->|command receipts| hs
     notif --> actions

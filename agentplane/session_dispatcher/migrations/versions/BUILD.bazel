@@ -1,0 +1,12 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+exports_files(["0001_dispatch.py"])
+
+py_library(
+    name = "0001_dispatch",
+    srcs = ["0001_dispatch.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)

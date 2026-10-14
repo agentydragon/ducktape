@@ -1,0 +1,164 @@
+// The Session Dispatcher: the durable queue between senders and the runners' Sessions. Design in
+// agentplane/docs/adr_sandbox_session_control.md.
+syntax = "proto3";
+
+package agentplane.proto.session_dispatcher;
+
+import "agentplane/proto/event_log.proto";
+import "google/protobuf/timestamp.proto";
+
+// One RPC per command, mirroring the runner's. Each stores the command durably and answers with its
+// `Dispatch` in `DELIVERY_STATE_QUEUED_IN_DISPATCHER`; none waits for delivery. `command_id` is the
+// idempotency key across all of them: a retry of the same operation and payload answers with the same
+// `Dispatch`, and the same ID under another operation or payload fails `ALREADY_EXISTS`.
+service SessionDispatcher {
+  rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
+  rpc ChangeModel(ChangeModelRequest) returns (ChangeModelResponse);
+  rpc ChangeReasoningEffort(ChangeReasoningEffortRequest) returns (ChangeReasoningEffortResponse);
+  // Not stored and not queued: delivered at once to a `Ready` Sandbox, and otherwise a no-op.
+  rpc InterruptTurn(InterruptTurnRequest) returns (InterruptTurnResponse);
+  // Goes ahead of the Session's queue: the inputs queued before it end `CANCELLED_IN_DISPATCHER` with
+  // reason `stopped`. Never counts against the queue cap.
+  rpc StopRunnerSession(StopRunnerSessionRequest) returns (StopRunnerSessionResponse);
+  rpc GetDispatch(GetDispatchRequest) returns (GetDispatchResponse);
+  // The current Dispatches of a Session or a Sandbox, then each one again whenever it changes.
+  rpc WatchDispatches(WatchDispatchesRequest) returns (stream WatchDispatchesResponse);
+  rpc ListDispatches(ListDispatchesRequest) returns (ListDispatchesResponse);
+  // Only while the Dispatch is `DELIVERY_STATE_QUEUED_IN_DISPATCHER`: once a delivery began its outcome
+  // is the runner's.
+  rpc CancelDispatch(CancelDispatchRequest) returns (CancelDispatchResponse);
+}
+
+// Where a Dispatch is. The one vocabulary of every dispatch.
+enum DeliveryState {
+  DELIVERY_STATE_UNSPECIFIED = 0;
+  DELIVERY_STATE_QUEUED_IN_DISPATCHER = 1;     // stored, not sent; `reason` says what it waits for
+  DELIVERY_STATE_DELIVERING_TO_RUNNER = 2;     // a call to the runner is in flight
+  DELIVERY_STATE_RUNNER_ADMITTED = 3;          // the runner journaled it
+  DELIVERY_STATE_HARNESS_CONFIRMED = 4;        // it reached the model's context
+  DELIVERY_STATE_NO_OP = 5;                    // nothing to do; `reason` says where that was decided
+  DELIVERY_STATE_FAILED = 6;                   // terminal; `reason` names where it failed
+  DELIVERY_STATE_CANCELLED_IN_DISPATCHER = 7;  // cancelled before delivery began; `reason` says by whom
+  DELIVERY_STATE_UNKNOWN = 8;                  // the Sandbox was deleted; the outcome can no longer be read
+}
+
+enum Operation {
+  OPERATION_UNSPECIFIED = 0;
+  OPERATION_SUBMIT_INPUT = 1;
+  OPERATION_CHANGE_MODEL = 2;
+  OPERATION_CHANGE_REASONING_EFFORT = 3;
+  OPERATION_STOP_RUNNER_SESSION = 4;
+}
+
+message Dispatch {
+  string command_id = 1;
+  string session_id = 2;
+  string sandbox = 3;  // the Sandbox's name
+  // The Sandbox this was queued for, which a recreated Sandbox of the same name is not. Absent when no
+  // such Sandbox existed.
+  optional string sandbox_uid = 4;
+  Operation operation = 5;
+  DeliveryState state = 6;
+  optional string reason = 7;
+  // The runner journal's `CommandAdmitted` entry, once the runner admitted it.
+  optional agentplane.proto.event_log.EventEntry admission = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp updated_at = 10;
+}
+
+message SubmitInputRequest {
+  string command_id = 1;
+  string session_id = 2;
+  string sandbox = 3;
+  string text = 4;
+}
+
+message SubmitInputResponse {
+  Dispatch dispatch = 1;
+}
+
+message ChangeModelRequest {
+  string command_id = 1;
+  string session_id = 2;
+  string sandbox = 3;
+  string model = 4;
+}
+
+message ChangeModelResponse {
+  Dispatch dispatch = 1;
+}
+
+message ChangeReasoningEffortRequest {
+  string command_id = 1;
+  string session_id = 2;
+  string sandbox = 3;
+  string effort = 4;
+}
+
+message ChangeReasoningEffortResponse {
+  Dispatch dispatch = 1;
+}
+
+message InterruptTurnRequest {
+  string command_id = 1;
+  string session_id = 2;
+  string sandbox = 3;
+  string turn_id = 4;
+}
+
+message InterruptTurnResponse {
+  // `DELIVERY_STATE_RUNNER_ADMITTED` with `admission`, or `DELIVERY_STATE_NO_OP` with `reason`.
+  DeliveryState state = 1;
+  optional string reason = 2;
+  optional agentplane.proto.event_log.EventEntry admission = 3;
+}
+
+message StopRunnerSessionRequest {
+  string command_id = 1;
+  string session_id = 2;
+  string sandbox = 3;
+}
+
+message StopRunnerSessionResponse {
+  Dispatch dispatch = 1;
+}
+
+message GetDispatchRequest {
+  string command_id = 1;
+}
+
+message GetDispatchResponse {
+  Dispatch dispatch = 1;
+}
+
+// Which Dispatches: one Session's, or one Sandbox's by name. Exactly one is set.
+message DispatchFilter {
+  oneof scope {
+    string session_id = 1;
+    string sandbox = 2;
+  }
+}
+
+message WatchDispatchesRequest {
+  DispatchFilter filter = 1;
+}
+
+message WatchDispatchesResponse {
+  Dispatch dispatch = 1;
+}
+
+message ListDispatchesRequest {
+  DispatchFilter filter = 1;
+}
+
+message ListDispatchesResponse {
+  repeated Dispatch dispatches = 1;  // oldest first
+}
+
+message CancelDispatchRequest {
+  string command_id = 1;
+}
+
+message CancelDispatchResponse {
+  Dispatch dispatch = 1;
+}

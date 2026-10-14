@@ -1,0 +1,27 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(
+    default_testonly = True,
+    default_visibility = ["//agentplane/session_dispatcher:__pkg__"],
+)
+
+py_library(
+    name = "sandbox_status",
+    srcs = ["sandbox_status.py"],
+    deps = [
+        "//agentplane:sandbox_resource",
+        "//agentplane/sandbox_service/testing:kubernetes",
+    ],
+)
+
+py_library(
+    name = "scripted_runner",
+    srcs = ["scripted_runner.py"],
+    deps = [
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_control_pb2",
+        "//agentplane/proto:runner_control_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)

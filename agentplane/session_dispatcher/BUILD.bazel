@@ -1,0 +1,322 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@rules_oci//oci:defs.bzl", "oci_image")
+load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
+load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+
+package(default_visibility = ["//agentplane/session_dispatcher:__subpackages__"])
+
+py_library(
+    name = "channels",
+    srcs = ["channels.py"],
+    deps = [
+        "//agentplane/postgres:wakeups",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "database_migrate",
+    srcs = ["database_migrate.py"],
+    data = ["//agentplane/session_dispatcher/migrations:files"],
+    deps = [
+        ":db",
+        "//util:db_migrations",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "db",
+    srcs = ["db.py"],
+    deps = [
+        ":models",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//util:sqlalchemy_protobuf",
+        "//util:sqlalchemy_types",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "delivery",
+    srcs = ["delivery.py"],
+    deps = [
+        ":channels",
+        ":db",
+        ":models",
+        ":runner_client",
+        ":sandboxes",
+        ":store",
+        "//agentplane/proto:event_log_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+        "@pypi//tenacity",
+    ],
+)
+
+py_library(
+    name = "grpc_api",
+    srcs = ["grpc_api.py"],
+    deps = [
+        ":channels",
+        ":db",
+        ":models",
+        ":runner_client",
+        ":sandboxes",
+        ":store",
+        "//agentplane:grpc_servicer",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
+        "//agentplane/proto:session_dispatcher_pb2_grpc",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "main",
+    srcs = ["main.py"],
+    deps = [
+        ":delivery",
+        ":grpc_api",
+        ":runner_client",
+        ":sandboxes",
+        ":settings",
+        ":store",
+        "//agentplane:grpc_serving",
+        "//agentplane:service_process",
+        "//agentplane/workload_auth:principal",
+        "//util:kubernetes",
+        "@pypi//asyncpg",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "models",
+    srcs = ["models.py"],
+    deps = [
+        "//agentplane/proto:command_pb2",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "runner_client",
+    srcs = ["runner_client.py"],
+    deps = [
+        "//agentplane:grpc_calls",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_control_pb2",
+        "//agentplane/proto:runner_control_pb2_grpc",
+        "//agentplane/runner_gateway:runner_proxy",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "sandboxes",
+    srcs = ["sandboxes.py"],
+    deps = [
+        ":models",
+        "//agentplane:changes",
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//util:kubernetes",
+        "//util:kubernetes_watch",
+    ],
+)
+
+py_library(
+    name = "settings",
+    srcs = ["settings.py"],
+    deps = [
+        "//agentplane:subjects",
+        "//util:yaml_file_settings",
+        "@pypi//pydantic",
+        "@pypi//pydantic_settings",
+    ],
+)
+
+py_library(
+    name = "store",
+    srcs = ["store.py"],
+    deps = [
+        ":channels",
+        ":db",
+        ":models",
+        "//agentplane/postgres:wakeups",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "@pypi//protobuf",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":database_migrate",
+        ":runner_client",
+        ":sandboxes",
+        ":store",
+        "//agentplane:background_task",
+        "//agentplane:grpc_serving",
+        "//agentplane/proto:runner_control_pb2_grpc",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/session_dispatcher/testing:scripted_runner",
+        "//agentplane/testing:fake_apiserver",
+        "//util:kubernetes",
+        "//util/testing:postgres_fixtures",
+        "@pypi//asyncpg",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//psycopg",
+        "@pypi//pytest",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_test(
+    name = "test_delivery",
+    size = "medium",
+    srcs = ["test_delivery.py"],
+    deps = [
+        ":channels",
+        ":conftest",
+        ":db",
+        ":delivery",
+        ":models",
+        ":runner_client",
+        ":sandboxes",
+        ":store",
+        "//:conftest",
+        "//agentplane:background_task",
+        "//agentplane:sandbox_resource",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/session_dispatcher/testing:sandbox_status",
+        "//agentplane/session_dispatcher/testing:scripted_runner",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_store",
+    size = "medium",
+    srcs = ["test_store.py"],
+    deps = [
+        ":conftest",
+        ":models",
+        ":store",
+        "//:conftest",
+        "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_binary(
+    name = "server",
+    main_module = "agentplane.session_dispatcher.main",
+    deps = [":main"],
+)
+
+aspect_py_binary(
+    name = "server_image_bin",
+    main = "main.py",
+    deps = [":main"],
+)
+
+py_image_layer(
+    name = "server_layers",
+    binary = ":server_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("server_image_bin"),
+    env = py_image_env(binary_name = "server_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":server_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "migrate",
+    main_module = "agentplane.session_dispatcher.database_migrate",
+    deps = [":database_migrate"],
+)
+
+aspect_py_binary(
+    name = "migration_image_bin",
+    main = "database_migrate.py",
+    deps = [":database_migrate"],
+)
+
+py_image_layer(
+    name = "migration_layers",
+    binary = ":migration_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+oci_image(
+    name = "migration_image",
+    base = "@debian_trixie_slim_linux_amd64",
+    entrypoint = py_image_entrypoint("migration_image_bin"),
+    env = py_image_env(binary_name = "migration_image_bin"),
+    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
+    tars = [":migration_layers"],
+    user = "1000:1000",
+    visibility = ["//visibility:public"],
+)
+
+py_test(
+    name = "test_grpc_api",
+    size = "medium",
+    srcs = ["test_grpc_api.py"],
+    deps = [
+        ":conftest",
+        ":grpc_api",
+        ":runner_client",
+        ":sandboxes",
+        ":store",
+        "//:conftest",
+        "//agentplane:grpc_calls",
+        "//agentplane:grpc_serving",
+        "//agentplane:sandbox_resource",
+        "//agentplane/proto:session_dispatcher_pb2",
+        "//agentplane/proto:session_dispatcher_pb2_grpc",
+        "//agentplane/sandbox_service/testing:kubernetes",
+        "//agentplane/session_dispatcher/testing:sandbox_status",
+        "//agentplane/session_dispatcher/testing:scripted_runner",
+        "//agentplane/testing:fake_apiserver",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

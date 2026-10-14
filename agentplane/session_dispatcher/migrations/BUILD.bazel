@@ -1,0 +1,19 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+filegroup(
+    name = "files",
+    srcs = [
+        "env.py",
+        "//agentplane/session_dispatcher/migrations/versions:0001_dispatch.py",
+    ],
+    visibility = ["//agentplane/session_dispatcher:__pkg__"],
+)
+
+py_library(
+    name = "env",
+    srcs = ["env.py"],
+    deps = [
+        "//agentplane/session_dispatcher:db",
+        "@pypi//alembic",
+    ],
+)

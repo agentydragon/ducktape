@@ -311,6 +311,16 @@
       "test": "//agentplane/notification_service/...",
       "registry": "forgejo"
     },
+    "agentplane-session-dispatcher": {
+      "target": "//agentplane/session_dispatcher:image",
+      "test": "//agentplane/session_dispatcher/...",
+      "registry": "forgejo"
+    },
+    "agentplane-session-dispatcher-migrate": {
+      "target": "//agentplane/session_dispatcher:migration_image",
+      "test": "//agentplane/session_dispatcher/...",
+      "registry": "forgejo"
+    },
     "tf-runner": {
       "target": "//cluster/tf_runner:image",
       "test": "//cluster/tf_runner/..."

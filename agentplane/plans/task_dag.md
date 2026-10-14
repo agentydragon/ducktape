@@ -677,7 +677,7 @@ flowchart TD
     QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: the controller stops reading the blocking Quiesce shape]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
-    DISPATCHER_CORE[Candidate: the Session Dispatcher delivers to running Sandboxes]
+    DISPATCHER_CORE[Candidate: deploy the Session Dispatcher, then the facts that settle its commands]
     SANDBOX_SHARED_CODE_MOVE[Candidate: what outlives the Sandbox Service leaves its package]
     SANDBOX_WRITE_HELPER[Candidate: one shared library writes a Sandbox's spec]
     APP_SANDBOX_WRITES[Blocked: the app creates, deletes, suspends and resumes Sandboxes itself]
@@ -1147,27 +1147,24 @@ services diagram (12 to 11 services). Code and manifests go together here, after
 
 ### `DISPATCHER_CORE` — the Session Dispatcher delivers to running Sandboxes
 
-**Candidate; the runner's per-command RPCs are on devel and the proxy admits them.** A new service with its own database and
-the one job of delivery, proposed in `docs/adr_sandbox_session_control.md`. Its own API is one RPC per
-command, like the runner's. It accepts a message,
-persists it before it acknowledges the sender, delivers it through the gateway's runner proxy to a
-running Sandbox, and reports a delivery state the sender can read (operator, 2026-10-13 PDT; each name says where the command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`, `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED` with a reason, `CANCELLED_IN_DISPATCHER`, and `UNKNOWN` for a deleted Sandbox only; a quiesce refusal returns `DELIVERING_TO_RUNNER` to `QUEUED_IN_DISPATCHER`). The runner deduplicates on the
-command ID, a reply lost across an incarnation boundary is redelivered to the next incarnation
-(`THREAD_SUCCESSOR_DELIVERY`), delivery is first-in first-out per Session, `InterruptTurn` bypasses the queue and
-`StopRunnerSession` goes ahead of it, cancelling the inputs queued before it; those end `CANCELLED_IN_DISPATCHER` with reason `stopped`. An `InterruptTurn`
-is not stored: its outcome is its RPC response. A message for a deleted Session or a failed delivery ends in a
-terminal state with a reason, which the Dispatcher keeps while its Sandbox exists (operator, 2026-10-13 PDT; a different policy may come later); when the Sandbox CR's deletion arrives on the
-watch, queued commands end `FAILED` (reason `sandbox_deleted`) and delivering ones `UNKNOWN`. A queued command
-has no TTL; a Session holds at most about 1,000 queued commands, and a send past that fails
-`RESOURCE_EXHAUSTED`. The Dispatcher is a required door for senders. Replicas shard Sandboxes by a per-Sandbox Lease
-so each has one active owner. Authorization names which senders may send, and the sender kinds
-that may wake are `DISPATCHER_WAKE_ON_SEND`'s. It does not depend on the History Service to deliver. It learns a Sandbox's state from a watch on
-the Sandbox CR (`util.kubernetes_watch.ListWatch`, as the app and the gateway do), reading `Ready` with its
-reason and `status.incarnation`; its Role gets `get/list/watch` on `sandboxes`, and `patch` beside them for the wake of
-`DISPATCHER_WAKE_ON_SEND`, which patches `spec.running` and `spec.wakeGeneration` itself. There is no
-`WatchSandboxes` RPC and no Service watch. This
-node moves no sender and wakes nothing, so it can land beside the direct path with no change for
-anyone. Test duplicate sends, a sender that leaves, a deleted target and a refused delivery.
+**Candidate.** The service is in `session_dispatcher/` (README there) with its image, built and tested, and not
+deployed; it moves no sender and wakes nothing. What remains, in order:
+
+1. **Deploy it, after the image is pinned.** Deployment (one replica, `Recreate`), Service, database on the shared
+   CNPG cluster with the migration init container, Role with `get/list/watch` on `sandboxes`, its account in the
+   gateway's `caller_accounts`, the Flux image automation, and the README services diagram.
+2. **`HARNESS_CONFIRMED` has no writer.** A command stays `RUNNER_ADMITTED` until a fact says it reached the model's
+   context; decide which fact (the runner's journal, read from the Lease or the History Service) and settle `submit_input`
+   rows on it.
+3. **Replicas shard Sandboxes by a per-Sandbox Lease** so each has one active owner; until then there is one active
+   replica.
+4. **Dispatch-row retention.** The operator's policy is to keep a terminal Dispatch while its Sandbox exists, and
+   rows are kept past the Sandbox's deletion today; decide whether they go with it.
+5. **Authorization names which senders may send** (any `caller_accounts` entry may today); the sender kinds that may
+   wake are `DISPATCHER_WAKE_ON_SEND`'s.
+6. **A command whose reply was lost across an incarnation boundary** is redelivered to the next incarnation
+   (`THREAD_SUCCESSOR_DELIVERY`).
+7. **Poison commands** get no special handling yet.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
