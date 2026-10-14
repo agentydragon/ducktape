@@ -16,13 +16,31 @@ The importer consumes the `oci_image` targets through `oci_layout_rloc`, combine
 descriptors with the rendered tags, and streams each distinct blob once. It does not materialize
 Docker-format `oci_load` tarballs.
 
-Baseline measurement at `4fcc98579e` plus temporary cProfile instrumentation:
-[BuildBuddy lifecycle run](https://app.buildbuddy.io/invocation/75cf36f3-50c9-423c-bc24-522e00782390),
-2026-10-14, four tests passed in 869.98 seconds. Pytest setup took 812.96 seconds; cProfile attributed
-528.43 seconds to image import. The OCI-layout import change still needs a measured lifecycle pass;
-these are baseline numbers, not a claimed improvement. Earlier evidence
-from [#10414](https://github.com/agentydragon/ducktape/pull/10414) was 784 seconds for four lifecycle
-tests and 590 seconds for the model test; those timings predate Dispatcher deployment.
+## Lifecycle measurements
+
+Both runs used temporary cProfile instrumentation and passed all four model-free lifecycle tests.
+The instrumentation was removed after measurement.
+
+| Measurement (2026-10-14) | Per-image archive import | Combined OCI-layout stream |
+| ------------------------ | -----------------------: | -------------------------: |
+| Pytest total             |                 869.98 s |                   704.32 s |
+| Pytest setup             |                 812.96 s |                   652.23 s |
+| cProfile image import    |                 528.43 s |                   444.97 s |
+
+Baseline: `4fcc98579e` plus the profiler patch,
+[BuildBuddy run](https://app.buildbuddy.io/invocation/75cf36f3-50c9-423c-bc24-522e00782390).
+OCI stream: `ff38137b3f` plus the same instrumentation,
+[BuildBuddy run](https://app.buildbuddy.io/invocation/3b656910-9b6f-4b6c-8a7a-e7129375a1fd).
+Each run publishes `test.log`, `test.xml`, `k3s.log` and `lifecycle.prof` as test artifacts.
+
+The second run was 165.66 seconds (19%) shorter overall; image import was 83.45 seconds (16%) shorter.
+These are individual runs on shared RBE hosts, not a controlled benchmark or an estimate of steady-state
+CI latency. Image import still takes about 7.4 minutes and dominates setup. Inspect its containerd
+import/unpack work before changing test timeouts; the remaining setup cost includes deployment readiness.
+The next CI step remains the model-free target, with the bare-cluster coverage gaps below explicit.
+
+Earlier evidence from [#10414](https://github.com/agentydragon/ducktape/pull/10414) was 784 seconds for
+four lifecycle tests and 590 seconds for the model test; those timings predate Dispatcher deployment.
 
 ## Result
 
