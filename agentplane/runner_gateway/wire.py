@@ -9,6 +9,12 @@ from agentplane.proto import runner_gateway_pb2, runner_pb2, sandbox_service_pb2
 # gazelle:include_dep @pypi//protobuf
 
 
+def is_complete_spec(request: runner_gateway_pb2.CreateSessionRequest) -> bool:
+    """A spec with no mask is the whole launch spec: nothing inherits from the Sandbox. Callers that
+    mask send overrides, and an empty spec with no mask is "inherit every default"."""
+    return not request.override_mask.paths and bool(request.spec.ListFields())
+
+
 def launch_overrides(request: runner_gateway_pb2.CreateSessionRequest) -> dict[str, object]:
     paths = list(request.override_mask.paths)
     fields = runner_pb2.SessionSpec.DESCRIPTOR.fields_by_name

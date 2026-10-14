@@ -73,10 +73,13 @@ message SubmitCommandResponse {
 message CreateSessionRequest {
   agentplane.proto.sandbox_service.SandboxDestination sandbox = 1;
   agentplane.proto.runner.SessionSpec spec = 3;
-  // Which spec fields replace the Sandbox defaults (proto field names). Proto3 scalar
-  // fields cannot distinguish absent from explicitly empty; e.g. instructions=""
-  // with "instructions" in this mask clears inherited instructions. An empty mask
-  // inherits all defaults, regardless of spec's scalar default values.
+  // A non-empty spec with no mask is the complete launch spec and setup_script the only setup
+  // script: nothing inherits from the Sandbox.
+  //
+  // CLEANUP(added 2026-10-14): Remove the mask, and the Sandbox defaults it overrides, once the
+  // pinned app image sends complete specs. A mask names which spec fields replace the Sandbox
+  // defaults (proto field names); instructions="" with "instructions" in it clears inherited
+  // instructions, and an empty spec with no mask inherits every default.
   google.protobuf.FieldMask override_mask = 4;
   optional string setup_script = 5;
   // Required: a fresh UUID the client minted, the public Session ID and the runner's Session ID.

@@ -165,6 +165,41 @@ async def test_managed_open_expands_default_cwd_with_the_session_id(
     assert opened.spec.cwd == f"/state/workspaces/{(await creating).session_id}"
 
 
+async def test_complete_spec_opens_as_sent_and_inherits_nothing_from_the_sandbox(
+    remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: Cluster
+) -> None:
+    cluster.set_binding(
+        sandbox_service_pb2.SandboxBinding(
+            session_defaults=sandbox_service_pb2.SessionDefaults(
+                harness=runner_pb2.HARNESS_CLAUDE,
+                model="sandbox-default-model",
+                instructions="sandbox default instructions",
+                setup_script="sandbox default setup",
+            )
+        )
+    )
+    spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, model="test-model", cwd="/state/complete")
+    request = runner_gateway_pb2.CreateSessionRequest(sandbox=DESTINATION, spec=spec, session_id=str(uuid4()))
+    metadata = await remote.metadata()
+
+    async def create() -> runner_gateway_pb2.CreateSessionResponse:
+        return await remote.stub.CreateSession(request, metadata=metadata, timeout=5)
+
+    creating = asyncio.create_task(create())
+    opened = await peer.open()
+    assert opened.spec == spec
+    assert not opened.HasField("setup_script")
+    await creating
+
+
+async def test_complete_spec_still_needs_harness_cwd_and_model(remote: RunnerGatewayClient) -> None:
+    spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, cwd="/state/complete")
+    request = runner_gateway_pb2.CreateSessionRequest(sandbox=DESTINATION, spec=spec, session_id=str(uuid4()))
+    with pytest.raises(grpc.aio.AioRpcError) as refused:
+        await remote.stub.CreateSession(request, metadata=await remote.metadata(), timeout=5)
+    assert refused.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+
+
 async def test_command_uses_runner_ack_budget_not_unary_request_budget(
     resources: Resources, token_file: Path, peer: ScriptedRunner, engine: AsyncEngine
 ) -> None:

@@ -155,7 +155,10 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
             if not request.session_id:
                 raise ValueError("session ID is required")
             session_id = parse_session_id(request.session_id)
-            overrides = wire.launch_overrides(request)
+            complete = wire.is_complete_spec(request)
+            if complete:
+                session_lifecycle.validate_spec(request.spec)
+            overrides = {} if complete else wire.launch_overrides(request)
             binding = await self.held(request.sandbox, writes=True)
             sandbox_uid = UUID(request.sandbox.sandbox_uid)
             await self.resources.sessions.register(
@@ -164,14 +167,18 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 sandbox_name=request.sandbox.sandbox,
                 sandbox_uid=sandbox_uid,
             )
-            spec = session_lifecycle.launch_spec(str(session_id), overrides, binding=binding)
-            setup_script = (
-                request.setup_script
-                if request.HasField("setup_script")
-                else binding.session_defaults.setup_script
-                if binding is not None and binding.session_defaults.HasField("setup_script")
-                else None
-            )
+            if complete:
+                spec = request.spec
+                setup_script = request.setup_script if request.HasField("setup_script") else None
+            else:
+                spec = session_lifecycle.launch_spec(str(session_id), overrides, binding=binding)
+                setup_script = (
+                    request.setup_script
+                    if request.HasField("setup_script")
+                    else binding.session_defaults.setup_script
+                    if binding is not None and binding.session_defaults.HasField("setup_script")
+                    else None
+                )
             opening = runner_control_pb2.OpenSessionRequest(session_id=str(session_id), spec=spec)
             if setup_script is not None:
                 opening.setup_script = setup_script
