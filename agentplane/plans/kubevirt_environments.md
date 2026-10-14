@@ -12,7 +12,7 @@ stay out of scope.
 
 [Storage layouts](../docs/sandbox_storage.md) separates Sandbox ownership from content format and
 attachment compatibility. #10440 adds the declared workspace contract without activating it in
-deployed templates. The DAG's `WORKSPACE_PVC_ACCEPTANCE` owns image-pin gating, the testing comparison
+deployed templates. [Testing storage acceptance](../acceptance/debug/storage_acceptance.md) records image-pin gating, the testing comparison
 with the current DataVolume path and selection of the retained path. `WORKSPACE_VOLUME` owns template
 activation after that acceptance and the cutoff. `WORKSPACE_SANDBOX_CUTOFF` owns
 the separately reviewed incompatible cutoff dropping existing Sandboxes, accepted by the operator;

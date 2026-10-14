@@ -685,7 +685,6 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 flowchart TD
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
-    WORKSPACE_PVC_ACCEPTANCE[In flight: verify Sandbox-owned workspaces on testing]
     WORKSPACE_VOLUME[Blocked: roll out explicitly typed Sandbox-owned workspaces]
     WORKSPACE_SANDBOX_CUTOFF[Blocked: separate PR drops existing Sandboxes for the storage cutoff]
     WORKSPACE_DATAVOLUME_RETIRE[Blocked: retire the old DataVolume workspace path]
@@ -716,7 +715,6 @@ flowchart TD
     HOSTED_THREAD_SURFACES[Blocked: show and revive stopped Sessions]
     VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
-    WORKSPACE_PVC_ACCEPTANCE --> WORKSPACE_SANDBOX_CUTOFF
     WORKSPACE_SANDBOX_CUTOFF --> WORKSPACE_VOLUME
     WORKSPACE_VOLUME -- old consumers gone and images pinned --> WORKSPACE_DATAVOLUME_RETIRE
     STATE_VOLUME_LAYOUT --> STATE_VOLUME_BLOCK
@@ -800,23 +798,19 @@ node affinity and both required volume modes. A node-local volume remains pinned
 moving it is `WORKSPACE_NODE_PORTABILITY`. This provisioner work does not gate Sandbox ownership
 or the explicit layout contract for workspace PVCs.
 
-### `WORKSPACE_PVC_ACCEPTANCE` — verify Sandbox-owned workspaces on testing
-
-**In flight (Codex acceptance worker, 2026-10-14); gate each run on the #10440 controller image pin.**
-Verify a fresh Pod `DirectoryTree` workspace as well as the VM case. On testing, compare the
-current VM DataVolume path with a fresh Sandbox-owned `RawDiskImage` workspace, then verify files
-and PVC identity survive stop/start and workload replacement. Run one VM harness at a time within
-quota. Record the selected path and bounded acceptance evidence in the storage/VM docs. This is
-fresh provisioning, not migration or conversion; no old Sandbox data is needed for the comparison.
-Complete this before the incompatible cutoff and deployed-template rollout.
-
 ### `WORKSPACE_VOLUME` — roll out explicitly typed Sandbox-owned workspaces
 
-**Blocked on `WORKSPACE_SANDBOX_CUTOFF`, after `WORKSPACE_PVC_ACCEPTANCE`.** The implementation
+**Blocked on `WORKSPACE_SANDBOX_CUTOFF`.** The implementation
 merged in #10440 adds explicit workspace layouts, retained PVC identity and attachment
 compatibility checks; [storage layouts](../docs/sandbox_storage.md) owns the contract. This node is
 the remaining template rollout, not another implementation of ownership. No deployed template
 changes belong in #10440.
+
+Fresh testing Pod DirectoryTree and VM RawDiskImage fixtures passed retained file/PVC checks,
+including a changed-claim refusal and halted VM-object replacement. The old DataVolume kept files
+through halt/start but lost its workspace on VM-object replacement. The selected paths and exact
+evidence are in [storage acceptance](../acceptance/debug/storage_acceptance.md); no staging run
+or existing-data cutoff has occurred.
 
 Activate the selected layout only after its accepting controller image is pinned. A Pod's current
 workspace is under `/state/workspaces` on the state PVC; a VM's is a VM-owned DataVolume mounted
@@ -828,7 +822,7 @@ or the future block provisioner. The losing workspace path is removed by
 
 ### `WORKSPACE_SANDBOX_CUTOFF` — drop existing Sandboxes for the storage cutoff
 
-**Blocked on `WORKSPACE_PVC_ACCEPTANCE` and the concrete cutover resource list. Operator,
+**Blocked on approval of the concrete resource/loss list and execution of the cutoff. Operator,
 2026-10-13 PDT: an incompatible cutoff dropping existing Sandboxes is acceptable.** Prepare a
 separate data-drop PR identifying affected Sandboxes and their state/workspace PVCs, the resulting
 loss of native harness state/workspaces, and the order of deletion and template activation. Rai
@@ -843,8 +837,8 @@ not routine deletion of idle Sandboxes.
 superseded blank-DataVolume workspace template, controller support used only by that path and its
 obsolete tests/docs. Search all callers before removing generic DataVolume support. Gate removals
 on pinned caller images where applicable. Do not delete retained data as an incidental cleanup;
-existing data disposition belongs to `WORKSPACE_SANDBOX_CUTOFF`. If testing selects the old
-path instead, remove the unused new path and update this node to that actual outcome.
+existing data disposition belongs to `WORKSPACE_SANDBOX_CUTOFF`. Testing selected the retained
+Sandbox-owned RawDiskImage path; its evidence is linked above.
 
 ### `STATE_VOLUME_LAYOUT` — declare the state volume layout explicitly
 
@@ -1003,7 +997,7 @@ Session identity, journal continuation and native recall has passed; do not repe
 or scenario as an open gate. Audit deterministic coverage for concurrent resume, interrupted setup
 and incompatible retained storage; add only missing contract coverage. Current setup handling refuses
 a failed/interrupted setup rather than restarting it. Long-stop credential validity belongs to
-`RESUME_CREDENTIALS_VALID`, workspace/replacement acceptance to `WORKSPACE_PVC_ACCEPTANCE`, and dormant
+`RESUME_CREDENTIALS_VALID`, accepted workspace/replacement evidence to the storage acceptance note, and dormant
 harness restoration to `SELECTIVE_SESSION_REVIVAL`. Remove this node once its bounded coverage audit
 is complete; a missing live version of an adequately automated case is not another gate.
 
