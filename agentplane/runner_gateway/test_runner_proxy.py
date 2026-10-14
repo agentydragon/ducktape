@@ -163,21 +163,6 @@ async def test_a_lost_connection_fails_the_call_unavailable(holder: Replica) -> 
         assert lost.value.code() == grpc.StatusCode.UNAVAILABLE
 
 
-async def test_only_the_sandbox_controller_seals(holder: Replica) -> None:
-    async with runner_on(holder) as runner, runner_stub(holder) as stub:
-        with pytest.raises(grpc.aio.AioRpcError) as refused:
-            await stub.Seal(runner_pb2.SealRequest(), metadata=metadata(CALLER))
-        assert refused.value.code() == grpc.StatusCode.PERMISSION_DENIED
-        assert not runner.received
-
-        sealing = asyncio.ensure_future(stub.Seal(runner_pb2.SealRequest(), metadata=metadata(CONTROLLER)))
-        sealed = await runner.next(runner_pb2.SealRequest)
-        sealed.outcome.set_result(
-            runner_pb2.SealResponse(sessions=[runner_pb2.SessionSeal(session_id="test-session", cursor=3)])
-        )
-        assert [(seal.session_id, seal.cursor) for seal in (await sealing).sessions] == [("test-session", 3)]
-
-
 async def test_only_the_sandbox_controller_quiesces(holder: Replica) -> None:
     async with runner_on(holder) as runner, runner_stub(holder) as stub:
         with pytest.raises(grpc.aio.AioRpcError) as refused:

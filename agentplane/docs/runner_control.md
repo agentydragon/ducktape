@@ -33,7 +33,6 @@ service Runner {
   rpc ListSessions(runner.ListSessionsRequest) returns (runner.ListSessionsResponse);
   rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
   rpc ResumeSession(ResumeSessionRequest) returns (ResumeSessionResponse);
-  rpc Seal(runner.SealRequest) returns (runner.SealResponse);
   rpc Quiesce(runner.QuiesceRequest) returns (runner.QuiesceResponse);
   rpc DeliverCommand(DeliverCommandRequest) returns (DeliverCommandResponse);
   rpc SubmitInput(SubmitInputRequest) returns (SubmitInputResponse);
@@ -171,7 +170,7 @@ answers with the runner's own status and bytes. It has no database.
   carries; a gRPC server cannot see the dialed `:authority`. A missing or repeated header is
   `INVALID_ARGUMENT`, an unknown Sandbox `NOT_FOUND`.
 - **Authorization.** The bearer is a `token_audience` token. The `caller_accounts` may call every
-  method but `Seal` and `Quiesce`, which only `sandbox_controller_account` may; unset, nobody may.
+  method but `Quiesce`, which only `sandbox_controller_account` may; unset, nobody may.
 - **Holder.** A replica that does not hold the Sandbox's current connection answers `UNAVAILABLE`
   before acting, and the caller dials the control Service again.
 - **Deadline.** The caller's remaining deadline travels in the `Call`; a call without one waits until
@@ -287,10 +286,10 @@ attaches the Pod's projected token for that ingress's own audience, `agentplane-
 the History Service, and an audience of its own for a historyless client. No other recipient
 can replay a token the ingress saw, and an ingress token opens no control connection.
 
-**Sealing.** `Seal` on the control stream seals every journal and returns each Session's seal cursor
+**Sealing.** `Quiesce` on the control stream seals every journal and returns each Session's seal cursor
 with `flushed`, which is true once the ingress has acknowledged that seal. The runner answers from
 its recorded acknowledgements, so the report survives a runner restart. Sealing again returns the
-same cursors and the current `flushed`, so teardown repeats `Seal` every 10 s until every Session
+same cursors and the current `flushed`, so teardown repeats `Quiesce` every 10 s until every Session
 is flushed, and only then may the Sandbox's volume go. A runner that cannot report leaves the
 Sandbox in sealing for the operator.
 
@@ -378,22 +377,22 @@ Each operation is its own `Runner` method:
   bootstrap, which the runner began at start, has succeeded; an existing Session is confirmed and its
   stopped harness started.
 - `ResumeSession` restarts a stopped harness on its retained spec.
-- `Seal` fences, interrupts active turns, stops every harness and setup, and seals every journal.
+- `Quiesce` fences, interrupts active turns, stops every harness and setup, and seals every journal.
 
-Only `OpenSession` and `ResumeSession` create a Session or start a harness. The runner orders `Seal` by arrival: it waits for every command admission
+Only `OpenSession` and `ResumeSession` create a Session or start a harness. The runner orders `Quiesce` by arrival: it waits for every command admission
 already under way, and every call that arrives after it that starts or resumes work is refused
 with `ABORTED` at once, so no command delivered before it lands after it and none after it is lost
 silently. Only the replica holding the runner's stream calls the runner: callers reach it through the Sandbox's control Service
 ([Connection records](#connection-records-in-kubernetes)), and background work such as sealing runs on the replica holding the Lease. Calls are bounded by the
 calling RPC's deadline, like command deliveries, and a reconnect replays none of them.
 
-| Runner Gateway caller | Control operation                               |
-| --------------------- | ----------------------------------------------- |
-| `ListSessions` RPC    | `ListSessions`                                  |
-| `CreateSession`       | `OpenSession` with the client's ID              |
-| `ResumeSession`       | `ResumeSession`                                 |
-| `Teardown` sealing    | `Seal`, repeated until every Session is flushed |
-| `SubmitCommand`       | `DeliverCommand`                                |
+| Runner Gateway caller | Control operation                                  |
+| --------------------- | -------------------------------------------------- |
+| `ListSessions` RPC    | `ListSessions`                                     |
+| `CreateSession`       | `OpenSession` with the client's ID                 |
+| `ResumeSession`       | `ResumeSession`                                    |
+| `Teardown` sealing    | `Quiesce`, repeated until every Session is flushed |
+| `SubmitCommand`       | `DeliverCommand`                                   |
 
 The VM experiment's runtime acceptance drives the guest runner directly through a port-forward and
 moves with the selected VM control path.

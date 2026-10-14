@@ -113,8 +113,6 @@ message ListSessionsResponse {
 // Sandbox teardown. The runner durably refuses new and resumed sessions, stops every harness and
 // setup script, then seals every session's journal at its final cursor. Sealing again returns the
 // same cursors, with each session's current `flushed`. Sealed sessions can still be read to their end.
-message SealRequest {}
-
 message SessionSeal {
   string session_id = 1;
   // The session's final cursor in this Sandbox incarnation.
@@ -123,14 +121,6 @@ message SessionSeal {
   bool flushed = 3;
 }
 
-message SealResponse {
-  repeated SessionSeal sessions = 1;
-  reserved 2;
-  reserved "pushes";
-}
-
-// The same operation as `SealRequest`, under its settled name. `Seal` stays served until every caller
-// calls `Quiesce`.
 message QuiesceRequest {}
 
 // How far a runner's quiesce has got. A reader treats any value other than `QUIESCE_STAGE_QUIESCED`,

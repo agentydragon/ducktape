@@ -86,22 +86,18 @@ type Incarnation struct {
 type SandboxStatus struct {
 	Incarnation *Incarnation `json:"incarnation,omitempty"`
 	// The UID of the last incarnation whose runner sealed every Session, kept after it stops.
-	SealedIncarnation *string `json:"sealedIncarnation,omitempty"`
-	// The settled name of SealedIncarnation; readers accept either until writers emit this one.
 	QuiescedIncarnation *string            `json:"quiescedIncarnation,omitempty"`
 	Conditions          []metav1.Condition `json:"conditions,omitempty"`
 }
 
-// sessionsQuiesced reports whether every Session was sealed, under either condition name.
+// sessionsQuiesced reports whether every Session was sealed.
 func (s *Sandbox) sessionsQuiesced() bool {
-	return meta.IsStatusConditionTrue(s.Status.Conditions, SessionsSealed) || meta.IsStatusConditionTrue(s.Status.Conditions, Quiesced)
+	return meta.IsStatusConditionTrue(s.Status.Conditions, Quiesced)
 }
 
-// quiescedIncarnation reports whether uid is the incarnation whose runner sealed every Session,
-// under either field name.
+// quiescedIncarnation reports whether uid is the incarnation whose runner sealed every Session.
 func (s *Sandbox) quiescedIncarnation(uid string) bool {
-	return (s.Status.SealedIncarnation != nil && *s.Status.SealedIncarnation == uid) ||
-		(s.Status.QuiescedIncarnation != nil && *s.Status.QuiescedIncarnation == uid)
+	return s.Status.QuiescedIncarnation != nil && *s.Status.QuiescedIncarnation == uid
 }
 
 // quiescing reports whether the controller has begun quiescing the current incarnation's runner. A

@@ -26,7 +26,6 @@ SANDBOX_KIND = "Sandbox"
 SANDBOX_API_VERSION = f"{GROUP}/{VERSION}"
 # Set by the Runner Gateway on a deleting Sandbox once its runner sealed every Session and the
 # ingress acknowledged each seal; the controller deletes nothing of the Sandbox before.
-SESSIONS_SEALED = "SessionsSealed"
 QUIESCED = "Quiesced"
 # The Sandbox Controller's workload condition; its reasons say what the Sandbox is waiting on.
 RUNNING = "Running"
@@ -100,7 +99,7 @@ class Sandbox(_Wire):
     @property
     def sessions_sealed(self) -> bool:
         return any(
-            c.type in {SESSIONS_SEALED, QUIESCED} and c.status is ConditionStatus.TRUE for c in self.status.conditions
+            c.type == QUIESCED and c.status is ConditionStatus.TRUE for c in self.status.conditions
         )
 
     def running_reason(self) -> str | None:

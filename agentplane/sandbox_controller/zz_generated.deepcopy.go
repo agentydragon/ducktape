@@ -118,11 +118,6 @@ func (in *SandboxStatus) DeepCopyInto(out *SandboxStatus) {
 		*out = new(Incarnation)
 		**out = **in
 	}
-	if in.SealedIncarnation != nil {
-		in, out := &in.SealedIncarnation, &out.SealedIncarnation
-		*out = new(string)
-		**out = **in
-	}
 	if in.QuiescedIncarnation != nil {
 		in, out := &in.QuiescedIncarnation, &out.QuiescedIncarnation
 		*out = new(string)

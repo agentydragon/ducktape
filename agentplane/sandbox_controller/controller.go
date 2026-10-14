@@ -42,8 +42,6 @@ const (
 	// Set True on a deleting Sandbox, by this controller or the Runner Gateway, once its runner has
 	// sealed every Session and the ingress has acknowledged each seal; nothing of the Sandbox is
 	// deleted before, unless no runner ever connected.
-	SessionsSealed = "SessionsSealed"
-	// The settled name of SessionsSealed; readers accept either until writers emit this one.
 	Quiesced = "Quiesced"
 	// On the Pod or the VirtualMachine and its VMI and virt-launcher Pod, the state PVC, the
 	// ServiceAccount and the PolicyBinding: the Sandbox they belong to.

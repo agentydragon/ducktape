@@ -65,7 +65,7 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
   the runner's published facts (quiesce stage, idle-since, bootstrap state, valid only while
   the Lease's `pod-uid` is the incarnation's) enqueues the Sandbox; renewals do not. Time is not an
   event, so the moment a live connection would lapse, and a lapsed one, are requeued.
-- **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Sealing`. To give up on the seal,
+- **Gotcha:** a deleted Sandbox whose runner cannot seal stays in `Quiescing`. To give up on the seal,
   remove the finalizer by hand: the PVC is owned, so it goes with the Sandbox, and the Pod or VM
   with it.
 - **No Pod waits on its `PolicyBinding`'s readers.** Every reader fails closed, so a grant applied

@@ -7,7 +7,7 @@ import pytest_bazel
 
 from agentplane.proto.runner_pb2 import HARNESS_CODEX
 from agentplane.proto.sandbox_service_pb2 import SandboxBinding, SandboxPhase, SessionDefaults
-from agentplane.sandbox_resource import QUIESCED, SANDBOXES_PLURAL, SESSIONS_SEALED, OperatingMode
+from agentplane.sandbox_resource import QUIESCED, SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandbox_service.errors import SandboxNotFoundError
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
@@ -61,7 +61,7 @@ async def test_missing_sandbox_is_not_created(cluster: Cluster) -> None:
 
 SEALED = [
     {
-        "type": SESSIONS_SEALED,
+        "type": QUIESCED,
         "status": "True",
         "reason": "Sealed",
         "message": "",
@@ -83,10 +83,7 @@ def running_because(reason: str) -> list[dict[str, str]]:
         (False, False, False, [], SandboxPhase.SANDBOX_PHASE_SUSPENDED),
         (False, True, True, [], SandboxPhase.SANDBOX_PHASE_QUIESCING),
         (False, False, True, SEALED, SandboxPhase.SANDBOX_PHASE_TEARING_DOWN),
-        (False, True, False, running_because("Sealing"), SandboxPhase.SANDBOX_PHASE_QUIESCING),
-        (False, True, True, running_because("Sealing"), SandboxPhase.SANDBOX_PHASE_QUIESCING),
         (False, True, False, running_because("Quiescing"), SandboxPhase.SANDBOX_PHASE_QUIESCING),
-        (False, False, True, [{**SEALED[0], "type": QUIESCED}], SandboxPhase.SANDBOX_PHASE_TEARING_DOWN),
         (False, True, True, running_because("Deleting"), SandboxPhase.SANDBOX_PHASE_TEARING_DOWN),
     ],
 )

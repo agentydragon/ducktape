@@ -393,7 +393,7 @@ class Runner:
     def adopt_incarnation(self, incarnation_uid: str | None) -> None:
         self.store.adopt_incarnation(incarnation_uid)
 
-    async def seal(self) -> runner_pb2.SealResponse:
+    async def seal(self) -> runner_pb2.QuiesceResponse:
         """Sandbox teardown: refuse new work, interrupt running turns, stop every harness, seal every journal."""
         self._sealing = True
         self.enter_lameduck()
@@ -404,7 +404,7 @@ class Runner:
         finally:
             self._sealing = False
             self.facts_changed.set()
-        return runner_pb2.SealResponse(
+        return runner_pb2.QuiesceResponse(
             sessions=[
                 runner_pb2.SessionSeal(
                     session_id=session.session_id, cursor=cursor, flushed=self._flushed(session.session_id, cursor)

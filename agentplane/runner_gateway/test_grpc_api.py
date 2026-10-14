@@ -35,7 +35,7 @@ from agentplane.runner_gateway.testing.runner_control import (
     serve_replica_control,
 )
 from agentplane.runner_gateway.testing.sessions import register_on_fake_sandbox, register_session
-from agentplane.sandbox_resource import SANDBOXES_PLURAL, SESSIONS_SEALED
+from agentplane.sandbox_resource import QUIESCED, SANDBOXES_PLURAL
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, sandbox_client
 from agentplane.sandbox_service.testing.kubernetes import ACCOUNT, DESTINATION, OWNER, SANDBOX, SANDBOX_UID, Cluster
 from agentplane.subjects import ServiceAccountRef
@@ -352,7 +352,7 @@ async def test_unavailable_destination_does_not_contact_runner(
             stored["metadata"]["deletionTimestamp"] = "2026-09-01T12:00:00Z"
             stored["status"]["conditions"] = [
                 {
-                    "type": SESSIONS_SEALED,
+                    "type": QUIESCED,
                     "status": "True",
                     "reason": "Sealed",
                     "message": "",

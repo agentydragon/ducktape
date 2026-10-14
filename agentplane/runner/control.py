@@ -86,7 +86,7 @@ def _attached(session: Session) -> runner_pb2.Attached:
 async def _admit(runner: Runner, session_id: str, command: command_pb2.Command) -> event_log_pb2.EventEntry:
     """Admit a delivered command and return the journal's entry for it. A command already journaled
     with the same payload is answered with its existing entry, so redelivery is safe."""
-    # A delivery under way when the Seal arrived is admitted; the Seal waits for it.
+    # A delivery under way when the Quiesce arrived is admitted; the Quiesce waits for it.
     in_lameduck = runner.lameduck
     if not command.command_id or command.WhichOneof("operation") is None:
         raise InvalidRequestError("command_id and operation required")
@@ -112,10 +112,10 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
     def __init__(self, runner: Runner) -> None:
         self.runner = runner
         self._admissions: set[asyncio.Task[event_log_pb2.EventEntry]] = set()
-        self._sealing: asyncio.Task[runner_pb2.SealResponse] | None = None
+        self._sealing: asyncio.Task[runner_pb2.QuiesceResponse] | None = None
 
     async def _after_seal(self) -> None:
-        # Ordering only: the Seal's outcome is its own call's to report.
+        # Ordering only: the Quiesce's outcome is its own call's to report.
         if self._sealing is not None:
             await asyncio.wait({self._sealing})
 
@@ -147,8 +147,8 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
             session = await finish_command(self.runner.resume(request.session_id))
             return runner_control_pb2.ResumeSessionResponse(attached=_attached(session))
 
-    async def _seal(self, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
-        async def seal(preceding: set[asyncio.Task[event_log_pb2.EventEntry]]) -> runner_pb2.SealResponse:
+    async def _seal(self, context: grpc.aio.ServicerContext) -> runner_pb2.QuiesceResponse:
+        async def seal(preceding: set[asyncio.Task[event_log_pb2.EventEntry]]) -> runner_pb2.QuiesceResponse:
             # Ordering only: an admission's outcome is its own call's to report.
             if preceding:
                 await asyncio.wait(preceding)
@@ -169,14 +169,10 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
             return await finish_command(admission)
 
     @override
-    async def Seal(self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
-        return await self._seal(context)
-
-    @override
     async def Quiesce(
         self, request: runner_pb2.QuiesceRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.QuiesceResponse:
-        return runner_pb2.QuiesceResponse(sessions=(await self._seal(context)).sessions)
+        return await self._seal(context)
 
     @override
     async def DeliverCommand(

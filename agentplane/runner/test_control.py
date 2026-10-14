@@ -233,7 +233,7 @@ async def test_a_redelivery_after_the_harness_ended_is_answered_with_the_origina
         assert session.process is not None
         await session.process.stop()
     else:
-        await service.Seal(runner_pb2.SealRequest())
+        await service.Quiesce(runner_pb2.QuiesceRequest())
     assert not session.running
     assert await service.DeliverCommand(deliver(RUNNING, submit("test-input"))) == first
 
@@ -345,10 +345,10 @@ async def test_a_resume_the_runner_cannot_serve_is_refused(
     assert started == []
 
 
-async def test_a_seal_waits_for_the_admission_under_way_and_a_delivery_after_it_is_refused(
+async def test_a_quiesce_waits_for_the_admission_under_way_and_a_delivery_after_it_is_refused(
     runner: Runner, dial: Callable[[], Awaitable[Service]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Holds the earlier command's admission until the Seal has arrived behind it.
+    # Holds the earlier command's admission until the Quiesce has arrived behind it.
     journal = runner.sessions[RUNNING].journal
     admitting, unblocked = asyncio.Event(), asyncio.Event()
     get = journal.get
@@ -360,20 +360,20 @@ async def test_a_seal_waits_for_the_admission_under_way_and_a_delivery_after_it_
 
     monkeypatch.setattr(journal, "get", held_get)
     seal_arrived = asyncio.Event()
-    seal = RunnerService.Seal
+    quiesce = RunnerService.Quiesce
 
-    async def observed_seal(
-        service: RunnerService, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext
-    ) -> runner_pb2.SealResponse:
+    async def observed_quiesce(
+        service: RunnerService, request: runner_pb2.QuiesceRequest, context: grpc.aio.ServicerContext
+    ) -> runner_pb2.QuiesceResponse:
         seal_arrived.set()
-        return await seal(service, request, context)
+        return await quiesce(service, request, context)
 
-    monkeypatch.setattr(RunnerService, "Seal", observed_seal)
+    monkeypatch.setattr(RunnerService, "Quiesce", observed_quiesce)
     service = await dial()
     async with asyncio.timeout(10):
         before = asyncio.ensure_future(service.DeliverCommand(deliver(RUNNING, submit("test-before-seal"))))
         await admitting.wait()
-        sealing = asyncio.ensure_future(service.Seal(runner_pb2.SealRequest()))
+        sealing = asyncio.ensure_future(service.Quiesce(runner_pb2.QuiesceRequest()))
         await seal_arrived.wait()
         after = asyncio.create_task(refusal(service.DeliverCommand(deliver(RUNNING, submit("test-after-seal")))))
         unblocked.set()
@@ -382,11 +382,14 @@ async def test_a_seal_waits_for_the_admission_under_way_and_a_delivery_after_it_
     assert refused == grpc.StatusCode.ABORTED
 
 
-async def test_sealing_again_returns_the_same_cursors_and_opening_is_refused(
+async def test_quiescing_again_returns_the_same_cursors_and_opening_is_refused(
     runner: Runner, dial: Callable[[], Awaitable[Service]], started: list[str]
 ) -> None:
     service = await dial()
-    first, second = await service.Seal(runner_pb2.SealRequest()), await service.Seal(runner_pb2.SealRequest())
+    first, second = (
+        await service.Quiesce(runner_pb2.QuiesceRequest()),
+        await service.Quiesce(runner_pb2.QuiesceRequest()),
+    )
     assert first == second
     assert {row.session_id for row in first.sessions} == {RUNNING, STOPPED, FAILED_SETUP}
     assert await refusal(service.OpenSession(open_session("test-new-session"))) == grpc.StatusCode.ABORTED
@@ -395,13 +398,6 @@ async def test_sealing_again_returns_the_same_cursors_and_opening_is_refused(
     )
     assert not runner.sessions[RUNNING].running
     assert started == []
-
-
-async def test_quiescing_returns_what_sealing_does(runner: Runner, dial: Callable[[], Awaitable[Service]]) -> None:
-    service = await dial()
-    quiesced = await service.Quiesce(runner_pb2.QuiesceRequest())
-    assert quiesced.sessions == (await service.Seal(runner_pb2.SealRequest())).sessions
-    assert {row.session_id for row in quiesced.sessions} == {RUNNING, STOPPED, FAILED_SETUP}
 
 
 Facts = runner_control_pb2.RunnerFacts
