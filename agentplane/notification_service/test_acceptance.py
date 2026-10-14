@@ -30,7 +30,7 @@ from agentplane.action_service.testing.fixtures import RecordingExecutor
 from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
-from agentplane.grpc_calls import dial
+from agentplane.grpc_calls import bearer, dial
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.notification_service.api import create_app
@@ -384,6 +384,30 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         await history_caught_up()
                         await service.step()
 
+                async def wait_for_runner_admission() -> None:
+                    assert attempted_id is not None
+                    last_state = "not submitted"
+                    last_reason = ""
+                    for _ in range(100):
+                        response = await dispatcher.stub.GetDispatch(
+                            session_dispatcher_pb2.GetDispatchRequest(command_id=attempted_id),
+                            metadata=await bearer(dispatcher.token_file),
+                            timeout=5,
+                        )
+                        dispatch = response.dispatch
+                        last_state = session_dispatcher_pb2.DeliveryState.Name(dispatch.state)
+                        last_reason = dispatch.reason if dispatch.HasField("reason") else ""
+                        if dispatch.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED:
+                            return
+                        assert dispatch.state not in {
+                            session_dispatcher_pb2.DELIVERY_STATE_NO_OP,
+                            session_dispatcher_pb2.DELIVERY_STATE_FAILED,
+                            session_dispatcher_pb2.DELIVERY_STATE_CANCELLED_IN_DISPATCHER,
+                            session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
+                        }, f"Dispatcher terminated notification delivery: {last_state}: {last_reason}"
+                        await asyncio.sleep(0.05)
+                    raise AssertionError(f"Dispatcher did not admit notification: {last_state}: {last_reason}")
+
                 if failed_before_rpc:
                     with pytest.raises(ValueError, match="before SubmitInput"):
                         await step_until_sent()
@@ -394,6 +418,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                     await model.reply(initial, Text("Initial work complete"))
                 # The durable attempt marker exists, but the runner has not been called.
                 await step_until_sent()
+                await wait_for_runner_admission()
                 notice_request = await model.request()
                 notices = [text for text in notice_request.user_texts if text.startswith("Agentplane inbox notice: ")]
                 assert len(notices) == 1
