@@ -86,8 +86,10 @@ namespace. Ordinary OpenCode profiles keep their existing configuration.
 
 Every offline-profile config exposes six tested Ollama models in OpenCode's
 model picker, with the actual serving context in each display name. The five
-base models are prefetched by the rugged host generation; the experimental
-131,072-context Gemma alias is declared separately. Qwen3 4B remains the default.
+selectable base models are prefetched by the rugged host generation; the
+experimental 131,072-context Gemma alias is declared separately. Qwen3 4B
+remains the default. Qwen3.5 0.8B is also added to host prefetch as a cache
+prerequisite for separate router evaluation; it is not an OpenCode profile yet.
 
 After activating that Home Manager change and caching the model, run it from
 the project directory:
@@ -114,6 +116,15 @@ still applies: it is experimental, not qualified long-context coding quality.
 The project toolchain and dependencies must also be available locally. The
 verified task uses a frozen Python standard-library test suite; this does not
 establish that ducktape's usual remote Bazel workflow works without a network.
+
+The Qwen3.5 cache preparation uses two host generations. First activate the
+host configuration with Ollama enabled; its prefetch unit fetches any missing
+declared base tags and the model blobs stay in Ollama's persistent cache. The
+llama.cpp router remains disabled during this step. A later router activation
+is mutually exclusive with Ollama on port 11436 and reads that same cache; do
+not switch until the required tags are present and the router service account
+can read their blobs. The new base-tag prefetch does not qualify a context size
+or enable a Qwen3.5 picker entry.
 
 The tool-discovery failure came from combining deprecated `agent.tools` settings
 with permissions: the resulting trailing wildcard denial suppressed all tools.
