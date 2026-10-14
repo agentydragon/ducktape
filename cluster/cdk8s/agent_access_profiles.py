@@ -33,6 +33,7 @@ from cluster.cdk8s.providers.agentplane.policy_set import Rule
 RBAC_GROUP = "rbac.authorization.k8s.io"
 COINBASE_POLICY = "coinbase"
 PLAID_DIAGNOSTICS_POLICY = "plaid-diagnostics"
+AGENTPLANE_TESTING_POLICY = "agentplane-testing"
 
 
 @dataclass(frozen=True)
@@ -69,7 +70,8 @@ STATIC_IDENTITIES = {"haku": HAKU_IDENTITIES, "claude-ai": (CLAUDE_AI,)}
 # These legacy subjects are deliberately not aliases for the Haku profile.
 NAMESPACE_READER_SUBJECTS = (*HAKU_IDENTITIES, KUBECTL_USERS, CLAUDE_AI)
 CLUSTER_DIAGNOSTIC_SUBJECTS = (KUBECTL_USERS, *HAKU_IDENTITIES, AGENT_BOX, CLAUDE_AI)
-TESTING_OPERATOR_SUBJECTS = (HAKU_OIDC, HAKU_CONSOLE, HAKU_SERVICE_ACCOUNT, KUBECTL_USERS, CLAUDE_AI)
+# `claude-ai` receives this access through the combined PolicySet binding in staging.
+TESTING_OPERATOR_SUBJECTS = (HAKU_OIDC, HAKU_CONSOLE, HAKU_SERVICE_ACCOUNT, KUBECTL_USERS)
 
 
 def _namespace_read_grants() -> dict[str, RoleBindingGrant]:
@@ -188,7 +190,7 @@ PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *PUBLIC_INVENTORY)
 # reviewed egress rules to a set when one selection should grant both capabilities.
 POLICY_SETS = {
     "shared-diagnostics": SHARED_DIAGNOSTICS,
-    "testing-access": TESTING_ACCESS,
+    AGENTPLANE_TESTING_POLICY: TESTING_ACCESS,
     "public-inventory": PUBLIC_INVENTORY,
     "cluster-diagnostics": ("cluster-diagnostics",),
     "haku-sandbox-write": ("haku-sandbox-write",),
@@ -245,8 +247,8 @@ MANAGED_GRANTS = {
 STATIC_GRANTS = {
     # Independently scoped legacy OAuth identity, not an alias for the Haku profile. Widening it
     # fails cluster/validation's test_legacy_agentplane_accounts_are_not_haku_profile_aliases.
+    # Acceptance-testing RBAC comes through its combined PolicyBinding, not static RoleBindings.
     "claude-ai": (
-        *TESTING_ACCESS,
         "agentplane-sandbox-read",
         "haku-console-metadata",
         "clickhouse-diagnostics",

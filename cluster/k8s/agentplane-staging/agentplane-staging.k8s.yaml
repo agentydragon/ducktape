@@ -3441,10 +3441,9 @@ data:
           - github-identity-reads
           - ssh-reads
           - shared-diagnostics
-          - testing-access
+          - agentplane-testing
           - public-inventory
           - ducktape-pr-failed-jobs
-          - agentplane-testing
         thread_preset: public-coder-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
@@ -3466,7 +3465,6 @@ data:
           - github-clone
           - github-agentydragon-agent
           - github-actions-logs
-          - agentplane-testing
           - github-reads
           - github-identity-reads
           - sandbox-self
@@ -3478,7 +3476,7 @@ data:
           - ssh-reads
           - ducktape-pr-failed-jobs
           - shared-diagnostics
-          - testing-access
+          - agentplane-testing
           - cluster-diagnostics
           - haku-sandbox-write
           - coinbase
@@ -3502,13 +3500,12 @@ data:
           - ssh-reads
           - gaffer-private-branch-and-pr-creation
           - shared-diagnostics
-          - testing-access
+          - agentplane-testing
           - public-inventory
           - coinbase
           - spend-policy-config
           - plaid-diagnostics
           - ducktape-pr-failed-jobs
-          - agentplane-testing
         thread_preset: finance-agent-codex
       public-coder-ducktape:
         title: Public coder / ducktape
@@ -3525,10 +3522,9 @@ data:
           - github-identity-reads
           - ssh-reads
           - shared-diagnostics
-          - testing-access
+          - agentplane-testing
           - public-inventory
           - ducktape-pr-failed-jobs
-          - agentplane-testing
         thread_preset: public-coder-ducktape-codex
         bootstrap: |
           marker=/state/workspaces/.agentplane-public-coder-ready
@@ -7793,6 +7789,35 @@ spec:
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet
 metadata:
+  name: agentplane-testing
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: agentplane-testing-login-reader
+      namespaces:
+        - public-coder-agent
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: agentplane-testing-operator
+      namespaces:
+        - agentplane-testing
+    - type: egress
+      hosts:
+        - agentplane-app.agentplane-testing.svc.cluster.local
+      clusterInternal: true
+    - type: egress
+      hosts:
+        - agentplane-testing.allegedly.works
+        - agentplane-dex-testing.allegedly.works
+      clusterInternal: true
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
   name: cluster-diagnostics
   namespace: agentplane-staging
 spec:
@@ -8023,26 +8048,6 @@ spec:
         name: plaid-spend-finance-config-reader
       namespaces:
         - plaid-mcp
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  name: testing-access
-  namespace: agentplane-staging
-spec:
-  rules:
-    - type: kubernetes_role_binding
-      role:
-        kind: Role
-        name: agentplane-testing-login-reader
-      namespaces:
-        - public-coder-agent
-    - type: kubernetes_role_binding
-      role:
-        kind: Role
-        name: agentplane-testing-operator
-      namespaces:
-        - agentplane-testing
 ---
 apiVersion: v1
 kind: ServiceAccount
@@ -9188,23 +9193,6 @@ subjects:
     kind: ServiceAccount
     name: claude-ai
     namespace: agentplane-staging
----
-apiVersion: agentplane.allegedly.works/v1alpha1
-kind: PolicySet
-metadata:
-  name: agentplane-testing
-  namespace: agentplane-staging
-spec:
-  rules:
-    - type: egress
-      hosts:
-        - agentplane-app.agentplane-testing.svc.cluster.local
-      clusterInternal: true
-    - type: egress
-      hosts:
-        - agentplane-testing.allegedly.works
-        - agentplane-dex-testing.allegedly.works
-      clusterInternal: true
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy

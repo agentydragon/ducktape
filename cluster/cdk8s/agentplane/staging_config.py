@@ -13,7 +13,6 @@ from agentplane.app.settings import AppSettingsConfig
 from agentplane.runner.harness import Harness
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane.actions_staging_policies import (
-    AGENTPLANE_TESTING_POLICY,
     COMMON_GITHUB_READ_SET,
     DUCKTAPE_PR_FAILED_JOBS_SET,
     GAFFER_PRIVATE_BRANCH_AND_PR_CREATION_SET,
@@ -151,7 +150,6 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
             GITHUB_CLONE_POLICY,
             GITHUB_AGENTYDRAGON_AGENT_POLICY,
             GITHUB_ACTIONS_LOGS_POLICY,
-            AGENTPLANE_TESTING_POLICY,
             # Bound at launch rather than by a static account: a managed runner Pod runs as its own
             # per-Sandbox ServiceAccount, so the `haku-agent` binding never reaches it
             # and the preset is the only thing that decides what this Haku may do without the operator.
@@ -196,7 +194,7 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
         thread_preset=_THREAD_PRESET_FINANCE_AGENT_CODEX,
     )
     for preset in ("public-coder", "finance-agent"):
-        cfg.sandbox_presets[preset].policy_sets += [DUCKTAPE_PR_FAILED_JOBS_SET, AGENTPLANE_TESTING_POLICY]
+        cfg.sandbox_presets[preset].policy_sets += [DUCKTAPE_PR_FAILED_JOBS_SET]
     public_coder = cfg.sandbox_presets["public-coder"]
     thread = cfg.thread_presets[public_coder.thread_preset].model_copy(deep=True)
     thread.title = "Public coder / ducktape / Codex"

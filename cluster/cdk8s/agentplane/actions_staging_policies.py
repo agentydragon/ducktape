@@ -65,11 +65,12 @@ GROCY_SF_READS_SET = "grocy-sf-reads"
 _COINBASE_SECRET = "coinbase-api-credentials"
 _GITHUB_DOWNLOADS_POLICY = "github-downloads"
 
-# The staging-only policies created below. `agentplane-testing` lets a staging sandbox reach the
-# testing instance. The `coinbase` PolicySet combines GET egress with the view-only Coinbase key's
-# Secret grant; its set definition lives with Agentplane's Kubernetes access profiles. The two
-# Action PolicySet reads every preset binds by default live here too.
-AGENTPLANE_TESTING_POLICY = "agentplane-testing"
+# Staging-only PolicySets. `agentplane-testing` combines testing-instance egress with the
+# acceptance-test Kubernetes grants; its rules are assembled by the Policy Controller from the
+# access profile and `agentplane_testing_egress_rules`. The `coinbase` PolicySet combines GET
+# egress with the view-only Coinbase key's Secret grant. The two Action PolicySet reads every
+# preset binds by default live here too.
+AGENTPLANE_TESTING_POLICY = access.AGENTPLANE_TESTING_POLICY
 GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 SSH_READS_SET = "ssh-reads"
 
@@ -77,6 +78,18 @@ SSH_READS_SET = "ssh-reads"
 def coinbase_egress_rules() -> list[PolicySetSpecRules]:
     """GET-only access to Coinbase; callers sign requests with the key held in Kubernetes."""
     return [Rule.egress(hosts=["api.coinbase.com"], methods=[PolicySetSpecRulesMethods.GET])]
+
+
+def agentplane_testing_egress_rules() -> list[PolicySetSpecRules]:
+    """The egress half of the acceptance-testing PolicySet."""
+    testing_app = app_component.service(testing.ENV.namespace)
+    testing_login_hosts = [testing.ENV.app.hostname, urlsplit(testing.ENV.app.oidc_issuer).netloc]
+    # The proxy matches the exact host spelling. The app Service avoids hairpinning through the
+    # Gateway; only the browser callback and isolated testing Dex issuer use public hostnames.
+    return [
+        Rule.egress(hosts=[testing_app.fqdn], cluster_internal=True),
+        Rule.egress(hosts=testing_login_hosts, cluster_internal=True),
+    ]
 
 
 # The Action PolicySets created below that the launch presets bind, named because a
@@ -601,19 +614,6 @@ def add_staging_action_policies(scope: Construct) -> None:
     # bumping TLS. Nothing is substituted: the suite presents the app token it mints in
     # agentplane-testing (testing.AcceptanceToken), so any method may pass.
     testing_app = app_component.service(testing.ENV.namespace)
-    # Browser/OIDC acceptance tests follow the app's public callback and Dex issuer.
-    # Neither staging's app nor its real Authentik issuer belongs in this policy.
-    testing_login_hosts = [testing.ENV.app.hostname, urlsplit(testing.ENV.app.oidc_issuer).netloc]
-    add_egress_policy(
-        scope,
-        "egresspolicy-agentplane-testing",
-        metadata=ApiObjectMetadata(name=AGENTPLANE_TESTING_POLICY, namespace=_NAMESPACE),
-        # The proxy matches a request's host on the exact string, and clients spell the full name.
-        rules=[
-            Rule.egress(hosts=[testing_app.fqdn], cluster_internal=True),
-            Rule.egress(hosts=testing_login_hosts, cluster_internal=True),
-        ],
-    )
     proxy = egress.proxy(_NAMESPACE)
     # No `serverNames` on node:443 here, deliberately. This selector is the staging egress
     # proxy's own Pods, and `egress.py` already gives them open `[world, remote-node, host]:443/80`.
