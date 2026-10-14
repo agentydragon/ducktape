@@ -13,13 +13,14 @@ from collections.abc import AsyncIterator, Awaitable, Callable
 from typing import cast
 
 import pytest
-from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.acceptance.ollama_warmup import warm_ollama
 from agentplane.app.sandbox_models import NewSandbox, SandboxView, SessionDefaults, sandbox_is_ready
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
+from agentplane.sandbox_resource import OperatingMode
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
@@ -130,6 +131,22 @@ async def wait_until_running(client: Client, name: str) -> SandboxView:
     raise AssertionError("unreachable: reraise=True either returns the view or raises")
 
 
+async def suspend_and_delete(client: Client, name: str) -> None:
+    await client.suspend_sandbox(name)
+    # Deletion admission reads effective mode, which the controller publishes after the spec write.
+    async for attempt in AsyncRetrying(
+        stop=stop_after_delay(SANDBOX_READY_SECONDS),
+        wait=wait_fixed(2),
+        retry=retry_if_exception_type(SandboxNotReadyError),
+        reraise=True,
+    ):
+        with attempt:
+            view = await client.sandbox(name)
+            if view.operating_mode is not OperatingMode.SUSPENDED:
+                raise SandboxNotReadyError(f"{name} has not observed suspension: {view.operating_mode}")
+    await client.delete_sandbox(name)
+
+
 @pytest.fixture
 async def sandbox(client: Client) -> AsyncIterator[Sandboxes]:
     """Creates sandboxes and deletes every one it created, whatever the test did.
@@ -165,5 +182,4 @@ async def sandbox(client: Client) -> AsyncIterator[Sandboxes]:
     yield create
 
     for name in created:
-        await client.suspend_sandbox(name)
-        await client.delete_sandbox(name)
+        await suspend_and_delete(client, name)

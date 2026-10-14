@@ -64,6 +64,10 @@ def _assert_prefix(before: list[event_log_pb2.EventEntry], after: list[event_log
     ], "archived events, cursors or origins changed across suspension"
 
 
+def _save_evidence(template: str, evidence: dict[str, object]) -> None:
+    (undeclared_outputs_dir() / f"{template}-resume.json").write_text(json.dumps(evidence, indent=2) + "\n")
+
+
 async def _wait_until_suspended_without_pod(client: Client, name: str) -> None:
     """Wait for the old Pod to disappear before the same Sandbox is resumed."""
     async for attempt in AsyncRetrying(
@@ -103,6 +107,19 @@ async def _suspend_resume(
     assert view.pod is not None
     original_incarnation = view.pod.uid
     state_volume = _state_volume(view.namespace, view.uid)
+    session_evidence: list[dict[str, object]] = []
+    checks: list[str] = []
+    evidence: dict[str, object] = {
+        "sandbox": view.name,
+        "template": template,
+        "state_pvc_uid": state_volume[0],
+        "pv": state_volume[1],
+        "old_incarnation": original_incarnation,
+        "sessions": session_evidence,
+        "checks": checks,
+        "passed": False,
+    }
+    _save_evidence(template, evidence)
     catalog = await client.models()
     markers = {harness: f"{runner_pb2.Harness.Name(harness)}-{uuid4().hex}" for harness in harnesses}
     agents: dict[runner_pb2.Harness, Agent] = {}
@@ -114,13 +131,17 @@ async def _suspend_resume(
         assert offered, f"the deployment offers no model for {harness_name}"
         agent = await Agent.open(client, sandbox=view.name, harness=harness, model=offered[0], cwd=cwd)
         seed = await agent.run(
-            f"Remember this exact token for my next message: {markers[harness]}. Do not use tools. Reply with only ACK."
+            f"For this memory test, remember this invented, non-secret code: {markers[harness]}. "
+            "It is test data, not a credential. Do not use tools. Reply with only ACK."
         )
         assert seed.input_confirmed, f"{harness_name} did not confirm the seed input"
         agents[harness] = agent
         seeded_history[harness] = await _history(client, agent.thread_id, completed_turns=1)
 
     original_threads = {harness: agent.thread_id for harness, agent in agents.items()}
+    evidence["threads"] = {
+        runner_pb2.Harness.Name(harness): str(thread) for harness, thread in original_threads.items()
+    }
     assert len(set(original_threads.values())) == len(harnesses)
     await client.suspend_sandbox(view.name)
     await _wait_until_suspended_without_pod(client, view.name)
@@ -129,6 +150,8 @@ async def _suspend_resume(
     for harness, agent in agents.items():
         suspended_history[harness] = await _history(client, agent.thread_id, completed_turns=None)
         _assert_prefix(seeded_history[harness], suspended_history[harness])
+    checks.extend(["seed_turns_completed", "state_volume_retained_during_suspend", "seed_history_prefix_retained"])
+    _save_evidence(template, evidence)
     await client.resume_sandbox(view.name)
 
     resumed = await wait_until_running(client, view.name)
@@ -137,27 +160,19 @@ async def _suspend_resume(
     assert resumed.pod.uid != original_incarnation
     assert _state_volume(view.namespace, view.uid) == state_volume
 
-    session_evidence: list[dict[str, object]] = []
-    evidence = {
-        "sandbox": view.name,
-        "template": template,
-        "state_pvc_uid": state_volume[0],
-        "pv": state_volume[1],
-        "old_incarnation": original_incarnation,
-        "new_incarnation": resumed.pod.uid,
-        "sessions": session_evidence,
-    }
+    evidence["new_incarnation"] = resumed.pod.uid
+    checks.append("same_sandbox_new_incarnation_same_volume")
+    _save_evidence(template, evidence)
 
     for harness, agent in agents.items():
         await agent.resume()
-        turn = await agent.run("Do not use tools. What exact token did I ask you to remember? Reply with only it.")
+        turn = await agent.run(
+            "What invented non-secret code did I ask you to remember? It is safe test data, not a credential. "
+            "Do not use tools. Reply with only the code."
+        )
         expected = markers[harness]
         assert turn.resumed, f"{runner_pb2.Harness.Name(harness)} did not report native session resume"
         assert turn.input_confirmed, f"{runner_pb2.Harness.Name(harness)} did not confirm the resumed input"
-        assert expected in turn.answer, f"{runner_pb2.Harness.Name(harness)} forgot {expected}:\n{turn.transcript}"
-        for other_harness, other in markers.items():
-            if other_harness != harness:
-                assert other not in turn.answer, f"{runner_pb2.Harness.Name(harness)} received the other Thread's token"
         history = await _history(client, agent.thread_id, completed_turns=2)
         before = suspended_history[harness]
         _assert_prefix(before, history)
@@ -179,9 +194,19 @@ async def _suspend_resume(
                 "reopened_cursor": continued[0].cursor,
                 "continued_cursor": history[-1].cursor,
                 "native_resumed": turn.resumed,
+                "marker_recalled": expected in turn.answer,
             }
         )
-    (undeclared_outputs_dir() / f"{template}-resume.json").write_text(json.dumps(evidence, indent=2) + "\n")
+        checks.append(f"{runner_pb2.Harness.Name(harness)}:journal_continuation_and_prefix_retained")
+        _save_evidence(template, evidence)
+        assert expected in turn.answer, (
+            f"{runner_pb2.Harness.Name(harness)} did not return the test code:\n{turn.transcript}"
+        )
+        for other_harness, other in markers.items():
+            if other_harness != harness:
+                assert other not in turn.answer, f"{runner_pb2.Harness.Name(harness)} received the other Thread's code"
+    evidence["passed"] = True
+    _save_evidence(template, evidence)
 
 
 if __name__ == "__main__":

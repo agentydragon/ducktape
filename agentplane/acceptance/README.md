@@ -50,8 +50,9 @@ bazelisk test //agentplane/acceptance:test_suspend_resume \
 ```
 
 Successful cases write PVC/PV identities, old/new incarnation UIDs, Session IDs and seal/reopen/
-continuation cursors to the target's `test.outputs/{runner,runner-vm}-resume.json`. These files
-are live evidence only after the scenario actually passes. The scenario creates uniquely named
+continuation cursors to the target's `test.outputs/{runner,runner-vm}-resume.json`. Checkpoints are
+saved during the run, with `passed: false` until all assertions succeed, so partial evidence survives
+a model refusal or later failure. The memory code is explicitly synthetic and non-secret. The scenario creates uniquely named
 Sandboxes, and fixture teardown suspends and deletes only the Sandboxes that invocation created.
 It does not delete an existing Sandbox. This completed-turn scenario does not cover a crash at a
 command checkpoint or interrupted setup; deterministic coverage for those boundaries lives in
@@ -243,6 +244,8 @@ execution/caching or mint substitute credentials to work around that boundary.
 The controlled-host instructions above are operator-only, not an agent-pod fallback.
 See [repository instructions](../../AGENTS.md).
 
+Teardown waits until the controller reports effective `Suspended` mode before asking to delete;
+the spec write alone does not satisfy deletion admission. Authorization refusals fail immediately.
 Afterwards, check that nothing leaked: `kubectl -n agentplane-testing get sandboxes.agentplane.allegedly.works`
 should show no `accept-*`.
 

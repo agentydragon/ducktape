@@ -1,7 +1,7 @@
 """Offline acceptance-driver startup and terminal-result checks, not deployed harness evidence."""
 
 from collections.abc import AsyncIterator
-from unittest.mock import Mock, create_autospec
+from unittest.mock import Mock, call, create_autospec
 from uuid import UUID
 
 import httpx
@@ -9,10 +9,43 @@ import pytest
 import pytest_bazel
 
 from agentplane.acceptance.agent import Agent
+from agentplane.acceptance.conftest import suspend_and_delete
 from agentplane.app.testing.client import Attachment, Client
 from agentplane.proto import event_log_pb2, event_pb2, runner_pb2
+from agentplane.sandbox_resource import OperatingMode
 
 # gazelle:include_dep @pypi//protobuf
+
+
+async def test_cleanup_waits_for_effective_suspension_before_deleting() -> None:
+    client = create_autospec(Client, instance=True)
+    client.sandbox.side_effect = [
+        Mock(operating_mode=OperatingMode.RUNNING),
+        Mock(operating_mode=OperatingMode.SUSPENDED),
+    ]
+
+    await suspend_and_delete(client, "owned-test-sandbox")
+
+    assert client.mock_calls == [
+        call.suspend_sandbox("owned-test-sandbox"),
+        call.sandbox("owned-test-sandbox"),
+        call.sandbox("owned-test-sandbox"),
+        call.delete_sandbox("owned-test-sandbox"),
+    ]
+
+
+async def test_cleanup_does_not_retry_an_authorization_refusal_or_delete() -> None:
+    client = create_autospec(Client, instance=True)
+    request = httpx.Request("GET", "https://app.test.invalid/sandboxes/owned-test-sandbox")
+    client.sandbox.side_effect = httpx.HTTPStatusError(
+        "read refused", request=request, response=httpx.Response(403, request=request)
+    )
+
+    with pytest.raises(httpx.HTTPStatusError):
+        await suspend_and_delete(client, "owned-test-sandbox")
+
+    client.sandbox.assert_awaited_once()
+    client.delete_sandbox.assert_not_awaited()
 
 
 async def test_agent_open_retries_unavailable_without_creating_another_session() -> None:
