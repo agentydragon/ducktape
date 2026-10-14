@@ -1,4 +1,4 @@
-"""gRPC client for History Service reads, with no Kubernetes or Sandbox Service fallback."""
+"""gRPC client for History Service reads, with no Kubernetes fallback."""
 
 from __future__ import annotations
 

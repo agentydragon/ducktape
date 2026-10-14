@@ -7,9 +7,8 @@ placement. Its replicas hold the runner connections; a Sandbox's
 [`RunnerGatewayClient`](client.py) over a channel to the gateway, and its `SandboxControlClient`,
 which dials the Sandbox's `<sandbox>-control` Service for each call only the holder answers.
 
-Authentication and destinations work as in the
-[Sandbox Service API](../sandbox_service/API.md#authentication-and-destinations), under the gateway's
-own token audience and `caller_accounts`.
+Callers authenticate under the gateway's own token audience and `caller_accounts`. Each request
+checks the caller before resolving its Sandbox destination.
 
 ## Sessions and commands
 
@@ -86,9 +85,8 @@ name contains the given text, ignoring case.
 
 ## Errors and uncertain outcomes
 
-Status codes are those of the
-[Sandbox Service API](../sandbox_service/API.md#errors-and-uncertain-outcomes), plus
-`ALREADY_EXISTS` when a `SubmitCommand` command ID already belongs to a different submission.
+Errors use the shared gRPC status mapping; `ALREADY_EXISTS` also indicates that a `SubmitCommand`
+command ID already belongs to a different submission.
 
 Neither a successful write nor a timeout proves admission/rejection. A mutation may commit before
 its response is lost. Settle a command by retrying it with the unchanged ID/payload; admission is
@@ -99,7 +97,7 @@ is not a queue: nothing delivers it later, and the runner journal stays the rece
 
 `//agentplane/runner_gateway:server` uses `AGENTPLANE_RUNNER_GATEWAY_*` environment variables or
 kebab-case CLI flags (`AGENTPLANE_RUNNER_GATEWAY_CONFIG_FILE` for its YAML file). Its token audience is
-`agentplane-runner-gateway`, so a token for the Sandbox Service is refused here.
+`agentplane-runner-gateway`; Sandbox lifecycle requests use the Kubernetes API and are not served here.
 
 `port` defaults to 8080 for gRPC, which also serves the unauthenticated `grpc.health.v1.Health`.
 `SubmitCommand` waits up to `runner_admission_ack_timeout_s` (default 15) for runner journal

@@ -22,6 +22,7 @@ from agentplane.runner_gateway.connection_records import ConnectionHolder, Conne
 from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
+from agentplane.runner_gateway.testing.auth import CALLER_TOKEN
 from agentplane.runner_gateway.testing.grpc_service import connect, service
 from agentplane.runner_gateway.testing.resources import build_resources
 from agentplane.runner_gateway.testing.runner_control import (
@@ -33,14 +34,13 @@ from agentplane.runner_gateway.testing.runner_control import (
     serve_replica_control,
 )
 from agentplane.runner_gateway.testing.sessions import register_on_fake_sandbox
-from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
 from agentplane.sandboxes.testing.kubernetes import DESTINATION, SANDBOX_UID, SandboxCluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 
 # gazelle:include_dep @pypi//protobuf
 
-CALLER_AUDIENCE = "test-sandbox-service"
+CALLER_AUDIENCE = "test-runner-gateway-lifecycle"
 CALLER = ServiceAccountRef(namespace=SANDBOX_NAMESPACE, name="test-caller")
 SPEC: dict[str, object] = {"harness": "HARNESS_CLAUDE", "cwd": "/test-workspace/{session_id}", "model": "test-model"}
 

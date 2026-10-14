@@ -109,11 +109,84 @@ py_test(
     name = "test_console",
     srcs = ["test_console.py"],
     deps = [
+        ":conftest",
         ":console",
         ":errors",
         "//:conftest",
         "@pypi//aiohttp",
         "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        ":egress_views",
+        ":inventory",
+        "//agentplane/sandboxes/testing:fake_inventory",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//util:kubernetes",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_egress_views",
+    srcs = ["test_egress_views.py"],
+    deps = [
+        ":conftest",
+        ":egress_views",
+        "//:conftest",
+        "//agentplane:subjects",
+        "//agentplane/egress:resources",
+        "//agentplane/sandboxes/testing:fake_inventory",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//types_protobuf",
+    ],
+)
+
+py_test(
+    name = "test_inventory",
+    srcs = ["test_inventory.py"],
+    deps = [
+        ":conftest",
+        ":errors",
+        "//:conftest",
+        "//agentplane:sandbox_resource",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:sandboxes_pb2",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/testing:fake_apiserver",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_inventory_mutations",
+    srcs = ["test_inventory_mutations.py"],
+    deps = [
+        ":conftest",
+        ":errors",
+        ":inventory",
+        ":kubernetes_views",
+        "//:conftest",
+        "//agentplane:policy_sets",
+        "//agentplane:sandbox_resource",
+        "//agentplane:subjects",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:sandboxes_pb2",
+        "//agentplane/sandboxes/testing:fake_inventory",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

@@ -9,8 +9,8 @@ operator decisions and proportional acceptance from the [low-priority freezer](t
 
 **Dependency rule:** the integration app is a user-facing client. Other services must not depend on
 its APIs, private tables, implementation, process, or bootstrap, including in v1. The accepted
-[service boundary constraint](../docs/service_boundaries.md) and the [Sandbox Service](../sandbox_service/README.md)
-set the direction: app → independent backends; notifications → Sandbox Service, Runner Gateway,
+[service boundary constraint](../docs/service_boundaries.md) sets the direction: the app requests
+Sandbox state through Kubernetes and calls independent backends; notifications use the Runner Gateway,
 History Service and Action Service.
 
 Transcript search/lookup (`T3`) is deliberately deferred product work and is not in the current
@@ -35,7 +35,7 @@ execution sequence. This is a priority decision, not a technical dependency.
   DAG node names; the design is [VM Sandboxes](../docs/vm_sandboxes.md)
 - [User stories](user_stories.md) — north-star product context, not an implementation queue
 - [Input metadata](notification_presentation.md) — a sequenced follow-up to command admission
-- [History Service](history_service.md) — the target split (runner, Sandbox Service, Runner
+- [History Service](history_service.md) — the target split (runner, Sandbox Controller, Runner
   Gateway, History Service, app facade) and the invariants the refactor converges on
 - [Subscriptions and notifications](notifications.md) — standalone service design: SA-authorized session scope,
   explicit inbox acknowledgement, shipped Actions/GitHub delivery, remaining reliability acceptance,

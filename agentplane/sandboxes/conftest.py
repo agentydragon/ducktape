@@ -1,15 +1,12 @@
-"""Fake Kubernetes fixtures, a caller bearer file, and the service schema for integration tests."""
+"""Shared in-memory Kubernetes fixtures for Sandbox readers and inventory tests."""
 
 from collections.abc import AsyncIterator
-from pathlib import Path
 from typing import cast
 
 import pytest
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.history_service.testing.fixtures import service_database_template
-from agentplane.sandbox_service.egress import EgressInventory
-from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
+from agentplane.sandboxes.egress_views import EgressReader
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
@@ -19,15 +16,6 @@ from agentplane.sandboxes.testing.fake_inventory import (
 )
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from util.kubernetes import CustomObjectsClient
-from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
-from util.testing.postgres_fixtures import (
-    database_clones,
-    database_names,
-    engine,
-    postgres_admin_url,
-    postgres_container,
-    postgres_image,
-)
 
 
 @pytest.fixture(autouse=True)
@@ -53,8 +41,8 @@ def core_v1() -> FakeCoreV1Api:
 
 
 @pytest.fixture
-def egress(custom_objects: FakeCustomObjectsApi) -> EgressInventory:
-    return EgressInventory(namespace=NAMESPACE, custom_objects=cast(CustomObjectsClient, custom_objects))
+def egress(custom_objects: FakeCustomObjectsApi) -> EgressReader:
+    return EgressReader(namespace=NAMESPACE, custom_objects=cast(CustomObjectsClient, custom_objects))
 
 
 @pytest.fixture
@@ -64,15 +52,3 @@ def inventory(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> S
         custom_objects=cast(CustomObjectsClient, custom_objects),
         core_v1=cast(k8s_client.CoreV1Api, core_v1),
     )
-
-
-@pytest.fixture
-def token_file(tmp_path: Path) -> Path:
-    path = tmp_path / "caller-token"
-    path.write_text(CALLER_TOKEN)
-    return path
-
-
-@pytest.fixture
-def db_url(service_database_template: PostgresDatabaseTemplate, database_clones: DatabaseClones) -> str:
-    return database_clones.clone(service_database_template, drivername="postgresql+asyncpg")

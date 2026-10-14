@@ -67,8 +67,8 @@ follows it; code that differs converges on it.
   gRPC logs it and answers `UNKNOWN`. `context.abort` outside the mapping is for request validation
   the RPC itself performs.
 - **Client:** `agentplane.grpc_calls` logs each failed call and translates `grpc.aio.AioRpcError` in one place into a
-  `ServiceError` carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`; the Sandbox
-  Service and Runner Gateway clients read `FAILED_PRECONDITION` as `RefusedError`).
+  `ServiceError` carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`; the Runner
+  Gateway client reads `FAILED_PRECONDITION` as `RefusedError`).
 
 ## Deadlines
 
@@ -95,7 +95,7 @@ follows it; code that differs converges on it.
 - Channels are `grpc.aio.insecure_channel`: in-cluster traffic is plaintext and identity comes from
   the bearer (or, for Sandbox workloads, from the egress proxy that substitutes it). The client's
   package says which options its channels need, through a `dial(target)` the composition root
-  calls (`agentplane/grpc_calls.py` for the Sandbox Service and Runner Gateway clients); a client
+  calls (`agentplane/grpc_calls.py` for the Runner Gateway and History Service clients); a client
   that receives Session Events adds `LARGE_EVENT_RECEIVE_OPTIONS` (`agentplane/grpc_options.py`).
   The invariants:
   - `grpc.use_local_subchannel_pool: 1` for every channel that is closed and dialed again to the

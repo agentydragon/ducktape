@@ -1,7 +1,7 @@
 """The boxes this surface creates, reads and deletes, and the commands it runs in them.
 
 A box is a plain Pod running as its caller, stamped from a PodTemplate the binding offers. It is not a
-Sandbox Service Sandbox (<../../docs/adr_action_sandboxes.md>): no runner, no state volume, no
+Session Sandbox (<../../docs/adr_action_sandboxes.md>): no runner, no state volume, no
 ServiceAccount of its own. Each carries an owner reference to its caller's ServiceAccount, so a
 Session Sandbox's agent that created boxes as that Sandbox's account loses them with the Sandbox.
 """

@@ -1,31 +1,33 @@
-# Agentplane service dependency rule
+# Agentplane service boundaries
 
-Status: **accepted architecture constraint.** The Sandbox Service, the Runner Gateway, the History
-Service, and the app's clients of them are implemented and deployed.
+The integration app is a user-facing composition layer, not a backend dependency. Its former
+Sandbox Service caller and server source are retired; the previously pinned Deployment remains
+isolated pending resource cleanup. The app submits Sandbox desired state and operator grants through
+Kubernetes as the requesting operator, and the Sandbox Controller reconciles resources and owns
+`Sandbox.status`.
 
 ## The integration app is a client
 
-The integration app integrates independent capabilities into a user-facing view. **Other Agentplane
-services must not depend on it.** The dependency direction is app to services, never services to app.
+Other Agentplane services must not depend on the app. The dependency direction is app to services
+and shared infrastructure, never services to the app.
 
 ```mermaid
 flowchart LR
-    App[Integration app] --> Sandbox[Sandbox Service]
+    App[Integration app] --> Kubernetes[Kubernetes API: Sandbox spec and operator grants]
     App --> Gateway[Runner Gateway]
     App --> History[History Service]
     App --> Notifications[Notification service]
     App --> Actions[Action Service]
-    Notifications --> Sandbox
+    Notifications --> Kubernetes
     Notifications --> Gateway
     Notifications --> History
     Notifications --> Actions
-    Sandbox --> Kubernetes[Kubernetes / provisioning]
-    Sandbox --> Gateway
+    Controller[Sandbox Controller] --> Kubernetes
+    Controller --> Gateway
     Gateway --> Runners[Runners]
 ```
 
-The services may depend on shared infrastructure and explicit backend APIs. The graph is the relevant
-ownership direction, not an exhaustive list of existing infrastructure dependencies.
+The graph shows ownership direction, not every infrastructure dependency.
 
 For backend operations, this forbids:
 
@@ -34,8 +36,8 @@ For backend operations, this forbids:
 - Depending on the app's process/attachment, a browser session, or an app-issued ticket merely to act
   as a service. Shared authentication and independently owned operator authority are different things.
 - Making the app the only source of session instructions, provider configuration, or destination IDs
-  needed to create/manage sessions independently.
-- A "temporary v1" app API or app proxy that becomes a prerequisite for notification delivery.
+  needed to create or manage sessions independently.
+- A temporary app API or proxy that becomes a prerequisite for notification delivery.
 
 A shared helper belongs in an independently owned package. Backend records belong to their backend
 owner; a shared database server does not make private tables a supported API. The app can retain
@@ -43,43 +45,49 @@ presentation state and projections, but those must not become hidden sources of 
 
 ## Ownership
 
-- **Sandbox Service:** Sandbox provisioning and lifecycle, templates, grants and egress,
-  teardown, and the runner endpoints each new Sandbox's runner dials. It has no database.
-- **Runner Gateway:** the runner control stream, verified destination bindings, the Session registry,
-  authorized runner-session access, command admission and delivery, command receipt reads, the
-  `sandbox_commands` database, and sealing a Sandbox's runner on the Sandbox Service's request.
-- **History Service:** the Session Event archive, the ingress runners push their journals to, the Thread
-  fold of each Session, and the read API over both.
-- **Runner:** native harness scheduling/execution, durable command journal, canonical execution Events
-  and causal receipts.
-- **Notification service:** providers, subscriptions, persisted payloads, inbox HWM, notice policy, and
-  notice delivery bookkeeping.
-- **Action Service:** Action authorization/Decisions, execution lifecycle, and canonical Action history.
-- **Integration app:** user-facing composition, interaction, presentation, and app-only projections/state;
-  a client of the above that reads Session history and Threads from the History Service.
+- **Integration app:** user-facing composition and interaction. As the requesting operator, it writes
+  Sandbox `spec` and operator-owned `PolicyBinding` grants through Kubernetes. It reads Sandbox
+  projections for the UI, calls the Runner Gateway for Sessions and commands, and reads Session
+  history and Threads from the History Service.
+- **Sandbox Controller:** reconciles requested Sandbox state into ServiceAccounts, Pods or VMs,
+  state volumes and controller-owned grants. It owns `Sandbox.status`, including quiescing facts,
+  and asks the Runner Gateway to seal Sessions before stopping or deleting a runner.
+- **Runner Gateway:** runner control stream, verified destination bindings, Session registry,
+  authorized runner-session access, command admission and delivery, receipt reads, the
+  `sandbox_commands` database, and read-only Sandbox inventory.
+- **History Service:** the Session Event archive, the ingress runners push their journals to, the
+  Thread fold of each Session, and the read API over both. It retains the existing `sandbox_service`
+  PostgreSQL database and its authored history.
+- **Runner:** native harness scheduling and execution, durable command journal, canonical execution
+  Events and causal receipts.
+- **Notification service:** providers, subscriptions, persisted payloads, inbox HWM, notice policy,
+  and notice delivery bookkeeping.
+- **Action Service:** Action authorization and Decisions, execution lifecycle, and canonical Action
+  history.
 
-`app/threads/` owns only the app's thread metadata, projections, and browser-facing composition. Its
-session adapter uses the service client; it does not provision sandboxes or connect to runners.
-Thread identities never enter the Sandbox Service or Runner Gateway API.
+`app/threads/` owns only the app's Thread metadata, projections, and browser-facing composition. Its
+session adapter uses the History Service; it does not own Sandbox reconciliation or connect directly
+to runners. Thread identities never enter Runner Gateway APIs.
 
 ## Session access without the app
 
-The [Runner Gateway](../runner_gateway/README.md) resolves explicit session destinations, exposes
-authorized command delivery and receipt reads, and distinguishes available, unavailable,
-and permanently removed destinations without querying the app; the
-[Sandbox Service](../sandbox_service/README.md) provisions, suspends and resumes Sandboxes.
-Notification-triggered wake and durable acceptance of commands for offline destinations are separate,
-deferred product features. A service boundary is not permission to silently create a second
-runner-command queue.
+The Runner Gateway resolves explicit session destinations, exposes authorized command delivery and
+receipt reads, and distinguishes available, unavailable, and permanently removed destinations
+without querying the app. The Sandbox Controller reconciles each submitted desired state and uses the
+Gateway's runner proxy for quiescing; neither service depends on the app process to continue its work.
+Notification-triggered wake and durable acceptance for offline destinations are separate features
+with their own rollout gates. Do not create another runner-command queue as a side effect of a
+service-boundary change.
 
 Runner journals remain durable on runner state volumes. Runners push them to the History Service,
-whose Session Event archive outlives the runner volume; the app reads history from that archive through the
-History Service and keeps its UI projections.
+whose Session Event archive outlives the runner volume; the app reads history from that archive and
+keeps its UI projections.
 
-The Sandbox Service and the Runner Gateway serve protobuf/gRPC APIs; the app retains its
+The Runner Gateway and other backend components expose their own APIs; the app retains its
 browser-facing HTTP API. The Runner Gateway is the only production server of the runner control
-stream. It does not proxy runner outbound model, Actions, or egress traffic. Administrative/test
-exceptions must be explicit; there is no production direct-runner fallback in the app or notifications.
+stream. It does not proxy runner outbound model, Actions, or egress traffic. Administrative and test
+exceptions must be explicit; there is no production direct-runner fallback in the app or
+notifications.
 
 ## Existing staging data
 
@@ -88,43 +96,32 @@ between services, preserve existing data and identities, with an inventory, test
 path, and controlled ownership handoff. One-time migration of app-owned records is distinct from a
 steady-state dependency on app tables. See [staging data preservation](staging_data_preservation.md).
 Any necessary loss/reset must be described and explicitly approved before execution; the general
-staging-disposability rule in [`../AGENTS.md`](../AGENTS.md) is not permission to bypass this requirement.
+staging-disposability rule in [`../AGENTS.md`](../AGENTS.md) is not permission to bypass this
+requirement.
 
 ## Review and acceptance gates
 
-- Reject new reverse imports, app API clients, app-table reads, or app-only bootstrap dependencies in
+- Reject reverse imports, app API clients, app-table reads, or app-only bootstrap dependencies in
   backend code. Make this rule visible to coding agents in [`../AGENTS.md`](../AGENTS.md).
-- Give each record, queue, lifecycle operation, and auth decision one owner. No overlapping command
-  authorities or implicit new persistence semantics.
-- Exercise provisioning/session setup, notification ingestion/subscription, payload read/ack, command
-  delivery, and receipt replay **with the integration app unavailable**, from a backend path's first
-  implementation.
-- Verify restart/recovery also works without the app: a happy path using state pre-created by the app
-  alone does not demonstrate backend independence.
+- Give each record, queue, lifecycle operation, and authorization decision one owner. Avoid
+  overlapping command authorities or implicit persistence semantics.
+- Exercise notification ingestion/subscription, payload read/ack, command delivery, and receipt replay
+  with the app unavailable. Sandbox desired state is an operator request; reconciliation and runner
+  sealing remain owned by the controller and Gateway.
+- Verify restart/recovery does not depend on the app process after desired state has been accepted.
 - Test authorization failures and preserve the distinction between accepted intent, runner admission,
   and harness effect. Human decision requirements stay in their backend authority even if the UI is down.
 
-## Sandbox Service and Runner Gateway callers
+## Sandbox lifecycle and Runner Gateway callers
 
-Sandbox provisioning, grant mutations, Session operations and runner RPCs are service-owned
-operations. Consumers call the authenticated Sandbox Service or Runner Gateway API, not instantiate
-their inventory, provisioner, reconciler, destination resolver, command relay, or lifecycle
-implementation. Do not introduce local-or-remote unions, in-process fallbacks, or a second
-provisioning dependency in the app. Sandbox Service implementation targets are visible only inside
-that service, except the inventory and destination resolver the Runner Gateway reads.
+The Sandbox Service API and server source are retired. During the staged rollout, its previously
+pinned Deployment remains until the separate resource-removal change lands. The app submits Sandbox
+desired state and operator grants through the Kubernetes API as the requesting operator; the Sandbox
+Controller reconciles `spec` and owns `status`.
 
-Public protobuf/client models and read-only Kubernetes projections can be shared. The projection
-modules carry no create/delete/grant/session authority. Consumer acceptance tests use the real gRPC
-boundary through service-owned test fixtures; tests of backend mutations live with the service.
-
-Bazel defaults keep app implementation visible only to the app and its explicit acceptance/deployment
-consumers. Public DTOs, client/protobufs, and read-only projections are opt-in exports. The direct
-runner transport and its generated gRPC stub are visible only to runner code, the Runner Gateway, and
-Sandbox Service test support. Archive fault tests get
-an explicit test-only transport dependency, which production app targets cannot use. Shared runner
-error types live separately so importing an error does not grant a transport
-dependency. Use concrete service clients, not protocols introduced solely to allow alternate
-in-process implementations in consumer tests.
+Shared read-only Sandbox projections may be used by the app, notifications and Runner Gateway. They
+carry no create/delete/grant/session authority. Gateway and History protobuf/client types remain
+service-owned APIs; there is no Sandbox Service API or client.
 
 Thread launch defaults live in the app's configured preset catalog and are selected by the preset
 label on a Sandbox. New app Sandbox requests do not write per-Sandbox Session defaults. The existing

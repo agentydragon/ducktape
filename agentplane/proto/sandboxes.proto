@@ -1,4 +1,4 @@
-// The Sandbox resource and caller request shapes, shared by the Sandbox Service, the Runner Gateway and their callers.
+// Sandbox resource and caller request shapes shared by Kubernetes requesters and backend readers.
 syntax = "proto3";
 
 package agentplane.proto.sandboxes;

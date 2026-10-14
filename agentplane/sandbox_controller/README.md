@@ -2,8 +2,9 @@
 
 Reconciles `Sandbox` into retained state and optional workspace PVCs, its own ServiceAccount and
 `PolicyBinding`, and, while running, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
-[`agentplane/crds`](../crds/BUILD.bazel). The [Sandbox Service](../sandbox_service/README.md)'s
-`CreateSandbox` writes these Sandboxes. Its runner template reaches platform services over the
+[`agentplane/crds`](../crds/BUILD.bazel). The integration app submits Sandbox desired state and
+operator grants through the Kubernetes API; this controller reconciles each Sandbox and owns its
+status. Its runner template reaches platform services over the
 egress sidecar's platform routes. `spec.sessionDefaults` is the Runner
 Gateway's to read; `spec.bootstrap` and the Sandbox's identity reach its runner through the Sandbox's
 launch ConfigMap (a Pod mounts it, a VM gets it as a disk). Deletion first has the runner seal every

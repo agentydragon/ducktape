@@ -5,8 +5,8 @@ it. It exists for callers outside the cluster — Claude Code web and claude.ai,
 ServiceAccount — which have no Pod and so no other way to reach an in-cluster box, and for agents in
 Session Sandboxes that want a box of their own.
 
-A box is not a Session Sandbox ([ADR](../../docs/adr_action_sandboxes.md)). The Sandbox Service
-provisions a Sandbox to _host an agent_: a runner, a state volume, an account of its own. This
+A box is not a Session Sandbox ([ADR](../../docs/adr_action_sandboxes.md)). The app requests a
+Session Sandbox to _host an agent_: a runner, a state volume, an account of its own. This
 surface creates a box to _run commands in_, driven by an agent that lives elsewhere. They share the
 Pod recipe (`cluster/cdk8s/agentplane/sandbox_pod.py`) and nothing else.
 
@@ -33,8 +33,8 @@ it, so a call lasting minutes is ordinary rather than an attempt the sweep recla
 
 ## One ServiceAccount per caller, not per sandbox
 
-Every sandbox this surface stamps runs as the caller's account. The Sandbox Service does the
-opposite — an account per Sandbox, owner-referenced to it — and the difference is deliberate, with
+Every sandbox this surface stamps runs as the caller's account. A Session Sandbox has its own
+owner-referenced account, and the difference is deliberate, with
 intended consequences.
 
 **A sandbox is a caller.** It can create and exec sandboxes itself, including ones it did not
@@ -56,9 +56,9 @@ invariant; breaking it costs the whole account's authority rather than one box's
 
 ## Separation from the integration app
 
-**Its own label and selector.** Not `agentplane.allegedly.works/managed`, which the Sandbox Service
-lists, watches and gates operations on (<../../sandboxes/inventory.py>). A box carrying it
-would join the fleet view, which then looks for a runner the box does not have.
+**Its own label and selector.** Not `agentplane.allegedly.works/managed`, which identifies Session
+Sandboxes that carry runners (<../../sandboxes/inventory.py>). A box carrying it would join the
+fleet view, which then looks for a runner the box does not have.
 
 **Owned by its caller's account.** Each box carries an owner reference to the ServiceAccount it runs
 as. An agent in a Session Sandbox calls this surface as that Sandbox's own account, so the boxes it

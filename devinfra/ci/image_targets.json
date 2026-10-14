@@ -296,11 +296,6 @@
       "test": "//agentplane/runner_gateway/...",
       "registry": "forgejo"
     },
-    "agentplane-sandbox-service": {
-      "target": "//agentplane/sandbox_service:image",
-      "test": "//agentplane/sandbox_service/...",
-      "registry": "forgejo"
-    },
     "agentplane-notification-service": {
       "target": "//agentplane/notification_service:image",
       "test": "//agentplane/notification_service/...",

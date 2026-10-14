@@ -61,8 +61,8 @@ lost.
 - Stopping and starting a VM creates a new VMI on the same VM and disks. The VM supports neither live
   migration nor RAM suspension.
 - Commands reach a VM Sandbox only through the control stream. There is no guest exec path; `virt-launcher`
-  is not the guest. The operator console is output-only: the Sandbox Service attaches the VMI's serial
-  console with its own Role (`virtualmachineinstances/console`) and the app relays it to a logged-in operator.
+  is not the guest. The operator console is output-only: the integration app attaches the VMI's serial
+  console with its own `virtualmachineinstances/console` permission and relays it to a logged-in operator.
   KubeVirt serves one attached client per VMI, so a viewer holds out anyone else, and nothing is replayed.
   An interactive console or a diagnostics path would need its own authorization.
 - The guest root is small and replaceable; journals live on the state PVC and agent work on the

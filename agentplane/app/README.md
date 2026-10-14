@@ -7,19 +7,14 @@ synchronizes selected rows and content to the browser through authenticated Elec
 decisions and Connection consent.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
-## Sandbox Service retirement
+## Sandbox lifecycle ownership
 
-The app always uses the shared `agentplane/sandboxes` inventory for lifecycle operations. Its required
-`default_policy_sets` setting comes from the app ConfigMap, including when it is an empty set. The
-optional Sandbox Service fallback and its settings reader are removed. The server and its remaining
-resources are retired separately after this app image is pinned in both environments; see the
+The app uses the shared `agentplane/sandboxes` inventory to submit lifecycle requests directly to
+Kubernetes as the requesting operator. The Sandbox Controller reconciles the requested `spec` and
+owns `status`. Required `default_policy_sets` come from the app ConfigMap, including when the set is
+empty. The former Sandbox Service API and caller source are removed. Its existing pinned Deployment
+remains isolated pending the separate resource cleanup in the
 [task DAG](../plans/task_dag.md#sandbox_service_remove--remove-the-sandbox-service).
-
-Rollout evidence, 2026-10-14: testing and staging ConfigMaps both contain `basic` and
-`inference-experiments` as `default_policy_sets`; their app Deployments use
-`devel-20261014203121-a3161b0` with updated/Ready replicas 1/1 and 2/2 respectively. Those images
-selected the direct path from the same ConfigMaps; pinning this strict direct-only image remains a gate
-before deleting the server resources.
 
 ## Dependency boundary
 
@@ -29,9 +24,8 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 [service dependency rule](../docs/service_boundaries.md).
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
-app endpoint. The shared `agentplane/sandboxes` library owns Sandbox lifecycle rules; the app uses
-it directly as the requesting operator, and the legacy [Sandbox Service](../sandbox_service/README.md)
-is being retired. The [Runner Gateway](../runner_gateway/README.md) owns runner Sessions and commands; the
+app endpoint. The shared `agentplane/sandboxes` library owns Sandbox request construction; the app uses
+it directly as the requesting operator. The [Runner Gateway](../runner_gateway/README.md) owns runner Sessions and commands; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold;
 the app is a client of all three.
 Notifications depends on that backend and Actions, not this app. The app's own state is browser

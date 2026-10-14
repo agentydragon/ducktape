@@ -1,9 +1,9 @@
-"""The Sandbox Service's fake cluster, whose Sandboxes the gateway resolves runners in, the gateway's
-migrated database, and native runner fixtures."""
+"""A fake Kubernetes cluster, the gateway's database, and native runner fixtures."""
 
 import asyncio
 from collections.abc import AsyncIterator
 from contextlib import suppress
+from pathlib import Path
 
 import pytest
 from kubernetes_asyncio import client as k8s_client
@@ -14,8 +14,9 @@ from agentplane.runner.testing.fixtures import config, endpoint, harness, model,
 from agentplane.runner_gateway.commands.conftest import database_template, db_url, engine
 from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.session_registry import SessionRegistry
-from agentplane.sandbox_service.conftest import close_fake_clients, cluster, token_file
-from agentplane.sandboxes.testing.kubernetes import SandboxCluster
+from agentplane.runner_gateway.testing.auth import CALLER_TOKEN
+from agentplane.sandboxes.testing.fake_inventory import close_fake_api_clients
+from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 from util.testing.postgres_fixtures import (
     database_clones,
@@ -24,6 +25,25 @@ from util.testing.postgres_fixtures import (
     postgres_container,
     postgres_image,
 )
+
+
+@pytest.fixture(autouse=True)
+async def close_fake_clients() -> AsyncIterator[None]:
+    yield
+    await close_fake_api_clients()
+
+
+@pytest.fixture
+async def cluster() -> AsyncIterator[SandboxCluster]:
+    async with sandbox_cluster() as started:
+        yield started
+
+
+@pytest.fixture
+def token_file(tmp_path: Path) -> Path:
+    path = tmp_path / "caller-token"
+    path.write_text(CALLER_TOKEN)
+    return path
 
 
 @pytest.fixture

@@ -26,7 +26,7 @@ class ModelCatalog(BaseModel):
     `models` holds each model's metadata once; `harnesses` references it by `model` id, so a
     model two harnesses both accept (e.g. a local Ollama route) names its display name only once.
     An empty harness list pauses its launch-form offerings, not its existing sessions
-    or the low-level Sandbox Service/runner API.
+    or the low-level runner API.
     """
 
     model_config = ConfigDict(extra="forbid")

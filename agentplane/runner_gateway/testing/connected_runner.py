@@ -1,4 +1,4 @@
-"""The Sandbox Service and gateway over a fake Kubernetes cluster, with a runner connected to the gateway."""
+"""The Runner Gateway over a fake Kubernetes cluster, with a runner connected to the gateway."""
 
 import asyncio
 from collections.abc import AsyncIterator

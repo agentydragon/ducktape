@@ -3,9 +3,8 @@
 The Sandbox runners' side of Agentplane: Sessions, command admission and delivery, and the
 [runner control stream](../docs/runner_control.md) runners dial. Its own server (`:server`, image `:image`)
 serves the `RunnerGateway` gRPC service ([API](API.md), [`runner_gateway.proto`](../proto/runner_gateway.proto)) with
-replicas, apart from the Sandbox Service and its RBAC. It reads Sandboxes
-(`agentplane/sandbox_resource.py`) through the Sandbox Service's read-only `SandboxReader`
-(`agentplane.sandboxes.reader`), and does not create or delete them.
+replicas. It reads Sandboxes through the shared read-only projection
+(`agentplane.sandboxes.reader`) and does not create or delete them.
 
 It does not call the History Service, so Sessions, commands and lifecycle requests keep working
 while that service is down or rolling.
