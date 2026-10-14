@@ -1,6 +1,7 @@
 """Real-Postgres round trip for the migration chain: every downgrade runs, what a migration promises
 to carry forward survives it, and head lands exactly on the ORM metadata."""
 
+import json
 from pathlib import Path
 from uuid import UUID
 
@@ -21,6 +22,8 @@ ACCESS_TOKEN = "test-only-access-token"
 BOUND = UUID("00000000-0000-4000-8000-000000000006")
 UNBOUND = UUID("00000000-0000-4000-8000-000000000007")
 CALLER = '{"namespace": "agentplane-test", "name": "personal"}'
+RETIRED_SOURCE_REQUEST = UUID("00000000-0000-4000-8000-000000000008")
+CURRENT_SOURCE_REQUEST = UUID("00000000-0000-4000-8000-000000000009")
 
 
 def _seed_at_0005(connection: Connection) -> None:
@@ -115,6 +118,50 @@ def _seed_pre_binding_connections_at_0021(connection: Connection) -> None:
         )
 
 
+def _seed_policy_decisions_at_0025(connection: Connection) -> None:
+    """Two succeeded requests auto-approved by a policy set: one whose stored evidence names the source
+    spelling `PolicySource` no longer has, one on the current spelling."""
+    for request, source in [(RETIRED_SOURCE_REQUEST, "autoApproveIf"), (CURRENT_SOURCE_REQUEST, "rules")]:
+        connection.execute(
+            text(
+                """
+                INSERT INTO action_request
+                    (id, idempotency_key, action, arguments, title, caller_namespace, caller_name,
+                     state, version, created_at, updated_at)
+                VALUES
+                    (:request, :key, '{"group": "test", "name": "echo"}', '{}', 'Test request',
+                     'agentplane-test', 'test-caller', 'succeeded', 3, now(), now())
+                """
+            ).bindparams(request=request, key=str(request))
+        )
+        connection.execute(
+            text(
+                "INSERT INTO action_event (request_id, sequence, state, at) VALUES (:request, 1, 'succeeded', now())"
+            ).bindparams(request=request)
+        )
+        evidence = {
+            "bindings": [{"namespace": "agentplane-test", "name": "test-binding", "resource_version": "1"}],
+            "policy_sets": [{"namespace": "agentplane-test", "name": "test-set", "generation": 1}],
+            "matched": {
+                "namespace": "agentplane-test",
+                "policy_set": "test-set",
+                "source": source,
+                "index": 0,
+                "type": "exact_actions",
+            },
+        }
+        connection.execute(
+            text(
+                """
+                INSERT INTO action_decision
+                    (id, request_id, verdict, provider, policy_evidence, idempotency_key, decided_at)
+                VALUES
+                    (gen_random_uuid(), :request, 'allow', 'policy_set', CAST(:evidence AS jsonb), :key, now())
+                """
+            ).bindparams(request=request, key=str(request), evidence=json.dumps(evidence))
+        )
+
+
 def _round_trip(connection: Connection) -> None:
     config = Config()
     config.set_main_option("script_location", str(Path(__file__).parent / "migrations"))
@@ -193,6 +240,14 @@ def _round_trip(connection: Connection) -> None:
     assert connection.scalar(text("SELECT provider FROM mcp_server_linkage")) == LINKAGE
     assert _linked_access_token(connection) == ACCESS_TOKEN
     command.upgrade(config, "head")
+
+    # `0026` deletes a request on the retired source spelling, its events and Decision with it, and keeps the rest.
+    command.downgrade(config, "0025_drop_binding_change")
+    _seed_policy_decisions_at_0025(connection)
+    command.upgrade(config, "head")
+    assert connection.scalars(text("SELECT id FROM action_request")).all() == [CURRENT_SOURCE_REQUEST]
+    assert connection.scalars(text("SELECT request_id FROM action_event")).all() == [CURRENT_SOURCE_REQUEST]
+    assert connection.scalars(text("SELECT request_id FROM action_decision")).all() == [CURRENT_SOURCE_REQUEST]
 
     assert compare_metadata(MigrationContext.configure(connection), Base.metadata) == []
 
