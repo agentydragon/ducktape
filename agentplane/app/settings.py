@@ -39,6 +39,9 @@ class AppSettingsConfig(YamlFileSettings):
     sandbox_presets: dict[str, SandboxPreset] = Field(
         default_factory=dict, description="App-owned Sandbox launch-form presets keyed by displayable name."
     )
+    default_policy_sets: list[str] = Field(
+        description="Baseline PolicySets every new Sandbox inherits before its launch preset's policy sets."
+    )
     kubernetes_grants: dict[str, KubernetesGrant] = Field(
         default_factory=dict,
         description="The deployment's Kubernetes grant catalog, which the manifest generator expands into PolicySets.",

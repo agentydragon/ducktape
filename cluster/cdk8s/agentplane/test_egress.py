@@ -17,6 +17,7 @@ from cluster.cdk8s.agentplane.actions_staging_policies import AGENTPLANE_TESTING
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
+    DEFAULT_POLICIES,
     GITHUB_AGENTYDRAGON_AGENT_POLICY,
     INFERENCE_EXPERIMENTS_POLICY,
     KUBERNETES_AUDIENCE,
@@ -55,6 +56,19 @@ def _default_policies(docs: list[dict[str, Any]]) -> list[str]:
     config = _by_name(docs, "ConfigMap", f"{sandbox_service.NAME}-config")
     defaults: list[str] = yaml.safe_load(config["data"]["config.yaml"])["default_policy_sets"]
     return defaults
+
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_app_and_sandbox_service_share_default_policy_sets(
+    agentplane_manifests: dict[str, list[dict[str, Any]]], namespace: str
+) -> None:
+    docs = agentplane_manifests[namespace]
+    app_config = _by_name(docs, "ConfigMap", "agentplane-app-config")
+    app_defaults: list[str] = yaml.safe_load(app_config["data"]["config.yaml"])["default_policy_sets"]
+
+    assert app_defaults == _default_policies(docs)
+    assert app_defaults == sorted(DEFAULT_POLICIES)
+    assert PUBLIC_INTERNET_POLICY not in app_defaults
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)

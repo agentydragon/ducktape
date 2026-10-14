@@ -168,6 +168,7 @@ ENV = Environment(
         thread_preset_codex_model=GPT6_LUNA_RESPONSES,
         action_federation=_ACTION_FEDERATION,
         public_coder_policy_sets=[],
+        default_policy_sets=sorted(egress.DEFAULT_POLICIES),
     ),
     settle_deltas=True,
     db=DbProps(instances=1, wal_archive=False),

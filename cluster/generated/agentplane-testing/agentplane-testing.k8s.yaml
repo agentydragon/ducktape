@@ -3144,6 +3144,9 @@ data:
           if [ ! -f "$marker" ]; then
             printf '%s\n' 'public-coder workspace initialized' > "$marker"
           fi
+    default_policy_sets:
+      - basic
+      - inference-experiments
     kubernetes_grants: {}
     egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081/
     action_federation:

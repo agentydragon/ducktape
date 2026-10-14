@@ -695,8 +695,7 @@ flowchart TD
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
     DISPATCHER_CORE[Candidate: deploy the Session Dispatcher, then the facts that settle its commands]
-    APP_SANDBOX_RBAC_APPLIED[Blocked: updated app Sandbox grants reconcile in testing and staging]
-    APP_SANDBOX_WRITES[Blocked: the app creates, deletes, suspends and resumes Sandboxes itself]
+    APP_SANDBOX_WRITES[Blocked: direct Sandbox lifecycle config has not rolled out]
     SANDBOX_SERVICE_REMOVE[Blocked: remove the Sandbox Service]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     DISPATCHER_WAKE_ON_SEND[Blocked: a send wakes a suspended Sandbox]
@@ -744,7 +743,6 @@ flowchart TD
     APP_SENDS_VIA_DISPATCHER --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
         DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
-    APP_SANDBOX_RBAC_APPLIED --> APP_SANDBOX_WRITES
     APP_SANDBOX_WRITES --> SANDBOX_SERVICE_REMOVE
     DISPATCHER_CORE --> DISPATCHER_DEPLOY[In flight: the Session Dispatcher is deployed]
     DISPATCHER_CORE --> DISPATCHER_REPLICA_OWNERSHIP[Candidate: multiple replicas own disjoint Sandboxes]
@@ -1133,37 +1131,32 @@ never this field. Per-Session idle times stay out of Kubernetes.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `APP_SANDBOX_RBAC_APPLIED` — the app's direct Sandbox permissions are applied
-
-**Blocked on the RBAC change and Flux reconciliation in testing and staging.** PR #10450 adds the app's
-`sandboxtemplates` list and KubeVirt console read grants; the Role already has the Sandbox and
-PolicyBinding writes used by the direct path. Wait until the updated Role is reconciled in both
-environments before enabling the app's direct lifecycle and console callers. No staging writes are part
-of the RBAC PR.
-
 ### `APP_SANDBOX_WRITES` — the app creates, deletes, suspends and resumes Sandboxes itself
 
-**Blocked on `APP_SANDBOX_RBAC_APPLIED`.** The app does what it asks of the Sandbox Service through the
-Kubernetes API as the operator who asked, as it already does for `PolicyBinding`s: create, delete, suspend,
-resume, and it edits permissions (egress grants, policy views, templates) and reads the inventory with the
-derived phase. The shared `SandboxInventory` supplies the guarded running-state patch, retryable refusal
-while an incarnation is quiescing, create validation/idempotency and phase derivation. The VM serial console
-(`sandbox_service/console.py`) moves into the app (operator, 2026-10-13 PDT) through the KubeVirt console
-subresource. The app's Role already has `sandboxes` `create/patch/delete`; PR #10450 adds
-`sandboxtemplates` `list` and `virtualmachineinstances/console` `get` (the Role also has `policysets` and
-`pods`).
+**Blocked until the generated direct-path config is applied and the app rollout is healthy in both
+environments.** The guarded app image is currently pinned in testing and staging. As the requesting operator, the app creates, deletes,
+suspends and resumes Sandboxes through the Kubernetes API, and reads inventory with the derived phase.
+The shared `SandboxInventory` supplies the guarded running-state patch, retryable refusal while an
+incarnation is quiescing, create validation/idempotency and phase derivation. The app also edits egress
+grants, reads policy views and templates, and streams the VM serial console through KubeVirt's console
+subresource. Its Role grants for Sandboxes, templates, PolicyBindings, Pods, and VM console have
+reconciled in testing and staging. The direct path is enabled by the generated app `default_policy_sets`
+config; keep the Sandbox Service health and compatibility client until the final removal step.
 
 ### `SANDBOX_SERVICE_REMOVE` — remove the Sandbox Service
 
-**Blocked until the image of `APP_SANDBOX_WRITES`, the app image that writes `PolicyBinding`s itself, and the
-Notification Service image that reads the Sandbox CR are pinned on staging.** Remove the Deployment, Role and TokenReview,
+**Blocked until the app image with direct lifecycle support and the quiescing guard, and the
+Notification Service image that reads the Sandbox CR, are pinned on staging.** Remove the Deployment,
+Role and TokenReview,
 the protos and client, `StreamConsole`, the grant RPCs (`GrantEgress`, `RevokeEgress`, their messages,
 servicer, client methods, `sandbox_service/egress.py` and the `egresscredentials`/`policybindings` rules of
 the Role, each marked by a `CLEANUP` tombstone), the Notification Service's `sandbox_service` setting (its
 `CLEANUP` tombstone in `notification_service/settings.py`, the key in its manifest, the `sandboxes` token
 and its egress rule) and the Notification Service's place among the Service's callers (the
-`notification_service/docs/api.md` and `sandbox_service/README.md` sentences that name it), and update the README
-services diagram (12 to 11 services). Code and manifests go together here, after the pin.
+`notification_service/docs/api.md` and `sandbox_service/README.md` sentences that name it), the app's
+gRPC fallback, health probe, target/token settings and ServiceAccount token projection, and update the
+README services diagram (12 to 11 services). Drop manifest config before removing its settings readers.
+Code and manifests go together here, after the caller images are pinned.
 
 ### `DISPATCHER_CORE` — the Session Dispatcher delivers to running Sandboxes
 

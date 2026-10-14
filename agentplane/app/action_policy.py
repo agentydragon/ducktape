@@ -1,6 +1,6 @@
 """Read-only UI composition of Action Service policy views.
 
-Sandbox Service owns launch-time policy binding mutations. The app adds provenance to the
+The Sandbox Controller owns each Sandbox's launch PolicyBinding. The app adds provenance to the
 Action Service's answer; the historical integration-app ownership label is retained in staging.
 """
 

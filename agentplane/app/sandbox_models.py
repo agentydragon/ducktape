@@ -21,7 +21,7 @@ SandboxName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-
 
 
 class SandboxPhase(StrEnum):
-    """Where the Sandbox is in its lifecycle, as the Sandbox Service derives it."""
+    """Where the Sandbox is in its lifecycle, as the shared Sandbox inventory derives it."""
 
     CREATING = "Creating"
     RUNNING = "Running"

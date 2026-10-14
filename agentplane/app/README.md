@@ -1,7 +1,8 @@
 # Agentplane integration app
 
-The human-facing frontend over Agentplane's services: a FastAPI service that reaches sandboxes
-through the Sandbox Service and runner sessions through the Runner Gateway, reads their archived
+The human-facing frontend over Agentplane's services: a FastAPI service that manages sandboxes
+through the Kubernetes API when `default_policy_sets` enables its direct path, with the Sandbox
+Service as a gRPC lifecycle fallback, and runner sessions through the Runner Gateway, reads their archived
 Session history and Threads (each Session's conversation projection) from the History Service, and
 synchronizes selected rows and content to the browser through authenticated Electric endpoints. It also presents Actions, operator
 decisions and Connection consent.
@@ -15,7 +16,9 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 [service dependency rule](../docs/service_boundaries.md).
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
-app endpoint. The [Sandbox Service](../sandbox_service/README.md) owns sandbox lifecycle; the
+app endpoint. The shared `agentplane/sandboxes` library owns Sandbox lifecycle rules; the app uses
+it directly as the requesting operator, while the [Sandbox Service](../sandbox_service/README.md)
+remains a gRPC compatibility caller until its removal; the
 [Runner Gateway](../runner_gateway/README.md) owns runner Sessions and commands; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold;
 the app is a client of all three.
@@ -48,16 +51,17 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 - `presets.py`: app-owned `SandboxPreset` and `ThreadPreset` configuration and concrete launch
   resolution. Preset names stop at the app boundary; Kubernetes and the runner receive resolved
   fields.
-- Sandbox provisioning and grants are owned by `../sandbox_service/`, Sessions and commands by
-  `../runner_gateway/`, reached through their authenticated clients, `SandboxServiceClient` and
-  `RunnerGatewayClient`. The app retains read-only Kubernetes projections for UI updates.
+- Sandbox provisioning uses the shared `agentplane/sandboxes` inventory on the direct path, while
+  `SandboxServiceClient` remains the unset-config fallback; Sessions and commands are reached through
+  `RunnerGatewayClient`. The app reads Kubernetes projections for UI updates.
 - `egress_access.py`: egress-policy/binding projections for the UI, and the operator's grants and
   revocations of `PolicyBinding`s, written through the Kubernetes API by the app itself. Bindings remain
   desired-state grants, with expiry/revocation per binding; Flux-owned and Sandbox-controlled bindings
   are refused ([composition](../docs/egress_composition.md)).
   The egress decision stream is in `live.py`; an unreachable proxy leaves egress-policy views readable.
 - `action_policy.py`: read-only binding views composed with Action Service's effective-policy answer.
-  Launch grants belong to Sandbox Service, not this app or its preset catalog.
+  App-level `default_policy_sets` are combined with the selected preset's policy sets by the shared
+  Sandbox inventory; Policy Controller materializes the resulting grants.
 - `threads/`: Threads over the History Service. The app's database holds each Thread's identity
   and the name and archive state an operator sets (`Thread`, `models.py`). Everything folded from a Session's events (summaries, entities,
   payload chunks, evidence) is the History Service's, read over its gRPC API (`summaries.py`,
@@ -67,8 +71,9 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   (`ThreadStore`) composes the app database and the History Service; runners push their events to
   the History Service.
 - `threads/bridge.py`: browser-facing composition of session operations with archive synchronization.
-  `threads/runner_directory.py` selects explicit destinations from the app's live index and caches Sandbox
-  Service clients. Neither opens direct runner connections or owns lifecycle implementation.
+  `threads/runner_directory.py` selects ready Sandboxes from the app's live index and addresses the
+  Runner Gateway with their ServiceAccount and UID. Neither opens direct runner connections or owns
+  lifecycle implementation.
 - `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits for the frontend's
   generated client.
 - `threads/events/`: a Thread's archived events, read through the History Service. `event_log.py`
@@ -454,9 +459,10 @@ defaults, and a set name the namespace does not hold is refused with 422 before 
 The form records the picked preset in the URL (`/#/?preset=<name>`) so a launch form can be linked
 to.
 
-A Sandbox takes `policy_sets` alone: the Sandbox Service refuses egress policies, Action policy sets
-and Kubernetes grants on a create. `GET /sandboxes/form` lists the namespace's `PolicySet`s, which
-the form offers; a preset names `PolicySet`s only.
+A Sandbox takes `policy_sets` alone. The shared inventory validates the app's configured default sets
+with the submitted policy sets; Action policy sets and Kubernetes grants are not create inputs.
+`GET /sandboxes/form` lists the namespace's `PolicySet`s, which the form offers; a preset names
+`PolicySet`s only.
 
 Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
 content to the runner under a stable preset identity. The runner executes it idempotently on the

@@ -70,14 +70,14 @@ flowchart TB
 
     browser -->|HTTPS, SSE| app
     mcp_client -->|MCP over OAuth| actions
-    app -->|gRPC: Sandboxes| ss
+    app -->|gRPC health check; lifecycle fallback if direct config is absent| ss
     app -->|gRPC: Sessions, commands| gw
     app -->|gRPC: Session and Thread reads, change and Session-opening watch| hs
     app -->|HTTP| notif
     app -->|HTTP: operator decisions| actions
     app -->|HTTP admin port: egress decisions and a stream of when they change| proxy
     app -->|Thread shapes for the browser| electric
-    app -->|SandboxTemplates, Sandbox and policy reads; PolicyBinding create and delete for the operator| k8s
+    app -->|Sandbox inventory and lifecycle, templates, policies, VM console; PolicyBinding create and delete| k8s
     app -->|OIDC| authentik
     electric -->|logical replication| hist_db
     hist_db -.->|staging: WAL archive, on-demand base backups| outside
