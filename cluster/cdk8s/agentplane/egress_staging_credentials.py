@@ -636,34 +636,6 @@ def _buildbuddy(scope: Construct, *, namespace: str, credentials_namespace: str)
     )
 
 
-def plaid_pgweb_egress_rules() -> list[PolicySetSpecRules]:
-    """Read-only pgweb routes shared by the Plaid diagnostics callers."""
-    credential = PLAID_PGWEB_CREDENTIAL
-    host = plaid_pgweb.SERVICE.fqdn
-    # pgweb's other API routes and its web UI stay unreachable. Its session routes (`connect`,
-    # `disconnect`, `switchdb`) are POSTs, so POST is admitted on the query route alone.
-    reads = [
-        # keep-sorted start
-        "/api/connection",
-        "/api/info",
-        "/api/objects",
-        "/api/query",
-        "/api/schemas",
-        "/api/tables/**",
-        # keep-sorted end
-    ]
-    return [
-        _rule(credential, host, cluster_internal=True, method=PolicySetSpecRulesMethods.GET, paths=reads),
-        _rule(
-            credential,
-            host,
-            cluster_internal=True,
-            method=PolicySetSpecRulesMethods.POST,
-            paths=["/api/query"],
-        ),
-    ]
-
-
 def _plaid_pgweb(scope: Construct, *, reader: ServiceAccount, namespace: str, credentials_namespace: str) -> None:
     _copy_secret(
         scope,

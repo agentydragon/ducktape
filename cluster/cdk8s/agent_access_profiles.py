@@ -11,6 +11,11 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Literal
 
+from agentplane_policyset_crds.works.allegedly.agentplane import (
+    PolicySetSpecRules,
+    PolicySetSpecRulesCredentialRef,
+    PolicySetSpecRulesMethods,
+)
 from cdk8s_plus_34 import Group, ISubject, ServiceAccount, k8s
 from constructs import Construct
 
@@ -22,7 +27,8 @@ from agentplane.sandboxes.kubernetes_grants import (
     RoleRef,
 )
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
-from cluster.cdk8s.plaid_mcp import db, spend
+from cluster.cdk8s.plaid_mcp import db, pgweb as plaid_pgweb, spend
+from cluster.cdk8s.providers.agentplane.policy_set import Rule
 
 RBAC_GROUP = "rbac.authorization.k8s.io"
 COINBASE_POLICY = "coinbase"
@@ -190,6 +196,37 @@ POLICY_SETS = {
     "spend-policy-config": ("spend-policy-config",),
     PLAID_DIAGNOSTICS_POLICY: (PLAID_DIAGNOSTICS_POLICY,),
 }
+
+
+def plaid_pgweb_egress_rules(*, credential: str) -> list[PolicySetSpecRules]:
+    """The egress half of the Plaid diagnostics PolicySet."""
+    host = plaid_pgweb.SERVICE.fqdn
+    # pgweb's other API routes and its web UI stay unreachable. Its session routes (`connect`,
+    # `disconnect`, `switchdb`) are POSTs, so POST is admitted on the query route alone.
+    reads = [
+        # keep-sorted start
+        "/api/connection",
+        "/api/info",
+        "/api/objects",
+        "/api/query",
+        "/api/schemas",
+        "/api/tables/**",
+        # keep-sorted end
+    ]
+
+    def egress_rule(method: PolicySetSpecRulesMethods, paths: Sequence[str]) -> PolicySetSpecRules:
+        return Rule.egress(
+            hosts=[host],
+            cluster_internal=True,
+            methods=[method],
+            paths=paths,
+            credential_ref=PolicySetSpecRulesCredentialRef(name=credential),
+        )
+
+    return [
+        egress_rule(PolicySetSpecRulesMethods.GET, reads),
+        egress_rule(PolicySetSpecRulesMethods.POST, ["/api/query"]),
+    ]
 
 
 def covering_policy_sets(grants: Sequence[str]) -> list[str]:

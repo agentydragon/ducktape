@@ -1752,6 +1752,9 @@ py_library(
     deps = [
         ":namespace_access",
         "//agentplane/sandboxes:kubernetes_grants",
+        "//agentplane/crds:policyset",
+        "//cluster/cdk8s/plaid_mcp:pgweb",
+        "//cluster/cdk8s/providers/agentplane:policy_set",
         "//cluster/cdk8s/plaid_mcp:spend",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",

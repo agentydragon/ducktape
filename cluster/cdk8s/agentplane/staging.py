@@ -44,7 +44,7 @@ from cluster.cdk8s.agentplane.egress_credentials import (
     EgressCredentials,
     credential_external_secret,
 )
-from cluster.cdk8s.agentplane.egress_staging_credentials import add_staging_egress_credentials, plaid_pgweb_egress_rules
+from cluster.cdk8s.agentplane.egress_staging_credentials import PLAID_PGWEB_CREDENTIAL, add_staging_egress_credentials
 from cluster.cdk8s.agentplane.environment import (
     ActionsProps,
     AppProps,
@@ -434,7 +434,9 @@ def chart(app: App) -> Chart:
         },
         additional_rules={
             agent_access_profiles.COINBASE_POLICY: coinbase_egress_rules(),
-            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: plaid_pgweb_egress_rules(),
+            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: agent_access_profiles.plaid_pgweb_egress_rules(
+                credential=PLAID_PGWEB_CREDENTIAL
+            ),
         },
     )
     reader = ServiceAccount(
