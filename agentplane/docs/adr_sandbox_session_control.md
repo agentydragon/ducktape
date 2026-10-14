@@ -1,6 +1,6 @@
 # Sandbox and Session control: who owns what
 
-Status: **decided; see [Decisions](#decisions) for when each was settled. How a sealed journal is reopened (D3) is still to be designed, and idle suspension waits on it.**
+Status: **decided; see [Decisions](#decisions) for when each was settled. How a sealed journal is reopened (D3) is proposed below and awaits the operator; idle suspension waits on it.**
 
 Scope: the responsibilities split across the services and custom resources that run a Sandbox (Pod
 or VM) and deliver work to the Sessions in it. This covers the control Service, readiness and
@@ -212,9 +212,8 @@ marker names the incarnation it was entered in:
   quiesced across the restart; different UID, the marker belongs to an earlier incarnation and is
   removed before any call is accepted, and the runner starts unquiesced.
 - **Journals.** Each Session's journal sealed at its final cursor in the earlier incarnation. The
-  new incarnation continues it after that cursor with an entry recording that it resumed; how a
-  sealed journal is reopened and what the ingress does with the next cursor range is
-  still to be defined, and the earlier incarnation's acknowledgement stays valid for it.
+  new incarnation continues it after that cursor with an entry recording that it resumed;
+  [Reopening a sealed journal](#reopening-a-sealed-journal) proposes how.
 - **Outside the runner.** Runner facts on the Lease are valid only while its `pod-uid` names the incarnation:
   the gateway's `accept()` (`connection_records.py`) rebuilds the Lease with only `pod-uid` and `runner-boot-id` on every
   accepted connection, and the controller's `readRunnerFacts` (`runner_facts.go`) accepts facts only while `pod-uid`
@@ -279,10 +278,48 @@ Dispatcher is the only caller of the runner's `OpenSession` (D4). A
 setup that never ends makes the suspend wait forever and leaves delete working, which is intended. An automatic
 suspend needs none of it: a running setup is busy, so the conditional `Quiesce` refuses.
 
-**Sealed journals cannot restart today.** `Session._sealing` is initialised from `journal.sealed_cursor` and
-`ensure_running` then raises `JournalSealedError`, so every Session of a suspended Sandbox is unresumable until a
-Session can reopen a sealed journal in a new incarnation. Idle suspension, and any suspend that is not followed by a
-delete, is a one-way door for every Session until then, and idle suspension waits for that work.
+### Reopening a sealed journal
+
+**Proposed, not decided.** A resumed Sandbox cannot run any Session today, and idle suspension, or any suspend not
+followed by a delete, waits on this.
+
+**What "sealed" is after a quiesce.** One fact in several places, only the last keyed to an incarnation:
+
+- The runner journal's `Seal` row (`runner/journal.py`): `open` refuses entries after it, `_append` raises
+  `JournalSealedError`, and `Session._sealing` starts true from it, so `ensure_running` refuses (`runner/session.py`).
+- The runner's per-Session acknowledgement file records `sealed`; `IngressPusher.track` skips a Session whose
+  acknowledgement is sealed, and a push ends on a sealed first acknowledgement (`runner/ingress.py`).
+- The History Service stores the seal in the Session's feed state. `record_feed_state` keeps it sticky ("conflicting
+  seals"), and `Push` returns right after a sealed first acknowledgement, so it takes no entry from a sealed Session
+  (`history_service/ingress.py`, `storage/store.py`). `append` itself does not check it.
+- The lameduck marker is the exception: it carries the incarnation UID and is dropped on a different one.
+
+**What a resume needs.** The new incarnation mounts the same state volume, so the journal, its `Seal` row at cursor
+`N`, the sealed acknowledgement and the History Service's seal at `N` are all still there. Its runner must accept work
+(lameduck is already dropped), append `N+1` onward, and push to an ingress that accepts them. `Attached` carries no
+incarnation, so the ingress cannot tell a continuation from a runner that wrongly kept writing past its seal.
+
+**Choices.**
+
+1. **A seal belongs to an incarnation.** The runner's seal, its acknowledgement file and the feed-state seal each
+   record the incarnation UID that sealed. A runner under a different UID treats the seal as ended, reopens the journal
+   and appends an entry recording the resume. `Attached` gains the incarnation UID (the field `SESSION_INCARNATIONS`
+   needs anyway); the ingress accepts a push whose UID differs from the seal's, when `last_cursor` equals the seal's
+   cursor, and replaces the seal. Keeps a durable end-of-incarnation fact and the guarantee that nothing is written past
+   it. Costs a wire field, three runner places and two History Service places, and the History Service must accept the
+   continuation before any runner sends it (image before config). Existing seals have no UID and count as an earlier
+   incarnation's, so Sandboxes suspended today resume.
+2. **The journal is never sealed; finality is the lameduck marker.** Quiesce stops the harnesses and reports
+   flushed once the ingress acknowledged the last cursor; the lameduck marker, already keyed to the incarnation, makes
+   the Session refuse writes. Removes the `Seal` row, the `Sealed` frame and the feed-state seal. Loses the hard
+   guarantee: the journal could append after the flush check and the Pod could go with unacknowledged entries, so
+   every writer must honor the marker. The History Service learns an incarnation ended only from the next UID. Seals
+   already on disk still need option 1's reopen path once.
+3. **A new journal file per incarnation.** Rejected: cursors restart, so History Service cursors and every reader's
+   position would need an incarnation component.
+
+**Recommendation: 1.** It matches `SESSION_INCARNATIONS` ("its seal ends that incarnation, not the Session"), keeps
+the invariant that makes `Quiesced` safe, and option 2 would need option 1's path for existing seals anyway.
 
 **Transitions the sequence must cover.**
 
