@@ -387,7 +387,7 @@ class LiteLLMProxy(Construct):
             metadata=ApiObjectMetadata(name=self.spec.name, namespace=self.spec.namespace),
             hostnames=[hostname],
             backend=service(self.spec),
-            timeout="600s",
+            timeout="2400s",
             hsts=False,
             listener=None,
         )

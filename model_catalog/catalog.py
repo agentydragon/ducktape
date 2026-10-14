@@ -208,6 +208,10 @@ class Route:
     # For OpenAI-compatible local models, config emits this through extra_body so
     # LiteLLM does not filter it as unsupported for an unrecognized model slug.
     default_reasoning_effort: str | None = None
+    # Optional per-deployment LiteLLM request budgets, in seconds. Streaming uses
+    # its own timeout because LiteLLM resolves that independently from timeout.
+    timeout: int | None = None
+    stream_timeout: int | None = None
 
     def __post_init__(self) -> None:
         if self.default_reasoning_effort is not None and self.default_reasoning_effort not in self.reasoning_efforts:
@@ -531,6 +535,8 @@ RUGGED_LOCAL_GEMMA4_E2B_LONG_CONTEXT_EXPERIMENT = Route(
     default_reasoning_effort="none",
     supports_function_calling=True,
     publish_limits=True,
+    timeout=2_400,
+    stream_timeout=2_400,
 )
 RUGGED_LOCAL_EXPERIMENTAL_ROUTES = (RUGGED_LOCAL_GEMMA4_E2B_LONG_CONTEXT_EXPERIMENT,)
 

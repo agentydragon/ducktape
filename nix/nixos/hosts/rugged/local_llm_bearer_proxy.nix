@@ -72,7 +72,7 @@ in
           proxy_set_header Authorization "";
           proxy_set_header Connection "";
           proxy_buffering off;
-          proxy_read_timeout 600s;
+          proxy_read_timeout 2400s;
           proxy_send_timeout 600s;
         }
 

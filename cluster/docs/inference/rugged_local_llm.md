@@ -108,8 +108,16 @@ It selects the persisted alias `gemma4:e2b-it-qat-long-128k-b128` from
 and Home Manager changes before using the system endpoint. The built launcher
 passed a real read-tool roundtrip against a temporary server, whose actual runner
 used context 131072, batch/microbatch 128, F16 KV, and Flash Attention off. The
-profile reserves 4096 output tokens. The capacity/retrieval distinction below
-still applies: it is experimental, not qualified long-context coding quality.
+profile reserves 4096 output tokens. This change configures the Gemma route with
+2400-second LiteLLM request and stream timeouts and sets the shared Gateway's request
+and backend-request ceilings to 2400 seconds. Once activated, that Gateway ceiling
+applies to every authenticated LiteLLM route, not just this experiment; clients must
+allow more than 40 minutes for the full request. The earlier 124,005-token smoke took
+496 seconds and emitted 49 tokens at 5.8 tokens per second; at that observed decode
+rate, 4096 output tokens alone would take about 706 seconds, so the previous 600-second
+outer cap could not honor the configured output budget after prefill. This is a
+request budget, not a quality promotion: capacity is demonstrated, but long-context
+retrieval and coding quality remain experimental.
 
 The project toolchain and dependencies must also be available locally. The
 verified task uses a frozen Python standard-library test suite; this does not

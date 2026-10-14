@@ -199,6 +199,8 @@ data:
           model: openai/gemma4:e2b-it-qat-long-128k-b128
           api_base: http://rugged-local-llm.litellm.svc.cluster.local:18080/v1
           api_key: os.environ/RUGGED_LOCAL_LLM_KEY
+          timeout: 2400
+          stream_timeout: 2400
           extra_body:
             reasoning_effort: none
         model_info:
@@ -1093,8 +1095,8 @@ spec:
         - name: litellm
           port: 4000
       timeouts:
-        backendRequest: 600s
-        request: 600s
+        backendRequest: 2400s
+        request: 2400s
 ---
 apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor

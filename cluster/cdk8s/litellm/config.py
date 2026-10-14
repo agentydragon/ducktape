@@ -40,6 +40,10 @@ def model_entry(entry: Route | RouteAlias) -> dict:
         params["api_base"] = binding.api_base
     if binding.api_key is not None:
         params["api_key"] = binding.api_key
+    if route.timeout is not None:
+        params["timeout"] = route.timeout
+    if route.stream_timeout is not None:
+        params["stream_timeout"] = route.stream_timeout
     if route.default_reasoning_effort is not None:
         # Local OpenAI-compatible model IDs are not in LiteLLM's OpenAI model
         # capability catalog, so drop_params=True would strip a top-level
