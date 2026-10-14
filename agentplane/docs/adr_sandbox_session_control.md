@@ -527,6 +527,16 @@ naming the Session and the cap. No code in `agentplane/` uses `RESOURCE_EXHAUSTE
 cap counts queued commands only: delivered and terminal rows do not count, `InterruptTurn` is never stored, and
 `StopRunnerSession` is exempt so a full queue can still be cleared.
 
+**No TTL; a deleted Sandbox ends its queue.** Decided (operator, 2026-10-14): a queued command waits until it is
+delivered, however long that takes. The one exception is a Sandbox that is gone from Kubernetes entirely: the
+Dispatcher's watch on the Sandbox CR delivers the deletion, and it ends the Sandbox's `QUEUED_IN_DISPATCHER` commands
+as `FAILED` with the reason `sandbox_deleted` (they never reached a runner, and `FAILED` names where the failure was
+decided; `CANCELLED_IN_DISPATCHER` is for a sender or a later `StopRunnerSession`). A command already
+`DELIVERING_TO_RUNNER` has an ambiguous outcome and becomes `UNKNOWN`, the state kept for exactly that. The cleanup
+runs off the watch event, not a timer, and the Dispatcher's relist at start ends the queue of a Sandbox deleted while it
+was down. A sender reading the dispatch sees the terminal state and the reason. A new command to a missing Sandbox fails
+the same way at once, as `OpenSession` does above.
+
 **How long dispatch rows are kept (open).** A row serves the sender (status reads and `command_id` idempotency on a
 retried RPC) and the `OpenSession` window above. Redelivery of an already-admitted command resolves from the runner's
 journal, which is keyed by `command_id` (`runner/session.py`, `journal.get`), and history lives in the History Service,
@@ -734,22 +744,18 @@ sequenceDiagram
   `ResumeSession` (only Sessions with pending work) are needed. A resume storm also hits scheduling
   and the state volume's node.
 - **Resume can be impossible.** With node-local volumes the Sandbox can only resume where its PVC
-  lives; the node may be down or full. The queue needs a visible, bounded wait with a reason, a
-  message TTL, and a terminal state the sender can read for a poison command, a failed revival or a deleted target,
-  not a silent retry. The TTL and the poison-command handling are open (below).
+  lives; the node may be down or full. Queued commands have no TTL (decided below); they wait in
+  `QUEUED_IN_DISPATCHER` with the reason the Sandbox is not `Ready`, bounded in count by the per-Session cap. Poison
+  commands, where a delivery keeps failing, are open:
 
-  | Option                                                                                        | Cost                                                                              |
-  | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
-  | A. No TTL; a `QUEUED_IN_DISPATCHER` row waits, shows its reason, and the sender cancels       | A command to a Sandbox that cannot resume sits until someone looks                |
-  | B. Optional sender `expire_after` with a Dispatcher default; expiry is `FAILED`, reason named | A default has to be chosen; an expired command may already have woken the Sandbox |
-  | C. B plus an attempt cap on `DELIVERING_TO_RUNNER` returning to `QUEUED_IN_DISPATCHER`        | A cap is another number; lameduck `ABORTED` refusals must not count against it    |
+  | Option                                                                                             | Cost                                                                                       |
+  | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+  | A. Nothing: retry forever, show the reason on the row, the sender cancels                          | One poison command at the head of a Session's queue blocks the rest until someone looks    |
+  | B. Attempt cap on `DELIVERING_TO_RUNNER` returning to `QUEUED_IN_DISPATCHER`; at the cap, `FAILED` | A cap is another number; lameduck `ABORTED` refusals and waiting for resume must not count |
+  | C. As B, but at the cap hold the Session's queue with a reason instead of failing the command      | The Session stalls until a person resumes or cancels; ordering is kept                     |
 
-  The cap bounds the backlog but not its age: a Sandbox that cannot resume holds up to 1,000 commands per Session
-  indefinitely under A, so A is no longer unbounded in size, only in time. B and C stay worthwhile because they give
-  the sender a terminal answer instead of a full queue.
-
-  Recommend C. A refusal with a terminal code (`FAILED_PRECONDITION`) already fails the dispatch at once; the cap covers
-  a command that repeatedly loses its call or kills the harness. `StopRunnerSession` never expires.
+  Recommend B. A refusal with a terminal code (`FAILED_PRECONDITION`) already fails the dispatch at once; the cap
+  covers a command that repeatedly loses its call or crashes the harness. `StopRunnerSession` is never held behind it.
 
 - **VM RAM suspend.** If a VM keeps harness processes alive across suspend, quiescing means something different
   (flush the journal, keep the harness). Settle this before RAM suspend assumes the Pod sequence.
@@ -790,7 +796,8 @@ sequenceDiagram
 | Names: Session Dispatcher, `OpenSession` (kept), `Quiesce`, `Quiesced`, `Draining`, `Flushing`           | Decided | 2026-10-13 | below        |
 | The queue holds about 1,000 queued commands per Session; past that, `RESOURCE_EXHAUSTED`                 | Decided | 2026-10-14 | D4           |
 | How long the Dispatcher keeps dispatch rows                                                              | Open    |            | D4           |
-| A message TTL and the handling of poison commands                                                        | Open    |            | Complexities |
+| Queued commands have no TTL; a Sandbox gone from Kubernetes ends them as `FAILED`                        | Decided | 2026-10-14 | D4           |
+| The handling of poison commands                                                                          | Open    |            | Complexities |
 
 **Names.** Names already taken, so not used for the queue service: `inbox` is the Notification Service's (`inbox_id`,
 `InboxView`), `outbox` is the Action Service's (`action_outbox`), "mailbox" is the task DAG's word for an agent's
