@@ -100,9 +100,10 @@ async def running_dispatcher(
     monkeypatch.setattr(dispatcher_main, "until_terminated", until_stopped)
     task = asyncio.create_task(dispatcher_main.serve(settings), name="notification-acceptance-dispatcher")
     try:
-        async with dial(f"{settings.host}:{settings.port}") as channel, asyncio.timeout(5):
-            await channel.channel_ready()
-            await synced.wait()
+        async with dial(f"{settings.host}:{settings.port}") as channel:
+            async with asyncio.timeout(5):
+                await channel.channel_ready()
+                await synced.wait()
             yield SessionDispatcherClient(channel, token_file=caller_token_file, request_timeout_s=10)
     finally:
         stopping.set()
