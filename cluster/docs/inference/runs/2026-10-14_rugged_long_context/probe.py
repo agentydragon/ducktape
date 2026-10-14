@@ -219,6 +219,10 @@ def run_request(
         raise RuntimeError("Ollama stream ended without final usage record")
     return {
         "stage": stage,
+        "model": model,
+        "request_options": body["options"],
+        "minimum_available_kib": minimum_available_kib,
+        "deadline_utc": deadline.isoformat(),
         "request_sha256": sha256(request_bytes),
         "wall_seconds": time.perf_counter() - start,
         "first_content_seconds": first_token,
