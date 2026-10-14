@@ -184,12 +184,39 @@ class Client:
 
         Retrying with the same Session ID and overrides answers the same Session.
         """
+        opening = await self.open_session(name, session_id, overrides=overrides, setup_script=setup_script)
+        return await self.wait_for_session_admission(name, session_id, opening=opening)
+
+    async def open_session(
+        self,
+        name: str,
+        session_id: UUID,
+        *,
+        overrides: dict[str, object] | None = None,
+        setup_script: str | None = None,
+    ) -> session_dispatcher_pb2.SessionOpening:
+        """Submit an opening and return its first durable state without waiting for admission."""
         body = NewSession(session_id=session_id, spec=overrides or {}, setup_script=setup_script)
         answered = await self._json(
             "POST", f"/sandboxes/{name}/sessions", json=body.model_dump(mode="json", exclude_none=True)
         )
-        opening = ParseDict(answered, session_dispatcher_pb2.SessionOpening())
-        deadline = time.monotonic() + REQUEST_SECONDS
+        return ParseDict(answered, session_dispatcher_pb2.SessionOpening())
+
+    async def session_opening(self, name: str, session_id: UUID) -> session_dispatcher_pb2.SessionOpening:
+        """Read the durable opening state for a Sandbox Session."""
+        answered = await self._json("GET", f"/sandboxes/{name}/sessions/{session_id}/opening")
+        return ParseDict(answered, session_dispatcher_pb2.SessionOpening())
+
+    async def wait_for_session_admission(
+        self,
+        name: str,
+        session_id: UUID,
+        *,
+        opening: session_dispatcher_pb2.SessionOpening,
+        timeout_s: float = REQUEST_SECONDS,
+    ) -> Attachment:
+        """Wait for the runner admission behind an already accepted Session opening."""
+        deadline = time.monotonic() + timeout_s
         while True:
             if opening.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED:
                 attached = (
@@ -206,8 +233,20 @@ class Client:
             if time.monotonic() >= deadline:
                 raise TimeoutError(f"Session opening {opening.session_id} remained {opening.state}: {opening.reason}")
             await asyncio.sleep(0.2)
-            answered = await self._json("GET", f"/sandboxes/{name}/sessions/{session_id}/opening")
-            opening = ParseDict(answered, session_dispatcher_pb2.SessionOpening())
+            opening = await self.session_opening(name, session_id)
+
+    async def wait_for_thread_projection(self, thread_id: UUID, *, timeout_s: float) -> ThreadView:
+        """Wait for History's projection after runner admission; only a missing row is retried."""
+        deadline = time.monotonic() + timeout_s
+        while True:
+            try:
+                return await self.thread(thread_id)
+            except httpx.HTTPStatusError as error:
+                if error.response.status_code != HTTPStatus.NOT_FOUND:
+                    raise
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(f"Thread {thread_id} was not projected within {timeout_s:g}s") from error
+                await asyncio.sleep(0.2)
 
     async def resume_thread(self, thread_id: UUID) -> Attachment:
         """Resume the runner session already bound to this Thread."""
