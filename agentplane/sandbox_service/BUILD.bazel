@@ -161,6 +161,7 @@ py_test(
 
 py_test(
     name = "test_provisioning",
+    size = "medium",
     srcs = ["test_provisioning.py"],
     deps = [
         ":client",

@@ -389,6 +389,7 @@ py_test(
 
 py_test(
     name = "test_session_lifecycle",
+    size = "medium",
     srcs = ["test_session_lifecycle.py"],
     deps = [
         ":conftest",
