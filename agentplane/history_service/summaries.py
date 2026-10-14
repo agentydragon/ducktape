@@ -83,6 +83,8 @@ def _summary(
         message.last_event_at.FromDatetime(summary.last_event_at)
     if summary.last_model_activity_at is not None:
         message.last_model_activity_at.FromDatetime(summary.last_model_activity_at)
+    if summary.idle_since is not None:
+        message.idle_since.FromDatetime(summary.idle_since)
     if summary.last_turn_status is not None:
         message.last_turn_status = cast(event_pb2.TurnStatus, summary.last_turn_status)
     if summary.attached is not None:

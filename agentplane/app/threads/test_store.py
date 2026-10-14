@@ -1,5 +1,6 @@
 """Operator metadata over Thread views read from the History Service's fold."""
 
+from datetime import UTC
 from uuid import UUID
 
 import pytest
@@ -75,6 +76,18 @@ async def test_thread_turn_status_comes_from_the_fold_summary(
     assert view.last_turn_status == (None if status is None else event_pb2.TurnStatus.Name(status))
     assert view.feed_status == "ended"
     assert await store.list_threads() == [view]
+
+
+async def test_thread_idle_since_comes_from_the_fold_summary(
+    store: ThreadStore, event_logs: SeededEventLogStore, history: History
+) -> None:
+    done = event_pb2.TurnCompleted(turn_id="turn", status=event_pb2.TURN_STATUS_COMPLETED)
+    thread = await seed_thread(
+        event_logs, history, sandbox="one", session="test-idle-session", cursor=7, turn_completed=done
+    )
+    view = await store.get_thread(thread)
+    assert view is not None
+    assert view.idle_since == event_entry(7).event.at.ToDatetime(tzinfo=UTC)
 
 
 async def test_a_feed_ends_where_its_harness_stops_and_a_resumed_harness_reopens_it(

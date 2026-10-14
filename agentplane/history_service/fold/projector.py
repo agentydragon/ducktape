@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
 
 from agentplane.history_service.channels import Channel
 from agentplane.history_service.fold import projection_lease
+from agentplane.history_service.fold.idle import next_idle_since
 from agentplane.history_service.fold.lifecycle import project_lifecycle
 from agentplane.history_service.fold.model_activity import record_model_activity
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadHistorySummary
@@ -133,6 +134,7 @@ class HistoryProjector:
                     summary.last_event_at = at
                 if entry.event.HasField("turn_completed"):
                     summary.last_turn_status = entry.event.turn_completed.status
+                summary.idle_since = next_idle_since(summary.idle_since, entry.event)
 
             await project_lifecycle(session, thread_id, summary, page, through_cursor=page.entries[-1].cursor)
             await notify(session, Channel.SUMMARIES)

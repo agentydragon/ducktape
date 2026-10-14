@@ -178,6 +178,7 @@ ts_library(
         "//agentplane/app/frontend:thread_status",
         "//agentplane/app/frontend:thread_status_indicator",
         "//agentplane/app/frontend:thread_tab",
+        "//agentplane/app/frontend:time_ago",
         "//agentplane/app/frontend:topbar",
         "//agentplane/proto:command_pb",
         "//agentplane/proto:event_pb",

@@ -86,6 +86,38 @@ async def test_folds_retained_sessions_a_page_per_cycle_until_caught_up(engine: 
         assert await session.scalar(select(ThreadCheckpoint).where(ThreadCheckpoint.thread_id == empty)) is None
 
 
+async def test_a_session_is_idle_from_its_harness_start_or_last_turn_end_until_the_next_turn_or_stop(
+    engine: AsyncEngine, history: Store
+) -> None:
+    session_id = await retained_session(history, [])
+    folder = FoldRunner(engine=engine, history=history, concurrency=1, page_size=PAGE_SIZE)
+    sessions = async_sessionmaker(engine, expire_on_commit=False)
+
+    async def fold_idle_since(*entries: event_log_pb2.EventEntry) -> datetime | None:
+        await history.append(session_id, list(entries))
+        await folder.cycle()
+        async with sessions() as session:
+            summary = await session.get(ThreadHistorySummary, session_id)
+            assert summary is not None
+            return summary.idle_since
+
+    def at(cursor: int) -> datetime:
+        return entry(cursor).event.at.ToDatetime(tzinfo=UTC)
+
+    assert await fold_idle_since(entry(1, harness_started=event_pb2.HarnessStarted(pid=7))) == at(1)
+    assert await fold_idle_since(entry(2, turn_started=event_pb2.TurnStarted(turn_id="test-turn"))) is None
+    assert (
+        await fold_idle_since(
+            entry(3, item_started=event_pb2.ItemStarted(item_id="test-reply", kind=event_pb2.ITEM_KIND_ASSISTANT_TEXT))
+        )
+        is None
+    )
+    done = entry(4, turn_completed=event_pb2.TurnCompleted(turn_id="test-turn", status=event_pb2.TURN_STATUS_FAILED))
+    assert await fold_idle_since(done) == at(4)
+    assert await fold_idle_since(entry(5, text_delta=event_pb2.TextDelta(item_id="test-late", text="x"))) == at(4)
+    assert await fold_idle_since(entry(6, harness_exited=event_pb2.HarnessExited())) is None
+
+
 async def test_a_session_ends_only_once_its_harness_launch_has_an_outcome(engine: AsyncEngine, history: Store) -> None:
     # The runner announces a Session whose setup script runs before its harness starts.
     session_id = await retained_session(

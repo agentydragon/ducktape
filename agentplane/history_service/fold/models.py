@@ -64,6 +64,8 @@ class ThreadHistorySummary(Base):
     end: Mapped[dict[str, str] | None] = mapped_column(JSONB(none_as_null=True))
     # Inferred from model-originated events, not an observed provider request or cache receipt.
     last_model_activity_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # None while a turn runs or the harness is stopped.
+    idle_since: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
 
 class ThreadEntity(Base):

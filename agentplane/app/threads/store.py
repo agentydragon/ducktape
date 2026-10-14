@@ -215,6 +215,7 @@ def _view(thread: Thread, summary: FoldSummary, sandbox: str) -> ThreadView:
         last_cursor=summary.folded_through,
         last_event_at=summary.last_event_at,
         last_model_activity_at=summary.last_model_activity_at,
+        idle_since=summary.idle_since,
         harness_state=runner_pb2.HarnessState.Name(harness_state),
         setup_state=runner_pb2.SetupState.Name(attachment.setup_state) if attachment is not None else None,
         launch_outcome=runner_pb2.LaunchOutcome.Name(attachment.launch_outcome) if attachment is not None else None,

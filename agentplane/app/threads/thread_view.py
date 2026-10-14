@@ -36,6 +36,11 @@ class ThreadView(BaseModel):
         default=None,
         description="Inferred from this Thread's model-originated events; not an observed provider request or cache hit.",
     )
+    idle_since: datetime | None = Field(
+        default=None,
+        description="When the harness last became idle, running with no turn in progress; None while a turn runs, "
+        "while the harness is stopped, or before the fold has seen the event that sets it.",
+    )
     harness_state: str = Field(
         description="The protocol's HarnessState enum member, by name: HARNESS_STATE_RUNNING, "
         "HARNESS_STATE_STOPPED, or HARNESS_STATE_UNSPECIFIED while no feed has ever attached to this thread."
