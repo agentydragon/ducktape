@@ -29,16 +29,7 @@ from agentplane.app.oidc import OIDCSettings
 from agentplane.app.settings import Settings
 from agentplane.crd_group import GROUP
 from cluster.cdk8s import cilium
-from cluster.cdk8s.agentplane import (
-    actions,
-    database,
-    egress,
-    electric,
-    history_service,
-    notifications,
-    runner_gateway,
-    sandbox_service,
-)
+from cluster.cdk8s.agentplane import actions, database, egress, electric, history_service, notifications, runner_gateway
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import ServiceWorkload, add_service_workload
@@ -200,7 +191,6 @@ class App(Construct):
                 # TODO: a separate Sandbox namespace, holding the Sandboxes, their
                 # template and the runner ServiceAccount.
                 sandbox_namespace=namespace,
-                sandbox_service_target=f"{sandbox_service.service(namespace).fqdn}:{sandbox_service.service(namespace).pod_port}",
                 runner_gateway_target=runner_gateway.target(namespace),
                 runner_gateway_token_file="/var/run/secrets/agentplane-runner-gateway/token",
                 history_service_target=f"{history_service.service(namespace).fqdn}:{history_service.service(namespace).pod_port}",
@@ -232,7 +222,6 @@ class App(Construct):
         )
         config.mount_into(workload.container, env=Settings.config_file_env)
         for volume, audience, mount_path in [
-            ("sandbox-service-token", sandbox_service.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-sandbox-service"),
             ("runner-gateway-token", runner_gateway.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-runner-gateway"),
             ("history-service-token", history_service.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-history-service"),
             ("notifications-token", notifications.TOKEN_AUDIENCE, "/var/run/secrets/agentplane-notifications"),
@@ -263,7 +252,7 @@ class App(Construct):
     def _add_network_policy(self) -> None:
         namespace = self.env.namespace
         # The app takes browser traffic straight from the gateway and reaches DNS, the
-        # API server, the OIDC provider, Sandbox Service, Runner Gateway, History Service, the egress
+        # API server, the OIDC provider, Runner Gateway, History Service, the egress
         # proxy's admin port, the Action Service, and the trajectory store.
         NetworkPolicy(
             self,
@@ -275,7 +264,6 @@ class App(Construct):
                 cilium.dns_egress(),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 *self._oidc_egress_rules(),
-                sandbox_service.service(namespace).egress(),
                 runner_gateway.service(namespace).egress(),
                 history_service.service(namespace).egress(),
                 notifications.service(namespace).egress(),

@@ -117,8 +117,6 @@ def environment_chart(app: App, env: Environment) -> Chart:
         "notifications",
         env,
         actions=actions.service(env.namespace),
-        sandboxes=sandbox_service.service(env.namespace),
-        sandboxes_audience=sandbox_service.TOKEN_AUDIENCE,
         gateway=runner_gateway.service(env.namespace),
         gateway_audience=runner_gateway.TOKEN_AUDIENCE,
         gateway_control_target=runner_gateway.control_target(env.namespace),

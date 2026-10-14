@@ -42,7 +42,7 @@ flowchart TB
     github([GitHub])
     app[Integration app]
     subgraph services[Backend services]
-        ss[Sandbox Service]
+        ss[Sandbox Service, deployed pending retirement]
         gw[Runner Gateway]
         hs[History Service]
         notif[Notification service]
@@ -70,7 +70,6 @@ flowchart TB
 
     browser -->|HTTPS, SSE| app
     mcp_client -->|MCP over OAuth| actions
-    app -->|older app image: gRPC health check; lifecycle fallback if direct config is absent| ss
     app -->|gRPC: Sessions, lifecycle and remaining legacy commands| gw
     app -.->|queued commands and delivery-state reads after accepting app image is pinned| dispatcher
     app -->|gRPC: Session and Thread reads, change and Session-opening watch| hs
@@ -83,7 +82,6 @@ flowchart TB
     electric -->|logical replication| hist_db
     hist_db -.->|staging: WAL archive, on-demand base backups| outside
 
-    ss -->|Sandboxes| k8s
     gw -->|control EndpointSlices, Leases| k8s
     hs -->|ingest, fold, read| hist_db
     notif -->|Sandbox reads| k8s
@@ -119,9 +117,10 @@ flowchart TB
     proxy -->|credentials substituted| outside
 ```
 
-The app receiver now omits its Sandbox Service connection in direct mode. The health-check edge
-above remains until that app image is pinned; target/token manifest removal follows the pin
-([rollout gates](plans/task_dag.md#sandbox_service_remove--remove-the-sandbox-service)).
+The app now uses the Kubernetes API for Sandbox lifecycle, and notifications read Sandbox inventory
+directly. Neither workload renders a Sandbox Service target, token, or egress path. The Service
+remains deployed with its existing caller grants while these manifests roll out; service retirement
+has a separate gate ([rollout gates](plans/task_dag.md#sandbox_service_remove--remove-the-sandbox-service)).
 
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its
   conversation view, folded by the History Service. Every runner pushes its Events to the History

@@ -3210,7 +3210,6 @@ spec:
       containers:
         - args:
             - --sandbox-namespace=agentplane-testing
-            - --sandbox-service-target=agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
             - --runner-gateway-target=agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8080
             - --runner-gateway-token-file=/var/run/secrets/agentplane-runner-gateway/token
             - --history-service-target=agentplane-history-service.agentplane-testing.svc.cluster.local:8080
@@ -3314,9 +3313,6 @@ spec:
             - mountPath: /etc/agentplane
               name: configmap-agentplane-app-config
               readOnly: true
-            - mountPath: /var/run/secrets/agentplane-sandbox-service
-              name: sandbox-service-token
-              readOnly: true
             - mountPath: /var/run/secrets/agentplane-runner-gateway
               name: runner-gateway-token
               readOnly: true
@@ -3418,13 +3414,6 @@ spec:
         - configMap:
             name: agentplane-app-config
           name: configmap-agentplane-app-config
-        - name: sandbox-service-token
-          projected:
-            sources:
-              - serviceAccountToken:
-                  audience: agentplane-sandbox-service
-                  expirationSeconds: 3600
-                  path: token
         - name: runner-gateway-token
           projected:
             sources:
@@ -3634,14 +3623,6 @@ spec:
               protocol: TCP
           serverNames:
             - agentplane-dex-testing.allegedly.works
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-sandbox-service
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-runner-gateway
@@ -5565,9 +5546,6 @@ data:
     actions:
       url: http://agentplane-actions.agentplane-testing.svc.cluster.local:8080
       token_file: /var/run/secrets/notifications/actions
-    sandbox_service:
-      target: agentplane-sandbox-service.agentplane-testing.svc.cluster.local:8080
-      token_file: /var/run/secrets/notifications/sandboxes
     runner_gateway:
       target: agentplane-runner-gateway.agentplane-testing.svc.cluster.local:8080
       control_target: "{sandbox}-control.{namespace}.svc:8080"
@@ -5719,10 +5697,6 @@ spec:
                   expirationSeconds: 3600
                   path: actions
               - serviceAccountToken:
-                  audience: agentplane-sandbox-service
-                  expirationSeconds: 3600
-                  path: sandboxes
-              - serviceAccountToken:
                   audience: agentplane-runner-gateway
                   expirationSeconds: 3600
                   path: gateway
@@ -5814,14 +5788,6 @@ spec:
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-actions
-            k8s:io.kubernetes.pod.namespace: agentplane-testing
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
-    - toEndpoints:
-        - matchLabels:
-            app.kubernetes.io/name: agentplane-sandbox-service
             k8s:io.kubernetes.pod.namespace: agentplane-testing
       toPorts:
         - ports:

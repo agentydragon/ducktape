@@ -42,8 +42,6 @@ class Notifications(Construct):
         env: Environment,
         *,
         actions: ServiceRef,
-        sandboxes: ServiceRef,
-        sandboxes_audience: str,
         gateway: ServiceRef,
         gateway_audience: str,
         gateway_control_target: str,
@@ -87,10 +85,6 @@ class Notifications(Construct):
                 "actions": {
                     "url": f"http://{actions.fqdn}:{actions.port.number}",
                     "token_file": "/var/run/secrets/notifications/actions",
-                },
-                "sandbox_service": {
-                    "target": f"{sandboxes.fqdn}:{sandboxes.port.number}",
-                    "token_file": "/var/run/secrets/notifications/sandboxes",
                 },
                 "runner_gateway": {
                     "target": f"{gateway.fqdn}:{gateway.port.number}",
@@ -151,7 +145,6 @@ class Notifications(Construct):
             "/var/run/secrets/notifications",
             {
                 "actions": WORKLOAD_TOKEN_AUDIENCE,
-                "sandboxes": sandboxes_audience,
                 "gateway": gateway_audience,
                 "history": history_audience,
                 "dispatcher": dispatcher_audience,
@@ -168,7 +161,6 @@ class Notifications(Construct):
                 EgressRule.to_fqdns("api.github.com"),
                 EgressRule.to_entities(Entity.KUBE_APISERVER),
                 actions.egress(),
-                sandboxes.egress(),
                 gateway.egress(),
                 history.egress(),
                 dispatcher.egress(),

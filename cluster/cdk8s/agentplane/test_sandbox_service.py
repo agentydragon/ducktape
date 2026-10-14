@@ -21,7 +21,9 @@ from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:
+def test_app_and_sandbox_service_are_independent(
+    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
+) -> None:
     documents = agentplane_manifests[namespace]
 
     def resource(kind: str, name: str) -> dict[str, Any]:
@@ -29,19 +31,14 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
 
     application = resource("Deployment", app.NAME)["spec"]["template"]["spec"]
     container = one(item for item in application["containers"] if item["name"] == "app")
-    target = sandbox_service.service(namespace)
-    assert f"--sandbox-service-target={target.fqdn}:{target.pod_port}" in container["args"]
-    token = one(volume for volume in application["volumes"] if volume["name"] == "sandbox-service-token")
-    assert token["projected"]["sources"] == [
-        {
-            "serviceAccountToken": {
-                "audience": sandbox_service.TOKEN_AUDIENCE,
-                "expirationSeconds": 3600,
-                "path": "token",
-            }
-        }
-    ]
-    assert one(mount for mount in container["volumeMounts"] if mount["name"] == "sandbox-service-token")["readOnly"]
+    assert not any(arg.startswith("--sandbox-service-target=") for arg in container["args"])
+    assert not any(volume["name"] == "sandbox-service-token" for volume in application["volumes"])
+    app_policy = resource("CiliumNetworkPolicy", app.NAME)["spec"]
+    assert not any(
+        target["matchLabels"].get("app.kubernetes.io/name") == sandbox_service.NAME
+        for rule in app_policy["egress"]
+        for target in rule.get("toEndpoints", [])
+    )
     history = history_service.service(namespace)
     assert f"--history-service-target={history.fqdn}:{history.pod_port}" in container["args"]
     history_token = one(volume for volume in application["volumes"] if volume["name"] == "history-service-token")
@@ -125,11 +122,20 @@ def test_notifications_have_no_app_or_direct_runner_dependency(
     tokens = one(volume for volume in pod["volumes"] if volume["name"] == "service-tokens")
     assert {source["serviceAccountToken"]["audience"] for source in tokens["projected"]["sources"]} == {
         "agentplane-egress",
-        sandbox_service.TOKEN_AUDIENCE,
         runner_gateway.TOKEN_AUDIENCE,
         history_service.TOKEN_AUDIENCE,
         session_dispatcher.TOKEN_AUDIENCE,
     }
+    notification_settings = yaml.safe_load(
+        resource("ConfigMap", f"{notifications.NAME}-settings")["data"]["settings.yaml"]
+    )
+    assert "sandbox_service" not in notification_settings
+    notification_policy = resource("CiliumNetworkPolicy", notifications.NAME)["spec"]
+    assert not any(
+        target["matchLabels"].get("app.kubernetes.io/name") == sandbox_service.NAME
+        for rule in notification_policy["egress"]
+        for target in rule.get("toEndpoints", [])
+    )
     for container in pod["containers"] + pod["initContainers"]:
         database = one(item for item in container["env"] if item["name"] == "AGENTPLANE_NOTIFICATIONS_DATABASE_URL")
         assert database["valueFrom"]["secretKeyRef"] == {"name": "postgres-notifications", "key": "uri"}
