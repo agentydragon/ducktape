@@ -53,6 +53,9 @@ in
         # Match the context limit measured for the current rugged serving
         # harness. Larger contexts have not been qualified on this service.
         OLLAMA_CONTEXT_LENGTH = "32768";
+        # Keep GPU memory use aligned with the single-request benchmark setup.
+        OLLAMA_NUM_PARALLEL = "1";
+        OLLAMA_MAX_LOADED_MODELS = "1";
       };
     };
 
@@ -68,6 +71,9 @@ in
       environment = config.systemd.services.ollama.environment;
       serviceConfig = {
         Type = "oneshot";
+        # Keep the unit active after prefetch so a changed unit definition
+        # (including a changed declared model list) is restarted on nixos-rebuild.
+        RemainAfterExit = true;
         User = "ollama";
         Group = "ollama";
         UMask = "0077";

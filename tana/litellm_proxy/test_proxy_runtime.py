@@ -1,5 +1,6 @@
 """Runtime smoke tests for the LiteLLM proxy entrypoint closure."""
 
+import json
 import os
 import shutil
 import subprocess
@@ -8,7 +9,9 @@ from collections.abc import AsyncIterator, Iterator, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
+import httpx
 import litellm
+import openai
 import pytest_bazel
 from litellm.proxy.proxy_server import ProxyConfig
 from litellm.types.utils import GenericStreamingChunk
@@ -115,6 +118,62 @@ async def test_litellm_proxy_config_registers_custom_provider_before_router_buil
         litellm.provider_list = original_provider_list
         litellm._custom_providers = original_custom_providers
         litellm.model_list_set = original_model_list_set
+
+
+async def test_litellm_router_forwards_local_reasoning_default_in_http_payload(
+    tmp_path: Path, monkeypatch: Any
+) -> None:
+    """Use the pinned LiteLLM OpenAI adapter through a mock HTTP transport."""
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        textwrap.dedent(
+            """
+            model_list:
+              - model_name: rugged-local
+                litellm_params:
+                  model: openai/qwen3:4b
+                  api_base: http://ollama.test/v1
+                  api_key: sk-test
+                  extra_body:
+                    reasoning_effort: none
+            litellm_settings:
+              drop_params: true
+            router_settings:
+              num_retries: 0
+            """
+        )
+    )
+
+    request_bodies: list[dict[str, Any]] = []
+
+    def handle_request(request: httpx.Request) -> httpx.Response:
+        request_bodies.append(json.loads(request.content))
+        return httpx.Response(
+            200,
+            json={
+                "id": "chatcmpl-test",
+                "object": "chat.completion",
+                "created": 1,
+                "model": "qwen3:4b",
+                "choices": [{"index": 0, "message": {"role": "assistant", "content": "pong"}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
+            },
+            request=request,
+        )
+
+    http_client = httpx.AsyncClient(transport=httpx.MockTransport(handle_request))
+    openai_client = openai.AsyncOpenAI(api_key="sk-test", base_url="http://ollama.test/v1", http_client=http_client)
+    router, _, _ = await ProxyConfig().load_config(router=None, config_file_path=str(config_path))
+    assert router is not None
+    monkeypatch.setattr(router, "_get_async_openai_model_client", lambda *, deployment, kwargs: openai_client)
+
+    try:
+        response = await router.acompletion(model="rugged-local", messages=[{"role": "user", "content": "hi"}])
+    finally:
+        await openai_client.close()
+
+    assert response.choices[0].message.content == "pong"
+    assert request_bodies[0]["reasoning_effort"] == "none"
 
 
 if __name__ == "__main__":

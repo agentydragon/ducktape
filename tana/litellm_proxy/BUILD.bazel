@@ -10,6 +10,7 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 # lock (the lock() below), not the repo-wide @pypi hub.
 # gazelle:resolve py litellm @pypi_tana_litellm_proxy//litellm
 # gazelle:resolve py httpx @pypi_tana_litellm_proxy//httpx
+# gazelle:resolve py openai @pypi_tana_litellm_proxy//openai
 
 exports_files([
     "requirements.in",
@@ -158,7 +159,9 @@ py_test(
         "//:conftest",
         "//util/bazel:runfiles",
         "@pypi//pytest_bazel",
+        "@pypi_tana_litellm_proxy//httpx",
         "@pypi_tana_litellm_proxy//litellm",
+        "@pypi_tana_litellm_proxy//openai",
     ],
 )
 

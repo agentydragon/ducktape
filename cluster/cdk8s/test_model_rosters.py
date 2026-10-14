@@ -6,6 +6,7 @@ import pytest
 import pytest_bazel
 
 from cluster.cdk8s.litellm.config import model_entry
+from cluster.cdk8s.litellm.upstreams import RUGGED_LOCAL_LLM_API_BASE, RUGGED_LOCAL_LLM_KEY_ENV
 from cluster.cdk8s.model_selections import STAGING_APP_MODELS, TESTING_APP_MODELS
 from model_catalog.catalog import (
     ANTHROPIC_API_ROUTES,
@@ -18,11 +19,14 @@ from model_catalog.catalog import (
     HIDDEN_ALIASES,
     OLLAMA_CHAT_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
+    RUGGED_LOCAL_CANDIDATE_ROUTES,
     SERVED_ROUTES,
     EmbeddingLimits,
     Model,
+    Provider,
     Route,
     RouteAlias,
+    TokenLimits,
 )
 from model_catalog.policies import KEY_MODEL_LANES
 
@@ -54,6 +58,50 @@ def test_staging_picker_does_not_widen_its_key() -> None:
 def test_picker_is_narrower_than_ollama_key() -> None:
     assert all(route in OLLAMA_CHAT_ROUTES for route in TESTING_APP_MODELS.codex[1:])
     assert any(route not in TESTING_APP_MODELS.all for route in OLLAMA_CHAT_ROUTES)
+
+
+def test_rugged_local_candidates_are_served_and_experiment_only() -> None:
+    lane = KEY_MODEL_LANES["cheap_experiments_models"]
+    allowed = lane.allowed
+    assert all(route in SERVED_ROUTES and route in allowed for route in RUGGED_LOCAL_CANDIDATE_ROUTES)
+    assert not lane.fallbacks
+    assert all(route.upstream.provider == Provider.RUGGED_LOCAL for route in RUGGED_LOCAL_CANDIDATE_ROUTES)
+    assert [route.id for route in RUGGED_LOCAL_CANDIDATE_ROUTES] == [
+        "rugged-local/oai-chat/qwen3-4b-instruct-2507-q4-k-m",
+        "rugged-local/oai-chat/gemma4-e4b",
+        "rugged-local/oai-chat/gemma4-e2b-it-qat",
+    ]
+    assert [route.upstream_model for route in RUGGED_LOCAL_CANDIDATE_ROUTES] == [
+        "qwen3:4b-instruct-2507-q4_K_M",
+        "gemma4:e4b",
+        "gemma4:e2b-it-qat",
+    ]
+    assert all(
+        route.model.limits == TokenLimits(max_input_tokens=28_672, max_output_tokens=4_096)
+        for route in RUGGED_LOCAL_CANDIDATE_ROUTES
+    )
+    assert all(route.publish_limits for route in RUGGED_LOCAL_CANDIDATE_ROUTES)
+    for route in RUGGED_LOCAL_CANDIDATE_ROUTES:
+        entry = model_entry(route)
+        params = entry["litellm_params"]
+        assert params == {
+            "model": f"openai/{route.upstream_model}",
+            "api_base": RUGGED_LOCAL_LLM_API_BASE,
+            "api_key": f"os.environ/{RUGGED_LOCAL_LLM_KEY_ENV}",
+            "extra_body": {"reasoning_effort": "none"},
+        }
+        expected_model_info = {
+            "mode": "chat",
+            "max_input_tokens": 28_672,
+            "max_output_tokens": 4_096,
+            "max_tokens": 4_096,
+        }
+        if route.supports_function_calling:
+            expected_model_info["supports_function_calling"] = True
+        assert entry["model_info"] == expected_model_info
+        assert entry["model_info"].get("supports_function_calling", False) is (route.supports_function_calling is True)
+        assert route.reasoning_efforts == ("none",)
+        assert route.default_reasoning_effort == "none"
 
 
 @pytest.mark.parametrize("context_kib", [256, 512, 1024])

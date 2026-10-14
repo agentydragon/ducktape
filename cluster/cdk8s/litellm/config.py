@@ -40,6 +40,12 @@ def model_entry(entry: Route | RouteAlias) -> dict:
         params["api_base"] = binding.api_base
     if binding.api_key is not None:
         params["api_key"] = binding.api_key
+    if route.default_reasoning_effort is not None:
+        # Local OpenAI-compatible model IDs are not in LiteLLM's OpenAI model
+        # capability catalog, so drop_params=True would strip a top-level
+        # reasoning_effort. extra_body preserves the default at the HTTP boundary.
+        extra_body = params.setdefault("extra_body", {})
+        extra_body["reasoning_effort"] = route.default_reasoning_effort
     if upstream.shape == ApiShape.OLM_EMBED:
         # Fail instead of silently embedding a truncated prefix, including Ollama's
         # retry at num_batch after a runner rejects a longer input.
@@ -57,7 +63,10 @@ def model_entry(entry: Route | RouteAlias) -> dict:
             tana_ignore_out_of_credits_warning=False,
         )
     info: dict = {"mode": shape_mode(upstream.shape)}
-    if upstream.supports_function_calling:
+    supports_function_calling = route.supports_function_calling
+    if supports_function_calling is None:
+        supports_function_calling = upstream.supports_function_calling
+    if supports_function_calling:
         info["supports_function_calling"] = True
     if route.publish_limits:
         if (limits := route.model.limits) is None:

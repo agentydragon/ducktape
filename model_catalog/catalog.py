@@ -201,6 +201,17 @@ class Route:
     num_ctx: int | None = None
     # The two historical audio route IDs predate the naming scheme.
     bare_name: bool = False
+    # A route may narrow/override its adapter's generic function-calling capability
+    # when model-level evidence differs; None inherits the upstream declaration.
+    supports_function_calling: bool | None = None
+    # LiteLLM request default, separate from the chooser's supported-effort list.
+    # For OpenAI-compatible local models, config emits this through extra_body so
+    # LiteLLM does not filter it as unsupported for an unrecognized model slug.
+    default_reasoning_effort: str | None = None
+
+    def __post_init__(self) -> None:
+        if self.default_reasoning_effort is not None and self.default_reasoning_effort not in self.reasoning_efforts:
+            raise ValueError(f"default reasoning effort {self.default_reasoning_effort!r} is not allowed for {self.id}")
 
     @property
     def id(self) -> str:
@@ -482,6 +493,38 @@ OLLAMA_OPENAI = Upstream(Provider.OLLAMA, "openai", "chat", supports_function_ca
 OLLAMA_NATIVE = Upstream(Provider.OLLAMA, "ollama_chat", "chat", supports_function_calling=True)
 RUGGED_LOCAL_OPENAI = Upstream(Provider.RUGGED_LOCAL, "openai", "chat")
 
+# Candidate models exposed through rugged's loopback Ollama with a declared 32,768
+# token serving budget: 28,672 input plus 4,096 output. These are the request limits
+# advertised to LiteLLM, not evidence of a hard request rejection or model capacity.
+_RUGGED_LOCAL_LIMITS = TokenLimits(max_input_tokens=28_672, max_output_tokens=4_096)
+RUGGED_LOCAL_QWEN3_4B = Route(
+    Model("qwen3-4b-instruct-2507-q4-k-m", display_name="Qwen3 4B Instruct 2507 Q4_K_M", limits=_RUGGED_LOCAL_LIMITS),
+    RUGGED_LOCAL_OPENAI,
+    upstream_model="qwen3:4b-instruct-2507-q4_K_M",
+    reasoning_efforts=("none",),
+    default_reasoning_effort="none",
+    supports_function_calling=True,
+    publish_limits=True,
+)
+RUGGED_LOCAL_GEMMA4_E4B = Route(
+    Model("gemma4-e4b", display_name="Gemma 4 E4B", limits=_RUGGED_LOCAL_LIMITS),
+    RUGGED_LOCAL_OPENAI,
+    upstream_model="gemma4:e4b",
+    reasoning_efforts=("none",),
+    default_reasoning_effort="none",
+    publish_limits=True,
+)
+RUGGED_LOCAL_GEMMA4_E2B_IT_QAT = Route(
+    Model("gemma4-e2b-it-qat", display_name="Gemma 4 E2B IT QAT", limits=_RUGGED_LOCAL_LIMITS),
+    RUGGED_LOCAL_OPENAI,
+    upstream_model="gemma4:e2b-it-qat",
+    reasoning_efforts=("none",),
+    default_reasoning_effort="none",
+    supports_function_calling=True,
+    publish_limits=True,
+)
+RUGGED_LOCAL_CANDIDATE_ROUTES = (RUGGED_LOCAL_QWEN3_4B, RUGGED_LOCAL_GEMMA4_E4B, RUGGED_LOCAL_GEMMA4_E2B_IT_QAT)
+
 
 @dataclass(frozen=True)
 class OllamaRoutes:
@@ -732,6 +775,7 @@ MISTRAL_ROUTES = tuple(Route(model, MISTRAL_CHAT, publish_limits=True) for model
 # or metadata. Hidden harness-compatibility aliases are not advertised as model entries.
 SERVED_ROUTES: tuple[Route | RouteAlias, ...] = (
     *_OLLAMA_PROXY_ROUTES,
+    *RUGGED_LOCAL_CANDIDATE_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
     # TODO(#9574): Tana limits are unknown for this reverse-engineered gateway.
     # Restore exposure with its key lane/fallback and wrapper only after review.

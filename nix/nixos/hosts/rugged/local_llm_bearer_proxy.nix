@@ -75,6 +75,9 @@ in
         }
       }
     '';
+    # Nginx's ExecReload validates the config before signaling workers, so
+    # invalid rotated config leaves the current workers using the old token.
+    sops.templates."rugged-local-llm-nginx.conf".reloadUnits = [ "nginx.service" ];
 
     services.nginx = {
       enable = true;
