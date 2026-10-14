@@ -8,6 +8,7 @@ from agentplane.grpc_calls import bearer, raise_status
 from agentplane.proto import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 
 # gazelle:include_dep @pypi//grpcio
+# gazelle:include_dep @pypi//protobuf
 
 
 class SessionDispatcherClient:

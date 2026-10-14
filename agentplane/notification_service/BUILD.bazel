@@ -443,5 +443,6 @@ py_library(
         "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/proto:session_dispatcher_pb2_grpc",
         "@pypi//grpcio",
+        "@pypi//protobuf",
     ],
 )
