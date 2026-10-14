@@ -695,7 +695,7 @@ flowchart TD
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
     INCARNATION_UID_REQUIRED[Blocked: the runner rejects a Welcome without the incarnation UID]
-    RUNNER_FACTS_ON_LEASE[Candidate: the runner publishes stage, busy and boot facts on the connection Lease]
+    RUNNER_FACTS_ON_LEASE[Candidate: the runner publishes stage, idle and boot facts on the connection Lease]
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     CONTROL_SERVICE_OWNER[Candidate: the controller creates the Sandbox's control Service]
@@ -747,7 +747,6 @@ flowchart TD
     NOTIFICATIONS_VIA_DISPATCHER --> RUNNER_PROXY_SENDER_RESTRICT
     DISPATCHER_WAKE_ON_SEND --> SUSPENDED_COMPOSER
     APP_SENDS_VIA_DISPATCHER --> SUSPENDED_COMPOSER
-    DISPATCHER_WAKE_ON_SEND -. pending mark the controller reads .-> SANDBOX_IDLE_EXPIRY
     DISPATCHER_CORE -. shares delivery semantics .-> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> RESUME_CREDENTIALS_VALID
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
@@ -908,12 +907,12 @@ idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one,
 [teardown](../sandbox_service/API.md#teardown) and the seal. What a resume gets back of the
 workspace depends on `WORKSPACE_VOLUME`. Idle is a Sandbox-level fact: every Session in the Sandbox
 is idle. The control design (`docs/adr_sandbox_session_control.md`) puts the policy in the Sandbox
-controller: `spec.idleSuspendAfter`, a timer the controller measures from the busy and idle
-transitions the runner publishes (`RUNNER_FACTS_ON_LEASE`), so it needs no History Service and
+controller: `spec.idleSuspendAfter`, a timer the controller measures from the `idleSince`
+fact the runner publishes (`RUNNER_FACTS_ON_LEASE`), so it needs no History Service and
 survives a controller restart. Busy covers a turn, a command, a background or durable process and an
-attached terminal or console, or a Sandbox is suspended under a running job. The suspend request can
-carry an "only if idle since" precondition; a Sandbox the Session Dispatcher holds pending messages for
-(`DISPATCHER_WAKE_ON_SEND`) is not suspended. Suspension waits for the Sandbox bootstrap and every
+attached terminal or console, or a Sandbox is suspended under a running job. Automatic suspension is
+`Quiesce` with `if_idle_since`: the runner refuses it on a token mismatch or when busy, and there is
+no ingress-health gate. Suspension waits for the Sandbox bootstrap and every
 Session's setup; deletion does not wait. A Sandbox that is quiescing refuses resume. Action Service boxes are `ACTION_BOX_IDLE_REAPER`'s, which
 only ever deletes.
 
@@ -946,16 +945,19 @@ every environment, and in the VM guest's runner wheel pin.** Removes the missing
 adoption (marked by its `CLEANUP` tombstone) goes. Pin ordering is not relied on before this; afterwards a
 runner too old to know the field cannot meet a gateway that no longer sends it.
 
-### `RUNNER_FACTS_ON_LEASE` — the runner publishes stage, busy and boot facts on the connection Lease
+### `RUNNER_FACTS_ON_LEASE` — the runner publishes stage, idle and boot facts on the connection Lease
 
 **Candidate; the Lease already carries the incarnation UID.** The one
-transport several nodes share: the runner reports facts on the control stream, and the gateway
+transport several nodes share: the runner reports facts on the control stream in the `Heartbeat`'s
+optional `RunnerFacts`, sent on change and on the first `Heartbeat` after connect, and the gateway
 replica holding the connection writes them as annotations on the Sandbox-owned connection Lease,
-on transitions only and stamped with the incarnation UID, clearing them when a different
-incarnation connects. Facts: the seal stage (draining, flushing, sealed), the Sandbox's aggregate busy (any Session busy, or a background process or attached terminal running) with the time it
-became idle (`SANDBOX_IDLE_EXPIRY`), and the bootstrap result (`BOOTSTRAP_PROGRESS_CONTRACT`). Busy and idle
-facts ride the regular 15-second renewal write, so they add no etcd writes. The
-runner republishes its stage on reconnect so a gateway rollout loses nothing. A first-connection
+stamped with the incarnation UID, clearing them when a different incarnation connects. Facts: the
+seal stage (draining, flushing, sealed), when the Sandbox last went idle (`idleSince`, set only
+while no Session is busy and no background process or attached terminal runs; there is no `busy`
+fact) for `SANDBOX_IDLE_EXPIRY`, and the bootstrap result (`BOOTSTRAP_PROGRESS_CONTRACT`). The
+gateway writes stage transitions to the Lease at once and coalesces only `idleSince` into the
+regular 15-second renewal write, so it adds no etcd writes. The runner republishes its facts on
+reconnect so a gateway rollout loses nothing. A first-connection
 annotation, persisted, tells `NeverRan` (a Sandbox whose runner has not connected yet) from a runner
 that is down. Order: the controller reads the annotations before the gateway starts writing them.
 
@@ -1044,9 +1046,7 @@ a notification, not an agent's message unless `AGENT_MESSAGE_RECEPTION` decides 
 `StopRunnerSession` never wake a Sandbox; they are no-ops on a suspended one. Also here:
 rate limits and per-sender quotas, since a resume starts a Pod or VM and every harness; resuming
 only the Sessions that have pending work; a bounded wait with a visible reason when the volume's
-node is down or full; a pending mark, a Dispatcher-owned Lease per Sandbox that the controller reads (the Dispatcher
-never edits the Sandbox), while messages are pending so the controller does not suspend it
-(`SANDBOX_IDLE_EXPIRY`); and `spec.wakeOnSend: false`, which holds a Sandbox suspended (sends queue
+node is down or full; and `spec.wakeOnSend: false`, which holds a Sandbox suspended (sends queue
 and do not wake it) and doubles as the feature gate. Deletion beats everything. Test a message
 to a suspended Sandbox, one arriving while it seals, a failed revival and a resume storm.
 
