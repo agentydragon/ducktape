@@ -708,6 +708,8 @@ func TestAQuiescedStageSealsTheSandboxWithoutAskingTheRunner(t *testing.T) {
 
 func TestAQuiescingRunnerIsAskedAgainOnlyAtTheDeadline(t *testing.T) {
 	r, c := runningWithRunner(t)
+	// The Running condition's transition time comes from the wall clock.
+	r.Now = time.Now
 	sealer := r.Sealer.(*fakeSealer)
 	sealer.result = SealResult{Quiescing: true}
 	setRunning(t, c, false)
@@ -779,6 +781,8 @@ func TestResumingWhileTheRunnerQuiescesFinishesTheQuiesceFirst(t *testing.T) {
 
 func TestARunnerThatHasNotFinishedQuiescingIsNotTakenForQuiesced(t *testing.T) {
 	r, c := runningWithRunner(t)
+	// The Running condition's transition time comes from the wall clock.
+	r.Now = time.Now
 	sealer := r.Sealer.(*fakeSealer)
 	sealer.result = SealResult{Quiescing: true}
 	setRunning(t, c, false)
