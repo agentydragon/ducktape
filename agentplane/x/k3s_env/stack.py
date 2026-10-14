@@ -6,6 +6,7 @@ first Deployment that does not, with the Pod states and logs of whatever did not
 """
 
 import contextlib
+import io
 import json
 import logging
 import os
@@ -64,17 +65,11 @@ def _shadow_kernel_sysctls(work: Path) -> None:
     run("mount", "--bind", str(fake), "/proc/sys/kernel")
 
 
-def _read_member(archive: tarfile.TarFile, name: str) -> bytes:
-    member = archive.extractfile(name)
-    assert member
-    return member.read()
-
-
-def _layer_sizes(tarball: Path) -> dict[str, int]:
-    """Layer path (a content digest in docker-format tarballs) to size, per `manifest.json`."""
-    with tarfile.open(tarball) as archive:
-        manifest = json.loads(_read_member(archive, "manifest.json"))
-        return {layer: archive.getmember(layer).size for image in manifest for layer in image["Layers"]}
+def _archive_json(archive: tarfile.TarFile, name: str, value: object) -> None:
+    encoded = json.dumps(value).encode()
+    entry = tarfile.TarInfo(name)
+    entry.size = len(encoded)
+    archive.addfile(entry, io.BytesIO(encoded))
 
 
 class K3s:
@@ -166,27 +161,59 @@ class K3s:
             json.dumps({"spec": {"template": {"spec": {"hostNetwork": True, "dnsPolicy": "Default"}}}}),
         )  # fmt: skip
 
-    def import_images(self, tarballs: list[Path]) -> None:
-        layers: dict[str, int] = {}
-        for tarball in tarballs:
-            layers.update(_layer_sizes(tarball))
-        print(
-            f"{len(layers)} distinct layers, {sum(layers.values()) >> 20} MiB compressed across {len(tarballs)} images"
-        )
-        for tarball in tarballs:
-            print(f"importing {tarball.parent.name} ({tarball.stat().st_size >> 20} MiB)")
-            print(run("df", "-h", "/var/lib", "/tmp", check=False))
-            run(
-                str(self.binary),
-                "ctr",
-                "--address",
-                "/run/k3s/containerd/containerd.sock",
-                "-n",
-                "k8s.io",
-                "images",
-                "import",
-                str(tarball),
-            )
+    def import_images(self, references: list[Path]) -> None:
+        """Stream Bazel OCI layouts to containerd, preserving blob digests and sharing duplicate blobs."""
+        if not references:
+            raise ValueError("No Bazel OCI layouts found in runfiles")
+        manifests = []
+        blobs: dict[str, Path] = {}
+        for reference in references:
+            layout = get_required_path(reference.read_text().strip())
+            name = reference.stem.removesuffix("_layout")
+            repository = "runner" if name == "runner" else "agentplane-" + name.replace("_", "-")
+            tag = f"git.allegedly.works/ducktape-ci/{repository}:unset"
+            index = json.loads((layout / "index.json").read_text())
+            for descriptor in index["manifests"]:
+                descriptor.setdefault("annotations", {})["org.opencontainers.image.ref.name"] = tag
+                manifests.append(descriptor)
+            for blob in (layout / "blobs").glob("*/*"):
+                blobs.setdefault(blob.relative_to(layout).as_posix(), blob)
+        print(f"importing {len(references)} OCI layouts with {len(blobs)} distinct blobs")
+        with tempfile.TemporaryFile() as output:
+            with subprocess.Popen(
+                [
+                    str(self.binary),
+                    "ctr",
+                    "--address",
+                    "/run/k3s/containerd/containerd.sock",
+                    "-n",
+                    "k8s.io",
+                    "images",
+                    "import",
+                    "-",
+                ],
+                stdin=subprocess.PIPE,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+            ) as loader:
+                assert loader.stdin is not None
+                try:
+                    with loader.stdin, tarfile.open(fileobj=loader.stdin, mode="w|", dereference=True) as archive:
+                        _archive_json(archive, "oci-layout", {"imageLayoutVersion": "1.0.0"})
+                        _archive_json(archive, "index.json", {"schemaVersion": 2, "manifests": manifests})
+                        for name, blob in sorted(blobs.items()):
+                            archive.add(blob, arcname=name, recursive=False)
+                except BrokenPipeError:
+                    loader.wait()
+                    output.seek(0)
+                    logger.exception("containerd closed its import stream: %s", output.read().decode()[-6000:])
+                    raise
+                code = loader.wait()
+            output.seek(0)
+            log = output.read().decode()
+            if code:
+                raise RuntimeError(f"containerd image import exited {code}: {log[-6000:]}")
+            print(log)
 
     def install_cnpg_operator(self) -> None:
         """The release manifest of the operator the cluster runs (`cluster/cdk8s/cnpg_operator.py`)."""
@@ -296,14 +323,14 @@ def running_stack(*, litellm_key: str | None) -> Iterator[Stack]:
     None leaves it at the cluster-internal Service, which does not exist here, so no turn can run."""
     manifest = get_required_path("_main/cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml")
     crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
-    tarballs = sorted(get_required_path("_main/agentplane/x/k3s_env").glob("*_load/tarball.tar"))
+    layouts = sorted(get_required_path("_main/agentplane/x/k3s_env").glob("*_layout.rloc"))
 
     work = Path(tempfile.mkdtemp())
     k3s = K3s(work)
     process = k3s.start()
     try:
         ca_cert, ca_key = _openssl_ca(work)
-        k3s.import_images(tarballs)
+        k3s.import_images(layouts)
         for crd in crds:
             k3s.kubectl("apply", "-f", str(crd))
         k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(render.kubevirt_stub_crds()))
