@@ -310,7 +310,7 @@ async def test_a_rate_limited_wake_stays_queued_without_patching_until_its_retry
 
     sandbox_object = cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]
     assert sandbox_object["spec"]["running"] is False
-    assert sandbox_object["spec"]["wakeGeneration"] == 0
+    assert sandbox_object["spec"].get("wakeGeneration", 0) == 0
     assert (await store.get_dispatch("rate-limited")).state is DeliveryState.QUEUED_IN_DISPATCHER
 
     await wait_for(store, "rate-limited", DeliveryState.QUEUED_IN_DISPATCHER, Reason.SANDBOX_RESUMING)
@@ -332,7 +332,7 @@ async def test_a_wake_eligible_legacy_row_without_caller_identity_fails_closed(
     await wait_for(store, "legacy-wake", DeliveryState.QUEUED_IN_DISPATCHER, Reason.WAKE_CALLER_UNKNOWN)
     sandbox_object = cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]
     assert sandbox_object["spec"]["running"] is False
-    assert sandbox_object["spec"]["wakeGeneration"] == 0
+    assert sandbox_object["spec"].get("wakeGeneration", 0) == 0
 
 
 async def test_concurrent_queued_sends_share_one_sandbox_resume(
@@ -483,8 +483,10 @@ async def test_a_wake_marker_survives_dispatcher_restart_before_the_patch(
     original_wake = cluster.inventory.wake_for_send
     interrupted = asyncio.Event()
 
-    async def stop_after_marker(name: str, *, uid: str) -> bool:
-        del name, uid
+    async def stop_after_marker(
+        name: str, *, uid: str, before_resume: Callable[[int], Awaitable[None]] | None = None
+    ) -> bool:
+        del name, uid, before_resume
         interrupted.set()
         raise asyncio.CancelledError
 
