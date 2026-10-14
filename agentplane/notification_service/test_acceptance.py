@@ -413,10 +413,10 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                             filter=session_dispatcher_pb2.DispatchFilter(session_id=session_id)
                         ),
                         metadata=await bearer(dispatcher.token_file),
-                        timeout=30,
+                        timeout=5,
                     )
                     try:
-                        async with asyncio.timeout(30):
+                        async with asyncio.timeout(5):
                             async for response in watch:
                                 dispatch = response.dispatch
                                 if dispatch.command_id != attempted_id:
