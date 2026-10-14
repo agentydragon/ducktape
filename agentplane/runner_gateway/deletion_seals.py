@@ -18,6 +18,9 @@ from agentplane.sandbox_resource import Sandbox
 from util.kubernetes import CustomObjectsClient
 from util.kubernetes_watch import ListWatch, WatchedKind, apply_to
 
+# The generated `runner_pb2` stubs import protobuf; mypy reads stubs only from direct deps.
+# gazelle:include_dep @pypi//protobuf
+
 logger = logging.getLogger(__name__)
 
 FIELD_MANAGER = "agentplane-runner-gateway"
