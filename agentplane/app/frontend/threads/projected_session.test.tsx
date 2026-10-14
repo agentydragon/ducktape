@@ -372,7 +372,7 @@ it("sends the draft on Enter and clears it", async () => {
   const bubble = container.querySelector<HTMLElement>('.agentplane-user-bubble[data-message-phase="local"]');
   expect(bubble?.querySelector(".agentplane-verbatim")?.textContent).toBe("hello");
   expect(bubble?.parentElement?.querySelector('[role="status"] button')?.getAttribute("aria-label")).toBe(
-    "Saved in browser · waiting for runner to accept"
+    "Saved in browser · waiting for Dispatcher"
   );
   expect(bubble?.querySelector('[role="status"]')).toBeNull();
   expect(buttonIn(bubble?.parentElement, "Retry")).toBeDefined();
@@ -1017,7 +1017,7 @@ it.each([
   expect(plainOutcome?.getAttribute("title")).toBe(outcome === "noop" ? status : undefined);
   expect(bubble?.parentElement?.querySelector(".agentplane-command-progress") === null).toBe(outcome === "noop");
   expect(bubble?.parentElement?.querySelectorAll(".agentplane-command-light")).toHaveLength(
-    outcome === "effected" || outcome === "noop" ? 0 : 3
+    outcome === "effected" || outcome === "noop" ? 0 : 4
   );
   expect(bubble?.parentElement?.querySelectorAll(".agentplane-command-check")).toHaveLength(
     outcome === "effected" ? 1 : 0
