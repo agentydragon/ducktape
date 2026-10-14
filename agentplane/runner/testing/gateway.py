@@ -49,6 +49,8 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
         self.authorizations: list[str] = []
         self.closes: list[grpc.StatusCode] = []
         self.silences = 0
+        # Every RunnerFacts frame received, oldest first.
+        self.facts: list[runner_control_pb2.RunnerFacts] = []
         # The incarnation each new connection's Welcome names; a test changes it to start another.
         self.incarnation_uid = "test-incarnation"
         self._runner: runner_control_pb2_grpc.RunnerAsyncStub | None = None
@@ -58,6 +60,11 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
         """Until the runner holds a connection and has opened at least `connections` in all."""
         async with asyncio.timeout(30), self._connected:
             await self._connected.wait_for(lambda: self.connections >= connections and self._runner is not None)
+
+    async def wait_bootstrap(self, bootstrap: runner_control_pb2.RunnerFacts.Bootstrap) -> None:
+        """Until the newest facts the runner sent report `bootstrap`."""
+        async with asyncio.timeout(30), self._connected:
+            await self._connected.wait_for(lambda: bool(self.facts) and self.facts[-1].bootstrap == bootstrap)
 
     async def runner(self) -> runner_control_pb2_grpc.RunnerAsyncStub:
         """The runner's service through its newest connection, once it has one."""
@@ -108,6 +115,10 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
                             await send(runner_control_pb2.ServiceFrame(heartbeat=runner_control_pb2.Heartbeat()))
                         case "reply":
                             tunnel.answer(frame.reply)
+                        case "facts":
+                            async with self._connected:
+                                self.facts.append(frame.facts)
+                                self._connected.notify_all()
             finally:
                 if self._runner is runner:
                     self._runner = None
@@ -188,11 +199,7 @@ async def dialing(runner: Runner, gateway: Gateway) -> AsyncIterator[None]:
     async with (
         background(
             RunnerControlClient(
-                RunnerService(runner),
-                target=target,
-                bearer=bearer,
-                timing=TIMING,
-                adopt_incarnation=runner.adopt_incarnation,
+                RunnerService(runner), target=target, bearer=bearer, timing=TIMING, sandbox=runner
             ).run(),
             name="runner control stream",
         ),

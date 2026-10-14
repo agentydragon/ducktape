@@ -14,6 +14,7 @@ from types import TracebackType
 from typing import Self, assert_never
 
 from agentplane.proto import event_log_pb2, runner_pb2
+from agentplane.proto.runner_control_pb2 import RunnerFacts
 from agentplane.runner.adapter import HarnessAdapter
 from agentplane.runner.claude import ClaudeAdapter
 from agentplane.runner.codex import CodexAdapter
@@ -256,15 +257,33 @@ class Runner:
         """Wait for the Sandbox's bootstrap, which `startup` began, and refuse unless it succeeded."""
         if self.config.launch.bootstrap is None:
             return
-        log, execution = await self.initialize(self.config.launch.bootstrap)
-        if execution is not None:
-            # The bootstrap belongs to the Sandbox: abandoning this call must not stop it.
-            await asyncio.shield(execution)
-        outcome = log.since(log.last_sequence - 1)[0]
+        # Idempotent after `startup`; it raises where the selected script differs from the launch file's.
+        await self.initialize(self.config.launch.bootstrap)
+        await self.wait_bootstrap_settled()
+        match self.bootstrap_fact():
+            case RunnerFacts.BOOTSTRAP_INTERRUPTED:
+                raise BootstrapFailedError(
+                    "the Sandbox bootstrap was interrupted and never runs again; use a new Sandbox"
+                )
+            case RunnerFacts.BOOTSTRAP_FAILED:
+                raise BootstrapFailedError("the Sandbox bootstrap failed and never runs again; no session was opened")
+
+    async def wait_bootstrap_settled(self) -> None:
+        """Until the Sandbox's bootstrap has a recorded result or interruption; at once without one."""
+        if self._initialization_task is not None:
+            # The bootstrap belongs to the Sandbox: abandoning this wait must not stop it.
+            await asyncio.wait({self._initialization_task})
+
+    def bootstrap_fact(self) -> RunnerFacts.Bootstrap:
+        """Where the Sandbox's bootstrap stands, as published on the connection Lease."""
+        if self._initialization_log is None:
+            return RunnerFacts.BOOTSTRAP_UNSPECIFIED
+        if not self._initialization_log.ended:
+            return RunnerFacts.BOOTSTRAP_RUNNING
+        outcome = self._initialization_log.since(self._initialization_log.last_sequence - 1)[0]
         if outcome.WhichOneof("observation") == "interrupted":
-            raise BootstrapFailedError("the Sandbox bootstrap was interrupted and never runs again; use a new Sandbox")
-        if outcome.result.exit_code != 0:
-            raise BootstrapFailedError("the Sandbox bootstrap failed and never runs again; no session was opened")
+            return RunnerFacts.BOOTSTRAP_INTERRUPTED
+        return RunnerFacts.BOOTSTRAP_SUCCEEDED if outcome.result.exit_code == 0 else RunnerFacts.BOOTSTRAP_FAILED
 
     async def resume(self, session_id: str) -> Session:
         """Restart a stopped harness on the session's retained spec."""

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from typing import override
 from uuid import uuid4
@@ -192,16 +192,18 @@ class RunnerControlClient:
         target: str,
         bearer: str,
         timing: StreamTiming,
-        adopt_incarnation: Callable[[str | None], None],
+        sandbox: Runner,
     ) -> None:
         self.runner = runner
-        # Told each Welcome's incarnation before the gateway's first call can arrive.
-        self.adopt_incarnation = adopt_incarnation
+        self.sandbox = sandbox
         self.target = target
         # A placeholder the egress proxy swaps for this Pod's control token; the runner never holds it.
         self.bearer = bearer
         self.timing = timing
         self.boot_id = str(uuid4())
+
+    def facts(self) -> runner_control_pb2.RunnerFacts:
+        return runner_control_pb2.RunnerFacts(bootstrap=self.sandbox.bootstrap_fact())
 
     async def run(self) -> None:
         async with local_server(
@@ -234,7 +236,7 @@ class RunnerControlClient:
                     raise StreamLostError(await call.code(), await call.details())
                 if first.WhichOneof("frame") != "welcome":
                     raise StreamLostError(None, f"expected Welcome, got {first.WhichOneof('frame')}")
-                self.adopt_incarnation(first.welcome.incarnation_uid or None)
+                self.sandbox.adopt_incarnation(first.welcome.incarnation_uid or None)
                 welcomed_at = loop.time()
                 logger.info("runner control stream connected at epoch %d", first.welcome.connection_epoch)
                 await self.serve(call, runner)
@@ -280,6 +282,12 @@ class RunnerControlClient:
                         raise StreamLostError(grpc.StatusCode.INVALID_ARGUMENT, f"unexpected {kind} frame")
             raise StreamLostError(await call.code(), await call.details())
 
+        async def publish_facts() -> None:
+            # Each frame replaces the gateway's record of every fact, so each carries all of them.
+            await send(runner_control_pb2.RunnerFrame(facts=self.facts()))
+            await self.sandbox.wait_bootstrap_settled()
+            await send(runner_control_pb2.RunnerFrame(facts=self.facts()))
+
         async def keep_alive() -> None:
             while True:
                 await asyncio.sleep(self.timing.heartbeat_s)
@@ -290,6 +298,7 @@ class RunnerControlClient:
         try:
             async with asyncio.TaskGroup() as tasks:
                 tasks.create_task(read(tasks))
+                tasks.create_task(publish_facts())
                 tasks.create_task(keep_alive())
         except* (grpc.aio.AioRpcError, StreamLostError, TimeoutError) as group:
             # The first failure ends the connection; the rest are its consequences.

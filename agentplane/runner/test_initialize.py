@@ -11,6 +11,7 @@ import grpc
 import pytest_bazel
 
 from agentplane.proto import runner_pb2
+from agentplane.proto.runner_control_pb2 import RunnerFacts
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.initialization import InitializationLog
 from agentplane.runner.testing.driver import RunnerDriver, refusal, running
@@ -73,6 +74,14 @@ async def test_bootstrap_runs_at_runner_start_before_any_session_opens(
     assert finished.result.exit_code == 0
 
 
+async def test_the_gateway_is_told_how_the_bootstrap_stands(config: RunnerConfig, gateway: Gateway) -> None:
+    script = "while [ ! -f continue ]; do sleep 0.01; done\n"
+    async with running(bootstrapped(config, script), gateway):
+        await gateway.control.wait_bootstrap(RunnerFacts.BOOTSTRAP_RUNNING)
+        (config.state_dir / "continue").touch()
+        await gateway.control.wait_bootstrap(RunnerFacts.BOOTSTRAP_SUCCEEDED)
+
+
 async def test_an_initialized_sandbox_refuses_a_different_script_after_restart(
     config: RunnerConfig, gateway: Gateway, spec: runner_pb2.SessionSpec
 ) -> None:
@@ -96,6 +105,7 @@ async def test_a_failed_bootstrap_refuses_every_session_and_never_reruns(
     script = "echo run >> runs\necho broken >&2\nexit 7\n"
     async with running(bootstrapped(config, script), gateway):
         driver = RunnerDriver(gateway)
+        await gateway.control.wait_bootstrap(RunnerFacts.BOOTSTRAP_FAILED)
         first = await refusal(driver.attach("failed-1", spec=spec))
         repeated = await refusal(driver.attach("failed-2", spec=spec))
         sessions = await driver.list_sessions()
