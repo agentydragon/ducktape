@@ -456,6 +456,22 @@ async def test_a_delivery_under_way_makes_the_sandbox_busy_until_it_is_answered(
     assert runner.facts().idle_since.ToNanoseconds() > idle_since.ToNanoseconds()
 
 
+async def test_a_running_session_setup_is_published_even_while_the_sandbox_was_already_busy(
+    runner: Runner, gateway: Gateway, dial: Callable[[], Awaitable[Service]]
+) -> None:
+    await dial()
+    await gateway.control.wait_for_facts(Facts())
+    session = runner.sessions[RUNNING]
+    with runner.delivering():
+        await gateway.control.wait_for_idleness(idle=False)
+        session.setup_state = runner_pb2.SETUP_STATE_RUNNING
+        runner.note_activity()
+        await gateway.control.wait_for_facts(Facts(setups_running=True))
+        session.setup_state = runner_pb2.SETUP_STATE_SUCCEEDED
+        runner.note_activity()
+    assert not runner.facts().setups_running
+
+
 @pytest.mark.parametrize(
     ("script", "bootstrap"), [("exit 0", Facts.BOOTSTRAP_SUCCEEDED), ("exit 3", Facts.BOOTSTRAP_FAILED)]
 )

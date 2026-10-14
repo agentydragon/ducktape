@@ -754,6 +754,31 @@ func TestSuspensionWaitsForARunningBootstrapAndThenQuiesces(t *testing.T) {
 	}
 }
 
+func TestSuspensionWaitsForARunningSetup(t *testing.T) {
+	r, c := runningWithRunner(t)
+	var lease coordinationv1.Lease
+	if err := c.Get(context.Background(), client.ObjectKey{Namespace: namespace, Name: sandboxName + "-runner"}, &lease); err != nil {
+		t.Fatal(err)
+	}
+	lease.Annotations[SetupsRunningAnnotation] = "true"
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+	setRunning(t, c, false)
+	reconcileOnce(t, r)
+	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 || runningReason(t, c) != "SuspendPending" {
+		t.Fatalf("quiesce calls = %d, Running reason = %s, want 0 and SuspendPending", calls, runningReason(t, c))
+	}
+	delete(lease.Annotations, SetupsRunningAnnotation)
+	if err := c.Update(context.Background(), &lease); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if runningReason(t, c) != "Quiescing" {
+		t.Errorf("Running reason = %s once the setup ended, want Quiescing", runningReason(t, c))
+	}
+}
+
 func TestDeletionDoesNotWaitForARunningBootstrap(t *testing.T) {
 	r, c := runningWithRunner(t)
 	publishBootstrap(t, c, "running")

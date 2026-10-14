@@ -114,6 +114,8 @@ message RunnerFacts {
   // track it.
   google.protobuf.Timestamp idle_since = 2;
   Bootstrap bootstrap = 3;
+  // Some Session's setup script is running. A suspend waits for it to finish.
+  bool setups_running = 4;
 }
 
 message OpenSessionRequest {

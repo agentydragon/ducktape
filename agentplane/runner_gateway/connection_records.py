@@ -37,7 +37,8 @@ CONNECTION_EPOCH_ANNOTATION = f"{GROUP}/connection-epoch"
 QUIESCE_STAGE_ANNOTATION = f"{GROUP}/quiesce-stage"
 IDLE_SINCE_ANNOTATION = f"{GROUP}/idle-since"
 BOOTSTRAP_ANNOTATION = f"{GROUP}/bootstrap"
-_FACT_ANNOTATIONS = (QUIESCE_STAGE_ANNOTATION, IDLE_SINCE_ANNOTATION, BOOTSTRAP_ANNOTATION)
+SETUPS_RUNNING_ANNOTATION = f"{GROUP}/setups-running"
+_FACT_ANNOTATIONS = (QUIESCE_STAGE_ANNOTATION, IDLE_SINCE_ANNOTATION, BOOTSTRAP_ANNOTATION, SETUPS_RUNNING_ANNOTATION)
 # Selects the Leases the cache holds; other controllers keep Leases in the Sandbox namespace too.
 CONNECTION_LABEL = f"{GROUP}/runner-connection"
 LEASE_DURATION_S = 30
@@ -76,6 +77,8 @@ def fact_annotations(facts: runner_control_pb2.RunnerFacts) -> dict[str, str]:
         annotations[IDLE_SINCE_ANNOTATION] = facts.idle_since.ToDatetime(tzinfo=UTC).isoformat()
     if facts.bootstrap != runner_control_pb2.RunnerFacts.BOOTSTRAP_UNSPECIFIED:
         annotations[BOOTSTRAP_ANNOTATION] = _BOOTSTRAPS[facts.bootstrap]
+    if facts.setups_running:
+        annotations[SETUPS_RUNNING_ANNOTATION] = "true"
     return annotations
 
 

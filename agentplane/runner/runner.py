@@ -116,6 +116,8 @@ class Runner:
         self._deliveries = 0
         # When the Sandbox last became idle; None while busy.
         self._idle_since: Timestamp | None = None
+        # The setups_running fact as last evaluated, so a change publishes.
+        self._setups_published = False
 
     def facts(self) -> runner_control_pb2.RunnerFacts:
         """What the Runner Gateway records about this runner on the connection Lease."""
@@ -126,7 +128,11 @@ class Runner:
             facts.bootstrap = self._bootstrap_state(log)
         if self._idle_since is not None:
             facts.idle_since.CopyFrom(self._idle_since)
+        facts.setups_running = self._setups_running()
         return facts
+
+    def _setups_running(self) -> bool:
+        return any(session.setup_state == runner_pb2.SETUP_STATE_RUNNING for session in self.sessions.values())
 
     @contextmanager
     def delivering(self) -> Iterator[None]:
@@ -148,14 +154,17 @@ class Runner:
             or (self._initialization_log is not None and not self._initialization_log.ended)
             or any(session.busy for session in self.sessions.values())
         )
+        changed = (setups := self._setups_running()) != self._setups_published
+        self._setups_published = setups
         if busy and self._idle_since is not None:
             self._idle_since = None
+            changed = True
         elif not busy and self._idle_since is None:
             self._idle_since = Timestamp()
             self._idle_since.GetCurrentTime()
-        else:
-            return
-        self.facts_changed.set()
+            changed = True
+        if changed:
+            self.facts_changed.set()
 
     def _quiesce_stage(self) -> runner_control_pb2.RunnerFacts.QuiesceStage:
         sessions = [self.sessions[session_id] for session_id in self.store.session_ids() if session_id in self.sessions]

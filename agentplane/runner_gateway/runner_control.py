@@ -225,9 +225,10 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
                                 grpc.StatusCode.INVALID_ARGUMENT, f"unknown runner fact value {error}"
                             ) from error
                         previous = facts or runner_control_pb2.RunnerFacts()
-                        if (previous.quiesce_stage, previous.bootstrap) != (
+                        if (previous.quiesce_stage, previous.bootstrap, previous.setups_running) != (
                             frame.heartbeat.facts.quiesce_stage,
                             frame.heartbeat.facts.bootstrap,
+                            frame.heartbeat.facts.setups_running,
                         ):
                             urgent.set()
                         facts = frame.heartbeat.facts

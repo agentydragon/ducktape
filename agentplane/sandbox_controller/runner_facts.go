@@ -17,6 +17,8 @@ const (
 	// `running`, `succeeded`, `failed` or `interrupted`; absent when no bootstrap is configured or
 	// none has been reported.
 	BootstrapAnnotation = "agentplane.allegedly.works/bootstrap"
+	// `true` while some Session's setup script runs; absent otherwise.
+	SetupsRunningAnnotation = "agentplane.allegedly.works/setups-running"
 )
 
 // QuiesceStage is how far the runner has got in quiescing.
@@ -51,6 +53,8 @@ type RunnerFacts struct {
 	// Nil while the Sandbox is busy or the runner does not track activity.
 	IdleSince *time.Time
 	Bootstrap BootstrapState
+	// Some Session's setup script is running.
+	SetupsRunning bool
 }
 
 // readRunnerFacts reads the facts the Lease holds for the incarnation with this UID. A Lease whose
@@ -87,6 +91,7 @@ func readRunnerFacts(lease *coordinationv1.Lease, incarnationUID string) (Runner
 	default:
 		facts.Bootstrap = BootstrapStateUnrecognised
 	}
+	facts.SetupsRunning = annotations[SetupsRunningAnnotation] == "true"
 	if since, ok := annotations[IdleSinceAnnotation]; ok {
 		idleSince, err := time.Parse(time.RFC3339, since)
 		if err != nil {
@@ -101,7 +106,7 @@ func readRunnerFacts(lease *coordinationv1.Lease, incarnationUID string) (Runner
 // carry the same facts and are not changes.
 func runnerFactsChanged(previous, current *coordinationv1.Lease) bool {
 	for _, key := range []string{
-		PodUIDAnnotation, QuiesceStageAnnotation, IdleSinceAnnotation, BootstrapAnnotation,
+		PodUIDAnnotation, QuiesceStageAnnotation, IdleSinceAnnotation, BootstrapAnnotation, SetupsRunningAnnotation,
 	} {
 		if previous.Annotations[key] != current.Annotations[key] {
 			return true

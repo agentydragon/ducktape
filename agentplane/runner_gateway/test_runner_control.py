@@ -19,6 +19,7 @@ from agentplane.runner_gateway.connection_records import (
     POD_UID_ANNOTATION,
     QUIESCE_STAGE_ANNOTATION,
     RUNNER_BOOT_ID_ANNOTATION,
+    SETUPS_RUNNING_ANNOTATION,
     ConnectionHolder,
     ConnectionLeases,
     RecordOwner,
@@ -297,6 +298,7 @@ async def test_the_runners_facts_reach_the_lease_and_replace_the_last_ones(
                 quiesce_stage=runner_control_pb2.RunnerFacts.QUIESCE_STAGE_FLUSHING,
                 idle_since=idle_since,
                 bootstrap=runner_control_pb2.RunnerFacts.BOOTSTRAP_SUCCEEDED,
+                setups_running=True,
             )
         )
         await read_until_annotated(call, cluster, BOOTSTRAP_ANNOTATION, "succeeded")
@@ -306,6 +308,7 @@ async def test_the_runners_facts_reach_the_lease_and_replace_the_last_ones(
             QUIESCE_STAGE_ANNOTATION: "flushing",
             IDLE_SINCE_ANNOTATION: "2026-10-14T01:02:03+00:00",
             BOOTSTRAP_ANNOTATION: "succeeded",
+            SETUPS_RUNNING_ANNOTATION: "true",
         }
         # Busy again: no idle time, and the stage and bootstrap the runner no longer reports are gone.
         await call.write(facts_frame())
