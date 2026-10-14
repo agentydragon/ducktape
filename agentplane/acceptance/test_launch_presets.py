@@ -44,6 +44,12 @@ async def test_public_coder_preset_launches_an_initialized_editable_codex_thread
     first_id = uuid4()
     opening = await client.open_session(view.name, first_id, overrides={"instructions": INSTRUCTIONS})
     assert opening.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
+    retried = await client.open_session(view.name, first_id, overrides={"instructions": INSTRUCTIONS})
+    assert (retried.session_id, retried.sandbox, retried.created_at) == (
+        opening.session_id,
+        opening.sandbox,
+        opening.created_at,
+    )
     first = await client.wait_for_session_admission(
         view.name, first_id, opening=opening, timeout_s=RUNNER_ANSWERS_SECONDS
     )
