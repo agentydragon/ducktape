@@ -136,6 +136,13 @@ DataVolume declaration is absent. The VM container disk is
 
 Both controllers run `devel-20261014210304-b2c581c` and are Ready (staging 2/2, testing 1/1).
 Both namespaces contain no Sandboxes, VirtualMachines, VMIs or DataVolumes. Only shared PostgreSQL
-PVCs remain: staging `postgres-1`/`postgres-2`, testing `postgres-1`. The old workspace path has no
-live consumers; its code retirement can proceed after a repository-wide caller check. No workloads
-were created or deleted during this verification, and this is not a staging workload acceptance run.
+PVCs remain: staging `postgres-1`/`postgres-2`, testing `postgres-1`. The repository-wide caller
+check found no production template consumers of the old workspace path. The follow-up removes its
+stale acceptance comparison and documentation while preserving generic DataVolume support for
+custom VM templates and the separate fixture-local KubeVirt experiment. No workloads were created
+or deleted during this verification, and this is not a staging workload acceptance run.
+
+The live `test_storage_deployed` target now exercises only the active Pod DirectoryTree and VM
+RawDiskImage workspace paths. The legacy DataVolume row above remains historical evidence; generic
+DataVolume disks in custom VM templates and the separate fixture-local KubeVirt experiment are not
+covered by that retired comparison.

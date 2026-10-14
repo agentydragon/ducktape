@@ -265,7 +265,7 @@ func TestInvalidWorkspaceDeclarationStartsNothing(t *testing.T) {
 	}
 }
 
-func TestLegacyVMWorkspaceClaimStillResumesWithoutManagedDeclaration(t *testing.T) {
+func TestCustomVMDataVolumeWorkspaceResumesWithoutManagedDeclaration(t *testing.T) {
 	legacy := &corev1.PersistentVolumeClaim{ObjectMeta: metav1.ObjectMeta{Namespace: namespace, Name: WorkspaceVolumeName(sandboxName), UID: "legacy-dv-pvc"}}
 	r, c := newReconciler(t, true, testVMTemplate("guest:v1"), legacy)
 	reconcileOnce(t, r)
@@ -274,7 +274,7 @@ func TestLegacyVMWorkspaceClaimStillResumesWithoutManagedDeclaration(t *testing.
 	setRunning(t, c, true)
 	reconcileOnce(t, r)
 	if !vmRunning(getVM(t, c)) || getWorkspacePVC(t, c).UID != legacy.UID || workspaceBinding(getSandbox(t, c)) != nil {
-		t.Fatal("legacy DataVolume claim was adopted or blocked")
+		t.Fatal("custom VM DataVolume workspace was adopted or blocked")
 	}
 }
 
@@ -334,7 +334,7 @@ func TestDirectoryWorkspaceSurvivesCompatibleVMToPodTransition(t *testing.T) {
 	}
 }
 
-func TestKindChangeCannotDiscardLegacyDataVolumeDisks(t *testing.T) {
+func TestKindChangeCannotDiscardCustomVMDataVolumeDisks(t *testing.T) {
 	r, c := newReconciler(t, true, testVMTemplate("guest:v1"))
 	reconcileOnce(t, r)
 	setRunning(t, c, false)

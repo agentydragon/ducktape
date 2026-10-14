@@ -472,8 +472,8 @@ py_test(
 
 py_test(
     name = "test_storage_deployed",
-    # Three bounded fresh fixtures, two involving guest boots and normal stop/start. CI does
-    # not select this target; it needs the operator host's kubeconfig and testing ingress.
+    # Two bounded fresh fixtures; the VM case exercises guest boot and normal stop/start. CI
+    # does not select this target; it needs the operator host's kubeconfig and testing ingress.
     timeout = "eternal",
     srcs = ["test_storage_deployed.py"],
     env_inherit = [

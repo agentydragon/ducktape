@@ -65,8 +65,8 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
   A changed layout, incompatible attachment, conflicting identity or omission of a retained workspace
   refuses the next start with `VolumeLayoutMismatch`, before replacing a workload. No conversion or
   reformatting occurs. [Storage contract](../docs/sandbox_storage.md).
-- A kind change cannot discard a retained VM's DataVolume disks. Legacy templates without a managed
-  workspace declaration continue to use their own DataVolumes across stop/start.
+- A kind change cannot discard a retained VM's DataVolume disks. Custom VM templates without a
+  managed workspace declaration continue to use their own DataVolumes across stop/start.
 - The VM, its VMI and its virt-launcher Pod carry the Sandbox label. The controller does not set
   the launcher's ServiceAccount: KubeVirt sets one only from a volume the guest could read, so the
   namespace's launcher admission sets the Sandbox's.

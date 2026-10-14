@@ -50,10 +50,11 @@ lost.
 - The state PVC reaches the guest over virtiofs at `/state`, laid out as in a runner Pod. KubeVirt's
   `virtiofsd` is uid/gid 107 with no capabilities, so only guest root and a user with uid and gid 107
   can write there; the runner runs as root and harnesses as 107. Upstream has no rootful alternative.
-- The deployed `runner-vm` template still uses a blank DataVolume for its workspace. That disk is
-  VM-owned and survives stop/start, but not deletion of the VM. Templates can instead declare a
-  Sandbox-owned workspace with an explicit layout; rollout is separate from controller support.
-  The guest formats its workspace disk only when it reads as zeros end to end
+- The deployed `runner-vm` template declares a Sandbox-owned `RawDiskImage` workspace with ext4.
+  Its claim survives stop/start and replacement of the VM object. The Pod runner uses a
+  Sandbox-owned `DirectoryTree` workspace. Custom VM templates may still declare generic
+  DataVolume disks; those remain VM-owned and are not managed workspace declarations. The guest
+  formats its workspace disk only when it reads as zeros end to end
   and fails on any other unrecognised content, so a disk that lost its filesystem is left for a person.
   The zero scan reads in 16 MiB chunks, about 1.5 GB/s; `cmp` takes 45 s for 10 GiB on the guest's
   single vCPU because it issues millions of tiny reads.

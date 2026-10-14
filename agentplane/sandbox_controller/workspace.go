@@ -109,7 +109,7 @@ func (r *Reconciler) ensureWorkspaceVolume(ctx context.Context, sandbox *Sandbox
 		binding = sandbox.Status.Volumes.Workspace
 	}
 	if workspace == nil {
-		// Legacy VM DataVolume claims have the same name but are not a managed workspace.
+		// A VM template's DataVolume claim is not a managed workspace claim.
 		if binding != nil || (pvc != nil && metav1.IsControlledBy(pvc, sandbox)) {
 			return layoutMismatch("retained workspace cannot lose its layout declaration"), nil
 		}

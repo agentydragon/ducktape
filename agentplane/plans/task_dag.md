@@ -21,7 +21,7 @@ Dispatch assignments (Rai authorized, Codex reported, 2026-10-14):
 | Worker            | Assigned sequence; each successor retains its node's gates                                                                                                           |
 | ----------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `dispatcher`      | Wake limits, selective revival and failure feedback; state-volume layout; Dispatcher creation/resume and app/wake/UI activation as gates clear.                      |
-| `dag_burndown`    | Isolated k3s CI; typed workspace templates and legacy DataVolume retirement; then declarative VM guest storage. Cutoff evidence in #10493.                           |
+| `dag_burndown`    | Isolated k3s CI; declarative VM guest image rollout and acceptance. Cutoff evidence in #10493.                                                                       |
 | `sandbox_service` | Complete app Session defaults and Dispatcher routing; notification activation and direct sender removal; Sandbox Service config cleanup and eligible legacy cleanup. |
 | Coordinator       | Replica acceptance, integration review and DAG burn-down.                                                                                                            |
 
@@ -685,7 +685,6 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 flowchart TD
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
-    WORKSPACE_DATAVOLUME_RETIRE[Candidate: retire the old DataVolume workspace path]
     STATE_VOLUME_LAYOUT_ROLLOUT[Candidate: activate explicit state layout declarations]
     VM_GUEST_DECLARATIVE_STORAGE[In flight: declarative guest disk initialization]
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
@@ -777,17 +776,6 @@ that is not coverage of every node. `local-path` does not enforce PVC capacity. 
 node affinity and both required volume modes. A node-local volume remains pinned to its node;
 moving it is `WORKSPACE_NODE_PORTABILITY`. This provisioner work does not gate Sandbox ownership
 or the explicit layout contract for workspace PVCs.
-
-### `WORKSPACE_DATAVOLUME_RETIRE` — retire the old DataVolume workspace path
-
-**Candidate; assigned to `dag_burndown`, 2026-10-14.** Typed templates from #10507 have reconciled
-in both environments and no legacy workload consumers remain; see
-[rollout evidence](../acceptance/debug/storage_acceptance.md#typed-template-rollout). Remove the
-superseded blank-DataVolume workspace template, controller support used only by that path and its
-obsolete tests/docs. Search all callers before removing generic DataVolume support. Gate removals
-on pinned caller images where applicable. Do not delete retained data as an incidental cleanup;
-completed existing-data disposition is recorded in [cutoff evidence](workspace_cutoff.md). Testing selected the retained
-Sandbox-owned RawDiskImage path; its evidence is in the same acceptance note.
 
 ### `STATE_VOLUME_LAYOUT_ROLLOUT` — activate explicit state layout declarations
 

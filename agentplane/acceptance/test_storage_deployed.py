@@ -117,24 +117,18 @@ async def _cleanup(name: str, uid: str, claims: list[str]) -> None:
         raise ExceptionGroup("storage fixture cleanup failed", errors)
 
 
-async def _volumes(name: str, uid: str, *, retained: bool) -> dict:
+async def _volumes(name: str, uid: str) -> dict:
     state = await _object("pvc", f"{name}-state")
     workspace = await _object("pvc", f"{name}-workspace")
     assert state["status"]["phase"] == workspace["status"]["phase"] == "Bound"
     assert any(owner["uid"] == uid and owner.get("controller") for owner in state["metadata"]["ownerReferences"])
     record = workspace["metadata"].get("annotations", {}).get(RECORD)
-    if retained:
-        assert any(
-            owner["uid"] == uid and owner.get("controller") for owner in workspace["metadata"]["ownerReferences"]
-        )
-        assert record is not None
-        binding = (await _object(f"sandboxes.{GROUP}", name))["status"]["volumes"]["workspace"]
-        assert binding["name"] == workspace["metadata"]["name"]
-        assert binding["uid"] == workspace["metadata"]["uid"]
-        assert binding["layout"] == json.loads(record)["layout"]
-    else:
-        assert record is None
-        assert all(owner["uid"] != uid for owner in workspace["metadata"]["ownerReferences"])
+    assert any(owner["uid"] == uid and owner.get("controller") for owner in workspace["metadata"]["ownerReferences"])
+    assert record is not None
+    binding = (await _object(f"sandboxes.{GROUP}", name))["status"]["volumes"]["workspace"]
+    assert binding["name"] == workspace["metadata"]["name"]
+    assert binding["uid"] == workspace["metadata"]["uid"]
+    assert binding["layout"] == json.loads(record)["layout"]
     return {
         "state": {
             "name": state["metadata"]["name"],
@@ -150,16 +144,11 @@ async def _volumes(name: str, uid: str, *, retained: bool) -> dict:
     }
 
 
-async def _probe(
-    client: Client, name: str, cwd: str, workspace_dir: str, marker: str, *, workspace_exists: bool
-) -> dict:
+async def _probe(client: Client, name: str, cwd: str, workspace_dir: str, marker: str) -> dict:
     state = "/state/storage-acceptance-state"
     workspace = f"{workspace_dir}/storage-acceptance-workspace"
     source = f'set -eu\ntest "$(cat {state})" = {shlex.quote(marker)}\nsha256sum {state}\n'
-    if workspace_exists:
-        source += f'test "$(cat {workspace})" = {shlex.quote(marker)}\nsha256sum {workspace}\n'
-    else:
-        source += f"test ! -e {workspace}\nprintf 'workspace=absent\\n'\n"
+    source += f'test "$(cat {workspace})" = {shlex.quote(marker)}\nsha256sum {workspace}\n'
     if workspace_dir == "/workspace":
         # The Pod image declares awk/coreutils, but not util-linux's findmnt.
         source += "awk '$5 == \"/workspace\" { print; found=1 } END { exit !found }' /proc/self/mountinfo\n"
@@ -193,7 +182,7 @@ async def _probe(
     raise AssertionError("storage probe ended without its setup result")
 
 
-@pytest.mark.parametrize("case", ["pod-directory", "vm-raw", "vm-legacy"])
+@pytest.mark.parametrize("case", ["pod-directory", "vm-raw"])
 async def test_fresh_workspace_storage_survives_replacement(client: Client, base_url: str, case: str) -> None:
     # This test cannot be redirected to staging via the standard client fixture.
     assert base_url.rstrip("/") == "https://agentplane-testing.allegedly.works"
@@ -207,29 +196,18 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
     assert not existing, "serialize this acceptance with other testing Sandbox users"
     quota = json.loads(await _kubectl("get", "resourcequota", "-o", "json"))["items"]
     assert quota[0]["status"]["used"]["requests.storage"] == "5Gi", "unexpected active testing storage"
-    vm, retained = case.startswith("vm"), case != "vm-legacy"
+    vm = case.startswith("vm")
     base = await _object(f"sandboxtemplates.{GROUP}", "runner-vm" if vm else "runner")
     name = f"accept-storage-{case}-{uuid4().hex[:8]}"
     template = name
     spec = copy.deepcopy(base["spec"])
     workspace_dir = "/state/workspaces" if vm else "/workspace"
-    # The guest creates .home before starting its runner, including on a new legacy disk. The
-    # runner requires a child of its workspace root; the mount root itself is forbidden.
+    # The guest creates .home before starting its runner on a fresh disk. The runner requires a
+    # child of its workspace root; the mount root itself is forbidden.
     cwd = f"{workspace_dir}/.home" if vm else workspace_dir
-    if retained:
-        spec["workspaceVolume"] = {
-            "name": "workspace",
-            "claim": {**copy.deepcopy(spec["stateVolume"]["claim"]), "volumeMode": "Filesystem"},
-            "layout": {"type": "RawDiskImage", "filesystem": "ext4"} if vm else {"type": "DirectoryTree"},
-        }
-        if vm:
-            spec["vm"].pop("dataVolumeTemplates")
-            spec["vm"]["template"]["spec"]["volumes"] = [
-                volume for volume in spec["vm"]["template"]["spec"]["volumes"] if volume["name"] != "workspace"
-            ]
-        else:
-            runner = next(container for container in spec["pod"]["spec"]["containers"] if container["name"] == "runner")
-            runner["volumeMounts"].append({"name": "workspace", "mountPath": workspace_dir})
+    if not vm:
+        runner = next(container for container in spec["pod"]["spec"]["containers"] if container["name"] == "runner")
+        runner["volumeMounts"].append({"name": "workspace", "mountPath": workspace_dir})
     marker = f"storage-test-{uuid4().hex}"
     bootstrap = f"set -eu\nprintf '%s\\n' {marker} > /state/storage-acceptance-state\nprintf '%s\\n' {marker} > {workspace_dir}/storage-acceptance-workspace\nsync\n"
     config = await _object("configmap", "agentplane-sandbox-service-config")
@@ -290,21 +268,18 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
         await _condition(name, "Ready")
         await _condition(name, "Bootstrapped")
         old_incarnation = (await _object(f"sandboxes.{GROUP}", name))["status"]["incarnation"]
-        before = await _volumes(name, uid, retained=retained)
+        before = await _volumes(name, uid)
         workload = await _object("virtualmachine" if vm else "pod", name)
         workload_uid = workload["metadata"]["uid"]
         workload_spec = workload["spec"]["template"]["spec"] if vm else workload["spec"]
         attachment = next(volume for volume in workload_spec["volumes"] if volume["name"] == "workspace")
-        if retained:
-            assert attachment["persistentVolumeClaim"]["claimName"] == before["workspace"]["name"]
-        else:
-            assert attachment["dataVolume"]["name"] == before["workspace"]["name"]
+        assert attachment["persistentVolumeClaim"]["claimName"] == before["workspace"]["name"]
         evidence.update(
             before=before,
             old_incarnation=old_incarnation,
             workspace_attachment=attachment,
             original_workload_uid=workload_uid,
-            first_probe=await _probe(client, name, cwd, workspace_dir, marker, workspace_exists=True),
+            first_probe=await _probe(client, name, cwd, workspace_dir, marker),
         )
         if vm:
             assert "\next4 " in evidence["first_probe"]["stdout"]
@@ -315,35 +290,34 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
         # all its disks. VM-object replacement is a separate explicit fixture operation below.
         if vm:
             await _kubectl("wait", f"virtualmachineinstance/{name}", "--for=delete", "--timeout=120s")
-        if retained:
-            assert await _volumes(name, uid, retained=True) == before
-            # Exercise the durable record at the actual resume boundary: an incompatible claim
-            # edit must refuse before starting any replacement or changing retained contents.
-            changed = await _object(f"sandboxtemplates.{GROUP}", template)
-            changed["spec"]["workspaceVolume"]["claim"]["resources"]["requests"]["storage"] = "11Gi"
-            await _kubectl("replace", "-f", "-", body=changed)
-            await _running(name, uid, True)
-            await _kubectl(
-                "wait",
-                f"sandboxes.{GROUP}/{name}",
-                '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=VolumeLayoutMismatch',
-                f"--timeout={BOUND_SECONDS}s",
-            )
-            refused = await _object(f"sandboxes.{GROUP}", name)
-            assert not refused["status"].get("incarnation")
-            assert await _volumes(name, uid, retained=True) == before
-            evidence["incompatible_claim_refused"] = True
-            save()
-            await _suspend(name, uid)
-            changed = await _object(f"sandboxtemplates.{GROUP}", template)
-            changed["spec"] = spec
-            await _kubectl("replace", "-f", "-", body=changed)
+        assert await _volumes(name, uid) == before
+        # Exercise the durable record at the actual resume boundary: an incompatible claim
+        # edit must refuse before starting any replacement or changing retained contents.
+        changed = await _object(f"sandboxtemplates.{GROUP}", template)
+        changed["spec"]["workspaceVolume"]["claim"]["resources"]["requests"]["storage"] = "11Gi"
+        await _kubectl("replace", "-f", "-", body=changed)
+        await _running(name, uid, True)
+        await _kubectl(
+            "wait",
+            f"sandboxes.{GROUP}/{name}",
+            '--for=jsonpath={.status.conditions[?(@.type=="Ready")].reason}=VolumeLayoutMismatch',
+            f"--timeout={BOUND_SECONDS}s",
+        )
+        refused = await _object(f"sandboxes.{GROUP}", name)
+        assert not refused["status"].get("incarnation")
+        assert await _volumes(name, uid) == before
+        evidence["incompatible_claim_refused"] = True
+        save()
+        await _suspend(name, uid)
+        changed = await _object(f"sandboxtemplates.{GROUP}", template)
+        changed["spec"] = spec
+        await _kubectl("replace", "-f", "-", body=changed)
         await _running(name, uid, True)
         await _condition(name, "Ready")
         await _condition(name, "Bootstrapped")
         new_incarnation = (await _object(f"sandboxes.{GROUP}", name))["status"]["incarnation"]
         assert new_incarnation["uid"] != old_incarnation["uid"]
-        after = await _volumes(name, uid, retained=retained)
+        after = await _volumes(name, uid)
         assert after["state"] == before["state"]
         assert after == before
         if vm:
@@ -351,7 +325,7 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
         evidence.update(
             after=after,
             new_incarnation=new_incarnation,
-            resumed_probe=await _probe(client, name, cwd, workspace_dir, marker, workspace_exists=True),
+            resumed_probe=await _probe(client, name, cwd, workspace_dir, marker),
         )
         save()
         if vm:
@@ -364,13 +338,10 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
             assert any(
                 owner["uid"] == uid and owner.get("controller") for owner in halted["metadata"]["ownerReferences"]
             )
-            # Delete only this recorded, fully stopped fixture VM. Sandbox-owned claims survive;
-            # the legacy DataVolume and its PVC are owned by this VM and are garbage-collected.
+            # Delete only this recorded, fully stopped fixture VM. The Sandbox-owned workspace
+            # claim survives replacement of its VM.
             await _delete("virtualmachines", name, workload_uid, group="kubevirt.io", version="v1")
-            if retained:
-                assert await _volumes(name, uid, retained=True) == before
-            else:
-                await _kubectl("wait", f"pvc/{name}-workspace", "--for=delete", "--timeout=120s")
+            assert await _volumes(name, uid) == before
             await _running(name, uid, True)
             await _condition(name, "Ready")
             await _condition(name, "Bootstrapped")
@@ -378,17 +349,14 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
             assert replacement["metadata"]["uid"] != workload_uid
             replacement_incarnation = (await _object(f"sandboxes.{GROUP}", name))["status"]["incarnation"]
             assert replacement_incarnation["uid"] != new_incarnation["uid"]
-            replacement_volumes = await _volumes(name, uid, retained=retained)
+            replacement_volumes = await _volumes(name, uid)
             assert replacement_volumes["state"] == before["state"]
-            if retained:
-                assert replacement_volumes == before
-            else:
-                assert replacement_volumes["workspace"]["uid"] != before["workspace"]["uid"]
+            assert replacement_volumes == before
             evidence["replacement"] = {
                 "workload_uid": replacement["metadata"]["uid"],
                 "incarnation": replacement_incarnation,
                 "volumes": replacement_volumes,
-                "probe": await _probe(client, name, cwd, workspace_dir, marker, workspace_exists=retained),
+                "probe": await _probe(client, name, cwd, workspace_dir, marker),
             }
         evidence["passed"] = True
         save()

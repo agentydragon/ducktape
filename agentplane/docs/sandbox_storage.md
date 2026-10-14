@@ -154,13 +154,14 @@ does not inspect or repair filesystems through the Kubernetes API.
 
 ## Initial rollout
 
-The operator accepts an incompatible cutoff dropping existing Sandboxes rather than migrating
-their old storage layouts. The [task DAG](../plans/task_dag.md) separates the controller/image pin,
-testing comparison, a data-drop PR listing the affected Sandboxes and owned volumes, template
-activation, and retirement of the losing DataVolume/PVC path. #10440 implements the contract and
-does not delete existing data. The template activation uses the accepted controller and guest pins;
-refresh both namespace inventories immediately before applying it. The cutoff is not a policy of
-automatically deleting idle Sandboxes.
+The accepted incompatible cutoff removed the listed disposable Sandboxes and their owned storage
+under [#10493](../plans/workspace_cutoff.md); it did not migrate existing contents. #10440
+implements the retained-layout contract, and #10507 activated the selected layouts in the deployed
+templates: `DirectoryTree` for the Pod runners and `RawDiskImage`/ext4 for `runner-vm`, each with a
+Sandbox-owned workspace claim. The [storage acceptance record](../acceptance/debug/storage_acceptance.md)
+contains the testing results and read-only rollout verification. This cutoff was a one-time
+operator decision, not a policy to automatically delete idle Sandboxes. Generic DataVolume disks
+in custom VM templates remain supported.
 
 ## Formatting and conversion
 

@@ -11,13 +11,13 @@ stay out of scope.
 ## Storage rollout
 
 [Storage layouts](../docs/sandbox_storage.md) separates Sandbox ownership from content format and
-attachment compatibility. #10440 adds the declared workspace contract without activating it in
-deployed templates. [Testing storage acceptance](../acceptance/debug/storage_acceptance.md) records image-pin gating, the testing comparison
-with the old DataVolume path and selection of the retained path. Typed workspace templates from
-#10507 have reconciled in testing and staging. The operator-directed incompatible cutoff is
-complete; [cutoff evidence](workspace_cutoff.md) records the empty inventory and remaining cleanup.
-`WORKSPACE_DATAVOLUME_RETIRE` owns removal of the losing path once consumers are gone. The guest
-shell-to-NixOS work is `VM_GUEST_DECLARATIVE_STORAGE`. Conversion is deferred to
+attachment compatibility. #10440 adds the declared workspace contract. [Testing storage acceptance](../acceptance/debug/storage_acceptance.md)
+records image-pin gating, the historical comparison with the old DataVolume path, and selection of
+the retained path. Typed workspace templates from #10507 have reconciled in testing and staging;
+the operator-directed incompatible cutoff is complete ([evidence](workspace_cutoff.md)). This
+follow-up retires the superseded blank-DataVolume production workspace path while retaining generic
+DataVolume disks in custom VM templates. The guest shell-to-NixOS work is
+`VM_GUEST_DECLARATIVE_STORAGE`. Conversion is deferred to
 `VOLUME_LAYOUT_CONVERSION`, much later, and does not gate this rollout. A filesystem-backed raw
 `disk.img` and an ordinary Pod directory are explicitly incompatible without such a conversion.
 

@@ -37,7 +37,7 @@ history were not deleted. The removed state PVCs also held workspace files and n
 persistence; reverting manifests cannot restore them. No content backup or successful seal for
 the operator's deletions is claimed.
 
-## Completed activation and remaining cleanup
+## Completed activation and retirement
 
 The bounded testing matrix passed for Pod DirectoryTree, VM RawDiskImage, and the legacy
 DataVolume comparison; exact invocations and limitations are in the
@@ -47,10 +47,11 @@ DirectoryTree at `/state/workspaces` and VM RawDiskImage/ext4. Read-only verific
 Sandboxes, VMs, VMIs or DataVolumes remaining. This proves template reconciliation, not staging
 workload acceptance or existing-data migration.
 
-Retire the obsolete DataVolume-specific production path after checking all remaining code callers.
-Keep generic KubeVirt support needed elsewhere. Conversion and node portability remain separate
-future work. Fresh Sandboxes get fresh UIDs and storage; recreate finance Sandboxes only when the
-operator requests them, using new Sessions rather than claiming deleted native Sessions revived.
+The obsolete production blank-DataVolume workspace comparison is retired after the #10507 rollout
+and repository-wide caller review. Generic DataVolume disks in custom VM templates and the separate
+fixture-local KubeVirt experiment remain. Conversion and node portability are separate future work.
+Fresh Sandboxes get fresh UIDs and storage; recreate finance Sandboxes only when the operator
+requests them, using new Sessions rather than claiming deleted native Sessions revived.
 
 Reverting activation cannot reinterpret already provisioned new workspaces: the durable layout
 and identity guard must reject incompatible declarations until an explicit future conversion exists.
