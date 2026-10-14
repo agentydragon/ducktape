@@ -1507,3 +1507,17 @@ py_test(
         "@pypi//pytest_bazel",
     ],
 )
+
+py_test(
+    name = "test_identity",
+    srcs = ["test_identity.py"],
+    deps = [
+        ":conftest",
+        ":identity",
+        "//:conftest",
+        "@pypi//fastapi",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

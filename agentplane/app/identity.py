@@ -66,14 +66,15 @@ class TokenReviewer:
         )
         status_ = review.status
         if status_ is None or not status_.authenticated or status_.user is None or not status_.user.username:
-            logger.info("TokenReview refused a token: %s", status_ and status_.error)
-            return None
-        if self._audience not in (status_.audiences or []):
-            logger.info("TokenReview returned a token for another audience: %s", status_.audiences)
+            reason = "unauthenticated" if status_ is None or not status_.authenticated else "missing_username"
+            logger.info("TokenReview rejected caller: reason=%s username=None", reason)
             return None
         username = str(status_.user.username)
+        if self._audience not in (status_.audiences or []):
+            logger.info("TokenReview rejected caller: reason=wrong_audience username=%r", username)
+            return None
         if username not in self._subjects:
-            logger.warning("refusing a token for a subject this app does not accept: %s", f"{username=}")
+            logger.warning("TokenReview rejected caller: reason=subject_not_allowed username=%r", username)
             raise HTTPException(status.HTTP_403_FORBIDDEN, "token subject is not accepted here")
         return username
 
