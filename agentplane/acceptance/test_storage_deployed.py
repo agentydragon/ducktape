@@ -74,19 +74,19 @@ async def _running(name: str, uid: str, value: bool) -> None:
     )
 
 
-async def _delete(plural: str, name: str, uid: str) -> None:
+async def _delete(plural: str, name: str, uid: str, *, group: str = GROUP, version: str = VERSION) -> None:
     configuration = k8s.Configuration()
     await k8s_config.load_kube_config(client_configuration=configuration)
     async with k8s.ApiClient(configuration) as api:
         await k8s.CustomObjectsApi(api).delete_namespaced_custom_object(
-            GROUP,
-            VERSION,
+            group,
+            version,
             NAMESPACE,
             plural,
             name,
             body=k8s.V1DeleteOptions(preconditions=k8s.V1Preconditions(uid=uid)),
         )
-    await _kubectl("wait", f"{plural}.{GROUP}/{name}", "--for=delete", "--timeout=120s")
+    await _kubectl("wait", f"{plural}.{group}/{name}", "--for=delete", "--timeout=120s")
 
 
 async def _suspend(name: str, uid: str) -> None:
@@ -292,6 +292,7 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
         old_incarnation = (await _object(f"sandboxes.{GROUP}", name))["status"]["incarnation"]
         before = await _volumes(name, uid, retained=retained)
         workload = await _object("virtualmachine" if vm else "pod", name)
+        workload_uid = workload["metadata"]["uid"]
         workload_spec = workload["spec"]["template"]["spec"] if vm else workload["spec"]
         attachment = next(volume for volume in workload_spec["volumes"] if volume["name"] == "workspace")
         if retained:
@@ -302,6 +303,7 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
             before=before,
             old_incarnation=old_incarnation,
             workspace_attachment=attachment,
+            original_workload_uid=workload_uid,
             first_probe=await _probe(client, name, cwd, workspace_dir, marker, workspace_exists=True),
         )
         if vm:
@@ -309,8 +311,10 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
         save()
         await _suspend(name, uid)
         await _kubectl("wait", f"pod/{old_incarnation['name']}", "--for=delete", "--timeout=120s")
+        # Ordinary VM suspension halts the VM and removes its VMI/launcher, retaining the VM and
+        # all its disks. VM-object replacement is a separate explicit fixture operation below.
         if vm:
-            await _kubectl("wait", f"virtualmachine/{name}", "--for=delete", "--timeout=120s")
+            await _kubectl("wait", f"virtualmachineinstance/{name}", "--for=delete", "--timeout=120s")
         if retained:
             assert await _volumes(name, uid, retained=True) == before
             # Exercise the durable record at the actual resume boundary: an incompatible claim
@@ -334,8 +338,6 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
             changed = await _object(f"sandboxtemplates.{GROUP}", template)
             changed["spec"] = spec
             await _kubectl("replace", "-f", "-", body=changed)
-        else:
-            await _kubectl("wait", f"pvc/{name}-workspace", "--for=delete", "--timeout=120s")
         await _running(name, uid, True)
         await _condition(name, "Ready")
         await _condition(name, "Bootstrapped")
@@ -343,16 +345,52 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
         assert new_incarnation["uid"] != old_incarnation["uid"]
         after = await _volumes(name, uid, retained=retained)
         assert after["state"] == before["state"]
-        if retained:
-            assert after == before
-        else:
-            assert after["workspace"]["uid"] != before["workspace"]["uid"]
+        assert after == before
+        if vm:
+            assert (await _object("virtualmachine", name))["metadata"]["uid"] == workload_uid
         evidence.update(
             after=after,
             new_incarnation=new_incarnation,
-            resumed_probe=await _probe(client, name, cwd, workspace_dir, marker, workspace_exists=retained),
-            passed=True,
+            resumed_probe=await _probe(client, name, cwd, workspace_dir, marker, workspace_exists=True),
         )
+        save()
+        if vm:
+            await _suspend(name, uid)
+            await _kubectl("wait", f"pod/{new_incarnation['name']}", "--for=delete", "--timeout=120s")
+            await _kubectl("wait", f"virtualmachineinstance/{name}", "--for=delete", "--timeout=120s")
+            halted = await _object("virtualmachine", name)
+            assert halted["metadata"]["uid"] == workload_uid
+            assert halted["spec"]["runStrategy"] == "Halted"
+            assert any(
+                owner["uid"] == uid and owner.get("controller") for owner in halted["metadata"]["ownerReferences"]
+            )
+            # Delete only this recorded, fully stopped fixture VM. Sandbox-owned claims survive;
+            # the legacy DataVolume and its PVC are owned by this VM and are garbage-collected.
+            await _delete("virtualmachines", name, workload_uid, group="kubevirt.io", version="v1")
+            if retained:
+                assert await _volumes(name, uid, retained=True) == before
+            else:
+                await _kubectl("wait", f"pvc/{name}-workspace", "--for=delete", "--timeout=120s")
+            await _running(name, uid, True)
+            await _condition(name, "Ready")
+            await _condition(name, "Bootstrapped")
+            replacement = await _object("virtualmachine", name)
+            assert replacement["metadata"]["uid"] != workload_uid
+            replacement_incarnation = (await _object(f"sandboxes.{GROUP}", name))["status"]["incarnation"]
+            assert replacement_incarnation["uid"] != new_incarnation["uid"]
+            replacement_volumes = await _volumes(name, uid, retained=retained)
+            assert replacement_volumes["state"] == before["state"]
+            if retained:
+                assert replacement_volumes == before
+            else:
+                assert replacement_volumes["workspace"]["uid"] != before["workspace"]["uid"]
+            evidence["replacement"] = {
+                "workload_uid": replacement["metadata"]["uid"],
+                "incarnation": replacement_incarnation,
+                "volumes": replacement_volumes,
+                "probe": await _probe(client, name, cwd, workspace_dir, marker, workspace_exists=retained),
+            }
+        evidence["passed"] = True
         save()
     evidence["cleanup_complete"] = True
     save()
