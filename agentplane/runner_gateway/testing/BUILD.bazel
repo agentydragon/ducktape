@@ -24,6 +24,7 @@ py_library(
         "//agentplane:grpc_serving",
         "//agentplane/runner_gateway:client",
         "//agentplane/runner_gateway:grpc_api",
+        "//agentplane/runner_gateway:runner_proxy",
         "//agentplane/sandbox_service:grpc_api",
         "//agentplane/sandbox_service:provisioning",
         "@pypi//grpcio",

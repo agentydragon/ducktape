@@ -9,7 +9,7 @@ import grpc
 
 from agentplane.grpc_calls import dial
 from agentplane.grpc_serving import serving
-from agentplane.runner_gateway import grpc_api as gateway_api
+from agentplane.runner_gateway import grpc_api as gateway_api, runner_proxy
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_service import grpc_api as sandbox_api
 from agentplane.sandbox_service.provisioning import Provisioning
@@ -21,6 +21,19 @@ from agentplane.sandbox_service.provisioning import Provisioning
 async def service(resources: gateway_api.Resources, provisioning: Provisioning | None = None) -> AsyncIterator[str]:
     server = grpc.aio.server()
     gateway_api.add_service(resources, server)
+    server.add_generic_rpc_handlers(
+        (
+            runner_proxy.RunnerProxy(
+                runner_proxy.Resources(
+                    principals=resources.principals,
+                    caller_accounts=resources.caller_accounts,
+                    sandboxes=resources.destinations.sandboxes,
+                    control=resources.control,
+                    sandbox_controller_account=None,
+                )
+            ),
+        )
+    )
     if provisioning is not None:
         # The Sandbox Service, for the same callers and deadlines as the gateway.
         sandbox_api.add_service(
