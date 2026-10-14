@@ -39,6 +39,12 @@ let
     exec ${pkgs.util-linux}/sbin/agetty "''${autologin[@]}" --keep-baud 115200,57600,38400,9600 ttyS0 "''${TERM:-vt220}"
   '';
 
+  assertBlankDevice = pkgs.writeTextFile {
+    name = "agentplane-assert-blank-device";
+    executable = true;
+    text = "#!${pkgs.python3}/bin/python3\n" + builtins.readFile ./assert_blank_device.py;
+  };
+
   workspacePreparation = pkgs.writeShellScript "agentplane-prepare-workspace" ''
     set -euo pipefail
     device="${workspaceDevice}"
@@ -72,14 +78,15 @@ let
     # No known signature is not proof that the disk is empty. A CDI blank DataVolume is
     # zero-filled, so only a disk that reads as zeros end to end is formatted; one that lost its
     # filesystem but still holds data is left for a person to look at.
-    if cmp --silent -n "$(blockdev --getsize64 "$device")" "$device" /dev/zero; then
+    if ${assertBlankDevice} "$device"; then
       :
     else
       status=$?
-      if [ "$status" -eq 1 ]; then
+      # 3 is NOT_BLANK_EXIT_CODE in assert_blank_device.py.
+      if [ "$status" -eq 3 ]; then
         echo "Refusing to format a non-zero workspace disk without a recognized filesystem" >&2
       else
-        echo "Could not verify the blank workspace disk (cmp status $status)" >&2
+        echo "Could not verify the blank workspace disk (status $status)" >&2
       fi
       exit 1
     fi
@@ -93,11 +100,22 @@ in
   services.openssh.enable = lib.mkForce false;
   services.qemuGuest.enable = true;
 
+  # KubeVirt's masquerade hands the guest its address alone; probing it with ARP first holds the
+  # network, and the runner's first dial, back by about five seconds.
+  networking.dhcpcd.extraConfig = "noarp";
+
   # Keep the replaceable guest root small: the runner's journals live on the state PVC and agent
   # work on the workspace disk.
   virtualisation.diskSize = 8 * 1024;
   boot.kernelModules = [ "virtiofs" ];
-  boot.kernelParams = [ "console=ttyS0,115200n8" ];
+  boot.kernelParams = [
+    "console=ttyS0,115200n8"
+    # The root disk is discarded at every stop and the workspace is a journalled ext4, so a boot-time
+    # check has nothing to repair; it costs seconds of seek-bound reads on a cold node.
+    "fsck.mode=skip"
+  ];
+  # Nobody is at the boot menu; its countdown is the first seconds of every start.
+  boot.loader.timeout = 0;
   # The runner's journal (a start failure's traceback included) reaches the serial console, which
   # the VMI serial log and `virtctl console` read, without a guest exec.
   services.journald.console = "/dev/ttyS0";
@@ -216,7 +234,6 @@ in
     unitConfig.DefaultDependencies = false;
     path = [
       pkgs.coreutils
-      pkgs.diffutils
       pkgs.e2fsprogs
       pkgs.util-linux
     ];

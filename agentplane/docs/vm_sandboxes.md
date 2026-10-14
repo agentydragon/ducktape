@@ -49,7 +49,8 @@ lost.
   can write there; the runner runs as root and harnesses as 107. Upstream has no rootful alternative.
 - The workspace is a VM-local blank disk. The guest formats it only when it reads as zeros end to end
   and fails on any other unrecognised content, so a disk that lost its filesystem is left for a person.
-  The zero scan takes time proportional to the disk.
+  The zero scan reads in 16 MiB chunks, about 1.5 GB/s; `cmp` takes 45 s for 10 GiB on the guest's
+  single vCPU because it issues millions of tiny reads.
 - Stopping and starting a VM creates a new VMI on the same VM and disks. The VM supports neither live
   migration nor RAM suspension.
 - Commands reach a VM Sandbox only through the control stream. There is no guest exec path; `virt-launcher`

@@ -903,3 +903,20 @@ py_library(
         "@pypi//jinja2",
     ],
 )
+
+py_library(
+    name = "assert_blank_device",
+    srcs = ["assert_blank_device.py"],
+)
+
+py_test(
+    name = "test_assert_blank_device",
+    srcs = ["test_assert_blank_device.py"],
+    deps = [
+        ":assert_blank_device",
+        ":conftest",
+        "//:conftest",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
