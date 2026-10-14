@@ -550,8 +550,12 @@ so a terminal row is not the system of record for anything after senders stop re
 | B. Delete a terminal row as soon as the History Service has it | Couples the Dispatcher to History Service state; `NO_OP` and `FAILED` rows never reach it     |
 | C. Keep every row                                              | An unbounded table; an audit trail the History Service already provides                       |
 
-Recommend A: keep non-terminal rows indefinitely, keep an `OpenSession` row until the History Service directory has the
-Session and the window has passed, and delete other terminal rows after the window. The window length is a judgement
+Recommend A: keep non-terminal rows indefinitely and delete every terminal row, `OpenSession` rows included, after the
+window, with no History Service check. An admitted `OpenSession` is covered after that point: the runner's journal on
+the state volume answers a repeat in the same Sandbox with `ALREADY_EXISTS`, the History Service binds the writing
+Sandbox at the first push, and a suspend or delete cannot happen before every journal is flushed and acknowledged, so
+only a Sandbox running for the whole window with the ingress unreachable leaves a gap. A row not yet admitted stays
+until delivered. The window length is a judgement
 call that no code fixes; a few days of sender retry is the constraint.
 
 **History Service dependency.** Delivery does not need it: admission is the runner's receipt, and
@@ -753,16 +757,11 @@ sequenceDiagram
 - **Resume can be impossible.** With node-local volumes the Sandbox can only resume where its PVC
   lives; the node may be down or full. Queued commands have no TTL (decided below); they wait in
   `QUEUED_IN_DISPATCHER` with the reason the Sandbox is not `Ready`, bounded in count by the per-Session cap. Poison
-  commands, where a delivery keeps failing, are open:
-
-  | Option                                                                                             | Cost                                                                                       |
-  | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-  | A. Nothing: retry forever, show the reason on the row, the sender cancels                          | One poison command at the head of a Session's queue blocks the rest until someone looks    |
-  | B. Attempt cap on `DELIVERING_TO_RUNNER` returning to `QUEUED_IN_DISPATCHER`; at the cap, `FAILED` | A cap is another number; lameduck `ABORTED` refusals and waiting for resume must not count |
-  | C. As B, but at the cap hold the Session's queue with a reason instead of failing the command      | The Session stalls until a person resumes or cancels; ordering is kept                     |
-
-  Recommend B. A refusal with a terminal code (`FAILED_PRECONDITION`) already fails the dispatch at once; the cap
-  covers a command that repeatedly loses its call or crashes the harness. `StopRunnerSession` is never held behind it.
+  commands, where a delivery keeps failing, get no special handling (decided, operator, 2026-10-14): the dispatch
+  retries, shows its reason, and the sender cancels it. A refusal with a terminal code (`FAILED_PRECONDITION`) already
+  fails the dispatch at once. To do: revisit once a poison command is seen in practice; an attempt cap on
+  `DELIVERING_TO_RUNNER` returning to `QUEUED_IN_DISPATCHER`, or holding the Session's queue, are the candidates.
+  One failing command at the head of a Session's queue blocks the rest until it is cancelled.
 
 - **VM RAM suspend.** If a VM keeps harness processes alive across suspend, quiescing means something different
   (flush the journal, keep the harness). Settle this before RAM suspend assumes the Pod sequence.
@@ -804,7 +803,7 @@ sequenceDiagram
 | The queue holds about 1,000 queued commands per Session; past that, `RESOURCE_EXHAUSTED`                    | Decided              | 2026-10-14 | D4           |
 | How long the Dispatcher keeps dispatch rows                                                                 | Open                 |            | D4           |
 | Queued commands have no TTL; a Sandbox gone from Kubernetes ends them as `FAILED`                           | Decided              | 2026-10-14 | D4           |
-| The handling of poison commands                                                                             | Open                 |            | Complexities |
+| No special handling of poison commands for now; revisit when one is seen                                    | Decided              | 2026-10-14 | Complexities |
 
 **Names.** Names already taken, so not used for the queue service: `inbox` is the Notification Service's (`inbox_id`,
 `InboxView`), `outbox` is the Action Service's (`action_outbox`), "mailbox" is the task DAG's word for an agent's
