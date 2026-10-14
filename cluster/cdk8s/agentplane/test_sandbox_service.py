@@ -81,9 +81,13 @@ def test_app_uses_independent_service(namespace: str, agentplane_manifests: dict
     history_migration = one(history_pod["initContainers"])
     assert {"name": "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL", "valueFrom": history_secret} in history_migration["env"]
     # The app reads the cluster, and writes only the operator's PolicyBindings and Sandboxes.
-    for rule in resource("Role", app.NAME)["rules"]:
+    app_rules = resource("Role", app.NAME)["rules"]
+    for rule in app_rules:
         if rule["resources"] not in (["policybindings"], ["sandboxes"]):
             assert set(rule["verbs"]) <= {"get", "list", "watch"}
+    app_permissions = {(tuple(rule["apiGroups"]), tuple(rule["resources"]), tuple(rule["verbs"])) for rule in app_rules}
+    assert (("agentplane.allegedly.works",), ("sandboxtemplates",), ("list",)) in app_permissions
+    assert (("subresources.kubevirt.io",), ("virtualmachineinstances/console",), ("get",)) in app_permissions
     backend_config = yaml.safe_load(resource("ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
     gateway_config = yaml.safe_load(resource("ConfigMap", f"{runner_gateway.NAME}-config")["data"]["config.yaml"])
     # Every runner starts each Session with this platform block, in both environments.
