@@ -48,7 +48,6 @@ message RunnerFrame {
     Hello hello = 1;                  // first frame, exactly once
     Heartbeat heartbeat = 3;
     grpc_tunnel.Reply reply = 5;      // to a `call` on this stream
-    RunnerFacts facts = 6;            // after every Welcome, and when a fact changes
   }
 }
 
@@ -85,13 +84,15 @@ message DeliverCommandResponse {
 // above. A `command_id` is unique across all of them and `DeliverCommand`: the same id under
 // another operation or payload fails `ALREADY_EXISTS`.
 
-message Heartbeat {}
+message Heartbeat {
+  optional RunnerFacts facts = 1;     // runner only: on a change, and first after every Welcome
+}
 
-// Each frame replaces the gateway's record of all the facts; an unset fact is not reported.
+// Each Heartbeat carrying it replaces the gateway's record of all the facts.
 message RunnerFacts {
   QuiesceStage quiesce_stage = 1;     // unspecified: not quiescing
-  oneof activity { Busy busy = 2; Idle idle = 3; }  // the whole Sandbox; Idle carries `since`
-  Bootstrap bootstrap = 4;            // running, succeeded, failed or interrupted
+  google.protobuf.Timestamp idle_since = 2;  // absent while the Sandbox is busy
+  Bootstrap bootstrap = 3;            // running, succeeded, failed or interrupted
 }
 ```
 
@@ -310,8 +311,7 @@ metadata:
     agentplane.allegedly.works/runner-boot-id: <from Hello>
     # The runner's last RunnerFacts, each present only while the runner reports it:
     agentplane.allegedly.works/quiesce-stage: draining | flushing | quiesced
-    agentplane.allegedly.works/busy: "true" | "false"
-    agentplane.allegedly.works/idle-since: <RFC 3339 time, only with busy "false">
+    agentplane.allegedly.works/idle-since: <RFC 3339 time the Sandbox became idle; absent while busy>
     agentplane.allegedly.works/bootstrap: running | succeeded | failed | interrupted
 spec:
   holderIdentity: <replica Pod name>
@@ -345,8 +345,8 @@ No routing record is kept: runners dial out, so nothing is routed inbound.
   A conflict means another replica won a race; it re-reads and retries, and the runner's own
   newest-connection rule decides which stream survives. It then writes the EndpointSlice with the new epoch, and only then sends `Welcome`.
   An EndpointSlice write carrying an older epoch than the one stored is skipped.
-- **Runner facts.** The holder writes the runner's latest `RunnerFacts` into the Lease annotations
-  with the renewal that records liveness, so busy and idle add no write. A change of quiesce stage
+- **Runner facts.** The holder writes the runner's latest `RunnerFacts`, which arrive on `Heartbeat`,
+  into the Lease annotations with the renewal that records liveness, so the idle time adds no write. A change of quiesce stage
   or bootstrap result triggers that write at once. A new connection starts with none, since accepting
   rewrites the annotations, and the runner republishes after `Welcome`; a runner gone quiet leaves
   its last facts, which a reader trusts only while `pod-uid` names the incarnation it reads and the

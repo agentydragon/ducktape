@@ -57,7 +57,6 @@ message RunnerFrame {
     Hello hello = 1;  // first frame, exactly once
     Heartbeat heartbeat = 3;
     agentplane.proto.grpc_tunnel.Reply reply = 5;  // to a `call` on this stream
-    RunnerFacts facts = 6;
   }
   reserved 2, 4;
   reserved "receipt", "control_result";
@@ -88,11 +87,14 @@ message Welcome {
   reserved "capabilities";
 }
 
-message Heartbeat {}
+message Heartbeat {
+  // Only the runner sets it: sent at once when a fact changes and with its first heartbeat after every
+  // `Welcome`. Each carrying it replaces the gateway's record of all the facts.
+  optional RunnerFacts facts = 1;
+}
 
 // What the runner publishes about itself, for the Runner Gateway to record on the Sandbox's connection
-// Lease. The runner sends it after every `Welcome` and whenever a fact changes; each one replaces the
-// gateway's record of all of them.
+// Lease.
 message RunnerFacts {
   enum QuiesceStage {
     QUIESCE_STAGE_UNSPECIFIED = 0;  // not quiescing
@@ -107,20 +109,13 @@ message RunnerFacts {
     BOOTSTRAP_FAILED = 3;
     BOOTSTRAP_INTERRUPTED = 4;
   }
-  // The whole Sandbox: busy while any Session runs a turn or command, or a background process or
-  // attached terminal runs.
-  message Busy {}
-  message Idle {
-    google.protobuf.Timestamp since = 1;
-  }
 
   QuiesceStage quiesce_stage = 1;
-  // Unset where the runner reports no busy fact.
-  oneof activity {
-    Busy busy = 2;
-    Idle idle = 3;
-  }
-  Bootstrap bootstrap = 4;
+  // When the whole Sandbox became idle: any Session running a turn or command, or a background process
+  // or attached terminal running, makes it busy. Absent while busy, and from a runner that does not
+  // track it.
+  google.protobuf.Timestamp idle_since = 2;
+  Bootstrap bootstrap = 3;
 }
 
 message OpenSessionRequest {

@@ -14,7 +14,6 @@ from google.protobuf.timestamp_pb2 import Timestamp
 from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc
 from agentplane.runner_gateway.connection_records import (
     BOOTSTRAP_ANNOTATION,
-    BUSY_ANNOTATION,
     CONNECTION_EPOCH_ANNOTATION,
     IDLE_SINCE_ANNOTATION,
     POD_UID_ANNOTATION,
@@ -264,7 +263,9 @@ async def test_recreating_the_sandbox_ends_the_connection(
 
 
 def facts_frame(**fields: Any) -> runner_control_pb2.RunnerFrame:
-    return runner_control_pb2.RunnerFrame(facts=runner_control_pb2.RunnerFacts(**fields))
+    return runner_control_pb2.RunnerFrame(
+        heartbeat=runner_control_pb2.Heartbeat(facts=runner_control_pb2.RunnerFacts(**fields))
+    )
 
 
 def lease_annotations(cluster: Cluster) -> dict[str, str]:
@@ -294,7 +295,7 @@ async def test_the_runners_facts_reach_the_lease_and_replace_the_last_ones(
         await call.write(
             facts_frame(
                 quiesce_stage=runner_control_pb2.RunnerFacts.QUIESCE_STAGE_FLUSHING,
-                idle=runner_control_pb2.RunnerFacts.Idle(since=idle_since),
+                idle_since=idle_since,
                 bootstrap=runner_control_pb2.RunnerFacts.BOOTSTRAP_SUCCEEDED,
             )
         )
@@ -303,16 +304,15 @@ async def test_the_runners_facts_reach_the_lease_and_replace_the_last_ones(
             POD_UID_ANNOTATION: "test-pod-uid",
             RUNNER_BOOT_ID_ANNOTATION: "test-boot",
             QUIESCE_STAGE_ANNOTATION: "flushing",
-            BUSY_ANNOTATION: "false",
             IDLE_SINCE_ANNOTATION: "2026-10-14T01:02:03+00:00",
             BOOTSTRAP_ANNOTATION: "succeeded",
         }
-        await call.write(facts_frame(busy=runner_control_pb2.RunnerFacts.Busy()))
-        await read_until_annotated(call, cluster, BUSY_ANNOTATION, "true")
+        # Busy again: no idle time, and the stage and bootstrap the runner no longer reports are gone.
+        await call.write(facts_frame())
+        await read_until_annotated(call, cluster, BOOTSTRAP_ANNOTATION, None)
         assert lease_annotations(cluster) == {
             POD_UID_ANNOTATION: "test-pod-uid",
             RUNNER_BOOT_ID_ANNOTATION: "test-boot",
-            BUSY_ANNOTATION: "true",
         }
 
 

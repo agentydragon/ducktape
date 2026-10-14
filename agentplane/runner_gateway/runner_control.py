@@ -202,7 +202,7 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         writing = asyncio.Lock()
         facts: runner_control_pb2.RunnerFacts | None = None
         # Set when a fact that others wait on changes, so the Lease is written now and not at the next
-        # renewal, which carries busy and idle.
+        # renewal, which carries the idle time.
         urgent = asyncio.Event()
 
         async def send(frame: runner_control_pb2.ServiceFrame) -> None:
@@ -217,22 +217,22 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
             async for frame in frames:
                 last_frame, last_frame_at = loop.time(), datetime.now(UTC)
                 match frame.WhichOneof("frame"):
-                    case "heartbeat":
-                        pass
-                    case "facts":
+                    case "heartbeat" if frame.heartbeat.HasField("facts"):
                         try:
-                            fact_annotations(frame.facts)
+                            fact_annotations(frame.heartbeat.facts)
                         except KeyError as error:
                             raise _StreamClosedError(
                                 grpc.StatusCode.INVALID_ARGUMENT, f"unknown runner fact value {error}"
                             ) from error
                         previous = facts or runner_control_pb2.RunnerFacts()
                         if (previous.quiesce_stage, previous.bootstrap) != (
-                            frame.facts.quiesce_stage,
-                            frame.facts.bootstrap,
+                            frame.heartbeat.facts.quiesce_stage,
+                            frame.heartbeat.facts.bootstrap,
                         ):
                             urgent.set()
-                        facts = frame.facts
+                        facts = frame.heartbeat.facts
+                    case "heartbeat":
+                        pass
                     case "reply":
                         connection.tunnel.answer(frame.reply)
                     case kind:

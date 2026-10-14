@@ -35,10 +35,9 @@ RUNNER_BOOT_ID_ANNOTATION = f"{GROUP}/runner-boot-id"
 CONNECTION_EPOCH_ANNOTATION = f"{GROUP}/connection-epoch"
 # The runner's published facts, on the Lease only while the connection that reported them holds it.
 QUIESCE_STAGE_ANNOTATION = f"{GROUP}/quiesce-stage"
-BUSY_ANNOTATION = f"{GROUP}/busy"
 IDLE_SINCE_ANNOTATION = f"{GROUP}/idle-since"
 BOOTSTRAP_ANNOTATION = f"{GROUP}/bootstrap"
-_FACT_ANNOTATIONS = (QUIESCE_STAGE_ANNOTATION, BUSY_ANNOTATION, IDLE_SINCE_ANNOTATION, BOOTSTRAP_ANNOTATION)
+_FACT_ANNOTATIONS = (QUIESCE_STAGE_ANNOTATION, IDLE_SINCE_ANNOTATION, BOOTSTRAP_ANNOTATION)
 # Selects the Leases the cache holds; other controllers keep Leases in the Sandbox namespace too.
 CONNECTION_LABEL = f"{GROUP}/runner-connection"
 LEASE_DURATION_S = 30
@@ -73,12 +72,8 @@ def fact_annotations(facts: runner_control_pb2.RunnerFacts) -> dict[str, str]:
     annotations: dict[str, str] = {}
     if facts.quiesce_stage != runner_control_pb2.RunnerFacts.QUIESCE_STAGE_UNSPECIFIED:
         annotations[QUIESCE_STAGE_ANNOTATION] = _QUIESCE_STAGES[facts.quiesce_stage]
-    match facts.WhichOneof("activity"):
-        case "busy":
-            annotations[BUSY_ANNOTATION] = "true"
-        case "idle":
-            annotations[BUSY_ANNOTATION] = "false"
-            annotations[IDLE_SINCE_ANNOTATION] = facts.idle.since.ToDatetime(tzinfo=UTC).isoformat()
+    if facts.HasField("idle_since"):
+        annotations[IDLE_SINCE_ANNOTATION] = facts.idle_since.ToDatetime(tzinfo=UTC).isoformat()
     if facts.bootstrap != runner_control_pb2.RunnerFacts.BOOTSTRAP_UNSPECIFIED:
         annotations[BOOTSTRAP_ANNOTATION] = _BOOTSTRAPS[facts.bootstrap]
     return annotations
