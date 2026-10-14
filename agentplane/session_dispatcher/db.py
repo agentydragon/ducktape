@@ -37,6 +37,8 @@ class Dispatch(Base):
     wake_caller_name: Mapped[str | None]
     # Null until the Dispatcher requested a wake; empty string records a wake before any incarnation existed.
     wake_from_incarnation: Mapped[str | None]
+    # PostgreSQL time when a budgeted wake was first requested; null while waiting for budget.
+    wake_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     # Queried by the queue cap and by a stop, which the command carries too.
     operation: Mapped[Operation] = mapped_column(StringBackedStrEnumColumn(Operation))
     command: Mapped[command_pb2.Command] = mapped_column(ProtobufColumn(command_pb2.Command))
@@ -60,6 +62,8 @@ class SessionOpening(Base):
     wake_caller_name: Mapped[str | None]
     # Null until the Dispatcher requested a wake; empty string records a wake before any incarnation existed.
     wake_from_incarnation: Mapped[str | None]
+    # PostgreSQL time when a budgeted wake was first requested; null while waiting for budget.
+    wake_requested_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     spec: Mapped[runner_pb2.SessionSpec] = mapped_column(ProtobufColumn(runner_pb2.SessionSpec))
     setup_script: Mapped[str | None]
     state: Mapped[DeliveryState] = mapped_column(StringBackedStrEnumColumn(DeliveryState))

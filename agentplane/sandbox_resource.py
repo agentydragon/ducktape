@@ -118,18 +118,19 @@ class Sandbox(_Wire):
     def sessions_sealed(self) -> bool:
         return any(c.type == QUIESCED and c.status is ConditionStatus.TRUE for c in self.status.conditions)
 
-    def _ready_condition(self) -> Condition | None:
+    def ready_condition(self) -> Condition | None:
+        """The controller's reason for Ready or its current scheduling/start blocker."""
         return next((c for c in self.status.conditions if c.type == READY), None)
 
     @property
     def ready(self) -> bool:
-        condition = self._ready_condition()
+        condition = self.ready_condition
         return condition is not None and condition.status is ConditionStatus.TRUE
 
     @property
     def suspended(self) -> bool:
         """Asked to stop and stopped: no Pod or VM runs, and the state volume is kept."""
-        condition = self._ready_condition()
+        condition = self.ready_condition
         return self.operating_mode is OperatingMode.SUSPENDED and condition is not None and condition.reason == STOPPED
 
     def running_reason(self) -> str | None:

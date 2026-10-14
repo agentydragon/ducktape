@@ -4,6 +4,7 @@ import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 import grpc
@@ -22,7 +23,7 @@ from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.session_dispatcher.channels import Channel
 from agentplane.session_dispatcher.db import Dispatch, SessionOpening
 from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
-from agentplane.session_dispatcher.models import DeliveryState, Operation, Reason
+from agentplane.session_dispatcher.models import WAKE_DEADLINE_S, DeliveryState, Operation, Reason
 from agentplane.session_dispatcher.ownership import LEASE_RENEW_INTERVAL_S, SandboxOwnershipLeases
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxWatch, delivery_blocker
@@ -36,6 +37,19 @@ logger = logging.getLogger(__name__)
 # What the next attempt waits after a call that never reached a runner, doubling to the cap.
 RETRY_INITIAL_S = 0.5
 RETRY_MAX_S = 30
+
+
+class _WakeSupersededError(Exception):
+    """A queued wake was cancelled or fenced off before the Kubernetes patch."""
+
+
+def _wake_deadline_reason(sandbox: Sandbox) -> str:
+    condition = sandbox.ready_condition
+    if condition is None:
+        detail = "Ready condition is unavailable"
+    else:
+        detail = f"Ready={condition.status}/{condition.reason}: {condition.message}"
+    return f"wake_deadline_expired: {detail}"
 
 
 def _opening_key(session_id: str) -> str:
@@ -81,6 +95,8 @@ class Delivery:
         self._refused: dict[UUID, str | None] = {}
         self._attempts: dict[str, int] = {}
         self._retry_at: dict[str, float] = {}
+        # Persisted database deadlines schedule only the currently owned queued wake work.
+        self._wake_deadline_at: dict[str, float] = {}
 
     async def run(self) -> None:
         """Deliver until cancelled."""
@@ -142,9 +158,10 @@ class Delivery:
         self.ended.publish(await self._retry_storage(lambda: self.store.end_sandbox(sandbox_uid)))
 
     def _next_retry_in(self) -> float | None:
-        if not self._retry_at:
+        deadlines = (*self._retry_at.values(), *self._wake_deadline_at.values())
+        if not deadlines:
             return None
-        return max(0.0, min(self._retry_at.values()) - asyncio.get_running_loop().time())
+        return max(0.0, min(deadlines) - asyncio.get_running_loop().time())
 
     async def _start(self, deliveries: asyncio.TaskGroup) -> None:
         now = asyncio.get_running_loop().time()
@@ -153,6 +170,9 @@ class Delivery:
         for key in tuple(self._retry_at):
             if not key.startswith("opening:") and key not in active:
                 self._clear_retry(key)
+        for key in tuple(self._wake_deadline_at):
+            if not key.startswith("opening:") and key not in active:
+                self._wake_deadline_at.pop(key, None)
         for head in heads:
             if head.session_id in self._delivering:
                 continue
@@ -163,6 +183,7 @@ class Delivery:
                 continue
             owner = self._owners.get(head.sandbox_uid)
             if owner is None:
+                self._wake_deadline_at.pop(head.command_id, None)
                 continue
             if sandbox.metadata.deletion_timestamp is not None:
                 self._clear_retry(head.command_id)
@@ -175,6 +196,29 @@ class Delivery:
                 and not sandbox.spec.wake_on_send
                 and (awaiting_new_incarnation or blocker is Reason.SANDBOX_SUSPENDED)
             )
+            if wake_disabled:
+                self._clear_retry(head.command_id)
+                await self.store.clear_wake_state(head.command_id, owner=owner)
+                awaiting_new_incarnation = False
+            elif head.wake_requested_at is not None:
+                if not awaiting_new_incarnation and blocker is None:
+                    # The new Ready incarnation ended this wake cycle; a later wake gets a fresh deadline.
+                    self._clear_retry(head.command_id)
+                    await self.store.clear_wake_state(head.command_id, owner=owner)
+                else:
+                    failed, remaining = await self.store.fail_expired_wake(
+                        head.command_id, owner=owner, reason=_wake_deadline_reason(sandbox)
+                    )
+                    if failed is not None:
+                        self._clear_retry(head.command_id)
+                        continue
+                    if remaining is None:
+                        # A cancel, delete, or ownership change won while this old row snapshot was in flight.
+                        self._clear_retry(head.command_id)
+                        continue
+                    self._wake_deadline_at[head.command_id] = asyncio.get_running_loop().time() + remaining
+            else:
+                self._wake_deadline_at.pop(head.command_id, None)
             retry_at = self._retry_at.get(head.command_id)
             if retry_at is not None and retry_at > now and not wake_disabled:
                 continue
@@ -216,7 +260,7 @@ class Delivery:
             )
             if claimed is None:
                 return
-            self._retry_at.pop(head.command_id, None)
+            self._clear_retry(head.command_id)
             try:
                 admission = await self.runner.deliver(head.sandbox_name, head.session_id, head.command)
             except grpc.aio.AioRpcError as error:
@@ -285,6 +329,9 @@ class Delivery:
         for key in tuple(self._retry_at):
             if key.startswith("opening:") and key not in active:
                 self._clear_retry(key)
+        for key in tuple(self._wake_deadline_at):
+            if key.startswith("opening:") and key not in active:
+                self._wake_deadline_at.pop(key, None)
         for opening in openings:
             key = _opening_key(opening.session_id)
             if opening.session_id in self._delivering:
@@ -296,6 +343,7 @@ class Delivery:
                 continue
             owner = self._owners.get(opening.sandbox_uid)
             if owner is None:
+                self._wake_deadline_at.pop(key, None)
                 continue
             if sandbox.metadata.deletion_timestamp is not None:
                 self._clear_retry(key)
@@ -308,6 +356,27 @@ class Delivery:
                 and not sandbox.spec.wake_on_send
                 and (awaiting_new_incarnation or blocker is Reason.SANDBOX_SUSPENDED)
             )
+            if wake_disabled:
+                self._clear_retry(key)
+                await self.store.clear_opening_wake_state(opening.session_id, owner=owner)
+                awaiting_new_incarnation = False
+            elif opening.wake_requested_at is not None:
+                if not awaiting_new_incarnation and blocker is None:
+                    self._clear_retry(key)
+                    await self.store.clear_opening_wake_state(opening.session_id, owner=owner)
+                else:
+                    failed, remaining = await self.store.fail_expired_opening_wake(
+                        opening.session_id, owner=owner, reason=_wake_deadline_reason(sandbox)
+                    )
+                    if failed is not None:
+                        self._clear_retry(key)
+                        continue
+                    if remaining is None:
+                        self._clear_retry(key)
+                        continue
+                    self._wake_deadline_at[key] = asyncio.get_running_loop().time() + remaining
+            else:
+                self._wake_deadline_at.pop(key, None)
             retry_at = self._retry_at.get(key)
             if retry_at is not None and retry_at > now and not wake_disabled:
                 continue
@@ -337,10 +406,12 @@ class Delivery:
         command_id = head.command_id
         if not sandbox.spec.wake_on_send:
             self._clear_retry(command_id)
+            await self.store.clear_wake_state(command_id, owner=owner)
             await self.store.note_waiting(command_id, Reason.WAKE_ON_SEND_DISABLED, owner=owner)
             return
         if head.wake_caller_namespace is None or head.wake_caller_name is None:
             self._clear_retry(command_id)
+            await self.store.clear_wake_state(command_id, owner=owner)
             await self.store.note_waiting(command_id, Reason.WAKE_CALLER_UNKNOWN, owner=owner)
             return
         if not await self.store.note_waking(command_id, owner=owner, incarnation=_incarnation_uid(sandbox)):
@@ -352,15 +423,18 @@ class Delivery:
             caller=ServiceAccountRef(namespace=head.wake_caller_namespace, name=head.wake_caller_name),
             owner=owner,
             notify=lambda reason: self.store.note_waiting(command_id, reason, owner=owner),
+            mark_requested=lambda: self.store.note_wake_requested(command_id, owner=owner),
         )
 
     async def _wake_for_opening(self, opening: SessionOpening, sandbox: Sandbox, owner: SandboxOwner) -> None:
         if not sandbox.spec.wake_on_send:
             self._clear_retry(_opening_key(opening.session_id))
+            await self.store.clear_opening_wake_state(opening.session_id, owner=owner)
             await self.store.note_opening_waiting(opening.session_id, Reason.WAKE_ON_SEND_DISABLED, owner=owner)
             return
         if opening.wake_caller_namespace is None or opening.wake_caller_name is None:
             self._clear_retry(_opening_key(opening.session_id))
+            await self.store.clear_opening_wake_state(opening.session_id, owner=owner)
             await self.store.note_opening_waiting(opening.session_id, Reason.WAKE_CALLER_UNKNOWN, owner=owner)
             return
         if not await self.store.note_opening_waking(
@@ -374,6 +448,7 @@ class Delivery:
             caller=ServiceAccountRef(namespace=opening.wake_caller_namespace, name=opening.wake_caller_name),
             owner=owner,
             notify=lambda reason: self.store.note_opening_waiting(opening.session_id, reason, owner=owner),
+            mark_requested=lambda: self.store.note_opening_wake_requested(opening.session_id, owner=owner),
         )
 
     async def _request_sandbox_wake(
@@ -385,6 +460,7 @@ class Delivery:
         caller: ServiceAccountRef,
         owner: SandboxOwner,
         notify: Callable[[Reason], Awaitable[None]],
+        mark_requested: Callable[[], Awaitable[datetime | None]],
     ) -> None:
         try:
             if self._owners.get(sandbox_uid) != owner or not await self.ownership.still_owns(owner):
@@ -397,13 +473,29 @@ class Delivery:
                 )
                 if retry_after_s is not None:
                     raise WakeRateLimitedError(retry_after_s)
+                requested_at = await mark_requested()
+                if requested_at is None:
+                    raise _WakeSupersededError
+                self._schedule_wake_deadline(key, requested_at)
 
-            if not await self.inventory.wake_for_send(sandbox_name, uid=str(sandbox_uid), before_resume=reserve_wake):
+            requested = await self.inventory.wake_for_send(
+                sandbox_name, uid=str(sandbox_uid), before_resume=reserve_wake
+            )
+            if not requested:
                 self._clear_retry(key)
                 await notify(Reason.WAKE_ON_SEND_DISABLED)
                 return
+            if key not in self._wake_deadline_at:
+                # The Sandbox was already running, so its desired resume is the wake request we observed.
+                requested_at = await mark_requested()
+                if requested_at is None:
+                    raise _WakeSupersededError
+                self._schedule_wake_deadline(key, requested_at)
+        except _WakeSupersededError:
+            self._clear_attempt_retry(key)
+            return
         except SandboxQuiescingError:
-            self._clear_retry(key)
+            self._clear_attempt_retry(key)
             await notify(Reason.SANDBOX_RESUMING)
             return
         except SandboxTearingDownError, InventorySandboxNotFoundError:
@@ -422,12 +514,20 @@ class Delivery:
             )
             await notify(Reason.DELIVERY_UNAVAILABLE)
             return
-        self._clear_retry(key)
+        self._clear_attempt_retry(key)
         await notify(Reason.SANDBOX_RESUMING)
 
     def _clear_retry(self, key: str) -> None:
+        self._clear_attempt_retry(key)
+        self._wake_deadline_at.pop(key, None)
+
+    def _clear_attempt_retry(self, key: str) -> None:
         self._retry_at.pop(key, None)
         self._attempts.pop(key, None)
+
+    def _schedule_wake_deadline(self, key: str, requested_at: datetime) -> None:
+        remaining = (requested_at + timedelta(seconds=WAKE_DEADLINE_S) - datetime.now(UTC)).total_seconds()
+        self._wake_deadline_at[key] = asyncio.get_running_loop().time() + max(0.0, remaining)
 
     async def _deliver_opening(self, opening: SessionOpening, incarnation: str | None, owner: SandboxOwner) -> None:
         key = _opening_key(opening.session_id)
@@ -442,7 +542,7 @@ class Delivery:
             )
             if claimed is None:
                 return
-            self._retry_at.pop(key, None)
+            self._clear_retry(key)
             try:
                 attached = await self.runner.open_session(
                     opening.sandbox_name, opening.session_id, opening.spec, opening.setup_script

@@ -376,6 +376,28 @@ func TestRunningSandboxGetsStateVolumeAndPod(t *testing.T) {
 	}
 }
 
+func TestUnschedulablePodConditionReachesSandboxReady(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	pod := getPod(t, c)
+	pod.Status.Phase = corev1.PodPending
+	pod.Status.Conditions = []corev1.PodCondition{{
+		Type: corev1.PodScheduled, Status: corev1.ConditionFalse,
+		Reason: "Unschedulable", Message: "0/2 nodes are available: PVC is not bound",
+	}}
+	if err := c.Status().Update(context.Background(), pod); err != nil {
+		t.Fatal(err)
+	}
+
+	reconcileOnce(t, r)
+	if got := getCondition(t, c, Running); got.Reason != "Unschedulable" || got.Message != "0/2 nodes are available: PVC is not bound" {
+		t.Errorf("Running = %s: %q, want the PodScheduled failure", got.Reason, got.Message)
+	}
+	if got := getReadyCondition(t, c); got.Status != metav1.ConditionFalse || got.Reason != "Unschedulable" || got.Message != "0/2 nodes are available: PVC is not bound" {
+		t.Errorf("Ready = %s/%s: %q, want the PodScheduled failure", got.Status, got.Reason, got.Message)
+	}
+}
+
 func TestStoppedSandboxKeepsStateVolumeWithoutPod(t *testing.T) {
 	r, c := newReconciler(t, false, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)

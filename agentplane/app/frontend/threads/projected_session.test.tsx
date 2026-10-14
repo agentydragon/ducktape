@@ -766,6 +766,31 @@ it("shows a queued Dispatcher receipt and its waking reason without offering a r
   expect(buttonIn(row, "Cancel")).toBeUndefined();
 });
 
+it("shows the cause when a send-triggered Sandbox wake misses its deadline", async () => {
+  const failed = message("wake-deadline");
+  new LocalCommands(THREAD.id).remember(failed);
+  const reason = "wake_deadline_expired: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound";
+  const dispatch = {
+    commandId: failed.commandId,
+    sessionId: THREAD.id,
+    state: "DELIVERY_STATE_FAILED",
+    reason,
+    updatedAt: "2026-10-14T12:00:00Z",
+    admission: null,
+  } as const;
+  vi.mocked(command).mockResolvedValue({ kind: "dispatch", dispatch });
+  vi.mocked(commandDispatch).mockResolvedValue(dispatch);
+
+  const container = await render();
+  const row = pendingRow(container, failed.commandId);
+  expect(row.querySelector('[data-stage="dispatch_failed"]')).not.toBeNull();
+  expect(progressLabel(container, failed.commandId)).toBe(
+    "Dispatcher could not deliver: Sandbox did not become Ready within 10 minutes: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound"
+  );
+  expect(buttonIn(row, "Retry")).toBeUndefined();
+  expect(buttonIn(row, "Cancel")).toBeUndefined();
+});
+
 it("opens compact command detail on touch and closes on blur or Escape", async () => {
   new LocalCommands(THREAD.id).remember(message("touch"));
   const container = await render();

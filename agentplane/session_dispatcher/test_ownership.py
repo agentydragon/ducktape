@@ -6,10 +6,12 @@ from uuid import UUID
 
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
+from sqlalchemy import update
 
 from agentplane.proto import command_pb2, runner_pb2
 from agentplane.sandbox_resource import SANDBOX_API_VERSION, SANDBOX_KIND
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SANDBOX_UID, SandboxCluster
+from agentplane.session_dispatcher.db import Dispatch, SessionOpening
 from agentplane.session_dispatcher.models import DeliveryState, Reason
 from agentplane.session_dispatcher.ownership import LEASE_LABEL, SandboxOwnershipLeases, _lease_name
 from agentplane.session_dispatcher.store import DispatchStore
@@ -76,6 +78,20 @@ async def test_one_live_lease_owner_and_expired_lease_failover(store: DispatchSt
     )
     assert not await store.note_waking("stale-wake", owner=old_owner, incarnation=None)
     assert (await store.get_dispatch("stale-wake")).wake_from_incarnation is None
+    assert await store.note_waking("stale-wake", owner=new_owner, incarnation=None)
+    assert await store.note_wake_requested("stale-wake", owner=new_owner) is not None
+    async with store.sessions.begin() as session:
+        await session.execute(
+            update(Dispatch)
+            .where(Dispatch.command_id == "stale-wake")
+            .values(wake_requested_at=datetime.now(UTC) - timedelta(minutes=11))
+        )
+    failed, remaining = await store.fail_expired_wake(
+        "stale-wake", owner=old_owner, reason="stale owner must not settle"
+    )
+    assert failed is None
+    assert remaining is None
+    assert (await store.get_dispatch("stale-wake")).state is DeliveryState.QUEUED_IN_DISPATCHER
     await store.open_session(
         session_id="stale-opening",
         sandbox_name=SANDBOX,
@@ -86,6 +102,20 @@ async def test_one_live_lease_owner_and_expired_lease_failover(store: DispatchSt
     )
     assert not await store.note_opening_waking("stale-opening", owner=old_owner, incarnation=None)
     assert (await store.get_opening("stale-opening")).wake_from_incarnation is None
+    assert await store.note_opening_waking("stale-opening", owner=new_owner, incarnation=None)
+    assert await store.note_opening_wake_requested("stale-opening", owner=new_owner) is not None
+    async with store.sessions.begin() as session:
+        await session.execute(
+            update(SessionOpening)
+            .where(SessionOpening.session_id == "stale-opening")
+            .values(wake_requested_at=datetime.now(UTC) - timedelta(minutes=11))
+        )
+    failed_opening, remaining = await store.fail_expired_opening_wake(
+        "stale-opening", owner=old_owner, reason="stale owner must not settle"
+    )
+    assert failed_opening is None
+    assert remaining is None
+    assert (await store.get_opening("stale-opening")).state is DeliveryState.QUEUED_IN_DISPATCHER
 
     assert (
         await store.settle(

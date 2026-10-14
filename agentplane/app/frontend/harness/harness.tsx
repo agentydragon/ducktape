@@ -1863,6 +1863,27 @@ function rememberDispatch(): void {
   local.acknowledgeDispatch(command, dispatch);
 }
 
+function rememberFailedDispatch(): void {
+  const command = create(CommandSchema, {
+    commandId: "wake-deadline-dispatch",
+    operation: {
+      case: "submitInput",
+      value: { text: "Please start the Sandbox when capacity is available." },
+    },
+  });
+  const local = new LocalCommands(RUNNING_THREAD);
+  local.remember(command);
+  const dispatch: DispatchReceipt = {
+    commandId: command.commandId,
+    sessionId: RUNNING_THREAD,
+    state: "DELIVERY_STATE_FAILED",
+    reason: "wake_deadline_expired: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound",
+    updatedAt: ago(1_000),
+    admission: null,
+  };
+  local.acknowledgeDispatch(command, dispatch);
+}
+
 // One MCP server per row state the MCP servers page draws: linked and connected, a link whose token
 // lapsed while its refresh keeps failing, a refresh the provider refused, never linked, and
 // bearer-only backends that are up or unreachable.
@@ -3036,6 +3057,7 @@ const visualHarness = {
   rememberInputEcho,
   rememberSettledCommands,
   rememberDispatch,
+  rememberFailedDispatch,
   completedRollout(): void {
     mapThread = (thread) =>
       thread.id === IDLE_THREAD

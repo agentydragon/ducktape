@@ -460,6 +460,7 @@ py_test(
     srcs = ["test_ownership.py"],
     deps = [
         ":conftest",
+        ":db",
         ":models",
         ":ownership",
         ":store",
@@ -473,5 +474,6 @@ py_test(
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )

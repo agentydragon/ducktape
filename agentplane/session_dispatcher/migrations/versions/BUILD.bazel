@@ -6,6 +6,7 @@ exports_files([
     "0003_wake_eligible.py",
     "0004_sandbox_ownership.py",
     "0005_wake_budget.py",
+    "0006_wake_deadline.py",
 ])
 
 py_library(
@@ -47,6 +48,15 @@ py_library(
 py_library(
     name = "0005_wake_budget",
     srcs = ["0005_wake_budget.py"],
+    deps = [
+        "@pypi//alembic",
+        "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "0006_wake_deadline",
+    srcs = ["0006_wake_deadline.py"],
     deps = [
         "@pypi//alembic",
         "@pypi//sqlalchemy",

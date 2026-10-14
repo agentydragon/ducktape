@@ -149,3 +149,6 @@ class AgentplaneFixture:
 
     async def remember_dispatch(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.rememberDispatch()")
+
+    async def remember_failed_dispatch(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.rememberFailedDispatch()")

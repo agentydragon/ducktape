@@ -15,7 +15,14 @@ from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.session_dispatcher.channels import Channel, create_wakeups
 from agentplane.session_dispatcher.db import Dispatch, SandboxOwnership, SessionOpening, WakeAttempt
 from agentplane.session_dispatcher.ended_dispatches import TerminalEvent
-from agentplane.session_dispatcher.models import LIVE_STATES, DeliveryState, Operation, Reason, operation_of
+from agentplane.session_dispatcher.models import (
+    LIVE_STATES,
+    WAKE_DEADLINE_S,
+    DeliveryState,
+    Operation,
+    Reason,
+    operation_of,
+)
 from agentplane.session_dispatcher.snapshots import describe_dispatch
 from agentplane.session_dispatcher.terminal_broadcast import TerminalBroadcast
 from agentplane.subjects import ServiceAccountRef
@@ -201,6 +208,7 @@ class DispatchStore:
                     else None
                 ),
                 wake_from_incarnation=None,
+                wake_requested_at=None,
                 operation=operation,
                 command=command,
                 state=DeliveryState.QUEUED_IN_DISPATCHER,
@@ -244,6 +252,86 @@ class DispatchStore:
                 )
             )
 
+    async def note_wake_requested(self, command_id: str, *, owner: SandboxOwner) -> datetime | None:
+        """Start the bounded wait after the authenticated wake budget has been reserved."""
+        async with self.sessions.begin() as session:
+            sandbox_uid = await session.scalar(select(Dispatch.sandbox_uid).where(Dispatch.command_id == command_id))
+            if sandbox_uid != owner.sandbox_uid or not await self._fence_owner(session, owner):
+                return None
+            now = cast(datetime | None, await session.scalar(select(func.clock_timestamp())))
+            if now is None:
+                raise RuntimeError("PostgreSQL did not return its current time")
+            requested = await session.scalar(
+                update(Dispatch)
+                .where(
+                    Dispatch.command_id == command_id,
+                    Dispatch.state == DeliveryState.QUEUED_IN_DISPATCHER,
+                    Dispatch.wake_requested_at.is_(None),
+                )
+                .values(wake_requested_at=now, updated_at=now)
+                .returning(Dispatch.wake_requested_at)
+            )
+            if requested is not None:
+                await notify(session, Channel.DISPATCH)
+                return requested
+            return await session.scalar(
+                select(Dispatch.wake_requested_at).where(
+                    Dispatch.command_id == command_id, Dispatch.state == DeliveryState.QUEUED_IN_DISPATCHER
+                )
+            )
+
+    async def clear_wake_state(self, command_id: str, *, owner: SandboxOwner) -> None:
+        """End the old wake cycle when policy disables it or a new incarnation is Ready."""
+        async with self.sessions.begin() as session:
+            sandbox_uid = await session.scalar(select(Dispatch.sandbox_uid).where(Dispatch.command_id == command_id))
+            if sandbox_uid != owner.sandbox_uid or not await self._fence_owner(session, owner):
+                return
+            cleared = await session.execute(
+                update(Dispatch)
+                .where(
+                    Dispatch.command_id == command_id,
+                    Dispatch.state == DeliveryState.QUEUED_IN_DISPATCHER,
+                    (Dispatch.wake_from_incarnation.is_not(None) | Dispatch.wake_requested_at.is_not(None)),
+                )
+                .values(wake_from_incarnation=None, wake_requested_at=None, updated_at=datetime.now(UTC))
+                .returning(Dispatch.position)
+            )
+            if cleared.first() is not None:
+                await notify(session, Channel.DISPATCH)
+
+    async def fail_expired_wake(
+        self, command_id: str, *, owner: SandboxOwner, reason: str
+    ) -> tuple[Dispatch | None, float | None]:
+        """Settle an expired wake only for its still-queued row and current Sandbox owner.
+
+        A positive second result means the PostgreSQL deadline has not arrived yet; a stale owner,
+        cancelled row, or row without a requested wake returns (None, None).
+        """
+        async with self.sessions.begin() as session:
+            sandbox_uid = await session.scalar(select(Dispatch.sandbox_uid).where(Dispatch.command_id == command_id))
+            if sandbox_uid != owner.sandbox_uid or not await self._fence_owner(session, owner):
+                return None, None
+            row = await session.scalar(
+                select(Dispatch)
+                .where(
+                    Dispatch.command_id == command_id,
+                    Dispatch.state == DeliveryState.QUEUED_IN_DISPATCHER,
+                    Dispatch.wake_requested_at.is_not(None),
+                )
+                .with_for_update()
+            )
+            if row is None or row.wake_requested_at is None:
+                return None, None
+            now = cast(datetime | None, await session.scalar(select(func.clock_timestamp())))
+            if now is None:
+                raise RuntimeError("PostgreSQL did not return its current time")
+            remaining = (row.wake_requested_at + timedelta(seconds=WAKE_DEADLINE_S) - now).total_seconds()
+            if remaining > 0:
+                return None, remaining
+            row.state, row.reason, row.updated_at = DeliveryState.FAILED, reason, now
+            await notify(session, Channel.DISPATCH)
+            return row, None
+
     async def open_session(
         self,
         *,
@@ -277,6 +365,7 @@ class DispatchStore:
                 wake_caller_namespace=None if wake_caller is None else wake_caller.namespace,
                 wake_caller_name=None if wake_caller is None else wake_caller.name,
                 wake_from_incarnation=None,
+                wake_requested_at=None,
                 spec=spec,
                 setup_script=setup_script,
                 state=DeliveryState.QUEUED_IN_DISPATCHER,
@@ -322,6 +411,88 @@ class DispatchStore:
                     )
                 )
             )
+
+    async def note_opening_wake_requested(self, session_id: str, *, owner: SandboxOwner) -> datetime | None:
+        """Start the bounded wait after the authenticated wake budget has been reserved."""
+        async with self.sessions.begin() as session:
+            sandbox_uid = await session.scalar(
+                select(SessionOpening.sandbox_uid).where(SessionOpening.session_id == session_id)
+            )
+            if sandbox_uid != owner.sandbox_uid or not await self._fence_owner(session, owner):
+                return None
+            now = cast(datetime | None, await session.scalar(select(func.clock_timestamp())))
+            if now is None:
+                raise RuntimeError("PostgreSQL did not return its current time")
+            requested = await session.scalar(
+                update(SessionOpening)
+                .where(
+                    SessionOpening.session_id == session_id,
+                    SessionOpening.state == DeliveryState.QUEUED_IN_DISPATCHER,
+                    SessionOpening.wake_requested_at.is_(None),
+                )
+                .values(wake_requested_at=now, updated_at=now)
+                .returning(SessionOpening.wake_requested_at)
+            )
+            if requested is not None:
+                await notify(session, Channel.DISPATCH)
+                return requested
+            return await session.scalar(
+                select(SessionOpening.wake_requested_at).where(
+                    SessionOpening.session_id == session_id, SessionOpening.state == DeliveryState.QUEUED_IN_DISPATCHER
+                )
+            )
+
+    async def clear_opening_wake_state(self, session_id: str, *, owner: SandboxOwner) -> None:
+        """End the old opening wake cycle when policy disables it or a new incarnation is Ready."""
+        async with self.sessions.begin() as session:
+            sandbox_uid = await session.scalar(
+                select(SessionOpening.sandbox_uid).where(SessionOpening.session_id == session_id)
+            )
+            if sandbox_uid != owner.sandbox_uid or not await self._fence_owner(session, owner):
+                return
+            cleared = await session.execute(
+                update(SessionOpening)
+                .where(
+                    SessionOpening.session_id == session_id,
+                    SessionOpening.state == DeliveryState.QUEUED_IN_DISPATCHER,
+                    (SessionOpening.wake_from_incarnation.is_not(None) | SessionOpening.wake_requested_at.is_not(None)),
+                )
+                .values(wake_from_incarnation=None, wake_requested_at=None, updated_at=datetime.now(UTC))
+                .returning(SessionOpening.session_id)
+            )
+            if cleared.first() is not None:
+                await notify(session, Channel.DISPATCH)
+
+    async def fail_expired_opening_wake(
+        self, session_id: str, *, owner: SandboxOwner, reason: str
+    ) -> tuple[SessionOpening | None, float | None]:
+        """Settle an expired opening wake under the Sandbox ownership and queue-state fences."""
+        async with self.sessions.begin() as session:
+            sandbox_uid = await session.scalar(
+                select(SessionOpening.sandbox_uid).where(SessionOpening.session_id == session_id)
+            )
+            if sandbox_uid != owner.sandbox_uid or not await self._fence_owner(session, owner):
+                return None, None
+            row = await session.scalar(
+                select(SessionOpening)
+                .where(
+                    SessionOpening.session_id == session_id,
+                    SessionOpening.state == DeliveryState.QUEUED_IN_DISPATCHER,
+                    SessionOpening.wake_requested_at.is_not(None),
+                )
+                .with_for_update()
+            )
+            if row is None or row.wake_requested_at is None:
+                return None, None
+            now = cast(datetime | None, await session.scalar(select(func.clock_timestamp())))
+            if now is None:
+                raise RuntimeError("PostgreSQL did not return its current time")
+            remaining = (row.wake_requested_at + timedelta(seconds=WAKE_DEADLINE_S) - now).total_seconds()
+            if remaining > 0:
+                return None, remaining
+            row.state, row.reason, row.updated_at = DeliveryState.FAILED, reason, now
+            await notify(session, Channel.DISPATCH)
+            return row, None
 
     async def reserve_wake_attempt(
         self, *, caller: ServiceAccountRef, sandbox_uid: UUID, wake_generation: int

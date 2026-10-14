@@ -9,6 +9,7 @@ filegroup(
         "//agentplane/session_dispatcher/migrations/versions:0003_wake_eligible.py",
         "//agentplane/session_dispatcher/migrations/versions:0004_sandbox_ownership.py",
         "//agentplane/session_dispatcher/migrations/versions:0005_wake_budget.py",
+        "//agentplane/session_dispatcher/migrations/versions:0006_wake_deadline.py",
     ],
     visibility = ["//agentplane/session_dispatcher:__pkg__"],
 )

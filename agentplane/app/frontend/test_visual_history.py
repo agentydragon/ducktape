@@ -289,6 +289,21 @@ async def test_dispatcher_queued_while_sandbox_resumes(
     await view.capture()
 
 
+async def test_dispatcher_reports_why_a_sandbox_wake_failed(view: VisualPage, app: AgentplaneFixture) -> None:
+    await app.build(Scene.PENDING_COMMANDS)
+    await app.remember_failed_dispatch()
+    await app.mount_thread(RUNNING_THREAD)
+    await view.check(context="fixture ready")
+    row = view.page.locator('[data-command-id="wake-deadline-dispatch"]')
+    await expect(row.locator('[data-stage="dispatch_failed"]')).to_be_visible()
+    await row.locator(".agentplane-command-progress-hit").hover()
+    tooltip = row.get_by_role("tooltip")
+    await expect(tooltip).to_be_visible()
+    await expect(tooltip).to_contain_text("Sandbox did not become Ready within 10 minutes")
+    await expect(tooltip).to_contain_text("Unschedulable: 0/2 nodes are available: PVC is not bound")
+    await view.capture(target=row)
+
+
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
 async def test_cancel_unsent_input(view: VisualPage, app: AgentplaneFixture) -> None:
     await view.page.evaluate(

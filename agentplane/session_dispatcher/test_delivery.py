@@ -20,10 +20,10 @@ from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.session_dispatcher import delivery as delivery_module
 from agentplane.session_dispatcher.channels import Channel
-from agentplane.session_dispatcher.db import Dispatch, WakeAttempt
+from agentplane.session_dispatcher.db import Dispatch, SessionOpening, WakeAttempt
 from agentplane.session_dispatcher.delivery import Delivery
 from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
-from agentplane.session_dispatcher.models import DeliveryState, Reason
+from agentplane.session_dispatcher.models import WAKE_DEADLINE_S, DeliveryState, Reason
 from agentplane.session_dispatcher.ownership import SandboxOwnershipLeases
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxWatch
@@ -232,6 +232,9 @@ async def test_a_wake_retry_rechecks_ownership_after_failover(
     async def notified(reason: Reason) -> None:
         del reason
 
+    async def mark_requested() -> datetime | None:
+        return None
+
     await delivery._request_sandbox_wake(
         key="stale-wake",
         sandbox_name=sandbox.metadata.name,
@@ -239,6 +242,7 @@ async def test_a_wake_retry_rechecks_ownership_after_failover(
         caller=WAKE_CALLER,
         owner=stale_owner,
         notify=notified,
+        mark_requested=mark_requested,
     )
     assert calls == [f"{sandbox.metadata.name}:{sandbox.metadata.uid}"]
 
@@ -256,6 +260,7 @@ async def test_a_wake_retry_rechecks_ownership_after_failover(
         caller=WAKE_CALLER,
         owner=stale_owner,
         notify=notified,
+        mark_requested=mark_requested,
     )
     assert calls == [f"{sandbox.metadata.name}:{sandbox.metadata.uid}"]
 
@@ -326,6 +331,7 @@ async def test_a_rate_limited_wake_stays_queued_without_patching_until_its_retry
     monkeypatch.setattr(store, "reserve_wake_attempt", reserve_wake)
     await enqueue(store, sandboxes, "rate-limited", wake_eligible=True)
     await wait_for(store, "rate-limited", DeliveryState.QUEUED_IN_DISPATCHER, Reason.WAKE_RATE_LIMITED)
+    assert (await store.get_dispatch("rate-limited")).wake_requested_at is None
 
     sandbox_object = cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]
     assert sandbox_object["spec"]["running"] is False
@@ -445,7 +451,51 @@ async def test_a_wake_patch_is_retried_after_a_transient_api_failure(
     async with store.sessions() as session:
         assert await session.scalar(select(func.count()).select_from(WakeAttempt)) == 1
     assert key not in delivery._retry_at
-    assert delivery._next_retry_in() is None
+    assert key in delivery._wake_deadline_at
+    assert delivery._next_retry_in() is not None
+
+
+@pytest.mark.parametrize("opening", [False, True], ids=["command", "opening"])
+async def test_a_wake_deadline_fails_with_the_current_condition_without_deleting_queued_work(
+    opening: bool, store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster, delivery: Delivery
+) -> None:
+    set_sandbox(cluster, ready=False, running=False, wake_on_send=True)
+    if opening:
+        await open_session(store, sandboxes, wake_eligible=True)
+        await wait_for_opening(store, DeliveryState.QUEUED_IN_DISPATCHER, Reason.SANDBOX_RESUMING)
+        async with store.sessions.begin() as session:
+            await session.execute(
+                update(SessionOpening)
+                .where(SessionOpening.session_id == SESSION)
+                .values(wake_requested_at=datetime.now(UTC) - timedelta(seconds=WAKE_DEADLINE_S + 1))
+            )
+    else:
+        await enqueue(store, sandboxes, "wake-deadline", wake_eligible=True)
+        await wait_for(store, "wake-deadline", DeliveryState.QUEUED_IN_DISPATCHER, Reason.SANDBOX_RESUMING)
+        async with store.sessions.begin() as session:
+            await session.execute(
+                update(Dispatch)
+                .where(Dispatch.command_id == "wake-deadline")
+                .values(wake_requested_at=datetime.now(UTC) - timedelta(seconds=WAKE_DEADLINE_S + 1))
+            )
+
+    set_sandbox(cluster, ready=False, running=True, incarnation="pod-2", wake_on_send=True)
+    sandbox = cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]
+    condition = sandbox["status"]["conditions"][0]
+    condition.update(reason="Unschedulable", message="0/2 nodes are available: PVC is not bound")
+    cluster.fake.put(sandbox_resource.SANDBOXES_PLURAL, sandbox)
+    reason = "wake_deadline_expired: Ready=False/Unschedulable: 0/2 nodes are available: PVC is not bound"
+
+    if opening:
+        await wait_for_opening(store, DeliveryState.FAILED, reason)
+        opening_row = await store.get_opening(SESSION)
+        assert opening_row.reason == reason
+        assert opening_row.wake_requested_at is not None
+    else:
+        dispatch_row = await wait_for(store, "wake-deadline", DeliveryState.FAILED, reason)
+        assert dispatch_row.reason == reason
+        assert dispatch_row.wake_requested_at is not None
+    assert SANDBOX in cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL]
 
 
 async def test_canceling_a_send_clears_its_wake_retry_deadline(

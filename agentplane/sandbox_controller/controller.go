@@ -757,12 +757,30 @@ func podCondition(condition *metav1.Condition, sandbox *Sandbox, pod *corev1.Pod
 	case !pod.DeletionTimestamp.IsZero() || !sandbox.running():
 		condition.Reason, condition.Message = "Stopping", fmt.Sprintf("Pod %s is being deleted", pod.Name)
 	case pod.Status.Phase == corev1.PodPending || pod.Status.Phase == "":
-		condition.Reason, condition.Message = "Starting", fmt.Sprintf("Pod %s is not running yet", pod.Name)
+		if reason, message, scheduled := podSchedulingFailure(pod); scheduled {
+			condition.Reason, condition.Message = reason, message
+		} else {
+			condition.Reason, condition.Message = "Starting", fmt.Sprintf("Pod %s is not running yet", pod.Name)
+		}
 	case pod.Status.Phase == corev1.PodRunning:
 		condition.Status, condition.Reason, condition.Message = metav1.ConditionTrue, "PodRunning", fmt.Sprintf("Pod %s is running", pod.Name)
 	default:
 		condition.Reason, condition.Message = "PodEnded", fmt.Sprintf("Pod %s ended (%s); a new one replaces it", pod.Name, pod.Status.Phase)
 	}
+}
+
+func podSchedulingFailure(pod *corev1.Pod) (string, string, bool) {
+	for _, condition := range pod.Status.Conditions {
+		if condition.Type == corev1.PodScheduled && condition.Status == corev1.ConditionFalse && condition.Reason != "" {
+			return condition.Reason, condition.Message, true
+		}
+	}
+	return "", "", false
+}
+
+func podHasSchedulingFailure(pod *corev1.Pod) bool {
+	_, _, failed := podSchedulingFailure(pod)
+	return failed
 }
 
 // SetupWithManager wires the watches: each Sandbox, the objects it owns, the Pods, VMIs and state

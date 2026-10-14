@@ -6,6 +6,10 @@ from agentplane.proto import command_pb2
 
 # gazelle:include_dep @pypi//protobuf
 
+# A send-triggered wake that has actually been requested gets this bounded interval to
+# produce a new Ready incarnation. Queue rows remain stored when it expires.
+WAKE_DEADLINE_S = 10 * 60
+
 
 class Operation(StrEnum):
     """What a stored Dispatch asks of a Session. `InterruptTurn` is never stored."""
