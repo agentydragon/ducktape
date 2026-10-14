@@ -294,7 +294,7 @@ door for every Session until then, and `SANDBOX_IDLE_EXPIRY` is gated on that no
 the journal (#10341); the next incarnation does not dispatch it, since the conversation has moved on, and the
 Dispatcher fails it with the reason `ended_by_teardown`. A command dispatched and in flight ends its turn as
 `ended_by_teardown`. A refused send is retried after resume. An `InterruptTurn` or `StopRunnerSession` that
-completes as a no-op (nothing running, or Sandbox suspended) ends in the delivery state `NO_OP`.
+completes as a no-op (nothing running, or Sandbox suspended) ends in the delivery state `NO_OP` (D4).
 
 **Order per Session.** Dispatches to one Session deliver in FIFO order. A `StopRunnerSession` queued behind a
 `SubmitInput` cancels the earlier queued inputs that have not been delivered, because delivering them would
@@ -405,6 +405,25 @@ callers.
   different caller, authorized by caller identity, so it has no RPC of its own. `InterruptTurn` and `StopRunnerSession` never wake a suspended Sandbox (operator, 2026-10-13): with nothing running there is nothing to interrupt or stop, so they complete as no-ops.
 - `GetDispatch`, `WatchDispatches` (stream, by Session or Sandbox), `ListDispatches`, `CancelDispatch`
   (not once delivery is ambiguous). A Session's open is a dispatch like a command, with the same states.
+
+**Delivery states** (operator, 2026-10-14: each name says where the command is). One vocabulary for every
+dispatch, a command or a Session creation, recorded by the Dispatcher:
+
+| State                     | Meaning                                                                                                                                       | Survives an incarnation ending                         |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `QUEUED_IN_DISPATCHER`    | Stored durably, not yet sent. A reason says what it waits for: Sandbox suspended, resuming, not `Ready`, or `wakeOnSend` off                  | yes (Dispatcher database)                              |
+| `DELIVERING_TO_RUNNER`    | A call to the runner is in flight                                                                                                             | no: back to `QUEUED_IN_DISPATCHER` if the call is lost |
+| `RUNNER_ADMITTED`         | The runner journaled it (today's `CommandAdmitted`). Terminal for commands with no model-context step                                         | yes (runner journal on the state volume)               |
+| `HARNESS_CONFIRMED`       | It reached the model's context (today's `harness_user_message_confirmed`). Only `SubmitInput` gets here                                       | yes (History Service)                                  |
+| `NO_OP`                   | Nothing to do, e.g. `InterruptTurn` or `StopRunnerSession` on a suspended Sandbox or with nothing running; a reason says where it was decided | yes                                                    |
+| `FAILED`                  | Terminal, with a reason that names where it failed, e.g. `ended_by_teardown` for an admitted-but-undispatched command                         | yes                                                    |
+| `CANCELLED_IN_DISPATCHER` | Cancelled by the sender before delivery began                                                                                                 | yes                                                    |
+| `UNKNOWN`                 | Only for a deleted Sandbox, whose journal can no longer answer a redelivery                                                                   | yes                                                    |
+
+Transitions: `QUEUED_IN_DISPATCHER → DELIVERING_TO_RUNNER → RUNNER_ADMITTED → HARNESS_CONFIRMED`. A refusal because
+the runner is quiescing returns `DELIVERING_TO_RUNNER` to `QUEUED_IN_DISPATCHER`, a retry rather than a failure.
+`QUEUED_IN_DISPATCHER → NO_OP` for an interrupt or stop that finds nothing to do. Redelivery of a `command_id`
+after a lost reply resolves from the runner's journal, which is why `UNKNOWN` is rare.
 
 **Where a new Session's spec comes from.** `OpenSession` carries it, from the caller (the app resolves its
 presets into a concrete `SessionSpec` first; the Dispatcher knows no preset). The Dispatcher stores it with the
@@ -585,20 +604,20 @@ sequenceDiagram
 
 Each DAG node fits without reshaping the split. Node edits belong to the Plans burn-down lane.
 
-| Node                                                        | Where it lands                                                                                                                              |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
-| `SESSION_QUEUE_DESIGN`, `SESSION_MESSAGE_QUEUE`             | Dispatcher; this document answers the new-service fork and the dependency questions                                                         |
-| `SESSION_ACTIVITY_STREAM`                                   | Built on the runner's busy/idle facts, the same definition idle suspension uses (operator, 2026-10-13)                                      |
-| `SANDBOX_IDLE_EXPIRY`                                       | Controller: `spec.idleSuspendAfter`, runner busy facts, the D3 sequence; gated on `SESSION_INCARNATIONS`                                    |
-| `SESSION_REVIVE`, `SESSION_INCARNATIONS`                    | Controller starts the incarnation; History Service records it from the runner's announcement                                                |
-| `BOOTSTRAP_PROGRESS_CONTRACT`                               | Runner fact on the Lease, republished at each connect; `Bootstrapped` is part of `Ready`; `BootstrapFailed` is terminal                     |
-| `CONTROLLER_SEALS`, `SANDBOX_LIFECYCLE`                     | Already the controller's; D3 adds the interrupt step                                                                                        |
-| `SANDBOX_GENERIC_SPLIT`                                     | The controller keeps Pod, VM, volume; sealing and runner facts become an optional layer on top; the Dispatcher is outside                   |
-| `SANDBOX_SPEC_EDIT`, `SANDBOX_IMAGE_REPLACE`                | Suspend then resume; no change to the split                                                                                                 |
-| `STATE_VOLUME_BLOCK`, `WORKSPACE_VOLUME`, `SANDBOX_ARCHIVE` | Controller; the Dispatcher only waits for `Ready`                                                                                           |
-| `VM_RAM_SUSPEND`                                            | Needs its own answer to "seal before suspend": see below                                                                                    |
-| `THREAD_SUCCESSOR_DELIVERY`, `COMMAND_DELIVERY_STATES`      | The Dispatcher's delivery states are the vocabulary, including `NO_OP`; redelivery resolves ambiguity, `unknown` only for a deleted Sandbox |
-| `AGENT_MESSAGING`, `SUSPENDED_COMPOSER`                     | Senders of the command RPCs                                                                                                                 |
+| Node                                                        | Where it lands                                                                                                                |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `SESSION_QUEUE_DESIGN`, `SESSION_MESSAGE_QUEUE`             | Dispatcher; this document answers the new-service fork and the dependency questions                                           |
+| `SESSION_ACTIVITY_STREAM`                                   | Built on the runner's busy/idle facts, the same definition idle suspension uses (operator, 2026-10-13)                        |
+| `SANDBOX_IDLE_EXPIRY`                                       | Controller: `spec.idleSuspendAfter`, runner busy facts, the D3 sequence; gated on `SESSION_INCARNATIONS`                      |
+| `SESSION_REVIVE`, `SESSION_INCARNATIONS`                    | Controller starts the incarnation; History Service records it from the runner's announcement                                  |
+| `BOOTSTRAP_PROGRESS_CONTRACT`                               | Runner fact on the Lease, republished at each connect; `Bootstrapped` is part of `Ready`; `BootstrapFailed` is terminal       |
+| `CONTROLLER_SEALS`, `SANDBOX_LIFECYCLE`                     | Already the controller's; D3 adds the interrupt step                                                                          |
+| `SANDBOX_GENERIC_SPLIT`                                     | The controller keeps Pod, VM, volume; sealing and runner facts become an optional layer on top; the Dispatcher is outside     |
+| `SANDBOX_SPEC_EDIT`, `SANDBOX_IMAGE_REPLACE`                | Suspend then resume; no change to the split                                                                                   |
+| `STATE_VOLUME_BLOCK`, `WORKSPACE_VOLUME`, `SANDBOX_ARCHIVE` | Controller; the Dispatcher only waits for `Ready`                                                                             |
+| `VM_RAM_SUSPEND`                                            | Needs its own answer to "seal before suspend": see below                                                                      |
+| `THREAD_SUCCESSOR_DELIVERY`, `COMMAND_DELIVERY_STATES`      | The Dispatcher's delivery states (D4) are the vocabulary; redelivery resolves ambiguity, `unknown` only for a deleted Sandbox |
+| `AGENT_MESSAGING`, `SUSPENDED_COMPOSER`                     | Senders of the command RPCs                                                                                                   |
 
 ## Complexities not yet named
 
