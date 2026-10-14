@@ -1,0 +1,4 @@
+{"event": "setup", "openvino": "2026.4.1-22982-e213a147257-releases/2026/4", "genai": "2026.4.1.0-3408-ab01d1771e4", "devices": ["CPU", "NPU"]}
+{"event": "loaded", "seconds": 5.6771311609918484, "pid": 571557, "rss_kib": 655664, "peak_rss_kib": 2278460, "accel_fds": ["/dev/accel/accel0"]}
+{"event": "generation", "task_id": "HumanEval/4", "repeat": 0, "elapsed_seconds": 13.91170445800526, "input_tokens": 155, "generated_tokens": 161, "ttft_ms": 1732.8553466796875, "throughput_tps": 13.140480041503906, "rss_kib": 656912}
+{"event": "generation", "task_id": "HumanEval/4", "repeat": 1, "elapsed_seconds": 12.78787263200502, "input_tokens": 155, "generated_tokens": 161, "ttft_ms": 1081.564453125, "throughput_tps": 13.66919994354248, "rss_kib": 656872}
