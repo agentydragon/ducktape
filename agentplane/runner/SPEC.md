@@ -81,13 +81,13 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   sealed journal, a command ID already used for other work, or a command without an ID and an
   operation. Delivery never creates a session or starts a harness.
 - Each `Runner` call is answered once, with its result or a gRPC status naming the cause.
-  `ListSessions` and `Seal` answer as the RPCs of the same name do. `OpenSession` creates a session
+  `ListSessions` and `Quiesce` answer as the RPCs of the same name do. `OpenSession` creates a session
   from its spec and starts it; for an existing session with the same spec, and setup script when
   given, it confirms it and starts its harness if stopped, and any other spec is refused.
   `ResumeSession` restarts a stopped harness on the retained spec, and is refused for an unknown or
-  sealed session or one whose setup failed or was interrupted. A `Seal` takes effect after every
+  sealed session or one whose setup failed or was interrupted. A `Quiesce` takes effect after every
   command delivered before it is answered; a call after it that starts or resumes work is refused
-  at once (see Teardown seal), and `ListSessions` waits for it. A lost connection drops
+  at once (see Teardown quiesce), and `ListSessions` waits for it. A lost connection drops
   the answers of calls in flight, never an operation halfway through.
 - The bearer it sends is a placeholder the egress proxy substitutes; the runner never holds the
   control token.
@@ -106,25 +106,25 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   Neither holds up another session, a command or a lifecycle request: the journal is the buffer.
 - The bearer it sends is a placeholder the egress proxy substitutes for the ingress's own audience.
 
-## Teardown seal
+## Teardown quiesce
 
-- `Seal` is for Sandbox teardown only. The runner first records, durably, that the Sandbox is sealed
-  in this incarnation, naming the incarnation UID its latest `Welcome` carried; from then on,
+- `Quiesce` is for Sandbox teardown only. The runner first records, durably, that the Sandbox is in
+  lameduck in this incarnation, naming the incarnation UID its latest `Welcome` carried; from then on,
   including after a restart in the same incarnation, it is in lameduck: `OpenSession`, `ResumeSession` and
   every delivered command except an interrupt or a stop are refused with `ABORTED`, which a sender
   reads as "retry after the Sandbox resumes", and a command already admitted but not dispatched is
   left pending. It then interrupts each active turn, waits up to a grace period for it to end, and
   stops every setup script and harness; the turn's `TurnCompleted` has `ended_by_teardown` set, which
   tells it from a user's interrupt. It seals each session's journal at its
-  final cursor, returning those cursors. Sealing again returns the same cursors. Each cursor comes
+  final cursor, returning those cursors. Quiescing again returns the same cursors. Each cursor comes
   with `flushed`: whether the ingress has acknowledged that seal, as the runner recorded it, so it
   holds across a restart.
 - A sealed journal takes no further Events, so its commands are refused. Its ingress push sends
   every entry through the seal's cursor, then `Sealed`.
 - An ordinary stop never seals, since a stopped session can resume. A seal ends this Sandbox's
   incarnation of the session's history.
-- The state volume outlives incarnations, so on each `Welcome` the runner drops a seal recorded under
-  another incarnation UID before it serves any call: a new incarnation starts unsealed. Journals
+- The state volume outlives incarnations, so on each `Welcome` the runner drops a lameduck recorded under
+  another incarnation UID before it serves any call: a new incarnation starts out of lameduck. Journals
   sealed by the earlier incarnation stay sealed.
 
 ## Events

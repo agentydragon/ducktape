@@ -37,17 +37,17 @@ func main() {
 	flag.Parse()
 	ctrl.SetLogger(zap.New())
 	log := ctrl.Log.WithName("sandbox-controller")
-	if err := run(*namespace, *metricsAddress, *probeAddress, sandboxcontroller.GatewaySealer{Target: *gatewayTarget, TokenFile: *gatewayTokenFile}); err != nil {
+	if err := run(*namespace, *metricsAddress, *probeAddress, sandboxcontroller.GatewayQuiescer{Target: *gatewayTarget, TokenFile: *gatewayTokenFile}); err != nil {
 		log.Error(err, "controller failed")
 		os.Exit(1)
 	}
 }
 
-func run(namespace, metricsAddress, probeAddress string, sealer sandboxcontroller.GatewaySealer) error {
+func run(namespace, metricsAddress, probeAddress string, quiescer sandboxcontroller.GatewayQuiescer) error {
 	if namespace == "" {
 		return errors.New("--namespace is required")
 	}
-	if (sealer.Target == "") != (sealer.TokenFile == "") {
+	if (quiescer.Target == "") != (quiescer.TokenFile == "") {
 		return errors.New("--runner-gateway-target and --runner-gateway-token-file go together")
 	}
 	scheme := runtime.NewScheme()
@@ -87,7 +87,7 @@ func run(namespace, metricsAddress, probeAddress string, sealer sandboxcontrolle
 	} else {
 		ctrl.Log.WithName("sandbox-controller").Info("KubeVirt's API is not served: VM Sandboxes stay unready")
 	}
-	if sealer.Target != "" {
+	if quiescer.Target != "" {
 		// Only the Runner Gateway's connection Leases, not the leader election Lease.
 		connection, err := labels.NewRequirement(sandboxcontroller.ConnectionLabel, selection.Equals, []string{"true"})
 		if err != nil {
@@ -112,8 +112,8 @@ func run(namespace, metricsAddress, probeAddress string, sealer sandboxcontrolle
 		return err
 	}
 	reconciler := &sandboxcontroller.Reconciler{Client: mgr.GetClient(), KubeVirt: kubeVirt, Now: time.Now}
-	if sealer.Target != "" {
-		reconciler.Sealer, reconciler.Leases = sealer, mgr.GetClient()
+	if quiescer.Target != "" {
+		reconciler.Quiescer, reconciler.Leases = quiescer, mgr.GetClient()
 	}
 	if err := reconciler.SetupWithManager(mgr); err != nil {
 		return err

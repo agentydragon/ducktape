@@ -409,7 +409,7 @@ async def test_a_seal_interrupts_the_active_turn_and_records_that_teardown_ended
     await model.hold(await model.request())
     await session.until(events.is_kind("harness_user_message_confirmed"))
 
-    await driver.seal()
+    await driver.quiesce()
     with pytest.raises(SessionSealedError):
         await session.until(lambda _: False)
 

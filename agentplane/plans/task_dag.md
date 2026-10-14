@@ -1366,12 +1366,12 @@ that have them. Order: every other caller has moved to the Dispatcher, then the 
 
 ### `CONTROLLER_SEALS` — the Sandbox controller seals
 
-**Candidate; the controller's sealer code has landed.** Two steps remain, each after the previous
+**Candidate; the controller's quiescer code has landed.** Two steps remain, each after the previous
 one's image is pinned in every environment. First, cdk8s passes the controller `--runner-gateway-target`
 and `--runner-gateway-token-file` (a projected token for audience `token_audience`), admits the
 controller to the gateway, and sets `sandbox_controller_account` on the gateway; the controller's
-`Sealer` and `Leases` become required. This step waits for the runner image with the per-incarnation seal marker to be pinned: with the
-sealer on, a resumed Sandbox's runner would otherwise find the old incarnation's marker. Then `runner_gateway/deletion_seals.py`, `sealing.py` and the
+`Quiescer` and `Leases` become required. This step waits for the runner image with the per-incarnation seal marker to be pinned: with the
+quiescer on, a resumed Sandbox's runner would otherwise find the old incarnation's marker. Then `runner_gateway/deletion_seals.py`, `sealing.py` and the
 gateway's write to Sandboxes go.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).

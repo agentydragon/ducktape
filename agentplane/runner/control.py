@@ -30,7 +30,7 @@ from agentplane.runner.runner import (
     InvalidRequestError,
     OpenError,
     Runner,
-    SandboxSealedError,
+    SandboxQuiescedError,
     SessionUnknownError,
     SetupFailedError,
     SpecConflictError,
@@ -59,7 +59,7 @@ _REFUSALS: tuple[tuple[type[Exception] | tuple[type[Exception], ...], grpc.Statu
     ((SpecConflictError, InitializationConflictError, CommandConflictError), grpc.StatusCode.ALREADY_EXISTS),
     (InvalidRequestError, grpc.StatusCode.INVALID_ARGUMENT),
     # The Sandbox is tearing down: the same call succeeds once it resumes.
-    (SandboxSealedError, grpc.StatusCode.ABORTED),
+    (SandboxQuiescedError, grpc.StatusCode.ABORTED),
     ((JournalSealedError, SetupFailedError, HarnessStoppedError, OpenError), grpc.StatusCode.FAILED_PRECONDITION),
     # The state volume failed; a retry may find it working.
     ((OSError, SQLAlchemyError), grpc.StatusCode.UNAVAILABLE),
@@ -112,18 +112,18 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
     def __init__(self, runner: Runner) -> None:
         self.runner = runner
         self._admissions: set[asyncio.Task[event_log_pb2.EventEntry]] = set()
-        self._sealing: asyncio.Task[runner_pb2.QuiesceResponse] | None = None
+        self._quiescing: asyncio.Task[runner_pb2.QuiesceResponse] | None = None
 
-    async def _after_seal(self) -> None:
+    async def _after_quiesce(self) -> None:
         # Ordering only: the Quiesce's outcome is its own call's to report.
-        if self._sealing is not None:
-            await asyncio.wait({self._sealing})
+        if self._quiescing is not None:
+            await asyncio.wait({self._quiescing})
 
     @override
     async def ListSessions(
         self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.ListSessionsResponse:
-        await self._after_seal()
+        await self._after_quiesce()
         return runner_pb2.ListSessionsResponse(sessions=self.runner.summaries())
 
     @override
@@ -147,17 +147,17 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
             session = await finish_command(self.runner.resume(request.session_id))
             return runner_control_pb2.ResumeSessionResponse(attached=_attached(session))
 
-    async def _seal(self, context: grpc.aio.ServicerContext) -> runner_pb2.QuiesceResponse:
-        async def seal(preceding: set[asyncio.Task[event_log_pb2.EventEntry]]) -> runner_pb2.QuiesceResponse:
+    async def _quiesce(self, context: grpc.aio.ServicerContext) -> runner_pb2.QuiesceResponse:
+        async def quiesce(preceding: set[asyncio.Task[event_log_pb2.EventEntry]]) -> runner_pb2.QuiesceResponse:
             # Ordering only: an admission's outcome is its own call's to report.
             if preceding:
                 await asyncio.wait(preceding)
-            return await self.runner.seal()
+            return await self.runner.quiesce()
 
         async with _refusals(context):
             self.runner.enter_lameduck()
-            self._sealing = sealing = asyncio.ensure_future(seal(set(self._admissions)))
-            return await finish_command(sealing)
+            self._quiescing = quiescing = asyncio.ensure_future(quiesce(set(self._admissions)))
+            return await finish_command(quiescing)
 
     async def _deliver(
         self, session_id: str, command: command_pb2.Command, context: grpc.aio.ServicerContext
@@ -173,7 +173,7 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
     async def Quiesce(
         self, request: runner_pb2.QuiesceRequest, context: grpc.aio.ServicerContext
     ) -> runner_pb2.QuiesceResponse:
-        return await self._seal(context)
+        return await self._quiesce(context)
 
     @override
     async def DeliverCommand(

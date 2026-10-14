@@ -249,13 +249,13 @@ func TestVMDeletionWaitsForTheVMIBeforeTheStateVolume(t *testing.T) {
 	reconcileOnce(t, r)
 	vmi, _ := startVMI(t, c, kubevirtv1.Running)
 	connect(t, c, "uid-runner")
-	r.Sealer.(*fakeSealer).err = errors.New("runner unreachable")
+	r.Quiescer.(*fakeQuiescer).err = errors.New("runner unreachable")
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
 	if getVM(t, c) == nil {
 		t.Fatal("deletion removed the VM before the Sessions were sealed")
 	}
-	sealSessions(t, r)
+	quiesceSessions(t, r)
 	reconcileOnce(t, r)
 	if getVM(t, c) != nil {
 		t.Fatal("deletion left the VM once the Sessions were sealed")

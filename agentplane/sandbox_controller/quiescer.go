@@ -15,12 +15,12 @@ import (
 	runnercontrolpb "github.com/agentydragon/ducktape/agentplane/proto/runner_control"
 )
 
-// sealTimeout bounds one Seal call; stopping harnesses can take a while, and Seal is idempotent, so
+// quiesceTimeout bounds one Seal call; stopping harnesses can take a while, and Seal is idempotent, so
 // a call that runs out of time is repeated.
-const sealTimeout = 30 * time.Second
+const quiesceTimeout = 30 * time.Second
 
-// SealResult is a runner's answer to a seal.
-type SealResult struct {
+// QuiesceResult is a runner's answer to a quiesce.
+type QuiesceResult struct {
 	// The runner says its quiesce is not final yet. False for a runner that does not report a stage,
 	// whose `Quiesce` blocks until Unflushed says the rest.
 	Quiescing bool
@@ -29,35 +29,35 @@ type SealResult struct {
 	Unflushed []string
 }
 
-// Sealer asks a Sandbox's runner to seal every Session.
-type Sealer interface {
-	Seal(ctx context.Context, sandbox *Sandbox) (SealResult, error)
+// Quiescer asks a Sandbox's runner to seal every Session.
+type Quiescer interface {
+	Quiesce(ctx context.Context, sandbox *Sandbox) (QuiesceResult, error)
 }
 
-// GatewaySealer calls `Runner.Quiesce` through the Runner Gateway's proxy, at the Sandbox's own
+// GatewayQuiescer calls `Runner.Quiesce` through the Runner Gateway's proxy, at the Sandbox's own
 // control Service, which names the replica holding its runner connection.
-type GatewaySealer struct {
+type GatewayQuiescer struct {
 	// Target is a template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`.
 	Target string
 	// TokenFile is the projected ServiceAccount token the gateway accepts from this controller.
 	TokenFile string
 }
 
-func (g GatewaySealer) Seal(ctx context.Context, sandbox *Sandbox) (SealResult, error) {
+func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *Sandbox) (QuiesceResult, error) {
 	// Projected tokens rotate: read it for every call.
 	token, err := os.ReadFile(g.TokenFile)
 	if err != nil {
-		return SealResult{}, err
+		return QuiesceResult{}, err
 	}
 	target := strings.NewReplacer("{sandbox}", sandbox.Name, "{namespace}", sandbox.Namespace).Replace(g.Target)
 	// A connection for this call alone: a replica that no longer holds the runner answers UNAVAILABLE,
 	// and the retry resolves the control Service again.
 	conn, err := grpc.NewClient(target, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
-		return SealResult{}, err
+		return QuiesceResult{}, err
 	}
 	defer conn.Close()
-	ctx, cancel := context.WithTimeout(ctx, sealTimeout)
+	ctx, cancel := context.WithTimeout(ctx, quiesceTimeout)
 	defer cancel()
 	ctx = metadata.AppendToOutgoingContext(
 		ctx,
@@ -66,9 +66,9 @@ func (g GatewaySealer) Seal(ctx context.Context, sandbox *Sandbox) (SealResult, 
 	)
 	response, err := runnercontrolpb.NewRunnerClient(conn).Quiesce(ctx, &runnerpb.QuiesceRequest{})
 	if err != nil {
-		return SealResult{}, fmt.Errorf("quiescing %s through %s: %w", sandbox.Name, target, err)
+		return QuiesceResult{}, fmt.Errorf("quiescing %s through %s: %w", sandbox.Name, target, err)
 	}
-	result := SealResult{
+	result := QuiesceResult{
 		Quiescing: response.Stage != nil && response.GetStage() != runnerpb.QuiesceStage_QUIESCE_STAGE_QUIESCED,
 		Sessions:  len(response.GetSessions()),
 	}

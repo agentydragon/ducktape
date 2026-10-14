@@ -49,7 +49,7 @@ class SpecConflictError(OpenError):
     """The session exists with a different spec or setup script."""
 
 
-class SandboxSealedError(OpenError):
+class SandboxQuiescedError(OpenError):
     pass
 
 
@@ -105,7 +105,7 @@ class Runner:
         self._initialize_lock = asyncio.Lock()
         self._initialization_log: InitializationLog | None = None
         self._initialization_task: asyncio.Task[None] | None = None
-        self._sealing = False
+        self._quiescing = False
         # Set whenever `facts()` may have changed; the control stream clears it before reading.
         self.facts_changed = asyncio.Event()
         # Deliveries between RPC entry and their answer count as busy before the journal knows of them.
@@ -155,7 +155,7 @@ class Runner:
 
     def _quiesce_stage(self) -> runner_control_pb2.RunnerFacts.QuiesceStage:
         sessions = [self.sessions[session_id] for session_id in self.store.session_ids() if session_id in self.sessions]
-        if self._sealing or any(session.journal.sealed_cursor is None for session in sessions):
+        if self._quiescing or any(session.journal.sealed_cursor is None for session in sessions):
             return runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
         if all(self._flushed(session.session_id, cast(int, session.journal.sealed_cursor)) for session in sessions):
             return runner_control_pb2.RunnerFacts.QUIESCE_STAGE_QUIESCED
@@ -368,16 +368,16 @@ class Runner:
 
     @property
     def lameduck(self) -> bool:
-        return self.store.sealed
+        return self.store.lameduck
 
     def enter_lameduck(self) -> None:
         """Durably refuse everything but draining operations, across runner restarts."""
-        self.store.seal()
+        self.store.enter_lameduck()
 
     def refuse_work(self) -> None:
         """Raise unless the runner still accepts new work; a sender retries after the Sandbox resumes."""
         if self.lameduck:
-            raise SandboxSealedError("this Sandbox is sealed: its sessions can be followed, not created or resumed")
+            raise SandboxQuiescedError("this Sandbox is quiesced: its sessions can be followed, not created or resumed")
 
     async def _confirm(self, session_id: str, spec: runner_pb2.SessionSpec, setup_script: str | None) -> Session:
         session = await self._load(session_id)
@@ -436,16 +436,16 @@ class Runner:
     def adopt_incarnation(self, incarnation_uid: str | None) -> None:
         self.store.adopt_incarnation(incarnation_uid)
 
-    async def seal(self) -> runner_pb2.QuiesceResponse:
+    async def quiesce(self) -> runner_pb2.QuiesceResponse:
         """Sandbox teardown: refuse new work, interrupt running turns, stop every harness, seal every journal."""
-        self._sealing = True
+        self._quiescing = True
         self.enter_lameduck()
         self.facts_changed.set()
         try:
             sessions = [await self._load(session_id) for session_id in self.store.session_ids()]
             cursors = await asyncio.gather(*(session.seal() for session in sessions))
         finally:
-            self._sealing = False
+            self._quiescing = False
             self.facts_changed.set()
         return runner_pb2.QuiesceResponse(
             sessions=[

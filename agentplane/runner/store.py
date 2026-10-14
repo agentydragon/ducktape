@@ -150,14 +150,15 @@ class SessionStore:
     def session_ids(self) -> list[str]:
         return sorted(path.name for path in self.root.iterdir() if (path / "session.json").is_file())
 
+    # The marker file keeps its name `sealed`: a state volume outlives runner releases.
     @property
-    def sealed(self) -> bool:
+    def lameduck(self) -> bool:
         return (self.root / "sealed").is_file()
 
     def adopt_incarnation(self, incarnation_uid: str | None) -> None:
         """Learn which incarnation of its Sandbox this runner is, from the gateway's `Welcome`, before
-        any call is served. The state volume outlives incarnations, so a seal recorded by an earlier
-        one is dropped; a seal recorded by this one, such as before a runner restart, stands. `None`,
+        any call is served. The state volume outlives incarnations, so a lameduck recorded by an earlier
+        one is dropped; one recorded by this one, such as before a runner restart, stands. `None`,
         from a gateway that does not name the incarnation, keeps every marker.
 
         CLEANUP(added 2026-10-13): require the UID, and drop `None`, once the gateway image that sends
@@ -169,7 +170,7 @@ class SessionStore:
             marker.unlink()
             sync_directory(self.root)
 
-    def seal(self) -> None:
+    def enter_lameduck(self) -> None:
         """Durably refuse new and resumed sessions in this incarnation, across runner restarts."""
         marker = self.root / "sealed"
         if not marker.is_file():

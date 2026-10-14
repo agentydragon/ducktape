@@ -60,7 +60,7 @@ const (
 
 	templateIndex = "spec.template"
 	// How soon a seal that failed or is not yet acknowledged is asked again.
-	sealRetry = 2 * time.Second
+	quiesceRetry = 2 * time.Second
 	// How long a runner that reports itself quiescing is left alone before the Quiesce call is
 	// repeated: its stage changes enqueue the Sandbox, so this covers a lost event or a stuck runner.
 	quiesceDeadline = time.Minute
@@ -84,9 +84,9 @@ type Reconciler struct {
 	// Seals a deleting Sandbox's Sessions through its runner. Without one, deletion waits for the
 	// Runner Gateway to set Quiesced.
 	//
-	// CLEANUP(added 2026-10-13): Make Sealer and Leases required once the manifests pass the sealer
+	// CLEANUP(added 2026-10-13): Make Quiescer and Leases required once the manifests pass the quiescer
 	// flags in every environment and the Runner Gateway no longer sets Quiesced.
-	Sealer Sealer
+	Quiescer Quiescer
 	// Reads the Lease the Runner Gateway writes for each connection, and, set up with a manager, watches
 	// them: a new connection, or a runner reconnecting, enqueues its Sandbox.
 	Leases client.Reader
@@ -174,7 +174,7 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 		gate = launchGate
 	}
 	if blocked == nil && (!sandbox.Spec.Running || sandbox.quiescing()) {
-		if blocked, err = r.sealBeforeStop(ctx, &sandbox, w); err != nil {
+		if blocked, err = r.quiesceBeforeStop(ctx, &sandbox, w); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -230,26 +230,26 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 	own := pvc != nil && metav1.IsControlledBy(pvc, sandbox)
 	// Without a state PVC of its own the Sandbox never had a runner, so it has no Session to seal;
 	// nor has one whose runner never connected, which is not sealed, only has nothing to seal.
-	needsSeal := own && !sandbox.sessionsQuiesced()
+	needsQuiesce := own && !sandbox.sessionsQuiesced()
 	var runner string
-	if needsSeal && r.Sealer != nil {
+	if needsQuiesce && r.Quiescer != nil {
 		var err error
-		if runner, err = r.unsealedRunner(ctx, sandbox); err != nil {
+		if runner, err = r.unquiescedRunner(ctx, sandbox); err != nil {
 			return w, nil, err
 		}
-		needsSeal = runner != ""
+		needsQuiesce = runner != ""
 	}
-	if needsSeal {
+	if needsQuiesce {
 		// Only a running runner seals, so a stopped Sandbox runs once more; the Runner Gateway
 		// refuses every new Session and command for a deleting Sandbox.
 		w, blocked, err := r.converge(ctx, sandbox, w, true, nil)
 		if err != nil || blocked != nil {
 			return w, blocked, err
 		}
-		if r.Sealer == nil {
+		if r.Quiescer == nil {
 			return w, &unready{reason: "Quiescing", message: "waiting for the Runner Gateway to seal every Session"}, nil
 		}
-		blocked = r.seal(ctx, sandbox, runner)
+		blocked = r.quiesce(ctx, sandbox, runner)
 		if blocked.retryAfter == 0 {
 			meta.SetStatusCondition(&sandbox.Status.Conditions, metav1.Condition{
 				Type: Quiesced, Status: metav1.ConditionTrue, Reason: "Quiesced", Message: blocked.message, ObservedGeneration: sandbox.Generation,
@@ -294,9 +294,9 @@ func (r *Reconciler) runnerLease(ctx context.Context, sandbox *Sandbox) (coordin
 	return lease, client.IgnoreNotFound(err)
 }
 
-// unsealedRunner is the Pod UID of the last connected runner if it still has Sessions to seal, or
+// unquiescedRunner is the Pod UID of the last connected runner if it still has Sessions to seal, or
 // "": none connected, or it is the one already sealed.
-func (r *Reconciler) unsealedRunner(ctx context.Context, sandbox *Sandbox) (string, error) {
+func (r *Reconciler) unquiescedRunner(ctx context.Context, sandbox *Sandbox) (string, error) {
 	runner, err := r.connectedRunner(ctx, sandbox)
 	if err != nil || sandbox.quiescedIncarnation(runner) {
 		return "", err
@@ -304,38 +304,38 @@ func (r *Reconciler) unsealedRunner(ctx context.Context, sandbox *Sandbox) (stri
 	return runner, nil
 }
 
-// sealBeforeStop holds a Sandbox that is to stop while its current incarnation's runner has Sessions
+// quiesceBeforeStop holds a Sandbox that is to stop while its current incarnation's runner has Sessions
 // to seal, and seals them. An incarnation whose runner never connected has none.
-func (r *Reconciler) sealBeforeStop(ctx context.Context, sandbox *Sandbox, w workload) (*unready, error) {
+func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *Sandbox, w workload) (*unready, error) {
 	pod := w.incarnation()
-	if r.Sealer == nil || pod == nil {
+	if r.Quiescer == nil || pod == nil {
 		return nil, nil
 	}
-	runner, err := r.unsealedRunner(ctx, sandbox)
+	runner, err := r.unquiescedRunner(ctx, sandbox)
 	if err != nil || runner == "" || runner != string(pod.UID) {
 		return nil, err
 	}
-	return r.seal(ctx, sandbox, runner), nil
+	return r.quiesce(ctx, sandbox, runner), nil
 }
 
-// seal asks the runner of the Pod with this UID to seal every Session and, once the ingress has
+// quiesce asks the runner of the Pod with this UID to seal every Session and, once the ingress has
 // acknowledged each seal, records it on the Sandbox's status for the caller to write. The returned
 // unready always says why the Sandbox is still held and has no retryAfter once the seal is recorded.
-// Seal is idempotent, so any failure is asked again.
+// Quiesce is idempotent, so any failure is asked again.
 //
 // A runner that publishes its quiesce stage on the connection Lease is not asked again while it
 // reports one, and never once it reports `Quiesced`: its next stage enqueues the Sandbox.
 //
-// CLEANUP(added 2026-10-14): Remove the fixed `sealRetry` re-ask and the call's reading of a missing
+// CLEANUP(added 2026-10-14): Remove the fixed `quiesceRetry` re-ask and the call's reading of a missing
 // stage once every runner publishes its stage (gateway, runner image and VM wheel pinned).
-func (r *Reconciler) seal(ctx context.Context, sandbox *Sandbox, runner string) *unready {
+func (r *Reconciler) quiesce(ctx context.Context, sandbox *Sandbox, runner string) *unready {
 	lease, err := r.runnerLease(ctx, sandbox)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: sealRetry}
+		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceRetry}
 	}
 	facts, err := readRunnerFacts(&lease, runner)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: sealRetry}
+		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceRetry}
 	}
 	switch facts.Stage {
 	case QuiesceQuiesced:
@@ -348,15 +348,15 @@ func (r *Reconciler) seal(ctx context.Context, sandbox *Sandbox, runner string) 
 			}
 		}
 	}
-	result, err := r.Sealer.Seal(ctx, sandbox)
+	result, err := r.Quiescer.Quiesce(ctx, sandbox)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: sealRetry}
+		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceRetry}
 	}
 	if result.Quiescing {
-		return &unready{reason: "Quiescing", message: "the runner has not finished quiescing", retryAfter: sealRetry}
+		return &unready{reason: "Quiescing", message: "the runner has not finished quiescing", retryAfter: quiesceRetry}
 	}
 	if len(result.Unflushed) > 0 {
-		return &unready{reason: "Quiescing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: sealRetry}
+		return &unready{reason: "Quiescing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: quiesceRetry}
 	}
 	sandbox.Status.QuiescedIncarnation = &runner
 	return &unready{reason: "Quiescing", message: fmt.Sprintf("%d Sessions sealed", result.Sessions)}

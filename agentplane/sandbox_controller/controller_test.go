@@ -83,7 +83,7 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 	tracker := clienttesting.NewObjectTracker(scheme, serializer.NewCodecFactory(scheme).UniversalDecoder())
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjectTracker(tracker).WithObjects(append(objects, sandbox)...).
 		WithStatusSubresource(&Sandbox{}, &kubevirtv1.VirtualMachineInstance{}).Build()
-	return &Reconciler{Client: c, KubeVirt: true, Sealer: &fakeSealer{}, Leases: c, Now: func() time.Time { return testNow }}, c
+	return &Reconciler{Client: c, KubeVirt: true, Quiescer: &fakeQuiescer{}, Leases: c, Now: func() time.Time { return testNow }}, c
 }
 
 func reconcileOnce(t *testing.T, r *Reconciler) {
@@ -474,23 +474,23 @@ func TestStateVolumeTheSandboxDoesNotOwnIsNotUsed(t *testing.T) {
 	}
 }
 
-// fakeSealer answers every seal with result, or err.
-type fakeSealer struct {
-	result SealResult
+// fakeQuiescer answers every seal with result, or err.
+type fakeQuiescer struct {
+	result QuiesceResult
 	err    error
 	calls  int
 }
 
-func (f *fakeSealer) Seal(context.Context, *Sandbox) (SealResult, error) {
+func (f *fakeQuiescer) Quiesce(context.Context, *Sandbox) (QuiesceResult, error) {
 	f.calls++
 	return f.result, f.err
 }
 
-// sealSessions is the runner of a connected Sandbox sealing every Session, asked by one reconcile.
-func sealSessions(t *testing.T, r *Reconciler) {
+// quiesceSessions is the runner of a connected Sandbox sealing every Session, asked by one reconcile.
+func quiesceSessions(t *testing.T, r *Reconciler) {
 	t.Helper()
-	sealer := r.Sealer.(*fakeSealer)
-	sealer.result, sealer.err = SealResult{Sessions: 2}, nil
+	quiescer := r.Quiescer.(*fakeQuiescer)
+	quiescer.result, quiescer.err = QuiesceResult{Sessions: 2}, nil
 	reconcileOnce(t, r)
 }
 
@@ -515,7 +515,7 @@ func TestDeletionOfASandboxNoRunnerConnectedToSealsNothing(t *testing.T) {
 	if getPod(t, c) != nil {
 		t.Fatal("the Pod outlived a Sandbox with nothing to seal")
 	}
-	if calls := r.Sealer.(*fakeSealer).calls; calls != 0 {
+	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 {
 		t.Errorf("asked a runner that never connected to seal %d times", calls)
 	}
 	if meta.IsStatusConditionTrue(getSandbox(t, c).Status.Conditions, Quiesced) {
@@ -527,16 +527,16 @@ func TestDeletionWaitsForTheRunnerToSealAndFlush(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
 	connect(t, c, "uid-runner")
-	sealer := r.Sealer.(*fakeSealer)
+	quiescer := r.Quiescer.(*fakeQuiescer)
 	deleteSandbox(t, c)
 	for _, answer := range []struct {
-		result SealResult
+		result QuiesceResult
 		err    error
 	}{
 		{err: errors.New("runner unreachable")},
-		{result: SealResult{Sessions: 1, Unflushed: []string{"s-1"}}},
+		{result: QuiesceResult{Sessions: 1, Unflushed: []string{"s-1"}}},
 	} {
-		sealer.result, sealer.err = answer.result, answer.err
+		quiescer.result, quiescer.err = answer.result, answer.err
 		result, err := r.Reconcile(context.Background(), request)
 		if err != nil || result.RequeueAfter == 0 {
 			t.Fatalf("a failed or unflushed seal is asked again: %v, %v", result, err)
@@ -545,7 +545,7 @@ func TestDeletionWaitsForTheRunnerToSealAndFlush(t *testing.T) {
 			t.Fatal("the Sandbox counted as sealed before the runner said so")
 		}
 	}
-	sealer.result, sealer.err = SealResult{Sessions: 1}, nil
+	quiescer.result, quiescer.err = QuiesceResult{Sessions: 1}, nil
 	reconcileOnce(t, r)
 	reconcileOnce(t, r)
 	if getPod(t, c) != nil {
@@ -564,7 +564,7 @@ func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
 	connect(t, c, "uid-runner")
-	r.Sealer.(*fakeSealer).err = errors.New("runner unreachable")
+	r.Quiescer.(*fakeQuiescer).err = errors.New("runner unreachable")
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
 	if getPod(t, c) == nil || getPVC(t, c) == nil {
@@ -574,7 +574,7 @@ func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 		t.Errorf("Running reason = %s, want Quiescing", reason)
 	}
 
-	sealSessions(t, r)
+	quiesceSessions(t, r)
 	reconcileOnce(t, r)
 	if getPod(t, c) != nil {
 		t.Fatal("deletion left the Pod once the Sessions were sealed")
@@ -589,7 +589,7 @@ func TestDeletionSealsThenRemovesPodThenStateVolume(t *testing.T) {
 	}
 }
 
-func TestDeletingAStoppedSandboxRunsItOnceMoreToSeal(t *testing.T) {
+func TestDeletingAStoppedSandboxRunsItOnceMoreToQuiesce(t *testing.T) {
 	r, c := newReconciler(t, false, testTemplate("test-image:v1"))
 	reconcileOnce(t, r)
 	connect(t, c, "uid-runner")
@@ -598,7 +598,7 @@ func TestDeletingAStoppedSandboxRunsItOnceMoreToSeal(t *testing.T) {
 	if getPod(t, c) == nil {
 		t.Fatal("a stopped Sandbox got no Pod to seal its Sessions from")
 	}
-	sealSessions(t, r)
+	quiesceSessions(t, r)
 	reconcileOnce(t, r)
 	if getPod(t, c) != nil {
 		t.Fatal("the sealing Pod outlived the seal")
@@ -626,9 +626,9 @@ func TestDeletionLeavesAStateVolumeTheSandboxDoesNotOwn(t *testing.T) {
 	}
 }
 
-func TestDeletionWithoutASealerWaitsForTheRunnerGateway(t *testing.T) {
+func TestDeletionWithoutAQuiescerWaitsForTheRunnerGateway(t *testing.T) {
 	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
-	r.Sealer, r.Leases = nil, nil
+	r.Quiescer, r.Leases = nil, nil
 	reconcileOnce(t, r)
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
@@ -653,10 +653,10 @@ func runningWithRunner(t *testing.T) (*Reconciler, client.Client) {
 	return r, c
 }
 
-func TestSuspensionWaitsForTheRunnerToSeal(t *testing.T) {
+func TestSuspensionWaitsForTheRunnerToQuiesce(t *testing.T) {
 	r, c := runningWithRunner(t)
-	sealer := r.Sealer.(*fakeSealer)
-	sealer.err = errors.New("runner unreachable")
+	quiescer := r.Quiescer.(*fakeQuiescer)
+	quiescer.err = errors.New("runner unreachable")
 	setRunning(t, c, false)
 	result, err := r.Reconcile(context.Background(), request)
 	if err != nil || result.RequeueAfter == 0 {
@@ -666,7 +666,7 @@ func TestSuspensionWaitsForTheRunnerToSeal(t *testing.T) {
 		t.Fatal("the Pod stopped before its runner sealed")
 	}
 
-	sealer.err = nil
+	quiescer.err = nil
 	reconcileOnce(t, r)
 	if sealed := getSandbox(t, c).Status.QuiescedIncarnation; sealed == nil || *sealed != "uid-pod" {
 		t.Fatalf("sealed incarnation = %v, want uid-pod", sealed)
@@ -701,7 +701,7 @@ func TestAQuiescedStageSealsTheSandboxWithoutAskingTheRunner(t *testing.T) {
 	if sealed := getSandbox(t, c).Status.QuiescedIncarnation; sealed == nil || *sealed != "uid-pod" {
 		t.Fatalf("sealed incarnation = %v, want uid-pod", sealed)
 	}
-	if calls := r.Sealer.(*fakeSealer).calls; calls != 0 {
+	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 {
 		t.Errorf("asked a runner that reported itself quiesced %d times", calls)
 	}
 }
@@ -710,24 +710,24 @@ func TestAQuiescingRunnerIsAskedAgainOnlyAtTheDeadline(t *testing.T) {
 	r, c := runningWithRunner(t)
 	// The Running condition's transition time comes from the wall clock.
 	r.Now = time.Now
-	sealer := r.Sealer.(*fakeSealer)
-	sealer.result = SealResult{Quiescing: true}
+	quiescer := r.Quiescer.(*fakeQuiescer)
+	quiescer.result = QuiesceResult{Quiescing: true}
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
-	if sealer.calls != 1 {
-		t.Fatalf("asked %d times before the runner reported a stage, want 1", sealer.calls)
+	if quiescer.calls != 1 {
+		t.Fatalf("asked %d times before the runner reported a stage, want 1", quiescer.calls)
 	}
 
 	publishQuiesceStage(t, c, "flushing")
 	result, err := r.Reconcile(context.Background(), request)
-	if err != nil || sealer.calls != 1 || result.RequeueAfter <= 0 || result.RequeueAfter > quiesceDeadline {
-		t.Fatalf("a runner reporting a stage is left alone until the deadline: calls=%d, %v, %v", sealer.calls, result, err)
+	if err != nil || quiescer.calls != 1 || result.RequeueAfter <= 0 || result.RequeueAfter > quiesceDeadline {
+		t.Fatalf("a runner reporting a stage is left alone until the deadline: calls=%d, %v, %v", quiescer.calls, result, err)
 	}
 
 	r.Now = func() time.Time { return time.Now().Add(2 * quiesceDeadline) }
 	reconcileOnce(t, r)
-	if sealer.calls != 2 {
-		t.Errorf("asked %d times after the deadline, want 2", sealer.calls)
+	if quiescer.calls != 2 {
+		t.Errorf("asked %d times after the deadline, want 2", quiescer.calls)
 	}
 }
 
@@ -743,7 +743,7 @@ func TestSuspensionOfAnIncarnationNoRunnerConnectedFromSealsNothing(t *testing.T
 	if getPod(t, c) != nil {
 		t.Fatal("the Pod was held for a seal it had none to make")
 	}
-	if calls := r.Sealer.(*fakeSealer).calls; calls != 0 {
+	if calls := r.Quiescer.(*fakeQuiescer).calls; calls != 0 {
 		t.Errorf("sealed %d times for an incarnation whose runner never connected", calls)
 	}
 }
@@ -761,8 +761,8 @@ func TestResumingASealedIncarnationReplacesIt(t *testing.T) {
 
 func TestResumingWhileTheRunnerQuiescesFinishesTheQuiesceFirst(t *testing.T) {
 	r, c := runningWithRunner(t)
-	sealer := r.Sealer.(*fakeSealer)
-	sealer.result = SealResult{Unflushed: []string{"session-1"}}
+	quiescer := r.Quiescer.(*fakeQuiescer)
+	quiescer.result = QuiesceResult{Unflushed: []string{"session-1"}}
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
 	setRunning(t, c, true)
@@ -771,7 +771,7 @@ func TestResumingWhileTheRunnerQuiescesFinishesTheQuiesceFirst(t *testing.T) {
 		t.Fatal("a Sandbox whose runner refuses every Session read Ready while it was quiescing")
 	}
 
-	sealer.result = SealResult{Sessions: 1}
+	quiescer.result = QuiesceResult{Sessions: 1}
 	reconcileOnce(t, r)
 	reconcileOnce(t, r)
 	if pod := getPod(t, c); pod != nil && string(pod.UID) == "uid-pod" {
@@ -783,8 +783,8 @@ func TestARunnerThatHasNotFinishedQuiescingIsNotTakenForQuiesced(t *testing.T) {
 	r, c := runningWithRunner(t)
 	// The Running condition's transition time comes from the wall clock.
 	r.Now = time.Now
-	sealer := r.Sealer.(*fakeSealer)
-	sealer.result = SealResult{Quiescing: true}
+	quiescer := r.Quiescer.(*fakeQuiescer)
+	quiescer.result = QuiesceResult{Quiescing: true}
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
 	if sealed := getSandbox(t, c).Status.QuiescedIncarnation; sealed != nil || getPod(t, c) == nil {
@@ -797,10 +797,10 @@ func TestDeletingASuspendedSealedSandboxAsksNoRunner(t *testing.T) {
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
 	reconcileOnce(t, r)
-	calls := r.Sealer.(*fakeSealer).calls
+	calls := r.Quiescer.(*fakeQuiescer).calls
 	deleteSandbox(t, c)
 	reconcileOnce(t, r)
-	if got := r.Sealer.(*fakeSealer).calls; got != calls || getPod(t, c) != nil {
+	if got := r.Quiescer.(*fakeQuiescer).calls; got != calls || getPod(t, c) != nil {
 		t.Fatalf("seals %d -> %d, Pod present %v: the sealed runner is not asked again nor run once more", calls, got, getPod(t, c) != nil)
 	}
 }

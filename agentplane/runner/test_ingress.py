@@ -213,17 +213,17 @@ async def test_flushed_reports_the_acknowledged_seal_across_a_restart(
     config: RunnerConfig, runner: Runner, ingress: tuple[ScriptedIngress, str]
 ) -> None:
     service, target = ingress
-    unflushed = await runner.seal()
+    unflushed = await runner.quiesce()
     assert {seal.session_id: seal.flushed for seal in unflushed.sessions} == {A: False, B: False}
     async with pushing(runner, target) as pusher:
         await service.until(lambda: service.sealed == {A, B})
         async with asyncio.timeout(10):
             await asyncio.gather(*pusher.pushes.values())
-    assert {seal.session_id: seal.flushed for seal in (await runner.seal()).sessions} == {A: True, B: True}
+    assert {seal.session_id: seal.flushed for seal in (await runner.quiesce()).sessions} == {A: True, B: True}
     await runner.stop()
     async with Runner(config) as restarted:
         restarted.adopt_incarnation(INCARNATION)
-        assert {seal.session_id: (seal.cursor, seal.flushed) for seal in (await restarted.seal()).sessions} == {
+        assert {seal.session_id: (seal.cursor, seal.flushed) for seal in (await restarted.quiesce()).sessions} == {
             A: (JOURNALED, True),
             B: (JOURNALED, True),
         }
@@ -235,7 +235,7 @@ async def test_an_unreachable_ingress_holds_up_neither_journaling_nor_seal(runne
         target = f"127.0.0.1:{unused.getsockname()[1]}"
     async with pushing(runner, target):
         await journal_stderr(runner, A, 1)
-        assert {seal.session_id: (seal.cursor, seal.flushed) for seal in (await runner.seal()).sessions} == {
+        assert {seal.session_id: (seal.cursor, seal.flushed) for seal in (await runner.quiesce()).sessions} == {
             A: (JOURNALED + 1, False),
             B: (JOURNALED, False),
         }
