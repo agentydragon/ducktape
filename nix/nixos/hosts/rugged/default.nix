@@ -80,7 +80,9 @@ in
   ducktape.cowork.enable = true;
 
   # Local LLM inference (Arc GPU + NPU)
-  ducktape.localLlm.ollamaUpstream.enable = true;
+  # Activate only after the Ollama generation has cached all bases below.
+  # The router reads that cache offline and fails closed if a base is missing.
+  ducktape.localLlm.ollamaUpstream.enable = false;
   # Qualified local models for the shared 32k serving budget, plus the Qwen3.5
   # base needed by separate experimental router evaluation. The prefetch unit
   # skips pulls once each base model is cached and refreshes the Gemma alias.
@@ -97,7 +99,7 @@ in
     numCtx = 131072;
     numBatch = 128;
   };
-  ducktape.localLlm.llamaRouter.enable = false;
+  ducktape.localLlm.llamaRouter.enable = true;
   ducktape.localLlm.bearerProxy.enable = true;
 
   # Keep the llama.cpp service disabled until its own GGUF models and bounded
