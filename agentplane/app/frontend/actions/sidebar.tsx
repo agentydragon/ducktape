@@ -2,7 +2,7 @@ import { Badge, Group, Stack, Text, Tooltip, UnstyledButton } from "@mantine/cor
 import IconArrowRight from "@tabler/icons-react/dist/esm/icons/IconArrowRight.mjs";
 import IconChevronDown from "@tabler/icons-react/dist/esm/icons/IconChevronDown.mjs";
 import IconChevronRight from "@tabler/icons-react/dist/esm/icons/IconChevronRight.mjs";
-import { type JSX, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { type JSX, type ReactNode, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation } from "react-router";
 
 import { JsonView } from "../json_view";
@@ -53,9 +53,12 @@ function usePendingRequests(): ActionRequestView[] {
 function PendingActionList({
   pending,
   onNavigate,
+  onOpenDetails,
 }: {
   pending: readonly ActionRequestView[];
   onNavigate?: () => void;
+  /** A docked workspace opens details in a pane of its own instead of navigating the route. */
+  onOpenDetails?: (request: ActionRequestView) => void;
 }): JSX.Element | null {
   const actions = useContext(ActionRequestsContext);
   const location = useLocation();
@@ -86,6 +89,23 @@ function PendingActionList({
           },
         };
 
+        const detailsLink = (className: string, content: ReactNode, label?: string): JSX.Element =>
+          onOpenDetails === undefined ? (
+            <Link
+              className={className}
+              to={detailsPath}
+              state={navigationState}
+              onClick={onNavigate}
+              aria-label={label}
+            >
+              {content}
+            </Link>
+          ) : (
+            <UnstyledButton className={className} onClick={() => onOpenDetails(request)} aria-label={label}>
+              {content}
+            </UnstyledButton>
+          );
+
         return (
           <div className="agentplane-actions-sidebar-request" key={request.id}>
             <div className="agentplane-actions-sidebar-request-heading">
@@ -111,15 +131,11 @@ function PendingActionList({
                 </div>
               </UnstyledButton>
               <Tooltip label="View full details" withArrow>
-                <Link
-                  className="agentplane-actions-sidebar-details"
-                  to={detailsPath}
-                  state={navigationState}
-                  onClick={onNavigate}
-                  aria-label={`View details for ${request.title}`}
-                >
-                  <IconArrowRight size={15} aria-hidden="true" />
-                </Link>
+                {detailsLink(
+                  "agentplane-actions-sidebar-details",
+                  <IconArrowRight size={15} aria-hidden="true" />,
+                  `View details for ${request.title}`
+                )}
               </Tooltip>
             </div>
             {!expanded && decision !== null && <div className="agentplane-actions-sidebar-decision">{decision}</div>}
@@ -138,14 +154,12 @@ function PendingActionList({
                     </Text>
                   )}
                   <Tooltip label="View full details" withArrow>
-                    <Link
-                      className="agentplane-actions-sidebar-details"
-                      to={detailsPath}
-                      state={navigationState}
-                      onClick={onNavigate}
-                    >
-                      Details <IconArrowRight size={13} aria-hidden="true" />
-                    </Link>
+                    {detailsLink(
+                      "agentplane-actions-sidebar-details",
+                      <>
+                        Details <IconArrowRight size={13} aria-hidden="true" />
+                      </>
+                    )}
                   </Tooltip>
                 </Group>
               </Stack>
@@ -153,6 +167,40 @@ function PendingActionList({
           </div>
         );
       })}
+    </>
+  );
+}
+
+/** The pending queue with its loading, error and empty states: the body of the sidebar section and
+ * of a docked Actions pane. */
+export function PendingActionsQueue({
+  onNavigate,
+  onOpenDetails,
+}: {
+  onNavigate?: () => void;
+  onOpenDetails?: (request: ActionRequestView) => void;
+}): JSX.Element | null {
+  const actions = useContext(ActionRequestsContext);
+  const pending = usePendingRequests();
+  if (actions === null) return null;
+  return (
+    <>
+      {actions.error !== null && (
+        <Text size="xs" c="red" role="alert">
+          {actions.error}
+        </Text>
+      )}
+      {actions.loading && (
+        <Text size="xs" c="dimmed" role="status">
+          Loading pending actions…
+        </Text>
+      )}
+      {!actions.loading && actions.error === null && pending.length === 0 && (
+        <Text size="xs" c="dimmed">
+          No pending actions.
+        </Text>
+      )}
+      <PendingActionList pending={pending} onNavigate={onNavigate} onOpenDetails={onOpenDetails} />
     </>
   );
 }
@@ -257,22 +305,7 @@ export function ActionsSidebarSection({ onNavigate }: { onNavigate?: () => void 
       </UnstyledButton>
       {open && (
         <div id="agentplane-actions-sidebar-content" className="agentplane-actions-sidebar-content">
-          {actions.error !== null && (
-            <Text size="xs" c="red" role="alert">
-              {actions.error}
-            </Text>
-          )}
-          {actions.loading && (
-            <Text size="xs" c="dimmed" role="status">
-              Loading pending actions…
-            </Text>
-          )}
-          {!actions.loading && actions.error === null && pending.length === 0 && (
-            <Text size="xs" c="dimmed">
-              No pending actions.
-            </Text>
-          )}
-          <PendingActionList pending={pending} onNavigate={onNavigate} />
+          <PendingActionsQueue onNavigate={onNavigate} />
         </div>
       )}
     </section>

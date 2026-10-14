@@ -1,0 +1,101 @@
+/* The dockable workspace (`dock.tsx`). Dockview's theme variables follow Mantine's, so the dock
+   takes the same light/dark scheme as the rest of the app. */
+
+.agentplane-dock-desktop,
+.agentplane-dock-phone {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.agentplane-dock-theme {
+  --dv-background-color: var(--mantine-color-default-hover);
+  --dv-group-view-background-color: var(--mantine-color-body);
+  --dv-tabs-and-actions-container-background-color: var(--mantine-color-default-hover);
+  --dv-activegroup-visiblepanel-tab-background-color: var(--mantine-color-body);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--mantine-color-default-hover);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--mantine-color-body);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--mantine-color-default-hover);
+  --dv-activegroup-visiblepanel-tab-color: var(--mantine-color-text);
+  --dv-activegroup-hiddenpanel-tab-color: var(--mantine-color-dimmed);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--mantine-color-text);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--mantine-color-dimmed);
+  --dv-tab-divider-color: var(--mantine-color-default-border);
+  --dv-separator-border: var(--mantine-color-default-border);
+  --dv-paneview-header-border-color: var(--mantine-color-default-border);
+  --dv-drag-over-background-color: color-mix(in srgb, var(--mantine-primary-color-filled) 25%, transparent);
+  --dv-drag-over-border-color: var(--mantine-primary-color-filled);
+  flex: 1;
+  min-height: 0;
+}
+
+.agentplane-dock-scroll {
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.agentplane-dock-padded {
+  padding: var(--mantine-spacing-sm);
+}
+
+.agentplane-dock-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+}
+
+.agentplane-dock-pane-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px var(--mantine-spacing-sm);
+  border-bottom: 1px solid var(--mantine-color-default-border);
+}
+
+.agentplane-dock-pane-header:empty {
+  display: none;
+}
+
+.agentplane-dock-pane-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.agentplane-dock-pane-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+}
+
+.agentplane-dock-pane-body {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0 var(--mantine-spacing-sm);
+}
+
+.agentplane-dock-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  padding: var(--mantine-spacing-md);
+  text-align: center;
+}
+
+.agentplane-dock-phone-bar {
+  flex: 0 0 auto;
+  padding: 6px 0;
+}
+
+.agentplane-dock-phone-content {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}

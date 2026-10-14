@@ -2,6 +2,7 @@
 # gazelle:exclude test_visual_disclosures.py
 # gazelle:exclude test_visual_history.py
 # gazelle:exclude test_visual_policies.py
+# gazelle:exclude test_visual_dock.py
 # gazelle:exclude test_visual_navigation.py
 # gazelle:exclude test_visual_scenes.py
 load("@aspect_rules_esbuild//esbuild:defs.bzl", "esbuild")
@@ -666,6 +667,69 @@ ts_library(
 )
 
 ts_library(
+    name = "phone_width",
+    srcs = ["phone_width.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+js_library(
+    name = "dock_css",
+    srcs = ["dock.css"],
+)
+
+ts_library(
+    name = "dock_workspace",
+    srcs = ["dock_workspace.ts"],
+    tsconfig = TSCONFIG,
+    deps = [
+        "//:node_modules/dockview-react",
+        "//:node_modules/zod",
+    ],
+)
+
+ts_library(
+    name = "dock",
+    srcs = [
+        "css.d.ts",
+        "dock.tsx",
+        "tabler_icons.d.ts",
+    ],
+    tsconfig = TSCONFIG,
+    deps = [
+        ":dock_css",
+        ":dock_workspace",
+        ":live",
+        ":phone_width",
+        ":sidebar",
+        ":topbar",
+        "//:node_modules/@mantine/core",
+        "//:node_modules/@tabler/icons-react",
+        "//:node_modules/@types/react",
+        "//:node_modules/dockview-react",
+        "//:node_modules/react",
+        "//:node_modules/react-router",
+        "//agentplane/app/frontend/actions:detail",
+        "//agentplane/app/frontend/actions:history",
+        "//agentplane/app/frontend/actions:requests",
+        "//agentplane/app/frontend/actions:sidebar",
+        "//agentplane/app/frontend/threads:projected_session",
+    ],
+)
+
+agentplane_vitest_test(
+    name = "dock_workspace_test",
+    srcs = ["dock_workspace.test.ts"],
+    deps = [
+        ":dock_workspace",
+        "//:node_modules/vitest",
+    ],
+)
+
+ts_library(
     name = "sidebar",
     srcs = [
         "sidebar.tsx",
@@ -681,6 +745,7 @@ ts_library(
         ":client",
         ":live",
         ":mark_glyph",
+        ":phone_width",
         ":resize_handle",
         ":sandbox_status",
         ":sidebar_css",
@@ -1034,6 +1099,7 @@ ts_library(
     tsconfig = TSCONFIG,
     deps = [
         ":consent",
+        ":dock",
         ":live",
         ":sandbox_page",
         ":sandboxes",
@@ -1223,6 +1289,12 @@ agentplane_visual_test(
     src = "test_visual_history.py",
     shard_count = 2,
     title = "Agentplane: history",
+)
+
+agentplane_visual_test(
+    name = "visual_dock",
+    src = "test_visual_dock.py",
+    title = "Agentplane: dockable workspace",
 )
 
 agentplane_visual_test(
