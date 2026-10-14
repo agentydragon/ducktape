@@ -122,6 +122,8 @@ def test_rugged_long_context_alias_is_explicitly_experimental() -> None:
             "model": "openai/gemma4:e2b-it-qat-long-128k-b128",
             "api_base": RUGGED_LOCAL_LLM_API_BASE,
             "api_key": f"os.environ/{RUGGED_LOCAL_LLM_KEY_ENV}",
+            "timeout": 2_400,
+            "stream_timeout": 2_400,
             "extra_body": {"reasoning_effort": "none"},
         },
         "model_info": {
