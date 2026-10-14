@@ -261,7 +261,9 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
     catalog = config["kubernetes_grants"]
     selected = _kubernetes_grants(config["sandbox_presets"][preset]["policy_sets"])
-    credential_grants = {"coinbase-credentials", "spend-policy-config"} if preset == "finance-agent" else set()
+    credential_grants = (
+        {"coinbase-credentials", "spend-policy-config", "plaid-diagnostics"} if preset == "finance-agent" else set()
+    )
     # Coinbase egress follows the Secret grant; haku-agent's egress PolicyBinding carries none.
     assert (COINBASE_POLICY in config["sandbox_presets"][preset]["policy_sets"]) == (preset == "finance-agent")
     assert COINBASE_POLICY not in _by_name(docs, "PolicyBinding", "haku-agent")["spec"]["policySets"]
@@ -272,7 +274,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         == {"cluster-diagnostics", "haku-sandbox-write", "coinbase-credentials"} - credential_grants
     )
     assert set(selected) - set(haku) == {"public-coder-node-read", "public-coder-cluster-metadata-read"} | (
-        {"spend-policy-config"} if preset == "finance-agent" else set()
+        {"spend-policy-config", "plaid-diagnostics"} if preset == "finance-agent" else set()
     )
     assert {
         "agentplane-staging-metadata",
@@ -315,7 +317,11 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         ("public-coder-agent", "agentplane-testing-login-reader"),
         ("agentplane-testing", "agentplane-testing-operator"),
     } | (
-        {("agentplane-staging", "claude-ai-coinbase-reader"), ("plaid-mcp", "plaid-spend-finance-config-reader")}
+        {
+            ("agentplane-staging", "claude-ai-coinbase-reader"),
+            ("plaid-mcp", "plaid-spend-finance-config-reader"),
+            ("plaid-mcp", "plaid-finance-diagnostics-reader"),
+        }
         if preset == "finance-agent"
         else set()
     )

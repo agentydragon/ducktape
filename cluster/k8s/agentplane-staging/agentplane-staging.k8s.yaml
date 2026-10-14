@@ -3500,6 +3500,7 @@ data:
           - public-inventory
           - coinbase-credentials
           - spend-policy-config
+          - plaid-diagnostics
           - ducktape-pr-failed-jobs
           - agentplane-testing
         thread_preset: finance-agent-codex
@@ -3950,6 +3951,12 @@ data:
         role_ref:
           kind: ClusterRole
           name: agent-readable-namespace-metadata
+      plaid-diagnostics:
+        kind: RoleBinding
+        namespace: plaid-mcp
+        role_ref:
+          kind: Role
+          name: plaid-finance-diagnostics-reader
       spend-policy-config:
         kind: RoleBinding
         namespace: plaid-mcp
@@ -7788,6 +7795,20 @@ spec:
         name: haku-sandbox-admin
       namespaces:
         - haku-sandbox
+---
+apiVersion: agentplane.allegedly.works/v1alpha1
+kind: PolicySet
+metadata:
+  name: plaid-diagnostics
+  namespace: agentplane-staging
+spec:
+  rules:
+    - type: kubernetes_role_binding
+      role:
+        kind: Role
+        name: plaid-finance-diagnostics-reader
+      namespaces:
+        - plaid-mcp
 ---
 apiVersion: agentplane.allegedly.works/v1alpha1
 kind: PolicySet

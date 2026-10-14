@@ -210,16 +210,26 @@ readers migrate to Flux-owned bindings as described below.
 
 The logical profiles are distinct from the transport identities:
 
-| Access path                                    | Logical profile / contract                                                                                                                               |
-| ---------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `oidc-ksbx-groups:haku` group                  | Static Haku; checked independently                                                                                                                       |
-| `haku:access-profile:haku` group               | Static Haku Console; checked independently                                                                                                               |
-| `haku-sandbox/haku` ServiceAccount             | Static Haku compute; checked independently                                                                                                               |
-| Managed `haku` preset                          | Includes public coder; matches each static Haku path, including the exact Coinbase grant below                                                           |
-| Managed `finance-agent` preset                 | Public coder permissions plus the exact Coinbase grant below; no static finance identity is implied                                                      |
-| `agentplane-staging/claude-ai` ServiceAccount  | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, and testing acceptance-token minting         |
-| `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset                                                                  |
-| `public-coder-agent/openclaw` ServiceAccount   | Static OpenClaw Action caller; Action Service reads labeled ServiceAccount metadata here, while its policy binding and sets stay in `agentplane-staging` |
+| Access path                        | Logical profile / contract                                                                          |
+| ---------------------------------- | --------------------------------------------------------------------------------------------------- |
+| `oidc-ksbx-groups:haku` group      | Static Haku; checked independently                                                                  |
+| `haku:access-profile:haku` group   | Static Haku Console; checked independently                                                          |
+| `haku-sandbox/haku` ServiceAccount | Static Haku compute; checked independently                                                          |
+| Managed `haku` preset              | Includes public coder; matches each static Haku path, including the exact Coinbase grant below      |
+| Managed `finance-agent` preset     | Public coder permissions plus the exact Coinbase grant below; no static finance identity is implied |
+
+| `agentplane-staging/claude-ai` ServiceAccount | Separate legacy OAuth/Actions account: broad cluster diagnostics, labeled namespace readers, Coinbase read, and testing acceptance-token minting |
+| `agentplane-staging/haku-agent` ServiceAccount | Separate Actions account: testing acceptance-token minting, not the managed Haku preset |
+| `public-coder-agent/openclaw` ServiceAccount | Static OpenClaw Action caller; Action Service reads labeled ServiceAccount metadata here, while its policy binding and sets stay in `agentplane-staging` |
+
+The managed finance preset also selects the `plaid-diagnostics` PolicySet: a namespaced
+`plaid-mcp` RoleBinding for read-only control-plane metadata (Pods, Services,
+EndpointSlices, workloads, events, PVCs, and CNPG Cluster status). The Role excludes
+Secrets, ConfigMaps, Pod logs/exec and every mutation; financial SQL continues to use
+the existing pgweb `plaid_ro` read-only egress path. This grant diagnoses sync and
+Postgres health without treating the sensitive `plaid-mcp` namespace as globally
+agent-readable. It is a new-sandbox preset grant, not proof of current RBAC in an
+already-running sandbox.
 
 **Intended relationship between the Haku and finance-agent presets.** Haku is the executive
 agent that directs the finance agent (Rai's finances are the finance agent's, and Haku

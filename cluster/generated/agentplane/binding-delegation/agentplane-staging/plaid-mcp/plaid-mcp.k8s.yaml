@@ -22,6 +22,14 @@ rules:
   - apiGroups:
       - rbac.authorization.k8s.io
     resourceNames:
+      - plaid-finance-diagnostics-reader
+    resources:
+      - roles
+    verbs:
+      - bind
+  - apiGroups:
+      - rbac.authorization.k8s.io
+    resourceNames:
       - plaid-spend-finance-config-reader
     resources:
       - roles

@@ -22,7 +22,7 @@ from agentplane.sandboxes.kubernetes_grants import (
     RoleRef,
 )
 from cluster.cdk8s.namespace_access import NAMESPACE_DIAGNOSTICS, AgentReadable
-from cluster.cdk8s.plaid_mcp import spend
+from cluster.cdk8s.plaid_mcp import db, spend
 
 RBAC_GROUP = "rbac.authorization.k8s.io"
 
@@ -107,6 +107,11 @@ def catalog() -> dict[str, KubernetesGrant]:
             role_ref=RoleRef(kind="Role", name="agentplane-testing-operator"),
         ),
         **_namespace_read_grants(),
+        "plaid-diagnostics": RoleBindingGrant(
+            kind="RoleBinding",
+            namespace=db.NAMESPACE,
+            role_ref=RoleRef(kind="Role", name=db.FINANCE_DIAGNOSTICS_READER),
+        ),
         "spend-policy-config": RoleBindingGrant(
             kind="RoleBinding",
             namespace=spend.NAMESPACE,
@@ -180,6 +185,7 @@ POLICY_SETS = {
     "haku-sandbox-write": ("haku-sandbox-write",),
     "coinbase-credentials": ("coinbase-credentials",),
     "spend-policy-config": ("spend-policy-config",),
+    "plaid-diagnostics": ("plaid-diagnostics",),
 }
 
 
@@ -193,7 +199,7 @@ def covering_policy_sets(grants: Sequence[str]) -> list[str]:
 
 MANAGED_GRANTS = {
     "public-coder": PUBLIC_GRANTS,
-    "finance-agent": (*PUBLIC_GRANTS, "coinbase-credentials", "spend-policy-config"),
+    "finance-agent": (*PUBLIC_GRANTS, "coinbase-credentials", "spend-policy-config", "plaid-diagnostics"),
     "haku": (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *HAKU_EXTRAS, "coinbase-credentials"),
 }
 STATIC_GRANTS = {

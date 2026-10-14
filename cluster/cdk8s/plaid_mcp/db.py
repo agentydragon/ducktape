@@ -38,6 +38,7 @@ POSTGRES = cnpg.PostgresRef.generated(name="plaid-mcp-db", namespace=NAMESPACE)
 _DATABASE = "plaidmcp"
 _READONLY_ROLE = "plaid_ro"
 READONLY = SecretRef(namespace=NAMESPACE, name="plaid-mcp-db-readonly")
+FINANCE_DIAGNOSTICS_READER = "plaid-finance-diagnostics-reader"
 _SPEND_ROLE = "plaid_spend"
 SPEND = SecretRef(namespace=NAMESPACE, name="plaid-mcp-db-spend")
 # The namespace holding a copy of the read-only credentials, for Haku's ad-hoc queries, and the
@@ -236,6 +237,25 @@ def _readonly_provisioner(chart: Chart) -> None:
 
 def chart(app: App) -> Chart:
     chart = Chart(app, POSTGRES.name, disable_resource_name_hashes=True)
+    # Finance sandboxes already query the mirror through read-only pgweb. Grant only
+    # control-plane metadata needed to diagnose sync, Service, and CNPG health;
+    # never grant Secret/ConfigMap reads, logs, exec, or database credentials.
+    k8s.KubeRole(
+        chart,
+        "finance-diagnostics-reader",
+        metadata=k8s.ObjectMeta(name=FINANCE_DIAGNOSTICS_READER, namespace=NAMESPACE),
+        rules=[
+            k8s.PolicyRule(
+                api_groups=[""],
+                resources=["pods", "services", "endpoints", "events", "persistentvolumeclaims"],
+                verbs=["get", "list"],
+            ),
+            k8s.PolicyRule(api_groups=["discovery.k8s.io"], resources=["endpointslices"], verbs=["get", "list"]),
+            k8s.PolicyRule(api_groups=["apps"], resources=["deployments", "statefulsets"], verbs=["get", "list"]),
+            k8s.PolicyRule(api_groups=["batch"], resources=["jobs", "cronjobs"], verbs=["get", "list"]),
+            k8s.PolicyRule(api_groups=["postgresql.cnpg.io"], resources=["clusters"], verbs=["get", "list"]),
+        ],
+    )
     _readonly_credentials(chart)
     _spend_credentials(chart)
     _readonly_copy(chart)
