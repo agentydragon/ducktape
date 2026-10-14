@@ -1,4 +1,40 @@
 apiVersion: v1
+kind: Service
+metadata:
+  name: rugged-local-llm
+  namespace: litellm
+spec:
+  clusterIP: None
+  externalIPs: []
+  ports:
+    - name: http
+      port: 18080
+      protocol: TCP
+      targetPort: 18080
+  selector: {}
+  type: ClusterIP
+---
+apiVersion: discovery.k8s.io/v1
+kind: EndpointSlice
+metadata:
+  labels:
+    endpointslice.kubernetes.io/managed-by: ducktape-static
+    kubernetes.io/service-name: rugged-local-llm
+  name: rugged-local-llm
+  namespace: litellm
+addressType: IPv4
+endpoints:
+  - addresses:
+      - 10.42.0.30
+    conditions:
+      ready: true
+    hostname: rugged
+ports:
+  - name: http
+    port: 18080
+    protocol: TCP
+---
+apiVersion: v1
 kind: ConfigMap
 metadata:
   annotations:
@@ -881,6 +917,11 @@ spec:
                   key: refresh_token
                   name: tana-firebase-refresh-token
                   optional: true
+            - name: RUGGED_LOCAL_LLM_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: rugged-local-llm-bearer-token
             - name: LANGFUSE_OTEL_HOST
               value: http://langfuse-web.langfuse.svc.cluster.local:3000
             - name: LANGFUSE_PUBLIC_KEY

@@ -285,7 +285,7 @@ def generate_manifests(root: Path) -> None:
     )
     seaweedfs_cluster.write_manifests(root)
     litellm_namespace.write_manifests(root)
-    litellm_proxy.write_manifests(root)
+    litellm_proxy.write_manifests(root, mesh)
     litellm_database.write_manifests(root)
     litellm_secrets.write_manifests(root)
     agents_namespaces.write_manifests(root)

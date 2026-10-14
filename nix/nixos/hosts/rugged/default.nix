@@ -37,6 +37,7 @@ in
     ./foxconn-wwan.nix
     ./nebula-underlay-refresh.nix
     ./local_llm_arc.nix
+    ./local_llm_bearer_proxy.nix
     ./local_llm_npu.nix
     ./gpu-debug.nix
     ./iio-debug.nix
@@ -79,6 +80,10 @@ in
 
   # Local LLM inference (Arc GPU + NPU)
   ducktape.localLlm.ollamaUpstream.enable = true;
+  # Provisional serving choice: 3/3 native tool probes passed; pending the
+  # broader quality comparison. The prefetch unit skips pulls once cached.
+  ducktape.localLlm.ollamaUpstream.models = [ "qwen3:4b-instruct-2507-q4_K_M" ];
+  ducktape.localLlm.bearerProxy.enable = true;
 
   # Keep the llama.cpp service disabled until its own GGUF models and bounded
   # context are verified. The stock driver does execute NPU work with the

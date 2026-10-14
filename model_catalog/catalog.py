@@ -83,6 +83,7 @@ class Provider(StrEnum):
     GOOGLE = "google"
     MISTRAL = "mistral"
     OLLAMA = "ollama"
+    RUGGED_LOCAL = "rugged-local"
     GROQ = "groq"
 
 
@@ -479,6 +480,7 @@ GEMINI_EMBEDDING_COMPAT_ALIAS = _GEMINI_EMBEDDING_2.id
 # downstream code receives Route objects, not naming ingredients.
 OLLAMA_OPENAI = Upstream(Provider.OLLAMA, "openai", "chat", supports_function_calling=True)
 OLLAMA_NATIVE = Upstream(Provider.OLLAMA, "ollama_chat", "chat", supports_function_calling=True)
+RUGGED_LOCAL_OPENAI = Upstream(Provider.RUGGED_LOCAL, "openai", "chat")
 
 
 @dataclass(frozen=True)

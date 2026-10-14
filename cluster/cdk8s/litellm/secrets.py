@@ -24,7 +24,7 @@ OUTPUT_DIR = f"{HAND_WRITTEN_ROOT}/litellm/secrets"
 _NAME = "litellm-secrets"
 _NAMESPACE = "litellm"
 _EXTERNAL_CREDS_STORE = "kubernetes-external-creds-secret-store"
-_SOPS_FILES = ("litellm-master-key.sops.yaml", "litellm-salt-key.sops.yaml")
+_SOPS_FILES = ("litellm-master-key.sops.yaml", "litellm-salt-key.sops.yaml", "rugged-local-llm-bearer-token.sops.yaml")
 _TANA_REFRESH_TOKEN = "tana-firebase-refresh-token"
 
 

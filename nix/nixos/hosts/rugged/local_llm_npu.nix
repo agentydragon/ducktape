@@ -2,10 +2,7 @@
 #
 # Enables the NPU kernel driver and userspace stack, and runs a Nix-native
 # llama-server (see nix/packages/{openvino-npu,llama-cpp-openvino}.nix) as a
-# router serving both models over the NPU, behind a bearer-token nginx proxy.
-# Port 18080 deliberately matches the Service/EndpointSlice already defined on
-# the (currently separate, on-hold) litellm-wiring PR, so that piece needs no
-# changes once it's proven out and reattached.
+# router serving both models over the NPU.
 #
 # Hardware: Intel Lunar Lake NPU (PCI 8086:643e), /dev/accel/accel0.
 {
@@ -19,8 +16,7 @@
 let
   cfg = config.ducktape.localLlm.npu;
 
-  llamaServerPort = 8090; # loopback-only; the bearer proxy is the only public listener
-  bearerProxyPort = 18080; # matches rugged-npu-llm-endpoints.yaml's Service/EndpointSlice
+  llamaServerPort = 8090; # loopback-only
 
   # Model IDs the router exposes are exactly these filenames (minus .gguf) --
   # litellm's proxy-config.yaml sends "model": "qwen3-4b" / "llama-3.2-1b".
@@ -93,48 +89,5 @@ in
       };
     };
 
-    # Bearer-checking proxy, mirroring cluster/k8s/activitywatch/bearer-proxy.conf.template's
-    # pattern. The secret file (secrets/hosts/rugged-npu-llm-bearer-token.sops.yaml)
-    # is deliberately "one value, both sides": rugged decrypts it here, and
-    # cluster-secrets is already an included recipient so litellm can read the
-    # same value once that wiring is proven out on real hardware and reattached
-    # (see the comment in the file itself).
-    sops.secrets.rugged_npu_llm_bearer_token = {
-      sopsFile = ../../../../secrets/hosts/rugged-npu-llm-bearer-token.sops.yaml;
-      key = "token";
-    };
-
-    sops.templates."rugged-npu-llm-nginx.conf".content = ''
-      map $http_authorization $rugged_npu_llm_ok {
-        default 0;
-        "Bearer ${config.sops.placeholder.rugged_npu_llm_bearer_token}" 1;
-      }
-
-      server {
-        listen ${toString bearerProxyPort};
-
-        location = /healthz {
-          return 200 "ok";
-        }
-
-        location / {
-          if ($rugged_npu_llm_ok = 0) {
-            return 401;
-          }
-          proxy_pass http://127.0.0.1:${toString llamaServerPort};
-          proxy_set_header Host $host;
-          proxy_buffering off; # llama-server streams SSE token-by-token
-        }
-      }
-    '';
-
-    services.nginx = {
-      enable = true;
-      appendHttpConfig = ''
-        include ${config.sops.templates."rugged-npu-llm-nginx.conf".path};
-      '';
-    };
-
-    networking.firewall.allowedTCPPorts = [ bearerProxyPort ];
   };
 }
