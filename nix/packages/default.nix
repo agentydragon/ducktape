@@ -485,6 +485,9 @@ rec {
   gmail-mcp = pkgs.callPackage ./gmail-mcp.nix { };
   foxflss = pkgs.callPackage ./foxflss.nix { };
   litert-lm = pkgs.callPackage ./litert-lm.nix { };
+  # Colibri's Qwen36 engine, built with its opt-in Vulkan backend for the
+  # Rugged Arc experiments; it remains an on-demand package, not a host service.
+  colibri = pkgs.callPackage ./colibri.nix { };
   # Intel NPU compiler libs (hermetic fetch) + openvino rebuilt against them --
   # see openvino-npu.nix for why nixpkgs' own openvino can't run NPU inference.
   npu-compiler-libs = pkgs.callPackage ./npu-compiler-libs.nix { };
