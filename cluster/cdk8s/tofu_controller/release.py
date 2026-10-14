@@ -65,7 +65,9 @@ _EXTERNAL_ARTIFACT_RBAC_PATCH = """\
 
 def chart(app: App) -> Chart:
     chart = Chart(app, NAME, disable_resource_name_hashes=True)
-    crd = Include(chart, "terraform-crd", url=str(get_required_path(_CRD)))
+    # Bazel runfiles expose data files through symlinks, while cdk8s's local-file loader checks
+    # lstat() and therefore treats those paths as empty. Resolve the runfile to its real file first.
+    crd = Include(chart, "terraform-crd", url=str(get_required_path(_CRD).resolve()))
     for obj in crd.api_objects:
         # Pruning the CRD would delete every Terraform with it.
         obj.metadata.add_annotation("kustomize.toolkit.fluxcd.io/prune", "disabled")
