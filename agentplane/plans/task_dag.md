@@ -290,6 +290,8 @@ unless `DISPATCHER_WAKE_ON_SEND` lets that kind of sender wake a Sandbox.
 the selected API, with correct provenance and distinct receipt/ack states. Security-negative and
 multi-replica retry cases belong in automated tests; no real provider outage requirement.
 
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
 ### `THREAD_CREATE_POLICY` — authorize session creation separately
 
 **Decision.** Review caller scope to open in an existing Sandbox, accepted defaults, quotas,
@@ -442,6 +444,8 @@ projected tokens (the relay reopens them per request, so rotation alone needs no
 clock. Settle first what "seal before suspend" means when the harness keeps running across the suspend
 (`QUIESCE_WITHOUT_POLLING` assumes the Pod sequence). Where storage or the guest cannot carry it, stop/start from the state PVC stays the
 lifecycle.
+
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `LOCAL_BAZEL` — bounded local client in a VM
 
@@ -653,6 +657,8 @@ conditions as a runner fact on the connection Lease (`RUNNER_FACTS_ON_LEASE`), i
 connect because it lasts the Sandbox's lifetime, and is part of `Ready`. `BootstrapFailed` is
 terminal.
 
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
 ## 7. Our own Sandbox resource: Sessions that outlive their Pod
 
 Not scheduled. A Session and its history are durable. The operator's direction (2026-10-12 PDT):
@@ -790,6 +796,8 @@ for it; check what else relies on it before changing). Check that a Session can 
 kinds on it. The runner versions and migrates the contents and the controller has no version gate
 (`SANDBOX_IMAGE_REPLACE`). The workspace is `WORKSPACE_VOLUME`'s.
 
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
 ### `NODE_LOCAL_BLOCK_STORAGE` — node-local block volumes on every node
 
 **Unscheduled; operator, 2026-10-13 PDT.** The cluster has no provisioner on every node that makes
@@ -815,6 +823,8 @@ of build caches), so this is where the block storage matters. Pods and VMs use t
 (`STATE_VOLUME_BLOCK`), so a Sandbox switching between them keeps both volumes and needs no
 compatibility rules or conversion (operator, 2026-10-13 PDT).
 
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
 ### `SANDBOX_SPEC_EDIT` — edit a suspended Sandbox's template or kind
 
 **Unscheduled; operator, 2026-10-13 PDT.** Let the operator change a Sandbox's template, including a
@@ -823,6 +833,8 @@ already reads the template as it is then (`SANDBOX_IMAGE_REPLACE`), and no spec 
 automatically; this is the explicit, operator-driven edit. Needs `WORKSPACE_VOLUME`,
 so a kind switch keeps the workspace, and `VM_PROVIDER` for the VM side. The preset the app records
 on a Sandbox as a label (`APP_SESSION_DEFAULTS`) must stay true after the edit.
+
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `WORKSPACE_NODE_PORTABILITY` — move a workspace between nodes
 
@@ -838,6 +850,8 @@ rehydrated before it can start, freeing the node's disk meanwhile. Sandbox statu
 is archived and where, and resuming one rehydrates first. Related to `WORKSPACE_NODE_PORTABILITY`,
 which shares the copy mechanism. Needs `WORKSPACE_VOLUME`; the runner's state PVC would archive the
 same way.
+
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `AGENTPLANE_SANDBOX_RESOURCE` — our own Sandbox resource
 
@@ -871,6 +885,8 @@ and the controller has no version gate. So of #8843's `ReplaceVmImage` (replaced
 the 2026-10-03 run) the Halted-only rewrite carries over,
 and the exact `VmTemplate.state_schema_version` match does not.
 
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
 ### `SANDBOX_GENERIC_SPLIT` — separate the generic Sandbox from the runner's sealing
 
 **Unscheduled; operator, 2026-10-13 PDT: a later TODO.** Our `Sandbox` resource binds two concerns
@@ -881,6 +897,8 @@ the first could be reused without the runner. Decide where the line falls (resou
 layered pair, a Sandbox and a runner that runs inside one, is the direction the control design
 (`docs/adr_sandbox_session_control.md`) points to: seal, runner connectivity and idle suspension
 are the runner-aware layer, and the Session Dispatcher sits outside both.
+
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `SANDBOX_RUNNER_LAYERING` — add the runner and harnesses to a platform user's image
 
@@ -918,6 +936,8 @@ no ingress-health gate. Suspension waits for the Sandbox bootstrap and every
 Session's setup (running setups are a runner fact; the Sandbox is `Ready` False with reason `SuspendPending`); deletion does not wait. A Sandbox that is quiescing refuses resume. Action Service boxes are `ACTION_BOX_IDLE_REAPER`'s, which
 only ever deletes.
 
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
 ### `SESSION_INCARNATIONS` — a Session records its incarnations
 
 **Blocked on the lifecycle decision and the resource.** The Sandbox resource's status lists its
@@ -930,6 +950,8 @@ Open piece (`SANDBOX_IDLE_EXPIRY` waits for it, since a sealed journal cannot re
 incarnation sealed stays sealed. This node decides how such a journal is reopened and what the ingress
 does with the next cursor range.
 
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
 ### `SESSION_REVIVE` — start a stopped Sandbox again
 
 **Blocked on incarnations.** The controller schedules a new Pod or VM
@@ -938,6 +960,8 @@ template as it is now, possibly on a new image, and resume each harness as
 a new incarnation of the same Session and history. Incarnation N+1 is created only after N has fully
 terminated, and the runner treats an interrupted Session setup as resumable. Test
 revival after a long stop, a refused incompatible state PVC, and concurrent revive requests.
+
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `INCARNATION_UID_REQUIRED` — the runner rejects a `Welcome` without the incarnation UID
 
@@ -1035,6 +1059,8 @@ at most ten minutes after the first pending entry, through `NOTIFICATIONS_VIA_DI
 display and delivery timing: suspension reads the runner's busy facts (`RUNNER_FACTS_ON_LEASE`) and
 never this field. Per-Session idle times stay out of Kubernetes.
 
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
 ### `DISPATCHER_CORE` — the Session Dispatcher delivers to running Sandboxes
 
 **Blocked on `RUNNER_COMMAND_RPCS`.** A new service with its own database and
@@ -1055,6 +1081,8 @@ reason and `status.incarnation`; its ServiceAccount gets one `get/list/watch` ru
 the Sandbox Service only to resume. There is no `WatchSandboxes` RPC and no Service watch. This
 node moves no sender and wakes nothing, so it can land beside the direct path with no change for
 anyone. Test duplicate sends, a sender that leaves, a deleted target and a refused delivery.
+
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `DISPATCHER_SESSION_CREATE` — dispatched Session creation
 
@@ -1118,11 +1146,15 @@ half-granted. Related to `POLICY_RUNTIME_GRANTS`, which makes grants expire.
 Session in the app has an enabled composer; sending queues the message and shows that the Sandbox
 is starting and the message waits.
 
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
 ### `THREAD_SUCCESSOR_DELIVERY` — commands unsettled across incarnations
 
 **Blocked on revival.** A command whose admission was ambiguous when an incarnation ended is
 redelivered to the next one, which resolves the ambiguity (the runner deduplicates on the command
 ID). It is `unknown` only when the Sandbox was deleted. Moved from the freezer.
+
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `HOSTED_THREAD_SURFACES` — show and revive stopped Sessions
 
@@ -1292,6 +1324,8 @@ controller to the gateway, and sets `sandbox_controller_account` on the gateway;
 `Sealer` and `Leases` become required. This step waits for the runner image with the per-incarnation seal marker to be pinned: with the
 sealer on, a resumed Sandbox's runner would otherwise find the old incarnation's marker. Then `runner_gateway/deletion_seals.py`, `sealing.py` and the
 gateway's write to Sandboxes go.
+
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `RUNNER_COMMAND_RPCS` — one `Runner` RPC per command
 
