@@ -286,10 +286,10 @@ provenance rather than a client creation request, and does not allocate a new ex
 One common client flow can work for either harness. The operation names below are illustrative,
 not claims about the current API. The caller can be a UI backend, CLI, or another agent.
 
-1. **Client → Sandbox Service: `CreateSandbox`.** Supply a creation request ID, sandbox template,
-   and authorized workload configuration. The service authorizes and provisions the sandbox, then
-   returns a stable sandbox reference and a provisioning operation to follow. Allocated is not yet
-   ready: wait for the runner to become reachable and required sandbox initialization to succeed.
+1. **App → Kubernetes: create a Sandbox.** The app acts as the requesting operator and submits the
+   selected template, preset label and authorized workload configuration. The Sandbox Controller
+   reconciles it; allocated is not yet ready, so wait for controller status to report a reachable
+   runner and required initialization to succeed.
 2. **Client → Runner Gateway: `StartSession`.** Supply that sandbox reference, a session-creation
    request ID, the harness/model/workspace/instructions spec, and optionally the initial input with
    its own command ID. The service authorizes access, resolves the runner, and forwards the request;
@@ -517,7 +517,7 @@ ID would be bound to the client's UUID, not replace it, rather than treating tod
 
 The concrete root sequences are:
 
-1. Client provisions an authorized sandbox through Sandbox Service and follows readiness.
+1. The app submits an authorized Sandbox request through Kubernetes and follows controller readiness.
 2. Client calls `CreateSession` with a fresh UUID, harness spec and override mask. Service
    passes the UUID and launch intent to the runner, which accepts/reserves a logical root and
    execution owner. A retry carries the same UUID; whether the runner started it is read from the

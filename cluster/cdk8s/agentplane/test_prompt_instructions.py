@@ -71,7 +71,7 @@ def test_haku_preset_binds_what_its_account_binding_names(
     assert set(HAKU_ACTION_POLICY_SETS) - bound == {DUCKTAPE_PR_FAILED_JOBS_SET}, "a second write joined the bundle"
 
     # Every name the preset binds must resolve to a PolicySet this namespace actually creates, or the
-    # Sandbox Service refuses the launch outright.
+    # The app refuses the launch outright.
     created = {doc["metadata"]["name"] for doc in docs if doc["kind"] == "PolicySet"}
     assert set(preset) <= created, sorted(set(preset) - created)
 
