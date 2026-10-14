@@ -716,9 +716,12 @@ flowchart TD
     AGENTPLANE_SANDBOX_RESOURCE --> SESSION_INCARNATIONS
     AGENTPLANE_SANDBOX_RESOURCE -. stateful VMs .-> VM_PROVIDER
     SESSION_INCARNATIONS --> SESSION_REVIVE
-    SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Blocked: idle runner Sandboxes suspend]
+    SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Blocked: the controller suspends an idle Sandbox]
     RUNNER_SEAL_PER_INCARNATION[Candidate: the runner keys its seal to the incarnation and reopens]
     RUNNER_SEAL_PER_INCARNATION --> SANDBOX_IDLE_EXPIRY
+    IDLE_SUSPEND_FIELDS[Candidate: optional idle-suspend fields and the effective mode in status] -- image pinned --> EFFECTIVE_MODE_READERS[Blocked: Python readers follow the effective mode]
+    EFFECTIVE_MODE_READERS --> SANDBOX_IDLE_EXPIRY
+    SANDBOX_WRITE_HELPER -. wake helper shared .-> EFFECTIVE_MODE_READERS
     RUNNER_SEAL_PER_INCARNATION -. related .-> SESSION_INCARNATIONS
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
     HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
@@ -909,13 +912,36 @@ Options the operator named, none chosen: mount a separate volume that carries th
 Codex into a Pod image that has none of them; or take a user root filesystem and run it under
 Firecracker with the runner as init.
 
-### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes suspend
+### `IDLE_SUSPEND_FIELDS` — optional idle-suspend fields and the effective mode in status
 
-**Blocked on `SESSION_INCARNATIONS`, `RUNNER_SEAL_PER_INCARNATION`, `RUNNER_FACTS_ON_LEASE` and `QUIESCE_WITHOUT_POLLING`; operator,
-2026-10-11 and 2026-10-13 PDT.** An idle runner Sandbox suspends: it is sealed,
-then the Pod or VM goes, freeing memory and compute, and the Sandbox, its ServiceAccount, bindings
-and state PVC stay, so `SESSION_REVIVE` resumes it on the same PVC. Nothing deletes a Sandbox on
-idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one, through
+**Candidate; operator, 2026-10-11, 2026-10-13 and 2026-10-14 PDT.** The Sandbox resource gains
+`spec.idleSuspendAfter`, `status.suspendedBy` and `spec.wakeGeneration` (the last if it is not there yet;
+`SANDBOX_WRITE_HELPER` bumps it), all optional so the image that reads them ships before any manifest sets
+them. The controller publishes the effective mode once in status: whether the Sandbox is meant to run,
+from `spec.running` and, once `SANDBOX_IDLE_EXPIRY` writes it, `status.suspendedBy`. It reads the idle fields
+and decides nothing yet, so a Sandbox behaves exactly as before. Gate: the controller image is pinned before
+`EFFECTIVE_MODE_READERS`. Reader before writer.
+
+Control design: [ADR](../docs/adr_sandbox_session_control.md).
+
+### `EFFECTIVE_MODE_READERS` — every reader of `spec.running` follows the effective mode
+
+**Blocked on `IDLE_SUSPEND_FIELDS`, its controller image pinned.** Every reader of `spec.running` reads the
+status's effective mode instead: the controller's own reconcile and `vm.go` (with `IDLE_SUSPEND_FIELDS`),
+`sandbox_resource.py`, the shared phase derivation (`kubernetes_views.py`) and `inventory.py` in
+`agentplane/sandboxes/`, the app's delete path and its `sandbox_has_ready_pod`. The wake helper of
+`SANDBOX_WRITE_HELPER` sets `running = true` and bumps `wakeGeneration` for both causes (operator, 2026-10-14:
+the shape stays); it lands in `agentplane/sandboxes/` with the readers or in that node, whichever merges
+first. Gate: the images of these readers are pinned before `SANDBOX_IDLE_EXPIRY` writes `status.suspendedBy`,
+or a suspended-by-idle Sandbox reads as running.
+
+### `SANDBOX_IDLE_EXPIRY` — the controller suspends an idle Sandbox
+
+**Blocked on `EFFECTIVE_MODE_READERS`, `SESSION_INCARNATIONS`, `RUNNER_SEAL_PER_INCARNATION`,
+`RUNNER_FACTS_ON_LEASE` and `QUIESCE_WITHOUT_POLLING`; operator, 2026-10-11 and 2026-10-13 PDT.** An idle runner
+Sandbox suspends: it is sealed, then the Pod or VM goes, freeing memory and compute, and the Sandbox, its
+ServiceAccount, bindings and state PVC stay, so `SESSION_REVIVE` resumes it on the same PVC. Nothing deletes a
+Sandbox on idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one, through
 [teardown](../sandbox_service/API.md#teardown) and the seal. What a resume gets back of the
 workspace depends on `WORKSPACE_VOLUME`. Idle is a Sandbox-level fact: every Session in the Sandbox
 is idle. The control design (`docs/adr_sandbox_session_control.md`) puts the policy in the Sandbox
@@ -923,11 +949,7 @@ controller: `spec.idleSuspendAfter`, a timer the controller measures from the `i
 fact the runner publishes (`RUNNER_FACTS_ON_LEASE`), so it needs no History Service and
 survives a controller restart. Busy covers a delivery under way, the bootstrap, a turn, a command and a setup script. A background or
 durable process or an attached terminal does not count (operator, 2026-10-14), so a suspend ends them (`RUNNER_BUSY_TRACKING`). The controller's idle timer does not edit the spec: it
-writes `status.suspendedBy: Idle` with the `spec.wakeGeneration` it suspended at, and the shared wake helper
-(`SANDBOX_WRITE_HELPER`) sets `running = true` and bumps `wakeGeneration` for both causes (operator, 2026-10-14: the shape stays). The
-controller publishes the effective mode once in status, and every reader of `spec.running` (controller
-reconcile and `vm.go`, `sandbox_resource.py`, the shared phase derivation of `SANDBOX_WRITE_HELPER`, the app's delete path,
-the app's `sandbox_has_ready_pod`) reads that. Automatic suspension is
+writes `status.suspendedBy: Idle` with the `spec.wakeGeneration` it suspended at. Automatic suspension is
 `Quiesce` with `if_idle_since`: the runner refuses it on a token mismatch or when busy (`ABORTED`, as
 for a Sandbox already in lameduck; `FAILED_PRECONDITION` is terminal), and there is
 no ingress-health gate. Suspension waits for the Sandbox bootstrap and every
