@@ -281,7 +281,7 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
             async with asyncio.timeout(self.resources.request_timeout_s):
                 await self.resources.authenticate(context)
             deadline = asyncio.get_running_loop().time() + self.resources.watch_lease_s
-            written: dict[str, tuple[DeliveryState, str | None]] = {}
+            written: dict[str, tuple[session_dispatcher_pb2.DeliveryState, str]] = {}
             changed = asyncio.Event()
             # Subscribed before the first read, so a commit or a deletion after it is never missed.
             with (

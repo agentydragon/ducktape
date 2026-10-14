@@ -378,6 +378,7 @@ py_library(
         ":db",
         ":models",
         "//agentplane/proto:session_dispatcher_pb2",
+        "@pypi//protobuf",
     ],
 )
 

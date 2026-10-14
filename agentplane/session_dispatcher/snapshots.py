@@ -1,7 +1,8 @@
 """The exact wire snapshots shared by Dispatch reads and terminal watches."""
 
-# gazelle:include_dep @pypi//protobuf
+from typing import cast
 
+# gazelle:include_dep @pypi//protobuf
 from agentplane.proto import session_dispatcher_pb2
 from agentplane.session_dispatcher.db import Dispatch, SessionOpening
 from agentplane.session_dispatcher.models import DeliveryState, Operation
@@ -24,8 +25,8 @@ _STATES = {
 }
 
 
-def describe_state(state: DeliveryState) -> int:
-    return _STATES[state]
+def describe_state(state: DeliveryState) -> session_dispatcher_pb2.DeliveryState:
+    return cast(session_dispatcher_pb2.DeliveryState, _STATES[state])
 
 
 def describe_dispatch(row: Dispatch) -> session_dispatcher_pb2.Dispatch:
