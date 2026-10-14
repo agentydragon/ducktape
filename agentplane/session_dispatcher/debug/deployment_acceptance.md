@@ -57,3 +57,18 @@ parses exact deployed defaults, captures failed opening state/reason before clea
 UID deletion preconditions. The caller Pod is an authentication binding object; its readiness is
 not a prerequisite for TokenReview, and the probe does not claim its process generated the RPCs.
 The corrected bounded run remains pending.
+
+## Second probe: wrong Pod working directory
+
+The run at `6517e55d2f` in [invocation 54bb96be-81cc-4666-ad34-c6671c988d68](https://app.buildbuddy.io/invocation/54bb96be-81cc-4666-ad34-c6671c988d68)
+passed caller authentication, the suspended queue and the default PolicySet gate, then its opening
+stayed `QUEUED_IN_DISPATCHER` / `delivery_unavailable`. Scoped reads of the opening and command rows
+before cleanup and gateway logs show `UNAVAILABLE` with `[Errno 13] Permission denied: '/workspace'`.
+The actual Pod template mounts writable state at `/state` and runs UID 1000; successful existing
+Pod acceptance uses `/state/work`. The fixture had incorrectly selected `/workspace`. Its command
+watch reached its existing deadline; no timeout or retry policy was changed.
+
+The corrected SessionSpec uses the successful Pod helper's working directory and explicit low
+reasoning effort. Deadline failures now also retain opening state/reason before cleanup. This
+second run's own Sandbox, caller Pod and PVCs were removed by the API UID-fenced teardown. No shared
+resources were restarted or forced. This remains a probe setup failure, not deployment acceptance.

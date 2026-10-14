@@ -352,3 +352,31 @@ py_library(
     srcs = ["ended_dispatches.py"],
     deps = [":db"],
 )
+
+py_test(
+    name = "test_startup",
+    size = "medium",
+    srcs = ["test_startup.py"],
+    requires_docker = True,
+    deps = [
+        ":conftest",
+        ":main",
+        ":settings",
+        "//:conftest",
+        "//agentplane:grpc_calls",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
+        "//agentplane/proto:session_dispatcher_pb2_grpc",
+        "//agentplane/sandboxes/testing:kubernetes",
+        "//agentplane/session_dispatcher/testing:sandbox_status",
+        "//agentplane/session_dispatcher/testing:scripted_runner",
+        "//agentplane/testing:fake_apiserver",
+        "//util:net",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
+    ],
+)

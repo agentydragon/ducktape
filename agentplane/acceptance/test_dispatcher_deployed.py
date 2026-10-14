@@ -279,7 +279,10 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
                 sandbox=sandbox,
                 session_id=session,
                 spec=runner_pb2.SessionSpec(
-                    harness=runner_pb2.HARNESS_CODEX, model="chatgpt/oai-responses/gpt-6-luna", cwd="/workspace"
+                    harness=runner_pb2.HARNESS_CODEX,
+                    model="chatgpt/oai-responses/gpt-6-luna",
+                    cwd="/state/work",
+                    reasoning_effort="low",
                 ),
             ),
             metadata=authentication.metadata,
@@ -298,7 +301,7 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
             admitted = await _dispatch_until(
                 stub, authentication, session, lambda row: row.state == pb.DELIVERY_STATE_RUNNER_ADMITTED
             )
-        except DispatchFailedError as error:
+        except (DispatchFailedError, grpc.aio.AioRpcError) as error:
             failed_opening = await stub.GetSessionOpening(
                 pb.GetSessionOpeningRequest(session_id=session), metadata=authentication.metadata, timeout=15
             )
