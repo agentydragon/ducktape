@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Set
 from pathlib import Path
-from typing import ClassVar
+from typing import ClassVar, Self
 
-from pydantic import Field, field_serializer
+from pydantic import Field, field_serializer, model_validator
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
@@ -69,7 +69,11 @@ class Settings(AppSettingsConfig):
         description="Namespace whose Sandbox inventory the app observes. Separate from the app's own "
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
     )
-    sandbox_service_target: str = Field(min_length=1, description="The Sandbox Service's gRPC host:port.")
+    sandbox_service_target: str | None = Field(
+        default=None,
+        min_length=1,
+        description="The Sandbox Service's gRPC host:port; required only without direct Kubernetes lifecycle config.",
+    )
     runner_gateway_target: str = Field(
         min_length=1, description="The Runner Gateway's gRPC host:port, serving Sessions."
     )
@@ -90,6 +94,7 @@ class Settings(AppSettingsConfig):
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     sandbox_service_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
+
     runner_gateway_command_admission_timeout_s: float = Field(
         default=20,
         gt=0,
@@ -128,3 +133,9 @@ class Settings(AppSettingsConfig):
         '["system:serviceaccount:ns:sa"]. A token for any other subject is refused however it was '
         "minted, and the default accepts none at all, leaving an OIDC session the only way in.",
     )
+
+    @model_validator(mode="after")
+    def require_sandbox_lifecycle_backend(self) -> Self:
+        if self.default_policy_sets is None and self.sandbox_service_target is None:
+            raise ValueError("sandbox_service_target is required when default_policy_sets is absent")
+        return self

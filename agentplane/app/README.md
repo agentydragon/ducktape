@@ -8,6 +8,20 @@ synchronizes selected rows and content to the browser through authenticated Elec
 decisions and Connection consent.
 The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
+## Sandbox Service retirement
+
+With `default_policy_sets` configured (including an empty set), the app uses Kubernetes directly and
+opens no Sandbox Service channel or health probe. `sandbox_service_target` is optional in that mode;
+without direct config it remains required and selects the temporary gRPC lifecycle client. The old
+manifest target and projected token must remain until this accepting app image is pinned. Remaining
+config, client and service removal is tracked in the [task DAG](../plans/task_dag.md#sandbox_service_remove--remove-the-sandbox-service).
+
+Rollout evidence, 2026-10-14: testing and staging ConfigMaps both contain `basic` and
+`inference-experiments` as `default_policy_sets`; their app Deployments use
+`devel-20261014073924-0483e50` with observed generation current and updated/Ready replicas 1/1 and
+2/2 respectively. This confirms the direct-path configuration rollout, not the later optional-target
+image rollout or end-to-end lifecycle acceptance.
+
 ## Dependency boundary
 
 **The integration app is a user-facing client; other Agentplane services must not depend on it.**

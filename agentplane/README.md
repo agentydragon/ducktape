@@ -70,7 +70,7 @@ flowchart TB
 
     browser -->|HTTPS, SSE| app
     mcp_client -->|MCP over OAuth| actions
-    app -->|gRPC health check; lifecycle fallback if direct config is absent| ss
+    app -->|older app image: gRPC health check; lifecycle fallback if direct config is absent| ss
     app -->|gRPC: Sessions, commands| gw
     app -->|gRPC: Session and Thread reads, change and Session-opening watch| hs
     app -->|HTTP| notif
@@ -116,6 +116,10 @@ flowchart TB
     proxy -->|model calls| llm --> outside
     proxy -->|credentials substituted| outside
 ```
+
+The app receiver now omits its Sandbox Service connection in direct mode. The health-check edge
+above remains until that app image is pinned; target/token manifest removal follows the pin
+([rollout gates](plans/task_dag.md#sandbox_service_remove--remove-the-sandbox-service)).
 
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its
   conversation view, folded by the History Service. Every runner pushes its Events to the History

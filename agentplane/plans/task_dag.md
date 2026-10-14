@@ -695,7 +695,6 @@ flowchart TD
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
     DISPATCHER_CORE[Candidate: deploy the Session Dispatcher, then the facts that settle its commands]
-    APP_SANDBOX_WRITES[Blocked: direct Sandbox lifecycle config has not rolled out]
     SANDBOX_SERVICE_REMOVE[Blocked: remove the Sandbox Service]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     DISPATCHER_WAKE_ON_SEND[Blocked: a send wakes a suspended Sandbox]
@@ -743,7 +742,6 @@ flowchart TD
     APP_SENDS_VIA_DISPATCHER --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
         DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
-    APP_SANDBOX_WRITES --> SANDBOX_SERVICE_REMOVE
     DISPATCHER_CORE --> DISPATCHER_DEPLOY[In flight: the Session Dispatcher is deployed]
     DISPATCHER_CORE --> DISPATCHER_REPLICA_OWNERSHIP[Candidate: multiple replicas own disjoint Sandboxes]
     DISPATCHER_DEPLOY --> APP_SENDS_VIA_DISPATCHER
@@ -1131,23 +1129,13 @@ never this field. Per-Session idle times stay out of Kubernetes.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `APP_SANDBOX_WRITES` — the app creates, deletes, suspends and resumes Sandboxes itself
-
-**Blocked until the generated direct-path config is applied and the app rollout is healthy in both
-environments.** The guarded app image is currently pinned in testing and staging. As the requesting
-operator, the app creates, deletes, suspends and resumes Sandboxes through the Kubernetes API, and
-reads inventory with the derived phase.
-The shared `SandboxInventory` supplies the guarded running-state patch, retryable refusal while an
-incarnation is quiescing, create validation/idempotency and phase derivation. The app also edits egress
-grants, reads policy views and templates, and streams the VM serial console through KubeVirt's console
-subresource. Its Role grants for Sandboxes, templates, PolicyBindings, Pods, and VM console have
-reconciled in testing and staging. The direct path is enabled by the generated app `default_policy_sets`
-config; keep the Sandbox Service health and compatibility client until the final removal step.
-
 ### `SANDBOX_SERVICE_REMOVE` — remove the Sandbox Service
 
-**Blocked until the app image with direct lifecycle support and the quiescing guard, and the
-Notification Service image that reads the Sandbox CR, are pinned on staging.** Remove the Deployment,
+**In flight (Codex, 2026-10-14).** Direct app lifecycle config and its guarded image have rolled out in
+both environments (evidence in [the app README](../app/README.md#sandbox-service-retirement)). The next
+receiver change makes the app target optional and drops its channel and health probe in direct mode.
+After that app image is pinned, remove the old target and token configuration; keep the Service until
+all callers and their images no longer need it. Remove the Deployment,
 Role and TokenReview,
 the protos and client, `StreamConsole`, the grant RPCs (`GrantEgress`, `RevokeEgress`, their messages,
 servicer, client methods, `sandbox_service/egress.py` and the `egresscredentials`/`policybindings` rules of
