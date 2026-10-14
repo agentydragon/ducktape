@@ -938,6 +938,7 @@ py_library(
 
 py_test(
     name = "test_action_policy",
+    size = "medium",
     srcs = ["test_action_policy.py"],
     deps = [
         ":action_policy",
@@ -1424,6 +1425,7 @@ py_library(
 
 py_test(
     name = "test_sandbox_models",
+    size = "medium",
     srcs = ["test_sandbox_models.py"],
     deps = [
         ":conftest",
