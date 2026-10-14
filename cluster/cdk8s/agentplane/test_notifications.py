@@ -126,7 +126,7 @@ def test_notifications_use_the_configured_dispatcher(
         for rule in policy["egress"]
         for endpoint in rule.get("toEndpoints", [])
     }
-    assert {dispatcher.NAME, runner_gateway.NAME} <= egress_services
+    assert {session_dispatcher.NAME, runner_gateway.NAME} <= egress_services
 
 
 if __name__ == "__main__":
