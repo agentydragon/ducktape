@@ -696,6 +696,8 @@ flowchart TD
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
     INCARNATION_UID_REQUIRED[Blocked: the runner rejects a Welcome without the incarnation UID]
     RUNNER_FACTS_ON_LEASE[Candidate: the runner publishes stage, idle and boot facts on the connection Lease]
+    RUNNER_BUSY_TRACKING[Candidate: the runner knows whether the Sandbox is busy]
+    RUNNER_BUSY_TRACKING --> SANDBOX_IDLE_EXPIRY
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     CONTROL_SERVICE_OWNER[Candidate: the controller creates the Sandbox's control Service]
@@ -899,7 +901,7 @@ Firecracker with the runner as init.
 
 ### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes suspend
 
-**Blocked on `SESSION_INCARNATIONS`, `RUNNER_FACTS_ON_LEASE` and `QUIESCE_WITHOUT_POLLING`; operator,
+**Blocked on `SESSION_INCARNATIONS`, `RUNNER_FACTS_ON_LEASE`, `RUNNER_BUSY_TRACKING` and `QUIESCE_WITHOUT_POLLING`; operator,
 2026-10-11 and 2026-10-13 PDT.** An idle runner Sandbox suspends: it is sealed,
 then the Pod or VM goes, freeing memory and compute, and the Sandbox, its ServiceAccount, bindings
 and state PVC stay, so `SESSION_REVIVE` resumes it on the same PVC. Nothing deletes a Sandbox on
@@ -960,6 +962,18 @@ regular 15-second renewal write, so it adds no etcd writes. The runner republish
 reconnect so a gateway rollout loses nothing. A first-connection
 annotation, persisted, tells `NeverRan` (a Sandbox whose runner has not connected yet) from a runner
 that is down. Order: the controller reads the annotations before the gateway starts writing them.
+
+### `RUNNER_BUSY_TRACKING` — the runner knows whether the Sandbox is busy
+
+**Candidate; asked for by the Gateway runner proxy lane, 2026-10-13 PDT.** The Heartbeat's
+`RunnerFacts` carries `idle_since`, but the runner tracks nothing that makes a Sandbox busy. The
+runner computes the whole-Sandbox idle time: busy while any Session runs a turn or a command, a
+background or durable process runs, or a terminal or console is attached; `idle_since` is set only
+while idle, absent while busy, and published on each transition (`RUNNER_FACTS_ON_LEASE` carries it,
+`SANDBOX_IDLE_EXPIRY` reads it). Open: the runner's notion of a running turn or command today is a
+Session's `active_turn_id` and its pending commands; who owns terminals and background processes
+(the harness adapters, the VM console) is not decided. Test idleness across a turn that ends, a
+background process that outlives it, an attached terminal that detaches and a runner restart.
 
 ### `SEAL_RENAME` — Seal, Sealed and Sealing get names that say which fact they mean
 
