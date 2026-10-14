@@ -123,6 +123,16 @@ func (in *SandboxStatus) DeepCopyInto(out *SandboxStatus) {
 		*out = new(string)
 		**out = **in
 	}
+	if in.SuspendedBy != nil {
+		in, out := &in.SuspendedBy, &out.SuspendedBy
+		*out = new(SuspendedBy)
+		**out = **in
+	}
+	if in.SuspendedAtWakeGeneration != nil {
+		in, out := &in.SuspendedAtWakeGeneration, &out.SuspendedAtWakeGeneration
+		*out = new(int64)
+		**out = **in
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]metav1.Condition, len(*in))

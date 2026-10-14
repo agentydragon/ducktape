@@ -59,6 +59,14 @@ spec:
                     deletes the Pod and keeps the state PVC.
                   type: boolean
                   default: false
+                wakeGeneration:
+                  description: >-
+                    Bumped by whoever wakes the Sandbox. A Sandbox the controller suspended for idleness
+                    runs again once this differs from the generation it was suspended at.
+                  type: integer
+                  format: int64
+                  minimum: 0
+                  default: 0
                 policySets:
                   description: >-
                     PolicySets in the Sandbox's namespace to bind its own ServiceAccount to, through
@@ -98,6 +106,9 @@ spec:
                   maxLength: 65536
             status:
               type: object
+              x-kubernetes-validations:
+                - rule: has(self.suspendedBy) == has(self.suspendedAtWakeGeneration)
+                  message: suspendedBy and suspendedAtWakeGeneration are set together
               properties:
                 incarnation:
                   description: The Sandbox's current Pod, while it has one.
@@ -114,6 +125,23 @@ spec:
                     stops. A runner that connected and is not this one has Sessions still to seal
                     before the Sandbox stops or is deleted.
                   type: string
+                operatingMode:
+                  description: >-
+                    Whether the controller runs the Sandbox: `spec.running` unless the controller suspended
+                    it for idleness at the current `spec.wakeGeneration`. Readers of `spec.running` read
+                    this instead.
+                  type: string
+                  enum: [Running, Suspended]
+                suspendedBy:
+                  description: >-
+                    Set while the controller keeps a Sandbox stopped that `spec.running` says to run.
+                  type: string
+                  enum: [Idle]
+                suspendedAtWakeGeneration:
+                  description: The `spec.wakeGeneration` the controller suspended the Sandbox at.
+                  type: integer
+                  format: int64
+                  minimum: 0
                 conditions:
                   type: array
                   x-kubernetes-list-type: map

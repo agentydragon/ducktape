@@ -58,6 +58,9 @@ type SandboxSpec struct {
 	// Template names a SandboxTemplate in the Sandbox's namespace, read again at every start.
 	Template string `json:"template"`
 	Running  bool   `json:"running"`
+	// WakeGeneration is bumped by whoever wakes the Sandbox. An idle-suspended Sandbox runs again once it
+	// differs from the generation it was suspended at.
+	WakeGeneration int64 `json:"wakeGeneration,omitempty"`
 	// PolicySets names the PolicySets in the Sandbox's namespace its ServiceAccount is bound to.
 	PolicySets []string `json:"policySets,omitempty"`
 	// SessionDefaults are the Runner Gateway's; the controller keeps them only so its updates
@@ -86,8 +89,41 @@ type Incarnation struct {
 type SandboxStatus struct {
 	Incarnation *Incarnation `json:"incarnation,omitempty"`
 	// The UID of the last incarnation whose runner sealed every Session, kept after it stops.
-	QuiescedIncarnation *string            `json:"quiescedIncarnation,omitempty"`
-	Conditions          []metav1.Condition `json:"conditions,omitempty"`
+	QuiescedIncarnation *string `json:"quiescedIncarnation,omitempty"`
+	// OperatingMode is whether the controller runs the Sandbox: the one derivation every reader of
+	// `spec.running` reads instead.
+	OperatingMode OperatingMode `json:"operatingMode,omitempty"`
+	// SuspendedBy is set while the controller keeps a Sandbox stopped that `spec.running` says to run, and
+	// SuspendedAtWakeGeneration is the `spec.wakeGeneration` it stopped it at.
+	SuspendedBy               *SuspendedBy       `json:"suspendedBy,omitempty"`
+	SuspendedAtWakeGeneration *int64             `json:"suspendedAtWakeGeneration,omitempty"`
+	Conditions                []metav1.Condition `json:"conditions,omitempty"`
+}
+
+type OperatingMode string
+
+const (
+	OperatingModeRunning   OperatingMode = "Running"
+	OperatingModeSuspended OperatingMode = "Suspended"
+)
+
+type SuspendedBy string
+
+const SuspendedByIdle SuspendedBy = "Idle"
+
+// running reports whether the controller runs the Sandbox: `spec.running` holds and the Sandbox is not
+// idle-suspended at the current wake generation.
+func (s *Sandbox) running() bool {
+	idle := s.Status.SuspendedBy != nil && *s.Status.SuspendedBy == SuspendedByIdle &&
+		s.Status.SuspendedAtWakeGeneration != nil && *s.Status.SuspendedAtWakeGeneration == s.Spec.WakeGeneration
+	return s.Spec.Running && !idle
+}
+
+func (s *Sandbox) operatingMode() OperatingMode {
+	if s.running() {
+		return OperatingModeRunning
+	}
+	return OperatingModeSuspended
 }
 
 // sessionsQuiesced reports whether every Session was sealed.

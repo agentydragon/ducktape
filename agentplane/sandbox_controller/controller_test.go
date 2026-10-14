@@ -831,3 +831,44 @@ func TestDeletingASuspendedSealedSandboxAsksNoRunner(t *testing.T) {
 		t.Fatalf("seals %d -> %d, Pod present %v: the sealed runner is not asked again nor run once more", calls, got, getPod(t, c) != nil)
 	}
 }
+
+func TestAnIdleSuspendedSandboxStopsUntilItsWakeGenerationIsBumped(t *testing.T) {
+	r, c := newReconciler(t, true, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	if got := getSandbox(t, c).Status.OperatingMode; got != OperatingModeRunning {
+		t.Fatalf("operating mode = %s, want Running", got)
+	}
+	suspended := getSandbox(t, c)
+	idle, generation := SuspendedByIdle, suspended.Spec.WakeGeneration
+	suspended.Status.SuspendedBy, suspended.Status.SuspendedAtWakeGeneration = &idle, &generation
+	if err := c.Status().Update(context.Background(), suspended); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if getPod(t, c) != nil {
+		t.Fatal("an idle-suspended Sandbox kept its Pod")
+	}
+	if got := getSandbox(t, c).Status.OperatingMode; got != OperatingModeSuspended {
+		t.Errorf("operating mode = %s, want Suspended", got)
+	}
+	woken := getSandbox(t, c)
+	woken.Spec.WakeGeneration++
+	if err := c.Update(context.Background(), woken); err != nil {
+		t.Fatal(err)
+	}
+	reconcileOnce(t, r)
+	if getPod(t, c) == nil {
+		t.Fatal("a bumped wake generation did not start the Sandbox")
+	}
+	if got := getSandbox(t, c).Status.OperatingMode; got != OperatingModeRunning {
+		t.Errorf("operating mode = %s, want Running", got)
+	}
+}
+
+func TestAStoppedSandboxIsSuspended(t *testing.T) {
+	r, c := newReconciler(t, false, testTemplate("test-image:v1"))
+	reconcileOnce(t, r)
+	if got := getSandbox(t, c).Status.OperatingMode; got != OperatingModeSuspended {
+		t.Errorf("operating mode = %s, want Suspended", got)
+	}
+}

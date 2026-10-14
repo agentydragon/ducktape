@@ -150,7 +150,7 @@ func vmCondition(condition *metav1.Condition, sandbox *Sandbox, w workload) {
 	switch {
 	case vmi == nil:
 		condition.Reason, condition.Message = "Starting", fmt.Sprintf("VM %s has no VMI yet", w.vm.Name)
-	case !vmi.DeletionTimestamp.IsZero() || !sandbox.Spec.Running || !vmRunning(w.vm):
+	case !vmi.DeletionTimestamp.IsZero() || !sandbox.running() || !vmRunning(w.vm):
 		condition.Reason, condition.Message = "Stopping", fmt.Sprintf("VMI %s is stopping", vmi.Name)
 	case vmi.Status.Phase == kubevirtv1.Running && w.launcher != nil:
 		condition.Status, condition.Reason = metav1.ConditionTrue, "VMRunning"

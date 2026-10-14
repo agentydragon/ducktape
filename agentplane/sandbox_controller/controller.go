@@ -172,13 +172,13 @@ func (r *Reconciler) Reconcile(ctx context.Context, req reconcile.Request) (ctrl
 	} else if gate == nil {
 		gate = launchGate
 	}
-	if blocked == nil && (!sandbox.Spec.Running || sandbox.quiescing()) {
+	if blocked == nil && (!sandbox.running() || sandbox.quiescing()) {
 		if blocked, err = r.quiesceBeforeStop(ctx, &sandbox, w); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
 	if blocked == nil {
-		if w, blocked, err = r.converge(ctx, &sandbox, w, sandbox.Spec.Running, gate); err != nil {
+		if w, blocked, err = r.converge(ctx, &sandbox, w, sandbox.running(), gate); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -555,6 +555,7 @@ func withSandboxLabel(labels map[string]string, sandbox *Sandbox) map[string]str
 func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workload, blocked *unready) (ctrl.Result, error) {
 	status := sandbox.Status.DeepCopy()
 	status.Incarnation = nil
+	status.OperatingMode = sandbox.operatingMode()
 	if pod := w.incarnation(); pod != nil {
 		status.Incarnation = &Incarnation{Name: pod.Name, UID: string(pod.UID)}
 	}
@@ -566,7 +567,7 @@ func (r *Reconciler) updateStatus(ctx context.Context, sandbox *Sandbox, w workl
 		podCondition(&condition, sandbox, w.pod)
 	case w.vmi != nil || (w.vm != nil && vmRunning(w.vm)):
 		vmCondition(&condition, sandbox, w)
-	case sandbox.Spec.Running:
+	case sandbox.running():
 		condition.Reason, condition.Message = "Starting", "no Pod or VM is created yet"
 	case w.vm != nil:
 		condition.Reason, condition.Message = "Stopped", fmt.Sprintf("VM %s is halted; its disks and the state PVC are kept", w.vm.Name)
@@ -711,7 +712,7 @@ func podReady(pod *corev1.Pod) bool {
 
 func podCondition(condition *metav1.Condition, sandbox *Sandbox, pod *corev1.Pod) {
 	switch {
-	case !pod.DeletionTimestamp.IsZero() || !sandbox.Spec.Running:
+	case !pod.DeletionTimestamp.IsZero() || !sandbox.running():
 		condition.Reason, condition.Message = "Stopping", fmt.Sprintf("Pod %s is being deleted", pod.Name)
 	case pod.Status.Phase == corev1.PodPending || pod.Status.Phase == "":
 		condition.Reason, condition.Message = "Starting", fmt.Sprintf("Pod %s is not running yet", pod.Name)

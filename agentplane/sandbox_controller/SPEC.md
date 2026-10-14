@@ -18,6 +18,10 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 
 ## Incarnations
 
+- `status.operatingMode` (`Running` or `Suspended`) is whether the controller runs the Sandbox, and what
+  the rest of this section calls running: `spec.running`, unless the controller suspended the Sandbox
+  for idleness (`status.suspendedBy: Idle`) and `spec.wakeGeneration` still equals
+  `status.suspendedAtWakeGeneration`. Readers of `spec.running` read the mode instead.
 - While `spec.running` is set, the Sandbox has exactly one Pod, named after it and controlled by
   it, with the template's state volume backed by the PVC. A Pod that goes away or ends while the
   Sandbox is running is replaced by a new incarnation on the same PVC.
