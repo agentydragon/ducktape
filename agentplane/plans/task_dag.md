@@ -1376,7 +1376,7 @@ that have them. Order: every other caller has moved to the Dispatcher, then the 
 ### `CONTROLLER_SEALS` — the Sandbox controller seals
 
 **Candidate; the controller's quiescer code and its cdk8s wiring have landed.** What remains, once
-that change's controller image is pinned in every environment: the controller's `Quiescer` and
+the flags are live in every environment: the controller's `Quiescer` and
 `Leases` become required, and `runner_gateway/deletion_seals.py`, `sealing.py` and the gateway's
 write to Sandboxes go.
 
