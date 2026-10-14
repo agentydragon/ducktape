@@ -1582,13 +1582,16 @@ spec:
         - channels.nixos.org
         - code.forgejo.org
         - data.forgejo.org
+        - dl.google.com
         - files.pythonhosted.org
         - ftp.gnu.org
         - ghcr.io
+        - go.dev
         - index.crates.io
         - nixos.org
         - nodejs.org
         - pkg-containers.githubusercontent.com
+        - proxy.golang.org
         - pypi.org
         - registry.npmjs.org
         - releases.bazel.build

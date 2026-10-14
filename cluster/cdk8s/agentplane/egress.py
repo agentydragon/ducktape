@@ -452,7 +452,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
         metadata=ApiObjectMetadata(name=PACKAGES_POLICY, namespace=namespace),
         rules=[
             # The package and toolchain mirrors a box needs to install anything: without them
-            # `pip install`, `npm install`, a cargo fetch and every Bazel download fail in a
+            # `pip install`, `npm install`, a cargo fetch, a Go module fetch and every Bazel download fail in a
             # sandbox whose whole purpose is running commands.
             #
             # No credentialRef: these are public, unauthenticated reads, so there is nothing to
@@ -476,9 +476,11 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                     "channels.nixos.org",
                     "code.forgejo.org",
                     "data.forgejo.org",
+                    "dl.google.com",
                     "files.pythonhosted.org",
                     "ftp.gnu.org",
                     "ghcr.io",
+                    "go.dev",
                     "index.crates.io",
                     "nixos.org",
                     "nodejs.org",
@@ -486,6 +488,7 @@ def _egress_policies(scope: Construct, *, namespace: str) -> None:
                     # githubusercontent host in this policy rather than the GitHub one because
                     # it carries container layers, not repository content, and needs no token.
                     "pkg-containers.githubusercontent.com",
+                    "proxy.golang.org",
                     "pypi.org",
                     "registry.npmjs.org",
                     "releases.bazel.build",
