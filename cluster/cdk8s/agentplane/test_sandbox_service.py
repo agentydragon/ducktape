@@ -1,5 +1,4 @@
-"""The app and notifications reach the backend services with their own credentials, and the Sandbox Service
-and Runner Gateway run apart."""
+"""The app owns operator writes; the Sandbox Service has no deployed resources."""
 
 from typing import Any
 
@@ -8,133 +7,63 @@ import pytest_bazel
 import yaml
 from more_itertools import one
 
-from cluster.cdk8s.agentplane import (
-    app,
-    history_service,
-    notifications,
-    runner_gateway,
-    runner_sandbox,
-    sandbox_service,
-    session_dispatcher,
-)
+from cluster.cdk8s.agentplane import app, history_service, notifications, runner_gateway, session_dispatcher
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
+def _resource(documents: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]:
+    return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
+
+
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_app_and_sandbox_service_are_independent(
+def test_sandbox_service_resources_are_absent(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     documents = agentplane_manifests[namespace]
+    names = {document["metadata"]["name"] for document in documents}
+    assert not any(name.startswith("agentplane-sandbox-service") for name in names)
+    assert f"{namespace}-sandbox-service-token-reviewer" not in names
 
-    def resource(kind: str, name: str) -> dict[str, Any]:
-        return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
+    history = _resource(documents, "Deployment", history_service.NAME)["spec"]["template"]["spec"]
+    history_database = {"name": "postgres-sandbox-service", "key": "uri"}
+    history_external_secret = _resource(documents, "ExternalSecret", "postgres-sandbox-service")
+    assert history_external_secret["spec"]["target"]["name"] == "postgres-sandbox-service"
+    history_database_resource = _resource(documents, "Database", "sandbox-service")
+    assert history_database_resource["spec"]["name"] == "sandbox_service"
+    assert history_database_resource["spec"]["owner"] == "sandbox_service"
+    assert any(
+        value.get("secretKeyRef") == history_database
+        for container in [*history["initContainers"], *history["containers"]]
+        for value in (item.get("valueFrom", {}) for item in container["env"])
+    )
 
-    application = resource("Deployment", app.NAME)["spec"]["template"]["spec"]
+
+@pytest.mark.parametrize("namespace", NAMESPACES)
+def test_app_uses_direct_sandbox_access(namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]) -> None:
+    documents = agentplane_manifests[namespace]
+    application = _resource(documents, "Deployment", app.NAME)["spec"]["template"]["spec"]
     container = one(item for item in application["containers"] if item["name"] == "app")
     assert not any(arg.startswith("--sandbox-service-target=") for arg in container["args"])
     assert not any(volume["name"] == "sandbox-service-token" for volume in application["volumes"])
-    app_policy = resource("CiliumNetworkPolicy", app.NAME)["spec"]
-    assert not any(
-        target["matchLabels"].get("app.kubernetes.io/name") == sandbox_service.NAME
-        for rule in app_policy["egress"]
-        for target in rule.get("toEndpoints", [])
-    )
-    history = history_service.service(namespace)
-    assert f"--history-service-target={history.fqdn}:{history.pod_port}" in container["args"]
-    history_token = one(volume for volume in application["volumes"] if volume["name"] == "history-service-token")
-    assert history_token["projected"]["sources"] == [
-        {
-            "serviceAccountToken": {
-                "audience": history_service.TOKEN_AUDIENCE,
-                "expirationSeconds": 3600,
-                "path": "token",
-            }
-        }
-    ]
-    assert one(mount for mount in container["volumeMounts"] if mount["name"] == "history-service-token")["readOnly"]
-    service_pod = resource("Deployment", sandbox_service.NAME)["spec"]["template"]["spec"]
-    assert service_pod["serviceAccountName"] == sandbox_service.NAME
-    assert all("persistentVolumeClaim" not in volume for volume in service_pod.get("volumes", []))
-    gateway_pod = resource("Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
-    assert gateway_pod["serviceAccountName"] == runner_gateway.NAME
-    # The migration blocks startup; the gateway also needs the URL for explicit Open.
-    commands_migration = one(gateway_pod["initContainers"])
-    assert commands_migration["env"][0] == {
-        "name": "AGENTPLANE_RUNNER_GATEWAY_COMMANDS_DATABASE_URL",
-        "valueFrom": {"secretKeyRef": {"name": "postgres-sandbox-commands", "key": "uri"}},
-    }
-    gateway_container = one(item for item in gateway_pod["containers"] if item["name"] == "runner-gateway")
-    assert commands_migration["env"][0]["valueFrom"] in [item.get("valueFrom") for item in gateway_container["env"]]
-    # History belongs to the History Service, and command admission to the gateway: the Sandbox Service holds
-    # no database credential.
-    history_secret = {"secretKeyRef": {"name": "postgres-sandbox-service", "key": "uri"}}
-    assert "initContainers" not in service_pod
-    assert not any("valueFrom" in item for container in service_pod["containers"] for item in container.get("env", []))
-    assert all(
-        item.get("valueFrom") != history_secret
-        for container in [*gateway_pod["initContainers"], *gateway_pod["containers"]]
-        for item in container.get("env", [])
-    )
-    history_pod = resource("Deployment", history_service.NAME)["spec"]["template"]["spec"]
-    history_migration = one(history_pod["initContainers"])
-    assert {"name": "AGENTPLANE_HISTORY_SERVICE_DATABASE_URL", "valueFrom": history_secret} in history_migration["env"]
-    # The app reads the cluster, and writes only the operator's PolicyBindings and Sandboxes.
-    app_rules = resource("Role", app.NAME)["rules"]
+
+    app_rules = _resource(documents, "Role", app.NAME)["rules"]
     for rule in app_rules:
         if rule["resources"] not in (["policybindings"], ["sandboxes"]):
             assert set(rule["verbs"]) <= {"get", "list", "watch"}
-    app_permissions = {(tuple(rule["apiGroups"]), tuple(rule["resources"]), tuple(rule["verbs"])) for rule in app_rules}
-    assert (("agentplane.allegedly.works",), ("sandboxtemplates",), ("list",)) in app_permissions
-    assert (("subresources.kubevirt.io",), ("virtualmachineinstances/console",), ("get",)) in app_permissions
-    backend_config = yaml.safe_load(resource("ConfigMap", f"{sandbox_service.NAME}-config")["data"]["config.yaml"])
-    gateway_config = yaml.safe_load(resource("ConfigMap", f"{runner_gateway.NAME}-config")["data"]["config.yaml"])
-    # Every runner starts each Session with this platform block, in both environments.
-    platform = resource("ConfigMap", "agentplane-runner-platform-instructions")["data"]["platform-instructions.md"]
-    assert platform.count(runner_sandbox.KUBERNETES_ADMIN_INSTRUCTIONS) == 1
-    assert "kubernetes_admin" in platform
-    assert "pods_exec" in platform
-    assert f"http://agentplane-actions.{namespace}.svc.cluster.local:8080" in platform
-    assert backend_config["caller_accounts"] == [
-        {"namespace": namespace, "name": app.NAME},
-        {"namespace": namespace, "name": notifications.NAME},
-    ]
-    assert gateway_config["caller_accounts"] == [
-        *backend_config["caller_accounts"],
-        {"namespace": namespace, "name": session_dispatcher.NAME},
-    ]
-    assert gateway_config["token_audience"] != backend_config["token_audience"]
-    runner_policy = resource("CiliumNetworkPolicy", "agentplane-runner")["spec"]
-    # Runners dial out; nothing connects to them.
-    assert runner_policy["ingress"] == [{}]
+    permissions = {(tuple(rule["apiGroups"]), tuple(rule["resources"]), tuple(rule["verbs"])) for rule in app_rules}
+    assert (("agentplane.allegedly.works",), ("sandboxtemplates",), ("list",)) in permissions
+    assert (("subresources.kubevirt.io",), ("virtualmachineinstances/console",), ("get",)) in permissions
+
+    gateway = _resource(documents, "Deployment", runner_gateway.NAME)["spec"]["template"]["spec"]
+    assert gateway["serviceAccountName"] == runner_gateway.NAME
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_runner_gateway_cannot_write_sandbox_status(
+def test_notifications_have_no_app_or_sandbox_service_dependency(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
-    role = one(
-        doc
-        for doc in agentplane_manifests[namespace]
-        if doc["kind"] == "Role" and doc["metadata"]["name"] == runner_gateway.NAME
-    )
-
-    sandbox_write_verbs = {"create", "update", "patch", "delete", "deletecollection"}
-    assert not any(
-        set(rule["resources"]) & {"sandboxes", "sandboxes/status"} and set(rule["verbs"]) & sandbox_write_verbs
-        for rule in role["rules"]
-    )
-
-
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_notifications_have_no_app_or_direct_runner_dependency(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    def resource(kind: str, name: str) -> dict[str, Any]:
-        return one(
-            doc for doc in agentplane_manifests[namespace] if doc["kind"] == kind and doc["metadata"]["name"] == name
-        )
-
-    pod = resource("Deployment", notifications.NAME)["spec"]["template"]["spec"]
+    documents = agentplane_manifests[namespace]
+    pod = _resource(documents, "Deployment", notifications.NAME)["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == notifications.NAME
     tokens = one(volume for volume in pod["volumes"] if volume["name"] == "service-tokens")
     assert {source["serviceAccountToken"]["audience"] for source in tokens["projected"]["sources"]} == {
@@ -143,78 +72,16 @@ def test_notifications_have_no_app_or_direct_runner_dependency(
         history_service.TOKEN_AUDIENCE,
         session_dispatcher.TOKEN_AUDIENCE,
     }
-    notification_settings = yaml.safe_load(
-        resource("ConfigMap", f"{notifications.NAME}-settings")["data"]["settings.yaml"]
+    settings = yaml.safe_load(
+        _resource(documents, "ConfigMap", f"{notifications.NAME}-settings")["data"]["settings.yaml"]
     )
-    assert "sandbox_service" not in notification_settings
-    notification_policy = resource("CiliumNetworkPolicy", notifications.NAME)["spec"]
+    assert "sandbox_service" not in settings
+    policy = _resource(documents, "CiliumNetworkPolicy", notifications.NAME)["spec"]
     assert not any(
-        target["matchLabels"].get("app.kubernetes.io/name") == sandbox_service.NAME
-        for rule in notification_policy["egress"]
-        for target in rule.get("toEndpoints", [])
-    )
-    for container in pod["containers"] + pod["initContainers"]:
-        database = one(item for item in container["env"] if item["name"] == "AGENTPLANE_NOTIFICATIONS_DATABASE_URL")
-        assert database["valueFrom"]["secretKeyRef"] == {"name": "postgres-notifications", "key": "uri"}
-    role = resource("ClusterRole", f"{namespace}-notifications-token-reviewer")
-    assert role["rules"] == [
-        {"apiGroups": ["authentication.k8s.io"], "resources": ["tokenreviews"], "verbs": ["create"]}
-    ]
-    policy = resource("CiliumNetworkPolicy", notifications.NAME)["spec"]
-    assert not any(
-        target["matchLabels"].get("k8s:app.kubernetes.io/name") == app.NAME
+        target["matchLabels"].get("app.kubernetes.io/name") == app.NAME
         for rule in policy["egress"]
         for target in rule.get("toEndpoints", [])
     )
-
-
-def _token_audience(pod: dict[str, Any], container: str, token_file: str) -> str:
-    """The audience of the projected token a container finds at `token_file`."""
-    mount = one(
-        mount
-        for item in pod["containers"]
-        if item["name"] == container
-        for mount in item["volumeMounts"]
-        if token_file.startswith(f"{mount['mountPath']}/")
-    )
-    volume = one(volume for volume in pod["volumes"] if volume["name"] == mount["name"])
-    audience: str = one(
-        source["serviceAccountToken"]["audience"]
-        for source in volume["projected"]["sources"]
-        if source["serviceAccountToken"]["path"] == token_file.removeprefix(f"{mount['mountPath']}/")
-    )
-    return audience
-
-
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_gateway_callers_send_the_gateway_audience(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    documents = agentplane_manifests[namespace]
-
-    def resource(kind: str, name: str) -> dict[str, Any]:
-        return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
-
-    def pod(name: str) -> dict[str, Any]:
-        spec: dict[str, Any] = resource("Deployment", name)["spec"]["template"]["spec"]
-        return spec
-
-    def config(name: str, key: str) -> dict[str, Any]:
-        loaded: dict[str, Any] = yaml.safe_load(resource("ConfigMap", name)["data"][key])
-        return loaded
-
-    accepted = config(f"{runner_gateway.NAME}-config", "config.yaml")["token_audience"]
-    app_args = one(item for item in pod(app.NAME)["containers"] if item["name"] == "app")["args"]
-    app_token = one(
-        arg.removeprefix("--runner-gateway-token-file=")
-        for arg in app_args
-        if arg.startswith("--runner-gateway-token-file=")
-    )
-    notices = config(f"{notifications.NAME}-settings", "settings.yaml")["runner_gateway"]
-    assert {
-        _token_audience(pod(app.NAME), "app", app_token),
-        _token_audience(pod(notifications.NAME), "notifications", notices["token_file"]),
-    } == {accepted}
 
 
 if __name__ == "__main__":

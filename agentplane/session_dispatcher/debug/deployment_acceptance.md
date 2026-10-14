@@ -46,7 +46,7 @@ against Dispatcher `5df1aa9`. Pod-bound authentication and the suspended queue p
 at `2026-10-14T07:30:51.180Z` show `OpenSession` refused with `FAILED_PRECONDITION` because the LLM
 proxy model-config lookup returned HTTP 403; the subsequent command was `NOT_FOUND` because the
 Session had not been created. `Runner._create` resolves model configuration even without a model
-turn. The direct fixture CR had omitted the Sandbox Service's configured default PolicySets,
+turn. The direct fixture CR had omitted the app's configured default PolicySets,
 `basic` and `inference-experiments`. This is probe setup failure, not evidence of a Dispatcher
 opening-order race or the unrelated historical rollout 403.
 

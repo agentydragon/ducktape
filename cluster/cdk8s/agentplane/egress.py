@@ -118,9 +118,9 @@ GITHUB_ACTIONS_LOGS_POLICY = "github-actions-logs"
 BUILDBUDDY_POLICY = "buildbuddy"
 PUBLIC_CODER_VISUALS_POLICY = "public-coder-pr-visuals"
 PUBLIC_INTERNET_POLICY = "public-internet"
-# What the Sandbox Service grants every new sandbox before the caller's own picks. Platform
-# operations and inference experiments are granted independently: the latter is a fleet default,
-# not part of the basic Agentplane platform policy.
+# What the app grants every new sandbox before the caller's own picks. Platform operations and
+# inference experiments are granted independently: the latter is a fleet default, not part of the
+# basic Agentplane platform policy.
 DEFAULT_POLICIES = (BASIC_POLICY, INFERENCE_EXPERIMENTS_POLICY)
 
 

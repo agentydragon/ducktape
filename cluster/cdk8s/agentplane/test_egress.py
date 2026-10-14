@@ -12,7 +12,7 @@ from cdk8s import Testing as Cdk8sTesting
 from more_itertools import one
 
 from cluster.cdk8s import agent_access_profiles
-from cluster.cdk8s.agentplane import binding_delegation, notifications, sandbox_service, staging, testing
+from cluster.cdk8s.agentplane import binding_delegation, notifications, staging, testing
 from cluster.cdk8s.agentplane.actions_staging_policies import AGENTPLANE_TESTING_POLICY
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.agentplane.egress import (
@@ -51,22 +51,19 @@ def _by_name(docs: list[dict[str, Any]], kind: str, name: str) -> dict[str, Any]
     return one(doc for doc in docs if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
 
-def _default_policies(docs: list[dict[str, Any]]) -> list[str]:
-    """The PolicySets the Sandbox Service binds every new Sandbox to."""
-    config = _by_name(docs, "ConfigMap", f"{sandbox_service.NAME}-config")
+def _app_default_policies(docs: list[dict[str, Any]]) -> list[str]:
+    """The PolicySets the app grants to each Sandbox it creates."""
+    config = _by_name(docs, "ConfigMap", "agentplane-app-config")
     defaults: list[str] = yaml.safe_load(config["data"]["config.yaml"])["default_policy_sets"]
     return defaults
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_app_and_sandbox_service_share_default_policy_sets(
+def test_app_default_policy_sets_are_canonical(
     agentplane_manifests: dict[str, list[dict[str, Any]]], namespace: str
 ) -> None:
     docs = agentplane_manifests[namespace]
-    app_config = _by_name(docs, "ConfigMap", "agentplane-app-config")
-    app_defaults: list[str] = yaml.safe_load(app_config["data"]["config.yaml"])["default_policy_sets"]
-
-    assert app_defaults == _default_policies(docs)
+    app_defaults = _app_default_policies(docs)
     assert app_defaults == sorted(DEFAULT_POLICIES)
     assert PUBLIC_INTERNET_POLICY not in app_defaults
 
@@ -80,7 +77,7 @@ def test_public_internet_is_available_but_never_implicitly_granted(
     assert public["spec"]["rules"] == [{"type": "egress", "hosts": ["*"]}]
     # Every preset, not just today's public-coder preset, and the defaults.
     assert PUBLIC_INTERNET_POLICY not in _by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"]
-    assert PUBLIC_INTERNET_POLICY not in _default_policies(docs)
+    assert PUBLIC_INTERNET_POLICY not in _app_default_policies(docs)
     for doc in docs:
         if doc["kind"] == "PolicyBinding":
             if namespace == "agentplane-staging" and doc["metadata"]["name"] == "public-coder-openclaw":
@@ -115,7 +112,7 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(
     """Every agent talks to the API server, so the rule admitting it is in `basic`.
 
     `basic` is the policy every launch is granted before the caller picks anything
-    (`launch_policies`, agentplane/sandbox_service/egress.py), which is what makes
+    (`SandboxAccess`, agentplane/app/sandbox_access.py), which is what makes
     Kubernetes access a property of a sandbox rather than a choice one. It was its own policy
     while every SandboxTemplate already mounted the kubeconfig naming this credential
     (sandbox_pod.py): a box whose preset or caller did not name it held a working-looking config
@@ -143,7 +140,7 @@ def test_kubernetes_access_is_part_of_what_every_sandbox_is_granted(
     assert source["projectedWorkloadToken"]["audience"] == KUBERNETES_AUDIENCE, source
 
     # And `basic` reaches a sandbox that picks nothing, which is the whole claim.
-    defaults = _default_policies(docs)
+    defaults = _app_default_policies(docs)
     assert BASIC_POLICY in defaults, defaults
 
 
@@ -415,7 +412,7 @@ def test_inference_is_granted_separately_from_platform_operations(
     docs = agentplane_manifests[namespace]
     granted = _by_name(docs, "PolicySet", INFERENCE_EXPERIMENTS_POLICY)
     basic = _by_name(docs, "PolicySet", BASIC_POLICY)
-    assert INFERENCE_EXPERIMENTS_POLICY in _default_policies(docs)
+    assert INFERENCE_EXPERIMENTS_POLICY in _app_default_policies(docs)
     # Standing caller identities and static OpenClaw must receive the separate grant too.
     for binding in (doc for doc in docs if doc["kind"] == "PolicyBinding"):
         policies = binding["spec"]["policySets"]

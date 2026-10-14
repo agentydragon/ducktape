@@ -271,7 +271,7 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
         runner["volumeMounts"].append({"name": "workspace", "mountPath": workspace_dir})
     marker = f"storage-test-{uuid4().hex}"
     bootstrap = f"set -eu\nprintf '%s\\n' {marker} > /state/storage-acceptance-state\nprintf '%s\\n' {marker} > {workspace_dir}/storage-acceptance-workspace\nsync\n"
-    config = await _object("configmap", "agentplane-sandbox-service-config")
+    config = await _object("configmap", "agentplane-app-config")
     policies = yaml.safe_load(config["data"]["config.yaml"])["default_policy_sets"]
     assert policies
     assert all(isinstance(policy, str) for policy in policies)

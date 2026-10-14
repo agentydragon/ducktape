@@ -252,8 +252,8 @@ async def test_deployed_dispatcher_waits_for_ready_then_records_runner_admission
     assert deployment["spec"]["replicas"] == 1
     assert deployment["spec"]["strategy"]["type"] == "Recreate"
     image = deployment["spec"]["template"]["spec"]["containers"][0]["image"]
-    service_config = json.loads(await _kubectl("get", "configmap", "agentplane-sandbox-service-config", "-o", "json"))
-    policies = yaml.safe_load(service_config["data"]["config.yaml"])["default_policy_sets"]
+    app_config = json.loads(await _kubectl("get", "configmap", "agentplane-app-config", "-o", "json"))
+    policies = yaml.safe_load(app_config["data"]["config.yaml"])["default_policy_sets"]
     assert isinstance(policies, list)
     assert policies
     assert all(isinstance(name, str) and name for name in policies)

@@ -1,7 +1,4 @@
-load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
-load("@rules_oci//oci:defs.bzl", "oci_image")
-load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
-load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 package(default_visibility = ["//agentplane/sandbox_service:__subpackages__"])
 
@@ -45,34 +42,6 @@ py_test(
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],
-)
-
-py_library(
-    name = "main",
-    srcs = ["main.py"],
-    visibility = [
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
-    deps = [
-        ":egress",
-        ":grpc_api",
-        ":provisioning",
-        ":settings",
-        "//agentplane:grpc_serving",
-        "//agentplane:service_process",
-        "//agentplane/sandboxes:inventory",
-        "//agentplane/workload_auth:principal",
-        "//util:kubernetes",
-        "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
-        "@pypi//protobuf",
-    ],
-)
-
-py_binary(
-    name = "server",
-    main_module = "agentplane.sandbox_service.main",
-    deps = [":main"],
 )
 
 py_library(
@@ -194,37 +163,6 @@ py_library(
     ],
 )
 
-aspect_py_binary(
-    name = "server_image_bin",
-    main = "main.py",
-    deps = [":main"],
-)
-
-py_image_layer(
-    name = "server_layers",
-    binary = ":server_image_bin",
-    group = "1000",
-    owner = "1000",
-)
-
-oci_image(
-    name = "image",
-    base = "@debian_trixie_slim_linux_amd64",
-    entrypoint = py_image_entrypoint("server_image_bin"),
-    # Kubernetes TLS verification uses the system trust store.
-    env = py_image_env(
-        binary_name = "server_image_bin",
-        extra_env = {"SSL_CERT_FILE": "/etc/ssl/certs/ca-certificates.crt"},
-    ),
-    labels = {"org.opencontainers.image.source": "https://github.com/agentydragon/ducktape"},
-    tars = [
-        ":server_layers",
-        "//third_party/debian_slim:cacerts",
-    ],
-    user = "1000:1000",
-    visibility = ["//visibility:public"],
-)
-
 py_test(
     name = "test_inventory_mutations",
     srcs = ["test_inventory_mutations.py"],
@@ -244,21 +182,5 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "settings",
-    srcs = ["settings.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
-    deps = [
-        "//agentplane:log_levels",
-        "//agentplane:subjects",
-        "//util:yaml_file_settings",
-        "@pypi//pydantic",
-        "@pypi//pydantic_settings",
     ],
 )

@@ -57,14 +57,6 @@ class GitHubSettings(BaseModel):
     )
 
 
-class SandboxServiceSettings(BaseModel):
-    """The Sandbox Service endpoint the deployed manifest still writes; nothing reads it."""
-
-    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    target: str
-    token_file: Path
-
-
 class RunnerGatewaySettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
     target: str = Field(description="Runner Gateway gRPC host:port for read-only session validation.")
@@ -148,10 +140,6 @@ class Settings(YamlFileSettings):
     database_url: str = Field(description="PostgreSQL DSN supplied through a Secret-backed environment variable.")
     namespace: str = Field(description="Allowed caller ServiceAccount namespace and destination sandbox namespace.")
     actions: ActionsSettings
-    # CLEANUP(added 2026-10-14): Remove the field and `SandboxServiceSettings` once
-    #   `cluster/cdk8s/agentplane/notifications.py` stops writing `sandbox_service`; the previous image
-    #   requires the key, so the manifest may drop it only after this image is pinned.
-    sandbox_service: SandboxServiceSettings | None = None
     runner_gateway: RunnerGatewaySettings
     session_dispatcher: SessionDispatcherSettings
     history_service: HistoryServiceSettings

@@ -3779,10 +3779,6 @@ spec:
       namespace: agentplane-testing
     - apiVersion: apps/v1
       kind: Deployment
-      name: agentplane-sandbox-service
-      namespace: agentplane-testing
-    - apiVersion: apps/v1
-      kind: Deployment
       name: agentplane-session-dispatcher
       namespace: agentplane-testing
     - apiVersion: apps/v1
@@ -3988,10 +3984,6 @@ spec:
     - apiVersion: apps/v1
       kind: Deployment
       name: agentplane-egress
-      namespace: agentplane-staging
-    - apiVersion: apps/v1
-      kind: Deployment
-      name: agentplane-sandbox-service
       namespace: agentplane-staging
     - apiVersion: apps/v1
       kind: Deployment

@@ -11,7 +11,6 @@ an MCP approval gateway for any MCP-capable LLM product.
 
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   and an MCP endpoint over OAuth.
-- [Sandbox Service](sandbox_service/README.md): Sandbox lifecycle, grants, egress and teardown.
 - [Runner Gateway](runner_gateway/README.md): the runner control stream, Sessions, and command
   admission and delivery.
 - [Session Dispatcher](session_dispatcher/README.md): the durable command queue and delivery state
@@ -42,7 +41,6 @@ flowchart TB
     github([GitHub])
     app[Integration app]
     subgraph services[Backend services]
-        ss[Sandbox Service, deployed pending retirement]
         gw[Runner Gateway]
         hs[History Service]
         notif[Notification service]
@@ -117,10 +115,10 @@ flowchart TB
     proxy -->|credentials substituted| outside
 ```
 
-The app now uses the Kubernetes API for Sandbox lifecycle, and notifications read Sandbox inventory
-directly. Neither workload renders a Sandbox Service target, token, or egress path. The Service
-remains deployed with its existing caller grants while these manifests roll out; service retirement
-has a separate gate ([rollout gates](plans/task_dag.md#sandbox_service_remove--remove-the-sandbox-service)).
+The integration app writes Sandbox desired state and operator grants through the Kubernetes API;
+the Sandbox Controller reconciles those requests and owns `Sandbox.status`. Notifications and the
+Runner Gateway read Sandbox inventory directly. No Sandbox Service is deployed. The remaining
+service package and RPC cleanup is tracked in the [rollout gates](plans/task_dag.md#sandbox_service_remove--remove-the-sandbox-service).
 
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its
   conversation view, folded by the History Service. Every runner pushes its Events to the History
@@ -133,14 +131,14 @@ has a separate gate ([rollout gates](plans/task_dag.md#sandbox_service_remove--r
   the `RunnerControl` stream they dial to the Runner Gateway, routed per Sandbox by its `<sandbox>-control` Service and
   `<sandbox>-runner` Lease ([runner control stream](docs/runner_control.md)).
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
-  `sandbox_commands` (the Runner Gateway's Session registry),
-  `sandbox_service` (Session history, written by the History Service), `actions`,
-  `egress`, `notifications` and `session_dispatcher`; the Sandbox Service has none. The history and
-  Dispatcher databases are drawn.
-- **Sandbox Service and Runner Gateway.** The Sandbox Service owns Sandbox lifecycle and egress
-  grants; the Runner Gateway owns everything that talks to a runner: Sessions, commands and the
-  runner control stream. The Sandbox Controller holds a Sandbox's deletion until its Sessions are sealed.
-  They run as separate Deployments with their own accounts.
+  `sandbox_commands` (the Runner Gateway's Session registry), `sandbox_service` (Session history,
+  written by the History Service), `actions`, `egress`, `notifications` and `session_dispatcher`.
+  The History Service retains the existing `sandbox_service` database; no database or authored
+  history is removed with the Sandbox Service Deployment. The history and Dispatcher databases are drawn.
+- **Sandbox lifecycle and runner control.** The app writes requested Sandbox state and operator
+  grants to Kubernetes; the Sandbox Controller reconciles resources and owns status. The Runner
+  Gateway owns Sessions, commands and the runner control stream. The controller holds deletion
+  until the runner has sealed its Sessions through the Gateway.
 
 Status, open work and design gates: [`plans/`](plans/README.md). Implemented contracts:
 [`docs/`](docs/).
