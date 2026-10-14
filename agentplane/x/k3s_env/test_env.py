@@ -1,406 +1,65 @@
-"""Spike: does the rendered `agentplane-testing` stack come up on a bare k3s inside an RBE action?
+"""A real Qwen turn through the app, a Pod Sandbox and the public LiteLLM, on the bare-k3s stack."""
 
-Starts k3s (no kube-proxy, no Cilium), loads the Bazel-built service images, applies the rewritten
-manifest and reports, per Deployment, whether it became Available. It fails at the first missing
-piece with the Pod states and logs of whatever did not start.
-"""
-
-import asyncio
-import contextlib
-import json
-import logging
 import os
-import shutil
-import socket
-import subprocess
-import tarfile
-import tempfile
-import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import httpx
+import pytest
 import pytest_bazel
-import yaml
 
 from agentplane.acceptance.agent import Agent
-from agentplane.acceptance.conftest import AUDIENCE, POD_TEMPLATE, TESTING_SERVICE_ACCOUNT, wait_until_running
+from agentplane.acceptance.conftest import POD_TEMPLATE, wait_until_running
 from agentplane.app.sandbox_models import NewSandbox
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
 from agentplane.x.k3s_env import render
-from util.bazel.runfiles import get_required_path
+from agentplane.x.k3s_env.stack import Stack, run, running_stack
 
 # `runner_pb2.pyi` imports google.protobuf, which mypy follows for this direct dependency.
 # gazelle:include_dep @pypi//protobuf
 
-logger = logging.getLogger(__name__)
-
-K3S_VERSION = "v1.33.4+k3s1"
-CNPG_MANIFEST_URL = "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.0/cnpg-1.30.0.yaml"
-# Electric exits until history-service's migration has created its publication; its restart back-off reaches 5 min.
-DEPLOY_TIMEOUT_SECONDS = 480
-# k3s's default Pod CIDR.
-POD_CIDR = "10.42.0.0/16"
+SANDBOX = "smoke"
 
 
-def _run(*command: str, check: bool = True, input_text: str | None = None) -> str:
-    result = subprocess.run(command, capture_output=True, text=True, input=input_text, check=False)
-    if check and result.returncode:
-        raise RuntimeError(f"{command[:3]} exited {result.returncode}: {result.stderr[-2000:]}{result.stdout[-1000:]}")
-    return result.stdout + result.stderr
+@pytest.fixture(scope="module")
+def stack() -> Iterator[Stack]:
+    with running_stack(litellm_key=os.environ["LITELLM_QWEN_KEY"]) as running:
+        yield running
 
 
-def _shadow_kernel_sysctls(work: Path) -> None:
-    """The Firecracker guest has no CONFIG_KEYS; the kubelet refuses to start without these files."""
-    if Path("/proc/sys/kernel/keys/root_maxkeys").exists():
-        return
-    fake = work / "proc-sys-kernel"
-    fake.mkdir()
-    for path in Path("/proc/sys/kernel").rglob("*"):
-        target = fake / path.relative_to("/proc/sys/kernel")
-        if path.is_dir():
-            target.mkdir(parents=True, exist_ok=True)
-        else:
-            # The kubelet opens some sysctls (panic, osrelease) even when they cannot be read, so an
-            # unreadable one is shadowed by an empty file.
-            target.touch()
-            with contextlib.suppress(OSError):
-                target.write_bytes(path.read_bytes())
-    (fake / "keys").mkdir(exist_ok=True)
-    (fake / "keys/root_maxkeys").write_text("1000000\n")
-    (fake / "keys/root_maxbytes").write_text("25000000\n")
-    _run("mount", "--bind", str(fake), "/proc/sys/kernel")
-
-
-def _read_member(archive: tarfile.TarFile, name: str) -> bytes:
-    member = archive.extractfile(name)
-    assert member
-    return member.read()
-
-
-def _layer_sizes(tarball: Path) -> dict[str, int]:
-    """Layer path (a content digest in docker-format tarballs) to size, per `manifest.json`."""
-    with tarfile.open(tarball) as archive:
-        manifest = json.loads(_read_member(archive, "manifest.json"))
-        return {layer: archive.getmember(layer).size for image in manifest for layer in image["Layers"]}
-
-
-class K3s:
-    def __init__(self, work: Path) -> None:
-        self.work = work
-        self.binary = work / "k3s"
-        self.kubeconfig = work / "kubeconfig"
-        self.data_dir = Path("/var/lib/k3s-env")
-        # The address Pods use to reach host-side processes: the apiserver and the cluster DNS.
-        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
-            probe.connect(("192.0.2.1", 9))
-            self.node_ip: str = probe.getsockname()[0]
-
-    def kubectl(self, *args: str, check: bool = True, input_text: str | None = None) -> str:
-        return _run(
-            str(self.binary), "kubectl", "--kubeconfig", str(self.kubeconfig), *args, check=check, input_text=input_text
+def _print_turn_diagnostics(stack: Stack) -> None:
+    """The error alone does not say which hop refused."""
+    for selector in (
+        "app.kubernetes.io/name=agentplane-app",
+        "app.kubernetes.io/name=agentplane-runner-gateway",
+        "app.kubernetes.io/name=agentplane-llm-ingress",
+        f"agentplane.allegedly.works/sandbox={SANDBOX}",
+    ):
+        logs = stack.k3s.kubectl(
+            "logs", "-l", selector, "-n", render.NAMESPACE, "--all-containers", "--tail=60", check=False
         )
-
-    def start(self) -> subprocess.Popen[bytes]:
-        base = f"https://github.com/k3s-io/k3s/releases/download/{K3S_VERSION.replace('+', '%2B')}"
-        _run("curl", "-fsSL", "-o", str(self.binary), f"{base}/k3s")
-        _run("chmod", "+x", str(self.binary))
-        _shadow_kernel_sysctls(self.work)
-        self.log_path = Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", self.work)) / "k3s.log"
-        log = self.log_path.open("wb")
-        process = subprocess.Popen(
-            [
-                str(self.binary),
-                "server",
-                "--data-dir",
-                str(self.data_dir),
-                "--write-kubeconfig",
-                str(self.kubeconfig),
-                "--write-kubeconfig-mode",
-                "644",
-                "--node-name",
-                "env",
-                "--disable",
-                "traefik,metrics-server,servicelb",
-                "--disable-kube-proxy",
-                "--flannel-backend=host-gw",
-                "--disable-network-policy",
-                "--node-ip",
-                self.node_ip,
-                "--kubelet-arg",
-                f"cluster-dns={self.node_ip}",
-            ],
-            stdout=log,
-            stderr=subprocess.STDOUT,
-        )
-        deadline = time.monotonic() + 180
-        while time.monotonic() < deadline:
-            if self.kubeconfig.exists() and "env" in self.kubectl("get", "nodes", "-o", "name", check=False):
-                break
-            time.sleep(1)
-        ready = self.kubectl("wait", "--for=condition=Ready", "node/env", "--timeout=180s", check=False)
-        if "condition met" not in ready:
-            raise RuntimeError(f"k3s not ready (exit={process.poll()}): {ready}\n{self.log_path.read_text()[-6000:]}")
-        self._serve_dns_and_api_on_node()
-        # host-gw routes Pod traffic but does not translate it: without this, Pods cannot reach the internet.
-        iptables = self.data_dir / "data/current/bin/aux/iptables"  # the copy k3s ships; the host has none
-        _run(str(iptables), "-t", "nat", "-A", "POSTROUTING", "-s", POD_CIDR, "!", "-d", POD_CIDR, "-j", "MASQUERADE")
-        return process
-
-    def _serve_dns_and_api_on_node(self) -> None:
-        """Without kube-proxy the `kube-dns` ClusterIP is dead: CoreDNS listens on the node IP instead."""
-        for name in ("coredns", "local-path-provisioner"):
-            while "not found" in self.kubectl("-n", "kube-system", "get", f"deploy/{name}", check=False):
-                time.sleep(1)
-            self.kubectl(
-                "-n", "kube-system", "set", "env", f"deploy/{name}",
-                f"KUBERNETES_SERVICE_HOST={self.node_ip}", "KUBERNETES_SERVICE_PORT=6443",
-            )  # fmt: skip
-        corefile = self.kubectl(
-            "-n", "kube-system", "get", "configmap/coredns", "-o", "jsonpath={.data.Corefile}"
-        ).replace(
-            ".:53 {",
-            f".:53 {{\n    bind {self.node_ip}\n"
-            f"    rewrite name exact postgres-rw.{render.NAMESPACE}.svc.cluster.local "
-            f"{render.PRIMARY_SERVICE}.{render.NAMESPACE}.svc.cluster.local",
-            1,
-        )
-        self.kubectl(
-            "-n", "kube-system", "patch", "configmap/coredns", "--type", "merge", "-p",
-            json.dumps({"data": {"Corefile": corefile}}),
-        )  # fmt: skip
-        self.kubectl(
-            "-n", "kube-system", "patch", "deploy/coredns", "-p",
-            json.dumps({"spec": {"template": {"spec": {"hostNetwork": True, "dnsPolicy": "Default"}}}}),
-        )  # fmt: skip
-
-    def import_images(self, tarballs: list[Path]) -> None:
-        layers: dict[str, int] = {}
-        for tarball in tarballs:
-            layers.update(_layer_sizes(tarball))
-        print(
-            f"{len(layers)} distinct layers, {sum(layers.values()) >> 20} MiB compressed across {len(tarballs)} images"
-        )
-        for tarball in tarballs:
-            print(f"importing {tarball.parent.name} ({tarball.stat().st_size >> 20} MiB)")
-            print(_run("df", "-h", "/var/lib", "/tmp", check=False))
-            _run(
-                str(self.binary),
-                "ctr",
-                "--address",
-                "/run/k3s/containerd/containerd.sock",
-                "-n",
-                "k8s.io",
-                "images",
-                "import",
-                str(tarball),
-            )
-
-    def install_cnpg_operator(self) -> None:
-        """The release manifest of the operator the cluster runs (`cluster/cdk8s/cnpg_operator.py`)."""
-        manifest = self.work / "cnpg.yaml"
-        _run("curl", "-fsSL", "-o", str(manifest), CNPG_MANIFEST_URL)
-        self.kubectl("apply", "--server-side", "-f", str(manifest))
-        # No kube-proxy: the operator dials the apiserver directly, and the apiserver cannot reach the
-        # webhook Service, so an unreachable webhook must not fail the request. The operator still needs
-        # the configurations to exist: it injects its CA into them at startup.
-        for kind, name in (
-            ("mutatingwebhookconfiguration", "cnpg-mutating-webhook-configuration"),
-            ("validatingwebhookconfiguration", "cnpg-validating-webhook-configuration"),
-        ):
-            configuration = json.loads(self.kubectl("get", f"{kind}/{name}", "-o", "json"))
-            for webhook in configuration["webhooks"]:
-                webhook["failurePolicy"] = "Ignore"
-                webhook["timeoutSeconds"] = 2
-            self.kubectl("apply", "--server-side", "--force-conflicts", "-f", "-", input_text=json.dumps(configuration))
-        # The release manifest limits the operator to 100m CPU; throttled, it misses leader-election renewals and
-        # restarts, and the Cluster waits for it.
-        self.kubectl(
-            "-n", "cnpg-system", "patch", "deploy/cnpg-controller-manager", "--type=json", "-p",
-            '[{"op": "remove", "path": "/spec/template/spec/containers/0/resources/limits"}]',
-        )  # fmt: skip
-        self.kubectl(
-            "-n", "cnpg-system", "set", "env", "deploy/cnpg-controller-manager",
-            f"KUBERNETES_SERVICE_HOST={self.node_ip}", "KUBERNETES_SERVICE_PORT=6443",
-        )  # fmt: skip
-        waited = self.kubectl(
-            "-n", "cnpg-system", "wait", "--for=condition=Available", "deploy/cnpg-controller-manager", "--timeout=240s",
-            check=False,
-        )  # fmt: skip
-        if "condition met" not in waited:
-            raise RuntimeError(
-                f"CNPG operator not Available: {waited}\n"
-                + self.kubectl("-n", "cnpg-system", "get", "pods", "-o", "wide", check=False)
-                + self.kubectl("-n", "cnpg-system", "describe", "pods", check=False)[-3000:]
-                + self.kubectl("-n", "cnpg-system", "logs", "deploy/cnpg-controller-manager", "--tail=40", check=False)
-            )
-
-    def report(self) -> str:
-        parts = [
-            self.kubectl("get", "pods", "-A", "-o", "wide", check=False),
-            self.kubectl("get", "events", "-A", "--sort-by=.lastTimestamp", check=False)[-6000:],
-        ]
-        parts.append(self.kubectl("get", "cluster,database", "-A", check=False))
-        parts.append(
-            self.kubectl("-n", "cnpg-system", "logs", "deploy/cnpg-controller-manager", "--tail=25", check=False)
-        )
-        parts.append(
-            self.kubectl(
-                "-n", "cnpg-system", "logs", "deploy/cnpg-controller-manager", "--previous", "--tail=25", check=False
-            )
-        )
-        pods = self.kubectl("get", "pods", "-n", render.NAMESPACE, "-o", "name", check=False).split()
-        for pod in pods:
-            ready = self.kubectl(
-                "get",
-                pod,
-                "-n",
-                render.NAMESPACE,
-                "-o",
-                "jsonpath={.status.conditions[?(@.type=='Ready')].status}",
-                check=False,
-            )
-            if ready != "True":
-                logs = self.kubectl("logs", pod, "-n", render.NAMESPACE, "--all-containers", "--tail=40", check=False)
-                previous = self.kubectl(
-                    "logs", pod, "-n", render.NAMESPACE, "--all-containers", "--previous", "--tail=40", check=False
-                )
-                parts.append(f"--- {pod}\n{logs}\n--- previous\n{previous}")
-        return "\n".join(parts)
-
-
-async def _run_turn(base_url: str, token: str) -> str:
-    """One real Qwen turn through the app, a Pod Sandbox and LiteLLM; returns the agent's answer."""
-    async with Client(base_url=base_url, token=token) as client:
-        catalog = await client.models()
-        model = catalog.harnesses[Harness.CLAUDE][0]
-        await client.create_sandbox(NewSandbox(name="smoke", template=POD_TEMPLATE))
-        await wait_until_running(client, "smoke")
-        agent = await Agent.open(client, sandbox="smoke", harness=runner_pb2.HARNESS_CLAUDE, model=model)
-        turn = await agent.run("Reply with the single word: pong")
-        return turn.answer
-
-
-def _openssl_ca(work: Path) -> tuple[str, str]:
-    key, cert = work / "ca.key", work / "ca.crt"
-    _run("openssl", "ecparam", "-name", "prime256v1", "-genkey", "-noout", "-out", str(key))
-    _run(
-        "openssl",
-        "req",
-        "-x509",
-        "-new",
-        "-key",
-        str(key),
-        "-days",
-        "3",
-        "-subj",
-        "/CN=agentplane-egress-root-ca",
-        "-addext",
-        "basicConstraints=critical,CA:TRUE",
-        "-out",
-        str(cert),
+        print(f"--- {selector}\n{logs}")
+    print(
+        "--- LiteLLM from the host\n",
+        run("curl", "-sS", "-m", "20", "-I", f"https://{render.LITELLM_EXTERNAL_HOST}/", check=False),
     )
-    return cert.read_text(), key.read_text()
 
 
-def test_stack_comes_up() -> None:
-    manifest = get_required_path("_main/cluster/generated/agentplane-testing/agentplane-testing.k8s.yaml")
-    crds = sorted(get_required_path("_main/agentplane/crds/manifests").glob("crd-*.yaml"))
-    tarballs = sorted(get_required_path("_main/agentplane/x/k3s_env").glob("*_load/tarball.tar"))
-
-    work = Path(tempfile.mkdtemp())
-    k3s = K3s(work)
-    process = k3s.start()
-    try:
-        ca_cert, ca_key = _openssl_ca(work)
-        k3s.import_images(tarballs)
-        for crd in crds:
-            k3s.kubectl("apply", "-f", str(crd))
-        k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(render.kubevirt_stub_crds()))
-        k3s.install_cnpg_operator()
-        rewritten = render.rewrite(
-            yaml.safe_load_all(manifest.read_text()),
-            overrides={"litellm-key-cheap-experiments": os.environ["LITELLM_QWEN_KEY"]},
-            node_ip=k3s.node_ip,
-            external_litellm=True,
-        )
-        cluster_ca = Path(k3s.data_dir / "server/tls/server-ca.crt").read_text()
-        extra = render.egress_ca_objects(
-            ca_cert=ca_cert,
-            ca_key=ca_key,
-            system_roots=Path("/etc/ssl/certs/ca-certificates.crt").read_text(),
-            cluster_ca=cluster_ca,
-        )
-        everything = [*rewritten, *render.extra_namespaces(), *extra]
-        # Namespaces first, then CRD-backed and the rest; one apply tolerates ordering within a kind only.
-        namespaces = [d for d in everything if d["kind"] == "Namespace"]
-        rest = [d for d in everything if d["kind"] != "Namespace"]
-        k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(namespaces))
-        print("apply:", k3s.kubectl("apply", "-f", "-", input_text=yaml.safe_dump_all(rest), check=False)[-3000:])
-        logger.info("applied %s objects", len(rest))
-
-        failed: list[str] = []
-        deployments = [d["metadata"]["name"] for d in rest if d["kind"] == "Deployment"]
-        deadline = time.monotonic() + DEPLOY_TIMEOUT_SECONDS
-        for name in deployments:
-            remaining = max(5, int(deadline - time.monotonic()))
-            out = k3s.kubectl(
-                "wait",
-                "--for=condition=Available",
-                f"deployment/{name}",
-                "-n",
-                render.NAMESPACE,
-                f"--timeout={remaining}s",
-                check=False,
-            )
-            if "condition met" not in out:
-                failed.append(name)
-        answer = ""
-        if not failed:
-            app_ip = k3s.kubectl(
-                "get", "pod", "-n", render.NAMESPACE, "-l", "app.kubernetes.io/name=agentplane-app",
-                "-o", "jsonpath={.items[0].status.podIP}",
-            )  # fmt: skip
-            token = k3s.kubectl(
-                "-n", render.NAMESPACE, "create", "token", TESTING_SERVICE_ACCOUNT, f"--audience={AUDIENCE}"
-            ).strip()
-            try:
-                answer = asyncio.run(_run_turn(f"http://{app_ip}:8080", token))
-            except httpx.HTTPStatusError, AssertionError:
-                # The error alone does not say which hop refused.
-                for selector in (
-                    "app.kubernetes.io/name=agentplane-app",
-                    "app.kubernetes.io/name=agentplane-runner-gateway",
-                    "app.kubernetes.io/name=agentplane-llm-ingress",
-                    "agentplane.allegedly.works/sandbox=smoke",
-                ):
-                    logs = k3s.kubectl(
-                        "logs", "-l", selector, "-n", render.NAMESPACE, "--all-containers", "--tail=60", check=False
-                    )
-                    print(f"--- {selector}\n{logs}")
-                print(
-                    "--- LiteLLM from the host\n",
-                    _run("curl", "-sS", "-m", "20", "-I", f"https://{render.LITELLM_EXTERNAL_HOST}/", check=False),
-                )
-                print(
-                    "--- LiteLLM from a Pod\n",
-                    k3s.kubectl(
-                        "exec", "-n", render.NAMESPACE, "postgres-1", "-c", "postgres", "--", "bash", "-c",
-                        f"getent hosts {render.LITELLM_EXTERNAL_HOST}; timeout 8 bash -c '</dev/tcp/{render.LITELLM_EXTERNAL_HOST}/443' && echo tcp-ok",
-                        check=False,
-                    ),
-                )  # fmt: skip
-                raise
-        print("memory:", _run("free", "-m"))
-        print("answer:", answer)
-        (Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", work)) / "answer.txt").write_text(answer)
-        print(k3s.report())
-        assert not failed, f"Deployments not Available: {failed}"
-        assert answer, "the Qwen turn returned no answer"
-    finally:
-        process.terminate()
-        shutil.rmtree(work, ignore_errors=True)
+async def test_qwen_turn_completes(stack: Stack) -> None:
+    async with Client(base_url=stack.base_url, token=stack.token) as client:
+        model = (await client.models()).harnesses[Harness.CLAUDE][0]
+        await client.create_sandbox(NewSandbox(name=SANDBOX, template=POD_TEMPLATE))
+        await wait_until_running(client, SANDBOX)
+        agent = await Agent.open(client, sandbox=SANDBOX, harness=runner_pb2.HARNESS_CLAUDE, model=model)
+        try:
+            turn = await agent.run("Reply with the single word: pong")
+        except httpx.HTTPStatusError, AssertionError:
+            _print_turn_diagnostics(stack)
+            raise
+    print("answer:", turn.answer)
+    (Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", "/tmp")) / "answer.txt").write_text(turn.answer)
 
 
 if __name__ == "__main__":

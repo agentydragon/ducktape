@@ -102,35 +102,53 @@ _IMAGES = {
     for name in _IMAGES
 ]
 
+_K3S_EXEC_PROPERTIES = {
+    "dockerNetwork": "bridge",
+    "recycle-runner": "false",
+    "EstimatedComputeUnits": "4",
+    "EstimatedFreeDiskBytes": "50GB",
+}
+
+_K3S_TAGS = [
+    "external",
+    "manual",
+    "no-cache",
+    "requires-network",
+]
+
 py_library(
     name = "render",
     testonly = True,
     srcs = ["render.py"],
 )
 
-py_test(
-    name = "test_env",
-    size = "enormous",
-    srcs = ["test_env.py"],
+py_library(
+    name = "stack",
+    testonly = True,
+    srcs = ["stack.py"],
     data = [
         "//agentplane/crds",
         "//cluster:agentplane_testing_manifest",
     ] + [":" + name + "_tarball" for name in _IMAGES],
-    env_inherit = ["LITELLM_QWEN_KEY"],
-    exec_properties = {
-        "dockerNetwork": "bridge",
-        "recycle-runner": "false",
-        "EstimatedComputeUnits": "4",
-        "EstimatedFreeDiskBytes": "50GB",
-    },
-    tags = [
-        "external",
-        "manual",
-        "no-cache",
-        "requires-network",
-    ],
     deps = [
         ":render",
+        "//agentplane/acceptance:conftest",
+        "//util/bazel:runfiles",
+        "@pypi//pyyaml",
+    ],
+)
+
+# Both tests run the whole stack, so each is its own k3s on one RBE action.
+py_test(
+    name = "test_env",
+    size = "enormous",
+    srcs = ["test_env.py"],
+    env_inherit = ["LITELLM_QWEN_KEY"],
+    exec_properties = _K3S_EXEC_PROPERTIES,
+    tags = _K3S_TAGS,
+    deps = [
+        ":render",
+        ":stack",
         "//:conftest",
         "//agentplane/acceptance:agent",
         "//agentplane/acceptance:conftest",
@@ -138,11 +156,31 @@ py_test(
         "//agentplane/app/testing:client",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",
-        "//util/bazel:runfiles",
         "@pypi//httpx",
         "@pypi//protobuf",
+        "@pypi//pytest",
         "@pypi//pytest_bazel",
-        "@pypi//pyyaml",
+    ],
+)
+
+py_test(
+    name = "test_lifecycle",
+    size = "enormous",
+    srcs = ["test_lifecycle.py"],
+    exec_properties = _K3S_EXEC_PROPERTIES,
+    tags = _K3S_TAGS,
+    deps = [
+        ":render",
+        ":stack",
+        "//:conftest",
+        "//agentplane:sandbox_resource",
+        "//agentplane/acceptance:conftest",
+        "//agentplane/app:sandbox_models",
+        "//agentplane/app/testing:client",
+        "@pypi//httpx",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//tenacity",
     ],
 )
 
