@@ -1,0 +1,10 @@
+{
+  "verifier": "frozen PR #7910 unittest tests/test_task.py",
+  "workspace": "/tmp/ducktape-worktrees/2026-10-13-rugged-harness/cluster/docs/inference/runs/2026-10-13_rugged_coding/smoke_7910/results/qwen3-4b-offline-jsonl-4/workspace",
+  "test_sha256": "97e9d21bb9273765cece1307ef485833186467b297f64a359fa96210d0dbb764",
+  "implementation_sha256": "0f56a851c632ab6756153f39bd3a9cf4125a66b14e6a91dbb8c86c6f7ee733a4",
+  "tests_run": 4,
+  "failures": [],
+  "errors": [],
+  "successful": true
+}

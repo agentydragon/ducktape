@@ -1,0 +1,161 @@
+{
+  "all_samples": {
+    "decode_seconds": {
+      "max": 44.658084,
+      "median": 17.658466,
+      "min": 8.491522999,
+      "samples": 46,
+      "unit": "seconds"
+    },
+    "decode_tokens_per_second": {
+      "max": 60.336734588899695,
+      "median": 46.83176782327679,
+      "min": 34.98193537149678,
+      "samples": 46,
+      "unit": "tokens/s"
+    },
+    "input_tokens": {
+      "max": 238.0,
+      "median": 162.0,
+      "min": 93.0,
+      "samples": 46,
+      "unit": "tokens"
+    },
+    "output_tokens": {
+      "max": 2048.0,
+      "median": 761.5,
+      "min": 436.0,
+      "samples": 46,
+      "unit": "tokens"
+    },
+    "prefill_seconds": {
+      "max": 0.623453,
+      "median": 0.196957,
+      "min": 0.135827,
+      "samples": 46,
+      "unit": "seconds"
+    },
+    "prefill_tokens_per_second": {
+      "max": 1377.059803740048,
+      "median": 739.9339975140649,
+      "min": 231.806319588631,
+      "samples": 46,
+      "unit": "tokens/s"
+    },
+    "time_to_first_token_ms": {
+      "max": null,
+      "median": null,
+      "min": null,
+      "samples": 0,
+      "unit": "ms"
+    },
+    "wall_seconds": {
+      "max": 45.4562297329976,
+      "median": 18.228545988000405,
+      "min": 8.81791942199925,
+      "samples": 46,
+      "unit": "seconds"
+    }
+  },
+  "candidate": "gemma4-e4b-ollama-vulkan-partial",
+  "created_at_utc": "2026-10-14T08:26:27.948990+00:00",
+  "finish_reason_counts": {
+    "length": 3,
+    "stop": 43
+  },
+  "first_repeat_note": "repeat=0 rows are task-major first samples; they reduce within-task prefix-cache reuse but are not isolated cold-start measurements.",
+  "first_repeat_per_task": {
+    "decode_seconds": {
+      "max": 44.658084,
+      "median": 15.351927499999999,
+      "min": 10.214991,
+      "samples": 16,
+      "unit": "seconds"
+    },
+    "decode_tokens_per_second": {
+      "max": 58.27082191687044,
+      "median": 48.00758481369388,
+      "min": 38.17374341439771,
+      "samples": 16,
+      "unit": "tokens/s"
+    },
+    "input_tokens": {
+      "max": 238.0,
+      "median": 156.0,
+      "min": 93.0,
+      "samples": 16,
+      "unit": "tokens"
+    },
+    "output_tokens": {
+      "max": 2048.0,
+      "median": 738.0,
+      "min": 489.0,
+      "samples": 16,
+      "unit": "tokens"
+    },
+    "prefill_seconds": {
+      "max": 0.623453,
+      "median": 0.4452205,
+      "min": 0.375019,
+      "samples": 16,
+      "unit": "seconds"
+    },
+    "prefill_tokens_per_second": {
+      "max": 454.86514586263837,
+      "median": 316.66596021321163,
+      "min": 231.806319588631,
+      "samples": 16,
+      "unit": "tokens/s"
+    },
+    "time_to_first_token_ms": {
+      "max": null,
+      "median": null,
+      "min": null,
+      "samples": 0,
+      "unit": "ms"
+    },
+    "wall_seconds": {
+      "max": 45.4562297329976,
+      "median": 17.321104724003817,
+      "min": 10.779145059001166,
+      "samples": 16,
+      "unit": "seconds"
+    }
+  },
+  "memory": {
+    "cohort_window_seconds": 957.260479,
+    "coverage_end_utc": "2026-10-14T08:02:36.033841+00:00",
+    "coverage_start_utc": "2026-10-14T07:48:01.772331+00:00",
+    "median_sampling_interval_seconds": 2.002028,
+    "peak_call_rss_kib": null,
+    "peak_process_vmhwm_kib": 1719904.0,
+    "peak_resident_gtt_gib_binary": 7.854671478271484,
+    "peak_resident_gtt_kib_deduplicated": 8236220.0,
+    "peak_sampled_vmrss_kib": 1719904.0,
+    "pid_values": [785629],
+    "sampler_file": "/tmp/ducktape-worktrees/2026-10-13-rugged-harness/cluster/docs/inference/runs/2026-10-13_rugged_coding/results/gemma4-e4b-igpu/llama-server-memory-samples.jsonl",
+    "samples_with_resident_gtt_counter": 435,
+    "samples_with_rss": 435,
+    "samples_with_timestamp": 436,
+    "sampling_coverage_fraction_of_cohort_window": 0.9109142037399415,
+    "sampling_coverage_overlap_seconds": 871.982167,
+    "sampling_coverage_seconds": 874.26151,
+    "sampling_rows": 436
+  },
+  "quality": null,
+  "raw_file": "/tmp/ducktape-worktrees/2026-10-13-rugged-harness/cluster/docs/inference/runs/2026-10-13_rugged_coding/results/gemma4-e4b-igpu/humaneval-plus-raw.jsonl",
+  "raw_sha256": "6cb71175a5824eef6c02376a6d6ccc4f436228684f5ac2c280711d48599f39e9",
+  "samples_expected": 60,
+  "samples_missing": 14,
+  "samples_received": 46,
+  "status_counts": {
+    "ok": 46
+  },
+  "timing_method": {
+    "decode": "Ollama eval_duration converted from nanoseconds; NPU decode duration is derived as generated_tokens / reported throughput_tps.",
+    "first_token": "TTFT is reported only when the NPU raw runner measured it; no client TTFT is inferred for non-streaming Ollama.",
+    "prefill": "Ollama prompt_eval_duration converted from nanoseconds; separate prefill duration is unavailable for NPU rows.",
+    "wall": "Ollama wall_seconds or GenAI elapsed_seconds, as reported in the raw row."
+  },
+  "unique_task_ids": 16
+}

@@ -1,0 +1,11 @@
+{
+  "exit_code": 0,
+  "request_count": 1,
+  "model": "qwen3:4b-instruct-2507-q4_K_M",
+  "reasoning_effort": "none",
+  "temperature": 0.2,
+  "top_p": 0.95,
+  "tool_count": 6,
+  "tool_names": ["bash", "edit", "glob", "grep", "read", "write"],
+  "response_seen": true
+}

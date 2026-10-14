@@ -1,0 +1,19 @@
+{
+  "verifier": "frozen PR #7910 unittest tests/test_task.py",
+  "workspace": "/tmp/ducktape-worktrees/2026-10-13-rugged-harness/cluster/docs/inference/runs/2026-10-13_rugged_coding/smoke_7910/results/qwen3-4b-offline-jsonl-4/workspace",
+  "test_sha256": "97e9d21bb9273765cece1307ef485833186467b297f64a359fa96210d0dbb764",
+  "implementation_sha256": "56719ad780f91c9f305e2c865acb15ccfaf834ec1c34be7c92cebefe0fcc086e",
+  "tests_run": 4,
+  "failures": [
+    {
+      "test": "test_normalizes_records_and_preserves_unicode (tests.test_task.JsonlTransformTests.test_normalizes_records_and_preserves_unicode)",
+      "traceback": "Traceback (most recent call last):\n  File \"/tmp/ducktape-worktrees/2026-10-13-rugged-harness/cluster/docs/inference/runs/2026-10-13_rugged_coding/smoke_7910/results/qwen3-4b-offline-jsonl-4/workspace/tests/test_task.py\", line 16, in test_normalizes_records_and_preserves_unicode\n    self.assertEqual(transform_jsonl(source), expected)\n    ~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: '{\"co[13 chars]:\"Jos\\\\u00e9\",\"tags\":[\"bleu\",\"\\\\u6771\\\\u4eac\"][40 chars]]}\\n' != '{\"co[13 chars]:\"Jos\u00e9\",\"tags\":[\"bleu\",\"\u6771\u4eac\"]}\\n{\"name\":\"Zoe \ud83d\ude80\",\"tags\":[]}\\n'\n- {\"count\":2,\"name\":\"Jos\\u00e9\",\"tags\":[\"bleu\",\"\\u6771\\u4eac\"]}\n?                       ^^^^^^                  ^^^^^^^^^^^^\n+ {\"count\":2,\"name\":\"Jos\u00e9\",\"tags\":[\"bleu\",\"\u6771\u4eac\"]}\n?                       ^                  ^^\n- {\"name\":\"Zoe \\ud83d\\ude80\",\"tags\":[]}\n?              ^^^^^^^^^^^^\n+ {\"name\":\"Zoe \ud83d\ude80\",\"tags\":[]}\n?              ^\n\n"
+    },
+    {
+      "test": "test_rejects_non_string_tags (tests.test_task.JsonlTransformTests.test_rejects_non_string_tags) (tags='\"blue\"')",
+      "traceback": "Traceback (most recent call last):\n  File \"/tmp/ducktape-worktrees/2026-10-13-rugged-harness/cluster/docs/inference/runs/2026-10-13_rugged_coding/smoke_7910/results/qwen3-4b-offline-jsonl-4/workspace/tests/test_task.py\", line 29, in test_rejects_non_string_tags\n    with self.subTest(tags=tags), self.assertRaises(ValueError):\n                                  ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^\nAssertionError: ValueError not raised\n"
+    }
+  ],
+  "errors": [],
+  "successful": false
+}

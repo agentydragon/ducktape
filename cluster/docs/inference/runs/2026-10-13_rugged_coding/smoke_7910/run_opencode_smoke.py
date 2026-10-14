@@ -30,6 +30,22 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _archive_python_snapshot(workspace: Path, result_dir: Path) -> dict[str, dict[str, str]]:
+    snapshot = result_dir / "workspace_snapshot"
+    archived: dict[str, dict[str, str]] = {}
+    for relative in ("jsonl_transform.py", "tests/test_task.py", "tests/__init__.py"):
+        source = workspace / relative
+        destination = snapshot / f"{relative}.txt"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        data = source.read_bytes()
+        destination.write_bytes(data)
+        digest = hashlib.sha256(data).hexdigest()
+        if _sha256(destination) != digest or _sha256(source) != digest:
+            raise RuntimeError(f"Python source archive did not preserve {relative} bytes")
+        archived[relative] = {"archive": str(destination.relative_to(result_dir)), "sha256": digest}
+    return archived
+
+
 def _materialize_verifier(workspace: Path) -> None:
     task_metadata = json.loads((RUN_DIR / "selected_task.json").read_text())
     verifier_data = workspace / "tests" / "test_task.py.txt"
@@ -94,6 +110,7 @@ def main() -> None:
         json.dumps(_ollama(args.backend_port, "/api/ps"), indent=2) + "\n"
     )
     final_tests_hash = _sha256(args.workspace / "tests" / "test_task.py")
+    workspace_snapshot = _archive_python_snapshot(args.workspace, args.result_dir)
     (args.result_dir / "run_summary.json").write_text(
         json.dumps(
             {
@@ -117,6 +134,7 @@ def main() -> None:
                 "source_test_sha256_before": baseline_tests_hash,
                 "source_test_sha256_after": final_tests_hash,
                 "source_tests_unchanged": baseline_tests_hash == final_tests_hash,
+                "workspace_python_sources_archived_as_text": workspace_snapshot,
                 "opencode_exit_code": completed.returncode,
                 "workspace_file_sha256": {
                     str(path.relative_to(args.workspace)): _sha256(path)

@@ -1,0 +1,35 @@
+{
+  "archive_format": "Python source snapshots are Base64 encoded as .py.txt.b64; manifest SHA256 values cover decoded source bytes.",
+  "baseline_before_coding_attempt": {
+    "implementation": {
+      "path": "repair-2/workspace_before/jsonl_transform.py.txt.b64",
+      "sha256": "56719ad780f91c9f305e2c865acb15ccfaf834ec1c34be7c92cebefe0fcc086e"
+    },
+    "verifier": {
+      "path": "repair-2/workspace_before/tests/test_task.py.txt.b64",
+      "sha256": "97e9d21bb9273765cece1307ef485833186467b297f64a359fa96210d0dbb764"
+    }
+  },
+  "repair_5_before": {
+    "implementation": {
+      "path": "repair-5/workspace_before/jsonl_transform.py.txt.b64",
+      "sha256": "89290940a6a141d4fd2490e50fccfadb4eedcc33201adae69f89dc3186548b0d"
+    },
+    "verifier": {
+      "path": "repair-5/workspace_before/tests/test_task.py.txt.b64",
+      "sha256": "97e9d21bb9273765cece1307ef485833186467b297f64a359fa96210d0dbb764"
+    }
+  },
+  "repair_5_after_independent_verification": {
+    "implementation": {
+      "path": "workspace/jsonl_transform.py.txt.b64",
+      "sha256": "0f56a851c632ab6756153f39bd3a9cf4125a66b14e6a91dbb8c86c6f7ee733a4"
+    },
+    "verifier": {
+      "path": "workspace/tests/test_task.py.txt.b64",
+      "sha256": "97e9d21bb9273765cece1307ef485833186467b297f64a359fa96210d0dbb764"
+    },
+    "verifier_result": "repair-5/coding_task_verification.json",
+    "verifier_result_successful": true
+  }
+}

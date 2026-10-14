@@ -1,0 +1,13 @@
+{
+  "run_id": "qwen3-4b-offline-jsonl-3",
+  "status": "interrupted_cpu_fallback",
+  "cause": "OLLAMA_IGPU_ENABLE was omitted; Ollama logged that it dropped the integrated GPU and selected CPU.",
+  "task_result": "not a valid GPU coding result; interrupted during prompt prefill before any task output was captured",
+  "last_server_progress": {
+    "prefill_tokens": 3072,
+    "task_tokens": 5025,
+    "prompt_eval_seconds": 155.81,
+    "prompt_eval_tokens_per_second": 19.72
+  },
+  "successful_retry": "../qwen3-4b-offline-jsonl-4"
+}

@@ -1,0 +1,178 @@
+{
+  "all_samples": {
+    "decode_seconds": {
+      "max": 15.602198,
+      "median": 7.869832,
+      "min": 3.469895,
+      "samples": 60,
+      "unit": "seconds"
+    },
+    "decode_tokens_per_second": {
+      "max": 32.854020078417356,
+      "median": 28.36235578001634,
+      "min": 19.157146069205695,
+      "samples": 60,
+      "unit": "tokens/s"
+    },
+    "input_tokens": {
+      "max": 328.0,
+      "median": 150.0,
+      "min": 82.0,
+      "samples": 60,
+      "unit": "tokens"
+    },
+    "output_tokens": {
+      "max": 433.0,
+      "median": 209.5,
+      "min": 114.0,
+      "samples": 60,
+      "unit": "tokens"
+    },
+    "prefill_seconds": {
+      "max": 0.659763,
+      "median": 0.0518265,
+      "min": 0.033192999,
+      "samples": 60,
+      "unit": "seconds"
+    },
+    "prefill_tokens_per_second": {
+      "max": 7370.952156228231,
+      "median": 2721.8829474533086,
+      "min": 199.3977564636808,
+      "samples": 60,
+      "unit": "tokens/s"
+    },
+    "time_to_first_token_ms": {
+      "max": null,
+      "median": null,
+      "min": null,
+      "samples": 0,
+      "unit": "ms"
+    },
+    "wall_seconds": {
+      "max": 16.53945792900049,
+      "median": 8.504280281005776,
+      "min": 3.5203811719984515,
+      "samples": 60,
+      "unit": "seconds"
+    }
+  },
+  "candidate": "qwen3-4b-instruct-2507-q4_K_M-ollama-vulkan",
+  "created_at_utc": "2026-10-14T08:26:22.456369+00:00",
+  "finish_reason_counts": {
+    "stop": 60
+  },
+  "first_repeat_note": "repeat=0 rows are task-major first samples; they reduce within-task prefix-cache reuse but are not isolated cold-start measurements.",
+  "first_repeat_per_task": {
+    "decode_seconds": {
+      "max": 13.930022,
+      "median": 8.064512500000001,
+      "min": 3.623161,
+      "samples": 20,
+      "unit": "seconds"
+    },
+    "decode_tokens_per_second": {
+      "max": 32.627651608461655,
+      "median": 28.62892259038496,
+      "min": 19.169310388932313,
+      "samples": 20,
+      "unit": "tokens/s"
+    },
+    "input_tokens": {
+      "max": 328.0,
+      "median": 150.0,
+      "min": 82.0,
+      "samples": 20,
+      "unit": "tokens"
+    },
+    "output_tokens": {
+      "max": 364.0,
+      "median": 209.5,
+      "min": 114.0,
+      "samples": 20,
+      "unit": "tokens"
+    },
+    "prefill_seconds": {
+      "max": 0.627387,
+      "median": 0.317395,
+      "min": 0.20945,
+      "samples": 20,
+      "unit": "seconds"
+    },
+    "prefill_tokens_per_second": {
+      "max": 674.8029097098599,
+      "median": 462.68792551967795,
+      "min": 308.6106124415239,
+      "samples": 20,
+      "unit": "tokens/s"
+    },
+    "time_to_first_token_ms": {
+      "max": null,
+      "median": null,
+      "min": null,
+      "samples": 0,
+      "unit": "ms"
+    },
+    "wall_seconds": {
+      "max": 14.832963009001105,
+      "median": 8.672301696999057,
+      "min": 3.956238251994364,
+      "samples": 20,
+      "unit": "seconds"
+    }
+  },
+  "memory": {
+    "cohort_window_seconds": 543.021721,
+    "coverage_end_utc": "2026-10-14T07:44:16.245338+00:00",
+    "coverage_start_utc": "2026-10-14T07:37:09.705518+00:00",
+    "median_sampling_interval_seconds": 2.002858,
+    "peak_call_rss_kib": null,
+    "peak_process_vmhwm_kib": 2081912.0,
+    "peak_resident_gtt_gib_binary": 7.476951599121094,
+    "peak_resident_gtt_kib_deduplicated": 7840152.0,
+    "peak_sampled_vmrss_kib": 2081912.0,
+    "pid_values": [762291],
+    "sampler_file": "/tmp/ducktape-worktrees/2026-10-13-rugged-harness/cluster/docs/inference/runs/2026-10-13_rugged_coding/results/qwen3-4b-igpu/llama-server-memory-samples.jsonl",
+    "samples_with_resident_gtt_counter": 212,
+    "samples_with_rss": 212,
+    "samples_with_timestamp": 212,
+    "sampling_coverage_fraction_of_cohort_window": 0.7767455456906115,
+    "sampling_coverage_overlap_seconds": 421.789703,
+    "sampling_coverage_seconds": 426.53982,
+    "sampling_rows": 212
+  },
+  "quality": {
+    "base_pass_at_1": 0.95,
+    "base_sample_pass_fraction": 0.95,
+    "base_status_counts": {
+      "fail": 3,
+      "pass": 57
+    },
+    "candidate": "qwen3-4b-igpu",
+    "humaneval_plus_pass_at_1": 0.9,
+    "humaneval_plus_sample_pass_fraction": 0.9,
+    "humaneval_plus_status_counts": {
+      "fail": 6,
+      "pass": 54
+    },
+    "repeats_per_task": 3,
+    "samples": 60,
+    "scored_samples": 60,
+    "tasks": 20
+  },
+  "raw_file": "/tmp/ducktape-worktrees/2026-10-13-rugged-harness/cluster/docs/inference/runs/2026-10-13_rugged_coding/results/qwen3-4b-igpu/humaneval-plus-raw.jsonl",
+  "raw_sha256": "04f9f64bbb85188e1cdda2e0e90882da3946ee3ef486f26ae8ce891e533c9539",
+  "samples_expected": 60,
+  "samples_missing": 0,
+  "samples_received": 60,
+  "status_counts": {
+    "ok": 60
+  },
+  "timing_method": {
+    "decode": "Ollama eval_duration converted from nanoseconds; NPU decode duration is derived as generated_tokens / reported throughput_tps.",
+    "first_token": "TTFT is reported only when the NPU raw runner measured it; no client TTFT is inferred for non-streaming Ollama.",
+    "prefill": "Ollama prompt_eval_duration converted from nanoseconds; separate prefill duration is unavailable for NPU rows.",
+    "wall": "Ollama wall_seconds or GenAI elapsed_seconds, as reported in the raw row."
+  },
+  "unique_task_ids": 20
+}

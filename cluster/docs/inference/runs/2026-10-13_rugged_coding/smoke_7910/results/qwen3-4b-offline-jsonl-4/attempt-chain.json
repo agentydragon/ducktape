@@ -1,0 +1,57 @@
+{
+  "task": "PR #7910 jsonl-transform",
+  "workspace": "/tmp/ducktape-worktrees/2026-10-13-rugged-harness/cluster/docs/inference/runs/2026-10-13_rugged_coding/smoke_7910/results/qwen3-4b-offline-jsonl-4/workspace",
+  "baseline": {
+    "source_run_id": "qwen3-4b-offline-jsonl-4",
+    "agent_wall_seconds": 77.03948617499555,
+    "implementation_sha256": "56719ad780f91c9f305e2c865acb15ccfaf834ec1c34be7c92cebefe0fcc086e",
+    "test_sha256": "97e9d21bb9273765cece1307ef485833186467b297f64a359fa96210d0dbb764",
+    "verifier_successful": false,
+    "verifier_failures": 2
+  },
+  "attempts": [
+    {
+      "id": "repair-1",
+      "status": "namespace_setup_failed_before_inference",
+      "agent_wall_seconds": null
+    },
+    {
+      "id": "repair-2",
+      "status": "invalid_inner_workspace_path",
+      "agent_wall_seconds": 31.718807288998505,
+      "implementation_changed": false,
+      "verifier_successful": false
+    },
+    {
+      "id": "repair-3",
+      "status": "invalid_inner_workspace_path",
+      "agent_wall_seconds": 105.79881593900791,
+      "implementation_changed": false,
+      "verifier_successful": false
+    },
+    {
+      "id": "repair-4",
+      "status": "manually_interrupted_censored",
+      "agent_wall_seconds": null,
+      "trace_event_wall_seconds": 66.873,
+      "implementation_sha256_before": "56719ad780f91c9f305e2c865acb15ccfaf834ec1c34be7c92cebefe0fcc086e",
+      "implementation_sha256_after_interruption": "0f56a851c632ab6756153f39bd3a9cf4125a66b14e6a91dbb8c86c6f7ee733a4",
+      "verifier": "not run"
+    },
+    {
+      "id": "repair-5",
+      "status": "successful",
+      "agent_wall_seconds": 178.6313390180003,
+      "pre_repair_sha256": "89290940a6a141d4fd2490e50fccfadb4eedcc33201adae69f89dc3186548b0d",
+      "final_sha256": "0f56a851c632ab6756153f39bd3a9cf4125a66b14e6a91dbb8c86c6f7ee733a4",
+      "verifier_successful": true,
+      "tests_run": 4
+    }
+  ],
+  "successful_attempt_agent_seconds": {
+    "baseline": 77.03948617499555,
+    "repair_5": 178.6313390180003
+  },
+  "total_resolution_time_seconds": null,
+  "time_note": "Do not sum selected attempts as total completion time; repair-2/3/4 used time is excluded from the initial+repair-5 subtotal, and repair-4 has no authoritative agent wall measurement."
+}

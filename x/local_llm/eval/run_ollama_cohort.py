@@ -27,8 +27,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--base-url", required=True, help="Ollama origin, e.g. http://127.0.0.1:11436")
     parser.add_argument("--model", required=True, help="installed Ollama model name/tag")
     parser.add_argument("--output", type=Path, required=True, help="append-only raw JSONL")
-    parser.add_argument("--prompts", type=Path, default=Path(__file__).with_name("humaneval_plus_prompts.jsonl"))
-    parser.add_argument("--cohort", type=Path, default=Path(__file__).with_name("humaneval_plus_cohort.json"))
+    parser.add_argument("--prompts", type=Path, required=True, help="frozen prompt JSONL")
+    parser.add_argument("--cohort", type=Path, required=True, help="frozen cohort manifest JSON")
     parser.add_argument("--deadline-utc", help="stop before another request if its timeout crosses this ISO UTC time")
     parser.add_argument("--request-timeout-seconds", type=float, default=300)
     parser.add_argument("--reserve-seconds", type=float, default=30)
@@ -143,7 +143,7 @@ def power_snapshot() -> dict[str, str | None]:
         "bat1_percent": Path("/sys/class/power_supply/BAT1/capacity"),
         "platform_profile": Path("/sys/firmware/acpi/platform_profile"),
     }
-    values = {}
+    values: dict[str, str | None] = {}
     for key, path in paths.items():
         try:
             values[key] = path.read_text().strip()

@@ -1,0 +1,10 @@
+Implement `transform_jsonl(text)` in `jsonl_transform.py` using only the Python standard library.
+
+The function receives JSON Lines text and returns normalized JSON Lines text:
+- Ignore blank or whitespace-only input lines.
+- Each other line must decode to an object with a non-empty string `name` and an optional `tags` list containing only strings. Raise `ValueError` for malformed JSON or invalid fields, and include the 1-based input line number in the error.
+- Normalize `name` and each tag to Unicode NFC, then strip surrounding whitespace. Reject an empty normalized name. Drop empty tags and deduplicate tags while preserving their first normalized occurrence. An omitted `tags` field becomes an empty list.
+- Preserve other object fields. Emit compact JSON with sorted keys and literal Unicode (do not escape non-ASCII characters), one record per line, ending each output record with a newline.
+- Do not modify the tests.
+
+Run `python3 -m unittest -v tests.test_task`, fix any implementation failures, and report briefly what you changed.

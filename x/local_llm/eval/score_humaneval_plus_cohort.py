@@ -16,13 +16,11 @@ from pathlib import Path
 from evalplus.data.humaneval import HUMANEVAL_PLUS_VERSION, get_human_eval_plus, get_human_eval_plus_hash
 from evalplus.sanitize import sanitize
 
-RUN_DIR = Path(__file__).resolve().parent
-COHORT_PATH = RUN_DIR / "humaneval_plus_cohort.json"
-
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--raw", type=Path, required=True, help="generation JSONL")
+    parser.add_argument("--cohort", type=Path, required=True, help="frozen cohort manifest JSON")
     parser.add_argument("--candidate", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--workers", type=int, default=4)
@@ -77,7 +75,7 @@ def load_raw(path: Path, task_ids: list[str], repeats: int, repeat_base: str) ->
 
 def main() -> int:
     args = parse_args()
-    cohort = json.loads(COHORT_PATH.read_text())
+    cohort = json.loads(args.cohort.read_text())
     if cohort["evalplus_version"] != "0.3.1":
         raise RuntimeError(f"unexpected EvalPlus pin: {cohort['evalplus_version']}")
     if HUMANEVAL_PLUS_VERSION != "v0.1.10":

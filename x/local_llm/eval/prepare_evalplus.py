@@ -3,16 +3,13 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 from pathlib import Path
 
 from evalplus.data.humaneval import HUMANEVAL_PLUS_VERSION, get_human_eval_plus, get_human_eval_plus_hash
 
-RUN_DIR = Path(__file__).resolve().parent
-COHORT_PATH = RUN_DIR / "humaneval_plus_cohort.json"
-PROMPT_PATH = RUN_DIR / "humaneval_plus_prompts.jsonl"
-METADATA_PATH = RUN_DIR / "humaneval_plus_prompts_metadata.json"
 SYSTEM_PROMPT = "You are a helpful assistant good at coding."
 INSTRUCTION_PREFIX = (
     "Please provide a self-contained Python script that solves the following problem in a markdown code block:"
@@ -20,7 +17,13 @@ INSTRUCTION_PREFIX = (
 
 
 def main() -> None:
-    cohort = json.loads(COHORT_PATH.read_text())
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--cohort", type=Path, required=True)
+    parser.add_argument("--prompts", type=Path, required=True)
+    parser.add_argument("--metadata", type=Path, required=True)
+    args = parser.parse_args()
+
+    cohort = json.loads(args.cohort.read_text())
     problems = get_human_eval_plus(version=HUMANEVAL_PLUS_VERSION)
     task_ids = cohort["task_ids"]
     missing = sorted(set(task_ids) - problems.keys())
@@ -45,8 +48,10 @@ def main() -> None:
         )
 
     data = "".join(json.dumps(record, ensure_ascii=False) + "\n" for record in records)
-    PROMPT_PATH.write_text(data)
-    METADATA_PATH.write_text(
+    args.prompts.parent.mkdir(parents=True, exist_ok=True)
+    args.metadata.parent.mkdir(parents=True, exist_ok=True)
+    args.prompts.write_text(data)
+    args.metadata.write_text(
         json.dumps(
             {
                 "evalplus_version": cohort["evalplus_version"],
@@ -61,8 +66,8 @@ def main() -> None:
         )
         + "\n"
     )
-    print(f"exported {len(records)} prompts to {PROMPT_PATH}")
-    print(f"metadata: {METADATA_PATH}")
+    print(f"exported {len(records)} prompts to {args.prompts}")
+    print(f"metadata: {args.metadata}")
 
 
 if __name__ == "__main__":

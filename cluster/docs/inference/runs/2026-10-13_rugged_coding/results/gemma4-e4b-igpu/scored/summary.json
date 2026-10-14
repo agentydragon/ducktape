@@ -1,0 +1,141 @@
+{
+  "candidate": "gemma4-e4b-ollama-vulkan",
+  "created_at": "2026-10-14T08:35:39.169960+00:00",
+  "suite": "EvalPlus HumanEval+ fixed local cohort",
+  "evalplus_version": "0.3.1",
+  "dataset_release": "v0.1.10",
+  "dataset_hash_md5": "fe585eb4df8c88d844eeb463ea4d0302",
+  "task_ids": [
+    "HumanEval/4",
+    "HumanEval/13",
+    "HumanEval/18",
+    "HumanEval/24",
+    "HumanEval/26",
+    "HumanEval/49",
+    "HumanEval/56",
+    "HumanEval/60",
+    "HumanEval/83",
+    "HumanEval/106",
+    "HumanEval/117",
+    "HumanEval/121",
+    "HumanEval/142",
+    "HumanEval/146",
+    "HumanEval/147",
+    "HumanEval/150",
+    "HumanEval/152",
+    "HumanEval/156",
+    "HumanEval/158",
+    "HumanEval/159"
+  ],
+  "tasks": 20,
+  "repeats_per_task": 3,
+  "samples": 60,
+  "scorer": "EvalPlus sanitize.sanitize + evaluate.check_correctness (base and plus)",
+  "base_pass_at_1": 1.0,
+  "humaneval_plus_pass_at_1": 0.9666666666666666,
+  "base_sample_pass_fraction": 1.0,
+  "humaneval_plus_sample_pass_fraction": 0.9666666666666667,
+  "task_scores": {
+    "HumanEval/4": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/13": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/18": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/24": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/26": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/49": {
+      "base_passes": 3,
+      "plus_passes": 1,
+      "samples": 3
+    },
+    "HumanEval/56": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/60": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/83": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/106": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/117": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/121": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/142": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/146": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/147": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/150": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/152": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/156": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/158": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    },
+    "HumanEval/159": {
+      "base_passes": 3,
+      "plus_passes": 3,
+      "samples": 3
+    }
+  },
+  "raw_source": "/tmp/ducktape-worktrees/2026-10-13-rugged-harness/cluster/docs/inference/runs/2026-10-13_rugged_coding/results/gemma4-e4b-igpu/humaneval-plus-raw.jsonl"
+}

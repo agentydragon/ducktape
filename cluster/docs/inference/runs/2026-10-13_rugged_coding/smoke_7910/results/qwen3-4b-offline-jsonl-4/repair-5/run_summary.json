@@ -1,0 +1,39 @@
+{
+  "source_run_id": "qwen3-4b-offline-jsonl-4",
+  "repair_run_id": "repair-5",
+  "task": "jsonl-transform",
+  "model": "qwen3:4b-instruct-2507-q4_K_M",
+  "started_at": "2026-10-14T08:03:20.077375+00:00",
+  "outer_wall_seconds": 185.09982072899584,
+  "repair_agent_wall_seconds": 178.6313390180003,
+  "agent_wall_time_includes_model_startup": false,
+  "prompt_sha256": "b446d3c61b7fe4a1a03b1d715b6b9ac2e1672cda374d41812df9fbcbfa715d11",
+  "prompt_mode": "explicit_tool_first",
+  "workspace_path": "/tmp/ducktape-worktrees/2026-10-13-rugged-harness/cluster/docs/inference/runs/2026-10-13_rugged_coding/smoke_7910/results/qwen3-4b-offline-jsonl-4/workspace",
+  "workspace_snapshot_before": "workspace_before/",
+  "network_isolation": "outer bubblewrap --unshare-net contains Ollama and OpenCode; OpenCode nested namespace bridges only its inner loopback to outer Ollama",
+  "backend_port": 11501,
+  "launcher_exit_code": 0,
+  "test_sha256_before": "97e9d21bb9273765cece1307ef485833186467b297f64a359fa96210d0dbb764",
+  "test_sha256_after": "97e9d21bb9273765cece1307ef485833186467b297f64a359fa96210d0dbb764",
+  "tests_unchanged": true,
+  "implementation_sha256_before": "89290940a6a141d4fd2490e50fccfadb4eedcc33201adae69f89dc3186548b0d",
+  "implementation_sha256_after": "0f56a851c632ab6756153f39bd3a9cf4125a66b14e6a91dbb8c86c6f7ee733a4",
+  "implementation_changed": true,
+  "independent_verification": {
+    "result_file": "coding_task_verification.json",
+    "runner": "bb run //cluster/docs/inference/runs/2026-10-13_rugged_coding:verify_generated_coding_task",
+    "tests_run": 4,
+    "successful": true,
+    "test_sha256": "97e9d21bb9273765cece1307ef485833186467b297f64a359fa96210d0dbb764",
+    "implementation_sha256": "0f56a851c632ab6756153f39bd3a9cf4125a66b14e6a91dbb8c86c6f7ee733a4"
+  },
+  "initial_plus_this_attempt_agent_wall_seconds": 255.67082519299584,
+  "initial_plus_this_attempt_excludes_prior_continuations": true,
+  "time_interpretation": "The initial attempt and this successful continuation are reported separately. Their sum excludes setup failure, two invalid-path continuations, and the manually interrupted repair-4 attempt; it is not total resolution time.",
+  "pre_repair_workspace_state": {
+    "implementation_sha256": "89290940a6a141d4fd2490e50fccfadb4eedcc33201adae69f89dc3186548b0d",
+    "origin": "repair-4 shared-workspace edits; repair-4 was manually interrupted and not independently verified"
+  },
+  "original_agent_wall_seconds": 77.03948617499555
+}

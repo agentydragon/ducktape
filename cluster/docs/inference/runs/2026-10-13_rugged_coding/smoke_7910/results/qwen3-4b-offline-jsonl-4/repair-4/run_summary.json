@@ -1,0 +1,22 @@
+{
+  "repair_run_id": "repair-4",
+  "task": "jsonl-transform",
+  "model": "qwen3:4b-instruct-2507-q4_K_M",
+  "attempt_status": "manually_interrupted_censored",
+  "prompt_mode": "explicit_tool_first",
+  "workspace_path": "/tmp/ducktape-worktrees/2026-10-13-rugged-harness/cluster/docs/inference/runs/2026-10-13_rugged_coding/smoke_7910/results/qwen3-4b-offline-jsonl-4/workspace",
+  "workspace_snapshot_before": "workspace_before/",
+  "implementation_sha256_before": "56719ad780f91c9f305e2c865acb15ccfaf834ec1c34be7c92cebefe0fcc086e",
+  "implementation_sha256_after_interruption": "0f56a851c632ab6756153f39bd3a9cf4125a66b14e6a91dbb8c86c6f7ee733a4",
+  "implementation_changed": true,
+  "test_sha256": "97e9d21bb9273765cece1307ef485833186467b297f64a359fa96210d0dbb764",
+  "tests_unchanged": true,
+  "agent_trace_event_count": 25,
+  "agent_trace_wall_seconds": 66.873,
+  "agent_wall_seconds": null,
+  "interruption": "Manually interrupted while the agent was still editing and running the task tests; no complete attempt result or independent verifier was produced.",
+  "network_isolation": "outer bubblewrap --unshare-net contains Ollama and OpenCode; OpenCode nested namespace bridges only its inner loopback to outer Ollama",
+  "public_egress_denied": true,
+  "gpu_device": "Intel(R) Graphics (LNL), Vulkan; 37/37 layers offloaded",
+  "independent_verification": "not_run_censored_attempt"
+}

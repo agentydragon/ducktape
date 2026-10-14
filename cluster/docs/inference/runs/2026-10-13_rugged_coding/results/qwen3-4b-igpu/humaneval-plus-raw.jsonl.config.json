@@ -1,0 +1,20 @@
+{
+  "base_url": "http://127.0.0.1:11437",
+  "cohort_sha256": "e9b2362e89193ddee4c286b90bf4e522cc0bccc82e3afc16294b322d4144cce1",
+  "endpoint": "/api/chat",
+  "keep_alive": "30m",
+  "model_capabilities_reported": ["tools", "thinking", "completion"],
+  "model_digest": "0edcdef34593eac1aa2be9c7d06c432dcf81945adca5eca2f27662c18f168ba0",
+  "options_except_seed": { "num_ctx": 32768, "num_predict": 2048, "temperature": 0.2, "top_p": 0.95 },
+  "prompts_sha256": "6c3741d0b8be9dd9adeb29eae100372b891cb0939484b5dcfc0b973604de8cbd",
+  "request_order": "task-major, three repeats back-to-back; later repeats can reuse prompt cache",
+  "request_timeout_seconds": 300,
+  "requested_model": "qwen3:4b-instruct-2507-q4_K_M",
+  "resolved_model": "qwen3:4b-instruct-2507-q4_K_M",
+  "schema": 1,
+  "seeds": [20261013, 20261014, 20261015],
+  "stream": false,
+  "think_false_reported_supported": null,
+  "think_requested": false,
+  "thinking_support_reported": null
+}

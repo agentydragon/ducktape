@@ -1,0 +1,2 @@
+def identify_value():
+    return "rugged-offline-read-tool-check"

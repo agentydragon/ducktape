@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "candidate": "Gemma 4 E2B QAT, Ollama Vulkan",
+  "model": "gemma4:e2b-it-qat",
+  "model_digest": "07ea59a474013479c8b6b802bef095c40e964a1d776ba02f264c0e30e1aede0c",
+  "cohort_sha256": "e9b2362e89193ddee4c286b90bf4e522cc0bccc82e3afc16294b322d4144cce1",
+  "expected_samples": 60,
+  "completed_samples": 25,
+  "raw_samples": "humaneval-plus-raw.jsonl",
+  "next_request_marker": "humaneval-plus-raw.jsonl.inflight.json",
+  "last_completed_at_utc": "2026-10-14T08:40:30.095792+00:00",
+  "status": "paused_at_user_direction",
+  "reason": "Priority changed from candidate speed/quality cohorts to long-context work.",
+  "scored": false,
+  "model_unloaded": true,
+  "inference_slot_released": true
+}

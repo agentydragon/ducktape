@@ -1,0 +1,11 @@
+{
+  "task": "jsonl-transform",
+  "source": "PR #7910",
+  "source_commit": "283d234eee27cff5e5d8fbb5e34fd4e3560d796b",
+  "fixture_sha256": "b2706b6f910dfbcbec4e34abc92c886ee9de44c12e4dbac020825c8b9758be66",
+  "model": "rugged/gemma4:e2b-it-qat",
+  "opencode_version": "1.19.0",
+  "network": "bubblewrap --unshare-net; only fixed loopback Ollama endpoint bridged over a mode-0600 temporary Unix socket",
+  "wall_seconds": 1.4194377929961774,
+  "opencode_exit_code": 1
+}

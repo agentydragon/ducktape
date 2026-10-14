@@ -15,6 +15,7 @@ from typing import ClassVar
 
 RUN_DIR = Path(__file__).resolve().parent
 SMOKE_DIR = RUN_DIR / "smoke_7910"
+EVAL_DIR = Path(__file__).resolve().parents[5] / "x" / "local_llm" / "eval"
 OPENCODE = "/nix/store/0j2gmj4zx6xac1iipzy9m3ybh6wwkh6p-opencode-1.19.0/bin/opencode"
 
 
@@ -101,6 +102,12 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--launcher", type=Path, help="exercise a built rugged-opencode-offline launcher")
     parser.add_argument("--backend-port", type=int, help="fixed host-loopback port forwarded to the mock server")
+    parser.add_argument(
+        "--selector",
+        choices=("qwen3-4b", "gemma4-e2b", "gemma4-e4b"),
+        default="qwen3-4b",
+        help="local model profile passed to the built launcher",
+    )
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=False)
 
@@ -123,11 +130,15 @@ def main() -> int:
             "Built offline OpenCode launcher wire verification",
             "Use the write tool to create wire-probe.txt containing 'written', then reply mock-wire-ok.",
         ]
-        env = {**os.environ, "RUGGED_OPENCODE_BACKEND_PORT": str(args.backend_port)}
+        env = {
+            **os.environ,
+            "RUGGED_OPENCODE_BACKEND_PORT": str(args.backend_port),
+            "RUGGED_OPENCODE_MODEL": args.selector,
+        }
     else:
         command = [
             sys.executable,
-            str(RUN_DIR / "offline_exec.py"),
+            str(EVAL_DIR / "offline_exec.py"),
             "--workspace",
             str(fixture_workspace),
             "--config-dir",
@@ -172,10 +183,17 @@ def main() -> int:
     (args.output_dir / "request.json").write_text(json.dumps(request, indent=2) + "\n")
     tools = request.get("tools", [])
     tool_names = [tool.get("function", {}).get("name") for tool in tools if isinstance(tool, dict)]
+    expected_model = {
+        "qwen3-4b": "qwen3:4b-instruct-2507-q4_K_M",
+        "gemma4-e2b": "gemma4:e2b-it-qat",
+        "gemma4-e4b": "gemma4:e4b",
+    }[args.selector]
     checks = {
         "exit_code": completed.returncode,
         "request_count": len(MockHandler.requests),
         "model": request.get("model"),
+        "expected_model": expected_model,
+        "model_matches_selector": request.get("model") == expected_model,
         "reasoning_effort": request.get("reasoning_effort"),
         "temperature": request.get("temperature"),
         "top_p": request.get("top_p"),
@@ -187,6 +205,7 @@ def main() -> int:
     print(json.dumps(checks, indent=2))
     if (
         completed.returncode != 0
+        or request.get("model") != expected_model
         or request.get("reasoning_effort") != "none"
         or request.get("temperature") != 0.2
         or request.get("top_p") != 0.95

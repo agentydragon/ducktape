@@ -1,0 +1,47 @@
+load("//devinfra/python:defs.bzl", "py_binary")
+
+py_binary(
+    name = "offline_exec",
+    srcs = ["offline_exec.py"],
+)
+
+py_binary(
+    name = "run_ollama_cohort",
+    srcs = ["run_ollama_cohort.py"],
+)
+
+py_binary(
+    name = "run_openai_compat_cohort",
+    srcs = ["run_openai_compat_cohort.py"],
+)
+
+py_binary(
+    name = "sample_ollama_memory",
+    srcs = ["sample_ollama_memory.py"],
+)
+
+py_binary(
+    name = "probe_openai_tool_calls",
+    srcs = ["probe_openai_tool_calls.py"],
+)
+
+py_binary(
+    name = "verify_generated_coding_task",
+    srcs = ["verify_generated_coding_task.py"],
+)
+
+py_binary(
+    name = "summarize_humaneval_plus",
+    srcs = ["summarize_humaneval_plus.py"],
+)
+
+# These utilities use the separately pinned EvalPlus 0.3.1 runtime rather than
+# adding its large and conflicting dependency graph to the repository-wide
+# Bazel Python lock. Their source is shared here; the frozen input and lockfile
+# remain with each experiment's records.
+exports_files(
+    [
+        "prepare_evalplus.py",
+        "score_humaneval_plus_cohort.py",
+    ],
+)

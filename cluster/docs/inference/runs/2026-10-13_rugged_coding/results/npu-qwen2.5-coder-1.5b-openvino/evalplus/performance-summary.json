@@ -1,0 +1,167 @@
+{
+  "all_samples": {
+    "decode_seconds": {
+      "max": 38.464403444681096,
+      "median": 13.913607601881015,
+      "min": 3.0930897978206877,
+      "samples": 60,
+      "unit": "seconds"
+    },
+    "decode_tokens_per_second": {
+      "max": 14.20236301422119,
+      "median": 13.123695373535156,
+      "min": 10.6290864944458,
+      "samples": 60,
+      "unit": "tokens/s"
+    },
+    "input_tokens": {
+      "max": 328.0,
+      "median": 150.0,
+      "min": 82.0,
+      "samples": 60,
+      "unit": "tokens"
+    },
+    "output_tokens": {
+      "max": 494.0,
+      "median": 181.5,
+      "min": 42.0,
+      "samples": 60,
+      "unit": "tokens"
+    },
+    "prefill_seconds": {
+      "max": null,
+      "median": null,
+      "min": null,
+      "samples": 0,
+      "unit": "seconds"
+    },
+    "prefill_tokens_per_second": {
+      "max": null,
+      "median": null,
+      "min": null,
+      "samples": 0,
+      "unit": "tokens/s"
+    },
+    "time_to_first_token_ms": {
+      "max": 1796.7989501953125,
+      "median": 1161.1123046875,
+      "min": 1081.564453125,
+      "samples": 60,
+      "unit": "ms"
+    },
+    "wall_seconds": {
+      "max": 39.604480095003964,
+      "median": 15.004711697001767,
+      "min": 4.154810303996783,
+      "samples": 60,
+      "unit": "seconds"
+    }
+  },
+  "candidate": "qwen2.5-coder-1.5b-int4symg128-openvino-npu",
+  "created_at_utc": "2026-10-14T08:26:34.695609+00:00",
+  "finish_reason_counts": {
+    "missing": 60
+  },
+  "first_repeat_note": "repeat=0 rows are task-major first samples; they reduce within-task prefix-cache reuse but are not isolated cold-start measurements.",
+  "first_repeat_per_task": {
+    "decode_seconds": {
+      "max": 38.464403444681096,
+      "median": 13.404477547504477,
+      "min": 3.0930897978206877,
+      "samples": 20,
+      "unit": "seconds"
+    },
+    "decode_tokens_per_second": {
+      "max": 13.865743637084961,
+      "median": 13.135076522827148,
+      "min": 10.6290864944458,
+      "samples": 20,
+      "unit": "tokens/s"
+    },
+    "input_tokens": {
+      "max": 328.0,
+      "median": 150.0,
+      "min": 82.0,
+      "samples": 20,
+      "unit": "tokens"
+    },
+    "output_tokens": {
+      "max": 494.0,
+      "median": 182.0,
+      "min": 42.0,
+      "samples": 20,
+      "unit": "tokens"
+    },
+    "prefill_seconds": {
+      "max": null,
+      "median": null,
+      "min": null,
+      "samples": 0,
+      "unit": "seconds"
+    },
+    "prefill_tokens_per_second": {
+      "max": null,
+      "median": null,
+      "min": null,
+      "samples": 0,
+      "unit": "tokens/s"
+    },
+    "time_to_first_token_ms": {
+      "max": 1732.8553466796875,
+      "median": 1198.4126586914062,
+      "min": 1084.5721435546875,
+      "samples": 20,
+      "unit": "ms"
+    },
+    "wall_seconds": {
+      "max": 39.604480095003964,
+      "median": 14.55765143049939,
+      "min": 4.154810303996783,
+      "samples": 20,
+      "unit": "seconds"
+    }
+  },
+  "memory": {
+    "note": "No periodic process/GTT sampler file was supplied; per-call peak RSS is shown where available.",
+    "peak_call_rss_kib": 2299444.0,
+    "peak_resident_gtt_kib": null,
+    "sampler_file": null,
+    "sampling_coverage_overlap_seconds": null,
+    "sampling_coverage_seconds": null,
+    "sampling_rows": 0
+  },
+  "quality": {
+    "base_pass_at_1": 0.6833333333333332,
+    "base_sample_pass_fraction": 0.6833333333333333,
+    "base_status_counts": {
+      "fail": 19,
+      "pass": 41
+    },
+    "candidate": "Qwen2.5-Coder 1.5B OpenVINO NPU",
+    "humaneval_plus_pass_at_1": 0.65,
+    "humaneval_plus_sample_pass_fraction": 0.65,
+    "humaneval_plus_status_counts": {
+      "fail": 21,
+      "pass": 39
+    },
+    "repeats_per_task": 3,
+    "samples": 60,
+    "scored_samples": 60,
+    "tasks": 20
+  },
+  "raw_file": "/tmp/ducktape-worktrees/2026-10-13-rugged-npu/cluster/docs/inference/runs/2026-10-13_rugged_npu_openvino/humaneval-plus-raw.jsonl",
+  "raw_sha256": "5a5d527f40eb4e9b6608c586b0f31f04028f8f2fcce3b6e95710c558a7cfe9db",
+  "samples_expected": 60,
+  "samples_missing": 0,
+  "samples_received": 60,
+  "status_counts": {
+    "ok": 60
+  },
+  "timing_method": {
+    "decode": "Ollama eval_duration converted from nanoseconds; NPU decode duration is derived as generated_tokens / reported throughput_tps.",
+    "first_token": "TTFT is reported only when the NPU raw runner measured it; no client TTFT is inferred for non-streaming Ollama.",
+    "prefill": "Ollama prompt_eval_duration converted from nanoseconds; separate prefill duration is unavailable for NPU rows.",
+    "wall": "Ollama wall_seconds or GenAI elapsed_seconds, as reported in the raw row."
+  },
+  "unique_task_ids": 20
+}
