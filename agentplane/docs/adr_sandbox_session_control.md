@@ -600,8 +600,8 @@ Recommend **separate**. Multiple Dispatcher replicas shard Sandboxes by a per-Sa
 Sandbox has one active owner, as the gateway fences connection epochs.
 
 **Who may wake.** The Dispatcher knows the sender's identity, so it enforces which kinds of sender may
-resume a Sandbox (user message and notification yes; agent message no unless decided). Its ServiceAccount may patch `spec.running` and `spec.wakeGeneration` on Sandboxes and nothing else; the app
-writes the rest of desired state. A Sandbox with `spec.wakeOnSend: false` is not woken by a send:
+resume a Sandbox (user message and notification yes; agent message no unless decided). Its ServiceAccount holds `patch` on `sandboxes` and the Dispatcher writes only `spec.running` and
+`spec.wakeGeneration`; RBAC cannot narrow it to those fields (above); the app writes the rest of desired state. A Sandbox with `spec.wakeOnSend: false` is not woken by a send:
 the Dispatcher queues the message and the Sandbox stays suspended. The setting doubles as the feature gate for
 wake-on-send, so the Dispatcher can land with waking off.
 
