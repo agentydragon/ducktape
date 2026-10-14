@@ -20,6 +20,7 @@ from model_catalog.catalog import (
     OLLAMA_CHAT_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
     RUGGED_LOCAL_CANDIDATE_ROUTES,
+    RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
     SERVED_ROUTES,
     EmbeddingLimits,
     Model,
@@ -100,6 +101,37 @@ def test_rugged_local_candidates_are_served_and_experiment_only() -> None:
         assert entry["model_info"].get("supports_function_calling", False) is (route.supports_function_calling is True)
         assert route.reasoning_efforts == ("none",)
         assert route.default_reasoning_effort == "none"
+
+
+def test_rugged_long_context_alias_is_explicitly_experimental() -> None:
+    [route] = RUGGED_LOCAL_EXPERIMENTAL_ROUTES
+    lane = KEY_MODEL_LANES["cheap_experiments_models"]
+    assert route in SERVED_ROUTES
+    assert route in lane.allowed
+    assert not lane.fallbacks
+    assert route.id == "rugged-local/oai-chat/gemma4-e2b-it-qat-long-128k-experimental"
+    assert route.upstream_model == "gemma4:e2b-it-qat-long-128k-b128"
+    assert route.model.limits == TokenLimits(max_input_tokens=126_976, max_output_tokens=4_096)
+    assert route.publish_limits
+    assert route.supports_function_calling is True
+    assert route.reasoning_efforts == ("none",)
+    assert route.default_reasoning_effort == "none"
+    assert model_entry(route) == {
+        "model_name": route.id,
+        "litellm_params": {
+            "model": "openai/gemma4:e2b-it-qat-long-128k-b128",
+            "api_base": RUGGED_LOCAL_LLM_API_BASE,
+            "api_key": f"os.environ/{RUGGED_LOCAL_LLM_KEY_ENV}",
+            "extra_body": {"reasoning_effort": "none"},
+        },
+        "model_info": {
+            "mode": "chat",
+            "supports_function_calling": True,
+            "max_input_tokens": 126_976,
+            "max_output_tokens": 4_096,
+            "max_tokens": 4_096,
+        },
+    }
 
 
 @pytest.mark.parametrize("context_kib", [256, 512, 1024])

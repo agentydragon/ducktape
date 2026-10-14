@@ -194,6 +194,19 @@ data:
           max_input_tokens: 28672
           max_output_tokens: 4096
           max_tokens: 4096
+      - model_name: rugged-local/oai-chat/gemma4-e2b-it-qat-long-128k-experimental
+        litellm_params:
+          model: openai/gemma4:e2b-it-qat-long-128k-b128
+          api_base: http://rugged-local-llm.litellm.svc.cluster.local:18080/v1
+          api_key: os.environ/RUGGED_LOCAL_LLM_KEY
+          extra_body:
+            reasoning_effort: none
+        model_info:
+          mode: chat
+          supports_function_calling: true
+          max_input_tokens: 126976
+          max_output_tokens: 4096
+          max_tokens: 4096
       - model_name: ollama/olm-embed/qwen3-embedding-4b
         litellm_params:
           model: ollama/qwen3-embedding:4b

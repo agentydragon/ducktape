@@ -80,12 +80,19 @@ in
 
   # Local LLM inference (Arc GPU + NPU)
   ducktape.localLlm.ollamaUpstream.enable = true;
-  # Qualified local models for the shared 32k serving budget. The prefetch unit
-  # skips pulls once each model is cached.
+  # Qualified local models for the shared 32k serving budget, plus the base model
+  # for the separately named experimental 128k alias. The prefetch unit skips
+  # pulls once each base model is cached and refreshes aliases from their Modelfiles.
   ducktape.localLlm.ollamaUpstream.models = [
     "qwen3:4b-instruct-2507-q4_K_M"
     "gemma4:e4b"
+    "gemma4:e2b-it-qat"
   ];
+  ducktape.localLlm.ollamaUpstream.aliases."gemma4:e2b-it-qat-long-128k-b128" = {
+    from = "gemma4:e2b-it-qat";
+    numCtx = 131072;
+    numBatch = 128;
+  };
   ducktape.localLlm.bearerProxy.enable = true;
 
   # Keep the llama.cpp service disabled until its own GGUF models and bounded

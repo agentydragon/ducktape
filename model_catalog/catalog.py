@@ -516,6 +516,23 @@ RUGGED_LOCAL_GEMMA4_E4B = Route(
     publish_limits=True,
 )
 RUGGED_LOCAL_CANDIDATE_ROUTES = (RUGGED_LOCAL_QWEN3_4B, RUGGED_LOCAL_GEMMA4_E4B)
+# A 131,072 context allocation processed 124,005 native tokens without truncation,
+# but only one of three exact retrieval codes matched. Keep it separately named and
+# experimental until long-context retrieval is reliable.
+RUGGED_LOCAL_GEMMA4_E2B_LONG_CONTEXT_EXPERIMENT = Route(
+    Model(
+        "gemma4-e2b-it-qat-long-128k-experimental",
+        display_name="Gemma 4 E2B IT QAT (128K experimental)",
+        limits=TokenLimits(max_input_tokens=126_976, max_output_tokens=4_096),
+    ),
+    RUGGED_LOCAL_OPENAI,
+    upstream_model="gemma4:e2b-it-qat-long-128k-b128",
+    reasoning_efforts=("none",),
+    default_reasoning_effort="none",
+    supports_function_calling=True,
+    publish_limits=True,
+)
+RUGGED_LOCAL_EXPERIMENTAL_ROUTES = (RUGGED_LOCAL_GEMMA4_E2B_LONG_CONTEXT_EXPERIMENT,)
 
 
 @dataclass(frozen=True)
@@ -768,6 +785,7 @@ MISTRAL_ROUTES = tuple(Route(model, MISTRAL_CHAT, publish_limits=True) for model
 SERVED_ROUTES: tuple[Route | RouteAlias, ...] = (
     *_OLLAMA_PROXY_ROUTES,
     *RUGGED_LOCAL_CANDIDATE_ROUTES,
+    *RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
     # TODO(#9574): Tana limits are unknown for this reverse-engineered gateway.
     # Restore exposure with its key lane/fallback and wrapper only after review.
