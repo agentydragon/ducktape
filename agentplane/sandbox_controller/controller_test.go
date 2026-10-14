@@ -200,7 +200,7 @@ func TestReadyWaitsForTheBootstrapAndStopsOnItsFailure(t *testing.T) {
 		name, fact, reason  string
 		bootstrapped, ready bool
 	}{
-		{"none reported", "", "BootstrapPending", false, false},
+		{"none reported", "", "BootstrapNotReported", false, true},
 		{"running", "running", "BootstrapRunning", false, false},
 		{"succeeded", "succeeded", "BootstrapSucceeded", true, true},
 		{"failed", "failed", "BootstrapFailed", false, false},

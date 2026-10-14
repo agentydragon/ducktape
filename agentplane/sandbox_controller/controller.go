@@ -38,10 +38,10 @@ const (
 	RunnerConnected = "RunnerConnected"
 	// True once the Sandbox's bootstrap has run to success, or when it has none; a Sandbox-lifetime
 	// fact the connected runner republishes at each connect. False with `BootstrapFailed` when the
-	// bootstrap failed or was interrupted, which is terminal. Absent from a controller not configured
-	// with Leases.
+	// bootstrap failed or was interrupted, which is terminal. Unknown while the runner reports none,
+	// which does not hold `Ready`. Absent from a controller not configured with Leases.
 	Bootstrapped = "Bootstrapped"
-	// True when the Sandbox can take work: WorkloadReady, RunnerConnected and Bootstrapped. The
+	// True when the Sandbox can take work: WorkloadReady, RunnerConnected and no False Bootstrapped. The
 	// lifecycle phase is separate.
 	Ready = "Ready"
 	// Set True on a deleting Sandbox once its runner has sealed every Session and the ingress has
@@ -665,8 +665,8 @@ func (r *Reconciler) runnerConnectedCondition(ctx context.Context, sandbox *Sand
 }
 
 // bootstrappedCondition says how far the Sandbox's bootstrap has got, from the facts the incarnation's
-// runner published on its Lease. A Sandbox without one is bootstrapped. A runner that has not yet
-// reported leaves the condition False with `BootstrapPending`.
+// runner published on its Lease. A Sandbox without one is bootstrapped. A runner that has reported
+// nothing leaves the condition Unknown, since one that predates the fact never will.
 func (r *Reconciler) bootstrappedCondition(ctx context.Context, sandbox *Sandbox, incarnation *corev1.Pod) (metav1.Condition, error) {
 	condition := metav1.Condition{Type: Bootstrapped, Status: metav1.ConditionFalse, ObservedGeneration: sandbox.Generation}
 	if sandbox.Spec.Bootstrap == "" {
@@ -685,7 +685,8 @@ func (r *Reconciler) bootstrappedCondition(ctx context.Context, sandbox *Sandbox
 	}
 	switch facts.Bootstrap {
 	case BootstrapNone:
-		condition.Reason, condition.Message = "BootstrapPending", "the runner has not reported its bootstrap"
+		condition.Status = metav1.ConditionUnknown
+		condition.Reason, condition.Message = "BootstrapNotReported", "the runner has not reported its bootstrap"
 	case BootstrapRunning:
 		condition.Reason, condition.Message = "BootstrapRunning", "the bootstrap is running"
 	case BootstrapSucceeded:

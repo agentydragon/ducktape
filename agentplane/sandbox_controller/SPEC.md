@@ -107,10 +107,12 @@ incarnation never counts and a gateway rollout's brief drop does not. It is Fals
 nothing. A controller not configured to read Leases omits it.
 
 `Bootstrapped` is True once the Sandbox's bootstrap has run to success, and when the Sandbox has
-none (`NoBootstrap`). It is False with `BootstrapPending` until the incarnation's runner reports,
-`BootstrapRunning` while the script runs, and `BootstrapFailed` when it failed or was interrupted,
-which is terminal: the controller never retries it. A controller not configured to read Leases
+none (`NoBootstrap`). It is Unknown with `BootstrapNotReported` while the incarnation's runner has
+reported nothing, False with `BootstrapRunning` while the script runs, and False with
+`BootstrapFailed` when it failed or was interrupted, which is terminal: the controller never
+retries it. A controller not configured to read Leases
 omits it.
 
-`Ready` is True while all three hold, and otherwise False with the reason and message of the first
+`Ready` is True while `WorkloadReady` and `RunnerConnected` are True and `Bootstrapped` is not
+False (Unknown does not hold it), and otherwise False with the reason and message of the first
 that does not. It means the Sandbox can take work; the lifecycle phase is separate.
