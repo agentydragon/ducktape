@@ -688,7 +688,7 @@ flowchart TD
     WORKSPACE_VOLUME[In flight: activate typed Sandbox-owned workspaces]
     WORKSPACE_DATAVOLUME_RETIRE[Blocked: retire the old DataVolume workspace path]
     STATE_VOLUME_LAYOUT[Candidate: declare the state volume layout explicitly]
-    VM_GUEST_DECLARATIVE_STORAGE[Candidate: declarative guest disk initialization]
+    VM_GUEST_DECLARATIVE_STORAGE[In flight: declarative guest disk setup]
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
