@@ -152,7 +152,6 @@ py_library(
         "//agentplane/history_service:client",
         "//agentplane/postgres:wakeups",
         "//agentplane/runner_gateway:client",
-        "//agentplane/sandbox_service:client",
         "//agentplane/sandboxes:inventory",
         "//util:kubernetes",
         "//util/bazel:runfiles",

@@ -51,7 +51,7 @@ from util.net import pick_free_port
 
 APP_ENVIRONMENT = {
     "AGENTPLANE_SANDBOX_NAMESPACE": "test-sandbox-namespace",
-    "AGENTPLANE_SANDBOX_SERVICE_TARGET": "sandbox-service.test:8080",
+    "AGENTPLANE_DEFAULT_POLICY_SETS": json.dumps(["basic"]),
     "AGENTPLANE_RUNNER_GATEWAY_TARGET": "runner-gateway.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_CONTROL_TARGET": "{sandbox}-control.{namespace}.test:8080",
     "AGENTPLANE_RUNNER_GATEWAY_TOKEN_FILE": "/tokens/runner-gateway",
@@ -131,8 +131,8 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
     oidc = OIDCSettings()
 
     assert settings.sandbox_namespace == "test-sandbox-namespace"
-    assert settings.sandbox_service_request_timeout_s == 20
-    assert settings.sandbox_service_lifecycle_timeout_s == 310
+    assert settings.runner_gateway_request_timeout_s == 20
+    assert settings.runner_gateway_lifecycle_timeout_s == 310
     assert (settings.port, settings.token_audience) == (8080, "agentplane")
     assert settings.session_dispatcher_target is None
     assert str(settings.session_dispatcher_token_file) == "/var/run/secrets/agentplane-session-dispatcher/token"
@@ -145,23 +145,24 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
 
 
 @pytest.mark.parametrize("default_policy_sets", [None, [], ["basic"]])
-def test_sandbox_service_target_is_required_only_for_legacy_lifecycle(
+def test_default_policy_sets_are_required_for_direct_lifecycle(
     default_policy_sets: list[str] | None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     for name, value in APP_ENVIRONMENT.items():
         monkeypatch.setenv(name, value)
-    monkeypatch.delenv("AGENTPLANE_SANDBOX_SERVICE_TARGET")
+    monkeypatch.delenv("AGENTPLANE_DEFAULT_POLICY_SETS")
     # This value is deployed through the YAML ConfigMap, not an environment string.
     config = tmp_path / "config.yaml"
-    config.write_text(f"default_policy_sets: {json.dumps(default_policy_sets)}\n")
+    config.write_text(
+        "" if default_policy_sets is None else f"default_policy_sets: {json.dumps(default_policy_sets)}\n"
+    )
     monkeypatch.setenv("AGENTPLANE_CONFIG_FILE", str(config))
 
     if default_policy_sets is None:
-        with pytest.raises(ValidationError, match="sandbox_service_target is required"):
+        with pytest.raises(ValidationError, match="default_policy_sets"):
             Settings(_cli_parse_args=[])
     else:
         settings = Settings(_cli_parse_args=[])
-        assert settings.sandbox_service_target is None
         assert settings.default_policy_sets == set(default_policy_sets)
 
 

@@ -744,7 +744,6 @@ flowchart TD
     NOTIFICATIONS_VIA_DISPATCHER --> NOTIFICATION_GATEWAY_SEND_REMOVE
     APP_GATEWAY_SEND_REMOVE --> PROXY_START_METHODS_DISPATCHER_ONLY
     NOTIFICATION_GATEWAY_SEND_REMOVE --> PROXY_START_METHODS_DISPATCHER_ONLY
-    SANDBOX_SERVICE_CONFIG_REMOVE --> SANDBOX_SERVICE_REMOVE
     STATE_VOLUME_LAYOUT --> STATE_VOLUME_LAYOUT_FALLBACK_REMOVE
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE
     RUNNER_HEARTBEAT_SPLIT[Candidate: runner-only heartbeat type]
@@ -1070,21 +1069,13 @@ never this field. Per-Session idle times stay out of Kubernetes.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `SANDBOX_SERVICE_CONFIG_REMOVE` — stop configuring the retired Sandbox Service clients
-
-**Assigned to the Sandbox Service worker; recheck the #10466 app image pin before config removal.**
-The accepting image was verified pinned in testing and staging on 2026-10-14. Direct app lifecycle config
-has rolled out; the optional-target receiver and conditional channel/health probe have merged.
-Remove the app's `sandbox_service_target`, token projection and obsolete network edge, and the
-Notification Service's unused `sandbox_service` config, token and egress rule. Check all remaining
-readers before removing a projected token. Generate manifests canonically and verify both rollouts
-before deleting strict settings fields. Update the deployed traffic diagram with the config change.
-
 ### `SANDBOX_SERVICE_REMOVE` — delete the Sandbox Service and its legacy clients
 
-**Blocked on `SANDBOX_SERVICE_CONFIG_REMOVE` rolled out and all caller images using direct inventory.**
-Delete the app's gRPC lifecycle fallback, obsolete settings/client/channel/probe code, and Notification's
-unused `SandboxServiceSettings`. Remove the Service, Deployment, ServiceAccount, Role/Binding,
+**Blocked on the strict direct-only app image being pinned and healthy in both environments, and all
+remaining caller images using the replacement inventory.** The manifests no longer configure a
+Sandbox Service target or token, and the live app currently follows the direct path. Remove the app's
+legacy client and the Notification Service's unused `SandboxServiceSettings`. Remove the Service,
+Deployment, ServiceAccount, Role/Binding,
 TokenReview grants, network rules, image publication/Flux registration and migration-free service wiring.
 Delete its proto/service client, console/grant RPCs, server and tests, after moving any still-used shared
 inventory code into `agentplane/sandboxes/`. Search the whole repo, including acceptance and isolated

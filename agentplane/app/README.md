@@ -1,8 +1,7 @@
 # Agentplane integration app
 
 The human-facing frontend over Agentplane's services: a FastAPI service that manages sandboxes
-through the Kubernetes API when `default_policy_sets` enables its direct path, with the Sandbox
-Service as a gRPC lifecycle fallback, and runner sessions through the Runner Gateway, reads their archived
+through the Kubernetes API as the requesting operator, and runner sessions through the Runner Gateway, reads their archived
 Session history and Threads (each Session's conversation projection) from the History Service, and
 synchronizes selected rows and content to the browser through authenticated Electric endpoints. It also presents Actions, operator
 decisions and Connection consent.
@@ -10,17 +9,17 @@ The staging instance lives in `cluster/k8s/agentplane-staging/`.
 
 ## Sandbox Service retirement
 
-With `default_policy_sets` configured (including an empty set), the app uses Kubernetes directly and
-opens no Sandbox Service channel or health probe. `sandbox_service_target` is optional in that mode;
-without direct config it remains required and selects the temporary gRPC lifecycle client. The old
-manifest target and projected token must remain until this accepting app image is pinned. Remaining
-config, client and service removal is tracked in the [task DAG](../plans/task_dag.md#sandbox_service_remove--remove-the-sandbox-service).
+The app always uses the shared `agentplane/sandboxes` inventory for lifecycle operations. Its required
+`default_policy_sets` setting comes from the app ConfigMap, including when it is an empty set. The
+optional Sandbox Service fallback and its settings reader are removed. The server and its remaining
+resources are retired separately after this app image is pinned in both environments; see the
+[task DAG](../plans/task_dag.md#sandbox_service_remove--remove-the-sandbox-service).
 
 Rollout evidence, 2026-10-14: testing and staging ConfigMaps both contain `basic` and
 `inference-experiments` as `default_policy_sets`; their app Deployments use
-`devel-20261014073924-0483e50` with observed generation current and updated/Ready replicas 1/1 and
-2/2 respectively. This confirms the direct-path configuration rollout, not the later optional-target
-image rollout or end-to-end lifecycle acceptance.
+`devel-20261014203121-a3161b0` with updated/Ready replicas 1/1 and 2/2 respectively. Those images
+selected the direct path from the same ConfigMaps; pinning this strict direct-only image remains a gate
+before deleting the server resources.
 
 ## Dependency boundary
 
@@ -31,9 +30,8 @@ attachments, and app-only provisioning or prompt/bootstrap state, including in v
 
 Backend responsibilities needed by another service move to an independent owner, not a temporary
 app endpoint. The shared `agentplane/sandboxes` library owns Sandbox lifecycle rules; the app uses
-it directly as the requesting operator, while the [Sandbox Service](../sandbox_service/README.md)
-remains a gRPC compatibility caller until its removal; the
-[Runner Gateway](../runner_gateway/README.md) owns runner Sessions and commands; the
+it directly as the requesting operator, and the legacy [Sandbox Service](../sandbox_service/README.md)
+is being retired. The [Runner Gateway](../runner_gateway/README.md) owns runner Sessions and commands; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold;
 the app is a client of all three.
 Notifications depends on that backend and Actions, not this app. The app's own state is browser
@@ -65,9 +63,9 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
 - `presets.py`: app-owned `SandboxPreset` and `ThreadPreset` configuration and concrete launch
   resolution. Preset names stop at the app boundary; Kubernetes and the runner receive resolved
   fields.
-- Sandbox provisioning uses the shared `agentplane/sandboxes` inventory on the direct path, while
-  `SandboxServiceClient` remains the unset-config fallback; Sessions and commands are reached through
-  `RunnerGatewayClient`. The app reads Kubernetes projections for UI updates.
+- Sandbox provisioning uses the shared `agentplane/sandboxes` inventory directly as the requesting
+  operator; Sessions and commands are reached through `RunnerGatewayClient`. The app reads Kubernetes
+  projections for UI updates.
 - `egress_access.py`: egress-policy/binding projections for the UI, and the operator's grants and
   revocations of `PolicyBinding`s, written through the Kubernetes API by the app itself. Bindings remain
   desired-state grants, with expiry/revocation per binding; Flux-owned and Sandbox-controlled bindings
@@ -112,8 +110,8 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   The private Electric service reads PostgreSQL logical replication; app replicas do not retain
   per-listener thread copies. The scope read is a long poll held until the thread's first fold.
 - `system_status.py`: the System page's checks. `GET /system/status` probes, concurrently and each
-  within a 5-second budget, the gRPC health service of the Sandbox Service, Runner Gateway and
-  History Service and the `/healthz` of the Action Service, Notification Service and egress proxy
+  within a 5-second budget, the gRPC health service of the Runner Gateway and History Service and
+  the `/healthz` of the Action Service, Notification Service and egress proxy
   admin port, plus Electric's `/v1/health`; a probe that fails or times out is `down` with its
   reason, never an error response. LLM ingress is not probed: the app's NetworkPolicy has no egress
   to it. The Kubernetes API is not probed either; the freshness of the live views shows it.

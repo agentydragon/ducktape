@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Set
 from pathlib import Path
-from typing import ClassVar, Self
+from typing import ClassVar
 
-from pydantic import Field, field_serializer, model_validator
+from pydantic import Field, field_serializer
 from pydantic_settings import SettingsConfigDict
 
 from agentplane.app.action_federation_settings import ActionFederationSettings
@@ -22,7 +22,7 @@ class AppSettingsConfig(YamlFileSettings):
     """Deployment-authored app settings, before runtime-only inputs arrive.
 
     The runtime `Settings` model extends this, so cdk8s can construct this typed fragment
-    without fabricating the app's namespace, Sandbox Service target, or database URL.
+    without fabricating the app's namespace or database URL.
     """
 
     config_file_env: ClassVar[str] = "AGENTPLANE_CONFIG_FILE"
@@ -39,10 +39,9 @@ class AppSettingsConfig(YamlFileSettings):
     sandbox_presets: dict[str, SandboxPreset] = Field(
         default_factory=dict, description="App-owned Sandbox launch-form presets keyed by displayable name."
     )
-    default_policy_sets: Set[str] | None = Field(
-        default=None,
-        description="PolicySets every new Sandbox is bound to. When set, the app creates, suspends, resumes "
-        "and deletes Sandboxes through Kubernetes itself rather than through the Sandbox Service.",
+    default_policy_sets: Set[str] = Field(
+        description="PolicySets every new Sandbox is bound to. The app creates, suspends, resumes and deletes "
+        "Sandboxes through Kubernetes itself."
     )
     kubernetes_grants: dict[str, KubernetesGrant] = Field(
         default_factory=dict,
@@ -52,9 +51,9 @@ class AppSettingsConfig(YamlFileSettings):
     action_federation: ActionFederationSettings
 
     @field_serializer("default_policy_sets")
-    def serialize_default_policy_sets(self, value: Set[str] | None) -> list[str] | None:
+    def serialize_default_policy_sets(self, value: Set[str]) -> list[str]:
         """Keep the generated ConfigMap's list stable while Settings still parses it as a set."""
-        return None if value is None else sorted(value)
+        return sorted(value)
 
 
 class Settings(AppSettingsConfig):
@@ -68,11 +67,6 @@ class Settings(AppSettingsConfig):
     sandbox_namespace: str = Field(
         description="Namespace whose Sandbox inventory the app observes. Separate from the app's own "
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
-    )
-    sandbox_service_target: str | None = Field(
-        default=None,
-        min_length=1,
-        description="The Sandbox Service's gRPC host:port; required only without direct Kubernetes lifecycle config.",
     )
     runner_gateway_target: str = Field(
         min_length=1, description="The Runner Gateway's gRPC host:port, serving Sessions."
@@ -91,7 +85,6 @@ class Settings(AppSettingsConfig):
     history_service_target: str = Field(min_length=1)
     notifications_url: HttpEndpointUrl
     notifications_token_file: Path
-    sandbox_service_token_file: Path = Path("/var/run/secrets/agentplane-sandbox-service/token")
     runner_gateway_token_file: Path = Field(
         description="The rotating projected ServiceAccount token for the Runner Gateway audience."
     )
@@ -102,8 +95,8 @@ class Settings(AppSettingsConfig):
     session_dispatcher_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
     history_service_token_file: Path = Path("/var/run/secrets/agentplane-history-service/token")
     history_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
-    sandbox_service_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
-    sandbox_service_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
+    runner_gateway_request_timeout_s: float = Field(default=20, gt=0, allow_inf_nan=False)
+    runner_gateway_lifecycle_timeout_s: float = Field(default=310, gt=0, allow_inf_nan=False)
 
     runner_gateway_command_admission_timeout_s: float = Field(
         default=20,
@@ -143,9 +136,3 @@ class Settings(AppSettingsConfig):
         '["system:serviceaccount:ns:sa"]. A token for any other subject is refused however it was '
         "minted, and the default accepts none at all, leaving an OIDC session the only way in.",
     )
-
-    @model_validator(mode="after")
-    def require_sandbox_lifecycle_backend(self) -> Self:
-        if self.default_policy_sets is None and self.sandbox_service_target is None:
-            raise ValueError("sandbox_service_target is required when default_policy_sets is absent")
-        return self

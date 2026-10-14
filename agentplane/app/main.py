@@ -49,7 +49,6 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.service_process import configure_logging, kubernetes_configuration
 from agentplane.subjects import ServiceAccountRef
@@ -118,11 +117,6 @@ async def async_main(settings: Settings) -> None:
         httpx.AsyncClient(base_url=str(settings.notifications_url), timeout=5) as notifications_http,
         httpx.AsyncClient(base_url=str(settings.egress_admin_url), timeout=settings.egress_admin_timeout) as admin_http,
         httpx.AsyncClient(base_url=str(settings.electric_url), timeout=httpx.Timeout(65, connect=5)) as electric_http,
-        (
-            dial(settings.sandbox_service_target)
-            if settings.default_policy_sets is None and settings.sandbox_service_target is not None
-            else nullcontext()
-        ) as sandbox_service_channel,
         dial(settings.runner_gateway_target) as gateway_channel,
         (
             dial(settings.session_dispatcher_target)
@@ -141,34 +135,21 @@ async def async_main(settings: Settings) -> None:
         # Cast so `patch_namespaced_custom_object` accepts `_content_type` (see util.kubernetes).
         custom_objects = cast(CustomObjectsClient, CustomObjectsApi(api))
         core_v1 = CoreV1Api(api)
-        # CLEANUP(added 2026-10-14): Keep only the SandboxAccess branch, and make `default_policy_sets`
-        #   required, once the deployed manifests pass it everywhere.
-        inventory: SandboxServiceClient | SandboxAccess
-        if settings.default_policy_sets is None:
-            assert sandbox_service_channel is not None  # Settings validates the legacy backend's target.
-            inventory = SandboxServiceClient(
-                sandbox_service_channel,
-                namespace=settings.sandbox_namespace,
-                token_file=settings.sandbox_service_token_file,
-                request_timeout_s=settings.sandbox_service_request_timeout_s,
-                lifecycle_timeout_s=settings.sandbox_service_lifecycle_timeout_s,
-            )
-        else:
-            inventory = SandboxAccess(
-                SandboxInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects, core_v1=core_v1),
-                default_policy_sets=settings.default_policy_sets,
-                caller=ServiceAccountRef(namespace=settings.sandbox_namespace, name="agentplane-app"),
-            )
+        inventory = SandboxAccess(
+            SandboxInventory(namespace=settings.sandbox_namespace, custom_objects=custom_objects, core_v1=core_v1),
+            default_policy_sets=settings.default_policy_sets,
+            caller=ServiceAccountRef(namespace=settings.sandbox_namespace, name="agentplane-app"),
+        )
         gateway = RunnerGatewayClient(
             gateway_channel,
             token_file=settings.runner_gateway_token_file,
             command_admission_timeout_s=settings.runner_gateway_command_admission_timeout_s,
-            request_timeout_s=settings.sandbox_service_request_timeout_s,
+            request_timeout_s=settings.runner_gateway_request_timeout_s,
             control=SandboxControlClient(
                 control_target=settings.runner_gateway_control_target,
                 token_file=settings.runner_gateway_token_file,
-                request_timeout_s=settings.sandbox_service_request_timeout_s,
-                lifecycle_timeout_s=settings.sandbox_service_lifecycle_timeout_s,
+                request_timeout_s=settings.runner_gateway_request_timeout_s,
+                lifecycle_timeout_s=settings.runner_gateway_lifecycle_timeout_s,
             ),
         )
         dispatcher = (
@@ -234,11 +215,6 @@ async def async_main(settings: Settings) -> None:
             notifications_token_file=settings.notifications_token_file,
             system_status=SystemStatusChecker(
                 [
-                    *(
-                        [grpc_health_probe("Sandbox Service", sandbox_service_channel)]
-                        if sandbox_service_channel is not None
-                        else []
-                    ),
                     grpc_health_probe("Runner Gateway", gateway_channel),
                     grpc_health_probe("History Service", history_health_channel),
                     http_health_probe("Action Service", actions_http, "/healthz"),
