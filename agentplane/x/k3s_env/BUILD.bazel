@@ -140,6 +140,7 @@ py_test(
         "//agentplane/runner:harness",
         "//util/bazel:runfiles",
         "@pypi//httpx",
+        "@pypi//more_itertools",
         "@pypi//protobuf",
         "@pypi//pytest_bazel",
         "@pypi//pyyaml",
