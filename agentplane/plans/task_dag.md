@@ -791,7 +791,7 @@ or the explicit layout contract for workspace PVCs.
 
 ### `WORKSPACE_VOLUME` — roll out explicitly typed Sandbox-owned workspaces
 
-**In flight (Codex, 2026-10-14); template activation is ready for draft review on top of merged #10493.**
+**In flight (Codex, 2026-10-14); template activation is in draft #10507, based on devel after merged #10493.**
 The operator-directed existing Sandbox cutoff is complete; [cutoff evidence](workspace_cutoff.md)
 records the empty inventory verified on 2026-10-14. The implementation merged in #10440 adds
 explicit workspace layouts, retained PVC identity and attachment compatibility checks;
