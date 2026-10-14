@@ -8,6 +8,10 @@ their sample counts and limitations. Host config lives in `nix/nixos/hosts/rugge
 
 ## Backends
 
+This table preserves the initial October 13 checks. For measured long-context
+capacity, see [Context capacity](#context-capacity); for repeated coding quality
+and latency, see [Completed coding cohorts](#completed-coding-cohorts).
+
 | Backend                                   | State (2026-10-13)                                      | Gemma 4 E2B decode | Notes                                                                                                         |
 | ----------------------------------------- | ------------------------------------------------------- | -----------------: | ------------------------------------------------------------------------------------------------------------- |
 | Ollama 0.40.2, Vulkan on the iGPU         | Running on `127.0.0.1:11436`, model `gemma4:e2b-it-qat` |        12-17 tok/s | Cold load 31 s. Earlier notes measured ~22 tok/s.                                                             |
@@ -154,8 +158,8 @@ Speed and memory on the iGPU at `num_ctx=32768` (single runs; method, prefill ta
 
 ¹ Ollama reports 0.27 GiB for `gemma4:e4b`, which does not match its weights.
 
-- No crash at prompts up to ~21k tokens with `num_ctx=32768` on any of the four. Above 32k and
-  the service's 131072 default remain untested.
+- These earlier runs completed prompts up to ~21k tokens with `num_ctx=32768`.
+  The later Gemma E2B long-context experiment below is separate.
 - Prefill is the cost: 400-600 tok/s at 0.5k falls to 65-90 tok/s at 21k, so a 21k first prompt
   takes 4-6 minutes. Follow-up turns reuse the cache.
 - These earlier runs measured speed only; the repeated coding campaign below is separate.
@@ -186,10 +190,54 @@ at 128k, plus sliding-window storage. Actual runtime allocation must still be
 measured. Google's [model card](https://ai.google.dev/gemma/docs/core/model_card_4)
 also declares 128k context for E2B and E4B.
 
-The 32k E2B runner log narrows that estimate: with shared KV layers it allocated
-only 192 MiB of F16 KV for three non-sliding layers, plus 18 MiB for 12 sliding
-layers. Linear allocation scaling suggests about 786 MiB at 128k. This improves
-the memory-fit outlook, but does not predict full-prompt processing time.
+The initial [long-context experiment](runs/2026-10-14_rugged_long_context/) successfully
+allocated **131,072 context** for E2B with F16 KV and Flash Attention. The runner
+reported 768 MiB of KV for three shared full-attention layers, plus 30 MiB for
+12 sliding layers. Its sampled resident GTT was **6.92 GiB**; host available
+memory remained about 13 GiB. Ollama's `size_vram` substantially underreported
+that driver counter.
+
+Allocation did not establish usable 128k inference. The first actual **31,984-token**
+prompt failed during prefill: the runner logged progress to 16,384 tokens, then
+aborted with Vulkan `ErrorDeviceLost`. At the same timestamp, the kernel recorded
+an Intel `xe` GPU job timeout in that runner. Available memory stayed above
+12.14 GiB and full memory-pressure stall average was zero; neither an OOM nor the
+experiment's memory guard caused the exit. The runner used batch/microbatch 2048. A batch-128 retry passed that point and reached logged progress of 21,888
+tokens, then the experiment's global memory-pressure guard stopped it. Local
+Bazel build work overlapped that retry; the resulting stall pressure cannot be
+attributed to inference alone. No completed 32k or 128k prompt is claimed for
+these two attempts. Ollama's `/api/ps` still listed the model after the child died, so that
+endpoint alone is not a successful-execution check.
+
+Disabling Flash Attention while retaining F16 KV, batch/microbatch 128, and
+131,072 total context allowed both real prompts to complete:
+
+| Native input tokens | Cached tokens | Prefill seconds | Prefill tok/s | Time to first token | Request seconds | Exact retrieval |
+| ------------------: | ------------: | --------------: | ------------: | ------------------: | --------------: | --------------: |
+|              31,984 |             0 |          61.875 |         516.9 |             66.21 s |           69.22 |             3/3 |
+|             124,005 |             0 |         484.679 |         255.8 |            487.67 s |          496.11 |             1/3 |
+
+The 124k request was **not truncated** and generated 49 tokens in 8.450 seconds
+(5.80 tokens/s). It recovered the middle code but corrupted the codes near the
+beginning and end. Thus **128k allocation and real 124k processing work; reliable
+retrieval across that window is not established**. These are single diagnostic
+runs with three exact-match probes, not a long-context quality benchmark.
+All layers remained on the Vulkan GPU. The 124k run had sampled peak
+driver-reported resident GTT of 6,606,012 KiB (6.30 GiB), minimum host available
+memory of 11,769,704 KiB (11.22 GiB), and maximum full PSI ten-second average of
+11.99%. The completed 32k run peaked at 6,515,024 KiB resident GTT (6.21 GiB).
+
+The successful runs used a revised pressure guard: stop immediately below 8 GiB
+available memory, or after nine consecutive two-second samples with full PSI at
+least 25%. The earlier single-sample 10% guard also censored one Flash-Attention-off
+attempt despite ample available memory. Those attempts remain in the raw record;
+they are not model failures or successful completions.
+
+The result is consistent with the Intel Vulkan Flash Attention prefill problem
+reported in [llama.cpp #27638](https://github.com/ggml-org/llama.cpp/issues/27638).
+That issue describes slow scalar prefill paths and device loss on other Intel
+hardware. We have not instrumented rugged's shader selection, so this is a
+plausible explanation, not a proven identical internal cause.
 
 The tested OpenVINO Qwen pipeline reserves 8192 input tokens plus 2048 response
 tokens; its longest completed diagnostic prompt so far was 4538 tokens.
@@ -276,13 +324,22 @@ hardware-throughput ceilings.
 | --------------------------------------- | ------- | -------------: | -------------------------: | ---------------------: | ------------------: | ----------------------: |
 | Qwen2.5-Coder 1.5B INT4, OpenVINO NPU   | Battery |          41/60 |                39/60 (65%) |                  15.00 |               13.12 |                   181.5 |
 | Qwen3 4B Instruct Q4_K_M, Ollama Vulkan | AC      |          57/60 |                54/60 (90%) |                   8.50 |               28.36 |                   209.5 |
+| Gemma 4 E4B, Ollama Vulkan              | AC      |          60/60 |              58/60 (96.7%) |                  19.41 |               46.32 |                     813 |
 
-Both completed all 60 generations; neither scorer recorded a test timeout.
+All completed 60 generations; none of their scorers recorded a test timeout.
 Qwen3's generations all ended normally, rather than at the output cap. Its
 20 first-repeat requests had median latency 8.67 s and native prefill duration
 0.317 s. Including cached repeats lowers median prefill duration to 0.052 s;
 use the varied-prefix speed probes above for uncached prefill comparisons.
 Non-streaming Ollama responses do not provide an observed client TTFT.
+
+E4B generated much longer responses, so its higher decode throughput did not
+translate into shorter coding requests. Three responses hit the 2048-token cap;
+all three nevertheless passed both test sets after the same upstream sanitizer.
+The two augmented-test failures were on a different task. Its corrected tool
+probe passed three exact `read(main.py)` calls and tool-result follow-ups; an
+earlier 64-token probe cut off a long file path and is retained as a failed
+protocol attempt, not counted as successful tool use.
 
 Qwen3's sampled peak driver-reported resident GTT was **7.477 GiB**
 (7,840,152 KiB), with process RSS high-water mark **1.985 GiB**. The two-second
@@ -291,6 +348,27 @@ memory views and are not added together. Sampling began after the first coding
 requests, so this is not a measured initialization peak. NPU peak RSS includes
 pipeline initialization; its configuration reserves 8192 input + 2048 output
 tokens, versus the GPU's 32,768 total allocation.
+
+### Observed Pareto tradeoffs
+
+For the two completed AC GPU coding cohorts, neither candidate dominates:
+Qwen3 4B has lower median request latency (8.50 versus 19.41 seconds), while
+E4B passed more augmented-test samples (58 versus 54 of 60). E4B's sampled
+resident GTT peak was 7.855 GiB versus Qwen's 7.477 GiB; E4B process RSS
+high-water mark was 1.640 GiB. Sampling has gaps, including a deliberate pause
+between E4B batches, and does not establish initialization peaks.
+
+The NPU cohort has lower observed quality and slower requests than Qwen4 in
+these runs, but it ran on battery with a different static token reservation.
+It remains a separate low-memory/device option; this is not a controlled
+cross-device dominance claim. No energy measurements were taken.
+
+E2B stopped at **25/60 unscored generations** when the user prioritized long
+context. Coder 7B, Qwen3 8B, and LiteRT-LM have speed/protocol measurements but
+no completed coding cohort in this campaign. Consequently, the frontier above
+covers only the completed comparisons. E2B's new 124k result adds a demonstrated
+capacity option, with weak exact retrieval and no corresponding long-context
+coding score.
 
 ## Earlier agent behavior of Gemma 4 E2B
 
@@ -358,6 +436,22 @@ some coding generations overlapped manifest preparation. The Qwen IR pins,
 generations, and timing probes are in
 [PR #10451](https://github.com/agentydragon/ducktape/pull/10451).
 
+The [AC NPU repeat](runs/2026-10-14_rugged_long_context/) sent the same six
+varied-prefix speed requests used for the GPU comparison, with 256 output
+tokens each:
+
+| NPU input tokens | Repeats | Median decode tok/s | Median TTFT | Median request seconds |
+| ---------------- | ------: | ------------------: | ----------: | ---------------------: |
+| 512–514          |       3 |               45.76 |      384 ms |                    6.0 |
+| 3738–3739        |       3 |               41.10 |     1833 ms |                    8.0 |
+
+This pipeline reserved 8192 input + **256** response tokens, versus 2048
+response tokens for the coding cohort. Load/compilation took 79.53 s. Power,
+pipeline configuration, and workstation conditions all changed; the speedup
+is not a measured effect of AC power alone. The NPU driver's observed resident
+memory reached 2,143,392 KiB (**2.04 GiB**); peak process RSS during load was
+2,398,936 KiB (**2.29 GiB**). These counters are not added together.
+
 [PR #10443](https://github.com/agentydragon/ducktape/pull/10443) contains raw logs,
 version/hash pins, and reproduction commands. It bounds the dormant llama.cpp
 service to 2048 context / one slot and supplies its loader path; that service
@@ -371,6 +465,12 @@ the old effectively plaintext token into a SOPS-encrypted secret shared by the
 host and LiteLLM, disables Ollama cloud features, and keeps a single model and
 request active at a time. The proxy allows model discovery and chat completions;
 Ollama administration endpoints remain inaccessible through it.
+
+[PR #10470](https://github.com/agentydragon/ducktape/pull/10470) is merged with
+passing CI. It adds Qwen3 4B and Gemma E4B at a 32k shared context budget, advertises
+tool calling, and forwards disabled reasoning through the tested LiteLLM adapter.
+It supersedes the closed NPU-only draft #7112. Its initially failing manifest
+check was resolved by regenerating the manifests.
 
 Temporary nginx authentication/routing checks and generated LiteLLM adapter
 checks pass. NixOS activation and a real cluster-to-rugged request are still
