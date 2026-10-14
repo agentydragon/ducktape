@@ -29,42 +29,45 @@ class SessionDispatcherClient:
         common = {"sandbox": sandbox, "session_id": session_id, "command_id": command.command_id}
         match operation:
             case "submit_input":
-                response = await self._unary(
+                submit_response = await self._unary(
                     self.stub.SubmitInput,
                     session_dispatcher_pb2.SubmitInputRequest(**common, text=command.submit_input.text),
                 )
-                return response.dispatch
+                return submit_response.dispatch
             case "change_model":
-                response = await self._unary(
+                model_response = await self._unary(
                     self.stub.ChangeModel,
                     session_dispatcher_pb2.ChangeModelRequest(**common, model=command.change_model.model),
                 )
-                return response.dispatch
+                return model_response.dispatch
             case "change_reasoning_effort":
-                response = await self._unary(
+                effort_response = await self._unary(
                     self.stub.ChangeReasoningEffort,
                     session_dispatcher_pb2.ChangeReasoningEffortRequest(
                         **common, effort=command.change_reasoning_effort.effort
                     ),
                 )
-                return response.dispatch
+                return effort_response.dispatch
             case "stop_runner_session":
-                response = await self._unary(
+                stop_response = await self._unary(
                     self.stub.StopRunnerSession, session_dispatcher_pb2.StopRunnerSessionRequest(**common)
                 )
-                return response.dispatch
+                return stop_response.dispatch
             case "interrupt_turn":
-                response = await self._unary(
+                interrupt_response = await self._unary(
                     self.stub.InterruptTurn,
                     session_dispatcher_pb2.InterruptTurnRequest(**common, turn_id=command.interrupt_turn.turn_id),
                 )
                 dispatch = session_dispatcher_pb2.Dispatch(
-                    command_id=command.command_id, session_id=session_id, sandbox=sandbox, state=response.state
+                    command_id=command.command_id,
+                    session_id=session_id,
+                    sandbox=sandbox,
+                    state=interrupt_response.state,
                 )
-                if response.HasField("reason"):
-                    dispatch.reason = response.reason
-                if response.HasField("admission"):
-                    dispatch.admission.CopyFrom(response.admission)
+                if interrupt_response.HasField("reason"):
+                    dispatch.reason = interrupt_response.reason
+                if interrupt_response.HasField("admission"):
+                    dispatch.admission.CopyFrom(interrupt_response.admission)
                 return dispatch
             case _:
                 raise ValueError(f"unsupported Session Dispatcher command operation: {operation!r}")
