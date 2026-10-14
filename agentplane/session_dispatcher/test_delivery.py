@@ -207,6 +207,13 @@ async def test_a_wake_retry_rechecks_ownership_after_failover(
     sandbox = sandboxes.get_sandbox(SANDBOX)
     assert sandbox is not None
     stale_owner = delivery._owners[sandbox.metadata.uid]
+
+    # Keep this replica's cached proof stale while the test makes the Lease expire; otherwise the
+    # delivery loop's periodic renewal can race the test's read/replace and prevent failover.
+    async def keep_cached_owner() -> None:
+        pass
+
+    monkeypatch.setattr(delivery, "_sync_ownership", keep_cached_owner)
     coordination = k8s_client.CoordinationV1Api(cluster.api)
 
     calls: list[str] = []
