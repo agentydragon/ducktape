@@ -816,7 +816,7 @@ def generate_manifests(root: Path) -> None:
         seaweedfs_operator_kustomization,
     )
     ollama_app_artifact = artifact("ollama-app", ollama_app.OUTPUT_DIR)
-    ollama_app.ollama(
+    ollama_kustomization = ollama_app.ollama(
         flux_chart,
         # No `namespace=`: that transformer would also rewrite the RoleBinding's `claude-sandbox` subject.
         write_directory(
@@ -1011,7 +1011,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, write_directory(root, kubectl_passthrough_mcp_artifact, kubectl_passthrough_mcp.chart)
     )
     forgejo_artifact = artifact("forgejo", f"{HAND_WRITTEN_ROOT}/forgejo")
-    forgejo_flux_kustomizations.forgejo(
+    forgejo_kustomization = forgejo_flux_kustomizations.forgejo(
         flux_chart,
         forgejo_artifact,
         cnpg_kustomization,
@@ -1518,7 +1518,7 @@ def generate_manifests(root: Path) -> None:
         flux_chart, grocy_vallejo_user_perms_artifact, grocy_vallejo_kustomization
     )
     ha_mcp_artifact = artifact("ha-mcp", ha_mcp.OUTPUT_DIR, ha_mcp.PINS_DIR)
-    ha_mcp.ha_mcp(
+    ha_mcp_kustomization = ha_mcp.ha_mcp(
         flux_chart,
         write_directory(
             root, ha_mcp_artifact, ha_mcp.chart, components=[posixpath.relpath(ha_mcp.PINS_DIR, ha_mcp.OUTPUT_DIR)]
@@ -1695,11 +1695,14 @@ def generate_manifests(root: Path) -> None:
         "haku-console": haku_console_kustomization,
         # Bootstrap roots have no generated owner Kustomization to depend on.
         "flux-system": None,
+        "forgejo": forgejo_kustomization,
         "gatus": gatus_kustomization,
         "grocy-sf": grocy_sf_kustomization,
         "grocy-vallejo": grocy_vallejo_kustomization,
+        "ha-mcp": ha_mcp_kustomization,
         "haku-ci": haku_ci_kustomization,
         "haku-sandbox": haku_rbac_kustomization,
+        "kyverno": kyverno_kustomization,
         "litellm": litellm_kustomization,
         "local-path-storage": local_path_provisioner_kustomization,
         "loki": loki_kustomization,
@@ -1708,6 +1711,7 @@ def generate_manifests(root: Path) -> None:
         "node-feature-discovery": node_feature_discovery_kustomization,
         "nvidia-device-plugin": nvidia_device_plugin_kustomization,
         "oci-cache": oci_cache_kustomization,
+        "ollama": ollama_kustomization,
         "openebs": openebs_lvm_kustomization,
         "plaid-mcp": plaid_mcp_kustomization,
         "proxmox-proxy": proxmox_proxy_kustomization,

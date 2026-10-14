@@ -3,6 +3,7 @@ kind: Namespace
 metadata:
   labels:
     goldilocks.fairwinds.com/vpa-update-mode: "off"
+    rbac.ducktape.io/agent-readable-logs: "true"
   name: kyverno
 spec: {}
 ---

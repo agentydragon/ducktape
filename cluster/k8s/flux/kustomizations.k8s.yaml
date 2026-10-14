@@ -4413,6 +4413,27 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Delegates managed RoleBinding reconciliation in forgejo.
+  name: agentplane-staging-binding-delegation-forgejo
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: forgejo
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/forgejo
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Delegates managed RoleBinding reconciliation in gatus.
   name: agentplane-staging-binding-delegation-gatus
   namespace: ducktape-flux
@@ -4476,6 +4497,27 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Delegates managed RoleBinding reconciliation in ha-mcp.
+  name: agentplane-staging-binding-delegation-ha-mcp
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: ha-mcp
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/ha-mcp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Delegates managed RoleBinding reconciliation in haku-ci.
   name: agentplane-staging-binding-delegation-haku-ci
   namespace: ducktape-flux
@@ -4527,6 +4569,27 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/haku-sandbox
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed RoleBinding reconciliation in kyverno.
+  name: agentplane-staging-binding-delegation-kyverno
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: kyverno
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/kyverno
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -4695,6 +4758,27 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/oci-cache
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Delegates managed RoleBinding reconciliation in ollama.
+  name: agentplane-staging-binding-delegation-ollama
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: ollama
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agentplane/binding-delegation/agentplane-staging/ollama
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -5106,6 +5190,27 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Static agent diagnostics in forgejo; policy shared with managed agents.
+  name: agent-namespace-rbac-forgejo
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/forgejo
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Static agent diagnostics in gatus; policy shared with managed agents.
   name: agent-namespace-rbac-gatus
   namespace: ducktape-flux
@@ -5169,6 +5274,27 @@ apiVersion: kustomize.toolkit.fluxcd.io/v1
 kind: Kustomization
 metadata:
   annotations:
+    description: Static agent diagnostics in ha-mcp; policy shared with managed agents.
+  name: agent-namespace-rbac-ha-mcp
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/ha-mcp
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
     description: Static agent diagnostics in haku-ci; policy shared with managed agents.
   name: agent-namespace-rbac-haku-ci
   namespace: ducktape-flux
@@ -5178,6 +5304,27 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/haku-ci
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in kyverno; policy shared with managed agents.
+  name: agent-namespace-rbac-kyverno
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/kyverno
   prune: true
   retryInterval: 1m
   sourceRef:
@@ -5346,6 +5493,27 @@ spec:
       namespace: ducktape-flux
   interval: 10m
   path: ./cluster/generated/agents/namespace-rbac/oci-cache
+  prune: true
+  retryInterval: 1m
+  sourceRef:
+    kind: GitRepository
+    name: ducktape
+    namespace: ducktape-flux
+  wait: true
+---
+apiVersion: kustomize.toolkit.fluxcd.io/v1
+kind: Kustomization
+metadata:
+  annotations:
+    description: Static agent diagnostics in ollama; policy shared with managed agents.
+  name: agent-namespace-rbac-ollama
+  namespace: ducktape-flux
+spec:
+  dependsOn:
+    - name: claude-rbac
+      namespace: ducktape-flux
+  interval: 10m
+  path: ./cluster/generated/agents/namespace-rbac/ollama
   prune: true
   retryInterval: 1m
   sourceRef:

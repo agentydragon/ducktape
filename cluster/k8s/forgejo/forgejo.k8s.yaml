@@ -3,5 +3,6 @@ kind: Namespace
 metadata:
   labels:
     goldilocks.fairwinds.com/vpa-update-mode: auto
+    rbac.ducktape.io/agent-readable-logs: "true"
   name: forgejo
 spec: {}

@@ -3339,6 +3339,18 @@ data:
         role_ref:
           kind: ClusterRole
           name: agent-readable-namespace-logs
+      forgejo-metadata:
+        kind: RoleBinding
+        namespace: forgejo
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      forgejo-logs:
+        kind: RoleBinding
+        namespace: forgejo
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
       gatus-metadata:
         kind: RoleBinding
         namespace: gatus
@@ -3375,6 +3387,18 @@ data:
         role_ref:
           kind: ClusterRole
           name: agent-readable-namespace-logs
+      ha-mcp-metadata:
+        kind: RoleBinding
+        namespace: ha-mcp
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      ha-mcp-logs:
+        kind: RoleBinding
+        namespace: ha-mcp
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
       haku-ci-metadata:
         kind: RoleBinding
         namespace: haku-ci
@@ -3384,6 +3408,18 @@ data:
       haku-ci-logs:
         kind: RoleBinding
         namespace: haku-ci
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      kyverno-metadata:
+        kind: RoleBinding
+        namespace: kyverno
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      kyverno-logs:
+        kind: RoleBinding
+        namespace: kyverno
         role_ref:
           kind: ClusterRole
           name: agent-readable-namespace-logs
@@ -3474,6 +3510,18 @@ data:
       oci-cache-logs:
         kind: RoleBinding
         namespace: oci-cache
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-logs
+      ollama-metadata:
+        kind: RoleBinding
+        namespace: ollama
+        role_ref:
+          kind: ClusterRole
+          name: agent-readable-namespace-metadata
+      ollama-logs:
+        kind: RoleBinding
+        namespace: ollama
         role_ref:
           kind: ClusterRole
           name: agent-readable-namespace-logs
@@ -7413,10 +7461,13 @@ spec:
         - clickhouse
         - cnpg-system
         - flux-system
+        - forgejo
         - gatus
         - grocy-sf
         - grocy-vallejo
+        - ha-mcp
         - haku-ci
+        - kyverno
         - litellm
         - local-path-storage
         - loki
@@ -7424,6 +7475,7 @@ spec:
         - node-feature-discovery
         - nvidia-device-plugin
         - oci-cache
+        - ollama
         - openebs
         - proxmox-proxy
         - study-casino
@@ -7445,10 +7497,13 @@ spec:
         - clickhouse
         - cnpg-system
         - flux-system
+        - forgejo
         - gatus
         - grocy-sf
         - grocy-vallejo
+        - ha-mcp
         - haku-ci
+        - kyverno
         - litellm
         - local-path-storage
         - loki
@@ -7457,6 +7512,7 @@ spec:
         - node-feature-discovery
         - nvidia-device-plugin
         - oci-cache
+        - ollama
         - openebs
         - proxmox-proxy
         - public-coder-agent
@@ -8611,6 +8667,27 @@ rules:
       - agentplane.allegedly.works
     resources:
       - sandboxes
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - sandboxtemplates
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policysets
+    verbs:
+      - get
+      - list
+  - apiGroups:
+      - agentplane.allegedly.works
+    resources:
+      - policybindings
     verbs:
       - get
       - list

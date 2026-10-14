@@ -554,7 +554,15 @@ def add_staging_action_policies(scope: Construct) -> None:
         "role-claude-ai-sandbox-reader",
         metadata=ApiObjectMetadata(name="claude-ai-sandbox-reader", namespace=_NAMESPACE),
         rules=[
-            RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list"]),
+            RolePolicyRule(
+                resources=[
+                    custom_resource(GROUP, "sandboxes"),
+                    custom_resource(GROUP, "sandboxtemplates"),
+                    custom_resource(GROUP, "policysets"),
+                    custom_resource(GROUP, "policybindings"),
+                ],
+                verbs=["get", "list"],
+            ),
             # A `kind: vm` Sandbox's guest: state, and `virtctl console` for a runner that never connected.
             RolePolicyRule(
                 resources=[
