@@ -1014,7 +1014,7 @@ Dispatcher a delivery window. Per-Session idle times stay out of Kubernetes.
 the one job of delivery, proposed in `docs/adr_sandbox_session_control.md`. Its own API is one RPC per
 command, like the runner's. It accepts a message,
 persists it before it acknowledges the sender, delivers it through the gateway's runner proxy to a
-running Sandbox, and reports a delivery state the sender can read (operator, 2026-10-13 PDT; each name says where the command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`, `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED` with a reason, `CANCELLED_IN_DISPATCHER`, and `UNKNOWN` for a deleted Sandbox only; a quiesce refusal returns `DELIVERING_TO_RUNNER` to `QUEUED_IN_DISPATCHER`): the runner deduplicates on the
+running Sandbox, and reports a delivery state the sender can read (operator, 2026-10-13 PDT; each name says where the command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`, `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED` with a reason, `CANCELLED_IN_DISPATCHER`, and `UNKNOWN` for a deleted Sandbox only; a quiesce refusal returns `DELIVERING_TO_RUNNER` to `QUEUED_IN_DISPATCHER`). The runner deduplicates on the
 command ID, a reply lost across an incarnation boundary is redelivered to the next incarnation
 (`THREAD_SUCCESSOR_DELIVERY`), delivery is first-in first-out per Session, and `StopRunnerSession`
 cancels the inputs queued before it. A message for a deleted Session or a failed delivery ends in a
