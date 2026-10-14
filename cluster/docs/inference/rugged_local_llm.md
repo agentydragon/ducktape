@@ -518,8 +518,10 @@ The tested checkpoint was `JustVugg/Qwen3-Coder-30B-A3B-colibri-int4` at
 revision `d839110a17d31b4e6fa9f3d973b751f779b6b9c6`.
 
 On 2026-10-14, a temporary loopback `coli serve` used context 1024, `--cap 8`,
-one queue/KV slot, and the CPU runtime. The checkpoint reported 128 experts and
-`top_k=8`; no routing-pruning options were set. A forced `read_file` request
+one queue/KV slot, and the CPU runtime. Here `--cap 8` means eight cached
+experts per layer, not 8 GiB ([launcher help at the pinned source commit](https://github.com/JustVugg/colibri/blob/bf2442915d6e3dd4cdfd2eb9c2a3d2aa44a25850/c/coli#L2226-L2232)).
+The checkpoint reported 128 experts and `top_k=8`; no routing-pruning options
+were set. A forced `read_file` request
 returned HTTP 200 in **243.2 s**. Usage was 322 prompt and 28 completion tokens.
 It generated one valid call for the exact
 path below; the harness did not execute the tool or send a follow-up request,
@@ -558,14 +560,16 @@ Vulkan, but this smoke collected no GPU measurements.
 }
 ```
 
-The startup log reported 6.1 s to load resident weights and RSS of 2.96 GiB
-after load; peak RSS was not sampled. Linux `/proc/<pid>/io` `read_bytes` was
+The startup log reported 6.1 s to load resident weights and a log-reported RSS
+of 2.96 GB after load; peak RSS was not sampled. Linux `/proc/<pid>/io`
+`read_bytes` was
 3,393,306,624 before the request and reached 189,934,206,976 while it ran: at
 least **186.5 GB** of additional physical reads. The process exited before a
 final counter sample, so this is a lower bound, not a total-I/O measurement.
-This bounded CPU smoke supports
-SSD-streaming feasibility; it does not establish GPU behavior, throughput, or
-agent-task quality.
+At this CPU/cap-8 setting, 243 seconds for a 322-token prompt and 28 output
+tokens is too slow for interactive use. This smoke supports SSD-streaming
+feasibility, but does not characterize other cache sizes, GPU behavior,
+throughput, or agent-task quality.
 
 ## Cluster serving status
 
