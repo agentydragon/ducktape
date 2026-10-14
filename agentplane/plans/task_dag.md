@@ -701,7 +701,7 @@ flowchart TD
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
     QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: the controller stops reading the blocking Quiesce shape]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
-    CONTROL_SERVICE_OWNER[Candidate: the controller creates the Sandbox's control Service]
+    CONTROL_SERVICE_OWNER[Candidate: the gateway's permission to create Services goes]
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
     DISPATCHER_CORE[Blocked: the Session Dispatcher delivers to running Sandboxes]
     DISPATCHER_SESSION_CREATE[Blocked: dispatched Session creation]
@@ -1015,14 +1015,12 @@ Sandbox whose finalizer an operator removes by hand. While the ingress is down t
 off instead of retrying per Sandbox. Test a gateway rollout mid-seal, a runner restart mid-seal and
 a lost event.
 
-### `CONTROL_SERVICE_OWNER` — the controller creates the Sandbox's control Service
+### `CONTROL_SERVICE_OWNER` — the gateway's permission to create Services goes
 
-**Candidate; operator, 2026-10-13 PDT: the controller creates it.** The gateway creates the Service, Lease
-and EndpointSlice on the first connection, so the Service name resolves only after a runner
-connects. The controller creates the Service with the Sandbox, owned by it, so a
-caller sees no endpoints and not a DNS failure, and the gateway writes only the Lease and slice,
-with less Kubernetes access. One shared constant fixes the name and port. Order: the controller image
-that creates it is pinned, then the gateway stops creating it, then its permission goes.
+**Candidate; operator, 2026-10-13 PDT: the controller creates it.** The controller creates the
+Sandbox's control Service and the gateway no longer does. What is left is the gateway's `services`
+permission in `cluster/cdk8s/agentplane/runner_gateway.py`: drop it once the gateway image without
+the Service writes is pinned in both environments (image before config); it keeps `endpointslices`.
 
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
