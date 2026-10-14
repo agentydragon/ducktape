@@ -374,6 +374,7 @@ py_test(
         ":conftest",
         "//:conftest",
         "//agentplane:sandbox_resource",
+        "//agentplane/app:live",
         "//agentplane/app/testing:client",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",

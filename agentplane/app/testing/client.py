@@ -12,7 +12,7 @@ import asyncio
 import json
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator, AsyncIterator
 from dataclasses import dataclass
 from http import HTTPStatus
 from types import TracebackType
@@ -22,7 +22,7 @@ from uuid import UUID
 import httpx
 from google.protobuf.json_format import MessageToDict, ParseDict, ParseError
 
-from agentplane.app.live import DecisionsSnapshot, DecisionsUnavailable
+from agentplane.app.live import DecisionsSnapshot, DecisionsUnavailable, SandboxesSnapshot
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPresetView
 from agentplane.app.sandbox_models import NewSandbox, SandboxView
@@ -116,6 +116,32 @@ class Client:
 
     async def sandbox(self, name: str) -> SandboxView:
         return SandboxView.model_validate(await self._json("GET", f"/sandboxes/{name}"))
+
+    async def sandbox_snapshots(self) -> AsyncGenerator[SandboxesSnapshot]:
+        """Initial inventory and watch-triggered changes; the caller bounds the subscription.
+
+        This lifecycle stream fails immediately on HTTP refusals or connection loss. It does not
+        use the Thread journal's rollout-reconnect policy.
+        """
+        async with self._http.stream(
+            "GET",
+            "/live/sandboxes",
+            headers={"Accept": "text/event-stream"},
+            timeout=httpx.Timeout(REQUEST_SECONDS, read=None),
+        ) as response:
+            response.raise_for_status()
+            kind, data = "message", []
+            async for line in response.aiter_lines():
+                if line.startswith("event:"):
+                    kind = line.removeprefix("event:").strip()
+                elif line.startswith("data:"):
+                    data.append(line.removeprefix("data:").lstrip())
+                elif not line:
+                    frame, payload = kind, "\n".join(data)
+                    kind, data = "message", []
+                    if frame == "snapshot" and payload:
+                        yield SandboxesSnapshot.model_validate_json(payload)
+        raise RuntimeError("the Sandbox inventory stream ended")
 
     async def suspend_sandbox(self, name: str) -> None:
         await self._json("POST", f"/sandboxes/{name}/suspend")

@@ -7,13 +7,16 @@ testing deployment. Staging remains available for explicit ad hoc runs.
 
 from __future__ import annotations
 
+import asyncio
 import os
 import subprocess
 from collections.abc import AsyncIterator, Awaitable, Callable
+from contextlib import aclosing
 from typing import cast
+from uuid import UUID
 
 import pytest
-from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
+from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.acceptance.ollama_warmup import warm_ollama
 from agentplane.app.sandbox_models import NewSandbox, SandboxView, SessionDefaults, sandbox_is_ready
@@ -131,19 +134,22 @@ async def wait_until_running(client: Client, name: str) -> SandboxView:
     raise AssertionError("unreachable: reraise=True either returns the view or raises")
 
 
-async def suspend_and_delete(client: Client, name: str) -> None:
+async def suspend_and_delete(client: Client, name: str, uid: UUID) -> None:
     await client.suspend_sandbox(name)
     # Deletion admission reads effective mode, which the controller publishes after the spec write.
-    async for attempt in AsyncRetrying(
-        stop=stop_after_delay(SANDBOX_READY_SECONDS),
-        wait=wait_fixed(2),
-        retry=retry_if_exception_type(SandboxNotReadyError),
-        reraise=True,
-    ):
-        with attempt:
-            view = await client.sandbox(name)
-            if view.operating_mode is not OperatingMode.SUSPENDED:
-                raise SandboxNotReadyError(f"{name} has not observed suspension: {view.operating_mode}")
+    async with asyncio.timeout(SANDBOX_READY_SECONDS), aclosing(client.sandbox_snapshots()) as snapshots:
+        async for snapshot in snapshots:
+            if not snapshot.watch.fresh:
+                continue
+            view = next((view for view in snapshot.sandboxes if view.name == name), None)
+            if view is None:
+                continue
+            if view.uid != uid:
+                raise SandboxNotReadyError(f"{name} has been replaced: expected {uid}, observed {view.uid}")
+            if view.operating_mode is OperatingMode.SUSPENDED:
+                break
+        else:
+            raise SandboxNotReadyError(f"{name}'s stream ended before observing suspension")
     await client.delete_sandbox(name)
 
 
@@ -155,7 +161,7 @@ async def sandbox(client: Client) -> AsyncIterator[Sandboxes]:
     fails the teardown rather than being swallowed: a leaked one holds a PVC and a node slot. A run
     killed outright still leaks — see the sweeper entry in this package's README.
     """
-    created: list[str] = []
+    created: list[tuple[str, UUID]] = []
 
     async def create(
         name: str,
@@ -176,10 +182,10 @@ async def sandbox(client: Client) -> AsyncIterator[Sandboxes]:
                 bootstrap=bootstrap,
             )
         )
-        created.append(view.name)
+        created.append((view.name, view.uid))
         return await wait_until_running(client, view.name)
 
     yield create
 
-    for name in created:
-        await suspend_and_delete(client, name)
+    for name, uid in created:
+        await suspend_and_delete(client, name, uid)

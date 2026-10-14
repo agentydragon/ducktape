@@ -1,4 +1,4 @@
-"""`Client.events` follows a Thread across the app going away mid-stream."""
+"""Thread reconnect behavior and event-driven Sandbox inventory subscriptions."""
 
 from __future__ import annotations
 
@@ -44,7 +44,7 @@ async def _app(*connections: Connection, port: int = 0) -> AsyncIterator[tuple[C
 
     async def serve(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         request = (await reader.readuntil(b"\r\n\r\n")).decode()
-        after = int(request.split("after=")[1].split(" ")[0].split("&")[0])
+        after = int(request.split("after=")[1].split(" ")[0].split("&")[0]) if "after=" in request else 0
         try:
             await remaining.pop(0)(after, writer)
         finally:
@@ -149,6 +149,44 @@ async def test_a_client_error_is_not_retried() -> None:
     async with _app(conflict) as (client, _):
         with pytest.raises(Exception, match="409"):
             await _cursors(client)
+
+
+async def test_sandbox_subscription_parses_multiline_snapshots_and_ignores_health_frames() -> None:
+    watch = {"fresh": True, "stale_after_seconds": 30.0, "refreshed_seconds_ago": {}}
+
+    async def snapshots(after: int, writer: asyncio.StreamWriter) -> None:
+        del after
+        body = (
+            _frame("health", watch)
+            + b'event: snapshot\ndata: {"sandboxes": [],\ndata: "watch": '
+            + json.dumps(watch).encode()
+            + b"}\n\n"
+        )
+        await _respond(writer, "200 OK", body)
+
+    async with _app(snapshots) as (client, _):
+        updates = client.sandbox_snapshots()
+        snapshot = await anext(updates)
+        assert snapshot.sandboxes == []
+        assert snapshot.watch.fresh
+        with pytest.raises(RuntimeError, match="inventory stream ended"):
+            await anext(updates)
+
+
+@pytest.mark.parametrize("status", ["401 Unauthorized", "403 Forbidden"])
+async def test_sandbox_subscription_does_not_retry_any_authorization_refusal(status: str) -> None:
+    requests = 0
+
+    async def refused(after: int, writer: asyncio.StreamWriter) -> None:
+        nonlocal requests
+        del after
+        requests += 1
+        await _respond(writer, status, b"Access denied\r\n", "text/plain")
+
+    async with _app(refused) as (client, _):
+        with pytest.raises(httpx.HTTPStatusError):
+            await anext(client.sandbox_snapshots())
+    assert requests == 1
 
 
 if __name__ == "__main__":

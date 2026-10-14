@@ -244,8 +244,10 @@ execution/caching or mint substitute credentials to work around that boundary.
 The controlled-host instructions above are operator-only, not an agent-pod fallback.
 See [repository instructions](../../AGENTS.md).
 
-Teardown waits until the controller reports effective `Suspended` mode before asking to delete;
-the spec write alone does not satisfy deletion admission. Authorization refusals fail immediately.
+Teardown subscribes to `/live/sandboxes` until a fresh watch snapshot reports effective `Suspended`
+mode for the created Sandbox's name and UID, within the existing readiness bound. The spec write
+alone does not satisfy deletion admission. Authorization refusals fail immediately; teardown
+does not poll the inventory, reconnect a dropped stream, or delete a replacement Sandbox.
 Afterwards, check that nothing leaked: `kubectl -n agentplane-testing get sandboxes.agentplane.allegedly.works`
 should show no `accept-*`.
 
