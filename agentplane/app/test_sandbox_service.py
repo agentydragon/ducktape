@@ -6,13 +6,12 @@ from uuid import UUID, uuid4
 
 import pytest
 import pytest_bazel
-from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
 from agentplane.app.live import LiveIndex
 from agentplane.app.testing.history import SeededEventLogStore
-from agentplane.app.threads.bridge import MalformedMessageError, RunnerBridge
+from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.grpc_calls import ServiceError
@@ -71,11 +70,8 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
     ):
         directory = RunnerDirectory(live_index, remote)
         bridge = RunnerBridge(runners=directory, event_logs=event_logs, content=content)
-        with pytest.raises(MalformedMessageError):
-            await bridge.create_session(SANDBOX, uuid4(), {"reasoning_effort": "low", "reasoningEffort": "high"})
-        assert not runner.sessions
-        opened = await bridge.create_session(SANDBOX, uuid4(), MessageToDict(spec))
-        assert launches.PLATFORM_INSTRUCTIONS in opened.spec.instructions
+        opened = await bridge.create_session(SANDBOX, uuid4(), spec)
+        assert launches.PLATFORM_INSTRUCTIONS in opened.attached.spec.instructions
         thread = UUID(opened.session_id)
         first = command_pb2.Command(command_id="remote-first", submit_input=command_pb2.SubmitInput(text="first"))
         receipt = await bridge.command(thread, first)

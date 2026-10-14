@@ -126,5 +126,8 @@ error types live separately so importing an error does not grant a transport
 dependency. Use concrete service clients, not protocols introduced solely to allow alternate
 in-process implementations in consumer tests.
 
-Session defaults are named `SessionDefaults` / `session_defaults` in the API and in the Sandbox
-binding annotation. No database schema, identities, or retained logs change with package renames.
+Thread launch defaults live in the app's configured preset catalog and are selected by the preset
+label on a Sandbox. New app Sandbox requests do not write per-Sandbox Session defaults. The existing
+`SandboxBinding.session_defaults` field remains in the shared read model while its old producers and
+consumers are retired; removing that field is a later rollout step. No database schema, identities,
+or retained logs change with package renames.

@@ -83,7 +83,12 @@ class SilentEventSource extends EventTarget {
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 let root: ReturnType<typeof createRoot>;
 let container: HTMLDivElement;
-let presetDefaults = {} as Record<string, unknown>;
+const DEFAULT_PRESET_DEFAULTS = {
+  harness: "HARNESS_CLAUDE",
+  model: "test-model",
+  reasoning_effort: "low",
+};
+let presetDefaults = { ...DEFAULT_PRESET_DEFAULTS } as Record<string, unknown>;
 afterEach(async () => {
   await act(async () => root.unmount());
   container.remove();
@@ -91,7 +96,7 @@ afterEach(async () => {
   live.snapshot.threads = [];
   sessionStorage.clear();
   (live.snapshot.sandbox as SandboxView).binding = null;
-  presetDefaults = {};
+  presetDefaults = { ...DEFAULT_PRESET_DEFAULTS };
 });
 afterAll(() => vi.unstubAllGlobals());
 
@@ -235,7 +240,7 @@ it("resets the launch form when navigating directly between sandbox routes", asy
 async function postedBody(sessions: Mock<(request: Request) => Promise<Response>>) {
   const posted = sessions.mock.calls.find(([request]) => request.method === "POST")?.[0];
   if (posted === undefined) throw new Error("no POST reached the sessions endpoint");
-  return await posted.json();
+  return await posted.clone().json();
 }
 
 it("preserves a Sandbox reasoning default through model loading and submits it on later Thread launch", async () => {
@@ -408,25 +413,23 @@ it("reload retains only the Session ID, never the Open spec or bootstrap", async
   expect(newSession().disabled).toBe(false);
 });
 
-it("opens the Session ID the service answers, which a service predating client IDs mints itself", async () => {
-  const publicId = "7af90050-01fd-423c-a3cb-c1f552b6cda7";
-  live.snapshot.threads = [thread({ id: publicId })];
-  const sessions = vi.fn<(request: Request) => Promise<Response>>((request) =>
-    Promise.resolve(
-      request.method === "GET"
-        ? Response.json([])
-        : Response.json({
-            sessionId: publicId,
-            sandbox: "startup-test",
-            state: "DELIVERY_STATE_RUNNER_ADMITTED",
-            attached: { sessionId: publicId },
-          })
-    )
-  );
+it("opens the client-minted Session ID returned by the opening", async () => {
+  let publicId = "";
+  const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) => {
+    if (request.method === "GET") return Response.json([]);
+    publicId = (await request.clone().json()).session_id;
+    live.snapshot.threads = [thread({ id: publicId })];
+    return Response.json({
+      sessionId: publicId,
+      sandbox: "startup-test",
+      state: "DELIVERY_STATE_RUNNER_ADMITTED",
+      attached: { sessionId: publicId },
+    });
+  });
   const onOpenThread = await render(sessions);
   await act(async () => newSession().click());
   expect(onOpenThread).toHaveBeenCalledWith(publicId);
-  expect((await postedBody(sessions)).session_id).not.toBe(publicId);
+  expect((await postedBody(sessions)).session_id).toBe(publicId);
   expect(sessionStorage.getItem("agentplane:pending-open:startup-test")).toBeNull();
 });
 
@@ -485,6 +488,7 @@ it("disables archiving a thread while its harness is running", async () => {
 
 it("defaults new sessions to an offered harness while retaining existing Claude threads", async () => {
   live.snapshot.threads = [thread({ id: "old-session", name: "Existing Claude" })];
+  presetDefaults = { harness: "HARNESS_CODEX", model: "test-model" };
   const sessions = vi.fn<(request: Request) => Promise<Response>>(async (request) =>
     request.method === "GET"
       ? Response.json([{ sessionId: "old-session", spec: { harness: "HARNESS_CLAUDE" } }])

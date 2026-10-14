@@ -382,6 +382,7 @@ py_test(
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/testing:system_status",
         "//agentplane/app/threads:bridge",
+        "//agentplane/app/threads:dispatcher_client",
         "//agentplane/app/threads:history_watch",
         "//agentplane/app/threads:runner_directory",
         "//agentplane/app/threads:store",

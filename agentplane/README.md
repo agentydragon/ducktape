@@ -70,8 +70,8 @@ flowchart TB
 
     browser -->|HTTPS, SSE| app
     mcp_client -->|MCP over OAuth| actions
-    app -->|gRPC: Sessions, lifecycle and remaining legacy commands| gw
-    app -->|gRPC: queued Thread commands and delivery-state reads| dispatcher
+    app -->|gRPC: Session reads, native resume, and fallback direct opens| gw
+    app -->|gRPC: queued Thread commands, delivery reads, and gated OpenSession| dispatcher
     app -->|gRPC: Session and Thread reads, change and Session-opening watch| hs
     app -->|HTTP| notif
     app -->|HTTP: operator decisions| actions
@@ -89,7 +89,7 @@ flowchart TB
     dispatcher -.->|send wake: guarded Sandbox patch, gated off| k8s
     dispatcher -->|queued commands, state, terminal-event notifications| dispatcher_db
     dispatcher_db[(session_dispatcher DB)]
-    dispatcher -->|per-command Runner RPCs through the runner proxy| gw
+    dispatcher -->|queued Session opens and commands through the runner proxy| gw
     notif -->|every notice via SubmitInput; no direct Gateway fallback| dispatcher
     notif -->|command receipts| hs
     notif --> actions

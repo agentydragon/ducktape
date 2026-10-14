@@ -116,6 +116,7 @@ TEST_PRESETS = PresetCatalog(
             model="test-codex-model",
             reasoning_effort="medium",
             instructions="preset instructions",
+            setup_script="printf 'preset setup\\n'",
         )
     },
 )
@@ -270,7 +271,8 @@ async def test_create_records_preset_label_and_bootstrap_without_per_sandbox_ses
     assert response.status_code == 201, response.text
     row = response.json()
     assert row["preset"] == "public-coder"
-    assert row["binding"] == {"bootstrap": "mkdir -p /state/workspaces"}
+    assert row["binding"]["bootstrap"] == "mkdir -p /state/workspaces"
+    assert row["binding"]["session_defaults"] is None
     assert custom_objects.objects[(SANDBOXES_PLURAL, row["name"])]["spec"]["policySets"] == ["packages"]
 
 
@@ -380,7 +382,7 @@ async def test_delete_starts_teardown_once_the_sandbox_is_suspended(
     assert (await client.delete("/sandboxes/nope")).status_code == 404
 
 
-async def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_assembly(
+async def test_session_open_resolves_preset_defaults_from_sandbox_label_and_overlays_request(
     client: httpx.AsyncClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     created = (
@@ -422,13 +424,13 @@ async def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_
         reasoning_effort="medium",
         instructions="thread instructions",
     )
-    assert setup_scripts == [None]
+    assert setup_scripts == ["printf 'preset setup\\n'"]
     second_id = uuid4()
     cleared = await client.post(
         f"/sandboxes/{created['name']}/sessions", json={"session_id": str(second_id), "spec": {}, "setup_script": ""}
     )
     assert cleared.status_code == 201, cleared.text
-    assert setup_scripts == [None, ""]
+    assert setup_scripts == ["printf 'preset setup\\n'", ""]
     assert calls[1][1] == runner_pb2.SessionSpec(
         harness=runner_pb2.HARNESS_CODEX,
         model="test-codex-model",
@@ -436,6 +438,48 @@ async def test_bound_thread_forwards_overrides_without_app_bootstrap_or_default_
         reasoning_effort="medium",
         instructions="preset instructions",
     )
+
+
+async def test_open_session_rejects_invalid_spec_fields_before_the_bridge(
+    client: httpx.AsyncClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def unexpected_open(*_args: Any, **_kwargs: Any) -> session_dispatcher_pb2.SessionOpening:
+        raise AssertionError("invalid proto-JSON must not reach the bridge")
+
+    monkeypatch.setattr(bridge, "create_session", unexpected_open)
+    response = await client.post(
+        "/sandboxes/live/sessions", json={"session_id": str(uuid4()), "spec": {"not_a_session_field": "value"}}
+    )
+
+    assert response.status_code == 422
+
+
+async def test_session_opening_endpoint_returns_dispatcher_state(
+    client: httpx.AsyncClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session_id = uuid4()
+    opening = session_dispatcher_pb2.SessionOpening(
+        session_id=str(session_id),
+        sandbox="live",
+        state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+        reason="sandbox is not Ready",
+    )
+
+    async def get_opening(sandbox: str, requested_id: UUID) -> session_dispatcher_pb2.SessionOpening:
+        assert sandbox == "live"
+        assert requested_id == session_id
+        return opening
+
+    monkeypatch.setattr(bridge, "session_opening", get_opening)
+    response = await client.get(f"/sandboxes/live/sessions/{session_id}/opening")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "sessionId": str(session_id),
+        "sandbox": "live",
+        "state": "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
+        "reason": "sandbox is not Ready",
+    }
 
 
 @pytest.mark.parametrize("model_catalog", [CODEX_ONLY], indirect=True)
@@ -510,7 +554,7 @@ async def test_service_launch_failure_preserves_uncertainty(
 async def test_create_session_answers_the_service_id(
     client: httpx.AsyncClient, bridge: RunnerBridge, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """The client's Session ID reaches the bridge; the answer carries the ID the service confirmed."""
+    """The client's Session ID reaches the bridge and stays the opening's public identity."""
     requested = uuid4()
     received: list[tuple[str, UUID, runner_pb2.SessionSpec, str | None]] = []
 
@@ -819,7 +863,7 @@ async def test_presets_publish_editable_sandbox_and_session_defaults(client: htt
                 "cwd": "/state/workspaces/{session_id}",
                 "reasoning_effort": "medium",
                 "instructions": "preset instructions",
-                "setup_script": "",
+                "setup_script": "printf 'preset setup\\n'",
             },
             "bootstrap": "mkdir -p /state/workspaces",
         }

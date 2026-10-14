@@ -150,8 +150,13 @@ the authority for command outcomes. The browser retains the command locally unti
 its admission or command row; the app adds no command queue. Deployments that leave the optional
 Dispatcher target unset retain the Runner Gateway command path during rollout.
 
-The app still uses Runner Gateway for Session listing, opening, resuming and any command traffic
-while the Dispatcher target is unset. Those paths have separate rollout and retirement gates.
+The app continues to list Sessions and explicitly resume retained native Sessions through the
+Runner Gateway. New Session openings have a separate default-off
+`session_dispatcher_open_sessions` gate: while it is off, the app opens through the Gateway; when it
+is on, it submits the complete Session spec to the Dispatcher. A `SessionOpening` reports queued,
+delivering, runner-admitted, or failed state, and `GET /sandboxes/{name}/sessions/{id}/opening`
+checks that durable result. Admission does not mean the History Service has projected a Thread yet.
+These paths have separate rollout and retirement gates.
 
 The app copies no runner events and folds none. Each runner pushes its Sessions' events to the
 History Service's ingress, and the History Service folds them under per-Session leases
@@ -473,10 +478,12 @@ linked group becomes available is the Action Service's contract
 
 ## Launch presets
 
-`GET /presets` publishes configured Sandbox presets and their inherited editable Thread defaults.
-`POST /sandboxes` takes the concrete choices; the create form expands a preset into them and the
-operator edits what it pre-fills. `policy_sets` are the Sandbox's grants beside the deployment's
-defaults, and a set name the namespace does not hold is refused with 422 before the Sandbox exists.
+`GET /presets` publishes configured Sandbox presets and their Thread launch defaults. `POST
+/sandboxes` stores the selected preset label alongside the concrete Sandbox choices; it does not
+store per-Sandbox Session defaults. On a new Thread open, the app resolves the defaults from its
+configured preset catalog using that Sandbox label, then overlays fields explicitly supplied for
+the Thread. `policy_sets` are the Sandbox's grants beside the deployment's defaults, and a set name
+the namespace does not hold is refused with 422 before the Sandbox exists.
 The form records the picked preset in the URL (`/#/?preset=<name>`) so a launch form can be linked
 to.
 
@@ -487,13 +494,15 @@ with the submitted policy sets; Action policy sets and Kubernetes grants are not
 
 Before opening a session on a bound Sandbox, the app sends the SandboxPreset's configured bootstrap
 content to the runner under a stable preset identity. The runner executes it idempotently on the
-persistent state volume; a failure refuses the session open. The existing full `SessionSpec` API is
-available when no preset is selected. The app composes no instructions: the Runner Gateway prepends its
-configured platform instructions to every launch's preset or task instructions, including direct
-`SessionSpec` API launches ([API.md](../runner_gateway/API.md#launch-overrides-and-field-presence)). The
-shared block teaches agents the platform's egress and Actions Service protocol and how to query their
-effective Kubernetes permissions; a preset and the per-turn task remain the place for workload-specific
-constraints and the requested outcome.
+persistent state volume; a failure refuses the session open. The selected Sandbox preset determines
+the complete default `SessionSpec` even though the Sandbox stores only its preset label. An explicit
+request can override those defaults, including with empty strings. The app composes no instructions:
+the Runner Gateway prepends its configured platform instructions to every launch's preset or task
+instructions, including direct `SessionSpec` API launches
+([API.md](../runner_gateway/API.md#launch-overrides-and-field-presence)). The shared block teaches agents
+the platform's egress and Actions Service protocol and how to query their effective Kubernetes
+permissions; a preset and the per-turn task remain the place for workload-specific constraints and
+the requested outcome.
 
 Thread defaults may also include a one-time setup script. A new Thread sends its resolved cwd and
 setup source on the runner's first `Open`; the runner records setup stdout, stderr, and completion in
@@ -501,12 +510,13 @@ the Thread event stream and starts the harness only after setup succeeds. A fail
 readable Thread and workspace but cannot rerun setup under the same session id. The Sandbox page
 uses the configured cwd template instead of replacing it with a hardcoded workspace path.
 
-A new Thread's id is the public Session ID the browser mints and the Runner Gateway's
-`CreateSession` confirms; `{session_id}` in a cwd resolves server-side. The browser sends a fresh
-Session ID with the original overrides once and keeps only that ID in `sessionStorage`, never the
-spec or setup script, so it cannot retry the create. After a lost reply or a reload it never re-sends
-Open: **Check Open status** asks `GET /threads/{id}` for that ID, which exists once the runner has
-pushed the Session to the History Service. Until then the page offers only to discard the attempt.
+A new Thread's id is the public Session ID the browser mints and the opening API preserves;
+`{session_id}` in a cwd resolves server-side. The browser sends a fresh Session ID with the original
+overrides once and keeps only that ID in `sessionStorage`, never the spec or setup script, so it
+cannot retry the create. After a lost reply or a reload it never re-sends Open. **Check Open status**
+reads the Dispatcher opening and checks `GET /threads/{id}` for the projected Thread. A queued or
+runner-admitted opening is not presented as an existing Thread until History records it; the page
+keeps the status and reason visible while the projection catches up.
 
 ## Action policy
 

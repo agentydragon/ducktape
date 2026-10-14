@@ -417,7 +417,7 @@ export function SandboxPage({
     return () => {
       cancelled = true;
     };
-  }, [presetName]);
+  }, [name, presetName]);
 
   useEffect(() => {
     const offered = harnessOptions(modelCatalog).filter((option) => !option.disabled);

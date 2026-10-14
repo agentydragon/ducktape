@@ -136,18 +136,15 @@ it("pre-fills the preset's policy sets, hides picked sets, and sends the picks",
   const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
   if (!button) throw new Error("Missing New sandbox button");
   await act(async () => button.click());
-  expect(post).toHaveBeenCalledWith(
-    "/sandboxes",
-    expect.objectContaining({
-      body: expect.objectContaining({
-        template: "test-template",
-        preset: "test-preset",
-        policy_sets: ["test-basic", "test-packages"],
-        bootstrap: "mkdir -p /state/workspaces",
-      }),
-    })
-  );
-  expect(post.mock.calls[0]?.[1]?.body).not.toHaveProperty("session_defaults");
+  expect(post).toHaveBeenCalledWith("/sandboxes", {
+    body: {
+      name: "picked",
+      template: "test-template",
+      preset: "test-preset",
+      policy_sets: ["test-basic", "test-packages"],
+      bootstrap: "mkdir -p /state/workspaces",
+    },
+  });
   expect(onOpen).toHaveBeenCalledExactlyOnceWith(CREATED.name);
 });
 

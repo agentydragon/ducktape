@@ -145,6 +145,7 @@ def test_the_two_settings_models_read_environment_and_config_without_colliding(
     assert settings.runner_gateway_lifecycle_timeout_s == 310
     assert (settings.port, settings.token_audience) == (8080, "agentplane")
     assert settings.session_dispatcher_target is None
+    assert settings.session_dispatcher_open_sessions is False
     assert str(settings.session_dispatcher_token_file) == "/var/run/secrets/agentplane-session-dispatcher/token"
     assert oidc.redirect_uri == "https://app.test.invalid/auth/callback"
     assert (

@@ -185,7 +185,9 @@ class Client:
         Retrying with the same Session ID and overrides answers the same Session.
         """
         body = NewSession(session_id=session_id, spec=overrides or {}, setup_script=setup_script)
-        answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump(mode="json"))
+        answered = await self._json(
+            "POST", f"/sandboxes/{name}/sessions", json=body.model_dump(mode="json", exclude_none=True)
+        )
         opening = ParseDict(answered, session_dispatcher_pb2.SessionOpening())
         deadline = time.monotonic() + REQUEST_SECONDS
         while True:

@@ -14,7 +14,7 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
@@ -45,6 +45,7 @@ from agentplane.app.threads.bridge import (
     RunnerAdmissionTimeoutError,
     RunnerBridge,
 )
+from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.events.stream import follow
 from agentplane.app.threads.history_watch import SessionOpenings
 from agentplane.app.threads.runner_directory import RunnerDirectory
@@ -125,6 +126,37 @@ async def _create(http: httpx.AsyncClient, spec: runner_pb2.SessionSpec, session
     opened = await http.post(SESSIONS, json={"session_id": str(session_id), "spec": MessageToDict(spec)})
     assert opened.status_code == 201, opened.text
     return str(opened.json()["sessionId"])
+
+
+async def test_new_session_uses_dispatcher_when_the_opening_gate_is_enabled(
+    local_runners: RunnerDirectory, event_logs: SeededEventLogStore, content: ContentStore
+) -> None:
+    session_id = uuid4()
+    spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, model="test-model")
+    opening = session_dispatcher_pb2.SessionOpening(
+        session_id=str(session_id), sandbox=SANDBOX, state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
+    )
+    calls: list[tuple[str, str, runner_pb2.SessionSpec, str | None]] = []
+
+    class Dispatcher:
+        async def open_session(
+            self, *, sandbox: str, session_id: str, spec: runner_pb2.SessionSpec, setup_script: str | None
+        ) -> session_dispatcher_pb2.SessionOpening:
+            calls.append((sandbox, session_id, spec, setup_script))
+            return opening
+
+    bridge = RunnerBridge(
+        runners=local_runners,
+        event_logs=event_logs,
+        content=content,
+        dispatcher=cast(SessionDispatcherClient, Dispatcher()),
+        open_sessions_via_dispatcher=True,
+    )
+
+    result = await bridge.create_session(SANDBOX, session_id, spec, "bootstrap")
+
+    assert result is opening
+    assert calls == [(SANDBOX, str(session_id), spec, "bootstrap")]
 
 
 def _runner_session(runner: Runner, thread_id: str | UUID) -> Session:
@@ -269,7 +301,8 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
         session_id = uuid4()
         opened = await http.post(SESSIONS, json={"session_id": str(session_id), "spec": MessageToDict(spec)})
         assert opened.status_code == 201, opened.text
-        assert opened.json()["harnessState"] == "HARNESS_STATE_RUNNING"
+        assert opened.json()["state"] == "DELIVERY_STATE_RUNNER_ADMITTED"
+        assert opened.json()["attached"]["harnessState"] == "HARNESS_STATE_RUNNING"
         thread_id = opened.json()["sessionId"]
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
@@ -1229,7 +1262,7 @@ async def frame_lines(frames: AsyncIterator[bytes]) -> AsyncIterator[str]:
 async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
     replicas: Replicas, event_logs: SeededEventLogStore, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), MessageToDict(spec))).session_id)
+    thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), spec)).session_id)
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
     ):
@@ -1318,7 +1351,7 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
 async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
     replicas: Replicas, event_logs: SeededEventLogStore, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
-    thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), MessageToDict(spec))).session_id)
+    thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), spec)).session_id)
     await replicas.survivor.command(
         thread, command_pb2.Command(command_id="seed-input", submit_input=command_pb2.SubmitInput(text="BEFORE_RESUME"))
     )
@@ -1342,7 +1375,7 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
             assert (await next_message(lines)).event == "end"
     cursor = stopped[-1].id
     assert cursor is not None
-    await replicas.survivor.create_session(SANDBOX, thread, MessageToDict(spec))
+    await replicas.survivor.create_session(SANDBOX, thread, spec)
     async with aclosing(
         follow(replicas.survivor_event_logs, replicas.survivor_changes, thread, after_cursor=cursor)
     ) as frames:
@@ -1376,7 +1409,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
     content: ContentStore,
     history: History,
 ) -> None:
-    thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), MessageToDict(spec))).session_id)
+    thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), spec)).session_id)
     stop = command_pb2.Command(command_id="stop-for-offline", stop_runner_session=command_pb2.StopRunnerSession())
     admitted = await replicas.survivor.command(thread, stop)
     async with aclosing(
@@ -1416,9 +1449,9 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     # Stall the runner's push to the History Service's ingress without delaying the runner itself.
     monkeypatch.setattr("agentplane.runner.ingress.IngressPusher.push", AsyncMock())
     bridge = RunnerBridge(runners=local_runners, event_logs=event_logs, content=content)
-    opened = await asyncio.wait_for(bridge.create_session(SANDBOX, uuid4(), MessageToDict(spec)), timeout=10)
+    opened = await asyncio.wait_for(bridge.create_session(SANDBOX, uuid4(), spec), timeout=10)
     thread_id = UUID(opened.session_id)
-    assert opened.last_cursor > 0
+    assert opened.attached.last_cursor > 0
     assert await event_logs.last_cursor(thread_id) == 0
 
     # A native conversation must exist before Resume: an idle Open has no Claude/Codex
@@ -1457,7 +1490,7 @@ async def test_open_and_resume_reply_before_archive_catches_up(
         timeout=10,
     )
     assert resumed.session_id == opened.session_id
-    assert resumed.last_cursor > opened.last_cursor
+    assert resumed.last_cursor > opened.attached.last_cursor
     assert await event_logs.last_cursor(thread_id) == 0
 
 

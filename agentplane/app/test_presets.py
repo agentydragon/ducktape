@@ -49,5 +49,15 @@ def test_session_defaults_over_replaces_only_explicitly_set_fields(
     assert (merged.model, merged.instructions) == ("preset-model", instructions)
 
 
+def test_opening_defaults_resolve_from_the_authoritative_sandbox_preset_label(presets: PresetCatalog) -> None:
+    defaults = presets.defaults_for_sandbox("public-coder")
+
+    assert defaults.harness is Harness.CODEX
+    assert defaults.model == "preset-model"
+    assert presets.defaults_for_sandbox(None).model is None
+    with pytest.raises(KeyError, match="not in the app's preset catalog"):
+        presets.defaults_for_sandbox("deleted-config")
+
+
 if __name__ == "__main__":
     pytest_bazel.main()
