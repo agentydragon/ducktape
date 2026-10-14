@@ -1,0 +1,86 @@
+package sandboxcontroller
+
+import (
+	"testing"
+	"time"
+
+	coordinationv1 "k8s.io/api/coordination/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+)
+
+func factsLease(annotations map[string]string) *coordinationv1.Lease {
+	return &coordinationv1.Lease{ObjectMeta: metav1.ObjectMeta{Name: "test-sandbox-runner", Annotations: annotations}}
+}
+
+func TestFactsOfAnotherIncarnationAreNotRead(t *testing.T) {
+	for name, stamp := range map[string]map[string]string{
+		"stamped for an earlier incarnation": {RunnerFactsUIDAnnotation: "earlier-uid", QuiesceStageAnnotation: "quiesced"},
+		"unstamped":                          {QuiesceStageAnnotation: "quiesced"},
+	} {
+		facts, err := readRunnerFacts(factsLease(stamp), "current-uid")
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if facts.Stage != QuiesceNone {
+			t.Errorf("%s: stage = %v, want none", name, facts.Stage)
+		}
+	}
+}
+
+func TestFactsOfTheIncarnationAreRead(t *testing.T) {
+	facts, err := readRunnerFacts(factsLease(map[string]string{
+		RunnerFactsUIDAnnotation:  "current-uid",
+		QuiesceStageAnnotation:    "flushing",
+		BusyAnnotation:            "false",
+		IdleSinceAnnotation:       "2026-10-14T00:30:00Z",
+		BootstrapResultAnnotation: "succeeded",
+	}), "current-uid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.Stage != QuiesceFlushing || facts.Bootstrap != BootstrapSucceeded || facts.Busy == nil || *facts.Busy {
+		t.Errorf("facts = %+v", facts)
+	}
+	if want := time.Date(2026, 10, 14, 0, 30, 0, 0, time.UTC); facts.IdleSince == nil || !facts.IdleSince.Equal(want) {
+		t.Errorf("idle since = %v, want %v", facts.IdleSince, want)
+	}
+}
+
+func TestUnrecognisedFactValuesAreNamedNotSkipped(t *testing.T) {
+	facts, err := readRunnerFacts(factsLease(map[string]string{
+		RunnerFactsUIDAnnotation:  "current-uid",
+		QuiesceStageAnnotation:    "rebooting",
+		BootstrapResultAnnotation: "partial",
+	}), "current-uid")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if facts.Stage != QuiesceStageUnrecognised || facts.Bootstrap != BootstrapResultUnrecognised {
+		t.Errorf("facts = %+v", facts)
+	}
+}
+
+func TestMalformedFactsAreErrors(t *testing.T) {
+	for name, annotations := range map[string]map[string]string{
+		"busy not a boolean":      {BusyAnnotation: "maybe"},
+		"idle since not a time":   {BusyAnnotation: "false", IdleSinceAnnotation: "yesterday"},
+		"idle since while busy":   {BusyAnnotation: "true", IdleSinceAnnotation: "2026-10-14T00:30:00Z"},
+		"idle since without busy": {IdleSinceAnnotation: "2026-10-14T00:30:00Z"},
+	} {
+		annotations[RunnerFactsUIDAnnotation] = "current-uid"
+		if _, err := readRunnerFacts(factsLease(annotations), "current-uid"); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+}
+
+func TestOnlyFactsChangeTheLeaseWatchEnqueue(t *testing.T) {
+	renewed := factsLease(map[string]string{RunnerFactsUIDAnnotation: "uid", BusyAnnotation: "true"})
+	if runnerFactsChanged(renewed, renewed.DeepCopy()) {
+		t.Error("a renewal with the same facts counted as a change")
+	}
+	idle := factsLease(map[string]string{RunnerFactsUIDAnnotation: "uid", BusyAnnotation: "false"})
+	if !runnerFactsChanged(renewed, idle) {
+		t.Error("a change of busy did not count")
+	}
+}
