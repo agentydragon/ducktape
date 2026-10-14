@@ -3,6 +3,7 @@ load("//devinfra/python:defs.bzl", "py_library")
 py_library(
     name = "settings",
     srcs = ["settings.py"],
+    visibility = ["//cluster/cdk8s/agentplane:__pkg__"],
     deps = [
         "//agentplane:log_levels",
         "//agentplane:subjects",
