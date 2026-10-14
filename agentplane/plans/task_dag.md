@@ -846,8 +846,9 @@ same way.
 reconcile a pod Sandbox into its state PVC and Pods. Sandboxes are created as ours, and
 what is left is the nodes below. The Sandbox Service then folds into the controller, which is renamed for it
 (operator, 2026-10-11 PDT), and stays separate from the Runner Gateway, so the provisioning
-permissions stay off the runner-facing service. The gateway may write a Sandbox's desired running
-state, which the controller validates; it gets no resume RPC on the Sandbox Service. Action Service boxes keep a catalog of their own ([ADR](../docs/adr_action_sandboxes.md)).
+permissions stay off the runner-facing service. The Sandbox Service writes a Sandbox's desired
+state and the controller validates it; layers that act on CRs, the controller's idle timer included, do
+not edit them (`docs/adr_sandbox_session_control.md`). Action Service boxes keep a catalog of their own ([ADR](../docs/adr_action_sandboxes.md)).
 
 ```mermaid
 flowchart TD
@@ -905,7 +906,12 @@ is idle. The control design (`docs/adr_sandbox_session_control.md`) puts the pol
 controller: `spec.idleSuspendAfter`, a timer the controller measures from the `idleSince`
 fact the runner publishes (`RUNNER_FACTS_ON_LEASE`), so it needs no History Service and
 survives a controller restart. Busy covers a turn, a command, a background or durable process and an
-attached terminal or console, or a Sandbox is suspended under a running job. Automatic suspension is
+attached terminal or console, or a Sandbox is suspended under a running job. The controller's idle timer does not edit the spec: it
+writes `status.suspendedBy: Idle` with the `spec.wakeGeneration` it suspended at, and `ResumeSandbox` sets
+`running = true` and bumps `wakeGeneration` for both causes (operator, 2026-10-14: the shape stays). The
+controller publishes the effective mode once in status, and every reader of `spec.running` (controller
+reconcile and `vm.go`, `sandbox_resource.py`, `sandbox_service/kubernetes_views.py`, `begin_teardown`, the
+app's `sandbox_has_ready_pod`) reads that. Automatic suspension is
 `Quiesce` with `if_idle_since`: the runner refuses it on a token mismatch or when busy (`ABORTED`, as
 for a Sandbox already in lameduck; `FAILED_PRECONDITION` is terminal), and there is
 no ingress-health gate. Suspension waits for the Sandbox bootstrap and every
@@ -927,7 +933,7 @@ does with the next cursor range.
 ### `SESSION_REVIVE` — start a stopped Sandbox again
 
 **Blocked on incarnations.** The controller schedules a new Pod or VM
-for a stopped Sandbox, set running by an explicit call or by the gateway's resume hook, from its
+for a stopped Sandbox, set running by `ResumeSandbox` (the Dispatcher's wake, `DISPATCHER_WAKE_ON_SEND`, or an operator), from its
 template as it is now, possibly on a new image, and resume each harness as
 a new incarnation of the same Session and history. Incarnation N+1 is created only after N has fully
 terminated, and the runner treats an interrupted Session setup as resumable. Test
@@ -982,7 +988,7 @@ background process that outlives it, an attached terminal that detaches and a ru
 new work, its journals are final, and the ingress has acknowledged them. The doc proposes
 `Runner.Quiesce`, a `Quiesced` condition that is True only when every final cursor is acknowledged
 (False with reasons `Draining` then `Flushing`), `status.quiescedIncarnation`, the phase
-`Quiescing`, and `Ready` False with reason `Draining`; a journal is still "sealed" at its final
+`QUIESCING` (the wire enum keeps its six phases; it covers a suspend drain as well as a deletion drain), and `Ready` False with reason `Draining`; a journal is still "sealed" at its final
 cursor. This is a wire and stored-field change across the runner, gateway, controller, Sandbox
 Service, app and docs: readers accept both names before any writer emits the new one, and the
 Sandbox status field is added beside the old, switched, then removed. Land it before
@@ -1043,7 +1049,10 @@ is not stored: its outcome is its RPC response. A message for a deleted Session 
 terminal state with a reason and a time to live; a command admitted but not dispatched when the
 Sandbox is torn down ends as `ended_by_teardown`. Replicas shard Sandboxes by a per-Sandbox Lease
 so each has one active owner. Authorization names which senders may send, and the sender kinds
-that may wake are `DISPATCHER_WAKE_ON_SEND`'s. It does not depend on the History Service to deliver. This
+that may wake are `DISPATCHER_WAKE_ON_SEND`'s. It does not depend on the History Service to deliver. It learns a Sandbox's state from a watch on
+the Sandbox CR (`util.kubernetes_watch.ListWatch`, as the app and the gateway do), reading `Ready` with its
+reason and `status.incarnation`; its ServiceAccount gets one `get/list/watch` rule on `sandboxes`, and it asks
+the Sandbox Service only to resume. There is no `WatchSandboxes` RPC and no Service watch. This
 node moves no sender and wakes nothing, so it can land beside the direct path with no change for
 anyone. Test duplicate sends, a sender that leaves, a deleted target and a refused delivery.
 
