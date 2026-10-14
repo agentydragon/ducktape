@@ -128,6 +128,7 @@ def test_notifications_have_no_app_or_direct_runner_dependency(
         sandbox_service.TOKEN_AUDIENCE,
         runner_gateway.TOKEN_AUDIENCE,
         history_service.TOKEN_AUDIENCE,
+        session_dispatcher.TOKEN_AUDIENCE,
     }
     for container in pod["containers"] + pod["initContainers"]:
         database = one(item for item in container["env"] if item["name"] == "AGENTPLANE_NOTIFICATIONS_DATABASE_URL")
