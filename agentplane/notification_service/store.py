@@ -1128,6 +1128,16 @@ class Store:
             await notify(session, Channel.WORK)
             return True
 
+    async def delivery_failed(self, claim: Inbox, notice: Notice, error: str) -> None:
+        """Persist a terminal sender-side outcome without preparing another command for this coverage."""
+        async with self.sessions.begin() as session:
+            await self.fenced(session, claim)
+            row = await session.get(Notice, claim.id)
+            assert row is not None
+            assert row.command_id == notice.command_id
+            row.error = error
+            await notify(session, Channel.WORK)
+
     async def receipt(
         self, claim: Inbox, notice: Notice, entry: event_log_pb2.EventEntry, *, after_cursor: int
     ) -> None:

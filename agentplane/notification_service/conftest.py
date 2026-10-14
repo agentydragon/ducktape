@@ -94,6 +94,7 @@ def restart(engine: AsyncEngine) -> Callable[[Service], Service]:
             github,
             gateway=service.gateway,
             history=service.history,
+            dispatcher=service.dispatcher,
             notice_debounce=service.notice_debounce,
             stale_confirmation_s=service.stale_confirmation_s,
             operator_reader_account=service.operator_reader_account,

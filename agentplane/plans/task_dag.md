@@ -702,6 +702,7 @@ flowchart TD
     DISPATCHER_WAKE_ON_SEND[Blocked: a send wakes a suspended Sandbox]
     APP_SENDS_VIA_DISPATCHER[Blocked: the app sends through the Session Dispatcher]
     NOTIFICATIONS_VIA_DISPATCHER[Blocked: notifications send through the Session Dispatcher]
+    NOTIFICATION_GATEWAY_SEND_REMOVE[Blocked: remove the Notification Service's pre-activation gateway command path]
     RUNNER_PROXY_SENDER_RESTRICT[Blocked: only system callers send to the runner directly]
     RESUME_CREDENTIALS_VALID[Blocked: grants and tokens still valid after a long suspension]
     SUSPENDED_COMPOSER[Blocked: the composer stays enabled while a Session is suspended]
@@ -752,7 +753,7 @@ flowchart TD
     DISPATCHER_DEPLOY --> NOTIFICATIONS_VIA_DISPATCHER
     SESSION_REVIVE --> DISPATCHER_WAKE_ON_SEND
     APP_SENDS_VIA_DISPATCHER --> RUNNER_PROXY_SENDER_RESTRICT
-    NOTIFICATIONS_VIA_DISPATCHER --> RUNNER_PROXY_SENDER_RESTRICT
+    NOTIFICATION_GATEWAY_SEND_REMOVE --> RUNNER_PROXY_SENDER_RESTRICT
     NOTIFICATIONS_VIA_DISPATCHER --> SESSION_ACTIVITY_STREAM
     DISPATCHER_WAKE_ON_SEND --> SUSPENDED_COMPOSER
     APP_SENDS_VIA_DISPATCHER --> SUSPENDED_COMPOSER
@@ -1255,12 +1256,24 @@ sender moves.
 ### `NOTIFICATIONS_VIA_DISPATCHER` — notifications send through the Session Dispatcher
 
 **Blocked on `DISPATCHER_DEPLOY`; operator, 2026-10-13 PDT.** The Notification Service sends its
-notices through the Session Dispatcher, and keeps choosing when to deliver from its own quiet window or
-from `SESSION_ACTIVITY_STREAM`. Parallel with `APP_SENDS_VIA_DISPATCHER`.
+notices through the Session Dispatcher and keeps choosing when to deliver from its existing quiet window.
+It submits the already persisted notice ID and text, treats queued as
+acceptance rather than runner admission, and keeps reading admission/confirmation from History Service.
+The optional endpoint/token setting is code-first: pin an image that accepts the complete setting before
+adding it to the manifest. Once configured, a Dispatcher error never falls back to Runner Gateway.
+Parallel with `APP_SENDS_VIA_DISPATCHER`.
+
+### `NOTIFICATION_GATEWAY_SEND_REMOVE` — remove the pre-activation gateway command path
+
+**Blocked on `NOTIFICATIONS_VIA_DISPATCHER` and healthy rollout of its Dispatcher config.** After the
+manifest routes sends to a pinned, accepting image, remove the old direct `SubmitCommand` branch and make
+the Dispatcher endpoint required. Keep Runner Gateway only for the Notification Service's read-only
+`ListSessions` validation. This cleanup must land before `RUNNER_PROXY_SENDER_RESTRICT` closes command
+RPC authorization to the Notification Service.
 
 ### `RUNNER_PROXY_SENDER_RESTRICT` — only system callers send to the runner directly
 
-**Blocked on `APP_SENDS_VIA_DISPATCHER` and `NOTIFICATIONS_VIA_DISPATCHER`.** A policy edit at the gateway's
+**Blocked on `APP_SENDS_VIA_DISPATCHER` and `NOTIFICATION_GATEWAY_SEND_REMOVE`.** A policy edit at the gateway's
 per-method authorization: the command RPCs and `OpenSession` are open to the Session Dispatcher, the
 controller's seal call, operator diagnostics and acceptance tests, and to no other caller.
 `ListSessions` stays open to readers. Agent-to-agent messaging joins through its own nodes.

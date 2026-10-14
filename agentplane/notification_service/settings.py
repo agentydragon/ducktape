@@ -96,6 +96,15 @@ class HistoryServiceSettings(BaseModel):
     )
 
 
+class SessionDispatcherSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
+    target: str = Field(description="Session Dispatcher gRPC host:port for queued runner notices.")
+    request_timeout_s: PositiveSeconds = 15
+    token_file: Path = Field(
+        description="Path to the rotating projected ServiceAccount token used to authenticate to the Session Dispatcher."
+    )
+
+
 class NoticeDebounceSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
     quiet_seconds: float = Field(
@@ -144,6 +153,8 @@ class Settings(YamlFileSettings):
     #   requires the key, so the manifest may drop it only after this image is pinned.
     sandbox_service: SandboxServiceSettings | None = None
     runner_gateway: RunnerGatewaySettings
+    # Staged after the accepting image is pinned. Once set, notice sends use only this path.
+    session_dispatcher: SessionDispatcherSettings | None = None
     history_service: HistoryServiceSettings
     token_audience: str = Field(
         default=TOKEN_AUDIENCE, description="Audience required when TokenReview authenticates callers of this API."

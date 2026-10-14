@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.api import create_app
+from agentplane.notification_service.dispatcher_client import SessionDispatcherClient
 from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import Settings
 from agentplane.notification_service.sources.actions import ActionServiceClient
@@ -35,6 +36,15 @@ async def serve(settings: Settings) -> None:
             make_url(settings.database_url).set(drivername="postgresql+asyncpg"), pool_size=4, max_overflow=2
         )
         stack.push_async_callback(engine.dispose)
+        dispatcher = None
+        if settings.session_dispatcher is not None:
+            dispatcher_channel = dial(settings.session_dispatcher.target)
+            stack.push_async_callback(dispatcher_channel.close)
+            dispatcher = SessionDispatcherClient(
+                dispatcher_channel,
+                token_file=settings.session_dispatcher.token_file,
+                request_timeout_s=settings.session_dispatcher.request_timeout_s,
+            )
         async with (
             k8s_client.ApiClient(await kubernetes_configuration(None)) as kube,
             httpx.AsyncClient(
@@ -80,6 +90,7 @@ async def serve(settings: Settings) -> None:
                         ),
                     ),
                     history=history,
+                    dispatcher=dispatcher,
                     notice_debounce=settings.notice_debounce,
                     stale_confirmation_s=settings.stale_inbox_confirmation_s,
                     operator_reader_account=settings.operator_reader_account,

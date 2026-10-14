@@ -90,7 +90,8 @@ flowchart TB
     dispatcher -->|queued commands and delivery state| dispatcher_db
     dispatcher_db[(session_dispatcher DB)]
     dispatcher -.->|per-command Runner RPCs through the runner proxy; sender cutover pending| gw
-    notif -->|commands| gw
+    notif -->|commands until Dispatcher config activates| gw
+    notif -.->|queued SubmitInput after the pinned image accepts Dispatcher config| dispatcher
     notif -->|command receipts| hs
     notif --> actions
     notif -->|REST| github

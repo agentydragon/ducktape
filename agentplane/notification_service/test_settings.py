@@ -7,7 +7,13 @@ import pytest
 import pytest_bazel
 from pydantic import ValidationError
 
-from agentplane.notification_service.settings import GitHubSettings, NoticeDebounceSettings, QuotaSettings, Settings
+from agentplane.notification_service.settings import (
+    GitHubSettings,
+    NoticeDebounceSettings,
+    QuotaSettings,
+    SessionDispatcherSettings,
+    Settings,
+)
 
 BLOCKS: dict[str, object] = {
     "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
@@ -59,6 +65,7 @@ notice_debounce:
     assert str(settings.actions.url) == "http://actions/"
     assert settings.actions.token_file == Path("/tokens/actions")
     assert settings.runner_gateway.command_admission_timeout_s == 20
+    assert settings.session_dispatcher is None
     assert settings.stale_inbox_confirmation_s == 30
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__INBOXES_PER_ACCOUNT", "18")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__ACTIVE_SUBSCRIPTIONS_PER_INBOX", "36")
@@ -77,6 +84,19 @@ notice_debounce:
         file.write("unknown_setting: true\n")
     with pytest.raises(ValidationError, match="Extra inputs"):
         Settings(_cli_parse_args=False)
+
+
+def test_dispatcher_configuration_is_optional_but_complete_when_present(settings_file: Path) -> None:
+    with settings_file.open("a") as file:
+        file.write("session_dispatcher:\n  target: dispatcher:8080\n")
+    with pytest.raises(ValidationError, match="Field required"):
+        Settings(database_url="postgresql://unused", _cli_parse_args=False)
+    with settings_file.open("a") as file:
+        file.write("  token_file: /tokens/dispatcher\n  request_timeout_s: 8\n")
+    settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
+    assert settings.session_dispatcher == SessionDispatcherSettings(
+        target="dispatcher:8080", token_file=Path("/tokens/dispatcher"), request_timeout_s=8
+    )
 
 
 @pytest.mark.parametrize(

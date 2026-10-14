@@ -17,6 +17,7 @@ from agentplane.grpc_calls import RefusedError
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.channels import Channel
 from agentplane.notification_service.db import Inbox, Notice
+from agentplane.notification_service.dispatcher_client import SessionDispatcherClient
 from agentplane.notification_service.models import (
     ActionsSource,
     DestinationRef,
@@ -35,7 +36,7 @@ from agentplane.notification_service.sources.github.client import (
 from agentplane.notification_service.sources.github.source import GitHub
 from agentplane.notification_service.sources.github.state import RefreshDeferredError
 from agentplane.notification_service.store import ClaimLostError, ConflictError, QuotaError, Store
-from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxRunner
 from agentplane.sandboxes.errors import SandboxNotFoundError
@@ -92,12 +93,14 @@ class Service:
         *,
         gateway: RunnerGatewayClient,
         history: HistoryServiceClient,
+        dispatcher: SessionDispatcherClient | None = None,
         notice_debounce: NoticeDebounceSettings,
         stale_confirmation_s: float,
         operator_reader_account: str | None,
     ) -> None:
         self.store, self.actions, self.sandboxes, self.history = store, actions, sandboxes, history
         self.gateway = gateway
+        self.dispatcher = dispatcher
         self.github = github
         self.operator_reader_account = operator_reader_account
         self.notice_debounce = notice_debounce
@@ -148,13 +151,19 @@ class Service:
     async def deliver(self, claim: Inbox, runner: SandboxRunner, notice: Notice) -> None:
         # TODO: Observe command-scoped admission outcomes by command ID in the History Service, rather
         # than checkpointing the shared conversation journal.
-        # The runner's journal end now; its entries are read from the History Service, which may lag.
-        live = first(
-            (session for session in await runner.list_sessions() if session.session_id == claim.session_id), None
-        )
-        if live is None:
-            raise DestinationRejectedError
-        if live.last_cursor < notice.runner_cursor:
+        # The runner's journal or History Service watermark may be ahead of the copied cursor.
+        if self.dispatcher is None:
+            live = first(
+                (session for session in await runner.list_sessions() if session.session_id == claim.session_id), None
+            )
+            if live is None:
+                raise DestinationRejectedError
+            last_cursor = live.last_cursor
+        else:
+            # The Dispatcher can accept work while a Sandbox is suspended or its harness is stopped.
+            # History is the durable cursor watermark; the Dispatcher owns the delivery wait.
+            last_cursor = (await self.history.read_session_events(claim.session_id, limit=1)).last_cursor
+        if last_cursor < notice.runner_cursor:
             raise ConflictError("runner cursor regressed")
         copied = notice.runner_cursor
         # Verify the durable boundary before advancing, including after a worker restart.
@@ -164,10 +173,10 @@ class Service:
                 return
             await self.store.receipt(claim, notice, boundary[0], after_cursor=copied - 1)
             copied = boundary[0].cursor
-        if not notice.attempted and live.last_cursor > copied:
+        if not notice.attempted and last_cursor > copied:
             # No command can precede the durable attempt marker. Skip unrelated history,
             # but retain the exact tail entry to verify continuity on an uncertain retry.
-            tail = await self.read_history(claim.session_id, after_cursor=live.last_cursor - 1, limit=1)
+            tail = await self.read_history(claim.session_id, after_cursor=last_cursor - 1, limit=1)
             if not tail:
                 return
             await self.store.checkpoint_before_attempt(claim, notice, tail[0])
@@ -177,26 +186,43 @@ class Service:
         for entry in await self.read_history(claim.session_id, after_cursor=copied, limit=128):
             await self.store.receipt(claim, notice, entry, after_cursor=copied)
             copied = entry.cursor
-        # Until the History Service has everything the runner had, a retry could precede an admission.
-        if copied < live.last_cursor:
+        # Until History covers the current durable watermark, a retry could precede an admission.
+        if copied < last_cursor:
             return
-        # Re-read durable receipt state. A lost response is uncertain: reconcile
-        # the runner journal first, then retry only the same command ID/payload.
-        # Runner admission is idempotent; never prepare a second notice here.
+        # Re-read durable receipt state. A lost response is uncertain: reconcile History first,
+        # then retry only the same command ID and payload. Both enqueue and runner admission are
+        # idempotent; a queued response is not an admission receipt.
         current = await self.store.notice(claim, prepare=False)
         if current is None or current.command_id != notice.command_id or current.confirmed or current.error:
             return
-        if live.harness_state != runner_pb2.HARNESS_STATE_RUNNING:
-            return
         if not current.admitted and (current.attempted or await self.store.attempt(claim, current)):
             # Its admission and confirmation are copied by a later claim, once the History Service has them.
-            await self.gateway.command(
-                runner.destination,
-                claim.session_id,
-                command_pb2.Command(
-                    command_id=str(current.command_id), submit_input=command_pb2.SubmitInput(text=current.text)
-                ),
-            )
+            if self.dispatcher is None:
+                if live.harness_state != runner_pb2.HARNESS_STATE_RUNNING:
+                    return
+                await self.gateway.command(
+                    runner.destination,
+                    claim.session_id,
+                    command_pb2.Command(
+                        command_id=str(current.command_id), submit_input=command_pb2.SubmitInput(text=current.text)
+                    ),
+                )
+            else:
+                dispatch = await self.dispatcher.submit_input(
+                    sandbox=runner.destination.sandbox,
+                    session_id=claim.session_id,
+                    command_id=str(current.command_id),
+                    text=current.text,
+                )
+                if dispatch.state in {
+                    session_dispatcher_pb2.DELIVERY_STATE_NO_OP,
+                    session_dispatcher_pb2.DELIVERY_STATE_FAILED,
+                    session_dispatcher_pb2.DELIVERY_STATE_CANCELLED_IN_DISPATCHER,
+                    session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN,
+                }:
+                    state = session_dispatcher_pb2.DeliveryState.Name(dispatch.state)
+                    reason = dispatch.reason if dispatch.HasField("reason") else "no reason provided"
+                    await self.store.delivery_failed(claim, current, f"Dispatcher {state}: {reason}")
 
     async def get_notice_due_at(self, claim: Inbox) -> datetime | None:
         pending = await self.store.get_pending_entry_times(claim)

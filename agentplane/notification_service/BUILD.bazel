@@ -83,6 +83,7 @@ py_library(
     srcs = ["main.py"],
     deps = [
         ":api",
+        ":dispatcher_client",
         ":service",
         ":settings",
         ":store",
@@ -123,6 +124,7 @@ py_library(
     deps = [
         ":channels",
         ":db",
+        ":dispatcher_client",
         ":models",
         ":settings",
         ":store",
@@ -137,6 +139,7 @@ py_library(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandboxes_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/runner_gateway:client",
         "//agentplane/sandboxes:errors",
         "//agentplane/sandboxes:reader",
@@ -261,19 +264,25 @@ py_test(
     deps = [
         ":conftest",
         ":db",
+        ":dispatcher_client",
         ":models",
         ":service",
         ":settings",
         ":store",
         "//:conftest",
+        "//agentplane:grpc_calls",
         "//agentplane/action_service:models",
         "//agentplane/notification_service/testing:store",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
+        "//agentplane/proto:history_service_pb2",
         "//agentplane/proto:sandboxes_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
+        "//agentplane/runner_gateway:client",
         "//agentplane/sandboxes:errors",
         "//agentplane/workload_auth:principal",
         "@pypi//aiohttp",
+        "@pypi//grpcio",
         "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest",
@@ -422,5 +431,16 @@ py_test(
         "//agentplane/workload_auth:principal",
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
+    ],
+)
+
+py_library(
+    name = "dispatcher_client",
+    srcs = ["dispatcher_client.py"],
+    deps = [
+        "//agentplane:grpc_calls",
+        "//agentplane/proto:session_dispatcher_pb2",
+        "//agentplane/proto:session_dispatcher_pb2_grpc",
+        "@pypi//grpcio",
     ],
 )
