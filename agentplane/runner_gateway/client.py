@@ -9,7 +9,14 @@ import grpc
 from google.protobuf.message import Message
 
 from agentplane.grpc_calls import bearer, call_unary, dial
-from agentplane.proto import command_pb2, event_log_pb2, runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2
+from agentplane.proto import (
+    command_pb2,
+    event_log_pb2,
+    runner_gateway_pb2,
+    runner_gateway_pb2_grpc,
+    runner_pb2,
+    sandboxes_pb2,
+)
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
 from agentplane.runner_gateway import wire
 

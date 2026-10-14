@@ -14,7 +14,7 @@ from google.protobuf.json_format import ParseError
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.grpc_servicer import Abort, ServicerResources, Status, status_mapping
-from agentplane.proto import runner_control_pb2, runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2
+from agentplane.proto import runner_control_pb2, runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2, sandboxes_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxBinding, SandboxDestination
 from agentplane.runner_gateway import session_lifecycle, wire
 from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
