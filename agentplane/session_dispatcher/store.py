@@ -337,7 +337,7 @@ class DispatchStore:
         async with self.sessions.begin() as session:
             account_key = f"dispatcher-wake:{caller.namespace}:{caller.name}"
             await session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(account_key, 0))))
-            now = await session.scalar(select(func.clock_timestamp()))
+            now = cast(datetime | None, await session.scalar(select(func.clock_timestamp())))
             if now is None:
                 raise RuntimeError("PostgreSQL did not return its current time")
             window_start = now - window
