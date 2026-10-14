@@ -478,6 +478,7 @@ py_test(
     srcs = ["test_storage_deployed.py"],
     env_inherit = [
         "AGENTPLANE_ACCEPTANCE_TOKEN",
+        "AGENTPLANE_STORAGE_CONTROLLER_IMAGE",
         "HOME",
         "KUBECONFIG",
     ],

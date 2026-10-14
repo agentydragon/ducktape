@@ -30,3 +30,13 @@ Implementation and live checks are in progress. No storage matrix row is accepte
 fresh provisioning and replacement only: no existing-data cutoff, kind conversion, BlockFilesystem,
 controller restart, node portability or staging acceptance is claimed. Rollout and cutoff remain
 separate gates in the task DAG.
+
+Before a run, verify the controller image's source accepts #10440, then supply that exact full
+reference as `AGENTPLANE_STORAGE_CONTROLLER_IMAGE`. Concurrent pin changes refuse before creating
+the next fixture. Image automation advanced the initial observed controller to `1ceacb7` during
+preparation; that source also contains the workspace record/layout implementation.
+
+The VM setup probe opens from `/state/workspaces/.home`, which the guest creates before starting
+its runner even for a replacement legacy disk. Its workspace marker path is separate at the mount
+root. Failed suspension does not prevent an attempted UID-scoped Delete; cleanup preserves both
+errors and follows the ordinary controller finalizer policy without forcing it.

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import copy
 import json
+import os
 import shlex
 from contextlib import AsyncExitStack
 from uuid import uuid4
@@ -48,7 +49,9 @@ async def _kubectl(*args: str, body: dict | None = None) -> str:
 
 
 async def _object(kind: str, name: str) -> dict:
-    return json.loads(await _kubectl("get", kind, name, "-o", "json"))
+    decoded = json.loads(await _kubectl("get", kind, name, "-o", "json"))
+    assert isinstance(decoded, dict)
+    return decoded
 
 
 async def _condition(name: str, condition: str, value: str = "True") -> None:
@@ -97,10 +100,21 @@ async def _suspend(name: str, uid: str) -> None:
 
 
 async def _cleanup(name: str, uid: str, claims: list[str]) -> None:
-    await _suspend(name, uid)
-    await _delete("sandboxes", name, uid)
-    for claim in claims:
-        await _kubectl("wait", f"pvc/{claim}", "--for=delete", "--timeout=120s")
+    errors: list[Exception] = []
+    try:
+        await _suspend(name, uid)
+    except Exception as error:
+        errors.append(error)
+    # Delete remains allowed when bootstrap/startup cannot suspend. It follows the controller's
+    # ordinary seal policy; the fixture never removes a finalizer or forces shared state.
+    try:
+        await _delete("sandboxes", name, uid)
+        for claim in claims:
+            await _kubectl("wait", f"pvc/{claim}", "--for=delete", "--timeout=120s")
+    except Exception as error:
+        errors.append(error)
+    if errors:
+        raise ExceptionGroup("storage fixture cleanup failed", errors)
 
 
 async def _volumes(name: str, uid: str, *, retained: bool) -> dict:
@@ -136,15 +150,17 @@ async def _volumes(name: str, uid: str, *, retained: bool) -> dict:
     }
 
 
-async def _probe(client: Client, name: str, cwd: str, marker: str, *, workspace_exists: bool) -> dict:
+async def _probe(
+    client: Client, name: str, cwd: str, workspace_dir: str, marker: str, *, workspace_exists: bool
+) -> dict:
     state = "/state/storage-acceptance-state"
-    workspace = f"{cwd}/storage-acceptance-workspace"
+    workspace = f"{workspace_dir}/storage-acceptance-workspace"
     source = f'set -eu\ntest "$(cat {state})" = {shlex.quote(marker)}\nsha256sum {state}\n'
     if workspace_exists:
         source += f'test "$(cat {workspace})" = {shlex.quote(marker)}\nsha256sum {workspace}\n'
     else:
         source += f"test ! -e {workspace}\nprintf 'workspace=absent\\n'\n"
-    source += f"findmnt -n -o FSTYPE,SOURCE,TARGET -T {cwd}\nprintf 'STORAGE_PROBE_OK\\n'\n"
+    source += f"findmnt -n -o FSTYPE,SOURCE,TARGET -T {workspace_dir}\nprintf 'STORAGE_PROBE_OK\\n'\n"
     session = uuid4()
     await client.create_session(
         name,
@@ -178,10 +194,10 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
     assert base_url.rstrip("/") == "https://agentplane-testing.allegedly.works"
     controller = await _object("deployment", "agentplane-sandbox-controller")
     assert controller["status"].get("readyReplicas") == 1
-    # Exact accepting pin is checked before any new-layout template is written. Later pins should
-    # update this acceptance artifact with verified source provenance, not silently skip the gate.
+    # The operator supplies the exact source-verified accepting pin before the run. A concurrent
+    # image rollout fails this gate before any new-layout template is written.
     controller_image = controller["spec"]["template"]["spec"]["containers"][0]["image"]
-    assert controller_image.endswith("devel-20261014073117-025621f"), controller_image
+    assert controller_image == os.environ["AGENTPLANE_STORAGE_CONTROLLER_IMAGE"], controller_image
     existing = json.loads(await _kubectl("get", f"sandboxes.{GROUP}", "-o", "json"))["items"]
     assert not existing, "serialize this acceptance with other testing Sandbox users"
     quota = json.loads(await _kubectl("get", "resourcequota", "-o", "json"))["items"]
@@ -191,7 +207,10 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
     name = f"accept-storage-{case}-{uuid4().hex[:8]}"
     template = name
     spec = copy.deepcopy(base["spec"])
-    cwd = "/state/workspaces/accept" if vm else "/workspace"
+    workspace_dir = "/state/workspaces" if vm else "/workspace"
+    # The guest creates .home before starting its runner, including on a new legacy disk. The
+    # runner requires a child of its workspace root; the mount root itself is forbidden.
+    cwd = f"{workspace_dir}/.home" if vm else workspace_dir
     if retained:
         spec["workspaceVolume"] = {
             "name": "workspace",
@@ -205,9 +224,9 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
             ]
         else:
             runner = next(container for container in spec["pod"]["spec"]["containers"] if container["name"] == "runner")
-            runner["volumeMounts"].append({"name": "workspace", "mountPath": cwd})
+            runner["volumeMounts"].append({"name": "workspace", "mountPath": workspace_dir})
     marker = f"storage-test-{uuid4().hex}"
-    bootstrap = f"set -eu\nmkdir -p {cwd}\nprintf '%s\\n' {marker} > /state/storage-acceptance-state\nprintf '%s\\n' {marker} > {cwd}/storage-acceptance-workspace\nsync\n"
+    bootstrap = f"set -eu\nprintf '%s\\n' {marker} > /state/storage-acceptance-state\nprintf '%s\\n' {marker} > {workspace_dir}/storage-acceptance-workspace\nsync\n"
     config = await _object("configmap", "agentplane-sandbox-service-config")
     policies = yaml.safe_load(config["data"]["config.yaml"])["default_policy_sets"]
     assert policies
@@ -278,7 +297,7 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
             before=before,
             old_incarnation=old_incarnation,
             workspace_attachment=attachment,
-            first_probe=await _probe(client, name, cwd, marker, workspace_exists=True),
+            first_probe=await _probe(client, name, cwd, workspace_dir, marker, workspace_exists=True),
         )
         if vm:
             assert "\next4 " in evidence["first_probe"]["stdout"]
@@ -326,7 +345,7 @@ async def test_fresh_workspace_storage_survives_replacement(client: Client, base
         evidence.update(
             after=after,
             new_incarnation=new_incarnation,
-            resumed_probe=await _probe(client, name, cwd, marker, workspace_exists=retained),
+            resumed_probe=await _probe(client, name, cwd, workspace_dir, marker, workspace_exists=retained),
             passed=True,
         )
         save()
