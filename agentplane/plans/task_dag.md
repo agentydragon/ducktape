@@ -705,6 +705,7 @@ flowchart TD
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
     DISPATCHER_CORE[Blocked: the Session Dispatcher delivers to running Sandboxes]
     DISPATCHER_SESSION_CREATE[Blocked: dispatched Session creation]
+    PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     DISPATCHER_WAKE_ON_SEND[Blocked: a send wakes a suspended Sandbox]
     APP_SENDS_VIA_DISPATCHER[Blocked: the app sends through the Session Dispatcher]
     NOTIFICATIONS_VIA_DISPATCHER[Blocked: notifications send through the Session Dispatcher]
@@ -742,6 +743,9 @@ flowchart TD
     SEAL_RENAME --> QUIESCE_LEGACY_SHAPE_REMOVAL
     RUNNER_FACTS_ON_LEASE -. carries the boot result .-> BOOTSTRAP_PROGRESS_CONTRACT
     DISPATCHER_CORE --> DISPATCHER_SESSION_CREATE
+    DISPATCHER_SESSION_CREATE --> PROXY_START_METHODS_DISPATCHER_ONLY
+    APP_SENDS_VIA_DISPATCHER --> PROXY_START_METHODS_DISPATCHER_ONLY
+    GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
     BOOTSTRAP_PROGRESS_CONTRACT -. Ready may then include the bootstrap .-> DISPATCHER_SESSION_CREATE
     DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
     DISPATCHER_CORE --> APP_SENDS_VIA_DISPATCHER
@@ -1044,7 +1048,8 @@ persists it before it acknowledges the sender, delivers it through the gateway's
 running Sandbox, and reports a delivery state the sender can read (operator, 2026-10-13 PDT; each name says where the command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`, `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED` with a reason, `CANCELLED_IN_DISPATCHER`, and `UNKNOWN` for a deleted Sandbox only; a quiesce refusal returns `DELIVERING_TO_RUNNER` to `QUEUED_IN_DISPATCHER`). The runner deduplicates on the
 command ID, a reply lost across an incarnation boundary is redelivered to the next incarnation
 (`THREAD_SUCCESSOR_DELIVERY`), delivery is first-in first-out per Session, `InterruptTurn` bypasses the queue and
-`StopRunnerSession` goes ahead of it, cancelling the inputs queued before it. A message for a deleted Session or a failed delivery ends in a
+`StopRunnerSession` goes ahead of it, cancelling the inputs queued before it; those end `CANCELLED_IN_DISPATCHER` with reason `stopped`. An `InterruptTurn`
+is not stored: its outcome is its RPC response. A message for a deleted Session or a failed delivery ends in a
 terminal state with a reason and a time to live; a command admitted but not dispatched when the
 Sandbox is torn down ends as `ended_by_teardown`. Replicas shard Sandboxes by a per-Sandbox Lease
 so each has one active owner. Authorization names which senders may send, and the sender kinds
@@ -1266,6 +1271,18 @@ flowchart TD
 Sandbox was made from on the Sandbox (a label) and fills a complete `SessionSpec` and setup script
 from it. `session_defaults` leaves `CreateSandboxRequest`, `SandboxBinding` and our Sandbox's spec,
 and `CreateSessionRequest` loses its field mask.
+
+### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
+
+**Blocked on `DISPATCHER_SESSION_CREATE`, `APP_SENDS_VIA_DISPATCHER` and `GATEWAY_WRAPPER_RETIRE`.** Today
+the gateway's runner proxy (`runner_gateway/runner_proxy.py`) lets every configured caller account call
+every runner method except `Quiesce` and `Seal`, and the gateway wrapper calls `OpenSession` too. The
+bound on a suspend waiting for setups (`SuspendPending`, `SANDBOX_IDLE_EXPIRY`) holds only if nothing
+but the Dispatcher can open a Session or send work, so the proxy's per-method policy authorizes
+`OpenSession` and the other start-or-continue-work methods (`SubmitInput`, `ResumeSession`, and
+`ChangeModel`/`ChangeReasoningEffort` if the design lane decides they start a stopped harness) for the
+Dispatcher's account alone. `InterruptTurn`, `StopRunnerSession` and the reads stay open to the callers
+that have them. Order: every other caller has moved to the Dispatcher, then the policy narrows.
 
 ### `CONTROLLER_SEALS` — the Sandbox controller seals
 
