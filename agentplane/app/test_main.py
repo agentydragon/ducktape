@@ -144,12 +144,15 @@ def test_the_two_settings_models_read_one_environment_without_colliding(monkeypa
 
 @pytest.mark.parametrize("default_policy_sets", [None, [], ["basic"]])
 def test_sandbox_service_target_is_required_only_for_legacy_lifecycle(
-    default_policy_sets: list[str] | None, monkeypatch: pytest.MonkeyPatch
+    default_policy_sets: list[str] | None, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     for name, value in APP_ENVIRONMENT.items():
         monkeypatch.setenv(name, value)
     monkeypatch.delenv("AGENTPLANE_SANDBOX_SERVICE_TARGET")
-    monkeypatch.setenv("AGENTPLANE_DEFAULT_POLICY_SETS", json.dumps(default_policy_sets))
+    # This value is deployed through the YAML ConfigMap, not an environment string.
+    config = tmp_path / "config.yaml"
+    config.write_text(f"default_policy_sets: {json.dumps(default_policy_sets)}\n")
+    monkeypatch.setenv("AGENTPLANE_CONFIG_FILE", str(config))
 
     if default_policy_sets is None:
         with pytest.raises(ValidationError, match="sandbox_service_target is required"):
