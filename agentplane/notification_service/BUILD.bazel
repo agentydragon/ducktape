@@ -170,7 +170,7 @@ py_library(
 
 py_test(
     name = "test_acceptance",
-    size = "large",
+    size = "medium",
     srcs = ["test_acceptance.py"],
     data = [
         "@agentplane_codex_cli_linux_x64//:files",  # keep: both pinned native harnesses
