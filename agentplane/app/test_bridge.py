@@ -36,6 +36,7 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.history import SeededEventLogStore, register_gateway_session
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
@@ -68,10 +69,9 @@ from agentplane.runner.session import Session
 from agentplane.runner.testing.failure_journal import FailureEvidence
 from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, Text
 from agentplane.runner_gateway.client import RunnerGatewayClient
+from agentplane.runner_gateway.testing.backend import Endpoint, runner_bearer
 from agentplane.runner_gateway.testing.control_listener import dialing
-from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.testing.backend import Endpoint, runner_bearer, seed_runner
-from agentplane.sandboxes.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
+from agentplane.sandboxes.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 
@@ -233,7 +233,7 @@ async def history_client(
 @pytest.fixture
 async def local_runners(
     live_index: LiveIndex,
-    sandbox_endpoint: Endpoint,
+    gateway_endpoint: Endpoint,
     gateway: RunnerGatewayClient,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
@@ -242,15 +242,15 @@ async def local_runners(
     """`SANDBOX` running, its Pod's runner connected over the control stream."""
     raw, live_index.pods[SANDBOX] = seed_runner(custom_objects, core_v1, SANDBOX)
     live_index.sandboxes[SANDBOX] = raw
-    async with dialing(runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)):
-        await asyncio.to_thread(sandbox_endpoint.wait_connected, UUID(raw["metadata"]["uid"]))
+    async with dialing(runner, gateway_endpoint.control_target, runner_bearer(SANDBOX)):
+        await asyncio.to_thread(gateway_endpoint.wait_connected, UUID(raw["metadata"]["uid"]))
         yield RunnerDirectory(live_index, gateway)
 
 
 @pytest.fixture
 async def app_url(
     local_runners: RunnerDirectory,
-    inventory: SandboxServiceClient,
+    inventory: SandboxAccess,
     store: ThreadStore,
     database_updates: WakeupListener,
     operator_sessions: OperatorSessionStore,
@@ -1201,7 +1201,7 @@ class Replicas:
 
 @pytest.fixture
 async def replicas(
-    sandbox_endpoint: Endpoint,
+    gateway_endpoint: Endpoint,
     local_runners: RunnerDirectory,
     live_index: LiveIndex,
     runner: Runner,
@@ -1225,13 +1225,13 @@ async def replicas(
     try:
         async with (
             # The survivor replica's own channel to the gateway.
-            dial(sandbox_endpoint.target) as survivor_channel,
+            dial(gateway_endpoint.target) as survivor_channel,
             listening(replica_engine, history_client, history_token_file) as replica_updates,
             history_client.new_client() as owner_openings_client,
             history_client.new_client() as survivor_openings_client,
         ):
             survivor = RunnerBridge(
-                runners=RunnerDirectory(live_index, sandbox_endpoint.gateway(survivor_channel)),
+                runners=RunnerDirectory(live_index, gateway_endpoint.gateway(survivor_channel)),
                 event_logs=survivor_event_logs,
                 content=ContentStore(replica_engine, history_reader=history_client),
             )
@@ -1307,7 +1307,7 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
 
 
 async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
-    sandbox_endpoint: Endpoint,
+    gateway_endpoint: Endpoint,
     gateway: RunnerGatewayClient,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
@@ -1325,10 +1325,10 @@ async def test_history_openings_give_a_session_the_app_did_not_start_a_thread(
         sandbox_uid=raw["metadata"]["uid"],
     )
     async with (
-        dialing(runner, sandbox_endpoint.control_target, runner_bearer(SANDBOX)),
+        dialing(runner, gateway_endpoint.control_target, runner_bearer(SANDBOX)),
         history_client.new_client() as openings_client,
     ):
-        await asyncio.to_thread(sandbox_endpoint.wait_connected, UUID(destination.sandbox_uid))
+        await asyncio.to_thread(gateway_endpoint.wait_connected, UUID(destination.sandbox_uid))
         openings = asyncio.create_task(SessionOpenings(openings_client, event_logs, retry_interval_s=0.05).run())
         try:
             session_id = uuid4()

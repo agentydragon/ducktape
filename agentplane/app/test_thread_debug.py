@@ -13,6 +13,7 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.replication_source import SANDBOX, SESSION, Placements, ReplicationSource
@@ -24,13 +25,12 @@ from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, event_pb2
-from agentplane.sandbox_service.client import SandboxServiceClient
 
 # gazelle:include_dep @pypi//protobuf
 
 
 async def test_lazy_scoped_evidence_and_native_expansion(
-    inventory: SandboxServiceClient,
+    inventory: SandboxAccess,
     bridge: RunnerBridge,
     store: ThreadStore,
     event_logs: SeededEventLogStore,

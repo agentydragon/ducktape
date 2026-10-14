@@ -31,6 +31,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSessionStore
+from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
@@ -39,7 +40,6 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandboxes.testing.fake_inventory import TEMPLATE, FakeAuthenticationV1Api
 from util.net import bind_free_port
 from util.testing.asgi import serve_app, serve_app_in_loop
@@ -60,7 +60,7 @@ class ServeApp(Protocol):
 
 @pytest.fixture
 def serve(
-    inventory: SandboxServiceClient,
+    inventory: SandboxAccess,
     bridge: RunnerBridge,
     store: ThreadStore,
     database_updates: WakeupListener,

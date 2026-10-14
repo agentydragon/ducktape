@@ -90,7 +90,6 @@ from agentplane.grpc_calls import RefusedError, ServiceError
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandboxes.egress_views import (
     BindingNotFoundError,
     BindingView,
@@ -129,7 +128,7 @@ class AppServices:
     names, so importing it would be a dependency cycle.
     """
 
-    inventory: SandboxServiceClient | SandboxAccess
+    inventory: SandboxAccess
     bridge: runner_bridge.RunnerBridge
     store: ThreadStore
     event_logs: EventLogStore
@@ -173,7 +172,7 @@ def _service[T](pick: Callable[[AppServices], T]) -> Any:
 
 
 Services = Annotated[AppServices, _service(lambda services: services)]
-Inventory = Annotated[SandboxServiceClient | SandboxAccess, _service(lambda services: services.inventory)]
+Inventory = Annotated[SandboxAccess, _service(lambda services: services.inventory)]
 Egress = Annotated[EgressAccess, _service(lambda services: services.egress)]
 EventLogs = Annotated[EventLogStore, _service(lambda services: services.event_logs)]
 Content = Annotated[ContentStore, _service(lambda services: services.content)]
@@ -1041,7 +1040,7 @@ def _detail_with_status(code: int) -> Callable[[Request, Exception], Awaitable[J
 
 
 def create_app(
-    inventory: SandboxServiceClient | SandboxAccess,
+    inventory: SandboxAccess,
     bridge: runner_bridge.RunnerBridge,
     store: ThreadStore,
     catalog: ModelCatalog,

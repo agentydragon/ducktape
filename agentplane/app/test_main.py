@@ -31,6 +31,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.main import AppServer, SpaFiles, serve_then_close
 from agentplane.app.oidc import OIDCSettings
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.settings import Settings
 from agentplane.app.shutdown import drain_of
 from agentplane.app.testing.history import SeededEventLogStore
@@ -44,9 +45,7 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.testing.backend import seed_runner
-from agentplane.sandboxes.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi
+from agentplane.sandboxes.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
 from util.net import pick_free_port
 
 APP_ENVIRONMENT = {
@@ -231,7 +230,7 @@ async def _other_connections(database: AsyncEngine) -> int:
 
 @pytest.mark.usefixtures("sigterm_is_survivable")
 async def test_sigterm_ends_open_streams_fails_readiness_and_closes_session_openings_and_database(
-    inventory: SandboxServiceClient,
+    inventory: SandboxAccess,
     runners: RunnerDirectory,
     store: ThreadStore,
     database_updates: WakeupListener,

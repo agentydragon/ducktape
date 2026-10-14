@@ -28,6 +28,7 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import OperatorSession, OperatorSessionStore, request_session
+from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
@@ -37,7 +38,6 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.sandbox_service.client import SandboxServiceClient
 
 APP_URL = "http://test-app.invalid"
 OIDC = OIDCSettings(
@@ -163,7 +163,7 @@ ServeApp = Callable[[OperatorSessionStore, WakeupListener], FastAPI]
 
 @pytest.fixture
 def serve(
-    inventory: SandboxServiceClient,
+    inventory: SandboxAccess,
     bridge: RunnerBridge,
     store: ThreadStore,
     egress: EgressAccess,

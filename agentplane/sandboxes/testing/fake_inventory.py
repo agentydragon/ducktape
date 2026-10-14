@@ -326,6 +326,29 @@ def pod(name: str, *, phase: str, ready: bool, ip: str | None, waiting_reason: s
     )
 
 
+def seed_runner(
+    custom: FakeCustomObjectsApi, core: FakeCoreV1Api, name: str
+) -> tuple[dict[str, Any], k8s_client.V1Pod]:
+    """A controller-shaped Sandbox and Pod, ready for Runner Gateway authorization tests."""
+    raw = sandbox(name, conditions=READY)
+    running = pod(name, phase="Running", ready=True, ip="127.0.0.1")
+    running.metadata.namespace = NAMESPACE
+    running.metadata.uid = f"test-pod-{name}"
+    running.metadata.owner_references = [
+        k8s_client.V1OwnerReference(
+            api_version=sandbox_resource.SANDBOX_API_VERSION,
+            kind=sandbox_resource.SANDBOX_KIND,
+            name=name,
+            uid=raw["metadata"]["uid"],
+            controller=True,
+        )
+    ]
+    running.spec.service_account_name = name
+    custom.objects[(sandbox_resource.SANDBOXES_PLURAL, name)] = raw
+    core.pods[name] = running
+    return raw, running
+
+
 class FakeAuthenticationV1Api:
     """TokenReview over a table of tokens, answering as the API server does for an unknown one.
 

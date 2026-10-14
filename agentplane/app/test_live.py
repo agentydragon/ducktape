@@ -53,6 +53,7 @@ from agentplane.app.operator_sessions import (
     RequestSession,
     SessionRow,
 )
+from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.sandbox_models import sandbox_view
 from agentplane.app.shutdown import Drain
 from agentplane.app.testing.egress_proxy import FakeEgressAdmin, decision
@@ -72,8 +73,6 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
-from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.testing.backend import seed_runner
 from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
     FakeCoreV1Api,
@@ -81,6 +80,7 @@ from agentplane.sandboxes.testing.fake_inventory import (
     egress_policy_set,
     policy_binding,
     sandbox,
+    seed_runner,
 )
 from agentplane.subjects import ServiceAccountRef
 from util.net import pick_free_port
@@ -119,9 +119,7 @@ def seeded(custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api, live_in
     return live_index
 
 
-async def test_the_index_projects_the_rows_a_listing_would_return(
-    seeded: LiveIndex, inventory: SandboxServiceClient
-) -> None:
+async def test_the_index_projects_the_rows_a_listing_would_return(seeded: LiveIndex, inventory: SandboxAccess) -> None:
     """The push and the fetch share their projection; this is what says they still do."""
     assert seeded.sandbox_views() == [sandbox_view(view) for view in await inventory.list_sandboxes()]
     assert seeded.sandbox_view("runner-1") == sandbox_view(await inventory.get("runner-1"))
@@ -306,7 +304,7 @@ async def test_a_frame_goes_out_per_change_with_health_through_the_quiet(seeded:
 
 @pytest.fixture
 def app(
-    inventory: SandboxServiceClient,
+    inventory: SandboxAccess,
     gateway: RunnerGatewayClient,
     egress: EgressAccess,
     decisions: DecisionsClient,

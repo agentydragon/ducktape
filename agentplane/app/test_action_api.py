@@ -62,6 +62,7 @@ from agentplane.app.identity import TokenReviewer
 from agentplane.app.live import LiveIndex, SandboxSnapshot
 from agentplane.app.oidc import INSECURE_COOKIE, OIDCSettings
 from agentplane.app.operator_sessions import BrowserSession, OperatorSession, OperatorSessionStore
+from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
@@ -75,7 +76,6 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.runner_gateway.client import RunnerGatewayClient
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandboxes.action_policy_views import MANAGED_BY_APP, MANAGED_BY_LABEL
 from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCustomObjectsApi, policy_binding, sandbox
 from agentplane.subjects import ServiceAccountRef
@@ -151,7 +151,7 @@ def db_url(action_api_template: PostgresDatabaseTemplate, database_clones: Datab
 @pytest.fixture
 async def review(
     db_url: str,
-    inventory: SandboxServiceClient,
+    inventory: SandboxAccess,
     gateway: RunnerGatewayClient,
     bridge: RunnerBridge,
     store: ThreadStore,

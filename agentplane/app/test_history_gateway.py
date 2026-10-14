@@ -1,4 +1,4 @@
-"""The production app directory/bridge/archive against authenticated Sandbox Service and History Service gRPC."""
+"""The app's Runner Gateway and History Service path against authenticated gRPC peers."""
 
 from collections.abc import AsyncIterator
 from pathlib import Path
@@ -21,8 +21,8 @@ from agentplane.proto import command_pb2, runner_pb2
 from agentplane.runner.runner import Runner
 from agentplane.runner.testing import launches
 from agentplane.runner.testing.scripted_model import ScriptedModel, Text
+from agentplane.runner_gateway.testing.connected_runner import authenticated_runner_gateway
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
-from agentplane.sandbox_service.testing.connected_runner import authenticated_service
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster, sandbox_cluster
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 
@@ -62,10 +62,9 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
     service_history_db_url: str,
 ) -> None:
     async with (
-        authenticated_service(cluster, runner, tmp_path / "service-token", database_url=service_history_db_url) as (
-            _,
-            remote,
-        ),
+        authenticated_runner_gateway(
+            cluster, runner, tmp_path / "gateway-token", database_url=service_history_db_url
+        ) as remote,
         ingest(service_history_db_url, runner),
     ):
         directory = RunnerDirectory(live_index, remote)
@@ -107,9 +106,9 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
 async def test_stopped_service_never_falls_back_to_reachable_runner(
     cluster: SandboxCluster, live_index: LiveIndex, tmp_path: Path, runner: Runner, service_history_db_url: str
 ) -> None:
-    async with authenticated_service(
-        cluster, runner, tmp_path / "service-token", database_url=service_history_db_url
-    ) as (_, remote):
+    async with authenticated_runner_gateway(
+        cluster, runner, tmp_path / "gateway-token", database_url=service_history_db_url
+    ) as remote:
         directory = RunnerDirectory(live_index, remote)
         assert await directory.client(SANDBOX).list_sessions() == []
     # Each call to the Sandbox's runner dials its control Service anew, here with the gateway gone.

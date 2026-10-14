@@ -27,6 +27,7 @@ from agentplane.app.electric import ElectricProxy
 from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.operator_sessions import OperatorSessionStore
+from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.system_status import SystemStatusChecker
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.events.event_log import EventLogStore
@@ -41,15 +42,12 @@ from agentplane.history_service.fold.views import ThreadEntityView
 from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
-from agentplane.sandbox_service.client import SandboxServiceClient
 
 
 def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channel) -> dict[str, Any]:
     # Only routes and models shape the document; the service clients are never called.
     # Schema export never makes an RPC; the timeouts are inert placeholder arguments, not runtime defaults.
-    inventory = SandboxServiceClient(
-        channel, namespace="schema", token_file=Path("/schema-unused-token"), request_timeout_s=1, lifecycle_timeout_s=1
-    )
+    inventory = cast(SandboxAccess, None)
     gateway = RunnerGatewayClient(
         channel,
         token_file=Path("/schema-unused-token"),

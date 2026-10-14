@@ -42,9 +42,8 @@ from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import runner_gateway_pb2, runner_gateway_pb2_grpc, runner_pb2, session_dispatcher_pb2
 from agentplane.runner.harness import Harness
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
+from agentplane.runner_gateway.testing.backend import backend
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
-from agentplane.sandbox_service.client import SandboxServiceClient
-from agentplane.sandbox_service.testing.backend import backend, seed_runner
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
@@ -57,6 +56,7 @@ from agentplane.sandboxes.testing.fake_inventory import (
     pod,
     policy_binding,
     sandbox,
+    seed_runner,
 )
 from agentplane.subjects import ServiceAccountRef
 
@@ -131,7 +131,7 @@ def presets() -> PresetCatalog:
 def bare_app(
     presets: PresetCatalog,
     model_catalog: ModelCatalog,
-    inventory: SandboxServiceClient,
+    inventory: SandboxAccess,
     bridge: RunnerBridge,
     store: ThreadStore,
     database_updates: WakeupListener,
@@ -579,7 +579,7 @@ async def test_a_runner_that_has_not_connected_is_a_503(
     tmp_path: Path,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
-    inventory: SandboxServiceClient,
+    inventory: SandboxAccess,
     store: ThreadStore,
     database_updates: WakeupListener,
     operator_sessions: OperatorSessionStore,
@@ -677,7 +677,7 @@ async def test_unanswered_service_command_is_a_504_and_cancels_its_rpc(
     tmp_path: Path,
     custom_objects: FakeCustomObjectsApi,
     core_v1: FakeCoreV1Api,
-    inventory: SandboxServiceClient,
+    inventory: SandboxAccess,
     store: ThreadStore,
     database_updates: WakeupListener,
     operator_sessions: OperatorSessionStore,
