@@ -296,6 +296,7 @@ py_library(
         ":runner_gateway",
         ":sandbox_service",
         ":service_workload",
+        ":session_dispatcher",
         "//agentplane:crd_group",
         "//agentplane/app:oidc",
         "//agentplane/app:settings",

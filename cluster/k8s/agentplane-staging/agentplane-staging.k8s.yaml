@@ -4066,6 +4066,7 @@ spec:
             - --runner-gateway-target=agentplane-runner-gateway.agentplane-staging.svc.cluster.local:8080
             - --runner-gateway-token-file=/var/run/secrets/agentplane-runner-gateway/token
             - --history-service-target=agentplane-history-service.agentplane-staging.svc.cluster.local:8080
+            - --session-dispatcher-target=agentplane-session-dispatcher.agentplane-staging.svc.cluster.local:8080
             - --notifications-url=http://agentplane-notifications.agentplane-staging.svc.cluster.local:8080
             - --notifications-token-file=/var/run/secrets/agentplane-notifications/token
             - --host=0.0.0.0
@@ -4171,6 +4172,9 @@ spec:
               readOnly: true
             - mountPath: /var/run/secrets/agentplane-history-service
               name: history-service-token
+              readOnly: true
+            - mountPath: /var/run/secrets/agentplane-session-dispatcher
+              name: session-dispatcher-token
               readOnly: true
             - mountPath: /var/run/secrets/agentplane-notifications
               name: notifications-token
@@ -4279,6 +4283,13 @@ spec:
             sources:
               - serviceAccountToken:
                   audience: agentplane-history-service
+                  expirationSeconds: 3600
+                  path: token
+        - name: session-dispatcher-token
+          projected:
+            sources:
+              - serviceAccountToken:
+                  audience: agentplane-session-dispatcher
                   expirationSeconds: 3600
                   path: token
         - name: notifications-token
@@ -4502,6 +4513,14 @@ spec:
     - toEndpoints:
         - matchLabels:
             app.kubernetes.io/name: agentplane-runner-gateway
+            k8s:io.kubernetes.pod.namespace: agentplane-staging
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+    - toEndpoints:
+        - matchLabels:
+            app.kubernetes.io/name: agentplane-session-dispatcher
             k8s:io.kubernetes.pod.namespace: agentplane-staging
       toPorts:
         - ports:

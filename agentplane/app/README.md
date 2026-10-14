@@ -143,14 +143,14 @@ native execution. The Thread event stream and projected sync publish the archive
 outcome. After an unconfirmed delivery the browser keeps Retry and never Cancel, because the runner
 may have received it.
 
-When the optional Dispatcher target is configured on a pinned, accepting app image, the same
-endpoint stores the command in the Session Dispatcher and returns its durable `Dispatch`. The app
-reads later state at `GET /threads/{id}/commands/{command_id}/dispatch`; queued and delivering are
-distinct from runner admission, and neither admission nor `HARNESS_CONFIRMED` is presented as an
-effect. History remains the authority for command outcomes. The browser retains the command locally
-until History projects its admission or command row; the app adds no command queue. The Dispatcher
-setting is intentionally absent from deployment config until the receiving image and deployment
-acceptance gates pass.
+With the Dispatcher target configured in testing and staging, the same endpoint stores the command
+in the Session Dispatcher and returns its durable `Dispatch`. A configured Dispatcher failure is
+returned to the caller; it never falls back to direct Gateway submission. The app reads later state
+at `GET /threads/{id}/commands/{command_id}/dispatch`; queued and delivering are distinct from runner
+admission, and neither admission nor `HARNESS_CONFIRMED` is presented as an effect. History remains
+the authority for command outcomes. The browser retains the command locally until History projects
+its admission or command row; the app adds no command queue. Deployments that leave the optional
+Dispatcher target unset retain the Runner Gateway command path during rollout.
 
 The app still uses Runner Gateway for Session listing, opening, resuming and any command traffic
 while the Dispatcher target is unset. Those paths have separate rollout and retirement gates.

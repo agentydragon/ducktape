@@ -1,4 +1,4 @@
-"""The deployed Dispatcher is receiver-ready while senders remain on the Runner Gateway."""
+"""The deployed Dispatcher accepts authenticated app and notification senders."""
 
 from typing import Any
 
@@ -13,7 +13,7 @@ from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
 @pytest.mark.parametrize("namespace", NAMESPACES)
-def test_dispatcher_deployment_and_gateway_auth(
+def test_dispatcher_deployment_and_sender_auth(
     namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     documents = agentplane_manifests[namespace]
@@ -90,6 +90,32 @@ def test_dispatcher_deployment_and_gateway_auth(
         for endpoint in rule.get("fromEndpoints", [])
     }
     assert dispatcher_callers == {app.NAME, notifications.NAME}
+
+    app_deployment = resource("Deployment", app.NAME)
+    app_pod = app_deployment["spec"]["template"]["spec"]
+    app_container = one(item for item in app_pod["containers"] if item["name"] == "app")
+    dispatcher = session_dispatcher.service(namespace)
+    assert f"--session-dispatcher-target={dispatcher.fqdn}:{dispatcher.port.number}" in app_container["args"]
+    app_token = one(volume for volume in app_pod["volumes"] if volume["name"] == "session-dispatcher-token")
+    assert app_token["projected"]["sources"] == [
+        {
+            "serviceAccountToken": {
+                "audience": session_dispatcher.TOKEN_AUDIENCE,
+                "expirationSeconds": 3600,
+                "path": "token",
+            }
+        }
+    ]
+    app_token_mount = one(mount for mount in app_container["volumeMounts"] if mount["name"] == app_token["name"])
+    assert app_token_mount["mountPath"] == "/var/run/secrets/agentplane-session-dispatcher"
+    assert app_token_mount["readOnly"] is True
+    app_policy = resource("CiliumNetworkPolicy", app.NAME)["spec"]
+    app_egress = {
+        endpoint["matchLabels"].get("app.kubernetes.io/name")
+        for rule in app_policy["egress"]
+        for endpoint in rule.get("toEndpoints", [])
+    }
+    assert session_dispatcher.NAME in app_egress
     dispatcher_egress = {
         endpoint["matchLabels"].get("app.kubernetes.io/name")
         for rule in dispatcher_policy["egress"]

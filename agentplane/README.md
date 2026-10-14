@@ -71,7 +71,7 @@ flowchart TB
     browser -->|HTTPS, SSE| app
     mcp_client -->|MCP over OAuth| actions
     app -->|gRPC: Sessions, lifecycle and remaining legacy commands| gw
-    app -.->|queued commands and delivery-state reads after accepting app image is pinned| dispatcher
+    app -->|gRPC: queued Thread commands and delivery-state reads| dispatcher
     app -->|gRPC: Session and Thread reads, change and Session-opening watch| hs
     app -->|HTTP| notif
     app -->|HTTP: operator decisions| actions
