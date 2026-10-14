@@ -4870,6 +4870,7 @@ rules:
       - watch
       - create
       - update
+      - patch
   - apiGroups:
       - kubevirt.io
     resources:

@@ -92,10 +92,11 @@ class SandboxController(Construct):
                 RolePolicyRule(
                     resources=[custom_resource("", "pods")], verbs=["get", "list", "watch", "create", "delete"]
                 ),
-                # Update only to make the Sandbox the owner of a PVC created before it owned them.
+                # Update adds and removes the Sandbox owner reference; patch backfills the durable
+                # state-volume layout record on an older controller-owned claim.
                 RolePolicyRule(
                     resources=[custom_resource("", "persistentvolumeclaims")],
-                    verbs=["get", "list", "watch", "create", "update"],
+                    verbs=["get", "list", "watch", "create", "update", "patch"],
                 ),
                 # A VM Sandbox's VM, kept halted while it is stopped, and the VMI it reads status from.
                 RolePolicyRule(
