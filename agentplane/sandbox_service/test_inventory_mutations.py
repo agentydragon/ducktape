@@ -165,11 +165,50 @@ async def test_suspend_and_resume_patch_running(
 
     assert custom_objects.patches == [
         (SANDBOXES_PLURAL, "live", {"metadata": {"uid": live.uid, "resourceVersion": ANY}, "spec": {"running": False}}),
-        (SANDBOXES_PLURAL, "live", {"metadata": {"uid": live.uid, "resourceVersion": ANY}, "spec": {"running": True}}),
+        (
+            SANDBOXES_PLURAL,
+            "live",
+            {"metadata": {"uid": live.uid, "resourceVersion": ANY}, "spec": {"running": True, "wakeGeneration": 1}},
+        ),
     ]
     assert (suspended.operating_mode, resumed.operating_mode) == (OperatingMode.SUSPENDED, OperatingMode.RUNNING)
     with pytest.raises(SandboxNotFoundError):
         await inventory.suspend("live", uid="test-other-incarnation")
+
+
+async def test_published_operating_mode_overrides_spec_running(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+) -> None:
+    _populate_one_of_each_state(custom_objects, core_v1)
+    # Idle-suspended: the spec still says run, and the controller says it does not.
+    idle = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
+    idle["status"]["operatingMode"] = "Suspended"
+    idle["spec"]["wakeGeneration"] = 4
+    custom_objects.objects[(SANDBOXES_PLURAL, "starting")]["status"]["operatingMode"] = "Running"
+
+    live = await inventory.get("live")
+    assert live.operating_mode == OperatingMode.SUSPENDED
+    await inventory.begin_teardown("live", uid=live.uid)
+    assert custom_objects.deleted == [(SANDBOXES_PLURAL, "live")]
+
+
+async def test_resume_wakes_an_idle_suspended_sandbox_by_bumping_the_generation(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+) -> None:
+    _populate_one_of_each_state(custom_objects, core_v1)
+    idle = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
+    idle["status"]["operatingMode"] = "Suspended"
+    idle["spec"]["wakeGeneration"] = 4
+    awake = custom_objects.objects[(SANDBOXES_PLURAL, "starting")]
+    awake["status"]["operatingMode"] = "Running"
+
+    await inventory.resume("live", uid=idle["metadata"]["uid"])
+    await inventory.resume("starting", uid=awake["metadata"]["uid"])
+
+    assert [(name, body["spec"]) for _, name, body in custom_objects.patches] == [
+        ("live", {"running": True, "wakeGeneration": 5}),
+        ("starting", {"running": True}),
+    ]
 
 
 async def test_teardown_deletes_a_suspended_sandbox_fenced_until_sealed(

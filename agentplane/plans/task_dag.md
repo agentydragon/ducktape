@@ -719,9 +719,7 @@ flowchart TD
     SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Blocked: the controller suspends an idle Sandbox]
     RUNNER_SEAL_PER_INCARNATION[Candidate: the runner keys its seal to the incarnation and reopens]
     RUNNER_SEAL_PER_INCARNATION --> SANDBOX_IDLE_EXPIRY
-    IDLE_SUSPEND_FIELDS[Candidate: optional idle-suspend fields and the effective mode in status] -- image pinned --> EFFECTIVE_MODE_READERS[Blocked: Python readers follow the effective mode]
-    EFFECTIVE_MODE_READERS --> SANDBOX_IDLE_EXPIRY
-    SANDBOX_WRITE_HELPER -. wake helper shared .-> EFFECTIVE_MODE_READERS
+    IDLE_SUSPEND_FIELDS[Candidate: optional idle-suspend fields and the effective mode in status] -- image pinned --> EFFECTIVE_MODE_FALLBACK_DROP[Blocked: readers stop falling back to spec.running]
     RUNNER_SEAL_PER_INCARNATION -. related .-> SESSION_INCARNATIONS
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
     HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
@@ -920,24 +918,20 @@ Firecracker with the runner as init.
 them. The controller publishes the effective mode once in status: whether the Sandbox is meant to run,
 from `spec.running` and, once `SANDBOX_IDLE_EXPIRY` writes it, `status.suspendedBy`. It reads the idle fields
 and decides nothing yet, so a Sandbox behaves exactly as before. Gate: the controller image is pinned before
-`EFFECTIVE_MODE_READERS`. Reader before writer.
+the readers (landed with the wake helper). Reader before writer.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `EFFECTIVE_MODE_READERS` — every reader of `spec.running` follows the effective mode
+### `EFFECTIVE_MODE_FALLBACK_DROP` — the Python readers stop falling back to `spec.running`
 
-**Blocked on `IDLE_SUSPEND_FIELDS`, its controller image pinned.** Every reader of `spec.running` reads the
-status's effective mode instead: the controller's own reconcile and `vm.go` (with `IDLE_SUSPEND_FIELDS`),
-`sandbox_resource.py`, the shared phase derivation (`kubernetes_views.py`) and `inventory.py` in
-`agentplane/sandboxes/`, the app's delete path and its `sandbox_has_ready_pod`. The wake helper of
-`SANDBOX_WRITE_HELPER` sets `running = true` and bumps `wakeGeneration` for both causes (operator, 2026-10-14:
-the shape stays); it lands in `agentplane/sandboxes/` with the readers or in that node, whichever merges
-first. Gate: the images of these readers are pinned before `SANDBOX_IDLE_EXPIRY` writes `status.suspendedBy`,
-or a suspended-by-idle Sandbox reads as running.
+**Blocked on `IDLE_SUSPEND_FIELDS`, its controller image pinned.** `Sandbox.operating_mode` in
+`sandbox_resource.py` reads `status.operatingMode` and falls back to `spec.running` while the controller
+has not published it. Once the controller that publishes it is pinned everywhere, make the status field
+required and delete the fallback (its `CLEANUP` marker names the same gate).
 
 ### `SANDBOX_IDLE_EXPIRY` — the controller suspends an idle Sandbox
 
-**Blocked on `EFFECTIVE_MODE_READERS`, `SESSION_INCARNATIONS`, `RUNNER_SEAL_PER_INCARNATION`,
+**Blocked on the app image that reads `status.operatingMode` being pinned, `SESSION_INCARNATIONS`, `RUNNER_SEAL_PER_INCARNATION`,
 `RUNNER_FACTS_ON_LEASE` and `QUIESCE_WITHOUT_POLLING`; operator, 2026-10-11 and 2026-10-13 PDT.** An idle runner
 Sandbox suspends: it is sealed, then the Pod or VM goes, freeing memory and compute, and the Sandbox, its
 ServiceAccount, bindings and state PVC stay, so `SESSION_REVIVE` resumes it on the same PVC. Nothing deletes a
@@ -1091,7 +1085,7 @@ holds only the Service, and the removal is a deletion.
 
 **Candidate; operator, 2026-10-13 PDT: the Sandbox Service goes away and requesters write the spec.** A shared
 library for the two requesters, the app and the Dispatcher: the UID- and resourceVersion-guarded
-`spec.running` patch; the `wakeGeneration` bump; an advisory, retryable refusal while the Sandbox is
+`spec.running` patch; an advisory, retryable refusal while the Sandbox is
 quiescing (the controller enforces it) and of deleting a running Sandbox; create validation, the default
 policy sets on create and idempotent create (today `sandbox_service/provisioning.py` and `inventory.py`);
 and the phase derivation (today

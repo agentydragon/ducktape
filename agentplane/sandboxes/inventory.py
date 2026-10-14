@@ -24,6 +24,7 @@ from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.proto import runner_pb2
 from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest
 from agentplane.proto.sandboxes_pb2 import Sandbox
+from agentplane.sandbox_resource import OperatingMode
 from agentplane.sandboxes.console import stream_console
 from agentplane.sandboxes.errors import (
     InvalidSandboxError,
@@ -194,7 +195,7 @@ class SandboxInventory(SandboxReader):
         sandbox = await self._incarnation(name, uid=uid)
         if sandbox.metadata.deletion_timestamp is not None:
             return
-        if sandbox.spec.running:
+        if sandbox.operating_mode is OperatingMode.RUNNING:
             raise SandboxRunningError(name)
         await self._custom_objects.delete_namespaced_custom_object(
             GROUP,
@@ -218,6 +219,10 @@ class SandboxInventory(SandboxReader):
         sandbox = await self._incarnation(name, uid=uid)
         if sandbox.metadata.deletion_timestamp is not None:
             raise SandboxTearingDownError(name)
+        spec: dict[str, object] = {"running": running}
+        # An idle-suspended Sandbox stays stopped until its wake generation moves past the one it stopped at.
+        if running and sandbox.operating_mode is OperatingMode.SUSPENDED:
+            spec["wakeGeneration"] = sandbox.spec.wake_generation + 1
         # Guarded, so that a concurrent delete is never answered by a stale read's mode.
         await self._custom_objects.patch_namespaced_custom_object(
             GROUP,
@@ -225,10 +230,7 @@ class SandboxInventory(SandboxReader):
             self._namespace,
             sandbox_resource.SANDBOXES_PLURAL,
             name,
-            {
-                "metadata": {"uid": uid, "resourceVersion": sandbox.metadata.resource_version},
-                "spec": {"running": running},
-            },
+            {"metadata": {"uid": uid, "resourceVersion": sandbox.metadata.resource_version}, "spec": spec},
             _content_type=_MERGE_PATCH,
         )
 

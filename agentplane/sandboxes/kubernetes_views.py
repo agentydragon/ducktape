@@ -55,7 +55,7 @@ def sandbox_view(
         name=metadata.name,
         uid=str(metadata.uid),
         created_at=created_at,
-        operating_mode=OperatingMode.RUNNING if spec.running else OperatingMode.SUSPENDED,
+        operating_mode=sandbox.operating_mode,
         namespace=metadata.namespace,
         status=_struct(sandbox.status.model_dump(mode="json", by_alias=True, exclude_none=True)),
         service_account=ServiceAccount(namespace=metadata.namespace, name=metadata.name),
@@ -73,7 +73,7 @@ def _phase(sandbox: sandbox_resource.Sandbox) -> SandboxPhase:
         sealed = sandbox.sessions_sealed or sandbox.running_reason() == "Deleting"
         return SandboxPhase.SANDBOX_PHASE_TEARING_DOWN if sealed else SandboxPhase.SANDBOX_PHASE_QUIESCING
     incarnated = sandbox.status.incarnation is not None
-    if sandbox.spec.running:
+    if sandbox.operating_mode is OperatingMode.RUNNING:
         return SandboxPhase.SANDBOX_PHASE_RUNNING if incarnated else SandboxPhase.SANDBOX_PHASE_CREATING
     if not incarnated:
         return SandboxPhase.SANDBOX_PHASE_SUSPENDED

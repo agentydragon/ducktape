@@ -42,7 +42,7 @@ VMI_KIND = "VirtualMachineInstance"
 
 
 class OperatingMode(StrEnum):
-    """The Sandbox API's `operating_mode`, from `spec.running`."""
+    """Whether the Sandbox Controller runs the Sandbox."""
 
     RUNNING = "Running"
     SUSPENDED = "Suspended"
@@ -76,6 +76,7 @@ class SessionDefaults(_Wire):
 class Spec(_Wire):
     template: str
     running: bool = False
+    wake_generation: int = 0
     policy_sets: Set[str] = frozenset()
     session_defaults: SessionDefaults | None = None
     bootstrap: str | None = None
@@ -90,6 +91,9 @@ class Incarnation(_Wire):
 
 class Status(_Wire):
     incarnation: Incarnation | None = None
+    # CLEANUP(added 2026-10-14): Make this required once the Sandbox Controller image that publishes it
+    #   is pinned, and drop the `spec.running` fallback in `Sandbox.operating_mode`.
+    operating_mode: OperatingMode | None = None
     conditions: list[Condition] = Field(default_factory=list)
 
 
@@ -97,6 +101,14 @@ class Sandbox(_Wire):
     metadata: ObjectMeta
     spec: Spec
     status: Status = Field(default_factory=Status)
+
+    @property
+    def operating_mode(self) -> OperatingMode:
+        """`spec.running`, unless the controller suspended the Sandbox for idleness: readers never read
+        `spec.running` themselves."""
+        if self.status.operating_mode is not None:
+            return self.status.operating_mode
+        return OperatingMode.RUNNING if self.spec.running else OperatingMode.SUSPENDED
 
     @property
     def sessions_sealed(self) -> bool:
@@ -114,7 +126,7 @@ class Sandbox(_Wire):
     def suspended(self) -> bool:
         """Asked to stop and stopped: no Pod or VM runs, and the state volume is kept."""
         condition = self._ready_condition()
-        return not self.spec.running and condition is not None and condition.reason == STOPPED
+        return self.operating_mode is OperatingMode.SUSPENDED and condition is not None and condition.reason == STOPPED
 
     def running_reason(self) -> str | None:
         return next((c.reason for c in self.status.conditions if c.type == RUNNING), None)
