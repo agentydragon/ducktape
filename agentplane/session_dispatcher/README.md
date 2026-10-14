@@ -6,8 +6,8 @@ Sandbox is `Ready`, and the sender reads where it is. The manifests configure on
 staging and testing until `DISPATCHER_REPLICA_OWNERSHIP` lands; this is a temporary correctness limit
 because the delivery loop currently assumes one active owner. The app and Notification Service still
 send through the Runner Gateway pending their cutovers. Control design:
-[ADR](../docs/adr_sandbox_session_control.md). Rollout acceptance is tracked in
-[`DISPATCHER_DEPLOY`](../plans/task_dag.md).
+[ADR](../docs/adr_sandbox_session_control.md). Deployment and production-startup acceptance evidence is in
+[the acceptance report](debug/deployment_acceptance.md).
 
 ## Contract
 

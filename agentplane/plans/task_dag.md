@@ -719,7 +719,6 @@ flowchart TD
     HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
-    DISPATCHER_DEPLOY --> NOTIFICATIONS_VIA_DISPATCHER
     NOTIFICATIONS_VIA_DISPATCHER --> SESSION_ACTIVITY_STREAM
     DISPATCHER_WAKE_ACTIVATION --> SUSPENDED_COMPOSER
     APP_SENDS_VIA_DISPATCHER --> SUSPENDED_COMPOSER
@@ -728,7 +727,6 @@ flowchart TD
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
     EFFECTIVE_MODE_FALLBACK_DROP[Blocked: remove spec.running fallback after controller rollout]
-    DISPATCHER_DEPLOY[In flight: remaining deployed Dispatcher acceptance]
     DISPATCHER_REPLICA_OWNERSHIP[In flight: fenced per-Sandbox ownership]
     DISPATCHER_TERMINAL_BROADCAST[In flight: cross-replica deletion outcomes]
     DISPATCHER_REPLICA_ACTIVATION[Blocked: remove singleton deployment restriction]
@@ -737,7 +735,6 @@ flowchart TD
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
     APP_SENDS_VIA_DISPATCHER --> APP_DISPATCHER_ACTIVATION
-    DISPATCHER_DEPLOY --> APP_DISPATCHER_ACTIVATION
     APP_SESSION_DEFAULTS --> APP_SESSION_OPEN_VIA_DISPATCHER
     APP_DISPATCHER_ACTIVATION --> APP_GATEWAY_SEND_REMOVE
     APP_SESSION_OPEN_VIA_DISPATCHER --> APP_GATEWAY_SEND_REMOVE
@@ -1127,18 +1124,6 @@ and deletion events across replica boundaries without the app. Then remove the o
 singleton warnings from docs. This node finishes with the restriction gone, not merely a successful
 experiment; preserve the normal Lease renewal/fencing machinery.
 
-### `DISPATCHER_DEPLOY` — finish deployed Dispatcher acceptance
-
-**In flight (Codex acceptance worker, 2026-10-14), draft #10471; merge the probe correction/evidence.** The Deployment, database,
-migration init container, network policy, gateway account and Flux images from #10449 are deployed.
-Do not recreate deployment work. The testing probe has delivered a queued command through the real
-Dispatcher/Gateway without calling the app; exact evidence belongs in the Dispatcher component docs.
-The isolated production `serve()` startup/restart test also passes with a persisted queue and no app;
-its exact tested source and the live probe evidence are being published together. Remove this node
-with that evidence PR, without demanding a second live shared-service restart. Local port-forward
-transport does not prove Cilium caller ingress; the actual sender cutovers verify their service route.
-Sender code can be prepared in parallel; activation waits for the evidence handoff.
-
 ### `DISPATCHER_WAKE_ABUSE_LIMITS` — choose wake budgets before activation
 
 **Decision.** Review rates/per-sender quotas and authority for user and notification wakeups; no
@@ -1168,7 +1153,7 @@ it is not a compatibility shim to delete.
 
 ### `APP_SENDS_VIA_DISPATCHER` — the app sends through the Session Dispatcher
 
-**In flight (Codex, 2026-10-14); activation waits for `DISPATCHER_DEPLOY` and accepting app images.** The composer and the app's other command sends call the Session
+**In flight (Codex, 2026-10-14); draft #10475; activation waits for accepting app images.** The composer and the app's other command sends call the Session
 Dispatcher instead of `SubmitCommand`, showing its delivery states. The command-progress lights
 (`CommandProgress`: saved in browser, runner accepted, effect confirmed) gain a dispatch stage
 between the browser and the runner: queued in the Dispatcher (operator, 2026-10-13 PDT). It reads
@@ -1196,7 +1181,7 @@ implementation node once policy is reviewed; existing caller cutovers do not sil
 
 ### `APP_DISPATCHER_ACTIVATION` — activate app command sends through Dispatcher
 
-**Blocked on `APP_SENDS_VIA_DISPATCHER`, `DISPATCHER_DEPLOY` and the accepting app image pinned.**
+**Blocked on `APP_SENDS_VIA_DISPATCHER` and the accepting app image pinned.**
 Add endpoint/token/network configuration, deploy testing before staging, and verify queued, admitted
 and confirmed UI states. No fallback to direct sends on a Dispatcher error. Keep session creation
 and explicit native resume accounted for separately until all start-work callers have migrated.
@@ -1220,7 +1205,7 @@ merely because command sends moved.
 
 ### `NOTIFICATIONS_VIA_DISPATCHER` — notifications send through the Session Dispatcher
 
-**Blocked on `DISPATCHER_DEPLOY` and the #10465 Notification Service image being pinned in both environments.**
+**Blocked on the #10465 Notification Service image being pinned in both environments.**
 The optional sender implementation has merged; this node is the manifest activation and acceptance. The Notification Service sends its
 notices through the Session Dispatcher and keeps choosing when to deliver from its existing quiet window.
 It submits the already persisted notice ID and text, treats queued as
