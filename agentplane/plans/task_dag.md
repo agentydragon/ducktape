@@ -863,8 +863,7 @@ autologin from runtime config; those shell paths read per-boot inputs and are ou
 
 Build and pin the new VM image before a bounded staging first-format/remount acceptance; this lane
 does not change the embedded runner wheel. Do not apply the image or edit deployed templates in
-this PR. This can proceed independently of workspace ownership. Do not add a second formatting path
-or raise the existing device-discovery wait.
+this PR. Do not add a second formatting path or raise the existing device-discovery wait.
 
 ### `VOLUME_LAYOUT_CONVERSION` — explicit offline volume conversion
 
