@@ -680,6 +680,7 @@ flowchart TD
     CONTROL_SERVICE_OWNER[Candidate: the gateway's permission to create Services goes]
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
     DISPATCHER_CORE[Blocked: the Session Dispatcher delivers to running Sandboxes]
+    SANDBOX_SHARED_CODE_MOVE[Candidate: what outlives the Sandbox Service leaves its package]
     SANDBOX_WRITE_HELPER[Candidate: one shared library writes a Sandbox's spec]
     APP_SANDBOX_WRITES[Blocked: the app creates, deletes, suspends and resumes Sandboxes itself]
     NOTIFICATION_READS_SANDBOX_CR[Candidate: the Notification Service reads the Sandbox CR]
@@ -730,6 +731,8 @@ flowchart TD
     DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
     SANDBOX_WRITE_HELPER --> DISPATCHER_WAKE_ON_SEND
     SANDBOX_WRITE_HELPER --> APP_SANDBOX_WRITES
+    SANDBOX_SHARED_CODE_MOVE --> SANDBOX_SERVICE_REMOVE
+    SANDBOX_SHARED_CODE_MOVE -. land first, then the helper is written once .-> SANDBOX_WRITE_HELPER
     APP_SANDBOX_WRITES --> SANDBOX_SERVICE_REMOVE
     NOTIFICATION_READS_SANDBOX_CR --> SANDBOX_SERVICE_REMOVE
     DISPATCHER_CORE --> APP_SENDS_VIA_DISPATCHER
@@ -1057,6 +1060,19 @@ never this field. Per-Session idle times stay out of Kubernetes.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
+### `SANDBOX_SHARED_CODE_MOVE` — what outlives the Sandbox Service leaves its package
+
+**Candidate; a pure move with no behavior change.** `SANDBOX_SERVICE_REMOVE` is not a deletion yet: 51
+Python files outside `agentplane/sandbox_service/` import it (21 of them production code), and most of
+what they import survives the Service. Move out of the package: `reader.py` (`SandboxReader`; the gateway),
+`errors.py` (app, Notification Service, gateway), `kubernetes_views.py` (`app/live.py`), `egress_views.py`
+and `action_policy_views.py` (the app), `kubernetes_grants.py` (`app/settings.py` and five cdk8s
+generators), the test fakes under `sandbox_service/testing/` (13, 9, 6, 3 and 3 test files), and the
+shared messages in `agentplane/proto/sandbox_service.proto` beside the `SandboxService` RPCs
+(`SandboxDestination`, `SessionDestination`, `SandboxBinding`, `SessionDefaults`, `ServiceAccount`,
+`Sandbox`, `SandboxPhase`), the proto renamed for what it holds. Then `SANDBOX_WRITE_HELPER` and the removal
+start from a package that holds only the Service, and the removal is a deletion.
+
 ### `SANDBOX_WRITE_HELPER` — one shared library writes a Sandbox's spec
 
 **Candidate; operator, 2026-10-13 PDT: the Sandbox Service goes away and requesters write the spec.** A shared
@@ -1077,7 +1093,8 @@ Kubernetes API as the operator who asked, as it already does for `PolicyBinding`
 resume, and it edits permissions (egress grants, policy views, templates) and reads the inventory with the
 derived phase. The VM serial console
 (`sandbox_service/console.py`) moves into the app (operator, 2026-10-13 PDT) through the KubeVirt console
-subresource. The app's Role gains `sandboxes` `create/patch/delete` and `virtualmachineinstances/console` `get`.
+subresource. The app's Role gains `sandboxes` `create/patch/delete`, `sandboxtemplates` `list` and
+`virtualmachineinstances/console` `get` (it already has `policysets` and `pods`).
 
 ### `NOTIFICATION_READS_SANDBOX_CR` — the Notification Service reads the Sandbox CR
 
