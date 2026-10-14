@@ -88,6 +88,81 @@
         }
       ],
       "properties": {
+        "volumes": {
+          "type": "object",
+          "properties": {
+            "workspace": {
+              "description": "Projection of the PVC creation record, pinning the retained claim's identity.",
+              "type": "object",
+              "required": [
+                "name",
+                "uid",
+                "layout"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "uid": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "layout": {
+                  "type": "object",
+                  "required": [
+                    "type"
+                  ],
+                  "oneOf": [
+                    {
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "DirectoryTree"
+                          ]
+                        }
+                      },
+                      "not": {
+                        "required": [
+                          "filesystem"
+                        ]
+                      }
+                    },
+                    {
+                      "required": [
+                        "filesystem"
+                      ],
+                      "properties": {
+                        "type": {
+                          "enum": [
+                            "RawDiskImage",
+                            "BlockFilesystem"
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  "properties": {
+                    "type": {
+                      "type": "string",
+                      "enum": [
+                        "DirectoryTree",
+                        "RawDiskImage",
+                        "BlockFilesystem"
+                      ]
+                    },
+                    "filesystem": {
+                      "type": "string",
+                      "enum": [
+                        "ext4"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
         "incarnation": {
           "description": "The Sandbox's current Pod, while it has one.",
           "type": "object",

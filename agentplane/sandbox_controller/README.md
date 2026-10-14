@@ -1,6 +1,6 @@
 # Sandbox Controller
 
-Reconciles `Sandbox` into a state PVC that outlives every incarnation, its own ServiceAccount and
+Reconciles `Sandbox` into retained state and optional workspace PVCs, its own ServiceAccount and
 `PolicyBinding`, and, while running, one Pod or KubeVirt VM from its `SandboxTemplate`. Contract: [`SPEC.md`](SPEC.md). The CRDs are in
 [`agentplane/crds`](../crds/BUILD.bazel). The [Sandbox Service](../sandbox_service/README.md)'s
 `CreateSandbox` writes these Sandboxes. Its runner template reaches platform services over the
@@ -11,6 +11,7 @@ Session: the controller calls `Runner.Quiesce` through the [Runner Gateway](../r
 [runner proxy](../docs/runner_control.md#runner-proxy), at the Sandbox's own control Service, and sets the
 `Quiesced` condition. Suspension seals the same way before the Pod stops, recorded as
 `status.quiescedIncarnation`. `--runner-gateway-target` and `--runner-gateway-token-file` are required.
+Storage layouts, compatible attachments and retained identities: [Sandbox storage](../docs/sandbox_storage.md).
 
 Because that condition is set only once the History Service's ingress has
 acknowledged every seal, deleting a Sandbox waits while the History Service is down or rolling;
@@ -26,6 +27,7 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   state PVC (by the Sandbox label) and the templates it names (by a field index) map back to it.
 - [`vm.go`](vm.go): a VM Sandbox's VirtualMachine (types from `kubevirt.io/api`), its run strategy,
   and the VMI and virt-launcher Pod its status comes from.
+- [`workspace.go`](workspace.go): layout validation, the PVC creation record and the persisted claim binding.
 - [`identity.go`](identity.go): the Sandbox's ServiceAccount and `PolicyBinding`, and the
   conflicts that keep a Pod from starting. The `PolicyBinding` types are the Policy Controller's.
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace and, of the kinds

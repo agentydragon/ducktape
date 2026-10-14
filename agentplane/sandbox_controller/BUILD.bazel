@@ -13,6 +13,7 @@ go_library(
         "runner_facts.go",
         "types.go",
         "vm.go",
+        "workspace.go",
         "zz_generated.deepcopy.go",
     ],
     importpath = "github.com/agentydragon/ducktape/agentplane/sandbox_controller",
@@ -55,6 +56,7 @@ go_test(
         "launch_test.go",
         "runner_facts_test.go",
         "vm_test.go",
+        "workspace_test.go",
     ],
     embed = [":sandbox_controller"],
     deps = [
@@ -73,6 +75,7 @@ go_test(
         "@io_k8s_client_go//testing",
         "@io_k8s_sigs_controller_runtime//pkg/client",
         "@io_k8s_sigs_controller_runtime//pkg/client/fake",
+        "@io_k8s_sigs_controller_runtime//pkg/client/interceptor",
         "@io_k8s_sigs_controller_runtime//pkg/reconcile",
         "@io_kubevirt_api//core/v1:core",
     ],

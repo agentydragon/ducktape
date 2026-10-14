@@ -96,8 +96,7 @@ type Reconciler struct {
 // StateVolumeName is the Sandbox's state PVC.
 func StateVolumeName(sandbox string) string { return sandbox + "-state" }
 
-// WorkspaceVolumeName is the Sandbox's workspace PVC, which only a VM Sandbox whose template sets a
-// workspace volume has.
+// WorkspaceVolumeName is the Sandbox's retained workspace PVC.
 func WorkspaceVolumeName(sandbox string) string { return sandbox + "-workspace" }
 
 // unready is why the Sandbox cannot run; its reason and message go on the Running condition.
@@ -443,6 +442,9 @@ func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *Sandbox) (*
 		return nil, err
 	}
 	if pvc != nil {
+		if claimMode(pvc.Spec) != corev1.PersistentVolumeFilesystem {
+			return layoutMismatch("the state PVC must remain a DirectoryTree on a Filesystem claim"), nil
+		}
 		return claimConflict(pvc, sandbox, "StateVolumeConflict"), nil
 	}
 	template, blocked, err := r.template(ctx, sandbox)
@@ -450,23 +452,6 @@ func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *Sandbox) (*
 		return blocked, err
 	}
 	return nil, r.createClaim(ctx, sandbox, StateVolumeName(sandbox.Name), template.Spec.StateVolume.Claim)
-}
-
-// ensureWorkspaceVolume creates the workspace PVC of a template that sets one, if it does not exist
-// yet. It is created at a VM's start, from the template as it is then; a stopped VM keeps it.
-func (r *Reconciler) ensureWorkspaceVolume(ctx context.Context, sandbox *Sandbox, template *SandboxTemplate) (*unready, error) {
-	workspace := template.Spec.WorkspaceVolume
-	if workspace == nil {
-		return nil, nil
-	}
-	pvc, err := r.claim(ctx, sandbox, WorkspaceVolumeName(sandbox.Name))
-	if err != nil {
-		return nil, err
-	}
-	if pvc != nil {
-		return claimConflict(pvc, sandbox, "WorkspaceVolumeConflict"), nil
-	}
-	return nil, r.createClaim(ctx, sandbox, WorkspaceVolumeName(sandbox.Name), workspace.Claim)
 }
 
 func (r *Reconciler) template(ctx context.Context, sandbox *Sandbox) (*SandboxTemplate, *unready, error) {
@@ -481,8 +466,11 @@ func (r *Reconciler) template(ctx context.Context, sandbox *Sandbox) (*SandboxTe
 	if (template.Spec.Pod == nil) == (template.Spec.VM == nil) {
 		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s must set exactly one of pod and vm", template.Name)}, nil
 	}
-	if template.Spec.Pod != nil && template.Spec.WorkspaceVolume != nil {
-		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s sets a workspace volume without a vm", template.Name)}, nil
+	if claimMode(template.Spec.StateVolume.Claim) != corev1.PersistentVolumeFilesystem {
+		return nil, layoutMismatch("the state volume requires a Filesystem claim"), nil
+	}
+	if blocked := validateWorkspace(&template); blocked != nil {
+		return nil, blocked, nil
 	}
 	return &template, nil, nil
 }
@@ -498,6 +486,24 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 			}
 		}
 		return w, nil, r.haltVM(ctx, w.vm)
+	}
+	// Validate retained contents before replacing a sealed/ended incarnation or a halted VM.
+	ended := w.pod != nil && (w.pod.Status.Phase == corev1.PodSucceeded || w.pod.Status.Phase == corev1.PodFailed)
+	sealed := w.incarnation() != nil && sandbox.quiescedIncarnation(string(w.incarnation().UID))
+	if gate != nil && (sealed || ended) {
+		return w, gate, nil
+	}
+	var template *SandboxTemplate
+	if gate == nil && (sealed || ended || (w.pod == nil && !vmRunning(w.vm) && w.vmi == nil)) {
+		var blocked *unready
+		var err error
+		template, blocked, err = r.template(ctx, sandbox)
+		if template == nil {
+			return w, blocked, err
+		}
+		if blocked, err := r.ensureWorkspaceVolume(ctx, sandbox, template); blocked != nil || err != nil {
+			return w, blocked, err
+		}
 	}
 	// A runner that sealed its Sessions takes no new ones, so a Sandbox resumed meanwhile starts anew.
 	if pod := w.incarnation(); pod != nil && sandbox.quiescedIncarnation(string(pod.UID)) {
@@ -525,10 +531,7 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 	if gate != nil {
 		return w, gate, nil
 	}
-	template, blocked, err := r.template(ctx, sandbox)
-	if template == nil {
-		return w, blocked, err
-	}
+	// Render the same snapshot whose layout and binding passed the precheck.
 	if template.Spec.VM != nil {
 		if !r.KubeVirt {
 			return w, &unready{reason: "KubeVirtMissing", message: "the cluster does not serve KubeVirt's API, so a VM Sandbox cannot run"}, nil
@@ -536,8 +539,9 @@ func (r *Reconciler) converge(ctx context.Context, sandbox *Sandbox, w workload,
 		return r.startVM(ctx, sandbox, w, template)
 	}
 	if w.vm != nil {
-		// A Pod cannot use the VM's disks, so switching to a Pod template drops the VM-local
-		// workspace; the state PVC stays.
+		if len(w.vm.Spec.DataVolumeTemplates) != 0 || slices.ContainsFunc(w.vm.Spec.Template.Spec.Volumes, func(v kubevirtv1.Volume) bool { return v.DataVolume != nil }) {
+			return w, layoutMismatch("a Pod transition cannot discard the retained VM's DataVolume disks"), nil
+		}
 		if err := r.deleteIfLive(ctx, w.vm); err != nil {
 			return w, nil, err
 		}
@@ -573,6 +577,9 @@ func renderedSpec(spec any) string {
 // render is the template's Pod for this Sandbox, running as the Sandbox's ServiceAccount, with the
 // state volume filled in.
 func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready) {
+	if blocked := validateWorkspace(template); blocked != nil {
+		return nil, blocked
+	}
 	spec := template.Spec.Pod.Spec.DeepCopy()
 	volume := template.Spec.StateVolume.Name
 	if slices.ContainsFunc(spec.Volumes, func(v corev1.Volume) bool { return v.Name == volume }) {
@@ -588,6 +595,14 @@ func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready)
 			ClaimName: StateVolumeName(sandbox.Name),
 		}},
 	})
+	if workspace := template.Spec.WorkspaceVolume; workspace != nil {
+		spec.Volumes = append(spec.Volumes, corev1.Volume{
+			Name: workspace.Name,
+			VolumeSource: corev1.VolumeSource{PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+				ClaimName: WorkspaceVolumeName(sandbox.Name),
+			}},
+		})
+	}
 	annotations := maps.Clone(template.Spec.Pod.Annotations)
 	if annotations == nil {
 		annotations = map[string]string{}

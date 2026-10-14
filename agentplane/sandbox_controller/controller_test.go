@@ -14,11 +14,13 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	clienttesting "k8s.io/client-go/testing"
 	kubevirtv1 "kubevirt.io/api/core/v1"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+	"sigs.k8s.io/controller-runtime/pkg/client/interceptor"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	policycontroller "github.com/agentydragon/ducktape/agentplane/policy_controller"
@@ -82,7 +84,14 @@ func newReconciler(t *testing.T, running bool, objects ...client.Object) (*Recon
 	// uint64 fields.
 	tracker := clienttesting.NewObjectTracker(scheme, serializer.NewCodecFactory(scheme).UniversalDecoder())
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjectTracker(tracker).WithObjects(append(objects, sandbox)...).
-		WithStatusSubresource(&Sandbox{}, &kubevirtv1.VirtualMachineInstance{}).Build()
+		WithStatusSubresource(&Sandbox{}, &kubevirtv1.VirtualMachineInstance{}).
+		WithInterceptorFuncs(interceptor.Funcs{Create: func(ctx context.Context, c client.WithWatch, obj client.Object, opts ...client.CreateOption) error {
+			// The API server assigns a PVC UID on creation; the fake tracker does not.
+			if _, claim := obj.(*corev1.PersistentVolumeClaim); claim && obj.GetUID() == "" {
+				obj.SetUID(types.UID("uid-" + obj.GetName()))
+			}
+			return c.Create(ctx, obj, opts...)
+		}}).Build()
 	return &Reconciler{Client: c, KubeVirt: true, Quiescer: &fakeQuiescer{}, Leases: c, Now: func() time.Time { return testNow }}, c
 }
 

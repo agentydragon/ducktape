@@ -77,9 +77,6 @@ func (r *Reconciler) startVM(ctx context.Context, sandbox *Sandbox, w workload, 
 	if blocked != nil {
 		return w, blocked, nil
 	}
-	if blocked, err := r.ensureWorkspaceVolume(ctx, sandbox, template); blocked != nil || err != nil {
-		return w, blocked, err
-	}
 	if w.vm != nil {
 		w.vm.Labels, w.vm.Annotations, w.vm.Spec = vm.Labels, vm.Annotations, vm.Spec
 		return w, nil, r.Update(ctx, w.vm)
@@ -103,6 +100,9 @@ func (r *Reconciler) startVM(ctx context.Context, sandbox *Sandbox, w workload, 
 // sets it only from a serviceAccount volume, which would hand the guest the token, so the
 // namespace's launcher admission sets the Sandbox's.
 func renderVM(sandbox *Sandbox, template *SandboxTemplate) (*kubevirtv1.VirtualMachine, *unready) {
+	if blocked := validateWorkspace(template); blocked != nil {
+		return nil, blocked
+	}
 	spec := template.Spec.VM.DeepCopy()
 	if spec.Template == nil {
 		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s has no VM template", template.Name)}
@@ -139,6 +139,11 @@ func renderVM(sandbox *Sandbox, template *SandboxTemplate) (*kubevirtv1.VirtualM
 	instance.Volumes = append(instance.Volumes, pvcVolume(volume, StateVolumeName(sandbox.Name)))
 	if workspace != nil {
 		instance.Volumes = append(instance.Volumes, pvcVolume(workspace.Name, WorkspaceVolumeName(sandbox.Name)))
+		if workspace.Layout.Type == DirectoryTree {
+			instance.Domain.Devices.Filesystems = append(instance.Domain.Devices.Filesystems, kubevirtv1.Filesystem{
+				Name: workspace.Name, Virtiofs: &kubevirtv1.FilesystemVirtiofs{},
+			})
+		}
 	}
 	instance.Domain.Devices.Filesystems = append(instance.Domain.Devices.Filesystems, kubevirtv1.Filesystem{
 		Name: volume, Virtiofs: &kubevirtv1.FilesystemVirtiofs{},

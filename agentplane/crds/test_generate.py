@@ -68,5 +68,38 @@ def test_credential_target_schema_is_unambiguous(target: dict[str, str], valid: 
         assert Draft4Validator(schema, registry=Registry()).is_valid(target) is valid
 
 
+@pytest.mark.parametrize(
+    ("layout", "mode", "valid"),
+    [
+        ({"type": "DirectoryTree"}, None, True),
+        ({"type": "DirectoryTree"}, "Filesystem", True),
+        ({"type": "DirectoryTree", "filesystem": "ext4"}, None, False),
+        ({"type": "DirectoryTree"}, "Block", False),
+        ({"type": "RawDiskImage", "filesystem": "ext4"}, None, True),
+        ({"type": "RawDiskImage", "filesystem": "ext4"}, "Filesystem", True),
+        ({"type": "RawDiskImage"}, None, False),
+        ({"type": "RawDiskImage", "filesystem": "xfs"}, None, False),
+        ({"type": "RawDiskImage", "filesystem": "ext4"}, "Block", False),
+        ({"type": "BlockFilesystem", "filesystem": "ext4"}, "Block", True),
+        ({"type": "BlockFilesystem", "filesystem": "ext4"}, None, False),
+        ({"type": "BlockFilesystem", "filesystem": "ext4"}, "Filesystem", False),
+        ({"type": "Other"}, None, False),
+        ({}, None, False),
+        (None, None, False),
+    ],
+)
+def test_workspace_schema_rejects_ambiguous_layout_and_claim_mode(
+    layout: dict[str, str] | None, mode: str | None, valid: bool
+) -> None:
+    crd = yaml.safe_load(_committed(CRDS_DIR / "crd-sandboxtemplates.yaml"))
+    workspace: dict[str, object] = {"name": "workspace", "claim": {} if mode is None else {"volumeMode": mode}}
+    if layout is not None:
+        workspace["layout"] = layout
+    for version in crd["spec"]["versions"]:
+        schema = version["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"]["workspaceVolume"]
+        # CEL's Pod attachment rule is exercised by controller tests, not this Draft 4 validator.
+        assert Draft4Validator(schema, registry=Registry()).is_valid(workspace) is valid
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

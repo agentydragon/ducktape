@@ -21,6 +21,12 @@
           ]
         }
       ],
+      "x-kubernetes-validations": [
+        {
+          "rule": "!has(self.workspaceVolume) || !has(self.pod) || self.workspaceVolume.layout.type == 'DirectoryTree'",
+          "message": "Pod workspaces require DirectoryTree layout"
+        }
+      ],
       "properties": {
         "pod": {
           "description": "A PodTemplateSpec, for a Sandbox that runs as a Pod. Each incarnation's Pod takes its labels, annotations and spec; the controller adds the state volume. The API server validates the result when the Pod is created.",
@@ -52,22 +58,133 @@
           }
         },
         "workspaceVolume": {
-          "description": "Only with vm: the VM's own disk, held by a PVC of the Sandbox's that the controller creates when it starts the VM and the Sandbox keeps until it is deleted. The VM's volume of this name is that PVC; the template does not define the volume, and its disk of this name sets how the guest sees it.",
+          "description": "A Sandbox-owned PVC retained across incarnations. Its layout declares contents independently of attachment. The template must not define the volume itself.",
           "type": "object",
           "required": [
             "name",
-            "claim"
+            "claim",
+            "layout"
+          ],
+          "oneOf": [
+            {
+              "properties": {
+                "layout": {
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "BlockFilesystem"
+                      ]
+                    }
+                  }
+                },
+                "claim": {
+                  "required": [
+                    "volumeMode"
+                  ],
+                  "properties": {
+                    "volumeMode": {
+                      "enum": [
+                        "Block"
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "properties": {
+                "layout": {
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "DirectoryTree",
+                        "RawDiskImage"
+                      ]
+                    }
+                  }
+                },
+                "claim": {
+                  "properties": {
+                    "volumeMode": {
+                      "enum": [
+                        "Filesystem"
+                      ]
+                    }
+                  }
+                }
+              }
+            }
           ],
           "properties": {
             "name": {
-              "description": "The VM volume the controller fills with the workspace PVC.",
+              "description": "The Pod or VM volume the controller fills with the workspace PVC.",
               "type": "string",
               "minLength": 1
+            },
+            "layout": {
+              "type": "object",
+              "required": [
+                "type"
+              ],
+              "oneOf": [
+                {
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "DirectoryTree"
+                      ]
+                    }
+                  },
+                  "not": {
+                    "required": [
+                      "filesystem"
+                    ]
+                  }
+                },
+                {
+                  "required": [
+                    "filesystem"
+                  ],
+                  "properties": {
+                    "type": {
+                      "enum": [
+                        "RawDiskImage",
+                        "BlockFilesystem"
+                      ]
+                    }
+                  }
+                }
+              ],
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "enum": [
+                    "DirectoryTree",
+                    "RawDiskImage",
+                    "BlockFilesystem"
+                  ]
+                },
+                "filesystem": {
+                  "type": "string",
+                  "enum": [
+                    "ext4"
+                  ]
+                }
+              }
             },
             "claim": {
               "description": "A PersistentVolumeClaimSpec for the workspace PVC.",
               "type": "object",
-              "x-kubernetes-preserve-unknown-fields": true
+              "x-kubernetes-preserve-unknown-fields": true,
+              "properties": {
+                "volumeMode": {
+                  "type": "string",
+                  "enum": [
+                    "Filesystem",
+                    "Block"
+                  ]
+                }
+              }
             }
           }
         }

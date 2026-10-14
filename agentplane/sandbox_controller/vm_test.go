@@ -44,7 +44,13 @@ func testWorkspaceVMTemplate(image string) *SandboxTemplate {
 	template.Spec.VM.DataVolumeTemplates = nil
 	volumes := &template.Spec.VM.Template.Spec.Volumes
 	*volumes = slices.DeleteFunc(*volumes, func(v kubevirtv1.Volume) bool { return v.Name == workspaceVolume })
-	template.Spec.WorkspaceVolume = &WorkspaceVolume{Name: workspaceVolume, Claim: corev1.PersistentVolumeClaimSpec{
+	for i := range template.Spec.VM.Template.Spec.Domain.Devices.Disks {
+		disk := &template.Spec.VM.Template.Spec.Domain.Devices.Disks[i]
+		if disk.Name == workspaceVolume {
+			disk.Disk = &kubevirtv1.DiskTarget{Bus: "virtio"}
+		}
+	}
+	template.Spec.WorkspaceVolume = &WorkspaceVolume{Name: workspaceVolume, Layout: VolumeLayout{Type: RawDiskImage, Filesystem: "ext4"}, Claim: corev1.PersistentVolumeClaimSpec{
 		AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 		Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{
 			corev1.ResourceStorage: resource.MustParse("2Gi"),
@@ -255,7 +261,12 @@ func TestStartRendersAHaltedVMFromTheTemplateAsItIsThen(t *testing.T) {
 }
 
 func TestSwitchToAPodTemplateDeletesTheVMBeforeThePodStarts(t *testing.T) {
-	r, c := newReconciler(t, true, testVMTemplate("test-guest:v1"))
+	template := testVMTemplate("test-guest:v1")
+	// A VM without persistent guest disks can switch kinds without discarding their contents.
+	template.Spec.VM.DataVolumeTemplates = nil
+	template.Spec.VM.Template.Spec.Volumes = slices.DeleteFunc(template.Spec.VM.Template.Spec.Volumes, func(v kubevirtv1.Volume) bool { return v.DataVolume != nil })
+	template.Spec.VM.Template.Spec.Domain.Devices.Disks = slices.DeleteFunc(template.Spec.VM.Template.Spec.Domain.Devices.Disks, func(d kubevirtv1.Disk) bool { return d.Name == workspaceVolume })
+	r, c := newReconciler(t, true, template)
 	reconcileOnce(t, r)
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
@@ -361,7 +372,7 @@ func TestHaltedVMKeepsItsWorkspaceVolume(t *testing.T) {
 	r, c := newReconciler(t, true, testWorkspaceVMTemplate("test-guest:v1"))
 	reconcileOnce(t, r)
 	pvc := getWorkspacePVC(t, c)
-	pvc.Annotations = map[string]string{"test.example/marker": "kept"}
+	pvc.Annotations["test.example/marker"] = "kept"
 	if err := c.Update(context.Background(), pvc); err != nil {
 		t.Fatal(err)
 	}
@@ -388,8 +399,8 @@ func TestWorkspaceVolumeTheSandboxDoesNotOwnIsNotUsed(t *testing.T) {
 	if getVM(t, c) != nil {
 		t.Fatal("started a VM on a previous Sandbox's workspace")
 	}
-	if reason := runningReason(t, c); reason != "WorkspaceVolumeConflict" {
-		t.Errorf("Running reason = %s, want WorkspaceVolumeConflict", reason)
+	if reason := runningReason(t, c); reason != "VolumeLayoutMismatch" {
+		t.Errorf("Running reason = %s, want VolumeLayoutMismatch", reason)
 	}
 }
 
@@ -404,8 +415,8 @@ func TestTemplateDefiningTheWorkspaceVolumeItselfIsRefused(t *testing.T) {
 	if getVM(t, c) != nil || getWorkspacePVC(t, c) != nil {
 		t.Fatal("started a VM, or made a workspace PVC, for a template that defines the workspace volume itself")
 	}
-	if reason := runningReason(t, c); reason != "TemplateInvalid" {
-		t.Errorf("Running reason = %s, want TemplateInvalid", reason)
+	if reason := runningReason(t, c); reason != "VolumeLayoutMismatch" {
+		t.Errorf("Running reason = %s, want VolumeLayoutMismatch", reason)
 	}
 }
 
@@ -417,7 +428,7 @@ func TestPodTemplateWithAWorkspaceVolumeIsRefused(t *testing.T) {
 	if getPod(t, c) != nil {
 		t.Fatal("started a Pod from a template that sets a workspace volume")
 	}
-	if reason := runningReason(t, c); reason != "TemplateInvalid" {
-		t.Errorf("Running reason = %s, want TemplateInvalid", reason)
+	if reason := runningReason(t, c); reason != "VolumeLayoutMismatch" {
+		t.Errorf("Running reason = %s, want VolumeLayoutMismatch", reason)
 	}
 }
