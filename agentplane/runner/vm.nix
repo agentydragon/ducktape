@@ -27,6 +27,33 @@ let
   agentUser = "agent";
   agentId = 107;
 
+  # nixpkgs' codex bundles a GStreamer voice host that no harness here starts. Its build paths
+  # reference gcc and glibc's headers and its plugins reference a media stack, all of which would
+  # ship in the image. The binaries also carry full symbol tables.
+  codexVoiceRuntime = with pkgsUnstable.gst_all_1; [
+    gstreamer
+    gst-plugins-base
+    gst-plugins-good
+  ];
+  codexWithoutVoice =
+    pkgs.runCommand "codex-${pkgsUnstable.codex.version}-without-voice"
+      {
+        nativeBuildInputs = [
+          pkgs.binutils
+          pkgs.removeReferencesTo
+        ];
+      }
+      ''
+        cp -a ${pkgsUnstable.codex} $out
+        chmod -R u+w $out
+        rm -r $out/codex-resources/voice
+        strip --strip-all $out/bin/*
+        # The voice loader's package roots are embedded in bin/codex.
+        remove-references-to \
+          ${lib.concatMapStringsSep " " (package: "-t ${lib.getLib package}") codexVoiceRuntime} \
+          $out/bin/codex
+      '';
+
   # Serial console login, selected per environment by the guest config (`console_autologin`): a root
   # shell without a prompt where set, the ordinary login prompt otherwise. The guest has no account
   # passwords, so without autologin an attach stops at the prompt.
@@ -105,8 +132,24 @@ in
   networking.dhcpcd.extraConfig = "noarp";
 
   # Keep the replaceable guest root small: the runner's journals live on the state PVC and agent
-  # work on the workspace disk.
+  # work on the workspace disk. Every closure byte is pulled to the node before the guest boots.
   virtualisation.diskSize = 8 * 1024;
+  # Nobody reads man pages, info or the NixOS manual in a guest whose only interface is the runner.
+  documentation.enable = false;
+  # disk-image.nix cannot pass copyChannel, whose default puts a second nixpkgs source in the image.
+  image.modules.qemu-efi =
+    { config, pkgs, ... }:
+    {
+      system.build.image = lib.mkForce (
+        import (pkgs.path + "/nixos/lib/make-disk-image.nix") {
+          inherit lib config pkgs;
+          inherit (config.virtualisation) diskSize;
+          inherit (config.image) baseName format;
+          partitionTableType = "efi";
+          copyChannel = false;
+        }
+      );
+    };
   boot.kernelModules = [ "virtiofs" ];
   boot.kernelParams = [
     "console=ttyS0,115200n8"
@@ -359,7 +402,7 @@ in
     which
     xz
     pkgsUnstable.claude-code
-    pkgsUnstable.codex
+    codexWithoutVoice
   ];
 
   programs.nix-ld.enable = true;

@@ -86,7 +86,9 @@ guest's cgroups.
 - A cold start on the prototype guest took two minutes to pull the image, four to scan and format
   its blank disks and three to build a Java trust store one certificate at a time (the trust disk now
   supplies the PKCS#12 store). Per-boot work proportional to disk size or certificate count shows up
-  directly as startup latency.
+  directly as startup latency. So does the guest closure: a node pulls the whole qcow2 before the
+  guest's first boot, which is why `vm.nix` ships no documentation or channel copy and trims codex's
+  voice host, and why a new guest package is paid for on every cold node.
 
 ## Alternatives that lost
 
