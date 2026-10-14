@@ -104,6 +104,11 @@ python314Packages.buildPythonApplication rec {
 
   pythonImportsCheck = [ "litert_lm_cli.main" ];
 
+  # Dawn opens Vulkan with dlopen, which autoPatchelfHook cannot discover.
+  makeWrapperArgs = [
+    "--prefix LD_LIBRARY_PATH : ${lib.makeLibraryPath [ vulkan-loader ]}"
+  ];
+
   meta = {
     description = "Command-line tool for LiteRT-LM";
     homepage = "https://github.com/google-ai-edge/LiteRT-LM";
