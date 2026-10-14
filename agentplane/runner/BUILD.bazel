@@ -830,6 +830,7 @@ py_test(
         ":store",
         "//:conftest",
         "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",

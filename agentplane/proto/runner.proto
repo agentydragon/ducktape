@@ -133,7 +133,22 @@ message SealResponse {
 // calls `Quiesce`.
 message QuiesceRequest {}
 
+// How far a runner's quiesce has got. A reader treats any value other than `QUIESCE_STAGE_QUIESCED`,
+// one it does not know included, as not final.
+enum QuiesceStage {
+  QUIESCE_STAGE_UNSPECIFIED = 0;
+  // Refusing new work and ending running turns.
+  QUIESCE_STAGE_DRAINING = 1;
+  // Every Session's journal is final; the ingress has not acknowledged all of them.
+  QUIESCE_STAGE_FLUSHING = 2;
+  // Every final cursor is acknowledged.
+  QUIESCE_STAGE_QUIESCED = 3;
+}
+
 message QuiesceResponse {
+  // Absent from a runner whose `Quiesce` blocks until every seal is flushed; `sessions` then says it.
+  // Present, the quiesce is final only at `QUIESCE_STAGE_QUIESCED`, and `sessions` is empty before it.
+  optional QuiesceStage stage = 2;
   repeated SessionSeal sessions = 1;
 }
 

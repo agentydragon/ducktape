@@ -132,22 +132,18 @@ async def test_accepting_records_the_connection_on_the_sandbox(
         await call.write(HELLO)
         assert (await read_frame(call)).welcome.connection_epoch == 1
     lease = cluster.fake.objects["leases"][OWNER.lease_name]
-    service = cluster.fake.objects["services"][OWNER.control_name]
     endpoints = cluster.fake.objects["endpointslices"][OWNER.control_name]
-    # Deleting the Sandbox deletes all three.
-    for record in (lease, service, endpoints):
+    # Deleting the Sandbox deletes both.
+    for record in (lease, endpoints):
         assert owners(record) == [(SANDBOX_KIND, SANDBOX_UID)]
     assert (lease["spec"]["holderIdentity"], lease["spec"]["leaseTransitions"]) == (REPLICA.pod_name, 1)
     assert lease["metadata"]["annotations"] == {
         POD_UID_ANNOTATION: "test-pod-uid",
         RUNNER_BOOT_ID_ANNOTATION: "test-boot",
     }
-    assert service["spec"]["clusterIP"] == "None"
-    assert "selector" not in service["spec"]
-    assert endpoints["metadata"]["labels"]["kubernetes.io/service-name"] == service["metadata"]["name"]
+    assert endpoints["metadata"]["labels"]["kubernetes.io/service-name"] == OWNER.control_name
     assert endpoints["metadata"]["annotations"][CONNECTION_EPOCH_ANNOTATION] == "1"
     assert endpoints["endpoints"][0]["addresses"] == [REPLICA.pod_ip]
-    assert [port["name"] for port in endpoints["ports"]] == [port["name"] for port in service["spec"]["ports"]]
 
 
 async def test_a_runner_in_a_vm_connects(

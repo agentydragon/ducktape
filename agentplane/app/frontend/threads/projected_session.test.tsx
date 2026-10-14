@@ -326,6 +326,15 @@ it("shows inferred model activity in the composer controls, not in a separate ro
   expect(container.querySelector(".agentplane-sidebar-row-activity")).toBeNull();
 });
 
+it("shows how long the harness has been idle, with the full time on hover", async () => {
+  vi.spyOn(Date, "now").mockReturnValue(Date.parse("2026-01-01T12:10:00Z"));
+  sharedThread = { idle_since: "2026-01-01T12:04:00Z" };
+  const container = await render();
+  const idle = container.querySelector(".agentplane-composer-model-activity time");
+  expect(idle?.textContent).toBe("6 minutes ago");
+  expect(idle?.getAttribute("title")).toBe("2026-01-01T12:04:00.000Z");
+});
+
 it.each([
   ["2026-01-01T12:09:30Z", "just now"],
   ["2026-01-01T10:10:00Z", "2h ago"],

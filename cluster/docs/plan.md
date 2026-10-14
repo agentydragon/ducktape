@@ -280,14 +280,14 @@ hil-ovh`) and apply the same `nodePathMap` entry to any matching node.
       rotator-issued short-lived token. Keep the current static bearer until the
       rotator handoff is designed.
 
-## Production Cutover (`agentydragon.com`)
+## Legacy VPS Decommission
 
-- [ ] Website hosted in cluster, verify accessible
-- [ ] Update `agentydragon.com` DNS to point to cluster
+`agentydragon.com`, `www` and `adgn.link` are served from the cluster.
+
 - [ ] Decommission ansible-managed VPS:
   - [ ] Clean up remaining: stale nginx sites, stale home dirs, `/tmp` tarball
   - [ ] Verify no remaining services depend on old VPS
-  - [ ] Update DNS records, tear down VPS
+  - [ ] Tear down VPS
 
 ### File Sync (Syncthing Replacement)
 

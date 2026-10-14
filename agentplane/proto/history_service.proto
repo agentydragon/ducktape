@@ -141,6 +141,11 @@ message SessionSummary {
   optional string feed_error = 13;
   // The Sandbox that wrote the Session; absent until recorded.
   optional SandboxRef sandbox = 14;
+  // When the harness last became idle: running with no turn in progress, from the event that
+  // ended its last turn or started it. Absent while a turn runs, while the harness is stopped,
+  // and until the fold meets the event that sets it. Display only: suspension reads the runner's
+  // busy state on its Lease.
+  google.protobuf.Timestamp idle_since = 15;
 }
 
 message SandboxRef {

@@ -61,6 +61,7 @@ py_library(
 
 py_test(
     name = "test_inventory",
+    size = "medium",
     srcs = ["test_inventory.py"],
     deps = [
         ":conftest",
@@ -139,6 +140,7 @@ py_library(
 
 py_test(
     name = "test_egress",
+    size = "medium",
     srcs = ["test_egress.py"],
     deps = [
         ":conftest",
@@ -159,6 +161,7 @@ py_test(
 
 py_test(
     name = "test_provisioning",
+    size = "medium",
     srcs = ["test_provisioning.py"],
     deps = [
         ":client",

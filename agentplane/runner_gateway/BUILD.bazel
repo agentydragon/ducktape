@@ -372,6 +372,7 @@ py_test(
         "//agentplane/runner/testing:scripted_model",
         "//agentplane/runner_gateway/testing:grpc_service",
         "//agentplane/runner_gateway/testing:resources",
+        "//agentplane/sandbox_service/testing:connected_runner",
         "//agentplane/sandbox_service/testing:grpc_service",
         "//agentplane/sandbox_service/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
@@ -388,6 +389,7 @@ py_test(
 
 py_test(
     name = "test_session_lifecycle",
+    size = "medium",
     srcs = ["test_session_lifecycle.py"],
     deps = [
         ":conftest",
@@ -464,8 +466,10 @@ py_library(
         ":sealing",
         "//agentplane:crd_group",
         "//agentplane:sandbox_resource",
+        "//agentplane/proto:runner_pb2",
         "//util:kubernetes",
         "//util:kubernetes_watch",
+        "@pypi//protobuf",
         "@pypi//tenacity",
     ],
 )

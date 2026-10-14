@@ -29,8 +29,9 @@ from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.testing.grpc_service import service_client
 from agentplane.runner_gateway.testing.resources import build_resources
+from agentplane.sandbox_service.testing.connected_runner import runner_connected
 from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN
-from agentplane.sandbox_service.testing.kubernetes import DESTINATION, OWNER, Cluster, runner_connected
+from agentplane.sandbox_service.testing.kubernetes import DESTINATION, OWNER, Cluster
 from agentplane.testing.fake_apiserver import TokenVerdict
 
 # gazelle:include_dep @pypi//protobuf

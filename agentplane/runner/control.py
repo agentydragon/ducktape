@@ -37,7 +37,7 @@ from agentplane.runner.runner import (
     build_attached,
     finish_command,
 )
-from agentplane.runner.session import Session
+from agentplane.runner.session import DRAINING_OPERATIONS, Session
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -58,10 +58,9 @@ _REFUSALS: tuple[tuple[type[Exception] | tuple[type[Exception], ...], grpc.Statu
     (SessionUnknownError, grpc.StatusCode.NOT_FOUND),
     ((SpecConflictError, InitializationConflictError, CommandConflictError), grpc.StatusCode.ALREADY_EXISTS),
     (InvalidRequestError, grpc.StatusCode.INVALID_ARGUMENT),
-    (
-        (SandboxSealedError, JournalSealedError, SetupFailedError, HarnessStoppedError, OpenError),
-        grpc.StatusCode.FAILED_PRECONDITION,
-    ),
+    # The Sandbox is tearing down: the same call succeeds once it resumes.
+    (SandboxSealedError, grpc.StatusCode.ABORTED),
+    ((JournalSealedError, SetupFailedError, HarnessStoppedError, OpenError), grpc.StatusCode.FAILED_PRECONDITION),
     # The state volume failed; a retry may find it working.
     ((OSError, SQLAlchemyError), grpc.StatusCode.UNAVAILABLE),
 )
@@ -84,17 +83,20 @@ def _attached(session: Session) -> runner_pb2.Attached:
     return build_attached(session, session.journal.recovery_state)
 
 
-async def _admit(runner: Runner, request: runner_control_pb2.DeliverCommandRequest) -> event_log_pb2.EventEntry:
+async def _admit(runner: Runner, session_id: str, command: command_pb2.Command) -> event_log_pb2.EventEntry:
     """Admit a delivered command and return the journal's entry for it. A command already journaled
     with the same payload is answered with its existing entry, so redelivery is safe."""
-    command = request.command
+    # A delivery under way when the Seal arrived is admitted; the Seal waits for it.
+    in_lameduck = runner.lameduck
     if not command.command_id or command.WhichOneof("operation") is None:
         raise InvalidRequestError("command_id and operation required")
-    session = await runner.stored_session(request.session_id)
+    session = await runner.stored_session(session_id)
     if session is None:
         raise SessionUnknownError("no such session")
     stored = await session.journal.get(command.command_id)
     if stored is None:
+        if in_lameduck and command.WhichOneof("operation") not in DRAINING_OPERATIONS:
+            runner.refuse_work()
         if not session.running:
             raise HarnessStoppedError("the harness is not running")
         await finish_command(session.command(command))
@@ -129,7 +131,7 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
         self, request: runner_control_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.OpenSessionResponse:
         async with _refusals(context):
-            await self._after_seal()
+            self.runner.refuse_work()
             if not request.HasField("spec"):
                 raise InvalidRequestError("spec is required")
             setup_script = request.setup_script if request.HasField("setup_script") else None
@@ -141,7 +143,7 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
         self, request: runner_control_pb2.ResumeSessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.ResumeSessionResponse:
         async with _refusals(context):
-            await self._after_seal()
+            self.runner.refuse_work()
             session = await finish_command(self.runner.resume(request.session_id))
             return runner_control_pb2.ResumeSessionResponse(attached=_attached(session))
 
@@ -153,8 +155,18 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
             return await self.runner.seal()
 
         async with _refusals(context):
+            self.runner.enter_lameduck()
             self._sealing = sealing = asyncio.ensure_future(seal(set(self._admissions)))
             return await finish_command(sealing)
+
+    async def _deliver(
+        self, session_id: str, command: command_pb2.Command, context: grpc.aio.ServicerContext
+    ) -> event_log_pb2.EventEntry:
+        async with _refusals(context):
+            admission = asyncio.ensure_future(_admit(self.runner, session_id, command))
+            self._admissions.add(admission)
+            admission.add_done_callback(self._admissions.discard)
+            return await finish_command(admission)
 
     @override
     async def Seal(self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:
@@ -170,12 +182,65 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
     async def DeliverCommand(
         self, request: runner_control_pb2.DeliverCommandRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.DeliverCommandResponse:
-        async with _refusals(context):
-            await self._after_seal()
-            admission = asyncio.ensure_future(_admit(self.runner, request))
-            self._admissions.add(admission)
-            admission.add_done_callback(self._admissions.discard)
-            return runner_control_pb2.DeliverCommandResponse(admission=await finish_command(admission))
+        return runner_control_pb2.DeliverCommandResponse(
+            admission=await self._deliver(request.session_id, request.command, context)
+        )
+
+    @override
+    async def SubmitInput(
+        self, request: runner_control_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
+    ) -> runner_control_pb2.SubmitInputResponse:
+        command = command_pb2.Command(
+            command_id=request.command_id, submit_input=command_pb2.SubmitInput(text=request.text)
+        )
+        return runner_control_pb2.SubmitInputResponse(
+            admission=await self._deliver(request.session_id, command, context)
+        )
+
+    @override
+    async def ChangeModel(
+        self, request: runner_control_pb2.ChangeModelRequest, context: grpc.aio.ServicerContext
+    ) -> runner_control_pb2.ChangeModelResponse:
+        command = command_pb2.Command(
+            command_id=request.command_id, change_model=command_pb2.ChangeModel(model=request.model)
+        )
+        return runner_control_pb2.ChangeModelResponse(
+            admission=await self._deliver(request.session_id, command, context)
+        )
+
+    @override
+    async def ChangeReasoningEffort(
+        self, request: runner_control_pb2.ChangeReasoningEffortRequest, context: grpc.aio.ServicerContext
+    ) -> runner_control_pb2.ChangeReasoningEffortResponse:
+        command = command_pb2.Command(
+            command_id=request.command_id,
+            change_reasoning_effort=command_pb2.ChangeReasoningEffort(effort=request.effort),
+        )
+        return runner_control_pb2.ChangeReasoningEffortResponse(
+            admission=await self._deliver(request.session_id, command, context)
+        )
+
+    @override
+    async def InterruptTurn(
+        self, request: runner_control_pb2.InterruptTurnRequest, context: grpc.aio.ServicerContext
+    ) -> runner_control_pb2.InterruptTurnResponse:
+        command = command_pb2.Command(
+            command_id=request.command_id, interrupt_turn=command_pb2.InterruptTurn(turn_id=request.turn_id)
+        )
+        return runner_control_pb2.InterruptTurnResponse(
+            admission=await self._deliver(request.session_id, command, context)
+        )
+
+    @override
+    async def StopRunnerSession(
+        self, request: runner_control_pb2.StopRunnerSessionRequest, context: grpc.aio.ServicerContext
+    ) -> runner_control_pb2.StopRunnerSessionResponse:
+        command = command_pb2.Command(
+            command_id=request.command_id, stop_runner_session=command_pb2.StopRunnerSession()
+        )
+        return runner_control_pb2.StopRunnerSessionResponse(
+            admission=await self._deliver(request.session_id, command, context)
+        )
 
 
 class RunnerControlClient:

@@ -34,8 +34,6 @@ Retain the data-preserving rollback procedure. No Action Service or other databa
 ```mermaid
 flowchart LR
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history]
-    COMMAND_DELIVERY_STATES[Decision: one vocabulary of delivery states for a command or message]
-    COMMAND_DELIVERY_STATES -. shares vocabulary .-> NOTIFICATION_COMMAND_OUTCOME_DESIGN
     SESSION_INPUT_METADATA[Typed input annotations and provenance]
     SESSION_INPUT_METADATA_READ[Blocked: metadata reads and message correlation]
     NOTIFICATION_NOTICE_METADATA[Blocked: attach notice metadata to submissions]
@@ -48,17 +46,6 @@ flowchart LR
 
 Details: [command admission](../runner_gateway/API.md#sessions-and-commands); later
 [notification presentation and input metadata](notification_presentation.md).
-
-### `COMMAND_DELIVERY_STATES` — one vocabulary of delivery states for a command or message
-
-**Decision; found by the DAG's own overlap audit, 2026-10-13 PDT.** Four nodes each need to say how
-far a command or message got: `NOTIFICATION_COMMAND_OUTCOME_DESIGN` (did the harness run it, did it
-reach the model's context), `AGENT_MESSAGING_DESIGN` (accepted, delivered, handled and acknowledged
-as separate states), `THREAD_SUCCESSOR_DELIVERY` (ambiguous across an incarnation) and
-`DISPATCHER_CORE` (queued, delivered once the runner is up). Decide the states once, from
-submission to the model's context (the design adds a no-op state, for a command that had nothing to do, such as `InterruptTurn` on a suspended Sandbox): what each means, which component records it, and which survive an
-incarnation ending. Today `CommandAdmitted` and `harness_user_message_confirmed` are the recorded
-points. The four nodes then cite it, instead of each defining its own.
 
 ### `NOTIFICATION_COMMAND_OUTCOME_DESIGN` — notice delivery without reading conversation history
 
@@ -215,7 +202,6 @@ flowchart TD
     THREAD_CREATE_AUTHORIZATION[Blocked: implement session-create grants]
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
-    COMMAND_DELIVERY_STATES[Decision: one vocabulary of delivery states, section 2] -. shares vocabulary .-> AGENT_MESSAGING_DESIGN
     MULTIAGENT_MODEL --> THREAD_READ_POLICY_DESIGN
     MULTIAGENT_MODEL --> AGENT_MESSAGING_DESIGN
     MULTIAGENT_MODEL --> THREAD_CREATE_POLICY
@@ -709,14 +695,17 @@ flowchart TD
     SESSION_INCARNATIONS[Blocked: Sessions record incarnations]
     SESSION_REVIVE[Blocked: start a stopped Sandbox again]
     INCARNATION_UID_REQUIRED[Blocked: the runner rejects a Welcome without the incarnation UID]
-    QUIESCE_INTERRUPT[Candidate: refuse at entry and interrupt turns before sealing]
-    RUNNER_FACTS_ON_LEASE[Candidate: the runner publishes stage, busy and boot facts on the connection Lease]
+    RUNNER_FACTS_ON_LEASE[Candidate: the runner publishes stage, idle and boot facts on the connection Lease]
+    RUNNER_BUSY_TRACKING[Candidate: the runner knows whether the Sandbox is busy]
+    RUNNER_BUSY_TRACKING --> SANDBOX_IDLE_EXPIRY
     SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
+    QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: the controller stops reading the blocking Quiesce shape]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
-    CONTROL_SERVICE_OWNER[Candidate: the controller creates the Sandbox's control Service]
-    SESSION_ACTIVITY_STREAM[Candidate: the UI and notifications read per-Session idle from the History Service]
+    CONTROL_SERVICE_OWNER[Candidate: the gateway's permission to create Services goes]
+    SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
     DISPATCHER_CORE[Blocked: the Session Dispatcher delivers to running Sandboxes]
     DISPATCHER_SESSION_CREATE[Blocked: dispatched Session creation]
+    PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     DISPATCHER_WAKE_ON_SEND[Blocked: a send wakes a suspended Sandbox]
     APP_SENDS_VIA_DISPATCHER[Blocked: the app sends through the Session Dispatcher]
     NOTIFICATIONS_VIA_DISPATCHER[Blocked: notifications send through the Session Dispatcher]
@@ -744,8 +733,6 @@ flowchart TD
     SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Blocked: idle runner Sandboxes suspend]
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
     HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
-    COMMAND_DELIVERY_STATES[Decision: one vocabulary of delivery states, section 2] --> DISPATCHER_CORE
-    COMMAND_DELIVERY_STATES --> THREAD_SUCCESSOR_DELIVERY
     RUNNER_COMMAND_RPCS[Candidate: one Runner RPC per command, section 12] --> DISPATCHER_CORE
     MULTIAGENT_MODEL[Decision: identities and authority vocabulary, section 3] -. who may send and wake .-> DISPATCHER_CORE
     AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. offline behavior .-> DISPATCHER_CORE
@@ -753,10 +740,12 @@ flowchart TD
     RUNNER_FACTS_ON_LEASE --> SANDBOX_IDLE_EXPIRY
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
     SEAL_RENAME -. rename before the next sealing node lands .-> QUIESCE_WITHOUT_POLLING
-    QUIESCE_INTERRUPT -. interrupt precedes the seal .-> QUIESCE_WITHOUT_POLLING
-    QUIESCE_INTERRUPT --> DISPATCHER_WAKE_ON_SEND
+    SEAL_RENAME --> QUIESCE_LEGACY_SHAPE_REMOVAL
     RUNNER_FACTS_ON_LEASE -. carries the boot result .-> BOOTSTRAP_PROGRESS_CONTRACT
     DISPATCHER_CORE --> DISPATCHER_SESSION_CREATE
+    DISPATCHER_SESSION_CREATE --> PROXY_START_METHODS_DISPATCHER_ONLY
+    APP_SENDS_VIA_DISPATCHER --> PROXY_START_METHODS_DISPATCHER_ONLY
+    GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
     BOOTSTRAP_PROGRESS_CONTRACT -. Ready may then include the bootstrap .-> DISPATCHER_SESSION_CREATE
     DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
     DISPATCHER_CORE --> APP_SENDS_VIA_DISPATCHER
@@ -764,9 +753,9 @@ flowchart TD
     SESSION_REVIVE --> DISPATCHER_WAKE_ON_SEND
     APP_SENDS_VIA_DISPATCHER --> RUNNER_PROXY_SENDER_RESTRICT
     NOTIFICATIONS_VIA_DISPATCHER --> RUNNER_PROXY_SENDER_RESTRICT
+    NOTIFICATIONS_VIA_DISPATCHER --> SESSION_ACTIVITY_STREAM
     DISPATCHER_WAKE_ON_SEND --> SUSPENDED_COMPOSER
     APP_SENDS_VIA_DISPATCHER --> SUSPENDED_COMPOSER
-    DISPATCHER_WAKE_ON_SEND -. pending mark the controller reads .-> SANDBOX_IDLE_EXPIRY
     DISPATCHER_CORE -. shares delivery semantics .-> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> RESUME_CREDENTIALS_VALID
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
@@ -774,7 +763,6 @@ flowchart TD
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
     K3S_LIFECYCLE_SUITE[Candidate: k3s lifecycle integration suite]
     SEAL_RENAME -. quiesce assertions .-> K3S_LIFECYCLE_SUITE
-    QUIESCE_INTERRUPT -. quiesce assertions .-> K3S_LIFECYCLE_SUITE
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: the Sandbox bootstrap runs when the runner starts, section 6] -. Ready implies bootstrapped .-> K3S_LIFECYCLE_SUITE
 ```
 
@@ -797,7 +785,7 @@ connects. A command held only while the sender waits is lost if the sender goes 
 shared k3s environment fixture on a BuildBuddy action (`agentplane/x/k3s_rbe_spike`), one test per
 flow, no LLM: create, bootstrap, suspend, resume, quiesce and delete, about 15 minutes on RBE. The
 flows that work today (create, suspend, resume, delete, bootstrap) can land first. The quiesce
-assertions wait for `SEAL_RENAME` and `QUIESCE_INTERRUPT`, and the assertion that `Ready` implies a
+assertions wait for `SEAL_RENAME`, and the assertion that `Ready` implies a
 finished bootstrap for `BOOTSTRAP_PROGRESS_CONTRACT`. The disposable-environment lane owns the
 fixture. Tests that need ClusterIP Services, KubeVirt or Cilium stay elsewhere
 (`ISOLATED_ACCEPTANCE_CI`).
@@ -920,7 +908,7 @@ Firecracker with the runner as init.
 
 ### `SANDBOX_IDLE_EXPIRY` — idle runner Sandboxes suspend
 
-**Blocked on `SESSION_INCARNATIONS`, `RUNNER_FACTS_ON_LEASE` and `QUIESCE_WITHOUT_POLLING`; operator,
+**Blocked on `SESSION_INCARNATIONS`, `RUNNER_FACTS_ON_LEASE`, `RUNNER_BUSY_TRACKING` and `QUIESCE_WITHOUT_POLLING`; operator,
 2026-10-11 and 2026-10-13 PDT.** An idle runner Sandbox suspends: it is sealed,
 then the Pod or VM goes, freeing memory and compute, and the Sandbox, its ServiceAccount, bindings
 and state PVC stay, so `SESSION_REVIVE` resumes it on the same PVC. Nothing deletes a Sandbox on
@@ -928,13 +916,14 @@ idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one,
 [teardown](../sandbox_service/API.md#teardown) and the seal. What a resume gets back of the
 workspace depends on `WORKSPACE_VOLUME`. Idle is a Sandbox-level fact: every Session in the Sandbox
 is idle. The control design (`docs/adr_sandbox_session_control.md`) puts the policy in the Sandbox
-controller: `spec.idleSuspendAfter`, a timer the controller measures from the busy and idle
-transitions the runner publishes (`RUNNER_FACTS_ON_LEASE`), so it needs no History Service and
+controller: `spec.idleSuspendAfter`, a timer the controller measures from the `idleSince`
+fact the runner publishes (`RUNNER_FACTS_ON_LEASE`), so it needs no History Service and
 survives a controller restart. Busy covers a turn, a command, a background or durable process and an
-attached terminal or console, or a Sandbox is suspended under a running job. The suspend request can
-carry an "only if idle since" precondition; a Sandbox the Session Dispatcher holds pending messages for
-(`DISPATCHER_WAKE_ON_SEND`) is not suspended. Suspension waits for the Sandbox bootstrap and every
-Session's setup; deletion does not wait. A Sandbox that is quiescing refuses resume. Action Service boxes are `ACTION_BOX_IDLE_REAPER`'s, which
+attached terminal or console, or a Sandbox is suspended under a running job. Automatic suspension is
+`Quiesce` with `if_idle_since`: the runner refuses it on a token mismatch or when busy (`ABORTED`, as
+for a Sandbox already in lameduck; `FAILED_PRECONDITION` is terminal), and there is
+no ingress-health gate. Suspension waits for the Sandbox bootstrap and every
+Session's setup (running setups are a runner fact; the Sandbox is `Ready` False with reason `SuspendPending`); deletion does not wait. A Sandbox that is quiescing refuses resume. Action Service boxes are `ACTION_BOX_IDLE_REAPER`'s, which
 only ever deletes.
 
 ### `SESSION_INCARNATIONS` — a Session records its incarnations
@@ -966,28 +955,37 @@ every environment, and in the VM guest's runner wheel pin.** Removes the missing
 adoption (marked by its `CLEANUP` tombstone) goes. Pin ordering is not relied on before this; afterwards a
 runner too old to know the field cannot meet a gateway that no longer sends it.
 
-### `QUIESCE_INTERRUPT` — refuse at entry and interrupt turns before sealing
-
-**Candidate.** The runner refuses new and resumed Sessions at once but still admits commands to a
-Session whose journal is not yet sealed, and it stops a turn rather than interrupting it. Inside
-the one seal operation: refuse everything but draining operations from the start, with a distinct
-code a sender reads as "retry after resume"; interrupt active turns through the command protocol,
-wait up to a deadline, then stop the harnesses; record in history that teardown ended the turn, so
-it reads differently from a user's interrupt. Nothing is live, since the sealer flags are not in
-the manifests. Readers of the new code (the Session Dispatcher) land after it.
-
-### `RUNNER_FACTS_ON_LEASE` — the runner publishes stage, busy and boot facts on the connection Lease
+### `RUNNER_FACTS_ON_LEASE` — the runner publishes stage, idle and boot facts on the connection Lease
 
 **Candidate; the Lease already carries the incarnation UID.** The one
-transport several nodes share: the runner reports facts on the control stream, and the gateway
+transport several nodes share: the runner reports facts on the control stream in a runner-only `RunnerHeartbeat` on
+`RunnerFrame.heartbeat` (same field number as today), carrying optional `RunnerFacts`, sent on change and on the first `RunnerHeartbeat` after connect, and the gateway
 replica holding the connection writes them as annotations on the Sandbox-owned connection Lease,
-on transitions only and stamped with the incarnation UID, clearing them when a different
-incarnation connects. Facts: the seal stage (draining, flushing, sealed), the Sandbox's aggregate busy (any Session busy, or a background process or attached terminal running) with the time it
-became idle (`SANDBOX_IDLE_EXPIRY`), and the bootstrap result (`BOOTSTRAP_PROGRESS_CONTRACT`). Busy and idle
-facts ride the regular 15-second renewal write, so they add no etcd writes. The
-runner republishes its stage on reconnect so a gateway rollout loses nothing. A first-connection
+stamped with the incarnation UID, clearing them when a different incarnation connects. Facts: the
+seal stage (draining, flushing, sealed), when the Sandbox last went idle (`idleSince`, set only
+while no Session is busy and no background process or attached terminal runs; there is no `busy`
+fact) for `SANDBOX_IDLE_EXPIRY`, and the bootstrap result (`BOOTSTRAP_PROGRESS_CONTRACT`), and the Sessions whose setup is still running, which
+holds a suspend back (`Ready` False with reason `SuspendPending`, `SANDBOX_IDLE_EXPIRY`). The
+gateway writes stage transitions to the Lease at once and coalesces only `idleSince` into the
+regular 15-second renewal write, so it adds no etcd writes. The runner republishes its facts on
+reconnect so a gateway rollout loses nothing. A first-connection
 annotation, persisted, tells `NeverRan` (a Sandbox whose runner has not connected yet) from a runner
 that is down. Order: the controller reads the annotations before the gateway starts writing them.
+
+### `RUNNER_BUSY_TRACKING` — the runner knows whether the Sandbox is busy
+
+**Candidate; asked for by the Gateway runner proxy lane, 2026-10-13 PDT.** The `RunnerHeartbeat`'s
+`RunnerFacts` carries `idle_since`, but the runner tracks nothing that makes a Sandbox busy. The
+runner computes the whole-Sandbox idle time: busy while any Session runs a turn or a command, a
+background or durable process runs, or a terminal or console is attached; `idle_since` is set only
+while idle, absent while busy, and published on each transition (`RUNNER_FACTS_ON_LEASE` carries it,
+`SANDBOX_IDLE_EXPIRY` reads it). A delivery under way counts as busy, marked at RPC entry before the first `await`
+(`RunnerService._admissions` is already that set), and the conditional `Quiesce` compare sits directly
+before `enter_lameduck()` with no `await` between, so a `SubmitInput` between RPC entry and the journal
+write is never admitted into a runner that is then torn down. Open: the runner's notion of a running turn or command today is a
+Session's `active_turn_id` and its pending commands; who owns terminals and background processes
+(the harness adapters, the VM console) is not decided. Test idleness across a turn that ends, a
+background process that outlives it, an attached terminal that detaches and a runner restart.
 
 ### `SEAL_RENAME` — Seal, Sealed and Sealing get names that say which fact they mean
 
@@ -1002,7 +1000,16 @@ Sandbox status field is added beside the old, switched, then removed. Land it be
 `QUIESCE_WITHOUT_POLLING` and the rest of the sealing nodes, so they are written once; it
 conflicts with nearly all of them, which is fine, but the order saves work. `Quiesce` returns at
 lameduck entry and drops the cursors, so the controller reads `Quiesce` before the runner's `Seal`
-is renamed.
+is renamed. Rollout order: `QuiesceResponse.stage` is added; the controller image that reads both the
+legacy and the staged shape is pinned; the gateway's deletion seal goes (`CONTROLLER_SEALS`); then the
+runner's non-blocking `Quiesce` ships, the VM guest's runner wheel included in the pin order, since
+until then an empty unflushed list reads as flushed. Dropping the legacy shape is
+`QUIESCE_LEGACY_SHAPE_REMOVAL`.
+
+### `QUIESCE_LEGACY_SHAPE_REMOVAL` — the controller stops reading the blocking `Quiesce` shape
+
+**Blocked on the runner's non-blocking `Quiesce` pinned in every environment, the VM guest's wheel
+included.** Deletes the controller's legacy-shape read and the tombstone marking it.
 
 ### `QUIESCE_WITHOUT_POLLING` — the controller is told when a seal finishes
 
@@ -1015,39 +1022,35 @@ Sandbox whose finalizer an operator removes by hand. While the ingress is down t
 off instead of retrying per Sandbox. Test a gateway rollout mid-seal, a runner restart mid-seal and
 a lost event.
 
-### `CONTROL_SERVICE_OWNER` — the controller creates the Sandbox's control Service
+### `CONTROL_SERVICE_OWNER` — the gateway's permission to create Services goes
 
-**Candidate; operator, 2026-10-13 PDT: the controller creates it.** The gateway creates the Service, Lease
-and EndpointSlice on the first connection, so the Service name resolves only after a runner
-connects. The controller creates the Service with the Sandbox, owned by it, so a
-caller sees no endpoints and not a DNS failure, and the gateway writes only the Lease and slice,
-with less Kubernetes access. One shared constant fixes the name and port. Order: the controller image
-that creates it is pinned, then the gateway stops creating it, then its permission goes.
+**Candidate; operator, 2026-10-13 PDT: the controller creates it.** The controller creates the
+Sandbox's control Service and the gateway no longer does. What is left is the gateway's `services`
+permission in `cluster/cdk8s/agentplane/runner_gateway.py`: drop it once the gateway image without
+the Service writes is pinned in both environments (image before config); it keeps `endpointslices`.
 
-### `SESSION_ACTIVITY_STREAM` — the UI and notifications read per-Session idle from the History Service
+### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
-**Candidate; operator, 2026-10-13 PDT.** The UI shows idle time per Session; suspension uses the
-Sandbox aggregate from the Lease (`RUNNER_FACTS_ON_LEASE`) and never reads this. The History Service
-already folds runner events into `SessionSummary` (`last_turn_status`, `last_model_activity_at`) and
-serves `watch_session_summaries`; a per-Session `idleSince`, derived from the turn start and end
-events it ingests, is one more folded field, and the existing watch carries it to the UI and the
-notification service. `last_model_activity_at` stays separate. The app and the notification
-service's quiet window (`NoticeDebounceSettings`) both derive "last active" in different ways today;
-delete those derivations in the same change. The operator's direction: listeners pick their own
-moment, so the notification service decides when to deliver ("after a minute of quiet, at most ten
-minutes") and sends through `NOTIFICATIONS_VIA_DISPATCHER`; a sender does not hand the Session
-Dispatcher a delivery window. Per-Session idle times stay out of Kubernetes.
+**Blocked on `NOTIFICATIONS_VIA_DISPATCHER`.** The History Service folds `idle_since` into
+`SessionSummary` (the turn and harness events that start and end idleness), and the app shows it.
+What is left is the second listener: the notification service reads the Session's summary after each
+`WatchSessionSummaries` notice and picks its own moment, so it delivers after a minute of idleness,
+at most ten minutes after the first pending entry, through `NOTIFICATIONS_VIA_DISPATCHER`. Its
+`NoticeDebounceSettings` quiet window stays about inbox entry times until then. `idle_since` is
+display and delivery timing: suspension reads the runner's busy facts (`RUNNER_FACTS_ON_LEASE`) and
+never this field. Per-Session idle times stay out of Kubernetes.
 
 ### `DISPATCHER_CORE` — the Session Dispatcher delivers to running Sandboxes
 
-**Blocked on `COMMAND_DELIVERY_STATES` and `RUNNER_COMMAND_RPCS`.** A new service with its own database and
+**Blocked on `RUNNER_COMMAND_RPCS`.** A new service with its own database and
 the one job of delivery, proposed in `docs/adr_sandbox_session_control.md`. Its own API is one RPC per
 command, like the runner's. It accepts a message,
 persists it before it acknowledges the sender, delivers it through the gateway's runner proxy to a
-running Sandbox, and reports a delivery state the sender can read: the runner deduplicates on the
+running Sandbox, and reports a delivery state the sender can read (operator, 2026-10-13 PDT; each name says where the command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`, `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED` with a reason, `CANCELLED_IN_DISPATCHER`, and `UNKNOWN` for a deleted Sandbox only; a quiesce refusal returns `DELIVERING_TO_RUNNER` to `QUEUED_IN_DISPATCHER`). The runner deduplicates on the
 command ID, a reply lost across an incarnation boundary is redelivered to the next incarnation
-(`THREAD_SUCCESSOR_DELIVERY`), delivery is first-in first-out per Session, and `StopRunnerSession`
-cancels the inputs queued before it. A message for a deleted Session or a failed delivery ends in a
+(`THREAD_SUCCESSOR_DELIVERY`), delivery is first-in first-out per Session, `InterruptTurn` bypasses the queue and
+`StopRunnerSession` goes ahead of it, cancelling the inputs queued before it; those end `CANCELLED_IN_DISPATCHER` with reason `stopped`. An `InterruptTurn`
+is not stored: its outcome is its RPC response. A message for a deleted Session or a failed delivery ends in a
 terminal state with a reason and a time to live; a command admitted but not dispatched when the
 Sandbox is torn down ends as `ended_by_teardown`. Replicas shard Sandboxes by a per-Sandbox Lease
 so each has one active owner. Authorization names which senders may send, and the sender kinds
@@ -1059,24 +1062,23 @@ anyone. Test duplicate sends, a sender that leaves, a deleted target and a refus
 
 **Blocked on `DISPATCHER_CORE`.** `OpenSession` with a client-minted Session ID is stored
 durably and made idempotent by the ID: a retry returns the same record, and the same ID in another
-Sandbox is refused. The service waits for the Sandbox to be ready and calls the runner's
+Sandbox is refused. `ALREADY_EXISTS` from the runner's `OpenSession` counts as opened once
+`ListSessions` confirms the Session. The service waits for the Sandbox to be ready and calls the runner's
 idempotent `OpenSession`. It needs the Sandbox's name, never an address; when a caller omits the
 Sandbox it looks the Session up in the History Service, and until the runner has pushed anything
 its own record is authoritative.
 
 ### `DISPATCHER_WAKE_ON_SEND` — a send wakes a suspended Sandbox
 
-**Blocked on `DISPATCHER_CORE`, `SESSION_REVIVE` and `QUIESCE_INTERRUPT`.** A message for a suspended Sandbox's
+**Blocked on `DISPATCHER_CORE` and `SESSION_REVIVE`.** A message for a suspended Sandbox's
 Session resumes the Sandbox through the Sandbox Service, then delivers once `Ready` holds for the new
 incarnation, keying every attempt to the incarnation UID; a delivery refused by a sealing runner
-with the retryable code is redelivered after the resume. Which senders may wake: a user message and
+with `ABORTED` (the gateway flattens runner codes it does not list to `FAILED_PRECONDITION`, so it forwards this one) is redelivered after the resume. Which senders may wake: a user message and
 a notification, not an agent's message unless `AGENT_MESSAGE_RECEPTION` decides so. `InterruptTurn` and
 `StopRunnerSession` never wake a Sandbox; they are no-ops on a suspended one. Also here:
 rate limits and per-sender quotas, since a resume starts a Pod or VM and every harness; resuming
 only the Sessions that have pending work; a bounded wait with a visible reason when the volume's
-node is down or full; a pending mark, a Dispatcher-owned Lease per Sandbox that the controller reads (the Dispatcher
-never edits the Sandbox), while messages are pending so the controller does not suspend it
-(`SANDBOX_IDLE_EXPIRY`); and `spec.wakeOnSend: false`, which holds a Sandbox suspended (sends queue
+node is down or full; and `spec.wakeOnSend: false`, which holds a Sandbox suspended (sends queue
 and do not wake it) and doubles as the feature gate. Deletion beats everything. Test a message
 to a suspended Sandbox, one arriving while it seals, a failed revival and a resume storm.
 
@@ -1086,7 +1088,7 @@ to a suspended Sandbox, one arriving while it seals, a failed revival and a resu
 Dispatcher instead of `SubmitCommand`, showing its delivery states. The command-progress lights
 (`CommandProgress`: saved in browser, runner accepted, effect confirmed) gain a dispatch stage
 between the browser and the runner: queued in the Dispatcher (operator, 2026-10-13 PDT). It reads
-the delivery states `COMMAND_DELIVERY_STATES` settles, and for a Session whose Sandbox is waking
+the Dispatcher's delivery states, and for a Session whose Sandbox is waking
 (`DISPATCHER_WAKE_ON_SEND`) says so; `SUSPENDED_COMPOSER` is the composer side of the same wait.
 Visual scenarios name each stage's command after the state it shows. Parallel with
 `NOTIFICATIONS_VIA_DISPATCHER`; reader before writer, so the Session Dispatcher lands and is read before any
@@ -1270,6 +1272,18 @@ flowchart TD
 Sandbox was made from on the Sandbox (a label) and fills a complete `SessionSpec` and setup script
 from it. `session_defaults` leaves `CreateSandboxRequest`, `SandboxBinding` and our Sandbox's spec,
 and `CreateSessionRequest` loses its field mask.
+
+### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
+
+**Blocked on `DISPATCHER_SESSION_CREATE`, `APP_SENDS_VIA_DISPATCHER` and `GATEWAY_WRAPPER_RETIRE`.** Today
+the gateway's runner proxy (`runner_gateway/runner_proxy.py`) lets every configured caller account call
+every runner method except `Quiesce` and `Seal`, and the gateway wrapper calls `OpenSession` too. The
+bound on a suspend waiting for setups (`SuspendPending`, `SANDBOX_IDLE_EXPIRY`) holds only if nothing
+but the Dispatcher can open a Session or send work, so the proxy's per-method policy authorizes
+`OpenSession` and the other start-or-continue-work methods (`SubmitInput`, `ResumeSession`, and
+`ChangeModel`/`ChangeReasoningEffort` if the design lane decides they start a stopped harness) for the
+Dispatcher's account alone. `InterruptTurn`, `StopRunnerSession` and the reads stay open to the callers
+that have them. Order: every other caller has moved to the Dispatcher, then the policy narrows.
 
 ### `CONTROLLER_SEALS` — the Sandbox controller seals
 

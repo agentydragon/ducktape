@@ -12,8 +12,10 @@
       models."gemma4:e2b-it-qat" = {
         name = "Gemma 4 E2B QAT (rugged iGPU)";
         reasoning = false;
-        # Ollama's Gemma 4 template advertises tools, but OpenCode tool use
-        # has not been validated on this small local model yet.
+        # Tool calls work (cluster/docs/inference/rugged_local_llm.md), but with
+        # a real $HOME OpenCode's ~16k-token first prompt needs ~50 s of prefill
+        # and once produced no output in 10 min. Stays off until OpenCode runs
+        # with a minimal environment by default.
         tool_call = false;
         limit = {
           context = 131072;

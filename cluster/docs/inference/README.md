@@ -33,6 +33,8 @@ with their dated run records.
   runtimes on `wyrm2`. Owns the measurement conventions and the experiment order.
 - <results.md> — hand-maintained comparison table of current configurations,
   with source/trust marks on every number.
+- <rugged_local_llm.md> — what runs offline on `rugged` (Ollama Vulkan, LiteRT-LM,
+  NPU status), how to run it, and OpenCode tool-calling results with Gemma 4 E2B.
 - <backend_comparison.md> — feature/format/API matrix across llama.cpp, Ollama,
   vLLM, SGLang, TensorRT-LLM, and the rest. Includes current cluster state
   and migration path. Decision document for picking what to run on wyrm2.

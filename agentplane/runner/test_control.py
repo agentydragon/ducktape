@@ -12,7 +12,14 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.proto import command_pb2, event_pb2, runner_control_pb2, runner_control_pb2_grpc, runner_pb2
+from agentplane.proto import (
+    command_pb2,
+    event_log_pb2,
+    event_pb2,
+    runner_control_pb2,
+    runner_control_pb2_grpc,
+    runner_pb2,
+)
 from agentplane.runner.config import ClaudeLaunch, RunnerConfig
 from agentplane.runner.control import RunnerControlClient, RunnerService
 from agentplane.runner.harness_process import HarnessProcess
@@ -161,6 +168,57 @@ async def test_a_redelivered_command_is_admitted_once_and_answered_from_the_jour
     assert gateway.control.authorizations == ["Bearer test-placeholder"]
 
 
+async def test_each_command_rpc_admits_its_command_and_a_command_id_belongs_to_one_operation(
+    dial: Callable[[], Awaitable[Service]],
+) -> None:
+    service = await dial()
+    admissions: dict[str, event_log_pb2.EventEntry] = {
+        "submit_input": (
+            await service.SubmitInput(
+                runner_control_pb2.SubmitInputRequest(session_id=RUNNING, command_id="test-submit", text="test input")
+            )
+        ).admission,
+        "change_model": (
+            await service.ChangeModel(
+                runner_control_pb2.ChangeModelRequest(session_id=RUNNING, command_id="test-model", model="test-model")
+            )
+        ).admission,
+        "change_reasoning_effort": (
+            await service.ChangeReasoningEffort(
+                runner_control_pb2.ChangeReasoningEffortRequest(
+                    session_id=RUNNING, command_id="test-effort", effort="high"
+                )
+            )
+        ).admission,
+        "interrupt_turn": (
+            await service.InterruptTurn(
+                runner_control_pb2.InterruptTurnRequest(
+                    session_id=RUNNING, command_id="test-interrupt", turn_id="test-turn"
+                )
+            )
+        ).admission,
+        "stop_runner_session": (
+            await service.StopRunnerSession(
+                runner_control_pb2.StopRunnerSessionRequest(session_id=RUNNING, command_id="test-stop")
+            )
+        ).admission,
+    }
+    for operation, admission in admissions.items():
+        assert admission.event.command_admitted.command.WhichOneof("operation") == operation
+    redelivered = await service.SubmitInput(
+        runner_control_pb2.SubmitInputRequest(session_id=RUNNING, command_id="test-submit", text="test input")
+    )
+    assert redelivered.admission == admissions["submit_input"]
+    assert (
+        await refusal(
+            service.ChangeModel(
+                runner_control_pb2.ChangeModelRequest(session_id=RUNNING, command_id="test-submit", model="test-model")
+            )
+        )
+        == grpc.StatusCode.ALREADY_EXISTS
+    )
+
+
 @pytest.mark.parametrize("ending", ["stopped", "sealed"])
 async def test_a_redelivery_after_the_harness_ended_is_answered_with_the_original_admission(
     ending: str, runner: Runner, dial: Callable[[], Awaitable[Service]]
@@ -285,7 +343,7 @@ async def test_a_resume_the_runner_cannot_serve_is_refused(
     assert started == []
 
 
-async def test_a_seal_waits_for_the_admission_under_way_and_a_delivery_after_it_waits_for_the_seal(
+async def test_a_seal_waits_for_the_admission_under_way_and_a_delivery_after_it_is_refused(
     runner: Runner, dial: Callable[[], Awaitable[Service]], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Holds the earlier command's admission until the Seal has arrived behind it.
@@ -319,7 +377,7 @@ async def test_a_seal_waits_for_the_admission_under_way_and_a_delivery_after_it_
         unblocked.set()
         admitted, sealed, refused = await asyncio.gather(before, sealing, after)
     assert admitted.admission.cursor <= {row.session_id: row.cursor for row in sealed.sessions}[RUNNING]
-    assert refused == grpc.StatusCode.FAILED_PRECONDITION
+    assert refused == grpc.StatusCode.ABORTED
 
 
 async def test_sealing_again_returns_the_same_cursors_and_opening_is_refused(
@@ -329,7 +387,10 @@ async def test_sealing_again_returns_the_same_cursors_and_opening_is_refused(
     first, second = await service.Seal(runner_pb2.SealRequest()), await service.Seal(runner_pb2.SealRequest())
     assert first == second
     assert {row.session_id for row in first.sessions} == {RUNNING, STOPPED, FAILED_SETUP}
-    assert await refusal(service.OpenSession(open_session("test-new-session"))) == grpc.StatusCode.FAILED_PRECONDITION
+    assert await refusal(service.OpenSession(open_session("test-new-session"))) == grpc.StatusCode.ABORTED
+    assert await refusal(service.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id=STOPPED))) == (
+        grpc.StatusCode.ABORTED
+    )
     assert not runner.sessions[RUNNING].running
     assert started == []
 

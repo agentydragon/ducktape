@@ -79,6 +79,7 @@ py_library(
     name = "projector",
     srcs = ["projector.py"],
     deps = [
+        ":idle",
         ":lifecycle",
         ":model_activity",
         ":models",
@@ -146,5 +147,15 @@ py_test(
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "idle",
+    srcs = ["idle.py"],
+    deps = [
+        "//agentplane/proto:event_pb2",
+        "@pypi//protobuf",
+        "@pypi//types_protobuf",  # keep: mypy follows generated protobuf interfaces
     ],
 )

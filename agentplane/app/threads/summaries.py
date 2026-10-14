@@ -38,6 +38,7 @@ class FoldSummary:
     folded_through: int
     last_event_at: datetime | None
     last_model_activity_at: datetime | None
+    idle_since: datetime | None
     # A `TurnStatus` number, kept open as the fold stores it.
     last_turn_status: int | None
     # None until a runner attachment is folded.
@@ -45,7 +46,7 @@ class FoldSummary:
 
 
 NOTHING_FOLDED = FoldSummary(
-    folded_through=0, last_event_at=None, last_model_activity_at=None, last_turn_status=None, feed=None
+    folded_through=0, last_event_at=None, last_model_activity_at=None, idle_since=None, last_turn_status=None, feed=None
 )
 
 
@@ -99,6 +100,7 @@ def _summary(summary: history_service_pb2.SessionSummary) -> FoldSummary:
         last_model_activity_at=summary.last_model_activity_at.ToDatetime(tzinfo=UTC)
         if summary.HasField("last_model_activity_at")
         else None,
+        idle_since=summary.idle_since.ToDatetime(tzinfo=UTC) if summary.HasField("idle_since") else None,
         last_turn_status=summary.last_turn_status if summary.HasField("last_turn_status") else None,
         feed=feed,
     )

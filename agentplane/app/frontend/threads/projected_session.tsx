@@ -62,6 +62,7 @@ import { DISCLOSURE_STICKY_Z_INDEX } from "../disclosure";
 import { snapshotFresh, threadStatusFromSnapshot } from "../thread_status";
 import { sandboxReady, sandboxSummary } from "../sandbox_status";
 import { isoTime } from "../format_time";
+import { TimeAgo } from "../time_ago";
 import { NotificationStatus } from "../notification_status";
 import { TopbarActions, TopbarTitle } from "../topbar";
 import { installThreadFavicon } from "../thread_favicon";
@@ -1001,10 +1002,12 @@ function modelActivityAge(at: string | null | undefined, now: number): string {
 function ModelActivityHint({
   at,
   age,
+  idleSince,
   className,
 }: {
   at: string | null | undefined;
   age: string;
+  idleSince: string | null | undefined;
   className: string;
 }): JSX.Element {
   return (
@@ -1021,6 +1024,12 @@ function ModelActivityHint({
       }
     >
       Model activity: {age}
+      {idleSince && (
+        <>
+          {" · Idle since "}
+          <TimeAgo value={idleSince} />
+        </>
+      )}
     </Text>
   );
 }
@@ -1151,6 +1160,7 @@ function ProjectedSessionBody({
       <ModelActivityHint
         at={thread.last_model_activity_at}
         age={activityAge}
+        idleSince={activeTurn ? null : thread.idle_since}
         className="agentplane-thread-tail-model-activity"
       />
     </Stack>
@@ -1349,6 +1359,7 @@ function ProjectedSessionBody({
           <ModelActivityHint
             at={thread.last_model_activity_at}
             age={activityAge}
+            idleSince={activeTurn ? null : thread.idle_since}
             className="agentplane-composer-model-activity"
           />
           <Group className="agentplane-composer-send" gap="xs" wrap="nowrap">

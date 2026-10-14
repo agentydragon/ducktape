@@ -155,7 +155,7 @@ async def test_seal_stops_the_running_harness_and_ends_live_followers(
         await first.until(lambda _: False)
     assert sealed.value.cursor == seal.cursor == first.cursor
     assert events.of_kind(first.seen, "harness_exited")[-1].event.harness_exited.stopped_by_runner
-    assert await refusal(driver.attach("seal-1", spec=spec)) == grpc.StatusCode.FAILED_PRECONDITION
+    assert await refusal(driver.attach("seal-1", spec=spec)) == grpc.StatusCode.ABORTED
 
 
 async def test_resume_sends_the_model_the_reasoning_of_the_previous_harness(

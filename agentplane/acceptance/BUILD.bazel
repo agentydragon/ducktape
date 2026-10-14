@@ -126,6 +126,31 @@ py_test(
     ],
 )
 
+# Live, like `test_instructions`: one VM Sandbox and one turn per harness, `eternal` because a VM
+# guest boots before its runner answers.
+py_test(
+    name = "test_vm_sandbox",
+    timeout = "eternal",
+    srcs = ["test_vm_sandbox.py"],
+    env_inherit = [
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":agent",
+        ":conftest",
+        "//:conftest",
+        "//agentplane/app/testing:client",
+        "//agentplane/proto:runner_pb2",
+        "@pypi//protobuf",
+        "@pypi//pytest_bazel",
+    ],
+)
+
 # Live end-to-end resume: two Threads, one per harness, share a fixture Sandbox so a single Pod
 # replacement exercises both native stores. This uses real model turns and waits for the old Pod to
 # disappear before resuming the same Sandbox.

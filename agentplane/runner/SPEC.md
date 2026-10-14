@@ -86,7 +86,8 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   given, it confirms it and starts its harness if stopped, and any other spec is refused.
   `ResumeSession` restarts a stopped harness on the retained spec, and is refused for an unknown or
   sealed session or one whose setup failed or was interrupted. A `Seal` takes effect after every
-  command delivered before it is answered, and calls after it wait for it. A lost connection drops
+  command delivered before it is answered; a call after it that starts or resumes work is refused
+  at once (see Teardown seal), and `ListSessions` waits for it. A lost connection drops
   the answers of calls in flight, never an operation halfway through.
 - The bearer it sends is a placeholder the egress proxy substitutes; the runner never holds the
   control token.
@@ -109,8 +110,12 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
 
 - `Seal` is for Sandbox teardown only. The runner first records, durably, that the Sandbox is sealed
   in this incarnation, naming the incarnation UID its latest `Welcome` carried; from then on,
-  including after a restart in the same incarnation, it refuses `OpenSession` and `ResumeSession`, so no
-  session is created or resumed. It then stops every setup script and harness, and seals each session's journal at its
+  including after a restart in the same incarnation, it is in lameduck: `OpenSession`, `ResumeSession` and
+  every delivered command except an interrupt or a stop are refused with `ABORTED`, which a sender
+  reads as "retry after the Sandbox resumes", and a command already admitted but not dispatched is
+  left pending. It then interrupts each active turn, waits up to a grace period for it to end, and
+  stops every setup script and harness; the turn's `TurnCompleted` has `ended_by_teardown` set, which
+  tells it from a user's interrupt. It seals each session's journal at its
   final cursor, returning those cursors. Sealing again returns the same cursors. Each cursor comes
   with `flushed`: whether the ingress has acknowledged that seal, as the runner recorded it, so it
   holds across a restart.

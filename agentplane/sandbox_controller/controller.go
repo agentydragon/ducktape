@@ -319,6 +319,9 @@ func (r *Reconciler) seal(ctx context.Context, sandbox *Sandbox, runner string) 
 	if err != nil {
 		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: sealRetry}
 	}
+	if result.Quiescing {
+		return &unready{reason: "Quiescing", message: "the runner has not finished quiescing", retryAfter: sealRetry}
+	}
 	if len(result.Unflushed) > 0 {
 		return &unready{reason: "Quiescing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: sealRetry}
 	}
@@ -689,13 +692,15 @@ func (r *Reconciler) SetupWithManager(mgr ctrl.Manager) error {
 		Watches(&SandboxTemplate{}, byTemplate)
 	if r.Leases != nil {
 		// A connection's Lease is the Sandbox's by owner reference. Renewals only move the renew time,
-		// so only a different runner Pod or a new connection enqueues.
+		// so only a different runner Pod, a new connection or a change in the facts the runner
+		// publishes enqueues.
 		setup = setup.Watches(&coordinationv1.Lease{},
 			handler.EnqueueRequestForOwner(mgr.GetScheme(), mgr.GetRESTMapper(), &Sandbox{}),
 			builder.WithPredicates(predicate.Funcs{UpdateFunc: func(e event.UpdateEvent) bool {
 				previous, current := e.ObjectOld.(*coordinationv1.Lease), e.ObjectNew.(*coordinationv1.Lease)
 				return previous.Annotations[PodUIDAnnotation] != current.Annotations[PodUIDAnnotation] ||
-					leaseTransitions(previous) != leaseTransitions(current)
+					leaseTransitions(previous) != leaseTransitions(current) ||
+					runnerFactsChanged(previous, current)
 			}}))
 	}
 	if r.KubeVirt {

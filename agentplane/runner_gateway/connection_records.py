@@ -1,8 +1,9 @@
-"""Runner connection records in Kubernetes: each Sandbox's Lease, control Service and EndpointSlice.
+"""Runner connection records in Kubernetes: each Sandbox's Lease and the EndpointSlice of its control Service.
 
 The replica holding a Sandbox's runner connection owns its Lease (holder, epoch, liveness) and
-points the Sandbox's headless control Service at its own Pod. Every replica reads Leases from a
-watch cache, never from the API server per request. Contract: `agentplane/docs/runner_control.md`
+points the EndpointSlice of the Sandbox's headless control Service (which the Sandbox controller
+creates) at its own Pod. Every replica reads Leases from a watch cache, never from the API server
+per request. Contract: `agentplane/docs/runner_control.md`
 § Connection ownership and fencing.
 """
 
@@ -179,7 +180,6 @@ class ConnectionRecords:
 
     def __init__(self, api: k8s_client.ApiClient, *, namespace: str, holder: ConnectionHolder) -> None:
         self._coordination = k8s_client.CoordinationV1Api(api)
-        self._core = k8s_client.CoreV1Api(api)
         self._discovery = k8s_client.DiscoveryV1Api(api)
         self._namespace = namespace
         self._holder = holder
@@ -190,7 +190,7 @@ class ConnectionRecords:
         )
 
     async def accept(self, owner: RecordOwner, *, pod_uid: str, runner_boot_id: str) -> int:
-        """Take the Sandbox's Lease for a new connection and point its control Service here.
+        """Take the Sandbox's Lease for a new connection and point its control Service's EndpointSlice here.
 
         Returns the new epoch; the records are written before the caller sends `Welcome`.
         """
@@ -225,7 +225,6 @@ class ConnectionRecords:
                     await self._coordination.create_namespaced_lease(self._namespace, lease)
                 else:
                     await self._coordination.replace_namespaced_lease(owner.lease_name, self._namespace, lease)
-        await self._ensure_control_service(owner)
         await self._point_control_endpoints(owner, epoch=epoch)
         return epoch
 
@@ -243,31 +242,6 @@ class ConnectionRecords:
                     raise ConnectionSupersededError(owner.name)
                 lease.spec.renew_time = _micro_time(seen_at)
                 await self._coordination.replace_namespaced_lease(owner.lease_name, self._namespace, lease)
-
-    async def _ensure_control_service(self, owner: RecordOwner) -> None:
-        service = k8s_client.V1Service(
-            api_version="v1",
-            kind="Service",
-            metadata=self._metadata(owner.control_name, owner),
-            # Headless and selector-less: DNS returns the EndpointSlice's address, with no kube-proxy rules.
-            spec=k8s_client.V1ServiceSpec(
-                cluster_ip="None", ports=[k8s_client.V1ServicePort(name=CONTROL_PORT, port=self._holder.port)]
-            ),
-        )
-        async for attempt in _retrying_conflicts():
-            with attempt:
-                try:
-                    current = await self._core.read_namespaced_service(owner.control_name, self._namespace)
-                except k8s_client.ApiException as error:
-                    if error.status != 404:
-                        raise
-                    await self._core.create_namespaced_service(self._namespace, service)
-                    return
-                if owner.owns(current):
-                    return
-                # An earlier incarnation's, not yet collected; its deletion would take this one's too.
-                current.metadata.owner_references = [owner.reference()]
-                await self._core.replace_namespaced_service(owner.control_name, self._namespace, current)
 
     async def _point_control_endpoints(self, owner: RecordOwner, *, epoch: int) -> None:
         async for attempt in _retrying_conflicts():
