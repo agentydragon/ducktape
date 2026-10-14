@@ -13,7 +13,7 @@ from more_itertools import one
 
 from cluster.cdk8s import agent_access_profiles
 from cluster.cdk8s.agentplane import binding_delegation, notifications, sandbox_service, staging, testing
-from cluster.cdk8s.agentplane.actions_staging_policies import AGENTPLANE_TESTING_POLICY, COINBASE_POLICY
+from cluster.cdk8s.agentplane.actions_staging_policies import AGENTPLANE_TESTING_POLICY
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.agentplane.egress import (
     BASIC_POLICY,
@@ -198,7 +198,7 @@ def test_testing_github_policy_has_its_credential_and_no_real_account_credential
             AIQUOTA_READ_POLICY,
             FINANCE_AIQUOTA_HISTORY_POLICY,
             HAKU_MAILBOX_POLICY,
-            COINBASE_POLICY,
+            agent_access_profiles.COINBASE_POLICY,
             PLAID_PGWEB_CREDENTIAL,
         }
         for doc in manifests
@@ -268,17 +268,19 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
         else set()
     )
     # Coinbase bundles the Secret grant and GET egress; only explicitly selected callers get it.
-    assert (COINBASE_POLICY in config["sandbox_presets"][preset]["policy_sets"]) == (preset == "finance-agent")
+    assert (agent_access_profiles.COINBASE_POLICY in config["sandbox_presets"][preset]["policy_sets"]) == (
+        preset == "finance-agent"
+    )
     assert selected == _kubernetes_grants(config["sandbox_presets"]["public-coder"]["policy_sets"]) | credential_grants
     haku_policy_sets = config["sandbox_presets"]["haku"]["policy_sets"]
     haku = _kubernetes_grants(haku_policy_sets)
-    assert COINBASE_POLICY in haku_policy_sets
-    assert COINBASE_POLICY in _by_name(docs, "PolicyBinding", "claude-ai")["spec"]["policySets"]
-    assert COINBASE_POLICY in _by_name(docs, "PolicyBinding", "haku-agent")["spec"]["policySets"]
+    assert agent_access_profiles.COINBASE_POLICY in haku_policy_sets
+    assert agent_access_profiles.COINBASE_POLICY in _by_name(docs, "PolicyBinding", "claude-ai")["spec"]["policySets"]
+    assert agent_access_profiles.COINBASE_POLICY in _by_name(docs, "PolicyBinding", "haku-agent")["spec"]["policySets"]
     assert not any(
         doc["kind"] == "PolicySet" and doc["metadata"]["name"] == "coinbase-credentials" for doc in docs
     )
-    coinbase_rules = _by_name(docs, "PolicySet", COINBASE_POLICY)["spec"]["rules"]
+    coinbase_rules = _by_name(docs, "PolicySet", agent_access_profiles.COINBASE_POLICY)["spec"]["rules"]
     assert {rule["type"] for rule in coinbase_rules} == {"egress", "kubernetes_role_binding"}
     assert {
         (rule["role"]["kind"], rule["role"]["name"], tuple(rule["namespaces"]))

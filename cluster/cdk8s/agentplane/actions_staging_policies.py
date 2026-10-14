@@ -70,7 +70,6 @@ _GITHUB_DOWNLOADS_POLICY = "github-downloads"
 # Secret grant; its set definition lives with Agentplane's Kubernetes access profiles. The two
 # Action PolicySet reads every preset binds by default live here too.
 AGENTPLANE_TESTING_POLICY = "agentplane-testing"
-COINBASE_POLICY = access.COINBASE_POLICY
 GITHUB_IDENTITY_READS_SET = "github-identity-reads"
 SSH_READS_SET = "ssh-reads"
 
@@ -725,7 +724,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
-            COINBASE_POLICY,
+            access.COINBASE_POLICY,
             access.PLAID_DIAGNOSTICS_POLICY,
             AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,
@@ -750,7 +749,7 @@ def add_staging_action_policies(scope: Construct) -> None:
             ACTIVITYWATCH_READ_POLICY,
             AIQUOTA_READ_POLICY,
             HAKU_MAILBOX_POLICY,
-            COINBASE_POLICY,
+            access.COINBASE_POLICY,
             access.PLAID_DIAGNOSTICS_POLICY,
             AGENTPLANE_TESTING_POLICY,
             _GITHUB_DOWNLOADS_POLICY,
