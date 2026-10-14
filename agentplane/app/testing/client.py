@@ -173,13 +173,18 @@ class Client:
         raise RuntimeError(f"the egress decision stream of {name} ended without a snapshot")
 
     async def create_session(
-        self, name: str, session_id: UUID, *, overrides: dict[str, object] | None = None
+        self,
+        name: str,
+        session_id: UUID,
+        *,
+        overrides: dict[str, object] | None = None,
+        setup_script: str | None = None,
     ) -> Attachment:
         """Create a Session from the defaults recorded on the Sandbox plus proto-JSON overrides.
 
         Retrying with the same Session ID and overrides answers the same Session.
         """
-        body = NewSession(session_id=session_id, spec=overrides or {})
+        body = NewSession(session_id=session_id, spec=overrides or {}, setup_script=setup_script)
         answered = await self._json("POST", f"/sandboxes/{name}/sessions", json=body.model_dump(mode="json"))
         return Attachment(ParseDict(answered, runner_pb2.Attached()))
 

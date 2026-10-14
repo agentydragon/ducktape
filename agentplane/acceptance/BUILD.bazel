@@ -469,3 +469,32 @@ py_test(
         "@pypi//pyyaml",
     ],
 )
+
+py_test(
+    name = "test_storage_deployed",
+    # Three bounded fresh fixtures, two involving guest boots and normal stop/start. CI does
+    # not select this target; it needs the operator host's kubeconfig and testing ingress.
+    timeout = "eternal",
+    srcs = ["test_storage_deployed.py"],
+    env_inherit = [
+        "AGENTPLANE_ACCEPTANCE_TOKEN",
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane:crd_group",
+        "//agentplane:sandbox_resource",
+        "//agentplane/app/testing:client",
+        "//util/testing:undeclared_outputs",
+        "@pypi//kubernetes_asyncio",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+        "@pypi//pyyaml",
+    ],
+)
