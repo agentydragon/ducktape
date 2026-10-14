@@ -41,7 +41,10 @@ from util.testing.sqlalchemy_engines import managed_async_engine
 
 database_template, db_url = migrated_database_fixtures(RUNNER, drivername="postgresql+asyncpg")
 dispatcher_database_template, dispatcher_db_url = migrated_database_fixtures(
-    DISPATCHER_MIGRATIONS, drivername="postgresql+asyncpg"
+    DISPATCHER_MIGRATIONS,
+    drivername="postgresql+asyncpg",
+    template_name="dispatcher_database_template",
+    url_name="dispatcher_db_url",
 )
 
 
