@@ -98,9 +98,7 @@ class Sandbox(_Wire):
 
     @property
     def sessions_sealed(self) -> bool:
-        return any(
-            c.type == QUIESCED and c.status is ConditionStatus.TRUE for c in self.status.conditions
-        )
+        return any(c.type == QUIESCED and c.status is ConditionStatus.TRUE for c in self.status.conditions)
 
     def running_reason(self) -> str | None:
         return next((c.reason for c in self.status.conditions if c.type == RUNNING), None)
