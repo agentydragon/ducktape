@@ -15,8 +15,7 @@ from kubernetes_asyncio import client as k8s_client
 from agentplane.grpc_calls import RefusedError, ServiceError
 from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.proto import runner_pb2, sandbox_service_pb2, sandboxes_pb2
-from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest
-from agentplane.proto.sandboxes_pb2 import SandboxDestination, SandboxPhase
+from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest, SandboxDestination, SandboxPhase
 from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.egress import EgressInventory

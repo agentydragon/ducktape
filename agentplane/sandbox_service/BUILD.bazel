@@ -99,7 +99,6 @@ py_library(
     deps = [
         ":egress",
         "//agentplane:subjects",
-        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/proto:sandboxes_pb2",
         "//agentplane/sandboxes:inventory",
         "@pypi//protobuf",
@@ -236,7 +235,6 @@ py_test(
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/proto:runner_pb2",
-        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/proto:sandboxes_pb2",
         "//agentplane/sandboxes:errors",
         "//agentplane/sandboxes:inventory",

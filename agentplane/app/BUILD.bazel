@@ -1375,7 +1375,6 @@ py_library(
     deps = [
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
-        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/proto:sandboxes_pb2",
         "//agentplane/runner:harness",
         "@pypi//protobuf",
@@ -1479,7 +1478,6 @@ py_library(
     srcs = ["sandbox_access.py"],
     deps = [
         "//agentplane:subjects",
-        "//agentplane/proto:sandbox_service_pb2",
         "//agentplane/proto:sandboxes_pb2",
         "//agentplane/sandboxes:inventory",
         "@pypi//protobuf",
@@ -1496,7 +1494,7 @@ py_test(
         "//agentplane:policy_sets",
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
-        "//agentplane/proto:sandbox_service_pb2",
+        "//agentplane/proto:sandboxes_pb2",
         "//agentplane/sandboxes:errors",
         "//agentplane/sandboxes:inventory",
         "//agentplane/sandboxes/testing:fake_inventory",

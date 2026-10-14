@@ -687,7 +687,6 @@ flowchart TD
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
     DISPATCHER_CORE[Candidate: deploy the Session Dispatcher, then the facts that settle its commands]
-    SANDBOX_SHARED_CODE_MOVE[Candidate: what outlives the Sandbox Service leaves its package]
     SANDBOX_WRITE_HELPER[Candidate: one shared library writes a Sandbox's spec]
     APP_SANDBOX_WRITES[Blocked: the app creates, deletes, suspends and resumes Sandboxes itself]
     SANDBOX_SERVICE_REMOVE[Blocked: remove the Sandbox Service]
@@ -735,8 +734,6 @@ flowchart TD
         DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
     SANDBOX_WRITE_HELPER --> DISPATCHER_WAKE_ON_SEND
     SANDBOX_WRITE_HELPER --> APP_SANDBOX_WRITES
-    SANDBOX_SHARED_CODE_MOVE --> SANDBOX_SERVICE_REMOVE
-    SANDBOX_SHARED_CODE_MOVE -. land first, then the helper is written once .-> SANDBOX_WRITE_HELPER
     APP_SANDBOX_WRITES --> SANDBOX_SERVICE_REMOVE
     DISPATCHER_CORE --> DISPATCHER_DEPLOY[Blocked: the Session Dispatcher is deployed]
     DISPATCHER_DEPLOY --> APP_SENDS_VIA_DISPATCHER
@@ -1067,19 +1064,6 @@ display and delivery timing: suspension reads the runner's busy facts (`RUNNER_F
 never this field. Per-Session idle times stay out of Kubernetes.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
-### `SANDBOX_SHARED_CODE_MOVE` — what outlives the Sandbox Service leaves its package
-
-**Candidate; a pure move with no behavior change.** Everything shared now lives in
-`agentplane/sandboxes/` and `agentplane/proto/sandboxes.proto`. What is left under
-`agentplane/sandbox_service/` is the Service itself and what serves only it: `provisioning.py`
-(its `Provisioning.egress` is read by the `GrantEgress` and `RevokeEgress` handlers, so it moves with
-the CLEANUP that removes them, or goes with the Service) and the test fakes that stand up the gRPC
-Service (`testing/backend`, `grpc_service`, `connected_runner`, `kubernetes`), which the gateway and
-app tests use until `SANDBOX_SERVICE_REMOVE` replaces them with the Kubernetes-backed fakes. When
-`GrantEgress` and `RevokeEgress` are gone, this node ends with whatever importers still name
-`agentplane.sandbox_service`; then `SANDBOX_WRITE_HELPER` and the removal start from a package that
-holds only the Service, and the removal is a deletion.
 
 ### `SANDBOX_WRITE_HELPER` — one shared library writes a Sandbox's spec
 

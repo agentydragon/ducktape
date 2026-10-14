@@ -13,8 +13,7 @@ from kubernetes_asyncio import client as k8s_client
 
 from agentplane.policy_sets import POLICY_SETS_PLURAL
 from agentplane.proto.runner_pb2 import HARNESS_CODEX
-from agentplane.proto.sandbox_service_pb2 import CreateSandboxRequest
-from agentplane.proto.sandboxes_pb2 import SandboxPhase, SessionDefaults
+from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest, SandboxPhase, SessionDefaults
 from agentplane.sandbox_resource import PRESET_LABEL, SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandboxes.errors import (
     SandboxConflictError,

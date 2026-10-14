@@ -288,7 +288,7 @@ async def test_unlisted_callers_rejected_before_lookup(
         for call, request in (
             (sandboxes.stub.ListSandboxes, Empty()),
             (sandboxes.stub.GetSandbox, sandbox_service_pb2.GetSandboxRequest(name=SANDBOX)),
-            (sandboxes.stub.CreateSandbox, sandbox_service_pb2.CreateSandboxRequest()),
+            (sandboxes.stub.CreateSandbox, sandboxes_pb2.CreateSandboxRequest()),
             (sandboxes.stub.SuspendSandbox, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
             (sandboxes.stub.ResumeSandbox, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
             (sandboxes.stub.DeleteSandbox, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
