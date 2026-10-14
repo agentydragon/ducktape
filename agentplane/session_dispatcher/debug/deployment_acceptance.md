@@ -135,3 +135,13 @@ The server image was `devel-20261014203113-a3161b0` and migration image
 The deployment restriction and staging reconciliation gates are complete; the preceding
 failover/deletion test supplies the behavior evidence. Send-triggered wake activation remains
 separate and requires the newer failure-feedback receiver and migration from #10500.
+
+## App command sender activation
+
+#10498 merged as `606f1cdccf`. Read-only verification on 2026-10-14 after #10515 rollout found every
+actual app Pod Ready on `devel-20261014212925-dba91ac` (testing 1, staging 2), with no old app Pods.
+Both Deployments pass the namespace-local `--session-dispatcher-target` and mount the Dispatcher
+audience token. `RunnerBridge.command` uses that configured client and does not fall back after a
+configured Dispatcher failure. The existing sender/receiver synthesis and Dispatcher admission
+acceptance cover the route; this read proves deployment reconciliation, not a new browser-driven
+message test. Session creation and explicit native resume remain separate migration work.

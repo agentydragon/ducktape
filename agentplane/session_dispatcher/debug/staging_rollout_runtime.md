@@ -2,7 +2,7 @@
 
 Read-only investigation on 2026-10-14, approximately 21:30–21:34 UTC. This is a runtime
 reconciliation failure observed on `ovh-ns102453` (`10.42.0.15`), not evidence of a database
-migration lock. Its deeper containerd cause and recovery remain unresolved. No Pod deletion,
+migration lock. Its deeper containerd cause and what restored reconciliation remain unknown. No Pod deletion,
 service restart, node change or database write was performed.
 
 ## Evidence
@@ -26,13 +26,24 @@ KillPod, CRI violation` for old app and Gateway Pods. Notification Pod creation 
   21:21:08, then logged successful cleanup at 21:21:10. That precedes the stuck init container,
   but is not sufficient to establish the underlying defect or choose a recovery operation.
 
-## Gate and next diagnosis
+## Initial gate and diagnosis
 
-Testing can exercise the new receiver. Keep staging wake activation gated until every serving
-Dispatcher replica has the new receiver and the Deployment has fully reconciled. Preserve the
-runtime evidence before any operator-approved recovery; do not mask this by lengthening migration
-timeouts or changing application start order.
+At the initial observation, testing could exercise the new receiver, while staging wake activation
+remained gated on every serving Dispatcher replica receiving the new image and the Deployment fully
+reconciling. The subsequent observation below clears that hold. Runtime evidence should precede any
+operator-approved recovery; longer migration timeouts or application start ordering do not explain
+the mismatch.
 
 Read kubelet/CRI logs directly through the configured Talos API (`talosctl -e 10.42.0.15
 -n 10.42.0.15 logs kubelet` / `logs cri`). The default endpoint refused request forwarding, so the
 explicit node endpoint is required. The Kubernetes `nodes/proxy` permission was not probed.
+
+## Rollout subsequently reconciled
+
+A later read-only check on 2026-10-14 found both staging Dispatcher Pods Ready on `31e0b37`.
+The same `q5lg6` Pod now reports the migration container terminated with exit code 0 and finish time
+21:21:59, matching the earlier runtime exit event. The old `a3161b0` Pod is gone. A subsequent audit
+also found all testing/staging controllers Ready on `31e0b37` and both environments' Dispatcher
+migration containers successfully exited. This clears the Dispatcher rollout hold. It does not
+establish the deeper runtime defect or what recovered it; the coordinator performed no recovery
+writes or restarts.
