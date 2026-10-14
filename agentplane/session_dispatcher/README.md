@@ -46,11 +46,18 @@ and Notification Service still send through the Runner Gateway pending their cut
   anything else is `FAILED` with the runner's status. The runner deduplicates redelivery on `command_id`.
 - **Send wake**: only work from authenticated identities listed in `wake_caller_accounts` may request a
   wake, and the Sandbox must also have `spec.wakeOnSend: true`. Both fields default off. The Dispatcher
-  stores the old incarnation before using the shared guarded resume helper, retries that helper after
-  transient failures and restarts, and delivers only after a different incarnation becomes `Ready`.
-  `InterruptTurn` and `StopRunnerSession` never wake. The initial policy is 10 wakes per minute per authenticated caller; shared,
-  retry-safe enforcement is still pending and must land before this setting is enabled. Rate and
-  algorithm tuning remain a later TODO; this policy does not expand the caller allowlist.
+  stores the authenticated caller on eligible commands and openings, then reserves a wake budget in
+  PostgreSQL immediately before the shared guarded resume helper patches a suspended Sandbox. The
+  initial budget is 10 distinct wake generations per authenticated caller in a rolling 60-second
+  window, shared across replicas and restarts. The charge key is caller, Sandbox UID and target
+  `wakeGeneration`: messages for the same Sandbox resume share one charge, and retries of a target
+  generation reuse its charge while it remains in the window. A guarded patch reservation is charged
+  even if its response fails; after its minute expires, a later real patch attempt may consume another
+  slot. A denied attempt stays queued with `wake_rate_limited` and retries when the oldest charge
+  expires. A stored wake-eligible row without an authenticated caller fails closed as
+  `wake_caller_unknown`. The Dispatcher delivers only after a different incarnation becomes
+  `Ready`; `InterruptTurn` and `StopRunnerSession` never wake. The budget does not expand the
+  caller allowlist. Its initial rate and tuning remain a later TODO.
 
 Delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandbox change (the `ListWatch` on
 Sandboxes) or a retry deadline. Each replica also renews its owned Leases every ten seconds.

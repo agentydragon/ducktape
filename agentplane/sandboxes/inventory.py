@@ -187,7 +187,9 @@ class SandboxInventory(SandboxReader):
         await self._set_running(name, True, uid=uid)
 
     @_retry_on_conflict
-    async def wake_for_send(self, name: str, *, uid: str) -> bool:
+    async def wake_for_send(
+        self, name: str, *, uid: str, before_resume: Callable[[int], Awaitable[None]] | None = None
+    ) -> bool:
         """Request the shared guarded resume only when this Sandbox explicitly allows send wakes.
 
         `False` means the durable command should stay queued. A true result can still be waiting for
@@ -201,7 +203,7 @@ class SandboxInventory(SandboxReader):
         if sandbox.running_reason() == "Quiescing":
             raise SandboxQuiescingError(name)
         if sandbox.operating_mode is OperatingMode.SUSPENDED:
-            await self._request_resume(sandbox, name=name, uid=uid)
+            await self._request_resume(sandbox, name=name, uid=uid, before_resume=before_resume)
         return True
 
     @_retry_on_conflict
@@ -260,7 +262,14 @@ class SandboxInventory(SandboxReader):
             _content_type=_MERGE_PATCH,
         )
 
-    async def _request_resume(self, sandbox: sandbox_resource.Sandbox, *, name: str, uid: str) -> None:
+    async def _request_resume(
+        self,
+        sandbox: sandbox_resource.Sandbox,
+        *,
+        name: str,
+        uid: str,
+        before_resume: Callable[[int], Awaitable[None]] | None = None,
+    ) -> None:
         """Apply the wake verb to an already-read suspended Sandbox; caller owns conflict retry."""
         if sandbox.running_reason() == "Quiescing":
             raise SandboxQuiescingError(name)
@@ -270,6 +279,9 @@ class SandboxInventory(SandboxReader):
         )
         if sandbox.spec.running and not idle_still_suspended:
             return
+        wake_generation = sandbox.spec.wake_generation + 1
+        if before_resume is not None:
+            await before_resume(wake_generation)
         await self._custom_objects.patch_namespaced_custom_object(
             GROUP,
             VERSION,
@@ -278,7 +290,7 @@ class SandboxInventory(SandboxReader):
             name,
             {
                 "metadata": {"uid": uid, "resourceVersion": sandbox.metadata.resource_version},
-                "spec": {"running": True, "wakeGeneration": sandbox.spec.wake_generation + 1},
+                "spec": {"running": True, "wakeGeneration": wake_generation},
             },
             _content_type=_MERGE_PATCH,
         )

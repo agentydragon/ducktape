@@ -33,6 +33,8 @@ class Dispatch(Base):
     # The Sandbox the command was queued for: a Sandbox recreated under its name is another one.
     sandbox_uid: Mapped[UUID]
     wake_eligible: Mapped[bool] = mapped_column(default=False)
+    wake_caller_namespace: Mapped[str | None]
+    wake_caller_name: Mapped[str | None]
     # Null until the Dispatcher requested a wake; empty string records a wake before any incarnation existed.
     wake_from_incarnation: Mapped[str | None]
     # Queried by the queue cap and by a stop, which the command carries too.
@@ -54,6 +56,8 @@ class SessionOpening(Base):
     sandbox_name: Mapped[str]
     sandbox_uid: Mapped[UUID]
     wake_eligible: Mapped[bool] = mapped_column(default=False)
+    wake_caller_namespace: Mapped[str | None]
+    wake_caller_name: Mapped[str | None]
     # Null until the Dispatcher requested a wake; empty string records a wake before any incarnation existed.
     wake_from_incarnation: Mapped[str | None]
     spec: Mapped[runner_pb2.SessionSpec] = mapped_column(ProtobufColumn(runner_pb2.SessionSpec))
@@ -76,3 +80,15 @@ class SandboxOwnership(Base):
     lease_transitions: Mapped[int]
     holder_identity: Mapped[str]
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class WakeAttempt(Base):
+    """One authenticated caller's distinct guarded wake-generation request."""
+
+    __tablename__ = "wake_attempt"
+    __table_args__ = (Index("ix_wake_attempt_caller_time", "caller_namespace", "caller_name", "attempted_at"),)
+    caller_namespace: Mapped[str] = mapped_column(primary_key=True)
+    caller_name: Mapped[str] = mapped_column(primary_key=True)
+    sandbox_uid: Mapped[UUID] = mapped_column(primary_key=True)
+    wake_generation: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    attempted_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

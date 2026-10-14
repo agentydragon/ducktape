@@ -1,15 +1,20 @@
 """Queueing, cancelling and ending commands in the Dispatch table, against real PostgreSQL."""
 
+import asyncio
+from datetime import UTC, datetime
 from uuid import UUID
 
 import pytest
 import pytest_bazel
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2, session_dispatcher_pb2
-from agentplane.session_dispatcher.db import SessionOpening
+from agentplane.session_dispatcher.db import SessionOpening, WakeAttempt
 from agentplane.session_dispatcher.models import DeliveryState, Reason
 from agentplane.session_dispatcher.store import (
+    WAKE_LIMIT,
+    WAKE_WINDOW_S,
     CommandConflictError,
     DispatchNotFoundError,
     DispatchStore,
@@ -19,6 +24,7 @@ from agentplane.session_dispatcher.store import (
     SandboxOwner,
 )
 from agentplane.session_dispatcher.terminal_broadcast import TerminalBroadcast
+from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -26,6 +32,7 @@ SANDBOX_UID = UUID("00000000-0000-4000-8000-000000000001")
 SANDBOX = "test-sandbox"
 SESSION = "test-session"
 QUEUE_CAP = 3
+WAKE_CALLER = ServiceAccountRef(namespace="agentplane", name="app")
 
 
 @pytest.fixture
@@ -117,6 +124,56 @@ async def test_a_session_has_one_head_and_none_while_an_earlier_command_is_in_fl
         "a", owner=owner, from_states={DeliveryState.DELIVERING_TO_RUNNER}, to=DeliveryState.RUNNER_ADMITTED
     )
     assert [row.command_id for row in await store.heads()] == ["b", "other"]
+
+
+async def test_wake_attempts_are_shared_across_store_instances_and_deduplicate_retries(
+    store: DispatchStore, engine: AsyncEngine
+) -> None:
+    for generation in range(1, WAKE_LIMIT + 1):
+        assert (
+            await store.reserve_wake_attempt(caller=WAKE_CALLER, sandbox_uid=SANDBOX_UID, wake_generation=generation)
+            is None
+        )
+
+    # A retry for the same guarded generation does not spend another unit.
+    assert await store.reserve_wake_attempt(caller=WAKE_CALLER, sandbox_uid=SANDBOX_UID, wake_generation=1) is None
+
+    restarted_store = DispatchStore(engine, queue_cap=QUEUE_CAP, terminal_broadcast=store.terminal_broadcast)
+    retry_after = await restarted_store.reserve_wake_attempt(
+        caller=WAKE_CALLER, sandbox_uid=UUID(int=2), wake_generation=1
+    )
+    assert retry_after is not None
+    assert 0 < retry_after <= WAKE_WINDOW_S
+    # A different authenticated caller has an independent budget.
+    assert (
+        await restarted_store.reserve_wake_attempt(
+            caller=ServiceAccountRef(namespace="agentplane", name="notifications"),
+            sandbox_uid=UUID(int=2),
+            wake_generation=1,
+        )
+        is None
+    )
+
+
+async def test_concurrent_wake_reservations_cannot_exceed_one_callers_budget(store: DispatchStore) -> None:
+    outcomes = await asyncio.gather(
+        *(
+            store.reserve_wake_attempt(caller=WAKE_CALLER, sandbox_uid=UUID(int=number + 1), wake_generation=1)
+            for number in range(WAKE_LIMIT + 1)
+        )
+    )
+    assert sum(outcome is None for outcome in outcomes) == WAKE_LIMIT
+    assert sum(outcome is not None for outcome in outcomes) == 1
+
+
+async def test_wake_reservation_is_charged_again_after_the_window_expires(store: DispatchStore) -> None:
+    await store.reserve_wake_attempt(caller=WAKE_CALLER, sandbox_uid=SANDBOX_UID, wake_generation=1)
+    async with store.sessions.begin() as session:
+        await session.execute(update(WakeAttempt).values(attempted_at=datetime(2000, 1, 1, tzinfo=UTC)))
+    assert await store.reserve_wake_attempt(caller=WAKE_CALLER, sandbox_uid=SANDBOX_UID, wake_generation=1) is None
+    async with store.sessions() as session:
+        row_count = await session.scalar(select(func.count()).select_from(WakeAttempt))
+    assert row_count == 1
 
 
 async def test_settle_leaves_a_dispatch_that_already_moved_alone(store: DispatchStore) -> None:

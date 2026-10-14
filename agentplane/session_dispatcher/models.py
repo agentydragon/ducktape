@@ -39,6 +39,8 @@ class Reason(StrEnum):
     SANDBOX_RESUMING = "sandbox_resuming"
     SANDBOX_NOT_READY = "sandbox_not_ready"
     WAKE_ON_SEND_DISABLED = "wake_on_send_disabled"
+    WAKE_CALLER_UNKNOWN = "wake_caller_unknown"
+    WAKE_RATE_LIMITED = "wake_rate_limited"
     RUNNER_REFUSED_WORK = "runner_refused_work"
     DELIVERY_UNAVAILABLE = "delivery_unavailable"
     DISPATCHER_RESTARTED = "dispatcher_restarted"

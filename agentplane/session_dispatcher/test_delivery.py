@@ -2,14 +2,16 @@
 the fake API server."""
 
 import asyncio
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from uuid import UUID
 
 import grpc
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s_client
 from kubernetes_asyncio.client import ApiException
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane import sandbox_resource
@@ -18,7 +20,7 @@ from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.session_dispatcher import delivery as delivery_module
 from agentplane.session_dispatcher.channels import Channel
-from agentplane.session_dispatcher.db import Dispatch
+from agentplane.session_dispatcher.db import Dispatch, WakeAttempt
 from agentplane.session_dispatcher.delivery import Delivery
 from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.models import DeliveryState, Reason
@@ -28,12 +30,14 @@ from agentplane.session_dispatcher.sandboxes import SandboxWatch
 from agentplane.session_dispatcher.store import DispatchStore
 from agentplane.session_dispatcher.testing.sandbox_status import set_sandbox
 from agentplane.session_dispatcher.testing.scripted_runner import ScriptedRunner
+from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
 SESSION = "test-session"
+WAKE_CALLER = ServiceAccountRef(namespace="agentplane", name="test-app")
 
 
 @pytest.fixture(autouse=True)
@@ -73,7 +77,7 @@ async def enqueue(
         sandbox_name=SANDBOX,
         sandbox_uid=sandbox.metadata.uid,
         command=command,
-        wake_eligible=wake_eligible,
+        wake_caller=WAKE_CALLER if wake_eligible else None,
     )
 
 
@@ -199,7 +203,8 @@ async def test_a_wake_retry_rechecks_ownership_after_failover(
 
     calls: list[str] = []
 
-    async def wake(name: str, *, uid: str) -> bool:
+    async def wake(name: str, *, uid: str, before_resume: Callable[[int], Awaitable[None]] | None = None) -> bool:
+        del before_resume
         calls.append(f"{name}:{uid}")
         raise ApiException(status=500)
 
@@ -212,6 +217,7 @@ async def test_a_wake_retry_rechecks_ownership_after_failover(
         key="stale-wake",
         sandbox_name=sandbox.metadata.name,
         sandbox_uid=sandbox.metadata.uid,
+        caller=WAKE_CALLER,
         owner=stale_owner,
         notify=notified,
     )
@@ -228,6 +234,7 @@ async def test_a_wake_retry_rechecks_ownership_after_failover(
         key="stale-wake",
         sandbox_name=sandbox.metadata.name,
         sandbox_uid=sandbox.metadata.uid,
+        caller=WAKE_CALLER,
         owner=stale_owner,
         notify=notified,
     )
@@ -284,6 +291,50 @@ async def test_an_eligible_send_wakes_once_and_waits_for_a_new_ready_incarnation
     assert runner[0].calls == [("SubmitInput", "wake")]
 
 
+async def test_a_rate_limited_wake_stays_queued_without_patching_until_its_retry(
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    set_sandbox(cluster, ready=False, running=False, wake_on_send=True)
+    await wait_for_sandbox(sandboxes, lambda sandbox: sandbox.suspended and sandbox.spec.wake_on_send)
+    reservations = 0
+
+    async def reserve_wake(*, caller: ServiceAccountRef, sandbox_uid: UUID, wake_generation: int) -> float | None:
+        del caller, sandbox_uid, wake_generation
+        nonlocal reservations
+        reservations += 1
+        return 0.01 if reservations == 1 else None
+
+    monkeypatch.setattr(store, "reserve_wake_attempt", reserve_wake)
+    await enqueue(store, sandboxes, "rate-limited", wake_eligible=True)
+    await wait_for(store, "rate-limited", DeliveryState.QUEUED_IN_DISPATCHER, Reason.WAKE_RATE_LIMITED)
+
+    sandbox_object = cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]
+    assert sandbox_object["spec"]["running"] is False
+    assert sandbox_object["spec"]["wakeGeneration"] == 0
+    assert (await store.get_dispatch("rate-limited")).state is DeliveryState.QUEUED_IN_DISPATCHER
+
+    await wait_for(store, "rate-limited", DeliveryState.QUEUED_IN_DISPATCHER, Reason.SANDBOX_RESUMING)
+    assert reservations == 2
+    sandbox_object = cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]
+    assert sandbox_object["spec"]["running"] is True
+    assert sandbox_object["spec"]["wakeGeneration"] == 1
+
+
+async def test_a_wake_eligible_legacy_row_without_caller_identity_fails_closed(
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster
+) -> None:
+    set_sandbox(cluster, ready=False, running=False, wake_on_send=True)
+    await wait_for_sandbox(sandboxes, lambda sandbox: sandbox.suspended and sandbox.spec.wake_on_send)
+    await enqueue(store, sandboxes, "legacy-wake")
+    async with store.sessions.begin() as session:
+        await session.execute(update(Dispatch).where(Dispatch.command_id == "legacy-wake").values(wake_eligible=True))
+
+    await wait_for(store, "legacy-wake", DeliveryState.QUEUED_IN_DISPATCHER, Reason.WAKE_CALLER_UNKNOWN)
+    sandbox_object = cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]
+    assert sandbox_object["spec"]["running"] is False
+    assert sandbox_object["spec"]["wakeGeneration"] == 0
+
+
 async def test_concurrent_queued_sends_share_one_sandbox_resume(
     store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster, runner: tuple[ScriptedRunner, str]
 ) -> None:
@@ -301,6 +352,8 @@ async def test_concurrent_queued_sends_share_one_sandbox_resume(
     assert patched["spec"]["wakeGeneration"] == 1
     assert (await store.get_dispatch("storm-one")).wake_from_incarnation == "pod-1"
     assert (await store.get_dispatch("storm-two")).wake_from_incarnation == "pod-1"
+    async with store.sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(WakeAttempt)) == 1
 
     set_sandbox(cluster, ready=True, incarnation="pod-2", wake_on_send=True)
     await wait_for_sandbox(
@@ -370,6 +423,8 @@ async def test_a_wake_patch_is_retried_after_a_transient_api_failure(
 
     assert attempts == 2
     assert cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]["spec"]["wakeGeneration"] == 1
+    async with store.sessions() as session:
+        assert await session.scalar(select(func.count()).select_from(WakeAttempt)) == 1
     assert key not in delivery._retry_at
     assert delivery._next_retry_in() is None
 
@@ -555,7 +610,7 @@ async def open_session(store: DispatchStore, sandboxes: SandboxWatch, *, wake_el
         sandbox_uid=sandbox.metadata.uid,
         spec=runner_pb2.SessionSpec(),
         setup_script=None,
-        wake_eligible=wake_eligible,
+        wake_caller=WAKE_CALLER if wake_eligible else None,
     )
 
 

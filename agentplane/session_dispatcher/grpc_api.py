@@ -107,7 +107,7 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
                 sandbox_name=sandbox,
                 sandbox_uid=current.metadata.uid,
                 command=command,
-                wake_eligible=caller in self.resources.wake_caller_accounts,
+                wake_caller=caller if caller in self.resources.wake_caller_accounts else None,
             )
         )
 
@@ -228,7 +228,7 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
                         sandbox_uid=current.metadata.uid,
                         spec=request.spec,
                         setup_script=request.setup_script if request.HasField("setup_script") else None,
-                        wake_eligible=caller in self.resources.wake_caller_accounts,
+                        wake_caller=caller if caller in self.resources.wake_caller_accounts else None,
                     )
                 )
             )

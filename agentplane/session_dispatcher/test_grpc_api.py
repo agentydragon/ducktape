@@ -175,8 +175,13 @@ async def test_only_authenticated_configured_callers_can_mark_work_wake_eligible
         metadata=(("authorization", f"Bearer {OTHER_CALLER_TOKEN}"),),
     )
     store = DispatchStore(engine, queue_cap=QUEUE_CAP, terminal_broadcast=terminal_broadcast)
-    assert (await store.get_dispatch("app-send")).wake_eligible
-    assert not (await store.get_dispatch("other-send")).wake_eligible
+    allowed = await store.get_dispatch("app-send")
+    denied = await store.get_dispatch("other-send")
+    assert allowed.wake_eligible
+    assert (allowed.wake_caller_namespace, allowed.wake_caller_name) == (OWNER.namespace, OWNER.name)
+    assert not denied.wake_eligible
+    assert denied.wake_caller_namespace is None
+    assert denied.wake_caller_name is None
 
 
 async def test_an_interrupt_for_a_sandbox_that_does_not_exist_is_refused(stub: Dispatcher) -> None:
@@ -278,7 +283,9 @@ async def test_an_authenticated_app_opening_is_wake_eligible(
 ) -> None:
     await stub.OpenSession(pb.OpenSessionRequest(session_id=SESSION, sandbox=SANDBOX), metadata=BEARER)
     store = DispatchStore(engine, queue_cap=QUEUE_CAP, terminal_broadcast=terminal_broadcast)
-    assert (await store.get_opening(SESSION)).wake_eligible
+    opening = await store.get_opening(SESSION)
+    assert opening.wake_eligible
+    assert (opening.wake_caller_namespace, opening.wake_caller_name) == (OWNER.namespace, OWNER.name)
 
 
 async def test_a_session_cannot_be_opened_in_a_sandbox_that_does_not_exist(stub: Dispatcher) -> None:

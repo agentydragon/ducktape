@@ -26,7 +26,8 @@ from agentplane.session_dispatcher.models import DeliveryState, Operation, Reaso
 from agentplane.session_dispatcher.ownership import LEASE_RENEW_INTERVAL_S, SandboxOwnershipLeases
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxWatch, delivery_blocker
-from agentplane.session_dispatcher.store import DispatchStore, SandboxOwner
+from agentplane.session_dispatcher.store import DispatchStore, SandboxOwner, WakeRateLimitedError
+from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -182,7 +183,7 @@ class Delivery:
                 if head.wake_eligible:
                     # The marker is persisted before the patch for crash safety. Reissue the guarded,
                     # idempotent patch until the desired state changes or a new incarnation appears.
-                    await self._wake_for_send(head.command_id, sandbox, owner)
+                    await self._wake_for_send(head, sandbox, owner)
                 else:
                     await self.store.note_waiting(head.command_id, Reason.SANDBOX_RESUMING, owner=owner)
                 continue
@@ -197,7 +198,7 @@ class Delivery:
                         reason=blocker,
                     )
                 elif blocker is Reason.SANDBOX_SUSPENDED and head.wake_eligible:
-                    await self._wake_for_send(head.command_id, sandbox, owner)
+                    await self._wake_for_send(head, sandbox, owner)
                 else:
                     await self.store.note_waiting(head.command_id, blocker, owner=owner)
                 continue
@@ -332,10 +333,15 @@ class Delivery:
                 self._deliver_opening(opening, incarnation, owner), name=f"open-{opening.session_id}"
             )
 
-    async def _wake_for_send(self, command_id: str, sandbox: Sandbox, owner: SandboxOwner) -> None:
+    async def _wake_for_send(self, head: Dispatch, sandbox: Sandbox, owner: SandboxOwner) -> None:
+        command_id = head.command_id
         if not sandbox.spec.wake_on_send:
             self._clear_retry(command_id)
             await self.store.note_waiting(command_id, Reason.WAKE_ON_SEND_DISABLED, owner=owner)
+            return
+        if head.wake_caller_namespace is None or head.wake_caller_name is None:
+            self._clear_retry(command_id)
+            await self.store.note_waiting(command_id, Reason.WAKE_CALLER_UNKNOWN, owner=owner)
             return
         if not await self.store.note_waking(command_id, owner=owner, incarnation=_incarnation_uid(sandbox)):
             return
@@ -343,6 +349,7 @@ class Delivery:
             key=command_id,
             sandbox_name=sandbox.metadata.name,
             sandbox_uid=sandbox.metadata.uid,
+            caller=ServiceAccountRef(namespace=head.wake_caller_namespace, name=head.wake_caller_name),
             owner=owner,
             notify=lambda reason: self.store.note_waiting(command_id, reason, owner=owner),
         )
@@ -352,6 +359,10 @@ class Delivery:
             self._clear_retry(_opening_key(opening.session_id))
             await self.store.note_opening_waiting(opening.session_id, Reason.WAKE_ON_SEND_DISABLED, owner=owner)
             return
+        if opening.wake_caller_namespace is None or opening.wake_caller_name is None:
+            self._clear_retry(_opening_key(opening.session_id))
+            await self.store.note_opening_waiting(opening.session_id, Reason.WAKE_CALLER_UNKNOWN, owner=owner)
+            return
         if not await self.store.note_opening_waking(
             opening.session_id, owner=owner, incarnation=_incarnation_uid(sandbox)
         ):
@@ -360,6 +371,7 @@ class Delivery:
             key=_opening_key(opening.session_id),
             sandbox_name=sandbox.metadata.name,
             sandbox_uid=sandbox.metadata.uid,
+            caller=ServiceAccountRef(namespace=opening.wake_caller_namespace, name=opening.wake_caller_name),
             owner=owner,
             notify=lambda reason: self.store.note_opening_waiting(opening.session_id, reason, owner=owner),
         )
@@ -370,6 +382,7 @@ class Delivery:
         key: str,
         sandbox_name: str,
         sandbox_uid: UUID,
+        caller: ServiceAccountRef,
         owner: SandboxOwner,
         notify: Callable[[Reason], Awaitable[None]],
     ) -> None:
@@ -377,7 +390,15 @@ class Delivery:
             if self._owners.get(sandbox_uid) != owner or not await self.ownership.still_owns(owner):
                 self._owners.pop(sandbox_uid, None)
                 return
-            if not await self.inventory.wake_for_send(sandbox_name, uid=str(sandbox_uid)):
+
+            async def reserve_wake(target_generation: int) -> None:
+                retry_after_s = await self.store.reserve_wake_attempt(
+                    caller=caller, sandbox_uid=sandbox_uid, wake_generation=target_generation
+                )
+                if retry_after_s is not None:
+                    raise WakeRateLimitedError(retry_after_s)
+
+            if not await self.inventory.wake_for_send(sandbox_name, uid=str(sandbox_uid), before_resume=reserve_wake):
                 self._clear_retry(key)
                 await notify(Reason.WAKE_ON_SEND_DISABLED)
                 return
@@ -388,6 +409,11 @@ class Delivery:
         except SandboxTearingDownError, InventorySandboxNotFoundError:
             self._clear_retry(key)
             await notify(Reason.SANDBOX_DELETED)
+            return
+        except WakeRateLimitedError as error:
+            self._attempts.pop(key, None)
+            self._retry_at[key] = asyncio.get_running_loop().time() + error.retry_after_s
+            await notify(Reason.WAKE_RATE_LIMITED)
             return
         except ApiException:
             self._delay_retry(key)

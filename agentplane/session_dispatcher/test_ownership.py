@@ -13,9 +13,12 @@ from agentplane.sandboxes.testing.kubernetes import SANDBOX, SANDBOX_UID, Sandbo
 from agentplane.session_dispatcher.models import DeliveryState, Reason
 from agentplane.session_dispatcher.ownership import LEASE_LABEL, SandboxOwnershipLeases, _lease_name
 from agentplane.session_dispatcher.store import DispatchStore
+from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 
 # gazelle:include_dep @pypi//protobuf
+
+WAKE_CALLER = ServiceAccountRef(namespace="agentplane", name="test-app")
 
 
 async def test_one_live_lease_owner_and_expired_lease_failover(store: DispatchStore, cluster: SandboxCluster) -> None:
@@ -69,7 +72,7 @@ async def test_one_live_lease_owner_and_expired_lease_failover(store: DispatchSt
         sandbox_name=SANDBOX,
         sandbox_uid=sandbox_uid,
         command=command_pb2.Command(command_id="stale-wake", submit_input=command_pb2.SubmitInput(text="hello")),
-        wake_eligible=True,
+        wake_caller=WAKE_CALLER,
     )
     assert not await store.note_waking("stale-wake", owner=old_owner, incarnation=None)
     assert (await store.get_dispatch("stale-wake")).wake_from_incarnation is None
@@ -79,7 +82,7 @@ async def test_one_live_lease_owner_and_expired_lease_failover(store: DispatchSt
         sandbox_uid=sandbox_uid,
         spec=runner_pb2.SessionSpec(),
         setup_script=None,
-        wake_eligible=True,
+        wake_caller=WAKE_CALLER,
     )
     assert not await store.note_opening_waking("stale-opening", owner=old_owner, incarnation=None)
     assert (await store.get_opening("stale-opening")).wake_from_incarnation is None

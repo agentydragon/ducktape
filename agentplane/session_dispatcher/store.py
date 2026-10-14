@@ -2,7 +2,7 @@
 
 from collections.abc import Collection
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from sqlalchemy import ColumnElement, delete, exists, func, select, update
@@ -12,13 +12,17 @@ from sqlalchemy.orm import aliased
 from agentplane.postgres.wakeups import notify
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.session_dispatcher.channels import Channel, create_wakeups
-from agentplane.session_dispatcher.db import Dispatch, SandboxOwnership, SessionOpening
+from agentplane.session_dispatcher.db import Dispatch, SandboxOwnership, SessionOpening, WakeAttempt
 from agentplane.session_dispatcher.ended_dispatches import TerminalEvent
 from agentplane.session_dispatcher.models import LIVE_STATES, DeliveryState, Operation, Reason, operation_of
 from agentplane.session_dispatcher.snapshots import describe_dispatch
 from agentplane.session_dispatcher.terminal_broadcast import TerminalBroadcast
+from agentplane.subjects import ServiceAccountRef
 
 # gazelle:include_dep @pypi//protobuf
+
+WAKE_LIMIT = 10
+WAKE_WINDOW_S = 60
 
 
 class CommandConflictError(Exception):
@@ -50,6 +54,14 @@ class SandboxOwner:
     lease_uid: str
     lease_transitions: int
     holder_identity: str
+
+
+class WakeRateLimitedError(Exception):
+    """The authenticated caller has no wake budget until `retry_after_s` elapses."""
+
+    def __init__(self, retry_after_s: float) -> None:
+        super().__init__(f"wake budget exhausted; retry after {retry_after_s:.3f}s")
+        self.retry_after_s = retry_after_s
 
 
 class DispatchStore:
@@ -140,7 +152,7 @@ class DispatchStore:
         sandbox_name: str,
         sandbox_uid: UUID,
         command: command_pb2.Command,
-        wake_eligible: bool = False,
+        wake_caller: ServiceAccountRef | None = None,
     ) -> Dispatch:
         """Store `command` as queued; a stop first cancels what its Session has queued. A repeat of the same command returns the stored row."""
         operation = operation_of(command)
@@ -176,7 +188,17 @@ class DispatchStore:
                 session_id=session_id,
                 sandbox_name=sandbox_name,
                 sandbox_uid=sandbox_uid,
-                wake_eligible=wake_eligible and operation is not Operation.STOP_RUNNER_SESSION,
+                wake_eligible=wake_caller is not None and operation is not Operation.STOP_RUNNER_SESSION,
+                wake_caller_namespace=(
+                    wake_caller.namespace
+                    if wake_caller is not None and operation is not Operation.STOP_RUNNER_SESSION
+                    else None
+                ),
+                wake_caller_name=(
+                    wake_caller.name
+                    if wake_caller is not None and operation is not Operation.STOP_RUNNER_SESSION
+                    else None
+                ),
                 wake_from_incarnation=None,
                 operation=operation,
                 command=command,
@@ -229,7 +251,7 @@ class DispatchStore:
         sandbox_uid: UUID,
         spec: runner_pb2.SessionSpec,
         setup_script: str | None,
-        wake_eligible: bool = False,
+        wake_caller: ServiceAccountRef | None = None,
     ) -> SessionOpening:
         """Store a Session's opening as queued, or return the stored one when `session_id` was opened in
         the same Sandbox with the same request."""
@@ -250,7 +272,9 @@ class DispatchStore:
                 session_id=session_id,
                 sandbox_name=sandbox_name,
                 sandbox_uid=sandbox_uid,
-                wake_eligible=wake_eligible,
+                wake_eligible=wake_caller is not None,
+                wake_caller_namespace=None if wake_caller is None else wake_caller.namespace,
+                wake_caller_name=None if wake_caller is None else wake_caller.name,
                 wake_from_incarnation=None,
                 spec=spec,
                 setup_script=setup_script,
@@ -297,6 +321,49 @@ class DispatchStore:
                     )
                 )
             )
+
+    async def reserve_wake_attempt(
+        self, *, caller: ServiceAccountRef, sandbox_uid: UUID, wake_generation: int
+    ) -> float | None:
+        """Charge one distinct guarded wake generation in the caller's rolling budget.
+
+        Retries of the same target generation reuse their reservation while it is in the window.
+        `None` means the wake may proceed; otherwise the result is the seconds until the oldest
+        charge expires. The advisory lock makes the count and insert one per-caller transaction
+        across Dispatcher replicas.
+        """
+        window = timedelta(seconds=WAKE_WINDOW_S)
+        async with self.sessions.begin() as session:
+            account_key = f"dispatcher-wake:{caller.namespace}:{caller.name}"
+            await session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(account_key, 0))))
+            now = await session.scalar(select(func.clock_timestamp()))
+            if now is None:
+                raise RuntimeError("PostgreSQL did not return its current time")
+            window_start = now - window
+            account = (WakeAttempt.caller_namespace == caller.namespace, WakeAttempt.caller_name == caller.name)
+            await session.execute(delete(WakeAttempt).where(WakeAttempt.attempted_at <= window_start))
+            existing = await session.get(WakeAttempt, (caller.namespace, caller.name, sandbox_uid, wake_generation))
+            if existing is not None:
+                return None
+            count = await session.scalar(select(func.count()).where(*account, WakeAttempt.attempted_at > window_start))
+            if count is not None and count >= WAKE_LIMIT:
+                oldest = await session.scalar(
+                    select(func.min(WakeAttempt.attempted_at)).where(*account, WakeAttempt.attempted_at > window_start)
+                )
+                if oldest is None:
+                    raise RuntimeError("wake budget is full without a recorded attempt")
+                return max(0.001, (oldest + window - now).total_seconds())
+            session.add(
+                WakeAttempt(
+                    caller_namespace=caller.namespace,
+                    caller_name=caller.name,
+                    sandbox_uid=sandbox_uid,
+                    wake_generation=wake_generation,
+                    attempted_at=now,
+                )
+            )
+            await session.flush()
+        return None
 
     async def get_opening(self, session_id: str) -> SessionOpening:
         async with self.sessions() as session:
