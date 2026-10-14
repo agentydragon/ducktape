@@ -8,7 +8,7 @@ import yaml
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
-from cluster.cdk8s.agentplane import app, notifications, runner_gateway, session_dispatcher
+from cluster.cdk8s.agentplane import app, notifications, runner_gateway, session_dispatcher, staging
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 
 
@@ -22,11 +22,20 @@ def test_dispatcher_deployment_and_gateway_auth(
         return one(doc for doc in documents if doc["kind"] == kind and doc["metadata"]["name"] == name)
 
     deployment = resource("Deployment", session_dispatcher.NAME)
-    assert deployment["spec"]["replicas"] == 1
-    assert deployment["spec"]["strategy"] == {"type": "Recreate"}
-    assert not any(
-        doc["kind"] == "PodDisruptionBudget" and doc["metadata"]["name"] == session_dispatcher.NAME for doc in documents
-    )
+    if namespace == staging.ENV.namespace:
+        assert deployment["spec"]["replicas"] == 2
+        assert deployment["spec"]["strategy"] == {
+            "type": "RollingUpdate",
+            "rollingUpdate": {"maxSurge": 1, "maxUnavailable": 0},
+        }
+        assert resource("PodDisruptionBudget", session_dispatcher.NAME)["spec"]["minAvailable"] == 1
+    else:
+        assert deployment["spec"]["replicas"] == 1
+        assert deployment["spec"]["strategy"] == {"type": "Recreate"}
+        assert not any(
+            doc["kind"] == "PodDisruptionBudget" and doc["metadata"]["name"] == session_dispatcher.NAME
+            for doc in documents
+        )
     pod = deployment["spec"]["template"]["spec"]
     assert pod["serviceAccountName"] == session_dispatcher.NAME
     migration = one(pod["initContainers"])

@@ -1089,7 +1089,8 @@ renaming is deferred. No data deletion is bundled with this retirement.
 
 ### `DISPATCHER_REPLICA_ACTIVATION` — remove the singleton deployment restriction
 
-**Candidate; #10469 (per-Sandbox ownership) and #10478 (cross-replica terminal broadcast) are merged.**
+**In flight (coordinator, 2026-10-14): replica activation and testing acceptance.**
+#10469 (per-Sandbox ownership) and #10478 (cross-replica terminal broadcast) are merged.
 The Dispatcher image and schema migration 0004 are deployed in testing and staging; their health and
 pin gates are clear. Run two replicas on testing; verify ownership failover, queued delivery and
 deletion events across replica boundaries without the app. Then remove the one-replica limit and

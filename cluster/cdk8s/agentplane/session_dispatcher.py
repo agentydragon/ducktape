@@ -5,7 +5,6 @@ from cdk8s_plus_34 import (
     ContainerResources,
     Cpu,
     CpuResources,
-    DeploymentStrategy,
     MemoryResources,
     Role,
     RoleBinding,
@@ -19,7 +18,7 @@ from agentplane.session_dispatcher.settings import Settings
 from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import cilium
 from cluster.cdk8s.agentplane import database
-from cluster.cdk8s.agentplane.environment import Environment, ReplicaProfile
+from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.agentplane.migrate_container import migrate_init_container
 from cluster.cdk8s.agentplane.service_workload import add_service_workload
 from cluster.cdk8s.api_resource import custom_resource
@@ -37,7 +36,6 @@ _LABELS = {"app.kubernetes.io/name": NAME}
 _IMAGE = "git.allegedly.works/ducktape-ci/agentplane-session-dispatcher"
 _MIGRATION_IMAGE = "git.allegedly.works/ducktape-ci/agentplane-session-dispatcher-migrate"
 _RUNNER_TOKEN_FILE = "/var/run/secrets/agentplane-runner-gateway/token"
-_REPLICAS = ReplicaProfile(count=1, strategy=DeploymentStrategy.recreate(), min_ready=None, pdb_min_available=None)
 
 
 def service(namespace: str) -> ServiceRef:
@@ -99,7 +97,6 @@ class SessionDispatcher(Construct):
                 memory=MemoryResources(request=Size.mebibytes(128), limit=Size.mebibytes(512)),
             ),
             termination_grace=Duration.seconds(30),
-            replica_profile=_REPLICAS,
             migrate=migrate_init_container(
                 f"{_MIGRATION_IMAGE}:unset",
                 name="migrate",

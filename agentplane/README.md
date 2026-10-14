@@ -49,7 +49,7 @@ flowchart TB
         actions[Action Service]
         policy[Policy Controller]
         sandboxctl[Sandbox Controller]
-        dispatcher[Session Dispatcher]
+        dispatcher[Session Dispatcher, 2 replicas]
     end
     subgraph sandbox[Sandbox Pod]
         runner[Runner + native drivers]

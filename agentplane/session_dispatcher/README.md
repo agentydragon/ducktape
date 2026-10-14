@@ -2,13 +2,11 @@
 
 The durable queue between senders and a Sandbox's runner. A sender stores a command and gets a
 `Dispatch` back at once; the Dispatcher delivers it through the Runner Gateway's runner proxy once the
-Sandbox is `Ready`, and the sender reads where it is. The manifests configure one active replica in
-staging and testing until `DISPATCHER_REPLICA_ACTIVATION` passes. The delivery loop shards work by
-per-Sandbox Lease and fences claims and settlements with a PostgreSQL ownership generation. The app
-and Notification Service still send through the Runner Gateway pending their cutovers. Control design:
+Sandbox is `Ready`, and the sender reads where it is. The manifests use the environment replica profile: two rolling replicas in staging and one
+replica in testing. Testing can temporarily run two replicas for failover acceptance. The delivery loop shards work by
+per-Sandbox Lease and fences claims and settlements with a PostgreSQL ownership generation. Notifications submit through Dispatcher; app commands are being cut over separately. Control design:
 [ADR](../docs/adr_sandbox_session_control.md). Deployment and production-startup acceptance evidence is in
-[the acceptance report](debug/deployment_acceptance.md); replica-count activation remains gated in the
-[task DAG](../plans/task_dag.md).
+[the acceptance report](debug/deployment_acceptance.md). The [task DAG](../plans/task_dag.md) tracks rollout acceptance.
 
 ## Contract
 
