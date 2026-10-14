@@ -2,6 +2,8 @@
 
 This is a live hardware diagnostic on rugged, not a service deployment. The active NixOS driver remained `intel-npu-driver` 1.28.0 with `level-zero` 1.28.5; `ducktape.localLlm.npu.enable` remained false. No CPU fallback is counted as NPU inference. The 1.38.0 driver was tested only through isolated Nix store paths.
 
+Rugged was on battery during the investigation (`AC/online=0`); later observation found BAT0 at 100% and BAT1 at 58%, both discharging. Results should not be interpreted as AC-powered maximum-throughput numbers.
+
 ## Inputs and provenance
 
 - Intel NPU device: `/dev/accel/accel0`, OpenVINO full name `Intel(R) AI Boost`.
@@ -55,4 +57,8 @@ LD_LIBRARY_PATH=/run/opengl-driver/lib:/nix/store/dh158vr3svdcbjhv12fga184h5ww8k
 | 30 input tokens, 128 output |                    3 | 38.50, 38.77, 38.65 (median 38.65) | 291.46, 290.00, 278.71 |
 | 368 input tokens, 32 output |                    3 | 38.87, 39.64, 39.35 (median 39.35) | 279.13, 293.05, 272.55 |
 
-Model load was 24.733 s. Peak process RSS was 1,365,820 KiB during load; settled RSS after generation was 668,228 KiB. This is process RSS, not total system memory or NPU shared-memory accounting. The NPU guide describes static-shaped prefill, so a similar TTFT for these prompts cannot be converted into uncached prefill tokens/s. The TinyLlama answer itself was inaccurate; this is a device and throughput probe, not a coding-quality result.
+Model load was 24.733 s. Peak process RSS was 1,365,820 KiB during load; settled RSS after generation was 668,228 KiB. This is process RSS, not total system memory or NPU shared-memory accounting. The [OpenVINO NPU guide](https://docs.openvino.ai/2026/openvino-workflow-generative/inference-with-genai/inference-with-genai-on-npu.html) describes static-shaped prefill below the default 1,024-token chunk size, so a similar TTFT for these 512-limit prompts cannot be converted into uncached prefill tokens/s. The TinyLlama answer itself was inaccurate; this is a device and throughput probe, not a coding-quality result.
+
+## Coding model at an 8k prompt limit
+
+The pinned Qwen2.5-Coder 1.5B symmetric INT4 IR also compiled and generated on the **active 1.28.0 driver**, with `MAX_PROMPT_LEN=8192` and `MIN_RESPONSE_LEN=2048`. [The script](coder_probe.py) used explicit `NPU`, rejected missing NPU visibility, disabled chat-template application for a raw code-completion prompt, and recorded an open `/dev/accel/accel0` file descriptor after compilation and generation. [Raw output](qwen-coder-8k-probe.stdout.jsonl) and [stderr](qwen-coder-8k-probe.stderr.txt) are preserved. Compilation/load took 163.57 s; peak process RSS was 2,101,176 KiB and settled RSS after generation was 1,015,268 KiB. One 23-input-token, 128-output-token completion took 11.43 s; GenAI reported 1,716.74 ms TTFT and 13.17 output tokens/s. The first function body was correct, but the model continued with unrelated code and prose. This one prompt is a readiness check, not a coding-accuracy score. A fixed benchmark cohort is needed for that claim.

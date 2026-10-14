@@ -4,6 +4,15 @@
 
 **Hardware**: Lunar Lake NPU (~45 TOPS int8, "Intel AI Boost").
 
+**Update (2026-10-13)**: The September Level Zero failure was caused by missing
+loader/driver library search paths, not a driver-version defect. The active
+1.28.0 driver passed 55/55 filtered tests and separate OpenVINO GenAI models
+generated on the NPU; see <../../../../cluster/docs/inference/rugged_npu_driver.md>.
+The Nix llama.cpp service below is still disabled and its GGUF path has not
+been re-tested. Its environment now includes both libraries and its context
+is bounded, but the September findings remain historical evidence, not a
+fresh service validation.
+
 ## Current setup — Nix-native, currently disabled (2026-09-17)
 
 Fully native Nix package, no container: `nix/packages/{npu-compiler-libs,openvino-npu,llama-cpp-openvino}.nix`
