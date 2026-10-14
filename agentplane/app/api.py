@@ -66,7 +66,7 @@ from agentplane.app.operator_sessions import (
     request_session,
 )
 from agentplane.app.presets import PresetCatalog, SandboxPresetView
-from agentplane.app.sandbox_models import NewSandbox, SandboxView, create_request, sandbox_has_ready_pod, sandbox_view
+from agentplane.app.sandbox_models import NewSandbox, SandboxView, create_request, sandbox_is_ready, sandbox_view
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
 from agentplane.app.system_status import ComponentStatus, SystemStatusChecker
 from agentplane.app.threads import bridge as runner_bridge
@@ -814,7 +814,7 @@ async def archive_thread(store: Store, bridge: runner_bridge.Bridge, inventory: 
         pass
     else:
         if sandbox.pod is not None:
-            if not sandbox_has_ready_pod(sandbox):
+            if not sandbox_is_ready(sandbox):
                 raise HTTPException(
                     status.HTTP_409_CONFLICT,
                     "cannot verify the runner while a Pod exists; wait for its status to become ready or for it to be removed",

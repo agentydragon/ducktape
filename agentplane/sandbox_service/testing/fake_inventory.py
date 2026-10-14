@@ -192,6 +192,18 @@ def sandbox(name: str, *, running: bool = True, conditions: list[dict[str, Any]]
     }
 
 
+READY: list[dict[str, Any]] = [
+    {
+        "type": "Ready",
+        "status": "True",
+        "reason": "WorkloadReady",
+        "message": "",
+        "lastTransitionTime": "2026-01-01T00:00:00Z",
+    }
+]
+"""The conditions of a Sandbox whose controller reports its incarnation able to take work."""
+
+
 def egress_policy_set(name: str, rules: list[dict[str, Any]]) -> dict[str, Any]:
     """A PolicySet holding only `egress` rules, given without their `type`."""
     return {

@@ -3,7 +3,7 @@
 from uuid import UUID
 
 from agentplane.app.live import LiveIndex
-from agentplane.app.sandbox_models import sandbox_has_ready_pod
+from agentplane.app.sandbox_models import sandbox_is_ready
 from agentplane.app.threads.events.event_log import SessionNotRegisteredError
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxRunner
@@ -38,7 +38,7 @@ class RunnerDirectory:
         view = self._index.sandbox_view(sandbox)
         if view is None:
             raise SandboxNotFoundError(sandbox)
-        if not sandbox_has_ready_pod(view):
+        if not sandbox_is_ready(view):
             raise SandboxNotReachableError(sandbox)
         destination = SandboxDestination(
             owner=ServiceAccount(namespace=view.service_account.namespace, name=view.service_account.name),

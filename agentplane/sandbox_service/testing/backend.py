@@ -27,6 +27,7 @@ from agentplane.sandbox_service.inventory import SandboxInventory
 from agentplane.sandbox_service.provisioning import Provisioning
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
+    READY,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
     pod,
@@ -158,7 +159,7 @@ def seed_runner(
     custom: FakeCustomObjectsApi, core: FakeCoreV1Api, name: str
 ) -> tuple[dict[str, Any], k8s_client.V1Pod]:
     """Controller-shaped Sandbox and Pod, suitable for real destination authorization."""
-    raw = sandbox(name)
+    raw = sandbox(name, conditions=READY)
     running = pod(name, phase="Running", ready=True, ip="127.0.0.1")
     running.metadata.namespace = NAMESPACE
     running.metadata.uid = f"test-pod-{name}"

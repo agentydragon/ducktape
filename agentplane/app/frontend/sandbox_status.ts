@@ -4,9 +4,6 @@ import type { SandboxStatusKind } from "./status_mark";
 
 type RawObject = Record<string, unknown>;
 
-// Agentplane's own `Sandbox` (agentplane/crd_group.py), which controls each runner Pod.
-const SANDBOX_API_VERSION = "agentplane.allegedly.works/v1alpha1";
-
 export interface RawCondition {
   type: string;
   status: string;
@@ -71,30 +68,9 @@ export function podIp(sandbox: SandboxView): string | null {
   return rawString(sandbox.pod?.status?.podIP);
 }
 
-/** Match the service's availability facts, including the Pod's controller UID. */
+/** The Sandbox Controller's own `Ready` condition: no caller reads into the incarnation. */
 export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
-  if (
-    !sandbox ||
-    sandbox.phase !== "Running" ||
-    !sandbox.pod ||
-    sandbox.pod.name !== sandbox.name ||
-    sandbox.pod.namespace !== sandbox.namespace ||
-    !sandbox.pod.uid ||
-    sandbox.pod.deleting
-  )
-    return false;
-  const controllers = sandbox.pod.owner_references.filter((owner) => owner.controller);
-  if (controllers.length !== 1) return false;
-  const owner = controllers[0];
-  return (
-    owner.api_version === SANDBOX_API_VERSION &&
-    owner.kind === "Sandbox" &&
-    owner.name === sandbox.name &&
-    owner.uid === sandbox.uid &&
-    podPhase(sandbox) === "Running" &&
-    podIp(sandbox) !== null &&
-    rawConditions(sandbox.pod.status).some((condition) => condition.type === "Ready" && condition.status === "True")
-  );
+  return !!sandbox && rawConditions(rawObject(sandbox.status)).some((c) => c.type === "Ready" && c.status === "True");
 }
 
 export function sandboxSummary(sandbox: SandboxView): { label: string; kind: SandboxStatusKind } {

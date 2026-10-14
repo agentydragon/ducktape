@@ -46,6 +46,7 @@ from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import backend, seed_runner
 from agentplane.sandbox_service.testing.fake_inventory import (
     NAMESPACE,
+    READY,
     TEMPLATE,
     FakeCoreV1Api,
     FakeCustomObjectsApi,
@@ -167,7 +168,7 @@ def bare_app(
 
 @pytest.fixture
 def app(bare_app: FastAPI, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api) -> FastAPI:
-    custom_objects.objects[(SANDBOXES_PLURAL, "live")] = sandbox("live")
+    custom_objects.objects[(SANDBOXES_PLURAL, "live")] = sandbox("live", conditions=READY)
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
     custom_objects.objects[(SANDBOXES_PLURAL, "fresh")] = sandbox("fresh")
     custom_objects.objects[(POLICY_SETS_PLURAL, "github")] = egress_policy_set(

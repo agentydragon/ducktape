@@ -5,7 +5,7 @@ import { sandboxReady, sandboxSummary } from "./sandbox_status";
 
 const UID = "00000000-0000-4000-8000-000000000001";
 
-function sandboxOwnedBy(apiVersion: string): SandboxView {
+function sandbox(conditions: { type: string; status: string }[]): SandboxView {
   return {
     name: "test-sandbox",
     uid: UID,
@@ -13,31 +13,32 @@ function sandboxOwnedBy(apiVersion: string): SandboxView {
     created_at: "2026-01-01T00:00:00Z",
     operating_mode: "Running",
     service_account: { namespace: "agentplane-test", name: "test-sandbox" },
-    status: null,
+    status: { conditions },
     phase: "Running",
     pod: {
-      name: "test-sandbox",
+      name: "test-sandbox-launcher",
       namespace: "agentplane-test",
       uid: `${UID}-pod`,
       deleting: false,
       node_name: "test-node",
-      owner_references: [
-        { api_version: apiVersion, kind: "Sandbox", name: "test-sandbox", uid: UID, controller: true },
-      ],
+      owner_references: [],
       status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
     },
   };
 }
 
-describe("a Sandbox whose running Pod is Ready", () => {
-  it("is ready when Agentplane's Sandbox controls the Pod", () => {
-    const sandbox = sandboxOwnedBy("agentplane.allegedly.works/v1alpha1");
-    expect(sandboxReady(sandbox)).toBe(true);
-    expect(sandboxSummary(sandbox).kind).toBe("ready");
+describe("a Sandbox is ready when the Sandbox Controller says so", () => {
+  it("reads its own Ready condition, whatever Pod hosts the runner", () => {
+    const ready = sandbox([{ type: "Ready", status: "True" }]);
+    expect(sandboxReady(ready)).toBe(true);
+    expect(sandboxSummary(ready).kind).toBe("ready");
   });
 
-  it("is not ready when another API group's Sandbox controls the Pod", () => {
-    expect(sandboxReady(sandboxOwnedBy("other.example/v1"))).toBe(false);
+  it.each([
+    ["Ready is False", [{ type: "Ready", status: "False" }]],
+    ["it has no Ready condition", [{ type: "Running", status: "True" }]],
+  ])("is not ready when %s, even with a Ready Pod", (_, conditions) => {
+    expect(sandboxReady(sandbox(conditions))).toBe(false);
   });
 });
 
@@ -48,8 +49,6 @@ describe("a Sandbox's summary follows its phase over its Pod", () => {
     ["Suspending", { label: "Suspending", kind: "pending" }],
     ["Suspended", { label: "Suspended", kind: "suspended" }],
   ] as const)("%s", (phase, summary) => {
-    const sandbox = { ...sandboxOwnedBy("agentplane.allegedly.works/v1alpha1"), phase };
-    expect(sandboxSummary(sandbox)).toEqual(summary);
-    expect(sandboxReady(sandbox)).toBe(false);
+    expect(sandboxSummary({ ...sandbox([{ type: "Ready", status: "False" }]), phase })).toEqual(summary);
   });
 });

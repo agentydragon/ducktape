@@ -16,7 +16,7 @@ import pytest
 from tenacity import AsyncRetrying, stop_after_delay, wait_fixed
 
 from agentplane.acceptance.ollama_warmup import warm_ollama
-from agentplane.app.sandbox_models import NewSandbox, SandboxView, SessionDefaults, sandbox_has_ready_pod
+from agentplane.app.sandbox_models import NewSandbox, SandboxView, SessionDefaults, sandbox_is_ready
 from agentplane.app.testing.client import Client
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness
@@ -120,12 +120,12 @@ async def model(client: Client, harness: runner_pb2.Harness) -> str:
 
 
 async def wait_until_running(client: Client, name: str) -> SandboxView:
-    """Wait for the sandbox's Pod to be scheduled, pulled and Ready — the condition, not a delay."""
+    """Wait for the Sandbox's own `Ready` condition — the condition, not a delay."""
     async for attempt in AsyncRetrying(stop=stop_after_delay(SANDBOX_READY_SECONDS), wait=wait_fixed(2), reraise=True):
         with attempt:
             view = await client.sandbox(name)
-            if not sandbox_has_ready_pod(view):
-                raise SandboxNotReadyError(f"{name} has no ready, authorized Pod: {view.pod}")
+            if not sandbox_is_ready(view):
+                raise SandboxNotReadyError(f"{name} is not Ready: {view.status}")
             return view
     raise AssertionError("unreachable: reraise=True either returns the view or raises")
 
