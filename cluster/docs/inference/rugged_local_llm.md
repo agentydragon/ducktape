@@ -25,8 +25,10 @@ and latency, see [Completed coding cohorts](#completed-coding-cohorts).
 
 ### Ollama (always on)
 
-The NixOS service (`local_llm_arc.nix`) is already running with `OLLAMA_IGPU_ENABLE=1` and
-`OLLAMA_CONTEXT_LENGTH=131072`. It binds loopback only.
+The NixOS service (`local_llm_arc.nix`) binds loopback only. A live check on
+October 14 at 19:48 UTC found `OLLAMA_IGPU_ENABLE=1`, `OLLAMA_NO_CLOUD=1`, and
+`OLLAMA_CONTEXT_LENGTH=32768`; the experimental Flash-Attention-off settings were
+not yet active in that service.
 
 ```bash
 curl -s http://127.0.0.1:11436/v1/chat/completions -H 'Content-Type: application/json' \
@@ -85,6 +87,21 @@ the project directory:
 ```bash
 rugged-opencode-offline run "Fix the failing tests, run them, and summarize the change."
 ```
+
+The experimental 128k selection in
+[PR #10488](https://github.com/agentydragon/ducktape/pull/10488) uses the same launcher:
+
+```bash
+RUGGED_OPENCODE_MODEL=gemma4-e2b-long-128k-experimental rugged-opencode-offline
+```
+
+It selects the persisted alias `gemma4:e2b-it-qat-long-128k-b128` from
+[PR #10491](https://github.com/agentydragon/ducktape/pull/10491). Activate both host
+and Home Manager changes before using the system endpoint. The built launcher
+passed a real read-tool roundtrip against a temporary server, whose actual runner
+used context 131072, batch/microbatch 128, F16 KV, and Flash Attention off. The
+profile reserves 4096 output tokens. The capacity/retrieval distinction below
+still applies: it is experimental, not qualified long-context coding quality.
 
 The project toolchain and dependencies must also be available locally. The
 verified task uses a frozen Python standard-library test suite; this does not
@@ -168,8 +185,8 @@ Speed and memory on the iGPU at `num_ctx=32768` (single runs; method, prefill ta
 
 Distinguish the model's advertised limit, the server's allocation, and an actual
 completed prompt. The four Ollama candidates above completed roughly 21k-token
-prompts with 32,768 total context allocated. The live service's 131,072 setting
-does not establish that it processed a full 128k prompt. Input, chat formatting,
+prompts with 32,768 total context allocated. An earlier live service default of 131,072 did not establish that it processed
+a full 128k prompt; the current service default is 32,768. Input, chat formatting,
 tool definitions, history, and generated output share the context budget.
 
 Qwen3-4B-Instruct-2507 declares
