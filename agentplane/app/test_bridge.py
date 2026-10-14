@@ -1427,6 +1427,7 @@ async def test_open_and_resume_reply_before_archive_catches_up(
         thread_id,
         command_pb2.Command(command_id="seed-before-archive", submit_input=command_pb2.SubmitInput(text="SEED")),
     )
+    assert isinstance(seed, event_log_pb2.EventEntry)
     await model.reply(await model.request(), Text("SEED_REPLY"))
     async for attempt in AsyncRetrying(
         stop=stop_after_delay(20), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
