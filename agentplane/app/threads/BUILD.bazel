@@ -106,7 +106,7 @@ py_library(
         "//agentplane/app:sandbox_models",
         "//agentplane/app/threads/events:event_log",
         "//agentplane/proto:runner_gateway_pb2",
-        "//agentplane/proto:sandbox_service_pb2",
+        "//agentplane/proto:sandboxes_pb2",
         "//agentplane/runner_gateway:client",
         "//agentplane/sandboxes:errors",
         "@pypi//protobuf",

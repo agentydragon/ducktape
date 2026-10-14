@@ -41,7 +41,6 @@ py_library(
     name = "backend",
     srcs = ["backend.py"],
     deps = [
-        ":fake_inventory",
         ":grpc_service",
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
@@ -54,6 +53,7 @@ py_library(
         "//agentplane/sandbox_service:egress",
         "//agentplane/sandbox_service:provisioning",
         "//agentplane/sandboxes:inventory",
+        "//agentplane/sandboxes/testing:fake_inventory",
         "//agentplane/testing:fake_apiserver",
         "//agentplane/workload_auth:principal",
         "//util:kubernetes",
