@@ -636,6 +636,8 @@ flowchart LR
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
     ACTION_SURFACES_DESIGN -. related .-> NOTIFICATION_PRESENTATION
+    BUILD_BOX_BAZEL[Unscheduled: build Sandboxes can run Bazel]
+    BUILD_BOX_BAZEL -. related .-> ISOLATED_ACCEPTANCE_CI
 ```
 
 ### `ACTION_SURFACES_DESIGN` — where and in what states Actions render
@@ -778,6 +780,14 @@ immediate deletion of the testing namespace or its volumes.
 flowchart LR
     TESTING_ENVIRONMENT_RETIRE[Decision: coverage replacements before testing retirement]
 ```
+
+### `BUILD_BOX_BAZEL` — build Sandboxes can run Bazel
+
+**Unscheduled.** A build Sandbox cannot run Bazel: the repo's configuration uses `remote.buildbuddy.io`,
+whose gRPC dial ignores the box's HTTP proxy and times out, and it needs credentials. `agentplane/` has no
+`go.mod`, so a plain `go build` is not available either. Options: a local-only Bazel configuration for boxes,
+or a BuildBuddy route through the box's egress (the Go egress for boxes exists). The BuildBuddy route puts
+credentials in boxes, which is the operator's call.
 
 ## 6. Existing access and lifecycle follow-ups
 
