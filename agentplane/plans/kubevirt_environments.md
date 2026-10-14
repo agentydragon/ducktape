@@ -2,11 +2,24 @@
 
 Status: the Sandbox Controller runs a Sandbox as a KubeVirt VM, the launcher relay policy and the
 `runner-vm` template are deployed on `agentplane-testing`, and the guest runner dials the Runner
-Gateway through the relay. No VM Sandbox has been booted from that template yet. The design and its
-constraints are in [VM Sandboxes](../docs/vm_sandboxes.md). Sequencing of the live checks is the
+Gateway through the relay. The remaining acceptance gates below are independent of initial boot.
+The design and its constraints are in [VM Sandboxes](../docs/vm_sandboxes.md). Sequencing of the live checks is the
 [DAG VM lane](task_dag.md#4-vm-environment-phases); this plan keeps the gates that lane does not
 name. Warm pools, memory snapshots, live migration and arbitrary user-supplied VM specifications
 stay out of scope.
+
+## Storage rollout
+
+[Storage layouts](../docs/sandbox_storage.md) separates Sandbox ownership from content format and
+attachment compatibility. #10440 adds the declared workspace contract without activating it in
+deployed templates. The DAG's `WORKSPACE_PVC_ACCEPTANCE` owns image-pin gating, the testing comparison
+with the current DataVolume path and selection of the retained path. `WORKSPACE_VOLUME` owns template
+activation after that acceptance and the cutoff. `WORKSPACE_SANDBOX_CUTOFF` owns
+the separately reviewed incompatible cutoff dropping existing Sandboxes, accepted by the operator;
+`WORKSPACE_DATAVOLUME_RETIRE` owns removal of the losing path once consumers are gone. The guest
+shell-to-NixOS work is `VM_GUEST_DECLARATIVE_STORAGE`. Conversion is deferred to
+`VOLUME_LAYOUT_CONVERSION`, much later, and does not gate this rollout. A filesystem-backed raw
+`disk.img` and an ordinary Pod directory are explicitly incompatible without such a conversion.
 
 ## Open gates
 

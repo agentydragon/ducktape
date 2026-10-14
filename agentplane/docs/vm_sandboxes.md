@@ -44,10 +44,16 @@ lost.
 
 ## Guest and storage
 
+- [Sandbox storage layouts](sandbox_storage.md) separates PVC ownership, retained contents and
+  compatible Pod/VM attachments. A disk-image PVC is not an ordinary Pod filesystem mount, and
+  changing a template never converts an existing volume.
 - The state PVC reaches the guest over virtiofs at `/state`, laid out as in a runner Pod. KubeVirt's
   `virtiofsd` is uid/gid 107 with no capabilities, so only guest root and a user with uid and gid 107
   can write there; the runner runs as root and harnesses as 107. Upstream has no rootful alternative.
-- The workspace is a VM-local blank disk. The guest formats it only when it reads as zeros end to end
+- The deployed `runner-vm` template still uses a blank DataVolume for its workspace. That disk is
+  VM-owned and survives stop/start, but not deletion of the VM. Templates can instead declare a
+  Sandbox-owned workspace with an explicit layout; rollout is separate from controller support.
+  The guest formats its workspace disk only when it reads as zeros end to end
   and fails on any other unrecognised content, so a disk that lost its filesystem is left for a person.
   The zero scan reads in 16 MiB chunks, about 1.5 GB/s; `cmp` takes 45 s for 10 GiB on the guest's
   single vCPU because it issues millions of tiny reads.
@@ -107,6 +113,7 @@ Each was costed against KubeVirt v1.8.2 for adding the relay and its token mount
   a private guest-to-proxy route that enforces environment identity and revocation coupled to the VM.
 - **A `serviceAccount` volume for the launcher's identity.** It hands the credential to the guest
   (above).
-- **A block state disk in the guest** (a CDI blank volume formatted in the guest, with its own
-  quota). A Pod cannot mount that disk, so a Session could not move between kinds on one state PVC;
-  virtiofs gives one PVC that both mount, at the cost of the 107 identity above.
+- **An implicitly portable guest disk.** A disk image on a filesystem PVC and a raw block filesystem
+  need different Pod attachments from an ordinary directory tree. Block storage remains an option,
+  including an explicit stopped-Sandbox conversion; it does not make kind switches compatible by
+  itself. The [storage layout contract](sandbox_storage.md) defines that boundary.

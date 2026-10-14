@@ -334,8 +334,10 @@ journal.
 Direction for stateful VMs (operator, 2026-10-12 PDT; not scheduled): our own Sandbox resource
 (`AGENTPLANE_SANDBOX_RESOURCE`, `kind: pod | vm`) carries both kinds, and both keep their
 state on one filesystem PVC per Sandbox that Agentplane owns (section 7). Pods mount it as a volume,
-KubeVirt guests through virtiofs, so a Session can move between kinds, until `STATE_VOLUME_BLOCK`
-moves both to block storage.
+KubeVirt guests through virtiofs. Workspace portability is a separate constraint: retained layouts
+must be compatible with the next workload. `STATE_VOLUME_BLOCK` may change state attachment later;
+a block StorageClass does not itself make Pod and VM layouts interchangeable. See
+[storage layouts](../docs/sandbox_storage.md).
 
 ```mermaid
 flowchart LR
@@ -667,7 +669,13 @@ flowchart TD
     DURABLE_SESSION_LIFECYCLE[Decision: Session lifetime and revival]
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
-    WORKSPACE_VOLUME[Blocked: a workspace volume tracked apart from the state PVC]
+    WORKSPACE_PVC_ACCEPTANCE[Blocked: verify Sandbox-owned workspaces on testing]
+    WORKSPACE_VOLUME[Blocked: roll out explicitly typed Sandbox-owned workspaces]
+    WORKSPACE_SANDBOX_CUTOFF[Blocked: separate PR drops existing Sandboxes for the storage cutoff]
+    WORKSPACE_DATAVOLUME_RETIRE[Blocked: retire the old DataVolume workspace path]
+    STATE_VOLUME_LAYOUT[Candidate: declare the state volume layout explicitly]
+    VM_GUEST_DECLARATIVE_STORAGE[Candidate: declarative guest disk initialization]
+    VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
@@ -703,8 +711,12 @@ flowchart TD
     VM_PROVIDER[VM provider, section 4]
     DURABLE_SESSION_LIFECYCLE --> SESSION_INCARNATIONS
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
-    NODE_LOCAL_BLOCK_STORAGE --> WORKSPACE_VOLUME
     AGENTPLANE_SANDBOX_RESOURCE --> WORKSPACE_VOLUME
+    WORKSPACE_PVC_ACCEPTANCE --> WORKSPACE_SANDBOX_CUTOFF
+    WORKSPACE_SANDBOX_CUTOFF --> WORKSPACE_VOLUME
+    WORKSPACE_VOLUME -- old consumers gone and images pinned --> WORKSPACE_DATAVOLUME_RETIRE
+    STATE_VOLUME_LAYOUT --> STATE_VOLUME_BLOCK
+    VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_VOLUME --> WORKSPACE_NODE_PORTABILITY
     WORKSPACE_VOLUME --> SANDBOX_ARCHIVE
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
@@ -783,46 +795,100 @@ fixture. Tests that need ClusterIP Services, KubeVirt or Cilium stay elsewhere
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
 
-**Blocked on `NODE_LOCAL_BLOCK_STORAGE`; operator, 2026-10-13 PDT: the state volume need not be
-virtiofs, so switch both kinds to block storage once the cluster has it.** One PVC per Sandbox holds
-the runner's state and the harness's native files, not the workspace; each incarnation's runner
-continues the same journal on it. Today the Sandbox Controller creates it from the template's
-`stateVolume`, mounted as a volume in pods and through virtiofs in VMs (`agentplane/runner/vm.nix`),
-in separate `/state/runner` and `/state/harness` directories (`VM_PROCESS_ISOLATION`). Block storage
-would let a VM mount it as a disk with its own filesystem instead, which would end the virtiofs
-`107:107` constraint on who can write it (the uid choice in `vm.nix` and the pods' `107:107` exist
-for it; check what else relies on it before changing). Check that a Session can still move between
-kinds on it. The runner versions and migrates the contents and the controller has no version gate
-(`SANDBOX_IMAGE_REPLACE`). The workspace is `WORKSPACE_VOLUME`'s.
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
+**Blocked on `NODE_LOCAL_BLOCK_STORAGE` and `STATE_VOLUME_LAYOUT`.** Replace the VM's virtiofs
+state attachment with a declared disk layout once suitable node-local storage exists. The state
+PVC holds journals and native harness persistence under `/state/sessions`, separately from the
+workspace. A disk would remove virtiofs's `107:107` ownership constraint; check all callers before
+changing the guest and Pod UIDs. A Pod filesystem mount and a VM disk are not interchangeable just
+because the provisioner supports block storage. Specify supported attachments and reject
+incompatible kind changes; conversion is deferred, not a prerequisite for fresh provisioning.
+Use an explicit incompatible cutoff for existing Sandboxes, in a separate data-drop PR; the
+operator accepted dropping them rather than requiring migration. Gate guest behavior on the VM image and its embedded runner wheel, then activate templates.
 
 ### `NODE_LOCAL_BLOCK_STORAGE` — node-local block volumes on every node
 
-**Unscheduled; operator, 2026-10-13 PDT.** The cluster has no provisioner on every node that makes
-block volumes (a PVC with `volumeMode: Block`, or a filesystem PVC on a block device), so a VM
-cannot get a fast workspace that way. Install one that is node-local, since replicated filesystems
-were slow in the operator's experience, and capacity-enforcing, which is #4717
-(<https://github.com/agentydragon/ducktape/issues/4717>): `local-path` enforces no PVC size, and inside a
-guest `df` shows the node's whole disk. OpenEBS LVM already serves `llm-models` on one node.
-Node-local pins a volume, and so every incarnation, to its node; moving it is
-`WORKSPACE_NODE_PORTABILITY`.
+**Unscheduled; operator, 2026-10-13 PDT.** Extend capacity-enforcing node-local provisioning to
+all cluster nodes, tracked by [#4717](https://github.com/agentydragon/ducktape/issues/4717).
+`cluster/cdk8s/openebs_lvm/storage.py` already declares Proxmox filesystem and raw-block classes;
+that is not coverage of every node. `local-path` does not enforce PVC capacity. Verify capacity,
+node affinity and both required volume modes. A node-local volume remains pinned to its node;
+moving it is `WORKSPACE_NODE_PORTABILITY`. This provisioner work does not gate Sandbox ownership
+or the explicit layout contract for workspace PVCs.
 
-### `WORKSPACE_VOLUME` — a workspace volume tracked apart from the state PVC
+### `WORKSPACE_PVC_ACCEPTANCE` — verify Sandbox-owned workspaces on testing
 
-**Blocked on `NODE_LOCAL_BLOCK_STORAGE` and the Sandbox resource; operator, 2026-10-13 PDT.** Today,
-read from the code and not run: a pod's workspaces sit under `/state/workspaces` on the state PVC; a
-VM's workspace is a VM-local blank disk (a DataVolume) that survives stop and start, because stopping
-keeps the VM and its disks, and is deleted with the VM, that is, when the Sandbox is deleted or its
-template switches from VM to Pod. The pod's `/state/workspaces` content is not visible in a VM, whose
-disk mounts over that path. Track the workspace as its own volume in the Sandbox, apart from the state
-PVC, for both kinds, and when it is gone (dropped, or never made) resume reconciles by creating a
-fresh one, so losing a workspace never loses the runner's state. Workspaces can be large (tens of GB
-of build caches), so this is where the block storage matters. Pods and VMs use the same block storage
-(`STATE_VOLUME_BLOCK`), so a Sandbox switching between them keeps both volumes and needs no
-compatibility rules or conversion (operator, 2026-10-13 PDT).
+**Blocked on the controller image implementing #10440 being pinned.** On testing, compare the
+current VM DataVolume path with a fresh Sandbox-owned `RawDiskImage` workspace, then verify files
+and PVC identity survive stop/start and workload replacement. Run one VM harness at a time within
+quota. Record the selected path and bounded acceptance evidence in the storage/VM docs. This is
+fresh provisioning, not migration or conversion; no old Sandbox data is needed for the comparison.
+Complete this before the incompatible cutoff and deployed-template rollout.
 
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
+### `WORKSPACE_VOLUME` — roll out explicitly typed Sandbox-owned workspaces
+
+**Blocked on `WORKSPACE_SANDBOX_CUTOFF`, after `WORKSPACE_PVC_ACCEPTANCE`.** The implementation
+under review in #10440 adds explicit workspace layouts, retained PVC identity and attachment
+compatibility checks; [storage layouts](../docs/sandbox_storage.md) owns the contract. This node is
+the remaining template rollout, not another implementation of ownership. No deployed template
+changes belong in #10440.
+
+Activate the selected layout only after its accepting controller image is pinned. A Pod's current
+workspace is under `/state/workspaces` on the state PVC; a VM's is a VM-owned DataVolume mounted
+over that path. Neither may be silently hidden by a new mount or adopted as an unclassified PVC.
+The operator accepts an incompatible cutoff dropping existing Sandboxes;
+`WORKSPACE_SANDBOX_CUTOFF` owns that separate data-drop PR. Do not require migration, a converter
+or the future block provisioner. The losing workspace path is removed by
+`WORKSPACE_DATAVOLUME_RETIRE` after its callers are gone.
+
+### `WORKSPACE_SANDBOX_CUTOFF` — drop existing Sandboxes for the storage cutoff
+
+**Blocked on `WORKSPACE_PVC_ACCEPTANCE` and the concrete cutover resource list. Operator,
+2026-10-13 PDT: an incompatible cutoff dropping existing Sandboxes is acceptable.** Prepare a
+separate data-drop PR identifying affected Sandboxes and their state/workspace PVCs, the resulting
+loss of native harness state/workspaces, and the order of deletion and template activation. Rai
+merges it by hand; no auto-merge. Keep this out of #10440 and do not build tolerant adoption or a
+preservation migration for the old layout. Confirm old writers have stopped and owned PVC cleanup
+has completed before provisioning fresh workspaces. This approval is scoped to the storage cutoff,
+not routine deletion of idle Sandboxes.
+
+### `WORKSPACE_DATAVOLUME_RETIRE` — retire the old DataVolume workspace path
+
+**Blocked on `WORKSPACE_VOLUME` and old template/workload consumers being gone.** Remove the
+superseded blank-DataVolume workspace template, controller support used only by that path and its
+obsolete tests/docs. Search all callers before removing generic DataVolume support. Gate removals
+on pinned caller images where applicable. Do not delete retained data as an incidental cleanup;
+existing data disposition belongs to `WORKSPACE_SANDBOX_CUTOFF`. If testing selects the old
+path instead, remove the unused new path and update this node to that actual outcome.
+
+### `STATE_VOLUME_LAYOUT` — declare the state volume layout explicitly
+
+**Candidate.** Extend the workspace layout vocabulary and durable identity contract to
+`stateVolume`, whose existing contract is fixed `DirectoryTree`. Keep this separate from choosing
+block storage. Reader code must land and be pinned before manifests declare new fields; old
+manifests must remain accepted during that rolling deployment. Remove any temporary optional-field
+fallback in a follow-up node added with that implementation, after all declarations and images
+have moved. Do not infer an existing disk's format from a mutable template. Test mismatches before
+workload replacement. If existing declarations cannot be retained, use the approved incompatible
+cutoff in a separate data-drop PR rather than adding old-data compatibility fields.
+
+### `VM_GUEST_DECLARATIVE_STORAGE` — declarative guest disk initialization
+
+**Candidate; operator: the VM is running too much bash.** Inventory guest shell scripts and the
+NixOS module replacing each, then use declarative filesystem/disk initialization where supported.
+Preserve the explicit layout contract and refuse incompatible existing data. `autoFormat`'s
+recognizable-filesystem check is not equivalent to the existing zero-content scan; specify and
+test first-use formatting and remount behavior before removing the old scripts. This can proceed
+independently of workspace ownership. New guest configuration waits on the accepting VM image
+and, for runner changes, its embedded wheel pin.
+
+### `VOLUME_LAYOUT_CONVERSION` — explicit offline volume conversion
+
+**Unscheduled, much later; operator, 2026-10-13 PDT.** Conversion is an accepted future option,
+not work for #10440 or a gate on its rollout. Until implemented, incompatible layout changes are
+rejected. When scheduled, design a stopped-Sandbox operation with an explicit destination layout,
+verified data/metadata preservation, crash-safe binding switch and separately authorized source
+cleanup. See [storage layouts](../docs/sandbox_storage.md#formatting-and-conversion). Do not build
+a generic conversion framework now.
 
 ### `SANDBOX_SPEC_EDIT` — edit a suspended Sandbox's template or kind
 
@@ -830,8 +896,10 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 switch between VM and Pod, from the app, only while the Sandbox is suspended. Each incarnation
 already reads the template as it is then (`SANDBOX_IMAGE_REPLACE`), and no spec is replaced
 automatically; this is the explicit, operator-driven edit. Needs `WORKSPACE_VOLUME`,
-so a kind switch keeps the workspace, and `VM_PROVIDER` for the VM side. The preset the app records
-on a Sandbox as a label (`APP_SESSION_DEFAULTS`) must stay true after the edit.
+so a compatible kind switch keeps the workspace, and `VM_PROVIDER` for the VM side. Validate the
+retained state and workspace layouts before replacing a workload. Reject incompatible edits;
+`VOLUME_LAYOUT_CONVERSION` is a separate, much later task and does not block compatible edits. The
+preset the app records on a Sandbox as a label (`APP_SESSION_DEFAULTS`) must stay true after the edit.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
