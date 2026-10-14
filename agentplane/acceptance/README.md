@@ -31,12 +31,31 @@ interval. Each run writes its timings to
 
 ## Suspend and resume
 
-`//agentplane/acceptance:test_suspend_resume` opens one Claude Thread and one Codex Thread in the
-same owned testing Sandbox, asks each to remember a unique token, suspends until the old Pod is
-gone, then resumes both original Threads. It requires native resume evidence, the expected token
-from each model, and no cross-Thread token. Run it after the app and runner image changes have
-reached `agentplane-testing`; it uses the same controlled-host and cleanup requirements as the
-other live targets below.
+`//agentplane/acceptance:test_suspend_resume` tests two Threads (Claude and Codex) in one Pod Sandbox,
+and a separate Codex Thread in a VM Sandbox. It suspends until the old launcher or Pod is gone,
+then resumes the original Threads. Each case verifies the state PVC UID and bound PV survive,
+the incarnation changes, the sealed archived history remains byte-for-byte unchanged, and one
+`JournalReopened` continues its source sequence before a resumed native turn recalls its token.
+The two-Thread case also checks token isolation. Intentional delta settlement may leave gaps in
+archive cursors; retained entries remain ordered and unique.
+
+Run only after the app, controller and runner changes have reached testing. Check the VM image's
+embedded wheel release provenance: its runner must include Session setup reporting before testing
+suspend, even when the container runner already has it. Run one VM case at a time within the
+testing storage quota. To exercise Codex on the VM without repeating Pod or Claude acceptance:
+
+```bash
+bazelisk test //agentplane/acceptance:test_suspend_resume \
+  --test_arg=-k --test_arg=test_vm_codex --test_output=streamed
+```
+
+Successful cases write PVC/PV identities, old/new incarnation UIDs, Session IDs and seal/reopen/
+continuation cursors to the target's `test.outputs/{runner,runner-vm}-resume.json`. These files
+are live evidence only after the scenario actually passes. The scenario creates uniquely named
+Sandboxes, and fixture teardown suspends and deletes only the Sandboxes that invocation created.
+It does not delete an existing Sandbox. This completed-turn scenario does not cover a crash at a
+command checkpoint or interrupted setup; deterministic coverage for those boundaries lives in
+`//agentplane/runner:test_restart` and `//agentplane/runner:test_seal`.
 
 ## MCP integration
 
