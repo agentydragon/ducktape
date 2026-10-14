@@ -160,7 +160,12 @@ async def _probe(
         source += f'test "$(cat {workspace})" = {shlex.quote(marker)}\nsha256sum {workspace}\n'
     else:
         source += f"test ! -e {workspace}\nprintf 'workspace=absent\\n'\n"
-    source += f"findmnt -n -o FSTYPE,SOURCE,TARGET -T {workspace_dir}\nprintf 'STORAGE_PROBE_OK\\n'\n"
+    if workspace_dir == "/workspace":
+        # The Pod image declares awk/coreutils, but not util-linux's findmnt.
+        source += "awk '$5 == \"/workspace\" { print; found=1 } END { exit !found }' /proc/self/mountinfo\n"
+    else:
+        source += f"findmnt -n -o FSTYPE,SOURCE,TARGET -T {workspace_dir}\n"
+    source += "printf 'STORAGE_PROBE_OK\\n'\n"
     session = uuid4()
     await client.create_session(
         name,
