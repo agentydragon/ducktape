@@ -539,6 +539,7 @@ flowchart LR
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
     ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: the Sandbox bootstrap runs when the runner starts]
+    BOOTSTRAP_PROGRESS_CONTRACT --> BOOTSTRAP_UNKNOWN_HOLDS_READY[Blocked: an unreported bootstrap holds Ready]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
     NETWORK_WORKLOAD_IDENTITY[Unscheduled: network-level workload identity]
@@ -633,6 +634,16 @@ it accepts no resume command (operator, 2026-10-13 PDT). The result reaches the 
 conditions as a runner fact on the connection Lease (`RUNNER_FACTS_ON_LEASE`), is republished at each
 connect because it lasts the Sandbox's lifetime, and is part of `Ready`. `BootstrapFailed` is
 terminal.
+
+### `BOOTSTRAP_UNKNOWN_HOLDS_READY` — an unreported bootstrap holds `Ready`
+
+**Blocked on `BOOTSTRAP_PROGRESS_CONTRACT` and on every live Sandbox running a runner that reports the
+bootstrap fact.** `BOOTSTRAP_PROGRESS_CONTRACT` lets an `Unknown` `Bootstrapped` condition (reason
+`BootstrapNotReported`: the runner reported no bootstrap fact) leave `Ready` alone, because runners older
+than the Lease facts change never report it. Once none runs, `Unknown` holds `Ready` too (`Ready` False,
+reason `BootstrapNotReported`) and the gating comment in `agentplane/sandbox_controller/controller.go` goes.
+Gate: every live Sandbox's Lease carries the bootstrap annotation, or those Sandboxes were restarted on a
+current image. A `CLEANUP` tombstone naming this gate sits next to the code.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
