@@ -67,7 +67,7 @@ def test_dispatcher_deployment_and_gateway_auth(
 
     role = resource("Role", session_dispatcher.NAME)
     assert role["rules"] == [
-        {"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list", "watch"]},
+        {"apiGroups": [GROUP], "resources": ["sandboxes"], "verbs": ["get", "list", "watch", "patch"]},
         {
             "apiGroups": ["coordination.k8s.io"],
             "resources": ["leases"],

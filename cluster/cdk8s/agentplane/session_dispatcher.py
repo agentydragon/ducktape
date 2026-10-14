@@ -138,7 +138,10 @@ class SessionDispatcher(Construct):
             "role",
             metadata=ApiObjectMetadata(name=NAME, namespace=namespace),
             rules=[
-                RolePolicyRule(resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch"]),
+                # Requesters wake existing Sandboxes through the shared guarded spec patch.
+                RolePolicyRule(
+                    resources=[custom_resource(GROUP, "sandboxes")], verbs=["get", "list", "watch", "patch"]
+                ),
                 # Per-Sandbox delivery ownership. Grant before the Dispatcher starts using Leases.
                 RolePolicyRule(
                     resources=[custom_resource("coordination.k8s.io", "leases")],

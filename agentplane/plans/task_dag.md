@@ -1237,6 +1237,11 @@ node is down or full; and `spec.wakeOnSend: false`, which holds a Sandbox suspen
 and do not wake it) and doubles as the feature gate. Deletion beats everything. Test a message
 to a suspended Sandbox, one arriving while it seals, a failed revival and a resume storm.
 
+The Dispatcher's namespace Role must grant Sandbox `patch`, and Flux must apply that grant before
+the wake caller is activated. This is independent of the Lease permissions in PR #10459 and does not
+enable wake-on-send. Enable `wakeOnSend` only after the accepting controller and
+Dispatcher images are pinned. RBAC cannot restrict the Sandbox patch to individual spec fields.
+
 ### `APP_SENDS_VIA_DISPATCHER` — the app sends through the Session Dispatcher
 
 **Blocked on `DISPATCHER_DEPLOY`.** The composer and the app's other command sends call the Session
