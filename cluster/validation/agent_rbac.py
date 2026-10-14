@@ -115,6 +115,20 @@ class Rbac:
                 )
         return permissions
 
+    def policy_set_permissions(
+        self, policy_sets: dict[str, list[dict[str, Any]]], names: Iterable[str]
+    ) -> set[Permission]:
+        permissions: set[Permission] = set()
+        for rule in (rule for name in names for rule in policy_sets[name]):
+            if rule["type"] == "kubernetes_role_binding":
+                ref = RbacRoleRef(api_group="rbac.authorization.k8s.io", **rule["role"])
+                for namespace in rule["namespaces"]:
+                    permissions.update(self.rules(ref, namespace))
+            elif rule["type"] == "kubernetes_cluster_role_binding":
+                ref = RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name=rule["clusterRole"])
+                permissions.update(self.rules(ref, None))
+        return permissions
+
     def managed(
         self, config: dict[str, Any], policy_sets: dict[str, list[dict[str, Any]]], preset: str, *, namespace: str
     ) -> set[Permission]:
@@ -130,12 +144,5 @@ class Rbac:
         )
         names = config["sandbox_presets"][preset]["policy_sets"]
         assert len(names) == len(set(names)), names
-        for rule in (rule for name in names for rule in policy_sets[name]):
-            if rule["type"] == "kubernetes_role_binding":
-                ref = RbacRoleRef(api_group="rbac.authorization.k8s.io", **rule["role"])
-                for rule_namespace in rule["namespaces"]:
-                    permissions.update(self.rules(ref, rule_namespace))
-            elif rule["type"] == "kubernetes_cluster_role_binding":
-                ref = RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="ClusterRole", name=rule["clusterRole"])
-                permissions.update(self.rules(ref, None))
+        permissions.update(self.policy_set_permissions(policy_sets, names))
         return permissions
