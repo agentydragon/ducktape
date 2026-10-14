@@ -543,24 +543,13 @@ the same way at once, as `OpenSession` does above. Each dispatch row is keyed to
 name is free again after delete: otherwise a Sandbox deleted and recreated under one name while the Dispatcher was down
 would look, on relist, like the same Sandbox, and the old queue would be delivered into the new one.
 
-**How long dispatch rows are kept (open).** A row serves the sender (status reads and `command_id` idempotency on a
-retried RPC) and the `OpenSession` window above. A redelivery resolves from the runner's journal (D3), and
-history lives in the History Service, so a terminal row is not the system of record for anything after senders stop
-retrying.
-
-| Option                                                         | Cost                                                                                                                                                             |
-| -------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A. Delete a terminal row once a bounded window has passed      | A sender retrying after the window enqueues the command again, and the runner answers an already-admitted `command_id` with its admission, so nothing runs twice |
-| B. Delete a terminal row as soon as the History Service has it | Couples the Dispatcher to History Service state; `NO_OP` and `FAILED` rows never reach it                                                                        |
-| C. Keep every row                                              | An unbounded table; an audit trail the History Service already provides                                                                                          |
-
-Recommend A: keep non-terminal rows indefinitely and delete every terminal row, `OpenSession` rows included, after the
-window, with no History Service check. An admitted `OpenSession` is covered after that point: the runner's journal on
-the state volume answers a repeat in the same Sandbox with `ALREADY_EXISTS`, the History Service binds the writing
-Sandbox at the first push, and a suspend or delete cannot happen before every journal is flushed and acknowledged, so
-only a Sandbox running for the whole window with the ingress unreachable leaves a gap. A row not yet admitted stays
-until delivered. The window length is a judgement
-call that no code fixes; a few days of sender retry is the constraint.
+**Dispatch rows are kept as long as the Sandbox exists.** Decided (operator, 2026-10-14): for now no row is deleted
+while its Sandbox exists, since it is comparatively little data, and the policy can be revisited. A row serves the
+sender (status reads and `command_id` idempotency on a retried RPC) and the `OpenSession` window above, and keeping it
+means a retried `OpenSession` or command always finds its record. The Sandbox's rows go when the Sandbox is deleted,
+driven by the CR watch event that ends its non-terminal rows (above); a `WatchDispatches` subscriber sees those terminal
+states first, and a later read of a removed row is `NOT_FOUND`. A redelivery still resolves from the runner's journal
+(D3), and history lives in the History Service.
 
 **History Service dependency.** Delivery does not need it: admission is the runner's receipt, and
 placement is passed or looked up. Placement lookup and the reading of final-cursor acks (already required
@@ -802,7 +791,7 @@ sequenceDiagram
 | Removing the finalizer by hand is the only break-glass; there is no force-seal                                   | Decided | 2026-10-13 | Lifecycle      |
 | Names: Session Dispatcher, `OpenSession` (kept), `Quiesce`, `Quiesced`, `Draining`, `Flushing`                   | Decided | 2026-10-13 | below          |
 | The queue holds about 1,000 queued commands per Session; past that, `RESOURCE_EXHAUSTED`                         | Decided | 2026-10-14 | D4             |
-| How long the Dispatcher keeps dispatch rows                                                                      | Open    |            | D4             |
+| Dispatch rows are kept as long as the Sandbox exists, then removed; the policy may be revisited                  | Decided | 2026-10-14 | D4             |
 | Queued commands have no TTL; a Sandbox gone from Kubernetes ends them as `FAILED`                                | Decided | 2026-10-14 | D4             |
 | No special handling of poison commands for now; revisit when one is seen                                         | Decided | 2026-10-14 | Complexities   |
 
