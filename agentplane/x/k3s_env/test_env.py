@@ -367,6 +367,14 @@ def test_stack_comes_up() -> None:
                     "--- LiteLLM from the host\n",
                     _run("curl", "-sS", "-m", "20", "-I", f"https://{render.LITELLM_EXTERNAL_HOST}/", check=False),
                 )
+                print(
+                    "--- LiteLLM from a Pod\n",
+                    k3s.kubectl(
+                        "exec", "-n", render.NAMESPACE, "postgres-1", "-c", "postgres", "--", "bash", "-c",
+                        f"getent hosts {render.LITELLM_EXTERNAL_HOST}; timeout 8 bash -c '</dev/tcp/{render.LITELLM_EXTERNAL_HOST}/443' && echo tcp-ok",
+                        check=False,
+                    ),
+                )  # fmt: skip
                 raise
         print("memory:", _run("free", "-m"))
         print("answer:", answer)
