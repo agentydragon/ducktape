@@ -10,9 +10,11 @@ from datetime import UTC, datetime
 from typing import Annotated, cast
 from uuid import UUID
 
+import aiohttp
 import httpx
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
+from kubernetes_asyncio import client as k8s_client
 from pydantic import ValidationError
 from sqlalchemy import select
 
@@ -397,7 +399,9 @@ def create_app(service: Service, principals: WorkloadPrincipalResolver) -> FastA
             QuotaError: quota,
             ConnectionError: unavailable,
             TimeoutError: unavailable,
+            aiohttp.ClientError: unavailable,
             httpx.HTTPError: unavailable,
+            k8s_client.ApiException: unavailable,
         },
     )
     app.state.notification_service = service

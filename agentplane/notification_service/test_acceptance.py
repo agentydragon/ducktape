@@ -1,4 +1,4 @@
-"""Real Actions → notification inbox → Sandbox and History Services → both native harnesses, no app."""
+"""Real Actions → notification inbox → Sandbox CR, Runner Gateway and History Service → both native harnesses, no app."""
 
 import asyncio
 import json
@@ -141,7 +141,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 manager=delegate,
                 token="delegate-token",
                 audience="test-notifications",
-            ) as (sandboxes, remote),
+            ) as (_, remote),
             ingest(sandbox_service_db_url, runner),
             history_service(sandbox_service_db_url, tmp_path / "history-token") as history,
             history_wakeups.listener.listen(),
@@ -150,7 +150,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
             service = Service(
                 store,
                 source,
-                sandboxes,
+                cluster.inventory,
                 github=None,
                 gateway=remote,
                 history=history,

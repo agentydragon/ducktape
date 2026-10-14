@@ -6,8 +6,10 @@ from typing import cast
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import aiohttp
 import pytest
 import pytest_bazel
+from kubernetes_asyncio import client as k8s_client
 from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
@@ -143,7 +145,6 @@ def _matching_sandbox() -> Sandbox:
 
 async def _due_inbox(service: Service, *, prepare_notice: bool = False) -> tuple[Inbox, SubscriptionView]:
     service.notice_debounce = NoticeDebounceSettings(quiet_seconds=3600, max_wait_seconds=3600)
-    service.sandboxes.namespace = "test"
     cast(AsyncMock, service.actions.events).return_value = []
     subscription = await service.store.subscribe(PRINCIPAL, BODY)
     claim, source = await claimed(service.store)
@@ -165,7 +166,6 @@ async def test_stale_inbox_retires_after_persisted_recheck(
 ) -> None:
     claim, subscription = await _due_inbox(service, prepare_notice=prepare_notice)
     if reason == "not_found":
-        # Sandbox Service also returns NOT_FOUND when the managed label is removed.
         cast(AsyncMock, service.sandboxes.get).side_effect = SandboxNotFoundError("sandbox")
     else:
         replacement = _matching_sandbox()
@@ -276,9 +276,13 @@ async def test_transient_lookup_and_owner_mismatch_cannot_confirm_staleness(serv
         assert not source.cancelled
 
 
-async def test_initial_lookup_timeout_does_not_start_stale_confirmation(service: Service) -> None:
+@pytest.mark.parametrize(
+    "failure",
+    [TimeoutError("backend offline"), k8s_client.ApiException(status=503), aiohttp.ClientConnectionError("refused")],
+)
+async def test_initial_lookup_failure_does_not_start_stale_confirmation(service: Service, failure: Exception) -> None:
     claim, subscription = await _due_inbox(service)
-    cast(AsyncMock, service.sandboxes.get).side_effect = TimeoutError("backend offline")
+    cast(AsyncMock, service.sandboxes.get).side_effect = failure
     assert await service.step()
     async with service.store.sessions() as session:
         inbox = await session.get(Inbox, claim.id)

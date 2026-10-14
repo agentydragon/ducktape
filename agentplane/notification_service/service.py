@@ -5,8 +5,10 @@ import logging
 from contextlib import suppress
 from datetime import UTC, datetime, timedelta
 
+import aiohttp
 import grpc
 import httpx
+from kubernetes_asyncio import client as k8s_client
 from more_itertools import first
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
@@ -36,8 +38,8 @@ from agentplane.notification_service.store import ClaimLostError, ConflictError,
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.proto.sandbox_service_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxRunner
-from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.errors import SandboxNotFoundError
+from agentplane.sandbox_service.reader import SandboxReader
 from agentplane.subjects import ServiceAccountRef
 from agentplane.workload_auth.principal import WorkloadPrincipal
 
@@ -85,7 +87,7 @@ class Service:
         self,
         store: Store,
         actions: ActionServiceClient,
-        sandboxes: SandboxServiceClient,
+        sandboxes: SandboxReader,
         github: GitHub | None,
         *,
         gateway: RunnerGatewayClient,
@@ -296,7 +298,9 @@ class Service:
         except (
             ConnectionError,
             TimeoutError,
+            aiohttp.ClientError,
             grpc.aio.AioRpcError,
+            k8s_client.ApiException,
             RefusedError,
             DestinationRejectedError,
             QuotaError,

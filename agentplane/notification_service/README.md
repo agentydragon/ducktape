@@ -1,14 +1,14 @@
 # Notification Service
 
 Standalone Actions and GitHub App subscriptions and durable session inboxes. The service reads Actions history,
-looks up destination Sandboxes in the Sandbox Service, sends runner commands through the Runner Gateway, and
+reads destination Sandboxes from their Sandbox resources, sends runner commands through the Runner Gateway, and
 reads command receipts from the Session's runner entries in the History Service. It does not depend on the integration app or connect
 directly to runners.
 
 Agents subscribe with an explicit destination/session and an idempotence key, then retrieve stored
 payloads when notified. Reads are non-destructive; acknowledgement explicitly advances the handled
 contiguous prefix. Unacknowledged entries do not cause repeated reminders.
-For UID-pinned destinations, workers retire an inbox only after two `GetSandbox` lookups
+For UID-pinned destinations, workers retire an inbox only after two Sandbox lookups
 confirm that its managed Sandbox is missing or has a different UID, separated by the
 Pydantic-configured `stale_inbox_confirmation_s` grace period. Matching UIDs (including
 suspended Sandboxes) resume delivery; owner mismatches and transport failures never
@@ -29,8 +29,8 @@ History Service lags the runner's journal, so a retry never precedes an admissio
 ## Running and deployment
 
 Bazel targets: `:server`, `:migrate`, `:image`, `:migration_image`. The service needs its own PostgreSQL
-database, Actions, Sandbox Service, Runner Gateway and History Service endpoints, and projected
-service-account tokens.
+database, Actions, Runner Gateway and History Service endpoints, projected
+service-account tokens, and Kubernetes read access to Sandboxes and their Pods.
 
 Run the image-coupled migration before starting workers. Use published server/migration image tags
 and preserve existing staging data. `/healthz` reports process liveness; `/readyz` checks workers and
@@ -44,8 +44,7 @@ unknown keys fail startup. Environment variables override YAML using `__` for ne
 [settings.py](settings.py) defines the configuration fields and their descriptions.
 Configuration changes require a service restart.
 
-`actions` contains `url` and `token_file`; `sandbox_service` the Sandbox Service `target` and
-`token_file`; `runner_gateway` the Runner Gateway `target`, `control_target` and `token_file`;
+`actions` contains `url` and `token_file`; `runner_gateway` the Runner Gateway `target`, `control_target` and `token_file`;
 `history_service` its `target` and `token_file`. Each service checks its own token audience,
 so each token file holds a token projected for that service. Token paths refer to rotating projected ServiceAccount tokens, not static secrets. Actions rereads its
 token file for each request. Set `AGENTPLANE_NOTIFICATIONS_DATABASE_URL` through a Secret-backed

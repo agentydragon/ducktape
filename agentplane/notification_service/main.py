@@ -2,6 +2,7 @@
 
 import asyncio
 from contextlib import AsyncExitStack
+from typing import cast
 
 import httpx
 import uvicorn
@@ -19,9 +20,10 @@ from agentplane.notification_service.sources.github.client import GitHubClient
 from agentplane.notification_service.sources.github.source import GitHub
 from agentplane.notification_service.store import Store
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
-from agentplane.sandbox_service.client import SandboxServiceClient
+from agentplane.sandbox_service.reader import SandboxReader
 from agentplane.service_process import configure_logging, kubernetes_configuration
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
+from util.kubernetes import CustomObjectsClient
 
 # gazelle:include_dep @pypi//asyncpg
 
@@ -39,7 +41,6 @@ async def serve(settings: Settings) -> None:
                 base_url=str(settings.actions.url), timeout=settings.actions.request_timeout_s, follow_redirects=False
             ) as http,
             AsyncExitStack() as github_stack,
-            dial(settings.sandbox_service.target) as sandbox_service_channel,
             dial(settings.runner_gateway.target) as gateway_channel,
             HistoryServiceClient(
                 settings.history_service.target,
@@ -60,12 +61,10 @@ async def serve(settings: Settings) -> None:
                 Service(
                     Store(engine, quotas=settings.quotas),
                     ActionServiceClient(http, settings.actions.token_file),
-                    SandboxServiceClient(
-                        sandbox_service_channel,
+                    SandboxReader(
                         namespace=settings.namespace,
-                        token_file=settings.sandbox_service.token_file,
-                        request_timeout_s=settings.sandbox_service.request_timeout_s,
-                        lifecycle_timeout_s=settings.sandbox_service.lifecycle_timeout_s,
+                        custom_objects=cast(CustomObjectsClient, k8s_client.CustomObjectsApi(kube)),
+                        core_v1=k8s_client.CoreV1Api(kube),
                     ),
                     github,
                     gateway=RunnerGatewayClient(

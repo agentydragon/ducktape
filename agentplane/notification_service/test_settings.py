@@ -11,7 +11,6 @@ from agentplane.notification_service.settings import GitHubSettings, NoticeDebou
 
 BLOCKS: dict[str, object] = {
     "actions": {"url": "http://actions", "token_file": "/tokens/actions"},
-    "sandbox_service": {"target": "sandboxes:8080", "token_file": "/tokens/sandboxes"},
     "runner_gateway": {
         "target": "gateway:8080",
         "control_target": "{sandbox}-control.{namespace}.test:8080",
@@ -29,9 +28,6 @@ def settings_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 actions:
   url: http://actions
   token_file: /tokens/actions
-sandbox_service:
-  target: sandboxes:8080
-  token_file: /tokens/sandboxes
 runner_gateway:
   target: gateway:8080
   control_target: "{sandbox}-control.{namespace}.test:8080"
@@ -62,30 +58,21 @@ notice_debounce:
     assert settings.notice_debounce == NoticeDebounceSettings(quiet_seconds=3, max_wait_seconds=15)
     assert str(settings.actions.url) == "http://actions/"
     assert settings.actions.token_file == Path("/tokens/actions")
-    assert settings.sandbox_service.target == "sandboxes:8080"
-    assert settings.sandbox_service.token_file == Path("/tokens/sandboxes")
     assert settings.runner_gateway.command_admission_timeout_s == 20
-    assert settings.sandbox_service.request_timeout_s == 5
     assert settings.stale_inbox_confirmation_s == 30
-    assert settings.sandbox_service.lifecycle_timeout_s == 310
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__INBOXES_PER_ACCOUNT", "18")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__ACTIVE_SUBSCRIPTIONS_PER_INBOX", "36")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__ENTRIES_PER_INBOX", "750")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_ACTIONS__URL", "http://overridden-actions")
-    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__TARGET", "overridden-sandboxes:8080")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_NOTICE_DEBOUNCE__QUIET_SECONDS", "0")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_RUNNER_GATEWAY__COMMAND_ADMISSION_TIMEOUT_S", "22")
-    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_SANDBOX_SERVICE__REQUEST_TIMEOUT_S", "7")
     settings = Settings(_cli_parse_args=False)
     assert settings.quotas == QuotaSettings(
         inboxes_per_account=18, active_subscriptions_per_inbox=36, entries_per_inbox=750
     )
     assert settings.notice_debounce == NoticeDebounceSettings(quiet_seconds=0, max_wait_seconds=15)
     assert str(settings.actions.url) == "http://overridden-actions/"
-    assert settings.sandbox_service.target == "overridden-sandboxes:8080"
     assert settings.runner_gateway.command_admission_timeout_s == 22
-    assert settings.sandbox_service.request_timeout_s == 7
-    assert settings.sandbox_service.token_file == Path("/tokens/sandboxes")
     with settings_file.open("a") as file:
         file.write("unknown_setting: true\n")
     with pytest.raises(ValidationError, match="Extra inputs"):

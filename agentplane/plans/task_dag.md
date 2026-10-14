@@ -683,7 +683,6 @@ flowchart TD
     SANDBOX_SHARED_CODE_MOVE[Candidate: what outlives the Sandbox Service leaves its package]
     SANDBOX_WRITE_HELPER[Candidate: one shared library writes a Sandbox's spec]
     APP_SANDBOX_WRITES[Blocked: the app creates, deletes, suspends and resumes Sandboxes itself]
-    NOTIFICATION_READS_SANDBOX_CR[Candidate: the Notification Service reads the Sandbox CR]
     SANDBOX_SERVICE_REMOVE[Blocked: remove the Sandbox Service]
     DISPATCHER_SESSION_CREATE[Blocked: dispatched Session creation]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
@@ -734,7 +733,6 @@ flowchart TD
     SANDBOX_SHARED_CODE_MOVE --> SANDBOX_SERVICE_REMOVE
     SANDBOX_SHARED_CODE_MOVE -. land first, then the helper is written once .-> SANDBOX_WRITE_HELPER
     APP_SANDBOX_WRITES --> SANDBOX_SERVICE_REMOVE
-    NOTIFICATION_READS_SANDBOX_CR --> SANDBOX_SERVICE_REMOVE
     DISPATCHER_CORE --> APP_SENDS_VIA_DISPATCHER
     DISPATCHER_CORE --> NOTIFICATIONS_VIA_DISPATCHER
     SESSION_REVIVE --> DISPATCHER_WAKE_ON_SEND
@@ -1098,19 +1096,17 @@ derived phase. The VM serial console
 subresource. The app's Role gains `sandboxes` `create/patch/delete`, `sandboxtemplates` `list` and
 `virtualmachineinstances/console` `get` (it already has `policysets` and `pods`).
 
-### `NOTIFICATION_READS_SANDBOX_CR` — the Notification Service reads the Sandbox CR
-
-**Candidate; independent.** The Notification Service replaces its `GetSandbox` call with the shared
-`SandboxReader`, which reads the Sandbox CR (the helper's read side).
-
 ### `SANDBOX_SERVICE_REMOVE` — remove the Sandbox Service
 
-**Blocked until the images of `APP_SANDBOX_WRITES` and `NOTIFICATION_READS_SANDBOX_CR`, and the app image
-that writes `PolicyBinding`s itself, are pinned on staging.** Remove the Deployment, Role and TokenReview,
+**Blocked until the image of `APP_SANDBOX_WRITES`, the app image that writes `PolicyBinding`s itself, and the
+Notification Service image that reads the Sandbox CR are pinned on staging.** Remove the Deployment, Role and TokenReview,
 the protos and client, `StreamConsole`, the grant RPCs (`GrantEgress`, `RevokeEgress`, their messages,
 servicer, client methods, `sandbox_service/egress.py` and the `egresscredentials`/`policybindings` rules of
-the Role, each marked by a `CLEANUP` tombstone), and update the README services diagram (12 to 11
-services). Code and manifests go together here, after the pin.
+the Role, each marked by a `CLEANUP` tombstone), the Notification Service's `sandbox_service` setting (its
+`CLEANUP` tombstone in `notification_service/settings.py`, the key in its manifest, the `sandboxes` token
+and its egress rule) and the Notification Service's place among the Service's callers (the
+`notification_service/docs/api.md` and `sandbox_service/README.md` sentences that name it), and update the README
+services diagram (12 to 11 services). Code and manifests go together here, after the pin.
 
 ### `DISPATCHER_CORE` — the Session Dispatcher delivers to running Sandboxes
 
