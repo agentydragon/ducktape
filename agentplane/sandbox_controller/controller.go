@@ -59,10 +59,9 @@ const (
 	RenderedSpecAnnotation = "agentplane.allegedly.works/rendered-spec"
 
 	templateIndex = "spec.template"
-	// How soon a seal that failed or is not yet acknowledged is asked again.
-	quiesceRetry = 2 * time.Second
-	// How long a runner that reports itself quiescing is left alone before the Quiesce call is
-	// repeated: its stage changes enqueue the Sandbox, so this covers a lost event or a stuck runner.
+	// How long a quiesce that failed or is not final is left alone before the Quiesce call is repeated:
+	// a runner's stage changes and its reconnecting enqueue the Sandbox, so this covers a lost event or
+	// a stuck runner.
 	quiesceDeadline = time.Minute
 	// How soon a connection whose Lease has lapsed is looked at again: a renewal changes nothing the
 	// Lease watch enqueues on.
@@ -323,19 +322,19 @@ func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *Sandbox, w 
 // unready always says why the Sandbox is still held and has no retryAfter once the seal is recorded.
 // Quiesce is idempotent, so any failure is asked again.
 //
-// A runner that publishes its quiesce stage on the connection Lease is not asked again while it
-// reports one, and never once it reports `Quiesced`: its next stage enqueues the Sandbox.
+// A runner that reports a quiesce stage on the connection Lease is not asked again while it reports
+// one, and never once it reports `Quiesced`: its next stage enqueues the Sandbox.
 //
-// CLEANUP(added 2026-10-14): Remove the fixed `quiesceRetry` re-ask and the call's reading of a missing
-// stage once every runner publishes its stage (gateway, runner image and VM wheel pinned).
+// CLEANUP(added 2026-10-14): Remove the call's reading of a runner that reports no stage once the
+// runner's non-blocking `Quiesce` is pinned in every environment, the VM guest's wheel included.
 func (r *Reconciler) quiesce(ctx context.Context, sandbox *Sandbox, runner string) *unready {
 	lease, err := r.runnerLease(ctx, sandbox)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceRetry}
+		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}
 	}
 	facts, err := readRunnerFacts(&lease, runner)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceRetry}
+		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}
 	}
 	switch facts.Stage {
 	case QuiesceQuiesced:
@@ -350,13 +349,13 @@ func (r *Reconciler) quiesce(ctx context.Context, sandbox *Sandbox, runner strin
 	}
 	result, err := r.Quiescer.Quiesce(ctx, sandbox)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceRetry}
+		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}
 	}
 	if result.Quiescing {
-		return &unready{reason: "Quiescing", message: "the runner has not finished quiescing", retryAfter: quiesceRetry}
+		return &unready{reason: "Quiescing", message: "the runner has not finished quiescing", retryAfter: quiesceDeadline}
 	}
 	if len(result.Unflushed) > 0 {
-		return &unready{reason: "Quiescing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: quiesceRetry}
+		return &unready{reason: "Quiescing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: quiesceDeadline}
 	}
 	sandbox.Status.QuiescedIncarnation = &runner
 	return &unready{reason: "Quiescing", message: fmt.Sprintf("%d Sessions sealed", result.Sessions)}

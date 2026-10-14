@@ -1021,16 +1021,14 @@ until then an empty unflushed list reads as flushed. Dropping the legacy shape i
 **Blocked on the runner's non-blocking `Quiesce` pinned in every environment, the VM guest's wheel
 included.** Deletes the controller's legacy-shape read and the tombstone marking it.
 
-### `QUIESCE_WITHOUT_POLLING` — the controller is told when a seal finishes
+### `QUIESCE_WITHOUT_POLLING` — a runner that never progresses is backed off, not hammered
 
-**Blocked on `RUNNER_FACTS_ON_LEASE`.** The controller repeats the
-seal call every few seconds until every Session reports flushed. Instead it calls once; the call
-returns when the runner has entered lameduck; the controller reacts to the Lease stage events. It
-re-issues the idempotent call when a Sandbox should be sealing but its Lease shows no stage, and a
-runner that never progresses is caught by a deadline the controller requeues for, ending as a stuck
-Sandbox whose finalizer an operator removes by hand. While the ingress is down the controller backs
-off instead of retrying per Sandbox. Test a gateway rollout mid-seal, a runner restart mid-seal and
-a lost event.
+**Blocked on `RUNNER_FACTS_ON_LEASE` pinned in every environment (done in testing and staging).** The
+controller already calls once and reacts to the Lease stage events, re-issuing the idempotent call
+only at a one-minute deadline. What is left: while the ingress is down the controller backs off
+instead of retrying per Sandbox, and a live test (a Sandbox with a Session whose flush is held
+back) covers a gateway rollout mid-seal, a runner restart mid-seal and a lost event. Neither could
+be exercised on `agentplane-testing` without a held-back flush.
 
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
