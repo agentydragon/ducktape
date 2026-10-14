@@ -740,6 +740,13 @@ class Session:
         await self.stop()
         return await self.journal.seal(incarnation_uid)
 
+    async def reopen(self) -> None:
+        """Let a Session sealed by an earlier incarnation take work again, its harness stopped."""
+        async with self._lock:
+            await self.journal.reopen()
+            self._sealing = False
+            self._tearing_down = False
+
     async def stop(self) -> None:
         """Runner shutdown: stop the harness without interrupting; the log records the exit."""
         if self._setup_task is not None and not self._setup_task.done():

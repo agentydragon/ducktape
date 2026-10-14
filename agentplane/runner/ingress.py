@@ -174,7 +174,8 @@ class IngressPusher:
 
             def track(session: Session) -> None:
                 acknowledged = self.runner.store.read_acknowledgement(session.session_id)
-                if session.session_id in self.pushes or (acknowledged is not None and acknowledged.sealed):
+                pushing = self.pushes.get(session.session_id)
+                if (pushing is not None and not pushing.done()) or (acknowledged is not None and acknowledged.sealed):
                     return
                 task = asyncio.create_task(self.push(stub, session), name=f"push of session {session.session_id}")
                 task.add_done_callback(_report_push)

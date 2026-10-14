@@ -90,6 +90,22 @@ async def test_a_new_incarnation_on_the_same_state_is_not_sealed(
         assert not next_incarnation.store.lameduck
 
 
+async def test_a_new_incarnation_reopens_its_sealed_sessions_and_pushes_on(
+    config: RunnerConfig, last_cursors: dict[str, int], gateway: Gateway
+) -> None:
+    async with running(config, gateway):
+        await RunnerDriver(gateway).quiesce()
+        await gateway.ingress.wait_sealed("test-session-a")
+    gateway.control.incarnation_uid = "test-next-incarnation"
+    async with running(config, gateway) as next_incarnation:
+        await RunnerDriver(gateway).list_sessions()
+        await (await next_incarnation._load("test-session-a")).journal.append(event_pb2.Native(line="after resume"))
+        await gateway.ingress.wait_beyond("test-session-a", last_cursors["test-session-a"])
+        assert [entry.cursor for entry in gateway.ingress.since("test-session-a", last_cursors["test-session-a"])] == [
+            last_cursors["test-session-a"] + 1
+        ]
+
+
 async def test_a_gateway_that_names_no_incarnation_leaves_the_seal_to_the_state(
     config: RunnerConfig, last_cursors: dict[str, int], gateway: Gateway
 ) -> None:

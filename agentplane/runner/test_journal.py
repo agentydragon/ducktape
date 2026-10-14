@@ -260,6 +260,18 @@ async def test_a_seal_is_final_across_reopening(journal: Journal, tmp_path: Path
             await reopened.append(event_pb2.Native(line="after reopening"))
 
 
+async def test_reopening_a_sealed_journal_continues_it_and_survives_a_restart(journal: Journal, tmp_path: Path) -> None:
+    last = await journal.append(event_pb2.HarnessExited(exit_code=0))
+    await journal.seal("test-incarnation")
+    await journal.reopen()
+    assert journal.sealed_cursor is None
+    assert journal.sealed_incarnation_uid is None
+    assert (await journal.append(event_pb2.Native(line="after reopening"))).cursor == last.cursor + 1
+    async with Journal.open(tmp_path / "journal.sqlite", "test-source") as restarted:
+        assert restarted.sealed_cursor is None
+        assert restarted.last_cursor == last.cursor + 1
+
+
 async def test_a_seal_from_before_the_incarnation_column_opens_with_no_incarnation(tmp_path: Path) -> None:
     path = tmp_path / "legacy.sqlite"
     async with Journal.open(path, "test-source") as fresh:

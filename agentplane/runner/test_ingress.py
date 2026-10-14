@@ -67,7 +67,13 @@ class ScriptedIngress(runner_ingress_pb2_grpc.RunnerIngressServicer):
     async def Push(  # type: ignore[override]
         self, request_iterator: AsyncIterator[runner_ingress_pb2.PushFrame], context: grpc.aio.ServicerContext
     ) -> None:
-        session_id = (await anext(request_iterator)).announce.session_id
+        announce = (await anext(request_iterator)).announce
+        session_id = announce.session_id
+        if announce.HasField("incarnation_uid") and self.sealing_incarnation.get(session_id) not in (
+            None,
+            announce.incarnation_uid,
+        ):
+            self.sealed.discard(session_id)
         received: list[int] = []
         self.calls.append((session_id, received))
         await self._notify()
@@ -134,7 +140,7 @@ async def journal_of(runner: Runner, session_id: str) -> list[event_log_pb2.Even
 @pytest.fixture
 async def runner(config: RunnerConfig) -> AsyncIterator[Runner]:
     async with Runner(config) as runner:
-        runner.adopt_incarnation(INCARNATION)
+        await runner.adopt_incarnation(INCARNATION)
         for session_id in (A, B):
             runner.store.write(session_id, SessionRecord.from_spec(SPEC))
             await journal_stderr(runner, session_id, JOURNALED)
@@ -227,7 +233,7 @@ async def test_flushed_reports_the_acknowledged_seal_across_a_restart(
     assert {seal.session_id: seal.flushed for seal in (await runner.quiesce()).sessions} == {A: True, B: True}
     await runner.stop()
     async with Runner(config) as restarted:
-        restarted.adopt_incarnation(INCARNATION)
+        await restarted.adopt_incarnation(INCARNATION)
         assert {seal.session_id: (seal.cursor, seal.flushed) for seal in (await restarted.quiesce()).sessions} == {
             A: (JOURNALED, True),
             B: (JOURNALED, True),

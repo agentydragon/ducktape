@@ -145,6 +145,7 @@ class IngressStore(runner_ingress_pb2_grpc.RunnerIngressServicer):
     def __init__(self) -> None:
         self.committed: dict[str, list[event_log_pb2.EventEntry]] = {}
         self.sealed: dict[str, int] = {}
+        self._sealing_incarnation: dict[str, str] = {}
         self._changed = asyncio.Condition()
 
     def since(self, session_id: str, cursor: int) -> list[event_log_pb2.EventEntry]:
@@ -165,7 +166,13 @@ class IngressStore(runner_ingress_pb2_grpc.RunnerIngressServicer):
     async def Push(  # type: ignore[override]
         self, request_iterator: AsyncIterator[runner_ingress_pb2.PushFrame], context: grpc.aio.ServicerContext
     ) -> None:
-        session_id = (await anext(request_iterator)).announce.session_id
+        announce = (await anext(request_iterator)).announce
+        session_id = announce.session_id
+        # A continuation under another incarnation replaces the seal, as the History Service does.
+        if announce.HasField("incarnation_uid") and self._sealing_incarnation.get(
+            session_id, announce.incarnation_uid
+        ) != (announce.incarnation_uid):
+            del self.sealed[session_id]
         committed = self.committed.setdefault(session_id, [])
 
         async def acknowledge() -> None:
@@ -182,6 +189,8 @@ class IngressStore(runner_ingress_pb2_grpc.RunnerIngressServicer):
                     committed.append(frame.entry)
                 case "sealed":
                     self.sealed[session_id] = frame.sealed.cursor
+                    if frame.sealed.HasField("incarnation_uid"):
+                        self._sealing_incarnation[session_id] = frame.sealed.incarnation_uid
             await acknowledge()
             async with self._changed:
                 self._changed.notify_all()

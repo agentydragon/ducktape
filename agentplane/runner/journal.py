@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from sqlalchemy import JSON, ForeignKey, Index, LargeBinary, func, select, text
+from sqlalchemy import JSON, ForeignKey, Index, LargeBinary, delete, func, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncSession, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -342,6 +342,15 @@ class Journal:
         changed, self._changed = self._changed, asyncio.Event()
         changed.set()
         return seal.cursor
+
+    async def reopen(self) -> None:
+        """Make a sealed journal writable again; its next entry follows the seal's cursor. Open already: no-op."""
+        async with self._committed_transaction() as (session, _):
+            await session.execute(delete(Seal))
+            self._sealed_cursor = None
+            self._sealed_incarnation_uid = None
+        changed, self._changed = self._changed, asyncio.Event()
+        changed.set()
 
     @asynccontextmanager
     async def batch(self) -> AsyncIterator[None]:

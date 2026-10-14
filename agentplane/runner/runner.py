@@ -26,7 +26,7 @@ from agentplane.runner.initialization import InitializationLog
 from agentplane.runner.journal import Journal, RecoveryState
 from agentplane.runner.model_config import ModelConfigLookupError
 from agentplane.runner.session import Session
-from agentplane.runner.store import SessionRecord, SessionStore, StateOwner, validate_session_id
+from agentplane.runner.store import IngressAcknowledgement, SessionRecord, SessionStore, StateOwner, validate_session_id
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -307,6 +307,7 @@ class Runner:
                     activity_changed=self.note_activity,
                 )
                 await self.sessions[session_id].load_prefix_state()
+                await self._reopen_earlier_seal(self.sessions[session_id])
                 self.note_activity()
                 for loaded in self.session_loaded:
                     loaded(self.sessions[session_id])
@@ -448,8 +449,34 @@ class Runner:
         if session.setup_state in (runner_pb2.SETUP_STATE_NOT_REQUIRED, runner_pb2.SETUP_STATE_SUCCEEDED):
             await session.ensure_running()
 
-    def adopt_incarnation(self, incarnation_uid: str | None) -> None:
+    async def adopt_incarnation(self, incarnation_uid: str | None) -> None:
+        """Learn the incarnation from the gateway's `Welcome`, then take back every Session an earlier
+        incarnation sealed."""
         self.store.adopt_incarnation(incarnation_uid)
+        for session in list(self.sessions.values()):
+            await self._reopen_earlier_seal(session)
+
+    async def _reopen_earlier_seal(self, session: Session) -> None:
+        """Reopen a journal sealed by an incarnation other than this one, and have the ingress continue it.
+        A seal that names no incarnation is an earlier one's. Nothing is reopened before the incarnation is known,
+        nor while this incarnation's own lameduck stands."""
+        incarnation_uid = self.store.incarnation_uid
+        if (
+            incarnation_uid is None
+            or self.lameduck
+            or session.journal.sealed_cursor is None
+            or session.journal.sealed_incarnation_uid == incarnation_uid
+        ):
+            return
+        await session.reopen()
+        acknowledged = self.store.read_acknowledgement(session.session_id)
+        self.store.write_acknowledgement(
+            session.session_id,
+            IngressAcknowledgement(cursor=0 if acknowledged is None else acknowledged.cursor, sealed=False),
+        )
+        # The pusher stopped at the earlier seal; it takes the Session up again.
+        for loaded in self.session_loaded:
+            loaded(session)
 
     async def quiesce(self) -> runner_pb2.QuiesceResponse:
         """Sandbox teardown: refuse new work, interrupt running turns, stop every harness, seal every journal."""
@@ -548,6 +575,7 @@ def build_attached(session: Session, published: RecoveryState) -> runner_pb2.Att
         active_turn_id=published.active_turn_id,
         setup_state=session.setup_state,
         launch_outcome=session.launch_outcome,
+        incarnation_uid=session.store.incarnation_uid,
     )
 
 

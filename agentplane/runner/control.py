@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator, Callable
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from typing import override
 from uuid import uuid4
@@ -263,7 +263,7 @@ class RunnerControlClient:
         target: str,
         bearer: str,
         timing: StreamTiming,
-        adopt_incarnation: Callable[[str | None], None],
+        adopt_incarnation: Callable[[str | None], Awaitable[None]],
         facts: Callable[[], runner_control_pb2.RunnerFacts],
         facts_changed: asyncio.Event,
     ) -> None:
@@ -310,7 +310,7 @@ class RunnerControlClient:
                     raise StreamLostError(await call.code(), await call.details())
                 if first.WhichOneof("frame") != "welcome":
                     raise StreamLostError(None, f"expected Welcome, got {first.WhichOneof('frame')}")
-                self.adopt_incarnation(first.welcome.incarnation_uid or None)
+                await self.adopt_incarnation(first.welcome.incarnation_uid or None)
                 welcomed_at = loop.time()
                 logger.info("runner control stream connected at epoch %d", first.welcome.connection_epoch)
                 await self.serve(call, runner)
