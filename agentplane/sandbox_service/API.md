@@ -77,6 +77,7 @@ its volume go.
 - `UNAUTHENTICATED`: invalid workload bearer.
 - `PERMISSION_DENIED`: authenticated but unlisted service caller.
 - `NOT_FOUND`: missing/stale Sandbox incarnation.
+- `ABORTED`: `ResumeSandbox` arrived while the controller is quiescing an incarnation; retry when the Sandbox is suspended.
 - `INVALID_ARGUMENT`: malformed request or unknown policy set.
 - `FAILED_PRECONDITION`: runner or Sandbox state refuses the operation.
 - `UNAVAILABLE`: destination/backend unavailable; no offline admission.

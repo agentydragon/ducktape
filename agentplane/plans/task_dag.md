@@ -695,7 +695,7 @@ flowchart TD
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
     DISPATCHER_CORE[Candidate: deploy the Session Dispatcher, then the facts that settle its commands]
-    SANDBOX_WRITE_HELPER[Candidate: one shared library writes a Sandbox's spec]
+    APP_SANDBOX_RBAC_APPLIED[Blocked: updated app Sandbox grants reconcile in testing and staging]
     APP_SANDBOX_WRITES[Blocked: the app creates, deletes, suspends and resumes Sandboxes itself]
     SANDBOX_SERVICE_REMOVE[Blocked: remove the Sandbox Service]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
@@ -744,8 +744,7 @@ flowchart TD
     APP_SENDS_VIA_DISPATCHER --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
         DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
-    SANDBOX_WRITE_HELPER --> DISPATCHER_WAKE_ON_SEND
-    SANDBOX_WRITE_HELPER --> APP_SANDBOX_WRITES
+    APP_SANDBOX_RBAC_APPLIED --> APP_SANDBOX_WRITES
     APP_SANDBOX_WRITES --> SANDBOX_SERVICE_REMOVE
     DISPATCHER_CORE --> DISPATCHER_DEPLOY[Blocked: the Session Dispatcher is deployed]
     DISPATCHER_DEPLOY --> APP_SENDS_VIA_DISPATCHER
@@ -1133,28 +1132,25 @@ never this field. Per-Session idle times stay out of Kubernetes.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `SANDBOX_WRITE_HELPER` — one shared library writes a Sandbox's spec
+### `APP_SANDBOX_RBAC_APPLIED` — the app's direct Sandbox permissions are applied
 
-**Candidate; operator, 2026-10-13 PDT: the Sandbox Service goes away and requesters write the spec.** A shared
-library for the two requesters, the app and the Dispatcher: the UID- and resourceVersion-guarded
-`spec.running` patch; an advisory, retryable refusal while the Sandbox is
-quiescing (the controller enforces it) and of deleting a running Sandbox; create validation, the default
-policy sets on create and idempotent create (today `sandbox_service/provisioning.py` and `inventory.py`);
-and the phase derivation (today
-`sandbox_service/kubernetes_views.py`) as shared code. Cost: RBAC cannot narrow a patch to two fields, so
-the app and the Dispatcher can each write any field of any Sandbox, which no Service RPC allowed. The
-Dispatcher writes only `spec.running` and `spec.wakeGeneration`, by convention of the helper and not by
-enforcement; admission policy is undecided and the cost is accepted.
+**Blocked on the RBAC change and Flux reconciliation in testing and staging.** PR #10450 adds the app's
+`sandboxtemplates` list and KubeVirt console read grants; the Role already has the Sandbox and
+PolicyBinding writes used by the direct path. Wait until the updated Role is reconciled in both
+environments before enabling the app's direct lifecycle and console callers. No staging writes are part
+of the RBAC PR.
 
 ### `APP_SANDBOX_WRITES` — the app creates, deletes, suspends and resumes Sandboxes itself
 
-**Blocked on `SANDBOX_WRITE_HELPER`.** The app does what it asks of the Sandbox Service through the
+**Blocked on `APP_SANDBOX_RBAC_APPLIED`.** The app does what it asks of the Sandbox Service through the
 Kubernetes API as the operator who asked, as it already does for `PolicyBinding`s: create, delete, suspend,
 resume, and it edits permissions (egress grants, policy views, templates) and reads the inventory with the
-derived phase. The VM serial console
+derived phase. The shared `SandboxInventory` supplies the guarded running-state patch, retryable refusal
+while an incarnation is quiescing, create validation/idempotency and phase derivation. The VM serial console
 (`sandbox_service/console.py`) moves into the app (operator, 2026-10-13 PDT) through the KubeVirt console
-subresource. The app's Role gains `sandboxes` `create/patch/delete`, `sandboxtemplates` `list` and
-`virtualmachineinstances/console` `get` (it already has `policysets` and `pods`).
+subresource. The app's Role already has `sandboxes` `create/patch/delete`; PR #10450 adds
+`sandboxtemplates` `list` and `virtualmachineinstances/console` `get` (the Role also has `policysets` and
+`pods`).
 
 ### `SANDBOX_SERVICE_REMOVE` — remove the Sandbox Service
 

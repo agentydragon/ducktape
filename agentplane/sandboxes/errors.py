@@ -33,6 +33,13 @@ class SandboxTearingDownError(InventoryError):
         super().__init__(f"sandbox {name} is being deleted")
 
 
+class SandboxQuiescingError(InventoryError):
+    """A suspend is sealing this incarnation; retry resume once the Sandbox is suspended."""
+
+    def __init__(self, name: str) -> None:
+        super().__init__(f"sandbox {name} is quiescing; retry resume after it is suspended")
+
+
 class ConsoleUnavailableError(InventoryError):
     """The Sandbox has no VM whose serial console can be attached: a Pod Sandbox, a stopped VM, or a
     console another client already holds."""

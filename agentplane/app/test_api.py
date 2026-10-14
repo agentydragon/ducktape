@@ -26,6 +26,7 @@ from agentplane.app.live import LiveIndex
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.operator_sessions import OperatorSessionStore
 from agentplane.app.presets import PresetCatalog, SandboxPreset, ThreadPreset
+from agentplane.app.sandbox_access import SandboxAccess
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.model_test_data import TEST_MODELS
 from agentplane.app.testing.system_status import answering_system_status
@@ -44,6 +45,7 @@ from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControl
 from agentplane.sandbox_resource import SANDBOXES_PLURAL
 from agentplane.sandbox_service.client import SandboxServiceClient
 from agentplane.sandbox_service.testing.backend import backend, seed_runner
+from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
     READY,
@@ -56,6 +58,7 @@ from agentplane.sandboxes.testing.fake_inventory import (
     policy_binding,
     sandbox,
 )
+from agentplane.subjects import ServiceAccountRef
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -338,6 +341,35 @@ async def test_suspend_resume_apply_in_order(client: httpx.AsyncClient, custom_o
     assert (await client.get("/sandboxes/live")).json()["operating_mode"] == "Running"
     assert custom_objects.objects[(SANDBOXES_PLURAL, "live")]["spec"]["running"] is True
     assert (await client.post("/sandboxes/nope/suspend")).status_code == 404
+
+
+async def test_resume_during_controller_quiescing_is_retryable_in_direct_app(
+    app: FastAPI, client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+) -> None:
+    stored = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
+    stored["spec"]["running"] = False
+    stored["status"]["operatingMode"] = "Suspended"
+    stored["status"]["conditions"] = [
+        {
+            "type": "Running",
+            "status": "False",
+            "reason": "Quiescing",
+            "message": "waiting for the runner to seal",
+            "lastTransitionTime": "2026-09-01T12:00:00Z",
+        }
+    ]
+    app.state.services.inventory = SandboxAccess(
+        SandboxInventory(namespace=NAMESPACE, custom_objects=cast(Any, custom_objects), core_v1=cast(Any, core_v1)),
+        default_policy_sets=set(),
+        caller=ServiceAccountRef(namespace=NAMESPACE, name="agentplane-app"),
+    )
+    patches = list(custom_objects.patches)
+
+    response = await client.post("/sandboxes/live/resume")
+
+    assert response.status_code == 503
+    assert "retry resume after it is suspended" in response.json()["detail"]
+    assert custom_objects.patches == patches
 
 
 async def test_delete_starts_teardown_once_the_sandbox_is_suspended(

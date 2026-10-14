@@ -19,6 +19,7 @@ from agentplane.sandboxes.errors import (
     InventoryError,
     SandboxConflictError,
     SandboxNotFoundError,
+    SandboxQuiescingError,
     UnknownPolicySetError,
 )
 
@@ -43,6 +44,7 @@ errors = status_mapping(
         (ValueError, ParseError, UnknownPolicyError, UnknownPolicySetError),
         (grpc.StatusCode.INVALID_ARGUMENT, "invalid service request or grant selection"),
     ),
+    Abort(SandboxQuiescingError, (grpc.StatusCode.ABORTED, "sandbox is quiescing; retry after it is suspended")),
     Abort(InventoryError, (grpc.StatusCode.FAILED_PRECONDITION, "sandbox state refused the request")),
     deadline="service deadline expired",
     unavailable="Kubernetes unavailable",

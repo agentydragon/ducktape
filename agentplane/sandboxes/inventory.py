@@ -29,6 +29,7 @@ from agentplane.sandboxes.errors import (
     InvalidSandboxError,
     SandboxConflictError,
     SandboxNotFoundError,
+    SandboxQuiescingError,
     SandboxRunningError,
     SandboxTearingDownError,
     UnknownPolicySetError,
@@ -218,6 +219,8 @@ class SandboxInventory(SandboxReader):
         sandbox = await self._incarnation(name, uid=uid)
         if sandbox.metadata.deletion_timestamp is not None:
             raise SandboxTearingDownError(name)
+        if running and sandbox.running_reason() == "Quiescing":
+            raise SandboxQuiescingError(name)
         spec: dict[str, object] = {"running": running}
         # An idle-suspended Sandbox stays stopped until its wake generation moves past the one it stopped at.
         if running and sandbox.operating_mode is OperatingMode.SUSPENDED:

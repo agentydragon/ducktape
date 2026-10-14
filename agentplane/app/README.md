@@ -522,6 +522,8 @@ one. Which lists the service enforces is its contract
   it, and nothing brings that back. The rule lives in the API rather than in the browser, so it also
   binds the agent driving staging with a token; the two clicks it costs an operator are suspend and
   then delete. A running sandbox answers `DELETE` with 409 and a message saying to suspend it.
+- **Resume during a suspend is retryable:** while the controller seals an incarnation, the app returns
+  HTTP 503 for `POST /sandboxes/{name}/resume`. Retry after the Sandbox reaches Suspended.
 - **Raw is additive:** both modes use the same chronological thread blocks and disclosure
   state. Compact Event summaries sit between those blocks; expanded details retain the full generated
   envelope, native payload, and causal references. JSON wraps instead of forcing horizontal scrolling.

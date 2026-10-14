@@ -155,6 +155,29 @@ async def test_suspend_resume_and_delete_are_pinned_to_the_incarnation(api: Sand
         await api.resume("test")
 
 
+async def test_resume_during_controller_quiescing_is_retryable(api: SandboxServiceClient, case: Case) -> None:
+    await api.create(CreateSandboxRequest(name="quiescing", template=TEMPLATE))
+    await api.suspend("quiescing")
+    stored = _stored(case, "quiescing")
+    stored.setdefault("status", {})["conditions"] = [
+        {
+            "type": "Running",
+            "status": "False",
+            "reason": "Quiescing",
+            "message": "waiting for the runner to seal",
+            "lastTransitionTime": "2026-09-01T12:00:00Z",
+        }
+    ]
+    patches = list(case.custom.patches)
+
+    with pytest.raises(ServiceError) as refused:
+        await api.resume("quiescing")
+
+    assert refused.value.code == grpc.StatusCode.ABORTED
+    assert case.custom.patches == patches
+    assert stored["spec"]["running"] is False
+
+
 @pytest.mark.parametrize(
     "spec",
     [

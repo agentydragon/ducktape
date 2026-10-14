@@ -18,6 +18,7 @@ from agentplane.sandbox_resource import PRESET_LABEL, SANDBOXES_PLURAL, Operatin
 from agentplane.sandboxes.errors import (
     SandboxConflictError,
     SandboxNotFoundError,
+    SandboxQuiescingError,
     SandboxRunningError,
     SandboxTearingDownError,
     UnknownPolicySetError,
@@ -37,6 +38,13 @@ _READY = {
     "status": "True",
     "reason": "PodReady",
     "message": "",
+    "lastTransitionTime": "2026-09-01T12:00:00Z",
+}
+_QUIESCING = {
+    "type": "Running",
+    "status": "False",
+    "reason": "Quiescing",
+    "message": "waiting for the runner to seal",
     "lastTransitionTime": "2026-09-01T12:00:00Z",
 }
 
@@ -208,6 +216,51 @@ async def test_resume_wakes_an_idle_suspended_sandbox_by_bumping_the_generation(
         ("live", {"running": True, "wakeGeneration": 5}),
         ("starting", {"running": True}),
     ]
+
+
+async def test_resume_refuses_to_race_the_controller_quiescing_an_incarnation(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
+) -> None:
+    _populate_one_of_each_state(custom_objects, core_v1)
+    paused = custom_objects.objects[(SANDBOXES_PLURAL, "paused")]
+    paused["status"]["conditions"] = [_QUIESCING]
+
+    with pytest.raises(SandboxQuiescingError, match="retry resume after it is suspended"):
+        await inventory.resume("paused", uid=paused["metadata"]["uid"])
+
+    assert paused["spec"]["running"] is False
+    assert custom_objects.patches == []
+
+
+async def test_resume_rechecks_quiescing_after_a_resource_version_conflict(
+    inventory: SandboxInventory,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _populate_one_of_each_state(custom_objects, core_v1)
+    paused = custom_objects.objects[(SANDBOXES_PLURAL, "paused")]
+    original_patch = custom_objects.patch_namespaced_custom_object
+    attempts = 0
+
+    async def quiesce_then_conflict(
+        group: str, version: str, namespace: str, plural: str, name: str, body: object, *, _content_type: str
+    ) -> object:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            paused["status"]["conditions"] = [_QUIESCING]
+            paused["metadata"]["resourceVersion"] = "2"
+            raise k8s_client.ApiException(status=409)
+        return await original_patch(group, version, namespace, plural, name, body, _content_type=_content_type)
+
+    monkeypatch.setattr(custom_objects, "patch_namespaced_custom_object", quiesce_then_conflict)
+    with pytest.raises(SandboxQuiescingError):
+        await inventory.resume("paused", uid=paused["metadata"]["uid"])
+
+    assert attempts == 1
+    assert paused["spec"]["running"] is False
+    assert custom_objects.patches == []
 
 
 async def test_teardown_deletes_a_suspended_sandbox_fenced_until_sealed(
