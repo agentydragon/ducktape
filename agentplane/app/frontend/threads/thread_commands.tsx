@@ -315,7 +315,7 @@ export function PendingInputMessages({
                 <CommandOutcome
                   stage={stage}
                   subject="input"
-                  reason={failed || noop ? outcomeReason : (value.dispatch?.reason ?? issue?.message)}
+                  reason={outcomeReason ?? value.dispatch?.reason ?? issue?.message}
                   local
                   unsent={!value.attempted}
                 />
