@@ -215,6 +215,7 @@ py_test(
         "//agentplane/history_service/testing:backend",
         "//agentplane/notification_service/sources:actions",
         "//agentplane/proto:command_pb2",
+        "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandboxes_pb2",
         "//agentplane/proto:session_dispatcher_pb2",

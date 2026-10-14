@@ -40,7 +40,7 @@ from agentplane.notification_service.service import Service
 from agentplane.notification_service.settings import NoticeDebounceSettings
 from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.store import Store
-from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.proto import command_pb2, event_pb2, runner_pb2, session_dispatcher_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.platform_instructions import render_platform_instructions
@@ -65,8 +65,6 @@ from agentplane.workload_auth.principal import WorkloadPrincipalResolver
 from util.net import pick_free_port
 
 # gazelle:include_dep @pypi//protobuf
-
-logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
@@ -334,37 +332,15 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                         ),
                     )
                     initial = await model.request()
-                # Seed the real native journal past one worker replay batch. Each interrupt
-                # normally adds an admission and a no-op, so stop as soon as the boundary is
-                # crossed instead of submitting another full batch of unrelated commands.
+                # Seed the real journal past one worker replay batch. The send path is exercised
+                # through Dispatcher below; unrelated backlog entries need no Gateway RPCs.
                 history_cursor = 0
+                native_session = runner.sessions[session_id]
                 for index in range(130):
-                    command = command_pb2.Command(
-                        command_id=f"old-{index}", interrupt_turn=command_pb2.InterruptTurn(turn_id="nonexistent-turn")
+                    entry = await native_session.journal.append(
+                        event_pb2.HarnessStderr(text=f"notification journal seed {index + 1}")
                     )
-                    logger.info(
-                        "notification journal seed %d: submitting command_id=%s operation=%s",
-                        index + 1,
-                        command.command_id,
-                        command.WhichOneof("operation"),
-                    )
-                    try:
-                        receipt = await remote.command(destination, session_id, command)
-                    except Exception as error:
-                        logger.warning(
-                            "notification journal seed failed at command_id=%s last_cursor=%d: %s",
-                            command.command_id,
-                            history_cursor,
-                            type(error).__name__,
-                        )
-                        raise
-                    history_cursor = receipt.cursor
-                    logger.info(
-                        "notification journal seed %d: admitted command_id=%s cursor=%d",
-                        index + 1,
-                        command.command_id,
-                        history_cursor,
-                    )
+                    history_cursor = entry.cursor
                     if history_cursor > 128:
                         break
                 assert history_cursor > 128
