@@ -155,6 +155,10 @@ class SessionStore:
     def lameduck(self) -> bool:
         return (self.root / "sealed").is_file()
 
+    @property
+    def incarnation_uid(self) -> str | None:
+        return self._incarnation_uid
+
     def adopt_incarnation(self, incarnation_uid: str | None) -> None:
         """Learn which incarnation of its Sandbox this runner is, from the gateway's `Welcome`, before
         any call is served. The state volume outlives incarnations, so a lameduck recorded by an earlier

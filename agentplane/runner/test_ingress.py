@@ -41,6 +41,7 @@ class ScriptedIngress(runner_ingress_pb2_grpc.RunnerIngressServicer):
 
     committed: dict[str, list[event_log_pb2.EventEntry]] = field(default_factory=dict)
     sealed: set[str] = field(default_factory=set)
+    sealing_incarnation: dict[str, str | None] = field(default_factory=dict)
     # Sessions whose calls end with PERMISSION_DENIED, as another writer's would.
     refused: set[str] = field(default_factory=set)
     # A first acknowledgement to send in place of what is committed.
@@ -102,6 +103,9 @@ class ScriptedIngress(runner_ingress_pb2_grpc.RunnerIngressServicer):
                     case "sealed":
                         assert frame.sealed.cursor == len(committed)
                         self.sealed.add(session_id)
+                        self.sealing_incarnation[session_id] = (
+                            frame.sealed.incarnation_uid if frame.sealed.HasField("incarnation_uid") else None
+                        )
                     case "heartbeat":
                         continue
                 await acknowledge(len(committed))
@@ -219,6 +223,7 @@ async def test_flushed_reports_the_acknowledged_seal_across_a_restart(
         await service.until(lambda: service.sealed == {A, B})
         async with asyncio.timeout(10):
             await asyncio.gather(*pusher.pushes.values())
+    assert service.sealing_incarnation == {A: INCARNATION, B: INCARNATION}
     assert {seal.session_id: seal.flushed for seal in (await runner.quiesce()).sessions} == {A: True, B: True}
     await runner.stop()
     async with Runner(config) as restarted:

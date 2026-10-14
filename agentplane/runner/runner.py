@@ -443,7 +443,7 @@ class Runner:
         setup succeeds."""
         if self.lameduck:
             # Sealing began meanwhile and may have listed the store before it held this session.
-            await session.seal()
+            await session.seal(self.store.incarnation_uid)
             self.refuse_work()
         if session.setup_state in (runner_pb2.SETUP_STATE_NOT_REQUIRED, runner_pb2.SETUP_STATE_SUCCEEDED):
             await session.ensure_running()
@@ -458,7 +458,7 @@ class Runner:
         self.facts_changed.set()
         try:
             sessions = [await self._load(session_id) for session_id in self.store.session_ids()]
-            cursors = await asyncio.gather(*(session.seal() for session in sessions))
+            cursors = await asyncio.gather(*(session.seal(self.store.incarnation_uid) for session in sessions))
         finally:
             self._quiescing = False
             self.facts_changed.set()
