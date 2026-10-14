@@ -78,6 +78,7 @@ def coinbase_egress_rules() -> list[PolicySetSpecRules]:
     """GET-only access to Coinbase; callers sign requests with the key held in Kubernetes."""
     return [Rule.egress(hosts=["api.coinbase.com"], methods=[PolicySetSpecRulesMethods.GET])]
 
+
 # The Action PolicySets created below that the launch presets bind, named because a
 # preset refers to them by name. They live here rather than in the preset's own module so the
 # name and the object that answers to it are declared in one place: staging's presets import

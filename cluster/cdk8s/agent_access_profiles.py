@@ -240,13 +240,7 @@ def covering_policy_sets(grants: Sequence[str]) -> list[str]:
 MANAGED_GRANTS = {
     "public-coder": PUBLIC_GRANTS,
     "finance-agent": (*PUBLIC_GRANTS, "coinbase-credentials", "spend-policy-config", PLAID_DIAGNOSTICS_POLICY),
-    "haku": (
-        *SHARED_DIAGNOSTICS,
-        *TESTING_ACCESS,
-        *HAKU_EXTRAS,
-        "coinbase-credentials",
-        PLAID_DIAGNOSTICS_POLICY,
-    ),
+    "haku": (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *HAKU_EXTRAS, "coinbase-credentials", PLAID_DIAGNOSTICS_POLICY),
 }
 STATIC_GRANTS = {
     # Independently scoped legacy OAuth identity, not an alias for the Haku profile. Widening it

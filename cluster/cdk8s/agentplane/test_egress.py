@@ -277,9 +277,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     assert agent_access_profiles.COINBASE_POLICY in haku_policy_sets
     assert agent_access_profiles.COINBASE_POLICY in _by_name(docs, "PolicyBinding", "claude-ai")["spec"]["policySets"]
     assert agent_access_profiles.COINBASE_POLICY in _by_name(docs, "PolicyBinding", "haku-agent")["spec"]["policySets"]
-    assert not any(
-        doc["kind"] == "PolicySet" and doc["metadata"]["name"] == "coinbase-credentials" for doc in docs
-    )
+    assert not any(doc["kind"] == "PolicySet" and doc["metadata"]["name"] == "coinbase-credentials" for doc in docs)
     coinbase_rules = _by_name(docs, "PolicySet", agent_access_profiles.COINBASE_POLICY)["spec"]["rules"]
     assert {rule["type"] for rule in coinbase_rules} == {"egress", "kubernetes_role_binding"}
     assert {
@@ -293,15 +291,15 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
     assert "paths" not in egress_rule
     assert "credentialRef" not in egress_rule
     assert agent_access_profiles.PLAID_DIAGNOSTICS_POLICY in haku_policy_sets
-    assert agent_access_profiles.PLAID_DIAGNOSTICS_POLICY in _by_name(docs, "PolicyBinding", "claude-ai")["spec"][
-        "policySets"
-    ]
-    assert agent_access_profiles.PLAID_DIAGNOSTICS_POLICY in _by_name(docs, "PolicyBinding", "haku-agent")["spec"][
-        "policySets"
-    ]
-    assert not any(
-        doc["kind"] == "PolicySet" and doc["metadata"]["name"] == PLAID_PGWEB_CREDENTIAL for doc in docs
+    assert (
+        agent_access_profiles.PLAID_DIAGNOSTICS_POLICY
+        in _by_name(docs, "PolicyBinding", "claude-ai")["spec"]["policySets"]
     )
+    assert (
+        agent_access_profiles.PLAID_DIAGNOSTICS_POLICY
+        in _by_name(docs, "PolicyBinding", "haku-agent")["spec"]["policySets"]
+    )
+    assert not any(doc["kind"] == "PolicySet" and doc["metadata"]["name"] == PLAID_PGWEB_CREDENTIAL for doc in docs)
     assert (
         set(haku) - set(selected)
         == {
