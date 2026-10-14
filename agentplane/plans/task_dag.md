@@ -34,8 +34,6 @@ Retain the data-preserving rollback procedure. No Action Service or other databa
 ```mermaid
 flowchart LR
     NOTIFICATION_COMMAND_OUTCOME_DESIGN[Unscheduled: notice delivery without reading history]
-    COMMAND_DELIVERY_STATES[Decision: one vocabulary of delivery states for a command or message]
-    COMMAND_DELIVERY_STATES -. shares vocabulary .-> NOTIFICATION_COMMAND_OUTCOME_DESIGN
     SESSION_INPUT_METADATA[Typed input annotations and provenance]
     SESSION_INPUT_METADATA_READ[Blocked: metadata reads and message correlation]
     NOTIFICATION_NOTICE_METADATA[Blocked: attach notice metadata to submissions]
@@ -48,17 +46,6 @@ flowchart LR
 
 Details: [command admission](../runner_gateway/API.md#sessions-and-commands); later
 [notification presentation and input metadata](notification_presentation.md).
-
-### `COMMAND_DELIVERY_STATES` — one vocabulary of delivery states for a command or message
-
-**Decision; found by the DAG's own overlap audit, 2026-10-13 PDT.** Four nodes each need to say how
-far a command or message got: `NOTIFICATION_COMMAND_OUTCOME_DESIGN` (did the harness run it, did it
-reach the model's context), `AGENT_MESSAGING_DESIGN` (accepted, delivered, handled and acknowledged
-as separate states), `THREAD_SUCCESSOR_DELIVERY` (ambiguous across an incarnation) and
-`DISPATCHER_CORE` (queued, delivered once the runner is up). Decide the states once, from
-submission to the model's context (the design adds a no-op state, for a command that had nothing to do, such as `InterruptTurn` on a suspended Sandbox): what each means, which component records it, and which survive an
-incarnation ending. Today `CommandAdmitted` and `harness_user_message_confirmed` are the recorded
-points. The four nodes then cite it, instead of each defining its own.
 
 ### `NOTIFICATION_COMMAND_OUTCOME_DESIGN` — notice delivery without reading conversation history
 
@@ -215,7 +202,6 @@ flowchart TD
     THREAD_CREATE_AUTHORIZATION[Blocked: implement session-create grants]
     AGENT_LAUNCH_POLICY_DESIGN[Decision: constrained Sandbox launch and delegation]
     AGENT_SANDBOX_LAUNCH[Blocked: enforce agent Sandbox-launch policy]
-    COMMAND_DELIVERY_STATES[Decision: one vocabulary of delivery states, section 2] -. shares vocabulary .-> AGENT_MESSAGING_DESIGN
     MULTIAGENT_MODEL --> THREAD_READ_POLICY_DESIGN
     MULTIAGENT_MODEL --> AGENT_MESSAGING_DESIGN
     MULTIAGENT_MODEL --> THREAD_CREATE_POLICY
@@ -743,8 +729,6 @@ flowchart TD
     SESSION_INCARNATIONS --> SANDBOX_IDLE_EXPIRY[Blocked: idle runner Sandboxes suspend]
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
     HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
-    COMMAND_DELIVERY_STATES[Decision: one vocabulary of delivery states, section 2] --> DISPATCHER_CORE
-    COMMAND_DELIVERY_STATES --> THREAD_SUCCESSOR_DELIVERY
     RUNNER_COMMAND_RPCS[Candidate: one Runner RPC per command, section 12] --> DISPATCHER_CORE
     MULTIAGENT_MODEL[Decision: identities and authority vocabulary, section 3] -. who may send and wake .-> DISPATCHER_CORE
     AGENT_MESSAGING_DESIGN[Decision: send and receive contract, section 3] -. offline behavior .-> DISPATCHER_CORE
@@ -1026,11 +1010,11 @@ Dispatcher a delivery window. Per-Session idle times stay out of Kubernetes.
 
 ### `DISPATCHER_CORE` — the Session Dispatcher delivers to running Sandboxes
 
-**Blocked on `COMMAND_DELIVERY_STATES` and `RUNNER_COMMAND_RPCS`.** A new service with its own database and
+**Blocked on `RUNNER_COMMAND_RPCS`.** A new service with its own database and
 the one job of delivery, proposed in `docs/adr_sandbox_session_control.md`. Its own API is one RPC per
 command, like the runner's. It accepts a message,
 persists it before it acknowledges the sender, delivers it through the gateway's runner proxy to a
-running Sandbox, and reports a delivery state the sender can read: the runner deduplicates on the
+running Sandbox, and reports a delivery state the sender can read (operator, 2026-10-13 PDT; each name says where the command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`, `RUNNER_ADMITTED`, `HARNESS_CONFIRMED`, `NO_OP`, `FAILED` with a reason, `CANCELLED_IN_DISPATCHER`, and `UNKNOWN` for a deleted Sandbox only; a quiesce refusal returns `DELIVERING_TO_RUNNER` to `QUEUED_IN_DISPATCHER`): the runner deduplicates on the
 command ID, a reply lost across an incarnation boundary is redelivered to the next incarnation
 (`THREAD_SUCCESSOR_DELIVERY`), delivery is first-in first-out per Session, and `StopRunnerSession`
 cancels the inputs queued before it. A message for a deleted Session or a failed delivery ends in a
@@ -1072,7 +1056,7 @@ to a suspended Sandbox, one arriving while it seals, a failed revival and a resu
 Dispatcher instead of `SubmitCommand`, showing its delivery states. The command-progress lights
 (`CommandProgress`: saved in browser, runner accepted, effect confirmed) gain a dispatch stage
 between the browser and the runner: queued in the Dispatcher (operator, 2026-10-13 PDT). It reads
-the delivery states `COMMAND_DELIVERY_STATES` settles, and for a Session whose Sandbox is waking
+the Dispatcher's delivery states, and for a Session whose Sandbox is waking
 (`DISPATCHER_WAKE_ON_SEND`) says so; `SUSPENDED_COMPOSER` is the composer side of the same wait.
 Visual scenarios name each stage's command after the state it shows. Parallel with
 `NOTIFICATIONS_VIA_DISPATCHER`; reader before writer, so the Session Dispatcher lands and is read before any
