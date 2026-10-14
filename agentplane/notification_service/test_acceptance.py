@@ -336,13 +336,14 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 # through Dispatcher below; unrelated backlog entries need no Gateway RPCs.
                 history_cursor = 0
                 native_session = runner.sessions[session_id]
-                for index in range(130):
-                    entry = await native_session.journal.append(
-                        event_pb2.HarnessStderr(text=f"notification journal seed {index + 1}")
-                    )
-                    history_cursor = entry.cursor
-                    if history_cursor > 128:
-                        break
+                async with native_session.journal.batch():
+                    for index in range(130):
+                        entry = await native_session.journal.append(
+                            event_pb2.HarnessStderr(text=f"notification journal seed {index + 1}")
+                        )
+                        history_cursor = entry.cursor
+                        if history_cursor > 128:
+                            break
                 assert history_cursor > 128
                 original = SessionDispatcherClient.submit_input
                 lost = False
