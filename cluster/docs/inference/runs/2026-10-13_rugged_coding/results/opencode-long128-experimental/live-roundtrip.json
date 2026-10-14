@@ -1,0 +1,25 @@
+{
+  "selector": "gemma4-e2b-long-128k-experimental",
+  "model_alias": "gemma4:e2b-it-qat-long-128k-b128",
+  "launcher": "/nix/store/h7ggqyrnz40y55ygj3v6j4fr9w3fsj1g-rugged-opencode-offline/bin/rugged-opencode-offline",
+  "start_utc": "2026-10-14T19:10:43Z",
+  "end_utc": "2026-10-14T19:11:19.523Z",
+  "duration_seconds_approx": 36.5,
+  "prompt_task": "Read marker.txt with the read tool and return exactly its value after MARKER=.",
+  "tool": "read",
+  "tool_input": { "filePath": "marker.txt" },
+  "tool_result": "MARKER=cedar-93017",
+  "final_text": "cedar-93017",
+  "openai_compatible_http_statuses": [200, 200],
+  "server_flags_observed_by_serving_agent": [
+    "-c 131072",
+    "-np 1",
+    "--cache-type-k f16",
+    "--cache-type-v f16",
+    "--flash-attn off",
+    "-b 128",
+    "-ub 128"
+  ],
+  "network_boundary": "OpenCode ran in the offline launcher namespace; only the configured host-loopback backend port was bridged.",
+  "limitation": "The outer zsh bookkeeping wrapper failed to write its exit-code file because it assigned zsh's readonly special parameter status. The OpenCode JSONL stream records the completed read and final stop; serving confirmed HTTP 200 for both backend requests."
+}

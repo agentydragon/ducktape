@@ -14,9 +14,23 @@ only local file and shell tools. OpenCode runs inside `bubblewrap
 forwarded to one fixed host-loopback Ollama port. Set
 `RUGGED_OPENCODE_BACKEND_PORT` to override the default `11436`. The command
 expects Ollama and the selected model to be available before it starts.
-`RUGGED_OPENCODE_MODEL` selects from the declared `qwen3-4b`, `gemma4-e2b`, or
-`gemma4-e4b` profiles; Qwen remains the default. Tool use is enabled for E4B
-only after the successful 3-repeat probe below.
+`RUGGED_OPENCODE_MODEL` selects from the declared `qwen3-4b`, `gemma4-e2b`,
+`gemma4-e4b`, or `gemma4-e2b-long-128k-experimental` profiles; Qwen remains
+the default. Tool use is enabled for E4B only after the successful 3-repeat
+probe below.
+
+The experimental long-context profile routes to the serving alias
+`gemma4:e2b-it-qat-long-128k-b128` with 131,072 context and a 4,096-token
+output limit. The actual built launcher passed a mock wire/config check and a
+short live tool roundtrip; its exact generated config (Base64 archived with a
+decoded SHA256 manifest) and request/response artifacts are in
+`results/opencode-long128-experimental/`. The live request read a
+one-line marker through the `read` tool and returned the exact marker. Both
+OpenAI-compatible requests returned HTTP 200 with the server using F16 KV,
+flash attention off, context 131,072, and batch 128. The separate long
+retrieval trial processed 124,005 uncached input tokens but passed only one of
+three exact-retrieval checks, so this profile is experimental and is not a
+quality recommendation. Existing profiles and the default are unchanged.
 
 The actual launcher passed a mock OpenAI-compatible wire check. The recorded
 request carried `reasoning_effort: none`, temperature `0.2`, `top_p: 0.95`,

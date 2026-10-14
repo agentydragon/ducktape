@@ -1,0 +1,22 @@
+{
+  "exit_code": 0,
+  "request_count": 1,
+  "model": "gemma4:e2b-it-qat-long-128k-b128",
+  "expected_model": "gemma4:e2b-it-qat-long-128k-b128",
+  "model_matches_selector": true,
+  "max_tokens": 4096,
+  "expected_max_tokens": 4096,
+  "config_model": "rugged-offline/gemma4:e2b-it-qat-long-128k-b128",
+  "expected_config_model": "rugged-offline/gemma4:e2b-it-qat-long-128k-b128",
+  "context_limit": 131072,
+  "expected_context_limit": 131072,
+  "output_limit": 4096,
+  "expected_output_limit": 4096,
+  "tool_call": true,
+  "reasoning_effort": "none",
+  "temperature": 0.2,
+  "top_p": 0.95,
+  "tool_count": 6,
+  "tool_names": ["bash", "edit", "glob", "grep", "read", "write"],
+  "response_seen": true
+}

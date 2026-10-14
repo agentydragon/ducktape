@@ -1,0 +1,1 @@
+The OpenCode JSONL stream records a completed read tool call and final stop with text cedar-93017. The outer zsh bookkeeping wrapper then hit its readonly special parameter `status` before writing its exit-code file; the actual launcher process had ended, and the structured OpenCode stream plus Ollama HTTP 200 logs confirm the successful roundtrip.

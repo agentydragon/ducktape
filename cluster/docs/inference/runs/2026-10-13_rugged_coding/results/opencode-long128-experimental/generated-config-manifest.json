@@ -1,0 +1,6 @@
+{
+  "file": "generated-config.json.txt.b64",
+  "encoding": "base64",
+  "decoded_sha256": "f573f5c1fd5ad2e620044a4333a5d1d2caca615023d32d77aab623e71e87cd61",
+  "decode_command": "base64 -d generated-config.json.txt.b64 > generated-config.json"
+}

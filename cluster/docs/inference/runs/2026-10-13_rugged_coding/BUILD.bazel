@@ -1,3 +1,5 @@
+load("//devinfra/python:defs.bzl", "py_binary")
+
 filegroup(
     name = "frozen_humaneval_plus_inputs",
     srcs = [
@@ -6,4 +8,9 @@ filegroup(
         "humaneval_plus_prompts_metadata.json",
     ],
     visibility = ["//visibility:public"],
+)
+
+py_binary(
+    name = "verify_opencode_wire",
+    srcs = ["verify_opencode_wire.py"],
 )

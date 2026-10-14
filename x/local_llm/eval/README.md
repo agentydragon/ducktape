@@ -31,6 +31,37 @@ socat come from the repository Nix environment. For an offline proof that
 includes the model server, start the cached server inside the same outer
 network namespace as the launcher, as the rugged run script does.
 
+On Rugged, the existing `rugged-opencode-offline` launcher accepts an explicit
+experimental long-context selector:
+
+```bash
+RUGGED_OPENCODE_MODEL=gemma4-e2b-long-128k-experimental rugged-opencode-offline
+```
+
+It routes to the serving alias `gemma4:e2b-it-qat-long-128k-b128` and advertises
+131,072 context tokens with a 4,096-token output limit. The alias is prepared
+with 131,072 context and batch 128. Match the qualification run by setting
+`OLLAMA_KV_CACHE_TYPE=f16` and `OLLAMA_FLASH_ATTENTION=0` on the Ollama service
+before loading the model; the offline launcher does not configure server-wide
+settings. This remains an experiment:
+the long retrieval trial processed 124,005 uncached input tokens, but only one
+of three exact-retrieval checks passed. A large accepted context therefore does
+not imply reliable long-context coding. The normal selector and model profiles
+remain unchanged. Details are tracked in the
+[Rugged local-model report](../../../cluster/docs/inference/rugged_local_llm.md).
+
+The built launcher passed both a mock-wire check and a short live tool
+roundtrip using this selector. Its generated configuration (archived byte for
+byte as Base64) and request artifacts are in
+[`results/opencode-long128-experimental/`](../../../cluster/docs/inference/runs/2026-10-13_rugged_coding/results/opencode-long128-experimental/).
+Decode `generated-config.json.txt.b64` and check its SHA256 against
+`generated-config-manifest.json` to reproduce the exact generated config.
+The live call read a marker file through OpenCode's `read` tool and returned
+the marker exactly. The server reported HTTP 200 for both the tool request and
+follow-up, with a 131,072-token context, F16 KV cache, flash attention off, and
+batch 128. This is a tool/configuration smoke only; it does not add evidence
+about long-context retrieval quality.
+
 `run_ollama_cohort` records native Ollama `/api/chat` requests and raw
 responses, including token counts, durations, stop reasons, model digest,
 memory snapshot, and power state. Its prompt and manifest inputs are required

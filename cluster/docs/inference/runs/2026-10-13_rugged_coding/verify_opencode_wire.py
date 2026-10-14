@@ -101,15 +101,49 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--launcher", type=Path, help="exercise a built rugged-opencode-offline launcher")
+    parser.add_argument("--workspace", type=Path, help="writable workspace for the built launcher")
+    parser.add_argument("--profile-config", type=Path, help="generated OpenCode JSON for the selected profile")
     parser.add_argument("--backend-port", type=int, help="fixed host-loopback port forwarded to the mock server")
     parser.add_argument(
         "--selector",
-        choices=("qwen3-4b", "gemma4-e2b", "gemma4-e4b"),
+        choices=("qwen3-4b", "gemma4-e2b", "gemma4-e2b-long-128k-experimental", "gemma4-e4b"),
         default="qwen3-4b",
         help="local model profile passed to the built launcher",
     )
     args = parser.parse_args()
     args.output_dir.mkdir(parents=True, exist_ok=False)
+
+    expected_models = {
+        "qwen3-4b": ("qwen3:4b-instruct-2507-q4_K_M", 32768, 4096),
+        "gemma4-e2b": ("gemma4:e2b-it-qat", 131072, 8192),
+        "gemma4-e2b-long-128k-experimental": ("gemma4:e2b-it-qat-long-128k-b128", 131072, 4096),
+        "gemma4-e4b": ("gemma4:e4b", 32768, 4096),
+    }
+    expected_model, expected_context, expected_output = expected_models[args.selector]
+    config_checks: dict[str, object] = {}
+    if args.launcher is not None:
+        if args.backend_port is None or args.workspace is None or args.profile_config is None:
+            parser.error("--launcher requires --backend-port, --workspace, and --profile-config")
+        config = json.loads(args.profile_config.read_text())
+        configured_model = config["model"]
+        profile = config["provider"]["rugged-offline"]["models"][expected_model]
+        configured_limits = profile["limit"]
+        config_checks = {
+            "config_model": configured_model,
+            "expected_config_model": f"rugged-offline/{expected_model}",
+            "context_limit": configured_limits.get("context"),
+            "expected_context_limit": expected_context,
+            "output_limit": configured_limits.get("output"),
+            "expected_output_limit": expected_output,
+            "tool_call": profile.get("tool_call"),
+        }
+        if (
+            configured_model != config_checks["expected_config_model"]
+            or configured_limits.get("context") != expected_context
+            or configured_limits.get("output") != expected_output
+            or profile.get("tool_call") is not True
+        ):
+            raise RuntimeError(f"generated model profile does not match selector: {config_checks}")
 
     mock_port = args.backend_port if args.launcher is not None else 0
     server = ThreadingHTTPServer(("127.0.0.1", mock_port), MockHandler)
@@ -117,8 +151,6 @@ def main() -> int:
     thread.start()
     fixture_workspace = SMOKE_DIR / "jsonl-transform"
     if args.launcher is not None:
-        if args.backend_port is None:
-            parser.error("--backend-port is required with --launcher")
         command = [
             str(args.launcher.resolve(strict=True)),
             "run",
@@ -128,7 +160,7 @@ def main() -> int:
             "json",
             "--title",
             "Built offline OpenCode launcher wire verification",
-            "Use the write tool to create wire-probe.txt containing 'written', then reply mock-wire-ok.",
+            "Reply exactly mock-wire-ok.",
         ]
         env = {
             **os.environ,
@@ -167,7 +199,7 @@ def main() -> int:
             check=False,
             capture_output=True,
             text=True,
-            cwd=fixture_workspace if args.launcher is not None else None,
+            cwd=args.workspace.resolve(strict=True) if args.launcher is not None else None,
             env=env,
         )
     finally:
@@ -181,19 +213,22 @@ def main() -> int:
         raise RuntimeError(f"expected one mock completion request, got {len(MockHandler.requests)}")
     request = MockHandler.requests[0]
     (args.output_dir / "request.json").write_text(json.dumps(request, indent=2) + "\n")
-    tools = request.get("tools", [])
-    tool_names = [tool.get("function", {}).get("name") for tool in tools if isinstance(tool, dict)]
-    expected_model = {
-        "qwen3-4b": "qwen3:4b-instruct-2507-q4_K_M",
-        "gemma4-e2b": "gemma4:e2b-it-qat",
-        "gemma4-e4b": "gemma4:e4b",
-    }[args.selector]
+    raw_tools = request.get("tools", [])
+    tools = [tool for tool in raw_tools if isinstance(tool, dict)] if isinstance(raw_tools, list) else []
+    tool_names = []
+    for tool in tools:
+        function = tool.get("function")
+        if isinstance(function, dict):
+            tool_names.append(function.get("name"))
     checks = {
         "exit_code": completed.returncode,
         "request_count": len(MockHandler.requests),
         "model": request.get("model"),
         "expected_model": expected_model,
         "model_matches_selector": request.get("model") == expected_model,
+        "max_tokens": request.get("max_tokens"),
+        "expected_max_tokens": expected_output,
+        **config_checks,
         "reasoning_effort": request.get("reasoning_effort"),
         "temperature": request.get("temperature"),
         "top_p": request.get("top_p"),
@@ -206,6 +241,7 @@ def main() -> int:
     if (
         completed.returncode != 0
         or request.get("model") != expected_model
+        or request.get("max_tokens") != expected_output
         or request.get("reasoning_effort") != "none"
         or request.get("temperature") != 0.2
         or request.get("top_p") != 0.95

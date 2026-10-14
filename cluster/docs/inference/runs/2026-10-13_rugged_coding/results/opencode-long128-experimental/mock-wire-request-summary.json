@@ -1,0 +1,14 @@
+{
+  "model": "gemma4:e2b-it-qat-long-128k-b128",
+  "max_tokens": 4096,
+  "temperature": 0.2,
+  "top_p": 0.95,
+  "reasoning_effort": "none",
+  "tools": ["bash", "edit", "glob", "grep", "read", "write"],
+  "messages": [
+    {
+      "role": "user",
+      "content": "Reply exactly mock-wire-ok."
+    }
+  ]
+}

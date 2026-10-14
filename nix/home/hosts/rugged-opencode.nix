@@ -24,6 +24,13 @@ let
       output = 8192;
       toolCall = true;
     };
+    gemma4_e2b_long_128k_experimental = {
+      id = "gemma4:e2b-it-qat-long-128k-b128";
+      name = "Gemma 4 E2B QAT 128k Experimental (rugged iGPU, offline profile)";
+      context = 131072;
+      output = 4096;
+      toolCall = true;
+    };
     gemma4_e4b = {
       id = "gemma4:e4b";
       name = "Gemma 4 E4B (rugged iGPU, offline profile)";
@@ -97,6 +104,10 @@ let
         gemma4-e2b)
           selected_model="${offlineModels.gemma4_e2b.id}"
           selected_config="${offlineConfigs.gemma4_e2b}"
+          ;;
+        gemma4-e2b-long-128k-experimental)
+          selected_model="${offlineModels.gemma4_e2b_long_128k_experimental.id}"
+          selected_config="${offlineConfigs.gemma4_e2b_long_128k_experimental}"
           ;;
         gemma4-e4b)
           selected_model="${offlineModels.gemma4_e4b.id}"
