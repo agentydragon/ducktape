@@ -10,9 +10,9 @@ import grpc
 from sqlalchemy.exc import SQLAlchemyError
 from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception_type, wait_exponential
 
-from agentplane.proto import event_log_pb2
+from agentplane.proto import event_log_pb2, runner_pb2
 from agentplane.session_dispatcher.channels import Channel
-from agentplane.session_dispatcher.db import Dispatch
+from agentplane.session_dispatcher.db import Dispatch, SessionOpening
 from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.models import DeliveryState, Operation, Reason
 from agentplane.session_dispatcher.runner_client import RunnerClient
@@ -26,6 +26,11 @@ logger = logging.getLogger(__name__)
 # What the next attempt waits after a call that never reached a runner, doubling to the cap.
 RETRY_INITIAL_S = 0.5
 RETRY_MAX_S = 30
+
+
+def _opening_key(session_id: str) -> str:
+    """Retry state is keyed by command ID, which a Session ID never collides with."""
+    return f"opening:{session_id}"
 
 
 class Delivery:
@@ -62,6 +67,7 @@ class Delivery:
                     self._changed.clear()
                     try:
                         await self._end_gone()
+                        await self._start_openings(deliveries)
                         await self._start(deliveries)
                     except SQLAlchemyError:
                         logger.warning("dispatch storage unavailable; retrying", exc_info=True)
@@ -153,10 +159,7 @@ class Delivery:
                     head, from_states=sending, to=DeliveryState.QUEUED_IN_DISPATCHER, reason=Reason.RUNNER_REFUSED_WORK
                 )
             case grpc.StatusCode.UNAVAILABLE | grpc.StatusCode.DEADLINE_EXCEEDED:
-                attempts = self._attempts[head.command_id] = self._attempts.get(head.command_id, 0) + 1
-                self._retry_at[head.command_id] = asyncio.get_running_loop().time() + min(
-                    RETRY_MAX_S, RETRY_INITIAL_S * 2 ** (attempts - 1)
-                )
+                self._delay_retry(head.command_id)
                 await self._settle(
                     head, from_states=sending, to=DeliveryState.QUEUED_IN_DISPATCHER, reason=Reason.DELIVERY_UNAVAILABLE
                 )
@@ -166,6 +169,108 @@ class Delivery:
                 await self._settle(
                     head, from_states=sending, to=DeliveryState.FAILED, reason=f"runner {code.name}: {error.details()}"
                 )
+
+    def _delay_retry(self, key: str) -> None:
+        attempts = self._attempts[key] = self._attempts.get(key, 0) + 1
+        self._retry_at[key] = asyncio.get_running_loop().time() + min(
+            RETRY_MAX_S, RETRY_INITIAL_S * 2 ** (attempts - 1)
+        )
+
+    async def _start_openings(self, deliveries: asyncio.TaskGroup) -> None:
+        now = asyncio.get_running_loop().time()
+        for opening in await self.store.opening_heads():
+            key = _opening_key(opening.session_id)
+            if opening.session_id in self._delivering or self._retry_at.get(key, 0) > now:
+                continue
+            sandbox = self.sandboxes.get_sandbox(opening.sandbox_name)
+            if sandbox is None or sandbox.metadata.uid != opening.sandbox_uid:
+                # Its deletion reaches `_end_gone`.
+                continue
+            if (blocker := delivery_blocker(sandbox)) is not None:
+                await self.store.note_opening_waiting(opening.session_id, blocker)
+                continue
+            incarnation = sandbox.status.incarnation.uid if sandbox.status.incarnation is not None else None
+            if self._refused.get(sandbox.metadata.uid, "") == incarnation:
+                await self.store.note_opening_waiting(opening.session_id, Reason.RUNNER_REFUSED_WORK)
+                continue
+            self._delivering.add(opening.session_id)
+            deliveries.create_task(self._deliver_opening(opening, incarnation), name=f"open-{opening.session_id}")
+
+    async def _deliver_opening(self, opening: SessionOpening, incarnation: str | None) -> None:
+        key = _opening_key(opening.session_id)
+        try:
+            claimed = await self._retry_storage(
+                lambda: self.store.settle_opening(
+                    opening.session_id,
+                    from_states={DeliveryState.QUEUED_IN_DISPATCHER},
+                    to=DeliveryState.DELIVERING_TO_RUNNER,
+                )
+            )
+            if claimed is None:
+                return
+            self._retry_at.pop(key, None)
+            try:
+                attached = await self.runner.open_session(
+                    opening.sandbox_name, opening.session_id, opening.spec, opening.setup_script
+                )
+            except grpc.aio.AioRpcError as error:
+                await self._refuse_opening(opening, incarnation, error)
+                return
+            self._attempts.pop(key, None)
+            await self._settle_opening(opening, DeliveryState.RUNNER_ADMITTED, attached=attached)
+        finally:
+            self._delivering.discard(opening.session_id)
+            self._changed.set()
+
+    async def _refuse_opening(
+        self, opening: SessionOpening, incarnation: str | None, error: grpc.aio.AioRpcError
+    ) -> None:
+        match error.code():
+            case grpc.StatusCode.ABORTED:
+                self._refused[opening.sandbox_uid] = incarnation
+                await self._settle_opening(
+                    opening, DeliveryState.QUEUED_IN_DISPATCHER, reason=Reason.RUNNER_REFUSED_WORK
+                )
+            case grpc.StatusCode.UNAVAILABLE | grpc.StatusCode.DEADLINE_EXCEEDED:
+                self._delay_retry(_opening_key(opening.session_id))
+                await self._settle_opening(
+                    opening, DeliveryState.QUEUED_IN_DISPATCHER, reason=Reason.DELIVERY_UNAVAILABLE
+                )
+            case grpc.StatusCode.ALREADY_EXISTS:
+                # An earlier attempt created it and its reply was lost, or the runner holds another spec.
+                try:
+                    exists = await self.runner.has_session(opening.sandbox_name, opening.session_id)
+                except grpc.aio.AioRpcError as listing:
+                    await self._refuse_opening(opening, incarnation, listing)
+                    return
+                if exists:
+                    await self._settle_opening(opening, DeliveryState.RUNNER_ADMITTED)
+                else:
+                    await self._settle_opening(
+                        opening, DeliveryState.FAILED, reason=f"runner ALREADY_EXISTS: {error.details()}"
+                    )
+            case code:
+                await self._settle_opening(
+                    opening, DeliveryState.FAILED, reason=f"runner {code.name}: {error.details()}"
+                )
+
+    async def _settle_opening(
+        self,
+        opening: SessionOpening,
+        to: DeliveryState,
+        *,
+        reason: str | None = None,
+        attached: runner_pb2.Attached | None = None,
+    ) -> None:
+        await self._retry_storage(
+            lambda: self.store.settle_opening(
+                opening.session_id,
+                from_states={DeliveryState.DELIVERING_TO_RUNNER},
+                to=to,
+                reason=reason,
+                attached=attached,
+            )
+        )
 
     async def _settle(
         self,

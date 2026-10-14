@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import aliased
 
 from agentplane.postgres.wakeups import notify
-from agentplane.proto import command_pb2, event_log_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.session_dispatcher.channels import Channel, create_wakeups
-from agentplane.session_dispatcher.db import Dispatch
+from agentplane.session_dispatcher.db import Dispatch, SessionOpening
 from agentplane.session_dispatcher.models import LIVE_STATES, DeliveryState, Operation, Reason, operation_of
 
 # gazelle:include_dep @pypi//protobuf
@@ -23,6 +23,10 @@ class CommandConflictError(Exception):
 
 class QueueFullError(Exception):
     """The Session already holds as many queued commands as it may."""
+
+
+class OpeningConflictError(Exception):
+    """The Session ID was opened in another Sandbox or with another request."""
 
 
 class DispatchNotFoundError(Exception):
@@ -89,6 +93,106 @@ class DispatchStore:
             await notify(session, Channel.DISPATCH)
             return row
 
+    async def open_session(
+        self,
+        *,
+        session_id: str,
+        sandbox_name: str,
+        sandbox_uid: UUID,
+        spec: runner_pb2.SessionSpec,
+        setup_script: str | None,
+    ) -> SessionOpening:
+        """Store a Session's opening as queued, or return the stored one when `session_id` was opened in
+        the same Sandbox with the same request."""
+        async with self.sessions.begin() as session:
+            await session.execute(select(func.pg_advisory_xact_lock(func.hashtextextended(f"session:{session_id}", 0))))
+            existing = await session.get(SessionOpening, session_id)
+            if existing is not None:
+                if (existing.sandbox_name, existing.sandbox_uid, existing.spec, existing.setup_script) != (
+                    sandbox_name,
+                    sandbox_uid,
+                    spec,
+                    setup_script,
+                ):
+                    raise OpeningConflictError(session_id)
+                return existing
+            now = datetime.now(UTC)
+            opening = SessionOpening(
+                session_id=session_id,
+                sandbox_name=sandbox_name,
+                sandbox_uid=sandbox_uid,
+                spec=spec,
+                setup_script=setup_script,
+                state=DeliveryState.QUEUED_IN_DISPATCHER,
+                reason=None,
+                attached=None,
+                created_at=now,
+                updated_at=now,
+            )
+            session.add(opening)
+            await session.flush()
+            await notify(session, Channel.DISPATCH)
+            return opening
+
+    async def get_opening(self, session_id: str) -> SessionOpening:
+        async with self.sessions() as session:
+            opening = await session.get(SessionOpening, session_id)
+        if opening is None:
+            raise DispatchNotFoundError(session_id)
+        return opening
+
+    async def opening_heads(self) -> list[SessionOpening]:
+        """The openings still to deliver, oldest first."""
+        async with self.sessions() as session:
+            return list(
+                (
+                    await session.scalars(
+                        select(SessionOpening)
+                        .where(SessionOpening.state == DeliveryState.QUEUED_IN_DISPATCHER)
+                        .order_by(SessionOpening.created_at)
+                    )
+                ).all()
+            )
+
+    async def settle_opening(
+        self,
+        session_id: str,
+        *,
+        from_states: Collection[DeliveryState],
+        to: DeliveryState,
+        reason: str | None = None,
+        attached: runner_pb2.Attached | None = None,
+    ) -> SessionOpening | None:
+        """Move an opening out of one of `from_states`; None when it is in none of them."""
+        async with self.sessions.begin() as session:
+            opening = await session.scalar(
+                select(SessionOpening)
+                .where(SessionOpening.session_id == session_id, SessionOpening.state.in_(from_states))
+                .with_for_update()
+            )
+            if opening is None:
+                return None
+            opening.state, opening.reason, opening.attached = to, reason, attached
+            opening.updated_at = datetime.now(UTC)
+            await notify(session, Channel.DISPATCH)
+            return opening
+
+    async def note_opening_waiting(self, session_id: str, reason: Reason) -> None:
+        """Say what a queued opening waits for; a repeat of the stored reason writes nothing."""
+        async with self.sessions.begin() as session:
+            noted = await session.execute(
+                update(SessionOpening)
+                .where(
+                    SessionOpening.session_id == session_id,
+                    SessionOpening.state == DeliveryState.QUEUED_IN_DISPATCHER,
+                    SessionOpening.reason.is_distinct_from(reason),
+                )
+                .values(reason=reason, updated_at=datetime.now(UTC))
+                .returning(SessionOpening.session_id)
+            )
+            if noted.first() is not None:
+                await notify(session, Channel.DISPATCH)
+
     async def get_dispatch(self, command_id: str) -> Dispatch:
         async with self.sessions() as session:
             row = await session.scalar(select(Dispatch).where(Dispatch.command_id == command_id))
@@ -136,6 +240,10 @@ class DispatchStore:
                                 earlier.session_id == Dispatch.session_id,
                                 earlier.position < Dispatch.position,
                                 earlier.state.in_(LIVE_STATES),
+                            ),
+                            # A Session's commands wait for its opening.
+                            ~exists().where(
+                                SessionOpening.session_id == Dispatch.session_id, SessionOpening.state.in_(LIVE_STATES)
                             ),
                         )
                         .order_by(Dispatch.position)
@@ -192,6 +300,15 @@ class DispatchStore:
                 to=DeliveryState.QUEUED_IN_DISPATCHER,
                 reason=Reason.DISPATCHER_RESTARTED,
             )
+            await session.execute(
+                update(SessionOpening)
+                .where(SessionOpening.state == DeliveryState.DELIVERING_TO_RUNNER)
+                .values(
+                    state=DeliveryState.QUEUED_IN_DISPATCHER,
+                    reason=Reason.DISPATCHER_RESTARTED,
+                    updated_at=datetime.now(UTC),
+                )
+            )
 
     async def end_sandbox(self, sandbox_uid: UUID) -> list[Dispatch]:
         """The Sandbox is gone, and its rows are kept only as long as it exists: what never reached its
@@ -219,6 +336,7 @@ class DispatchStore:
                 await session.scalars(select(Dispatch).where(Dispatch.position.in_(ended)).order_by(Dispatch.position))
             )
             deleted = await session.execute(delete(Dispatch).where(for_sandbox).returning(Dispatch.position))
+            await session.execute(delete(SessionOpening).where(SessionOpening.sandbox_uid == sandbox_uid))
             if deleted.first() is not None:
                 await notify(session, Channel.DISPATCH)
             session.expunge_all()
@@ -227,7 +345,9 @@ class DispatchStore:
     async def list_sandbox_uids(self) -> set[UUID]:
         """The Sandboxes that rows are stored for."""
         async with self.sessions() as session:
-            return set(await session.scalars(select(Dispatch.sandbox_uid).distinct()))
+            return set(await session.scalars(select(Dispatch.sandbox_uid).distinct())) | set(
+                await session.scalars(select(SessionOpening.sandbox_uid).distinct())
+            )
 
     @staticmethod
     async def _move(session: AsyncSession, *where: ColumnElement[bool], to: DeliveryState, reason: Reason) -> list[int]:

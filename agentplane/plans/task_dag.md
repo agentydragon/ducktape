@@ -680,7 +680,7 @@ flowchart TD
     SANDBOX_WRITE_HELPER[Candidate: one shared library writes a Sandbox's spec]
     APP_SANDBOX_WRITES[Blocked: the app creates, deletes, suspends and resumes Sandboxes itself]
     SANDBOX_SERVICE_REMOVE[Blocked: remove the Sandbox Service]
-    DISPATCHER_SESSION_CREATE[Blocked: dispatched Session creation]
+    DISPATCHER_SESSION_LOOKUP[Candidate: a Session without a named Sandbox is found in the History Service]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     DISPATCHER_WAKE_ON_SEND[Blocked: a send wakes a suspended Sandbox]
     APP_SENDS_VIA_DISPATCHER[Blocked: the app sends through the Session Dispatcher]
@@ -720,12 +720,10 @@ flowchart TD
     RUNNER_FACTS_ON_LEASE --> SANDBOX_IDLE_EXPIRY
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
     RUNNER_FACTS_ON_LEASE -. carries the boot result .-> BOOTSTRAP_PROGRESS_CONTRACT
-    DISPATCHER_CORE --> DISPATCHER_SESSION_CREATE
-    DISPATCHER_SESSION_CREATE --> PROXY_START_METHODS_DISPATCHER_ONLY
+    DISPATCHER_CORE --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_SENDS_VIA_DISPATCHER --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
-    BOOTSTRAP_PROGRESS_CONTRACT -. Ready may then include the bootstrap .-> DISPATCHER_SESSION_CREATE
-    DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
+        DISPATCHER_CORE --> DISPATCHER_WAKE_ON_SEND
     SANDBOX_WRITE_HELPER --> DISPATCHER_WAKE_ON_SEND
     SANDBOX_WRITE_HELPER --> APP_SANDBOX_WRITES
     SANDBOX_SHARED_CODE_MOVE --> SANDBOX_SERVICE_REMOVE
@@ -1154,15 +1152,11 @@ queued command.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `DISPATCHER_SESSION_CREATE` — dispatched Session creation
+### `DISPATCHER_SESSION_LOOKUP` — a Session without a named Sandbox
 
-**Blocked on `DISPATCHER_CORE`.** `OpenSession` with a client-minted Session ID is stored
-durably and made idempotent by the ID: a retry returns the same record, and the same ID in another
-Sandbox is refused. `ALREADY_EXISTS` from the runner's `OpenSession` counts as opened once
-`ListSessions` confirms the Session. The service waits for the Sandbox to be ready and calls the runner's
-idempotent `OpenSession`. It needs the Sandbox's name, never an address; when a caller omits the
-Sandbox it looks the Session up in the History Service, and until the runner has pushed anything
-its own record is authoritative.
+`OpenSession` and the command RPCs take the Sandbox's name. When a caller omits it, the Dispatcher looks the
+Session up in the History Service; until the runner has pushed anything, its own `SessionOpening` is
+authoritative. Test a command for a Session whose opening is stored and one the History Service already holds.
 
 ### `DISPATCHER_WAKE_ON_SEND` — a send wakes a suspended Sandbox
 
@@ -1376,7 +1370,7 @@ and `CreateSessionRequest` loses its field mask.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
-**Blocked on `DISPATCHER_SESSION_CREATE`, `APP_SENDS_VIA_DISPATCHER` and `GATEWAY_WRAPPER_RETIRE`.** Today
+**Blocked on `APP_SENDS_VIA_DISPATCHER` and `GATEWAY_WRAPPER_RETIRE`.** Today
 the gateway's runner proxy (`runner_gateway/runner_proxy.py`) lets every configured caller account call
 every runner method except `Quiesce` and `Seal`, and the gateway wrapper calls `OpenSession` too. The
 bound on a suspend waiting for setups (`SuspendPending`, `SANDBOX_IDLE_EXPIRY`) holds only if nothing

@@ -6,7 +6,7 @@ from uuid import UUID
 from sqlalchemy import BigInteger, DateTime, Identity, Index
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from agentplane.proto import command_pb2, event_log_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.session_dispatcher.models import DeliveryState, Operation
 from util.sqlalchemy_protobuf import ProtobufColumn
 from util.sqlalchemy_types import StringBackedStrEnumColumn
@@ -38,5 +38,22 @@ class Dispatch(Base):
     state: Mapped[DeliveryState] = mapped_column(StringBackedStrEnumColumn(DeliveryState))
     reason: Mapped[str | None]
     admission: Mapped[event_log_pb2.EventEntry | None] = mapped_column(ProtobufColumn(event_log_pb2.EventEntry))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class SessionOpening(Base):
+    """A Session's creation, kept as long as its Sandbox exists."""
+
+    __tablename__ = "session_opening"
+    __table_args__ = (Index("ix_session_opening_sandbox_uid", "sandbox_uid"),)
+    session_id: Mapped[str] = mapped_column(primary_key=True)
+    sandbox_name: Mapped[str]
+    sandbox_uid: Mapped[UUID]
+    spec: Mapped[runner_pb2.SessionSpec] = mapped_column(ProtobufColumn(runner_pb2.SessionSpec))
+    setup_script: Mapped[str | None]
+    state: Mapped[DeliveryState] = mapped_column(StringBackedStrEnumColumn(DeliveryState))
+    reason: Mapped[str | None]
+    attached: Mapped[runner_pb2.Attached | None] = mapped_column(ProtobufColumn(runner_pb2.Attached))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))

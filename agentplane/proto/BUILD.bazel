@@ -31,6 +31,7 @@ proto_library(
     srcs = ["session_dispatcher.proto"],
     deps = [
         ":event_log_proto",
+        ":runner_proto",
         "@protobuf//:timestamp_proto",
     ],
 )

@@ -182,6 +182,30 @@ async def test_a_caller_without_a_known_bearer_is_unauthenticated(stub: Dispatch
     assert refused.value.code() is grpc.StatusCode.UNAUTHENTICATED
 
 
+async def test_a_session_opening_is_stored_and_its_id_is_the_idempotency_key(stub: Dispatcher) -> None:
+    request = pb.OpenSessionRequest(session_id=SESSION, sandbox=SANDBOX)
+    request.spec.model = "test-model"
+    opened = (await stub.OpenSession(request, metadata=BEARER)).opening
+    assert (opened.state, opened.sandbox_uid) == (pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER, SANDBOX_UID)
+    assert (await stub.OpenSession(request, metadata=BEARER)).opening == opened
+    assert (
+        await stub.GetSessionOpening(pb.GetSessionOpeningRequest(session_id=SESSION), metadata=BEARER)
+    ).opening == opened
+    request.spec.model = "other-model"
+    with pytest.raises(grpc.aio.AioRpcError) as refused:
+        await stub.OpenSession(request, metadata=BEARER)
+    assert refused.value.code() is grpc.StatusCode.ALREADY_EXISTS
+
+
+async def test_a_session_cannot_be_opened_in_a_sandbox_that_does_not_exist(stub: Dispatcher) -> None:
+    with pytest.raises(grpc.aio.AioRpcError) as refused:
+        await stub.OpenSession(pb.OpenSessionRequest(session_id=SESSION, sandbox="missing-sandbox"), metadata=BEARER)
+    assert refused.value.code() is grpc.StatusCode.NOT_FOUND
+    with pytest.raises(grpc.aio.AioRpcError) as unknown:
+        await stub.GetSessionOpening(pb.GetSessionOpeningRequest(session_id=SESSION), metadata=BEARER)
+    assert unknown.value.code() is grpc.StatusCode.NOT_FOUND
+
+
 async def test_an_interrupt_is_delivered_to_a_ready_runner_and_otherwise_nothing_happens(
     stub: Dispatcher, cluster: Cluster, runner: tuple[ScriptedRunner, str], sandboxes: SandboxWatch
 ) -> None:

@@ -1,9 +1,11 @@
 """Calls to a Sandbox's runner through the Runner Gateway's runner proxy, on its control Service."""
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from agentplane.grpc_calls import bearer, dial
-from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_control_pb2_grpc
+from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.runner_gateway.runner_proxy import SANDBOX_HEADER
 
 # gazelle:include_dep @pypi//protobuf
@@ -22,13 +24,35 @@ class RunnerClient:
         self.token_file = token_file
         self.request_timeout_s = request_timeout_s
 
+    @asynccontextmanager
+    async def _runner(
+        self, sandbox: str
+    ) -> AsyncIterator[tuple[runner_control_pb2_grpc.RunnerAsyncStub, tuple[tuple[str, str], ...]]]:
+        metadata = (*await bearer(self.token_file), (SANDBOX_HEADER, sandbox))
+        async with dial(self.control_target.format(sandbox=sandbox, namespace=self.namespace)) as channel:
+            runner: runner_control_pb2_grpc.RunnerAsyncStub = runner_control_pb2_grpc.RunnerStub(channel)
+            yield runner, metadata
+
+    async def open_session(
+        self, sandbox: str, session_id: str, spec: runner_pb2.SessionSpec, setup_script: str | None
+    ) -> runner_pb2.Attached:
+        """The runner's snapshot of the Session it created, or confirmed against the same spec."""
+        request = runner_control_pb2.OpenSessionRequest(session_id=session_id, spec=spec, setup_script=setup_script)
+        async with self._runner(sandbox) as (runner, metadata):
+            return (await runner.OpenSession(request, metadata=metadata, timeout=self.request_timeout_s)).attached
+
+    async def has_session(self, sandbox: str, session_id: str) -> bool:
+        async with self._runner(sandbox) as (runner, metadata):
+            listed = await runner.ListSessions(
+                runner_pb2.ListSessionsRequest(), metadata=metadata, timeout=self.request_timeout_s
+            )
+        return any(summary.session_id == session_id for summary in listed.sessions)
+
     async def deliver(self, sandbox: str, session_id: str, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """The runner's admission of `command`. An input or a setting change first resumes a stopped
         harness, which leaves a running one alone; an interrupt or a stop never starts anything."""
-        metadata = (*await bearer(self.token_file), (SANDBOX_HEADER, sandbox))
         timeout = self.request_timeout_s
-        async with dial(self.control_target.format(sandbox=sandbox, namespace=self.namespace)) as channel:
-            runner = runner_control_pb2_grpc.RunnerStub(channel)
+        async with self._runner(sandbox) as (runner, metadata):
             match command.WhichOneof("operation"):
                 case "submit_input":
                     await runner.ResumeSession(

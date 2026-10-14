@@ -14,7 +14,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from agentplane.grpc_servicer import Abort, ServicerResources, status_mapping
 from agentplane.proto import command_pb2, session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.session_dispatcher.channels import Channel
-from agentplane.session_dispatcher.db import Dispatch
+from agentplane.session_dispatcher.db import Dispatch, SessionOpening
 from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.models import DeliveryState, Operation, Reason
 from agentplane.session_dispatcher.runner_client import RunnerClient
@@ -24,6 +24,7 @@ from agentplane.session_dispatcher.store import (
     DispatchNotFoundError,
     DispatchStore,
     NotCancellableError,
+    OpeningConflictError,
     QueueFullError,
 )
 
@@ -64,6 +65,7 @@ class Resources(ServicerResources):
 # No bearer, database or cluster detail reaches clients.
 errors = status_mapping(
     Abort(CommandConflictError, (grpc.StatusCode.ALREADY_EXISTS, "command_id was used for other work")),
+    Abort(OpeningConflictError, (grpc.StatusCode.ALREADY_EXISTS, "session_id was opened with another request")),
     Abort(QueueFullError, lambda error: (grpc.StatusCode.RESOURCE_EXHAUSTED, str(error))),
     Abort(SandboxNotFoundError, (grpc.StatusCode.NOT_FOUND, "sandbox not found")),
     Abort(DispatchNotFoundError, (grpc.StatusCode.NOT_FOUND, "dispatch not found")),
@@ -91,6 +93,21 @@ def describe_dispatch(row: Dispatch) -> session_dispatcher_pb2.Dispatch:
     dispatch.created_at.FromDatetime(row.created_at)
     dispatch.updated_at.FromDatetime(row.updated_at)
     return dispatch
+
+
+def describe_opening(row: SessionOpening) -> session_dispatcher_pb2.SessionOpening:
+    opening = session_dispatcher_pb2.SessionOpening(
+        session_id=row.session_id,
+        sandbox=row.sandbox_name,
+        sandbox_uid=str(row.sandbox_uid),
+        state=_STATES[row.state],
+        reason=row.reason,
+    )
+    if row.attached is not None:
+        opening.attached.CopyFrom(row.attached)
+    opening.created_at.FromDatetime(row.created_at)
+    opening.updated_at.FromDatetime(row.updated_at)
+    return opening
 
 
 def _in_scope(scope: session_dispatcher_pb2.DispatchFilter, row: Dispatch) -> bool:
@@ -224,6 +241,37 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
                 )
             return session_dispatcher_pb2.InterruptTurnResponse(
                 state=_STATES[DeliveryState.RUNNER_ADMITTED], admission=admission
+            )
+
+    @override
+    async def OpenSession(
+        self, request: session_dispatcher_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
+    ) -> session_dispatcher_pb2.OpenSessionResponse:
+        async with self.request(context):
+            _require(session_id=request.session_id, sandbox=request.sandbox)
+            current = self.resources.sandboxes.get_sandbox(request.sandbox)
+            if current is None:
+                raise SandboxNotFoundError(request.sandbox)
+            return session_dispatcher_pb2.OpenSessionResponse(
+                opening=describe_opening(
+                    await self.resources.store.open_session(
+                        session_id=request.session_id,
+                        sandbox_name=request.sandbox,
+                        sandbox_uid=current.metadata.uid,
+                        spec=request.spec,
+                        setup_script=request.setup_script if request.HasField("setup_script") else None,
+                    )
+                )
+            )
+
+    @override
+    async def GetSessionOpening(
+        self, request: session_dispatcher_pb2.GetSessionOpeningRequest, context: grpc.aio.ServicerContext
+    ) -> session_dispatcher_pb2.GetSessionOpeningResponse:
+        async with self.request(context):
+            _require(session_id=request.session_id)
+            return session_dispatcher_pb2.GetSessionOpeningResponse(
+                opening=describe_opening(await self.resources.store.get_opening(request.session_id))
             )
 
     @override

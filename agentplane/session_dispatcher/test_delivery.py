@@ -10,7 +10,7 @@ import pytest_bazel
 
 from agentplane import sandbox_resource
 from agentplane.background_task import background
-from agentplane.proto import command_pb2
+from agentplane.proto import command_pb2, runner_pb2
 from agentplane.sandbox_service.testing.kubernetes import SANDBOX, Cluster
 from agentplane.session_dispatcher import delivery as delivery_module
 from agentplane.session_dispatcher.channels import Channel
@@ -129,6 +129,61 @@ async def test_a_command_the_runner_refuses_fails_with_its_status(
     await enqueue(store, sandboxes, "invalid")
     row = await wait_for(store, "invalid", DeliveryState.FAILED, "runner INVALID_ARGUMENT: empty input")
     assert row.admission is None
+
+
+async def open_session(store: DispatchStore, sandboxes: SandboxWatch) -> None:
+    sandbox = sandboxes.get_sandbox(SANDBOX)
+    assert sandbox is not None
+    await store.open_session(
+        session_id=SESSION,
+        sandbox_name=SANDBOX,
+        sandbox_uid=sandbox.metadata.uid,
+        spec=runner_pb2.SessionSpec(),
+        setup_script=None,
+    )
+
+
+async def wait_for_opening(store: DispatchStore, state: DeliveryState, reason: str | None = None) -> None:
+    changed = asyncio.Event()
+    with store.wakeups.changes[Channel.DISPATCH].subscribe(changed):
+        while True:
+            changed.clear()
+            opening = await store.get_opening(SESSION)
+            if (opening.state, opening.reason) == (state, reason):
+                return
+            await changed.wait()
+
+
+async def test_a_session_is_opened_before_its_commands_once_the_sandbox_is_ready(
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster, runner: tuple[ScriptedRunner, str]
+) -> None:
+    set_sandbox(cluster, ready=False)
+    await open_session(store, sandboxes)
+    await enqueue(store, sandboxes, "first")
+    await wait_for_opening(store, DeliveryState.QUEUED_IN_DISPATCHER, Reason.SANDBOX_NOT_READY)
+    set_sandbox(cluster, ready=True)
+    await wait_for(store, "first", DeliveryState.RUNNER_ADMITTED)
+    assert runner[0].calls == [("OpenSession", SESSION), ("SubmitInput", "first")]
+    assert (await store.get_opening(SESSION)).attached is not None
+
+
+async def test_an_opening_the_runner_already_holds_is_opened_once_it_lists_the_session(
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster, runner: tuple[ScriptedRunner, str]
+) -> None:
+    set_sandbox(cluster, ready=True)
+    runner[0].failures.append((grpc.StatusCode.ALREADY_EXISTS, "created by an attempt whose reply was lost"))
+    runner[0].listed_sessions.append(SESSION)
+    await open_session(store, sandboxes)
+    await wait_for_opening(store, DeliveryState.RUNNER_ADMITTED)
+
+
+async def test_an_opening_that_conflicts_with_the_runners_session_fails(
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster, runner: tuple[ScriptedRunner, str]
+) -> None:
+    set_sandbox(cluster, ready=True)
+    runner[0].failures.append((grpc.StatusCode.ALREADY_EXISTS, "another spec"))
+    await open_session(store, sandboxes)
+    await wait_for_opening(store, DeliveryState.FAILED, "runner ALREADY_EXISTS: another spec")
 
 
 async def test_a_deleted_sandbox_ends_its_commands_for_the_streams_and_takes_its_rows(

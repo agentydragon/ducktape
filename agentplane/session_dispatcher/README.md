@@ -9,7 +9,7 @@ Sandbox is `Ready`, and the sender reads where it is. Control design:
 ## Contract
 
 - **One RPC per command**: `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`, `InterruptTurn`,
-  `StopRunnerSession`, plus `GetDispatch`, `ListDispatches`, `WatchDispatches` and `CancelDispatch`
+  `StopRunnerSession`, `OpenSession`, `GetSessionOpening`, plus `GetDispatch`, `ListDispatches`, `WatchDispatches` and `CancelDispatch`
   ([proto](../proto/session_dispatcher.proto)). Callers name the Sandbox and the Session; `command_id` is
   the idempotency key across every command RPC.
 - **Delivery states** say where a command is: `QUEUED_IN_DISPATCHER`, `DELIVERING_TO_RUNNER`,
@@ -18,6 +18,12 @@ Sandbox is `Ready`, and the sender reads where it is. Control design:
 - **Order**: first in, first out per Session. `StopRunnerSession` goes first and cancels the inputs queued
   before it (reason `stopped`). `InterruptTurn` is not stored: it goes to a `Ready` Sandbox at once, and
   otherwise answers `NO_OP`.
+- **Opening a Session**: `OpenSession` stores the request keyed by the caller-minted `session_id` and answers
+  with a `SessionOpening` in the same delivery states. A retry with the same Sandbox, spec and
+  `setup_script` returns the stored record; anything else under that ID is `ALREADY_EXISTS`. Once the Sandbox
+  is `Ready` the runner's idempotent `OpenSession` is called before any of the Session's commands; the
+  runner's `ALREADY_EXISTS` counts as opened when `ListSessions` holds the Session and is `FAILED` otherwise.
+  Openings follow the rules of commands below for deleted Sandboxes, runner statuses and retention.
 - **Queue**: no TTL; at most `max_queued_per_session` queued commands per Session, then
   `RESOURCE_EXHAUSTED`. A command for a Sandbox that does not exist is refused `NOT_FOUND` and stores nothing.
 - **Sandbox deleted** (seen on the Sandbox watch): queued commands end `FAILED` (`sandbox_deleted`), delivering
@@ -36,6 +42,7 @@ Nothing polls: delivery wakes on a stored command (PostgreSQL `NOTIFY`), a Sandb
 
 - One active replica: the delivery loop assumes it is the only one.
 - `HARNESS_CONFIRMED` has no writer, so inputs stay `RUNNER_ADMITTED`.
+- Callers name the Sandbox; a Session with no Sandbox named is not looked up in the History Service.
 - Any account in `caller_accounts` may send to any Sandbox.
 
 ## Running

@@ -5,6 +5,7 @@ syntax = "proto3";
 package agentplane.proto.session_dispatcher;
 
 import "agentplane/proto/event_log.proto";
+import "agentplane/proto/runner.proto";
 import "google/protobuf/timestamp.proto";
 
 // One RPC per command, mirroring the runner's. Each stores the command durably and answers with its
@@ -21,6 +22,13 @@ service SessionDispatcher {
   // Goes ahead of the Session's queue: the inputs queued before it end `CANCELLED_IN_DISPATCHER` with
   // reason `stopped`. Never counts against the queue cap.
   rpc StopRunnerSession(StopRunnerSessionRequest) returns (StopRunnerSessionResponse);
+  // Stores the request and answers with the Session's `SessionOpening` in
+  // `DELIVERY_STATE_QUEUED_IN_DISPATCHER`; the opening is delivered once the Sandbox is `Ready`, before any
+  // command for the Session. `session_id` is the idempotency key: a retry with the same Sandbox and request
+  // answers with the same `SessionOpening`, and the same ID with another Sandbox or request fails
+  // `ALREADY_EXISTS`. A Sandbox that does not exist fails `NOT_FOUND`.
+  rpc OpenSession(OpenSessionRequest) returns (OpenSessionResponse);
+  rpc GetSessionOpening(GetSessionOpeningRequest) returns (GetSessionOpeningResponse);
   rpc GetDispatch(GetDispatchRequest) returns (GetDispatchResponse);
   // The current Dispatches of a Session or a Sandbox, then each one again whenever it changes.
   rpc WatchDispatches(WatchDispatchesRequest) returns (stream WatchDispatchesResponse);
@@ -161,4 +169,38 @@ message CancelDispatchRequest {
 
 message CancelDispatchResponse {
   Dispatch dispatch = 1;
+}
+
+message OpenSessionRequest {
+  string session_id = 1;  // minted by the caller
+  string sandbox = 2;
+  agentplane.proto.runner.SessionSpec spec = 3;
+  optional string setup_script = 4;  // selected only at creation
+}
+
+// Where a Session's opening is, in the vocabulary of `DeliveryState`: `DELIVERY_STATE_RUNNER_ADMITTED` is
+// opened.
+message SessionOpening {
+  string session_id = 1;
+  string sandbox = 2;
+  string sandbox_uid = 3;
+  DeliveryState state = 4;
+  optional string reason = 5;
+  // The runner's snapshot of the opened Session, absent when the runner already had it and confirmed it
+  // by listing.
+  optional agentplane.proto.runner.Attached attached = 6;
+  google.protobuf.Timestamp created_at = 7;
+  google.protobuf.Timestamp updated_at = 8;
+}
+
+message OpenSessionResponse {
+  SessionOpening opening = 1;
+}
+
+message GetSessionOpeningRequest {
+  string session_id = 1;
+}
+
+message GetSessionOpeningResponse {
+  SessionOpening opening = 1;
 }

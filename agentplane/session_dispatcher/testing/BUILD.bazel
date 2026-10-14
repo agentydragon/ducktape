@@ -21,6 +21,7 @@ py_library(
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_control_pb2_grpc",
+        "//agentplane/proto:runner_pb2",
         "@pypi//grpcio",
         "@pypi//protobuf",
     ],

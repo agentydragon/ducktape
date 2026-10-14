@@ -6,13 +6,15 @@ import pytest
 import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
-from agentplane.proto import command_pb2, event_log_pb2
+from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
+from agentplane.session_dispatcher.db import SessionOpening
 from agentplane.session_dispatcher.models import DeliveryState, Reason
 from agentplane.session_dispatcher.store import (
     CommandConflictError,
     DispatchNotFoundError,
     DispatchStore,
     NotCancellableError,
+    OpeningConflictError,
     QueueFullError,
 )
 
@@ -135,6 +137,52 @@ async def test_a_deleted_sandbox_ends_its_commands_and_takes_its_rows(store: Dis
     }
     assert [row.command_id for row in await store.list_dispatches(sandbox_name=SANDBOX)] == ["other-sandbox"]
     assert await store.list_sandbox_uids() == {UUID(int=2)}
+
+
+async def test_a_session_opens_once_and_its_opening_goes_before_its_commands(store: DispatchStore) -> None:
+    spec = runner_pb2.SessionSpec(model="test-model")
+
+    async def open_session(
+        *,
+        sandbox_name: str = SANDBOX,
+        sandbox_uid: UUID = SANDBOX_UID,
+        spec: runner_pb2.SessionSpec = spec,
+        setup_script: str | None = None,
+    ) -> SessionOpening:
+        return await store.open_session(
+            session_id=SESSION, sandbox_name=sandbox_name, sandbox_uid=sandbox_uid, spec=spec, setup_script=setup_script
+        )
+
+    opening = await open_session()
+    assert opening.state == DeliveryState.QUEUED_IN_DISPATCHER
+    await enqueue(store, submit("first"))
+    assert await store.heads() == []
+    assert (await open_session()).created_at == opening.created_at
+    for conflict in (
+        open_session(sandbox_name="other-sandbox"),
+        open_session(sandbox_uid=UUID(int=2)),
+        open_session(spec=runner_pb2.SessionSpec(model="other-model")),
+        open_session(setup_script="true"),
+    ):
+        with pytest.raises(OpeningConflictError):
+            await conflict
+    await store.settle_opening(
+        SESSION, from_states={DeliveryState.QUEUED_IN_DISPATCHER}, to=DeliveryState.RUNNER_ADMITTED
+    )
+    assert [row.command_id for row in await store.heads()] == ["first"]
+
+
+async def test_a_deleted_sandbox_ends_its_openings_and_takes_them(store: DispatchStore) -> None:
+    await store.open_session(
+        session_id=SESSION,
+        sandbox_name=SANDBOX,
+        sandbox_uid=SANDBOX_UID,
+        spec=runner_pb2.SessionSpec(),
+        setup_script=None,
+    )
+    await store.end_sandbox(SANDBOX_UID)
+    with pytest.raises(DispatchNotFoundError):
+        await store.get_opening(SESSION)
 
 
 async def test_a_call_in_flight_when_the_dispatcher_stopped_is_queued_again(store: DispatchStore) -> None:
