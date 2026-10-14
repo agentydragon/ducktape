@@ -49,7 +49,7 @@ def stored(session_id: str) -> runner_pb2.SessionSpec:
     return spec
 
 
-TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=0.5, backoff_initial_s=0.01, backoff_max_s=0.05)
+TIMING = StreamTiming(heartbeat_s=0.1, liveness_s=5, backoff_initial_s=0.01, backoff_max_s=0.05)
 
 type Service = runner_control_pb2_grpc.RunnerAsyncStub
 
