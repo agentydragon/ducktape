@@ -8,14 +8,14 @@ to `devel-20261014071248-5df1aa9`; the acceptance run must record the image it a
 
 ## Bounded matrix
 
-| Boundary                | Check                                                                                                                                            | Evidence class                               |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------- |
-| Caller authentication   | No bearer is refused; a short-lived token bound to a fixture Pod under the allowed testing app account is accepted                               | Deployed probe                               |
-| Queue while not Ready   | Create an owned stopped Pod Sandbox, enqueue a setting change, observe `QUEUED_IN_DISPATCHER` with `sandbox_suspended` through `WatchDispatches` | Deployed probe                               |
-| Delivery after Ready    | Queue Session opening, explicitly start only that Sandbox, observe opening and command admission plus matching runner journal command ID         | Deployed probe                               |
-| Independent persistence | Restart a fixture Dispatcher against its own migrated database and verify queued work survives                                                   | Followup integration check; not yet executed |
-| App unavailable         | Exercise startup, authentication, queue and delivery with no app process in the fixture                                                          | Followup integration check; not yet executed |
-| Resource cleanup        | Suspend and delete only the recorded Sandbox UID; delete only the recorded caller Pod; confirm PVC removal and quota                             | Deployed probe                               |
+| Boundary                | Check                                                                                                                                            | Evidence class                                |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------- |
+| Caller authentication   | No bearer is refused; a short-lived token bound to a fixture Pod under the allowed testing app account is accepted                               | Deployed probe                                |
+| Queue while not Ready   | Create an owned stopped Pod Sandbox, enqueue a setting change, observe `QUEUED_IN_DISPATCHER` with `sandbox_suspended` through `WatchDispatches` | Deployed probe                                |
+| Delivery after Ready    | Queue Session opening, explicitly start only that Sandbox, observe opening and command admission plus matching runner journal command ID         | Deployed probe                                |
+| Independent persistence | Restart a fixture Dispatcher against its own migrated database and verify queued work survives                                                   | Isolated service-lifecycle integration passed |
+| App unavailable         | Exercise startup, authentication, queue and delivery with no app process in the fixture                                                          | Isolated service-lifecycle integration passed |
+| Resource cleanup        | Suspend and delete only the recorded Sandbox UID; delete only the recorded caller Pod; confirm PVC removal and quota                             | Deployed probe                                |
 
 `//agentplane/acceptance:test_dispatcher_deployed` is a manual controlled-host test. It uses the
 testing Service through a localhost port-forward, Kubernetes API lifecycle operations on its own
@@ -72,3 +72,27 @@ The corrected SessionSpec uses the successful Pod helper's working directory and
 reasoning effort. Deadline failures now also retain opening state/reason before cleanup. This
 second run's own Sandbox, caller Pod and PVCs were removed by the API UID-fenced teardown. No shared
 resources were restarted or forced. This remains a probe setup failure, not deployment acceptance.
+
+## Passed deployed delivery and isolated lifecycle checks
+
+The corrected deployed probe at `bca067f740` passed in [invocation a3f8ead8-434a-4d62-b151-6ba50a81a3fb](https://app.buildbuddy.io/invocation/a3f8ead8-434a-4d62-b151-6ba50a81a3fb)
+(103.93 seconds of pytest). Dispatcher and gateway images were `5df1aa9`; controller was `025621f`.
+Sandbox UID `d0a0d3a4-fe0c-464e-9e7e-e0bff038a00f` held its command with `sandbox_suspended`, then admitted
+opening and command `72ee1d5b-b9e7-4afb-a295-8a8b7e8a6898` once explicitly started. The returned runner
+journal admission cursor was 9 and carried that exact command ID and setting payload. The JSON
+evidence has `passed: true` and `cleanup_complete: true`. Scoped deletion removed its Sandbox,
+caller Pod and PVCs; testing quota returned to 5Gi/80Gi.
+
+`//agentplane/session_dispatcher:test_startup` passed in [invocation 920c7265-ec5e-4eed-a5bd-1d792054c97b](https://app.buildbuddy.io/invocation/920c7265-ec5e-4eed-a5bd-1d792054c97b)
+(49.5 seconds). It constructs fresh server, engine, store, watch, authentication resolver and delivery
+worker through `serve`; tears them down; starts them again against the same isolated migrated
+PostgreSQL clone; verifies the queued row's retained identity/timestamp; and makes the fake Sandbox
+Ready. Real gRPC reaches the scripted runner with opening before input, exactly once. No app process
+is started. This is service-lifecycle integration, not an operating-system kill or deployed outage.
+
+BuildBuddy mirrored the integration working tree as base `f21ddae950` plus the complete branch and
+working-tree patch. The affected test and BUILD blobs match `e31d1a2e17`; source SHA-256 values are
+`5c5f1897e7a1df13bebd95c1267c4ea65f12b2ecc4130f29e7c220dec631c779` and
+`f02a525a53ad033a5ee1d2afe1ccb82db0a2953c70bc40e12a52a50906f364d8`. The different remote base is not a
+claim that the whole invocation ran an unpatched `e31d1a2e17` checkout. No extra live run was used
+for this check, and multi-replica behavior remains separate.
