@@ -248,7 +248,7 @@ in
       Type = "oneshot";
       RemainAfterExit = true;
     };
-    serviceConfig.ExecStart = "${workspaceDiskPreparation}";
+    serviceConfig.ExecStart = "${workspaceDiskPreparation} ${workspaceDevice}";
   };
 
   systemd.services.agentplane-workspace = {

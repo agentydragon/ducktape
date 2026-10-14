@@ -195,3 +195,22 @@ in-guest service log was captured, so the reason the runner did not connect rema
 Post-run reads confirmed the exact Sandbox, VM, VMI, launcher Pod, two PVCs, and matching PVs were
 absent; only `postgres-1` remained and storage usage returned to 5Gi/80Gi. No staging resources were
 changed, and no further acceptance run or timeout change is included.
+
+### Guest startup diagnosis
+
+A single diagnostic Sandbox, `diagnose-vm-20261014-163832` (UID
+`9c85e990-ef3f-46d6-9a65-8571fffb8655`), used the testing `runner-vm` template with the same
+`devel-20261014212650-ae038e8` guest image. Its serial console was captured through only that VMI's
+KubeVirt console subresource before cleanup. The guest started `agentplane-workspace-prepare.service`,
+whose program printed `usage: agentplane-prepare-workspace DEVICE` and exited
+`2/INVALIDARGUMENT`. Systemd then marked `state-workspaces.mount` and `local-fs.target` failed and
+entered emergency mode. `/state` itself mounted; no runner startup or Gateway dial followed.
+
+Source revision `ae038e8` changed the service's `ExecStart` from a shell wrapper that supplied
+`/dev/disk/by-id/virtio-workspace` to the new Python executable alone. The executable's `main()`
+requires exactly one device argument. This missing argument is the observed cause of
+`NeverConnected`; the two timed-out acceptance cases did not exercise their storage assertions.
+The diagnostic Sandbox and template were deleted with their recorded UID preconditions, and the
+namespace returned to no Sandboxes or VMs and 5Gi/80Gi storage use. A candidate image correction
+supplies the device argument and adds a Nix check against the rendered VM service command. Fresh
+formatting and retained remount remain unaccepted until that image is published and pinned.
