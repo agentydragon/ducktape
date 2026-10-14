@@ -8,7 +8,6 @@ from pathlib import Path
 import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s
-from sqlalchemy.engine import URL
 
 from agentplane.grpc_calls import dial
 from agentplane.proto import runner_pb2, session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
@@ -33,7 +32,7 @@ type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
 
 async def test_service_restart_retains_and_delivers_queued_work_without_an_app(
     cluster: SandboxCluster,
-    db_url: URL,
+    db_url: str,
     runner: tuple[ScriptedRunner, str],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -47,7 +46,7 @@ async def test_service_restart_retains_and_delivers_queued_work_without_an_app(
     )
     (runner_token := tmp_path / "runner-token").write_text("test-only-runner-token")
     settings = Settings(
-        database_url=db_url.render_as_string(hide_password=False),
+        database_url=db_url,
         namespace=OWNER.namespace,
         caller_accounts=frozenset({OWNER}),
         token_audience=AUDIENCE,
