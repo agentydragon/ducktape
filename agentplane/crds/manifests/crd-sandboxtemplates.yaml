@@ -68,6 +68,24 @@ spec:
                       description: A PersistentVolumeClaimSpec for the state PVC.
                       type: object
                       x-kubernetes-preserve-unknown-fields: true
+                    layout:
+                      description: >-
+                        The state PVC currently supports DirectoryTree only. Omission remains accepted
+                        for templates written before this field was introduced.
+                      type: object
+                      required: [type]
+                      oneOf:
+                        - properties:
+                            type:
+                              enum: [DirectoryTree]
+                          not:
+                            required: [filesystem]
+                      properties:
+                        type:
+                          type: string
+                          enum: [DirectoryTree]
+                        filesystem:
+                          type: string
                 workspaceVolume:
                   description: >-
                     A Sandbox-owned PVC retained across incarnations. Its layout declares contents

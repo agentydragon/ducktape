@@ -409,49 +409,12 @@ func (r *Reconciler) claim(ctx context.Context, sandbox *Sandbox, name string) (
 	return &pvc, nil
 }
 
-// createClaim creates the Sandbox's PVC of that name from spec, owned by the Sandbox, so nothing but
-// the Sandbox's own deletion garbage-collects it.
-func (r *Reconciler) createClaim(ctx context.Context, sandbox *Sandbox, name string, spec corev1.PersistentVolumeClaimSpec) error {
-	pvc := &corev1.PersistentVolumeClaim{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: sandbox.Namespace,
-			Labels:    map[string]string{SandboxLabel: sandbox.Name},
-		},
-		Spec: *spec.DeepCopy(),
-	}
-	if err := controllerutil.SetControllerReference(sandbox, pvc, r.Scheme(), controllerutil.WithBlockOwnerDeletion(false)); err != nil {
-		return err
-	}
-	// An AlreadyExists is a concurrent create; the PVC's watch event runs the check of the caller.
-	return client.IgnoreAlreadyExists(r.Create(ctx, pvc))
-}
-
 // claimConflict is why the Sandbox cannot use a PVC of its name: it is another's, or going.
 func claimConflict(pvc *corev1.PersistentVolumeClaim, sandbox *Sandbox, reason string) *unready {
 	if metav1.IsControlledBy(pvc, sandbox) && pvc.DeletionTimestamp.IsZero() {
 		return nil
 	}
 	return &unready{reason: reason, message: fmt.Sprintf("PVC %s belongs to another Sandbox or is being deleted", pvc.Name)}
-}
-
-// ensureStateVolume creates the state PVC from the template if it does not exist yet.
-func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *Sandbox) (*unready, error) {
-	pvc, err := r.stateVolume(ctx, sandbox)
-	if err != nil {
-		return nil, err
-	}
-	if pvc != nil {
-		if claimMode(pvc.Spec) != corev1.PersistentVolumeFilesystem {
-			return layoutMismatch("the state PVC must remain a DirectoryTree on a Filesystem claim"), nil
-		}
-		return claimConflict(pvc, sandbox, "StateVolumeConflict"), nil
-	}
-	template, blocked, err := r.template(ctx, sandbox)
-	if template == nil {
-		return blocked, err
-	}
-	return nil, r.createClaim(ctx, sandbox, StateVolumeName(sandbox.Name), template.Spec.StateVolume.Claim)
 }
 
 func (r *Reconciler) template(ctx context.Context, sandbox *Sandbox) (*SandboxTemplate, *unready, error) {
@@ -466,8 +429,8 @@ func (r *Reconciler) template(ctx context.Context, sandbox *Sandbox) (*SandboxTe
 	if (template.Spec.Pod == nil) == (template.Spec.VM == nil) {
 		return nil, &unready{reason: "TemplateInvalid", message: fmt.Sprintf("SandboxTemplate %s must set exactly one of pod and vm", template.Name)}, nil
 	}
-	if claimMode(template.Spec.StateVolume.Claim) != corev1.PersistentVolumeFilesystem {
-		return nil, layoutMismatch("the state volume requires a Filesystem claim"), nil
+	if blocked := validateStateVolume(&template); blocked != nil {
+		return nil, blocked, nil
 	}
 	if blocked := validateWorkspace(&template); blocked != nil {
 		return nil, blocked, nil
@@ -577,6 +540,9 @@ func renderedSpec(spec any) string {
 // render is the template's Pod for this Sandbox, running as the Sandbox's ServiceAccount, with the
 // state volume filled in.
 func render(sandbox *Sandbox, template *SandboxTemplate) (*corev1.Pod, *unready) {
+	if blocked := validateStateVolume(template); blocked != nil {
+		return nil, blocked
+	}
 	if blocked := validateWorkspace(template); blocked != nil {
 		return nil, blocked
 	}

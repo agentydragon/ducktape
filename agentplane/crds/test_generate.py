@@ -101,5 +101,21 @@ def test_workspace_schema_rejects_ambiguous_layout_and_claim_mode(
         assert Draft4Validator(schema, registry=Registry()).is_valid(workspace) is valid
 
 
+def test_state_volume_schema_keeps_legacy_templates_and_accepts_only_directory_trees() -> None:
+    crd = yaml.safe_load(_committed(CRDS_DIR / "crd-sandboxtemplates.yaml"))
+    state_volume_schema = crd["spec"]["versions"][0]["schema"]["openAPIV3Schema"]["properties"]["spec"]["properties"][
+        "stateVolume"
+    ]
+    validator = Draft4Validator(state_volume_schema, registry=Registry())
+    for state_volume, valid in [
+        ({"name": "state", "claim": {}}, True),
+        ({"name": "state", "claim": {}, "layout": {"type": "DirectoryTree"}}, True),
+        ({"name": "state", "claim": {}, "layout": {"type": "DirectoryTree", "filesystem": "ext4"}}, False),
+        ({"name": "state", "claim": {}, "layout": {"type": "RawDiskImage", "filesystem": "ext4"}}, False),
+        ({"name": "state", "claim": {}, "layout": {}}, False),
+    ]:
+        assert validator.is_valid(state_volume) is valid, state_volume
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

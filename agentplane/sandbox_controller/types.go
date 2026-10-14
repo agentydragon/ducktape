@@ -17,6 +17,8 @@ import (
 type StateVolume struct {
 	Name  string                           `json:"name"`
 	Claim corev1.PersistentVolumeClaimSpec `json:"claim"`
+	// Layout is optional while older SandboxTemplates are still accepted; omission means DirectoryTree.
+	Layout *VolumeLayout `json:"layout,omitempty"`
 }
 
 type VolumeLayoutType string
@@ -121,7 +123,15 @@ type WorkspaceBinding struct {
 }
 
 type SandboxVolumes struct {
+	State     *StateBinding     `json:"state,omitempty"`
 	Workspace *WorkspaceBinding `json:"workspace,omitempty"`
+}
+
+// StateBinding projects the state PVC's durable layout record and pins the claim's identity.
+type StateBinding struct {
+	Name   string       `json:"name"`
+	UID    string       `json:"uid"`
+	Layout VolumeLayout `json:"layout"`
 }
 
 type OperatingMode string

@@ -9,6 +9,13 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 
 - Every Sandbox gets one PVC, `<sandbox>-state`, created from its `SandboxTemplate`'s claim when
   the Sandbox is created, whether or not it is running.
+- `stateVolume.layout` is optional for the first accepting reader so existing templates remain valid;
+  omission means `DirectoryTree`. This reader accepts only `DirectoryTree` on a `Filesystem` claim.
+  It records the layout on the PVC and pins the claim's name, UID and layout in
+  `status.volumes.state` before attaching it. An existing controller-owned filesystem PVC without a
+  record is recorded as the historical `DirectoryTree` contract, never from the mutable template.
+  A missing or changed claim, foreign PVC, lost or unsupported record, or changed UID blocks workload
+  start without replacing the retained PVC.
 - The Sandbox is the PVC's controller owner, without `blockOwnerDeletion`, so the Pod going away or
   stopping never removes it, and foreground propagation or namespace deletion cannot remove it
   before the seal completes. A Sandbox never uses a PVC another Sandbox controls, and reports
@@ -50,7 +57,8 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 - Optional `workspaceVolume` declares a retained workspace's name, claim and required layout:
   `DirectoryTree`, `RawDiskImage` or `BlockFilesystem`. Directory trees mount in Pods or reach VMs
   through virtiofs; disk layouts attach only as VM disks and require explicit `ext4`. The layout
-  and claim mode must agree. The state PVC remains a directory tree.
+  and claim mode must agree. The state PVC remains `DirectoryTree` until a separate accepting code
+  and template rollout supports another layout.
 - The Sandbox owns `<sandbox>-workspace`, which survives suspension and compatible kind changes.
   The PVC's creation record persists its layout and claim declaration, and `status.volumes.workspace`
   pins its name, UID and layout. A restart recovers a recorded claim, never adopts unrecorded contents.

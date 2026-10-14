@@ -825,14 +825,16 @@ Sandbox-owned RawDiskImage path; its evidence is linked above.
 
 ### `STATE_VOLUME_LAYOUT` — declare the state volume layout explicitly
 
-**Candidate; assigned to `dispatcher` alongside the wake-feedback lane.**
-Extend the workspace layout vocabulary and durable identity contract to
-`stateVolume`, whose existing contract is fixed `DirectoryTree`. Keep this separate from choosing
-block storage. Reader code must land and be pinned before manifests declare new fields; old
-manifests must remain accepted during that rolling deployment. `STATE_VOLUME_LAYOUT_FALLBACK_REMOVE` removes any temporary optional-field fallback after all
-declarations and images have moved. Do not infer an existing disk's format from a mutable template. Test mismatches before
-workload replacement. If existing declarations cannot be retained, use the approved incompatible
-cutoff in a separate data-drop PR rather than adding old-data compatibility fields.
+**In flight; assigned to `dispatcher`, 2026-10-14 PDT.** Extend the layout vocabulary and durable
+identity contract to `stateVolume`, whose existing contents are fixed `DirectoryTree`. The accepting
+reader adds an optional field so old templates remain valid, defaults omission only to
+`DirectoryTree`, and currently accepts no other layout. Record the layout on the PVC and pin its name,
+UID and layout in Sandbox status before attachment. An existing controller-owned Filesystem state
+PVC with no record may be recorded using the historical fixed contract, never by reading the mutable
+template. Keep deployed templates unchanged until both the CRD schema and controller accepting image
+are pinned. `STATE_VOLUME_LAYOUT_FALLBACK_REMOVE` remains a separate successor that requires explicit
+declarations after accepting images are pinned. This does not choose block storage, convert volumes,
+or drop data; test layout and identity mismatches before workload replacement.
 
 ### `STATE_VOLUME_LAYOUT_FALLBACK_REMOVE` — require explicit state layout declarations
 

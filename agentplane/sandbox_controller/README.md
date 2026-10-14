@@ -27,7 +27,8 @@ A [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) co
   state PVC (by the Sandbox label) and the templates it names (by a field index) map back to it.
 - [`vm.go`](vm.go): a VM Sandbox's VirtualMachine (types from `kubevirt.io/api`), its run strategy,
   and the VMI and virt-launcher Pod its status comes from.
-- [`workspace.go`](workspace.go): layout validation, the PVC creation record and the persisted claim binding.
+- [`state_volume.go`](state_volume.go): the state layout contract, PVC creation record and identity binding.
+- [`workspace.go`](workspace.go): workspace layout validation, its PVC creation record and persisted claim binding.
 - [`identity.go`](identity.go): the Sandbox's ServiceAccount and `PolicyBinding`, and the
   conflicts that keep a Pod from starting. The `PolicyBinding` types are the Policy Controller's.
 - [`cmd/main.go`](cmd/main.go): the manager, its cache limited to one namespace and, of the kinds

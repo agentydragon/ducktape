@@ -119,6 +119,33 @@ spec:
                 volumes:
                   type: object
                   properties:
+                    state:
+                      description: >-
+                        Projection of the state PVC layout record, pinning the retained claim's identity.
+                      type: object
+                      required: [name, uid, layout]
+                      properties:
+                        name:
+                          type: string
+                          minLength: 1
+                        uid:
+                          type: string
+                          minLength: 1
+                        layout:
+                          type: object
+                          required: [type]
+                          oneOf:
+                            - properties:
+                                type:
+                                  enum: [DirectoryTree]
+                              not:
+                                required: [filesystem]
+                          properties:
+                            type:
+                              type: string
+                              enum: [DirectoryTree]
+                            filesystem:
+                              type: string
                     workspace:
                       description: >-
                         Projection of the PVC creation record, pinning the retained claim's identity.
