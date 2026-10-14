@@ -437,3 +437,32 @@ py_test(
         "@pypi//pyyaml",
     ],
 )
+
+py_test(
+    name = "test_dispatcher_deployed",
+    size = "large",
+    srcs = ["test_dispatcher_deployed.py"],
+    env_inherit = [
+        "HOME",
+        "KUBECONFIG",
+    ],
+    tags = [
+        "manual",
+        "no-remote-exec",
+    ],
+    deps = [
+        ":conftest",
+        "//:conftest",
+        "//agentplane:grpc_calls",
+        "//agentplane:sandbox_resource",
+        "//agentplane/proto:runner_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
+        "//agentplane/proto:session_dispatcher_pb2_grpc",
+        "//util:net",
+        "//util/testing:undeclared_outputs",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
