@@ -301,7 +301,8 @@ async def test_dispatcher_reports_why_a_sandbox_wake_failed(view: VisualPage, ap
     await expect(tooltip).to_be_visible()
     await expect(tooltip).to_contain_text("Sandbox did not become Ready within 10 minutes")
     await expect(tooltip).to_contain_text("Unschedulable: 0/2 nodes are available: PVC is not bound")
-    await view.capture(target=row)
+    await expect(tooltip).to_be_in_viewport(ratio=1)
+    await view.capture()
 
 
 @pytest.mark.parametrize("viewport", [DESKTOP, MOBILE_TOUCH], ids=["desktop", "mobile"])
