@@ -40,6 +40,8 @@ K3S_VERSION = "v1.33.4+k3s1"
 CNPG_MANIFEST_URL = "https://github.com/cloudnative-pg/cloudnative-pg/releases/download/v1.30.0/cnpg-1.30.0.yaml"
 # Electric exits until history-service's migration has created its publication; its restart back-off reaches 5 min.
 DEPLOY_TIMEOUT_SECONDS = 480
+# k3s's default Pod CIDR.
+POD_CIDR = "10.42.0.0/16"
 
 
 def _run(*command: str, check: bool = True, input_text: str | None = None) -> str:
@@ -141,6 +143,8 @@ class K3s:
         if "condition met" not in ready:
             raise RuntimeError(f"k3s not ready (exit={process.poll()}): {ready}\n{self.log_path.read_text()[-6000:]}")
         self._serve_dns_and_api_on_node()
+        # host-gw routes Pod traffic but does not translate it: without this, Pods cannot reach the internet.
+        _run("iptables", "-t", "nat", "-A", "POSTROUTING", "-s", POD_CIDR, "!", "-d", POD_CIDR, "-j", "MASQUERADE")
         return process
 
     def _serve_dns_and_api_on_node(self) -> None:
