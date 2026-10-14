@@ -273,6 +273,7 @@ async def test_a_sessions_launch_outcome_survives_a_restart(
             config=RunnerConfig(state_dir=state_dir, launch=launches.SANDBOX_LAUNCH),
             make_adapter=DerivingAdapter,
             state_owner_descriptor=owner.descriptor,
+            activity_changed=lambda: None,
         )
 
     journal_path = store.directory("test-session") / "journal.sqlite"

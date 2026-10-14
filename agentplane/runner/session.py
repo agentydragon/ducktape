@@ -58,8 +58,11 @@ class Session:
         config: RunnerConfig,
         make_adapter: Callable[[Session], HarnessAdapter],
         state_owner_descriptor: int,
+        activity_changed: Callable[[], None],
     ) -> None:
         self.session_id = session_id
+        # Called whenever `busy` may have changed.
+        self.activity_changed = activity_changed
         self.record = record
         self.store = store
         self.config = config
@@ -228,6 +231,7 @@ class Session:
                 self.active_turn_id = ""
         self._scheduled_commands.difference_update(terminal_command_ids)
         self._dispatched_commands.difference_update(terminal_command_ids)
+        self.activity_changed()
         return entry
 
     async def recover_after_restart(self) -> None:
@@ -248,6 +252,13 @@ class Session:
     @property
     def running(self) -> bool:
         return self.process is not None and self.process.running
+
+    @property
+    def busy(self) -> bool:
+        """A turn runs, a command is admitted and not finished, or the setup script runs."""
+        return (
+            bool(self.active_turn_id or self._scheduled_commands) or self.setup_state == runner_pb2.SETUP_STATE_RUNNING
+        )
 
     @property
     def setup_active(self) -> bool:
@@ -320,6 +331,7 @@ class Session:
         elif command_id in self._scheduled_commands:
             return
         self._scheduled_commands.add(command_id)
+        self.activity_changed()
         operation = command.WhichOneof("operation")
         if operation in DRAINING_OPERATIONS:
             self._track_dispatch(

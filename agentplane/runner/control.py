@@ -163,10 +163,11 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
         self, session_id: str, command: command_pb2.Command, context: grpc.aio.ServicerContext
     ) -> event_log_pb2.EventEntry:
         async with _refusals(context):
-            admission = asyncio.ensure_future(_admit(self.runner, session_id, command))
-            self._admissions.add(admission)
-            admission.add_done_callback(self._admissions.discard)
-            return await finish_command(admission)
+            with self.runner.delivering():
+                admission = asyncio.ensure_future(_admit(self.runner, session_id, command))
+                self._admissions.add(admission)
+                admission.add_done_callback(self._admissions.discard)
+                return await finish_command(admission)
 
     @override
     async def Seal(self, request: runner_pb2.SealRequest, context: grpc.aio.ServicerContext) -> runner_pb2.SealResponse:

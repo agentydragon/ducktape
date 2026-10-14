@@ -63,9 +63,23 @@ class ControlListener(runner_control_pb2_grpc.RunnerControlServicer):
             await self._connected.wait_for(lambda: self.connections >= connections and self._runner is not None)
 
     async def wait_for_facts(self, expected: runner_control_pb2.RunnerFacts) -> None:
-        """Until a heartbeat has carried exactly `expected`."""
+        """Until a heartbeat has carried `expected` in every fact but `idle_since`."""
+
+        def carried(facts: runner_control_pb2.RunnerFacts) -> bool:
+            without_idle = runner_control_pb2.RunnerFacts()
+            without_idle.CopyFrom(facts)
+            without_idle.ClearField("idle_since")
+            return without_idle == expected
+
         async with asyncio.timeout(30), self.facts_published:
-            await self.facts_published.wait_for(lambda: expected in self.facts)
+            await self.facts_published.wait_for(lambda: any(carried(facts) for facts in self.facts))
+
+    async def wait_for_idleness(self, *, idle: bool) -> None:
+        """Until the newest heartbeat says the Sandbox is idle (`idle_since` set) or busy (absent)."""
+        async with asyncio.timeout(30), self.facts_published:
+            await self.facts_published.wait_for(
+                lambda: bool(self.facts) and self.facts[-1].HasField("idle_since") == idle
+            )
 
     async def runner(self) -> runner_control_pb2_grpc.RunnerAsyncStub:
         """The runner's service through its newest connection, once it has one."""

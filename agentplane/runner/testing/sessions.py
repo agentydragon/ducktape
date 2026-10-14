@@ -48,6 +48,7 @@ async def open_session(
                 config=config,
                 make_adapter=make_adapter,
                 state_owner_descriptor=owner.descriptor,
+                activity_changed=lambda: None,
             )
     finally:
         owner.close()

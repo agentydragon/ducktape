@@ -412,7 +412,7 @@ async def test_the_first_heartbeat_of_a_connection_carries_the_facts(
 ) -> None:
     await dial()
     await gateway.control.wait_for_facts(Facts())
-    assert gateway.control.facts == [Facts()]
+    assert len(gateway.control.facts) == 1
 
 
 async def test_quiescing_publishes_flushing_until_the_ingress_acknowledged_every_journal(
@@ -425,6 +425,18 @@ async def test_quiescing_publishes_flushing_until_the_ingress_acknowledged_every
         runner.store.write_acknowledgement(row.session_id, IngressAcknowledgement(cursor=row.cursor, sealed=True))
     runner.acknowledged()
     await gateway.control.wait_for_facts(Facts(quiesce_stage=Facts.QUIESCE_STAGE_QUIESCED))
+
+
+async def test_a_delivery_under_way_makes_the_sandbox_busy_until_it_is_answered(
+    runner: Runner, gateway: Gateway, dial: Callable[[], Awaitable[Service]]
+) -> None:
+    await dial()
+    await gateway.control.wait_for_idleness(idle=True)
+    idle_since = runner.facts().idle_since
+    with runner.delivering():
+        await gateway.control.wait_for_idleness(idle=False)
+    await gateway.control.wait_for_idleness(idle=True)
+    assert runner.facts().idle_since.ToNanoseconds() > idle_since.ToNanoseconds()
 
 
 @pytest.mark.parametrize(

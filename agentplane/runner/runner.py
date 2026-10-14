@@ -7,11 +7,13 @@ import hashlib
 import json
 import logging
 import os
-from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable
-from contextlib import AsyncExitStack, suppress
+from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Iterator
+from contextlib import AsyncExitStack, contextmanager, suppress
 from pathlib import Path, PurePosixPath
 from types import TracebackType
 from typing import Self, assert_never, cast
+
+from google.protobuf.timestamp_pb2 import Timestamp
 
 from agentplane.proto import event_log_pb2, runner_control_pb2, runner_pb2
 from agentplane.runner.adapter import HarnessAdapter
@@ -106,6 +108,10 @@ class Runner:
         self._sealing = False
         # Set whenever `facts()` may have changed; the control stream clears it before reading.
         self.facts_changed = asyncio.Event()
+        # Deliveries between RPC entry and their answer count as busy before the journal knows of them.
+        self._deliveries = 0
+        # When the Sandbox last became idle; None while busy.
+        self._idle_since: Timestamp | None = None
 
     def facts(self) -> runner_control_pb2.RunnerFacts:
         """What the Runner Gateway records about this runner on the connection Lease."""
@@ -114,7 +120,38 @@ class Runner:
             facts.quiesce_stage = self._quiesce_stage()
         if (log := self._initialization_log) is not None:
             facts.bootstrap = self._bootstrap_state(log)
+        if self._idle_since is not None:
+            facts.idle_since.CopyFrom(self._idle_since)
         return facts
+
+    @contextmanager
+    def delivering(self) -> Iterator[None]:
+        """Marks the Sandbox busy from RPC entry until the answer, before the journal records anything."""
+        self._deliveries += 1
+        self.note_activity()
+        try:
+            yield
+        finally:
+            self._deliveries -= 1
+            self.note_activity()
+
+    def note_activity(self) -> None:
+        """Re-evaluate whether the Sandbox is busy and publish a change. Busy: a delivery under way, the
+        bootstrap running, or any Session with a turn, an unfinished command or a setup script. Terminals
+        and background processes outside those are not tracked: the runner does not supervise them."""
+        busy = (
+            self._deliveries > 0
+            or (self._initialization_log is not None and not self._initialization_log.ended)
+            or any(session.busy for session in self.sessions.values())
+        )
+        if busy and self._idle_since is not None:
+            self._idle_since = None
+        elif not busy and self._idle_since is None:
+            self._idle_since = Timestamp()
+            self._idle_since.GetCurrentTime()
+        else:
+            return
+        self.facts_changed.set()
 
     def _quiesce_stage(self) -> runner_control_pb2.RunnerFacts.QuiesceStage:
         sessions = [self.sessions[session_id] for session_id in self.store.session_ids() if session_id in self.sessions]
@@ -147,6 +184,7 @@ class Runner:
         async with self._initialize_lock:
             log, selected_now = self._claim_initialization(source)
             self.facts_changed.set()
+            self.note_activity()
             if log.ended:
                 return log, None
             if self._initialization_task is not None and not self._initialization_task.done():
@@ -160,6 +198,7 @@ class Runner:
             # run any part of itself. Never run it again; a fresh initialization needs a new Sandbox.
             log.append_interrupted(max(log.last_attempt, 1))
             self.facts_changed.set()
+            self.note_activity()
             return log, None
 
     def _claim_initialization(self, source: bytes) -> tuple[InitializationLog, bool]:
@@ -219,6 +258,7 @@ class Runner:
         await asyncio.gather(stdout, stderr)
         log.append_result(attempt, exit_code)
         self.facts_changed.set()
+        self.note_activity()
 
     @staticmethod
     async def _record_initialization_output(
@@ -239,6 +279,7 @@ class Runner:
             except InitializationConflictError:
                 # Every open refuses with the same error, which is where the caller sees it.
                 logger.exception("the Sandbox selected a different bootstrap script")
+        self.note_activity()
 
     async def _load(self, session_id: str) -> Session:
         async with self._sessions_lock:
@@ -259,8 +300,10 @@ class Runner:
                     config=self.config,
                     state_owner_descriptor=self._state_owner.descriptor,
                     make_adapter=make_adapter,
+                    activity_changed=self.note_activity,
                 )
                 await self.sessions[session_id].load_prefix_state()
+                self.note_activity()
                 for loaded in self.session_loaded:
                     loaded(self.sessions[session_id])
             return self.sessions[session_id]

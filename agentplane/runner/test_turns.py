@@ -420,6 +420,21 @@ async def test_a_seal_interrupts_the_active_turn_and_records_that_teardown_ended
     assert events.of_kind(session.seen, "harness_exited")[-1].cursor > done.cursor
 
 
+async def test_the_sandbox_is_busy_while_a_turn_runs_and_idle_after_it_ends(
+    driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
+) -> None:
+    control = driver.gateway.control
+    session = await driver.attach("busy-1", spec=spec)
+    await control.wait_for_idleness(idle=True)
+
+    await submit_input(session, "input-1", "Reply with exactly: BUSY_OK")
+    request = await model.request()
+    await control.wait_for_idleness(idle=False)
+    await model.reply(request, Text("BUSY_OK"))
+    await session.until(events.turn_completed)
+    await control.wait_for_idleness(idle=True)
+
+
 async def _interrupt_and_reconcile(session: SessionFollow) -> event_pb2.ConversationReconciled:
     turn_id = events.of_kind(session.seen, "turn_started")[-1].event.turn_started.turn_id
     await interrupt_turn(session, "interrupt-thinking", turn_id)
