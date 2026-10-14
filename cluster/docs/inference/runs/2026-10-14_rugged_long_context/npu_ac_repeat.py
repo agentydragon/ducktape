@@ -10,6 +10,7 @@ from pathlib import Path
 
 import openvino as ov
 import openvino_genai as genai
+from drm_memory import process_drm_memory
 
 MODEL = "/tmp/rugged-npu-qwen25coder-15b-sym-ov"
 CACHE = "/tmp/rugged-npu-qwen-cache"
@@ -77,6 +78,7 @@ def main() -> None:
             "rss_kib": rss_kib(),
             "peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
             "accel_fds": accel_fds(),
+            "drm_memory": process_drm_memory(os.getpid()),
         },
     )
     tokenizer = pipe.get_tokenizer()
@@ -107,6 +109,7 @@ def main() -> None:
                     "rss_kib": rss_kib(),
                     "peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
                     "accel_fds": accel_fds(),
+                    "drm_memory": process_drm_memory(os.getpid()),
                     "ac_online": Path("/sys/class/power_supply/AC/online").read_text().strip(),
                     "response": result.texts[0],
                 },

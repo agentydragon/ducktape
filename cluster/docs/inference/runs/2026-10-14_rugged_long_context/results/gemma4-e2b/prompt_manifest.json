@@ -1,0 +1,59 @@
+{
+  "model": "gemma4:e2b-it-qat",
+  "num_ctx_requested": 131072,
+  "targets": [
+    {
+      "target_content_tokens": 32000,
+      "content_tokens": 31976,
+      "line_count": 1264,
+      "expected_codes": {
+        "FIRST_KEY": "AB083F",
+        "MIDDLE_KEY": "05C842",
+        "LAST_KEY": "41A9CD"
+      },
+      "anchor_rows": {
+        "FIRST_KEY": 12,
+        "MIDDLE_KEY": 632,
+        "LAST_KEY": 1252
+      },
+      "prompt_sha256": "331a4441256247c566462098bca583e9bc41e72ffceaf806a4dc340aa7d173fd",
+      "prompt_bytes": 125281
+    },
+    {
+      "target_content_tokens": 64000,
+      "content_tokens": 63983,
+      "line_count": 2540,
+      "expected_codes": {
+        "FIRST_KEY": "AB083F",
+        "MIDDLE_KEY": "05C842",
+        "LAST_KEY": "41A9CD"
+      },
+      "anchor_rows": {
+        "FIRST_KEY": 25,
+        "MIDDLE_KEY": 1270,
+        "LAST_KEY": 2515
+      },
+      "prompt_sha256": "ce2e885742b686ae696c0c6b1dba3f077018354d56ac5235d2be9a1d71ebc021",
+      "prompt_bytes": 251503
+    },
+    {
+      "target_content_tokens": 124000,
+      "content_tokens": 123997,
+      "line_count": 4926,
+      "expected_codes": {
+        "FIRST_KEY": "AB083F",
+        "MIDDLE_KEY": "05C842",
+        "LAST_KEY": "41A9CD"
+      },
+      "anchor_rows": {
+        "FIRST_KEY": 49,
+        "MIDDLE_KEY": 2463,
+        "LAST_KEY": 4877
+      },
+      "prompt_sha256": "45c6eacad81d5bc33ff5f355a7ec901211f292237154d0d2b8ff7295f6d33c8d",
+      "prompt_bytes": 487500
+    }
+  ],
+  "tokenizer_sha256": "cc8d3a0ce36466ccc1278bf987df5f71db1719b9ca6b4118264f45cb627bfe0f",
+  "generated_at_utc": "2026-10-14T07:27:16Z"
+}

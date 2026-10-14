@@ -18,6 +18,7 @@ import urllib.request
 from datetime import UTC, datetime
 from pathlib import Path
 
+from drm_memory import ollama_runner_drm_memory
 from tokenizers import Tokenizer
 
 WORDS = [
@@ -66,10 +67,14 @@ def host_snapshot() -> dict:
         key, value = line.split(":", 1)
         if key in ("MemAvailable", "MemFree", "SwapFree"):
             mem[key + "_kib"] = int(value.split()[0])
+    pressure = Path("/proc/pressure/memory").read_text().strip()
+    full_line = next(line for line in pressure.splitlines() if line.startswith("full "))
+    full_avg10 = float(next(field.split("=", 1)[1] for field in full_line.split() if field.startswith("avg10=")))
     return {
         "time_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         **mem,
-        "memory_pressure": Path("/proc/pressure/memory").read_text().strip(),
+        "memory_pressure": pressure,
+        "memory_full_avg10_pct": full_avg10,
         "ac_online": Path("/sys/class/power_supply/AC/online").read_text().strip(),
     }
 
@@ -149,10 +154,12 @@ def monitor(
 ) -> None:
     while not stop.is_set():
         snapshot = host_snapshot()
-        log_jsonl(path, {"stage": stage, **snapshot})
+        log_jsonl(path, {"stage": stage, "runner_drm": ollama_runner_drm_memory(server_pid), **snapshot})
         reason = None
         if snapshot["MemAvailable_kib"] < minimum_available_kib:
             reason = "low_memory_threshold"
+        elif snapshot["memory_full_avg10_pct"] >= 10:
+            reason = "memory_pressure_threshold"
         elif datetime.now(UTC) >= deadline:
             reason = "deadline"
         if reason:
@@ -218,6 +225,7 @@ def run_request(
         "response": "".join(chunks),
         "native": final,
         "host_after": host_snapshot(),
+        "runner_drm_after": ollama_runner_drm_memory(server_pid),
     }
 
 
@@ -285,8 +293,12 @@ def main() -> None:
         return
     for target, prompt, metadata in prompts:
         stage = str(target)
-        if host_snapshot()["MemAvailable_kib"] < minimum_available_kib:
-            log_jsonl(args.output / "results.jsonl", {"stage": stage, "event": "skipped_low_memory"})
+        snapshot = host_snapshot()
+        if snapshot["MemAvailable_kib"] < minimum_available_kib:
+            log_jsonl(args.output / "results.jsonl", {"stage": stage, "event": "skipped_low_memory", **snapshot})
+            break
+        if snapshot["memory_full_avg10_pct"] >= 10:
+            log_jsonl(args.output / "results.jsonl", {"stage": stage, "event": "skipped_memory_pressure", **snapshot})
             break
         if datetime.now(UTC) >= deadline:
             log_jsonl(args.output / "results.jsonl", {"stage": stage, "event": "skipped_deadline"})
