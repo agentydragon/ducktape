@@ -13,6 +13,7 @@ from tenacity import AsyncRetrying, before_sleep_log, retry_if_exception_type, w
 from agentplane.proto import event_log_pb2
 from agentplane.session_dispatcher.channels import Channel
 from agentplane.session_dispatcher.db import Dispatch
+from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.models import DeliveryState, Operation, Reason
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxWatch, delivery_blocker
@@ -32,10 +33,9 @@ class Delivery:
     Sandbox or, after an unreachable runner, a backoff says it may; nothing polls."""
 
     def __init__(
-        self, store: DispatchStore, sandboxes: SandboxWatch, runner: RunnerClient, *, forget_after_s: float
+        self, store: DispatchStore, sandboxes: SandboxWatch, runner: RunnerClient, ended: EndedDispatches
     ) -> None:
-        # How long a deleted Sandbox's ended rows stay readable before they are deleted.
-        self.forget_after_s = forget_after_s
+        self.ended = ended
         self.store = store
         self.sandboxes = sandboxes
         self.runner = runner
@@ -56,12 +56,12 @@ class Delivery:
             self.sandboxes.changed.subscribe(self._changed),
         ):
             async with asyncio.TaskGroup() as deliveries:
-                await self._end_vanished(deliveries)
+                await self._end_vanished()
                 while True:
                     # Cleared before reading: a change racing with the read is a wakeup.
                     self._changed.clear()
                     try:
-                        await self._end_gone(deliveries)
+                        await self._end_gone()
                         await self._start(deliveries)
                     except SQLAlchemyError:
                         logger.warning("dispatch storage unavailable; retrying", exc_info=True)
@@ -71,25 +71,20 @@ class Delivery:
                         async with asyncio.timeout(self._next_retry_in()):
                             await self._changed.wait()
 
-    async def _end_vanished(self, deliveries: asyncio.TaskGroup) -> None:
+    async def _end_vanished(self) -> None:
         """Sandboxes deleted while this process was down: the first listing is complete."""
         for uid in await self.store.list_sandbox_uids() - self.sandboxes.live_uids():
-            await self._end(uid, deliveries)
+            await self._end(uid)
 
-    async def _end_gone(self, deliveries: asyncio.TaskGroup) -> None:
+    async def _end_gone(self) -> None:
         while self.sandboxes.gone:
             uid = next(iter(self.sandboxes.gone))
-            await self._end(uid, deliveries)
+            await self._end(uid)
             self.sandboxes.gone.discard(uid)
 
-    async def _end(self, sandbox_uid: UUID, deliveries: asyncio.TaskGroup) -> None:
-        """End the Sandbox's commands now, so a watcher reads why, and delete its rows after the grace."""
-        await self.store.end_sandbox(sandbox_uid)
-        deliveries.create_task(self._forget_later(sandbox_uid), name=f"forget-{sandbox_uid}")
-
-    async def _forget_later(self, sandbox_uid: UUID) -> None:
-        await asyncio.sleep(self.forget_after_s)
-        await self._retry_storage(lambda: self.store.forget_sandbox(sandbox_uid))
+    async def _end(self, sandbox_uid: UUID) -> None:
+        """Delete the Sandbox's Dispatches after ending them, and hand the ended ones to the open streams."""
+        self.ended.publish(await self._retry_storage(lambda: self.store.end_sandbox(sandbox_uid)))
 
     def _next_retry_in(self) -> float | None:
         if not self._retry_at:

@@ -193,19 +193,21 @@ class DispatchStore:
                 reason=Reason.DISPATCHER_RESTARTED,
             )
 
-    async def end_sandbox(self, sandbox_uid: UUID) -> None:
-        """The Sandbox is gone: what never reached its runner failed, and what did or may have has an
-        outcome nobody can read any more."""
+    async def end_sandbox(self, sandbox_uid: UUID) -> list[Dispatch]:
+        """The Sandbox is gone, and its rows are kept only as long as it exists: what never reached its
+        runner fails, what did or may have has an outcome nobody can read any more, and then every
+        row of the Sandbox is deleted. Returns the rows this ended, as they ended, for the streams
+        watching them."""
         async with self.sessions.begin() as session:
             for_sandbox = Dispatch.sandbox_uid == sandbox_uid
-            await self._move(
+            ended = await self._move(
                 session,
                 for_sandbox,
                 Dispatch.state == DeliveryState.QUEUED_IN_DISPATCHER,
                 to=DeliveryState.FAILED,
                 reason=Reason.SANDBOX_DELETED,
             )
-            await self._move(
+            ended += await self._move(
                 session,
                 for_sandbox,
                 (Dispatch.state == DeliveryState.DELIVERING_TO_RUNNER)
@@ -213,15 +215,14 @@ class DispatchStore:
                 to=DeliveryState.UNKNOWN,
                 reason=Reason.SANDBOX_DELETED,
             )
-
-    async def forget_sandbox(self, sandbox_uid: UUID) -> None:
-        """Delete the rows of a gone Sandbox, which are kept only as long as it exists."""
-        async with self.sessions.begin() as session:
-            deleted = await session.execute(
-                delete(Dispatch).where(Dispatch.sandbox_uid == sandbox_uid).returning(Dispatch.position)
+            rows = list(
+                await session.scalars(select(Dispatch).where(Dispatch.position.in_(ended)).order_by(Dispatch.position))
             )
+            deleted = await session.execute(delete(Dispatch).where(for_sandbox).returning(Dispatch.position))
             if deleted.first() is not None:
                 await notify(session, Channel.DISPATCH)
+            session.expunge_all()
+            return rows
 
     async def list_sandbox_uids(self) -> set[UUID]:
         """The Sandboxes that rows are stored for."""
@@ -229,12 +230,15 @@ class DispatchStore:
             return set(await session.scalars(select(Dispatch.sandbox_uid).distinct()))
 
     @staticmethod
-    async def _move(session: AsyncSession, *where: ColumnElement[bool], to: DeliveryState, reason: Reason) -> None:
+    async def _move(session: AsyncSession, *where: ColumnElement[bool], to: DeliveryState, reason: Reason) -> list[int]:
+        """The positions of the rows moved."""
         moved = await session.execute(
             update(Dispatch)
             .where(*where)
             .values(state=to, reason=reason, updated_at=datetime.now(UTC))
             .returning(Dispatch.position)
         )
-        if moved.first() is not None:
+        positions = list(moved.scalars())
+        if positions:
             await notify(session, Channel.DISPATCH)
+        return positions

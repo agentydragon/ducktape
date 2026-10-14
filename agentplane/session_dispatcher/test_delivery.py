@@ -16,6 +16,7 @@ from agentplane.session_dispatcher import delivery as delivery_module
 from agentplane.session_dispatcher.channels import Channel
 from agentplane.session_dispatcher.db import Dispatch
 from agentplane.session_dispatcher.delivery import Delivery
+from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.models import DeliveryState, Reason
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxWatch
@@ -27,14 +28,13 @@ from agentplane.session_dispatcher.testing.scripted_runner import ScriptedRunner
 # gazelle:include_dep @pypi//grpcio
 
 SESSION = "test-session"
-GRACE_S = 1
 
 
 @pytest.fixture(autouse=True)
 async def delivery(
-    store: DispatchStore, sandboxes: SandboxWatch, runner_client: RunnerClient
+    store: DispatchStore, sandboxes: SandboxWatch, runner_client: RunnerClient, ended: EndedDispatches
 ) -> AsyncIterator[Delivery]:
-    delivery = Delivery(store, sandboxes, runner_client, forget_after_s=GRACE_S)
+    delivery = Delivery(store, sandboxes, runner_client, ended)
     async with background(delivery.run(), name="delivery"):
         yield delivery
 
@@ -131,21 +131,20 @@ async def test_a_command_the_runner_refuses_fails_with_its_status(
     assert row.admission is None
 
 
-async def test_commands_for_a_deleted_sandbox_end_and_are_then_forgotten(
-    store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster
+async def test_a_deleted_sandbox_ends_its_commands_for_the_streams_and_takes_its_rows(
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: Cluster, ended: EndedDispatches
 ) -> None:
     set_sandbox(cluster, ready=False)
     await enqueue(store, sandboxes, "orphaned")
     await wait_for(store, "orphaned", DeliveryState.QUEUED_IN_DISPATCHER, Reason.SANDBOX_NOT_READY)
-    cluster.fake.delete(sandbox_resource.SANDBOXES_PLURAL, SANDBOX)
-    await wait_for(store, "orphaned", DeliveryState.FAILED, Reason.SANDBOX_DELETED)
-    changed = asyncio.Event()
-    with store.wakeups.changes[Channel.DISPATCH].subscribe(changed):
-        while True:
-            changed.clear()
-            if not await store.list_dispatches(session_id=SESSION):
-                break
-            await changed.wait()
+    published = asyncio.Event()
+    with ended.subscribe(published) as ends:
+        cluster.fake.delete(sandbox_resource.SANDBOXES_PLURAL, SANDBOX)
+        await published.wait()
+    assert [(row.command_id, row.state, row.reason) for row in ends] == [
+        ("orphaned", DeliveryState.FAILED, Reason.SANDBOX_DELETED)
+    ]
+    assert not await store.list_dispatches(session_id=SESSION)
 
 
 if __name__ == "__main__":

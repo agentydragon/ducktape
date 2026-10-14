@@ -15,6 +15,7 @@ from agentplane.grpc_servicer import Abort, ServicerResources, status_mapping
 from agentplane.proto import command_pb2, session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.session_dispatcher.channels import Channel
 from agentplane.session_dispatcher.db import Dispatch
+from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.models import DeliveryState, Operation, Reason
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxNotFoundError, SandboxWatch, delivery_blocker
@@ -54,6 +55,7 @@ class Resources(ServicerResources):
     store: DispatchStore
     sandboxes: SandboxWatch
     runner: RunnerClient
+    ended: EndedDispatches
     request_timeout_s: float
     # How long one WatchDispatches stream lasts before the caller reconnects.
     watch_lease_s: float
@@ -89,6 +91,16 @@ def describe_dispatch(row: Dispatch) -> session_dispatcher_pb2.Dispatch:
     dispatch.created_at.FromDatetime(row.created_at)
     dispatch.updated_at.FromDatetime(row.updated_at)
     return dispatch
+
+
+def _in_scope(scope: session_dispatcher_pb2.DispatchFilter, row: Dispatch) -> bool:
+    match scope.WhichOneof("scope"):
+        case "session_id":
+            return row.session_id == scope.session_id
+        case "sandbox":
+            return row.sandbox_name == scope.sandbox
+        case _:
+            return False
 
 
 def _require(**fields: str) -> None:
@@ -193,9 +205,7 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
             _require(command_id=request.command_id, session_id=request.session_id, sandbox=request.sandbox)
             sandbox = self.resources.sandboxes.get_sandbox(request.sandbox)
             if sandbox is None:
-                return session_dispatcher_pb2.InterruptTurnResponse(
-                    state=_STATES[DeliveryState.NO_OP], reason=Reason.SANDBOX_DELETED
-                )
+                raise SandboxNotFoundError(request.sandbox)
             if (blocker := delivery_blocker(sandbox)) is not None:
                 return session_dispatcher_pb2.InterruptTurnResponse(state=_STATES[DeliveryState.NO_OP], reason=blocker)
             try:
@@ -256,12 +266,18 @@ class SessionDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
             deadline = asyncio.get_running_loop().time() + self.resources.watch_lease_s
             written: dict[str, tuple[DeliveryState, str | None]] = {}
             changed = asyncio.Event()
-            # Subscribed before the first read, so a commit after it is never missed.
-            with self.resources.store.wakeups.changes[Channel.DISPATCH].subscribe(changed):
+            # Subscribed before the first read, so a commit or a deletion after it is never missed.
+            with (
+                self.resources.store.wakeups.changes[Channel.DISPATCH].subscribe(changed),
+                self.resources.ended.subscribe(changed) as ended,
+            ):
                 while True:
                     changed.clear()
                     async with asyncio.timeout(self.resources.request_timeout_s):
                         rows = await self._list(request.filter)
+                    # Deleted with their Sandbox, so they come by hand and are not read again.
+                    rows += [row for row in ended if _in_scope(request.filter, row)]
+                    ended.clear()
                     for row in rows:
                         if written.get(row.command_id) == (row.state, row.reason):
                             continue

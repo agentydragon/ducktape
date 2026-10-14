@@ -21,8 +21,9 @@ Sandbox is `Ready`, and the sender reads where it is. Control design:
 - **Queue**: no TTL; at most `max_queued_per_session` queued commands per Session, then
   `RESOURCE_EXHAUSTED`. A command for a Sandbox that does not exist is refused `NOT_FOUND` and stores nothing.
 - **Sandbox deleted** (seen on the Sandbox watch): queued commands end `FAILED` (`sandbox_deleted`), delivering
-  ones and admitted inputs `UNKNOWN`, which `WatchDispatches` shows; the Sandbox's Dispatches are deleted
-  `deleted_sandbox_grace_s` later, and a read after that is `NOT_FOUND`.
+  ones and admitted inputs `UNKNOWN`, which the open `WatchDispatches` streams are handed; the Sandbox's
+  Dispatches are deleted in the same step, so a later read or watch is `NOT_FOUND`/empty. A stream on another
+  replica is not handed them.
 - **Retention**: a Sandbox's Dispatches are kept as long as it exists. Other policies may come later.
 - **Runner statuses**: `ABORTED` (quiescing) returns the command to the queue until the Sandbox has a new
   incarnation; `UNAVAILABLE` and deadline retry with backoff; `FAILED_PRECONDITION` on a stop is `NO_OP`;

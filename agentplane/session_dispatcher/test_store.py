@@ -107,7 +107,7 @@ async def test_only_a_queued_command_is_cancelled(store: DispatchStore) -> None:
         await store.cancel("missing")
 
 
-async def test_a_deleted_sandbox_ends_its_commands_and_then_its_rows_are_forgotten(store: DispatchStore) -> None:
+async def test_a_deleted_sandbox_ends_its_commands_and_takes_its_rows(store: DispatchStore) -> None:
     for command_id in ("queued", "delivering", "admitted"):
         await enqueue(store, submit(command_id), session_id=command_id)
     await enqueue(
@@ -127,16 +127,12 @@ async def test_a_deleted_sandbox_ends_its_commands_and_then_its_rows_are_forgott
             admission=event_log_pb2.EventEntry(),
         )
     assert await store.list_sandbox_uids() == {SANDBOX_UID, UUID(int=2)}
-    await store.end_sandbox(SANDBOX_UID)
-    states = {row.command_id: row.state for row in await store.list_dispatches(sandbox_name=SANDBOX)}
-    assert states == {
+    ended = await store.end_sandbox(SANDBOX_UID)
+    assert {row.command_id: row.state for row in ended} == {
         "queued": DeliveryState.FAILED,
         "delivering": DeliveryState.UNKNOWN,
         "admitted": DeliveryState.UNKNOWN,
-        "model-admitted": DeliveryState.RUNNER_ADMITTED,
-        "other-sandbox": DeliveryState.QUEUED_IN_DISPATCHER,
     }
-    await store.forget_sandbox(SANDBOX_UID)
     assert [row.command_id for row in await store.list_dispatches(sandbox_name=SANDBOX)] == ["other-sandbox"]
     assert await store.list_sandbox_uids() == {UUID(int=2)}
 

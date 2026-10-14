@@ -14,6 +14,7 @@ from agentplane.grpc_serving import serving
 from agentplane.proto import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import Sandbox
 from agentplane.sandbox_service.testing.kubernetes import OWNER, SANDBOX, SANDBOX_UID, Cluster
+from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.grpc_api import Resources, add_service
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxWatch
@@ -35,7 +36,7 @@ type Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherAsyncStub
 
 @pytest.fixture
 async def stub(
-    cluster: Cluster, engine: AsyncEngine, sandboxes: SandboxWatch, runner_client: RunnerClient
+    cluster: Cluster, engine: AsyncEngine, sandboxes: SandboxWatch, runner_client: RunnerClient, ended: EndedDispatches
 ) -> AsyncIterator[Dispatcher]:
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{OWNER.namespace}:{OWNER.name}",
@@ -50,12 +51,17 @@ async def stub(
         store=store,
         sandboxes=sandboxes,
         runner=runner_client,
+        ended=ended,
         request_timeout_s=5,
-        watch_lease_s=1,
+        watch_lease_s=30,
     )
     server = grpc.aio.server()
     add_service(resources, server)
-    async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
+    async with (
+        store.wakeups.listener.listen(),
+        serving(server, "127.0.0.1:0", grace_s=0) as port,
+        dial(f"127.0.0.1:{port}") as channel,
+    ):
         dispatcher: Dispatcher = session_dispatcher_pb2_grpc.SessionDispatcherStub(channel)
         yield dispatcher
 
@@ -136,6 +142,29 @@ async def test_a_command_for_a_sandbox_that_does_not_exist_is_refused_and_stores
         pb.ListDispatchesRequest(filter=pb.DispatchFilter(session_id=SESSION)), metadata=BEARER
     )
     assert not listed.dispatches
+
+
+async def test_an_interrupt_for_a_sandbox_that_does_not_exist_is_refused(stub: Dispatcher) -> None:
+    with pytest.raises(grpc.aio.AioRpcError) as refused:
+        await stub.InterruptTurn(
+            pb.InterruptTurnRequest(command_id="i", session_id=SESSION, sandbox="no-such-sandbox", turn_id="t"),
+            metadata=BEARER,
+        )
+    assert refused.value.code() is grpc.StatusCode.NOT_FOUND
+
+
+async def test_a_watch_shows_a_session_dispatches_and_each_change_to_them(stub: Dispatcher) -> None:
+    await submit(stub, "a")
+    watch = stub.WatchDispatches(
+        pb.WatchDispatchesRequest(filter=pb.DispatchFilter(session_id=SESSION)), metadata=BEARER
+    )
+    events = aiter(watch)
+    opened = await anext(events)
+    assert (opened.dispatch.command_id, opened.dispatch.state) == ("a", pb.DELIVERY_STATE_QUEUED_IN_DISPATCHER)
+    await stub.CancelDispatch(pb.CancelDispatchRequest(command_id="a"), metadata=BEARER)
+    changed = await anext(events)
+    assert (changed.dispatch.command_id, changed.dispatch.state) == ("a", pb.DELIVERY_STATE_CANCELLED_IN_DISPATCHER)
+    watch.cancel()
 
 
 async def test_a_request_without_a_scope_or_an_id_is_invalid(stub: Dispatcher) -> None:

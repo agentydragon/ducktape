@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 from agentplane.grpc_serving import add_health, serving
 from agentplane.service_process import configure_logging, kubernetes_configuration, until_terminated
 from agentplane.session_dispatcher.delivery import Delivery
+from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.grpc_api import Resources, add_service
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxWatch
@@ -46,6 +47,7 @@ async def serve(settings: Settings) -> None:
                 token_file=settings.runner_token_file,
                 request_timeout_s=settings.runner_request_timeout_s,
             )
+            ended = EndedDispatches()
             server = grpc.aio.server()
             add_health(server)
             add_service(
@@ -59,6 +61,7 @@ async def serve(settings: Settings) -> None:
                     store=store,
                     sandboxes=sandboxes,
                     runner=runner,
+                    ended=ended,
                     request_timeout_s=settings.request_timeout_s,
                     watch_lease_s=settings.watch_lease_s,
                 ),
@@ -68,10 +71,7 @@ async def serve(settings: Settings) -> None:
             # none is worse than a restart.
             async with asyncio.TaskGroup() as workers:
                 watching = workers.create_task(sandboxes.run(), name="sandbox-watch")
-                delivering = workers.create_task(
-                    Delivery(store, sandboxes, runner, forget_after_s=settings.deleted_sandbox_grace_s).run(),
-                    name="delivery",
-                )
+                delivering = workers.create_task(Delivery(store, sandboxes, runner, ended).run(), name="delivery")
                 async with serving(server, f"{settings.host}:{settings.port}", grace_s=5):
                     await until_terminated()
                 watching.cancel()

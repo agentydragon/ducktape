@@ -32,11 +32,6 @@ class Settings(YamlFileSettings):
     runner_request_timeout_s: float = Field(default=10, gt=0, le=60)
     request_timeout_s: float = Field(default=15, gt=0, le=60)
     log_levels: LogLevels
-    deleted_sandbox_grace_s: float = Field(
-        default=60,
-        ge=0,
-        description="Seconds a deleted Sandbox's ended Dispatches stay readable before they are deleted.",
-    )
     max_queued_per_session: int = Field(default=1000, ge=1)
     sandbox_resync_seconds: int = Field(default=300, ge=1)
     watch_lease_s: float = Field(default=300, gt=0, description="Seconds a WatchDispatches stream lasts.")

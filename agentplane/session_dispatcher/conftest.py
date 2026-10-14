@@ -14,6 +14,7 @@ from agentplane.grpc_serving import serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.sandbox_service.testing.kubernetes import Cluster, kubernetes
 from agentplane.session_dispatcher.database_migrate import RUNNER
+from agentplane.session_dispatcher.ended_dispatches import EndedDispatches
 from agentplane.session_dispatcher.runner_client import RunnerClient
 from agentplane.session_dispatcher.sandboxes import SandboxWatch
 from agentplane.session_dispatcher.store import DispatchStore
@@ -69,6 +70,11 @@ async def sandboxes(cluster: Cluster) -> AsyncIterator[SandboxWatch]:
     async with background(watch.run(), name="sandbox-watch"):
         await watch.wait_synced()
         yield watch
+
+
+@pytest.fixture
+def ended() -> EndedDispatches:
+    return EndedDispatches()
 
 
 @pytest.fixture

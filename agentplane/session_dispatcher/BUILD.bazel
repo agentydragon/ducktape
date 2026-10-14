@@ -45,6 +45,7 @@ py_library(
     deps = [
         ":channels",
         ":db",
+        ":ended_dispatches",
         ":models",
         ":runner_client",
         ":sandboxes",
@@ -63,6 +64,7 @@ py_library(
     deps = [
         ":channels",
         ":db",
+        ":ended_dispatches",
         ":models",
         ":runner_client",
         ":sandboxes",
@@ -82,6 +84,7 @@ py_library(
     srcs = ["main.py"],
     deps = [
         ":delivery",
+        ":ended_dispatches",
         ":grpc_api",
         ":runner_client",
         ":sandboxes",
@@ -168,6 +171,7 @@ py_library(
     srcs = ["conftest.py"],
     deps = [
         ":database_migrate",
+        ":ended_dispatches",
         ":runner_client",
         ":sandboxes",
         ":store",
@@ -198,6 +202,7 @@ py_test(
         ":conftest",
         ":db",
         ":delivery",
+        ":ended_dispatches",
         ":models",
         ":runner_client",
         ":sandboxes",
@@ -300,6 +305,7 @@ py_test(
     srcs = ["test_grpc_api.py"],
     deps = [
         ":conftest",
+        ":ended_dispatches",
         ":grpc_api",
         ":runner_client",
         ":sandboxes",
@@ -320,4 +326,10 @@ py_test(
         "@pypi//pytest_bazel",
         "@pypi//sqlalchemy",
     ],
+)
+
+py_library(
+    name = "ended_dispatches",
+    srcs = ["ended_dispatches.py"],
+    deps = [":db"],
 )
