@@ -214,6 +214,12 @@ class K3s:
                 webhook["failurePolicy"] = "Ignore"
                 webhook["timeoutSeconds"] = 2
             self.kubectl("apply", "--server-side", "--force-conflicts", "-f", "-", input_text=json.dumps(configuration))
+        # The release manifest limits the operator to 100m CPU; throttled, it misses leader-election renewals and
+        # restarts, and the Cluster waits for it.
+        self.kubectl(
+            "-n", "cnpg-system", "patch", "deploy/cnpg-controller-manager", "--type=json", "-p",
+            '[{"op": "remove", "path": "/spec/template/spec/containers/0/resources/limits"}]',
+        )  # fmt: skip
         self.kubectl(
             "-n", "cnpg-system", "set", "env", "deploy/cnpg-controller-manager",
             f"KUBERNETES_SERVICE_HOST={self.node_ip}", "KUBERNETES_SERVICE_PORT=6443",
@@ -238,6 +244,11 @@ class K3s:
         parts.append(self.kubectl("get", "cluster,database", "-A", check=False))
         parts.append(
             self.kubectl("-n", "cnpg-system", "logs", "deploy/cnpg-controller-manager", "--tail=25", check=False)
+        )
+        parts.append(
+            self.kubectl(
+                "-n", "cnpg-system", "logs", "deploy/cnpg-controller-manager", "--previous", "--tail=25", check=False
+            )
         )
         pods = self.kubectl("get", "pods", "-n", render.NAMESPACE, "-o", "name", check=False).split()
         for pod in pods:
