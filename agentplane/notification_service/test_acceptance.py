@@ -254,24 +254,6 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 session_id = (await native.create(session_id=uuid4(), spec=MessageToDict(spec))).session_id
                 native_session = runner.sessions[session_id]
 
-                async def wait_for_turn_completion(after_cursor: int) -> None:
-                    cursor = after_cursor
-                    async with asyncio.timeout(30):
-                        while True:
-                            entries = await native_session.journal.since(cursor, limit=128)
-                            for entry in entries:
-                                cursor = entry.cursor
-                                if entry.event.HasField("turn_completed"):
-                                    return
-                            await native_session.journal.wait_beyond(cursor)
-
-                # Codex starts with a model turn before it accepts runner input. Let that startup
-                # turn complete in the journal before opening a batch to seed unrelated backlog.
-                if spec.harness == runner_pb2.HARNESS_CODEX:
-                    startup_cursor = native_session.journal.last_cursor
-                    await model.reply(await model.request(), Text("Ready for notifications"))
-                    await wait_for_turn_completion(startup_cursor)
-
                 async def history_caught_up() -> None:
                     # Delivery reads entries from the History Service, which copies them behind the runner.
                     (live,) = [session for session in await native.list_sessions() if session.session_id == session_id]
@@ -342,17 +324,17 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 }
                 assert "client_key" not in subscription
                 assert (await agent.post("/v1/subscriptions", json=body)).json() == subscription
-                # Seed the real journal past one worker replay batch. The send path is exercised
-                # through Dispatcher below; unrelated backlog entries need no Gateway RPCs.
-                history_cursor = 0
-                async with native_session.journal.batch():
-                    for index in range(130):
-                        entry = await native_session.journal.append(
-                            event_pb2.HarnessStderr(text=f"notification journal seed {index + 1}")
-                        )
-                        history_cursor = entry.cursor
-                        if history_cursor > 128:
-                            break
+                # Seed through the runner's serialized event path, not a test-owned journal batch
+                # that can collide with the stdout reader's batch. The Dispatcher send path below
+                # exercises a replay after one worker batch; these unrelated events need no RPCs.
+                history_cursor = native_session.journal.last_cursor
+                for index in range(130):
+                    entry = await native_session.emit(
+                        event_pb2.HarnessStderr(text=f"notification journal seed {index + 1}"), sources=[]
+                    )
+                    history_cursor = entry.cursor
+                    if history_cursor > 128:
+                        break
                 assert history_cursor > 128
                 initial = None
                 if busy:
