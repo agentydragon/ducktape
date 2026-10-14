@@ -966,8 +966,10 @@ runner too old to know the field cannot meet a gateway that no longer sends it.
 ### `RUNNER_FACTS_ON_LEASE` — the runner publishes stage, idle and boot facts on the connection Lease
 
 **In progress; the gateway writes what a runner sends, the runner sends its quiesce stage and bootstrap result, and the controller reader is the Sandbox controller lane's.** The one
-transport several nodes share: the runner reports facts on the control stream in a runner-only `RunnerHeartbeat` on
-`RunnerFrame.heartbeat` (same field number as today), carrying optional `RunnerFacts`, sent on change and on the first `RunnerHeartbeat` after connect, and the gateway
+transport several nodes share: the runner reports facts on the control stream, as optional `facts` on the `Heartbeat` message
+shared by `RunnerFrame.heartbeat` and `ServiceFrame.heartbeat`, sent on change and on the first `Heartbeat` after
+connect; what is left is moving them to a runner-only `RunnerHeartbeat` on `RunnerFrame.heartbeat`
+(wire-compatible: same field numbers), and the gateway
 replica holding the connection writes them as annotations on the Sandbox-owned connection Lease,
 stamped with the incarnation UID, clearing them when a different incarnation connects. Facts: the
 seal stage (draining, flushing, sealed), when the Sandbox last went idle (`idleSince`, set only
@@ -985,15 +987,17 @@ terminal) and does not yet.
 
 ### `RUNNER_BUSY_TRACKING` — the runner knows whether the Sandbox is busy
 
-**Candidate; asked for by the Gateway runner proxy lane, 2026-10-13 PDT.** The `RunnerHeartbeat`'s
-`RunnerFacts` carries `idle_since`, but the runner tracks nothing that makes a Sandbox busy. The
+**Candidate; asked for by the Gateway runner proxy lane, 2026-10-13 PDT.** The `Heartbeat`'s
+`facts` carry `idle_since`, but the runner tracks nothing that makes a Sandbox busy. The
 runner computes the whole-Sandbox idle time: busy while any Session runs a turn or a command, a
 background or durable process runs, or a terminal or console is attached; `idle_since` is set only
 while idle, absent while busy, and published on each transition (`RUNNER_FACTS_ON_LEASE` carries it,
 `SANDBOX_IDLE_EXPIRY` reads it). A delivery under way counts as busy, marked at RPC entry before the first `await`
 (`RunnerService._admissions` is already that set), and the conditional `Quiesce` compare sits directly
 before `enter_lameduck()` with no `await` between, so a `SubmitInput` between RPC entry and the journal
-write is never admitted into a runner that is then torn down. Open: the runner's notion of a running turn or command today is a
+write is never admitted into a runner that is then torn down. The runner compares `if_idle_since` at the
+precision the Lease carries (the gateway writes `idle-since` via `Timestamp.ToDatetime(...).isoformat()`,
+microseconds at most), so a runner publishing finer values never matches its echoed token. Open: the runner's notion of a running turn or command today is a
 Session's `active_turn_id` and its pending commands; who owns terminals and background processes
 (the harness adapters, the VM console) is not decided. Test idleness across a turn that ends, a
 background process that outlives it, an attached terminal that detaches and a runner restart.
@@ -1064,8 +1068,10 @@ command ID, a reply lost across an incarnation boundary is redelivered to the ne
 (`THREAD_SUCCESSOR_DELIVERY`), delivery is first-in first-out per Session, `InterruptTurn` bypasses the queue and
 `StopRunnerSession` goes ahead of it, cancelling the inputs queued before it; those end `CANCELLED_IN_DISPATCHER` with reason `stopped`. An `InterruptTurn`
 is not stored: its outcome is its RPC response. A message for a deleted Session or a failed delivery ends in a
-terminal state with a reason and a time to live; a command admitted but not dispatched when the
-Sandbox is torn down ends as `ended_by_teardown`. Replicas shard Sandboxes by a per-Sandbox Lease
+terminal state with a reason and a time to live; when the Sandbox CR's deletion arrives on the
+watch, queued commands end `FAILED` (reason `sandbox_deleted`) and delivering ones `UNKNOWN`. A queued command
+has no TTL; a Session holds at most about 1,000 queued commands, and a send past that fails
+`RESOURCE_EXHAUSTED`. The Dispatcher is a required door for senders. Replicas shard Sandboxes by a per-Sandbox Lease
 so each has one active owner. Authorization names which senders may send, and the sender kinds
 that may wake are `DISPATCHER_WAKE_ON_SEND`'s. It does not depend on the History Service to deliver. It learns a Sandbox's state from a watch on
 the Sandbox CR (`util.kubernetes_watch.ListWatch`, as the app and the gateway do), reading `Ready` with its
