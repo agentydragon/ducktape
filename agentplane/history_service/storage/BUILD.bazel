@@ -8,7 +8,6 @@ load("//devinfra/python:defs.bzl", "py_library", "py_test")
 package(default_visibility = [
     "//agentplane/history_service:__subpackages__",
     "//agentplane/runner_gateway:__subpackages__",
-    "//agentplane/sandbox_service:__subpackages__",
 ])
 
 py_library(

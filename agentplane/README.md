@@ -117,8 +117,8 @@ flowchart TB
 
 The integration app writes Sandbox desired state and operator grants through the Kubernetes API;
 the Sandbox Controller reconciles those requests and owns `Sandbox.status`. Notifications and the
-Runner Gateway read Sandbox inventory directly. No Sandbox Service is deployed. The remaining
-service package and RPC cleanup is tracked in the [rollout gates](plans/task_dag.md#sandbox_service_remove--remove-the-sandbox-service).
+Runner Gateway read Sandbox inventory directly. The Sandbox Service Deployment, API and server
+source are retired; the History Service retains its database and authored history.
 
 - **Sessions and Threads.** A Session is a runner's raw Event stream; a Thread is its
   conversation view, folded by the History Service. Every runner pushes its Events to the History

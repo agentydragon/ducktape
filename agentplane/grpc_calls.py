@@ -1,5 +1,5 @@
-"""Bearer metadata and status translation for the Agentplane gRPC clients. The Sandbox Service and
-Runner Gateway clients also dial through here and read FAILED_PRECONDITION as a `RefusedError`."""
+"""Bearer metadata and status translation for Agentplane gRPC clients, including Runner Gateway
+calls that read FAILED_PRECONDITION as a `RefusedError`."""
 
 import asyncio
 import logging

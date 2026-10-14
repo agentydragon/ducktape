@@ -8,7 +8,7 @@ plan owns the target the refactor converges on and the decisions still binding i
 ```mermaid
 flowchart LR
     Browser --> App[Integration app: auth, browser API]
-    App -- Sandboxes --> SS[Sandbox Service]
+    App -- Sandbox spec and grants --> K[Kubernetes API]
     App -- Runner calls: Sessions, commands --> GW[Runner Gateway]
     App -- thread and raw reads --> HS[History Service]
     Electric -- logical replication --> HSDB[(history database)]
@@ -18,18 +18,18 @@ flowchart LR
     HS --> HSDB
 ```
 
-| Component       | Owns                                                                                                                                                    | Does not own                                                        |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| Runner          | harness driving, journal, journal-ordered command admission, pushing its journal to one ingress                                                         | durable history beyond its volume                                   |
-| Sandbox Service | provisioning for every caller, lifecycle, grants, egress, teardown, the runner endpoints each Sandbox is created with                                   | Sessions, commands, Events                                          |
-| Runner Gateway  | the runner control stream and its authentication, serving each runner's `Runner` service at its Sandbox's control address                               | Sandboxes, Sessions, Events, stored history                         |
-| History Service | ingress, raw event log, delta settlement, thread fold and projection, read API, scoped history reads, which Sessions exist and which Sandbox wrote each | Sandbox lifecycle, routing, commands                                |
-| App             | browser auth and API, app-only Thread metadata, Session spec defaults (for now)                                                                         | folds, raw history, runner routing, which Sandbox a Session runs in |
+| Component          | Owns                                                                                                                                                    | Does not own                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| Runner             | harness driving, journal, journal-ordered command admission, pushing its journal to one ingress                                                         | durable history beyond its volume                                   |
+| Sandbox Controller | reconciles Sandbox lifecycle, grants and teardown; owns status and runner endpoints each Sandbox uses                                                   | Session records, commands, Events                                   |
+| Runner Gateway     | the runner control stream and its authentication, serving each runner's `Runner` service at its Sandbox's control address                               | Sandboxes, Sessions, Events, stored history                         |
+| History Service    | ingress, raw event log, delta settlement, thread fold and projection, read API, scoped history reads, which Sessions exist and which Sandbox wrote each | Sandbox lifecycle, routing, commands                                |
+| App                | browser auth and API, app-only Thread metadata, Session spec defaults (for now)                                                                         | folds, raw history, runner routing, which Sandbox a Session runs in |
 
 Properties the target keeps:
 
-- **Ingress is pluggable per deployment, control is not:** the Sandbox Service's configuration
-  names the one ingress every Sandbox it creates pushes to; the control endpoint is always the Runner Gateway, so lifecycle requests such as
+- **Ingress is pluggable per deployment, control is not:** the Sandbox configuration
+  names the one ingress every Sandbox pushes to; the control endpoint is always the Runner Gateway, so lifecycle requests such as
   `Seal` always have a path. A historyless client implements the ingress itself and sends commands
   through the gateway. The History Service knows Sessions from what it is pushed, binds each Session to the
   workload identity of its first writer, and records the Sandbox that writer is.
@@ -47,8 +47,8 @@ Properties the target keeps:
 Invariants once the refactor is done (operator, 2026-10-11 PDT). Each one still broken is closed by
 a node in the [task DAG](task_dag.md):
 
-- **One provisioner.** Only the Sandbox Service creates, changes or deletes Sandboxes, whoever asks
-  for them. Action Service boxes are plain Pods, not Sandboxes (#10012).
+- **One requested-state writer.** The app submits Sandbox changes as the requesting operator;
+  the Sandbox Controller reconciles them. Action Service boxes are plain Pods, not Sandboxes (#10012).
 - **One durable event log outside the runner:** the History Service's, written only through its
   ingress. The Runner Gateway's command submission records keep each admission entry; they are
   command receipts, not a second log.

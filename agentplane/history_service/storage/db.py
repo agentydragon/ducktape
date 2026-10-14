@@ -1,6 +1,6 @@
 """Durable Session history, independent of a Sandbox CR and runner PVC.
 
-The migration is owned by Sandbox Service. No app tables or app-issued identities are used.
+The History Service owns its migration. No app tables or app-issued identities are used.
 """
 
 from uuid import UUID

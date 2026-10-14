@@ -12,8 +12,7 @@ The staging instance lives in `cluster/k8s/agentplane-staging/`.
 The app uses the shared `agentplane/sandboxes` inventory to submit lifecycle requests directly to
 Kubernetes as the requesting operator. The Sandbox Controller reconciles the requested `spec` and
 owns `status`. Required `default_policy_sets` come from the app ConfigMap, including when the set is
-empty. The former Sandbox Service is no longer deployed; its API/server source cleanup remains in the
-[task DAG](../plans/task_dag.md#sandbox_service_remove--remove-the-sandbox-service).
+empty. The former Sandbox Service Deployment, API and server source are retired.
 
 ## Dependency boundary
 

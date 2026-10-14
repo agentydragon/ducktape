@@ -208,26 +208,6 @@ py_proto_library_with_mypy_stubs(
 )
 
 proto_library(
-    name = "sandbox_service_proto",
-    srcs = ["sandbox_service.proto"],
-    deps = [
-        ":sandboxes_proto",
-        "@protobuf//:empty_proto",
-    ],
-)
-
-py_proto_library_with_mypy_stubs(
-    name = "sandbox_service_pb2",
-    deps = [":sandbox_service_proto"],
-)
-
-py_grpc_service_library(
-    name = "sandbox_service_pb2_grpc",
-    proto = ":sandbox_service_proto",
-    py_proto = ":sandbox_service_pb2",
-)
-
-proto_library(
     name = "history_service_proto",
     srcs = ["history_service.proto"],
     deps = [

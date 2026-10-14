@@ -220,11 +220,12 @@ path. Kubernetes readiness does not prove native resume. The checked-in Sandbox
 operating model removes the Pod on suspension and keeps its workspace PVC; processes
 must be re-established. Verify the actual template's state mount and harness artifacts.
 
-Managed deletion seals first: [teardown](../sandbox_service/API.md#teardown) fences new work, seals
-every Session, and deletes the Sandbox only once the History Service's ingress has acknowledged
-every seal. While the runner is unreachable the Sandbox stays sealing. Externally deleting the only
-remaining storage while the History Service is behind cannot carry a no-loss guarantee. A Thread's
-archived page still displays the history the History Service has.
+Managed deletion fences new work, seals every Session, and deletes the Sandbox only once the History
+Service's ingress has acknowledged every seal. The Sandbox Controller coordinates sealing and
+deletion; the app submits the request through Kubernetes. While the runner is unreachable the
+Sandbox stays sealing. Externally deleting the only remaining storage while the History Service is
+behind cannot carry a no-loss guarantee. A Thread's archived page still displays the history the
+History Service has.
 
 ## Queue placement decision
 
@@ -347,21 +348,22 @@ if added, preserves required admission order without waiting for each command's 
 The app atomically saves an immutable `Command` and its target before promising
 delivery. Existing Threads need only the command; combined creation also needs a
 Thread id, resolved Sandbox target, and runner-opening intent. Presets are resolved
-editable fields, not another runtime identity. The Sandbox Service owns Sandbox lifecycle.
+editable fields, not another runtime identity. The app submits Sandbox requests; the Sandbox
+Controller owns reconciliation and status.
 
 ```mermaid
 sequenceDiagram
     participant F as Frontend
     participant A as App and PostgreSQL
-    participant S as Sandbox Service
+    participant K as Kubernetes API and Sandbox Controller
     participant G as Runner Gateway and runner
     participant HS as History Service
     F->>A: Proposed create request:<br/>{sandbox_target:resolved fields, initial_command:C}
     A->>A: Commit Thread, target, C
     A-->>F: Proposed HTTP 201 after commit:<br/>{thread_id:T, command:C}
     Note over F,A: Browser may close here
-    A->>S: CreateSandbox with stable name and resolved fields
-    S-->>A: Sandbox {uid:U, ...}
+    A->>K: Create Sandbox with stable name and resolved fields
+    K-->>A: Sandbox {uid:U, ...}
     A->>G: CreateSession {destination:U, session_id:T, spec:resolved fields, bootstrap}
     G-->>A: Attached {session_id:T, ...}
     A->>G: SubmitCommand {sandbox:S, session_id:T, command:C}

@@ -1,4 +1,4 @@
-"""Migrate the `sandbox_service` database, which stores Session Event history.
+"""Migrate the retained `sandbox_service` database, which stores Session Event history.
 
 Run from the history migration image as a History Service Deployment init container.
 A migration failure prevents the Pod from serving even existing lifecycle RPCs.

@@ -11,7 +11,6 @@ package(
         "//agentplane/llm_ingress:__pkg__",
         "//agentplane/notification_service:__pkg__",
         "//agentplane/runner_gateway:__subpackages__",
-        "//agentplane/sandbox_service:__subpackages__",
         "//agentplane/sandboxes:__subpackages__",
         "//agentplane/session_dispatcher:__pkg__",
     ],

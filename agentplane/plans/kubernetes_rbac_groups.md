@@ -17,9 +17,9 @@ because a binding names a ServiceAccount only.
 ## Old snapshot grants (`OLD_POLICY_KINDS_DROP`)
 
 Sandboxes created on agent-sandbox hold the old launch-time bindings and a `kubernetes-bindings`
-finalizer, and the Sandbox Service no longer sees them: they are recreated on Agentplane's own
-kind or cleaned by hand. The catalog fields, `kubernetes_grants.py` and the retained delegation
-scopes (`kubernetes_binding_cleanup_namespaces`) leave with that drop.
+finalizer. The retired service path does not reconcile those legacy grants: they are recreated on
+Agentplane's own kind or cleaned by hand. The catalog fields, `kubernetes_grants.py` and the retained
+delegation scopes (`kubernetes_binding_cleanup_namespaces`) leave with that drop.
 
 ## Verification owed on a deployed environment
 

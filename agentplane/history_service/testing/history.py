@@ -46,7 +46,7 @@ FOLD_INTERVAL_S = 0.05
 
 
 def migrate(database_url: str) -> None:
-    """Migrate a disposable history database as the Sandbox Service's migration job does."""
+    """Migrate a disposable history database as the History Service's migration job does."""
     RUNNER.apply(database_url)
 
 

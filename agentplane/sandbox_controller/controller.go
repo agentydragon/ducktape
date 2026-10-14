@@ -59,7 +59,7 @@ const (
 	StateVolumeFinalizer = "agentplane.allegedly.works/state-volume"
 	// On the Pod or VirtualMachine: the JSON of the spec rendered from the template when it was
 	// created or last started, so it can be diffed against what the template renders now. The
-	// Sandbox Service's update-spec diff is its reader.
+	// The integration app reads this annotation to show the rendered workload differences.
 	RenderedSpecAnnotation = "agentplane.allegedly.works/rendered-spec"
 
 	templateIndex = "spec.template"

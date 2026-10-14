@@ -451,11 +451,10 @@ every RPC with that Pod's own projected token for the dedicated audience
 `agentplane-runner-control`. The token is projected only into the sidecar, so neither the runner nor
 the harness ever holds it.
 
-The audience is distinct from the Sandbox Service's and Runner Gateway's (`agentplane-sandbox-service`,
-`agentplane-runner-gateway`) and from
+The audience is distinct from the Runner Gateway's (`agentplane-runner-gateway`) and from
 the shared `agentplane-egress` audience that the LLM ingress and Action Service receive, so none of
 those recipients can replay a token they saw as a runner connection, and a control token cannot
-call the Sandbox Service or Runner Gateway API.
+call the Runner Gateway API.
 
 The route is part of every runner template, and its network rules are not policy a launch selects,
 so no Sandbox can be cut off from its own control plane.

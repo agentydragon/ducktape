@@ -1,8 +1,7 @@
 """Serve the real History Service over a history database for consumer tests.
 
-The schema belongs to the Sandbox Service fixture that creates the database. `ingest` writes it as
-production does, a runner pushing to the ingress; the server only reads it, in read-only
-transactions as in production.
+The schema belongs to the History Service fixture. `ingest` writes it as production does, a runner
+pushing to the ingress; the server only reads it, in read-only transactions as in production.
 """
 
 import asyncio

@@ -39,8 +39,9 @@ not redesign storage, the History Service, or policy.
   (its `services` RBAC rule stays until the controller's image is pinned). It still wraps `Runner` with Session registry, readiness checks
   (`destinations.py`) and a database, and its API promises that session and command RPCs never provision, resume or
   wake a Sandbox.
-- **Sandbox Service** (`sandbox_service/`): writes a Sandbox's desired state for the app and serves reads and the VM
-  console; the Notification Service uses it only to read one Sandbox. It is to be removed (D4).
+- **Integration app** (`app/`): submits Sandbox desired state and operator-owned grants through the
+  Kubernetes API, reads Sandbox views, and attaches the output-only VM console. It acts as the
+  requesting operator; the Sandbox Controller owns status and reconciled resources.
 - **Runner**: harnesses, journal, command admission, `Quiesce` (a durable lameduck keyed to the incarnation UID,
   dropped on a `Welcome` carrying another). It publishes its quiesce stage and bootstrap result on its heartbeat. It starts the Sandbox's `bootstrap` at runner start, and `OpenSession`
   still waits for it. The per-command RPCs refuse work in lameduck with `ABORTED`.

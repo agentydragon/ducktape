@@ -10,19 +10,11 @@ from uuid import uuid4
 import grpc
 import pytest
 import pytest_bazel
-from google.protobuf.empty_pb2 import Empty
 from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.grpc_calls import ServiceError, dial
-from agentplane.proto import (
-    command_pb2,
-    runner_control_pb2,
-    runner_gateway_pb2,
-    runner_pb2,
-    sandbox_service_pb2,
-    sandboxes_pb2,
-)
+from agentplane.proto import command_pb2, runner_control_pb2, runner_gateway_pb2, runner_pb2, sandboxes_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
 from agentplane.runner_gateway import wire
 from agentplane.runner_gateway.client import RunnerGatewayClient
@@ -31,6 +23,7 @@ from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.grpc_api import Resources
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
+from agentplane.runner_gateway.testing.auth import CALLER_TOKEN
 from agentplane.runner_gateway.testing.grpc_service import gateway_client, service, service_client
 from agentplane.runner_gateway.testing.journal import admission
 from agentplane.runner_gateway.testing.resources import build_resources
@@ -43,8 +36,6 @@ from agentplane.runner_gateway.testing.runner_control import (
 )
 from agentplane.runner_gateway.testing.sessions import register_on_fake_sandbox, register_session
 from agentplane.sandbox_resource import QUIESCED, SANDBOXES_PLURAL
-from agentplane.sandbox_service.testing.grpc_service import CALLER_TOKEN, sandbox_client
-from agentplane.sandbox_service.testing.service_provisioning import service_provisioning
 from agentplane.sandboxes.testing.kubernetes import ACCOUNT, DESTINATION, OWNER, SANDBOX, SANDBOX_UID, SandboxCluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
@@ -52,7 +43,7 @@ from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
 
-AUDIENCE = "test-sandbox-service"
+AUDIENCE = "test-runner-gateway"
 SPEC: dict[str, object] = {"harness": "HARNESS_CODEX", "model": "test-model", "cwd": "/state"}
 
 
@@ -95,14 +86,14 @@ async def peer(cluster: SandboxCluster, resources: Resources) -> AsyncIterator[S
 
 @pytest.fixture
 async def remote(cluster: SandboxCluster, resources: Resources, token_file: Path) -> AsyncIterator[RunnerGatewayClient]:
-    async with service_client(resources, token_file, service_provisioning(cluster)) as client:
+    async with service_client(resources, token_file) as client:
         yield client
 
 
 async def test_managed_open_uses_the_client_session_id_and_retries_on_the_runner(
     cluster: SandboxCluster, resources: Resources, token_file: Path, peer: ScriptedRunner
 ) -> None:
-    async with service_client(resources, token_file, service_provisioning(cluster)) as remote:
+    async with service_client(resources, token_file) as remote:
         runner = remote.runner(DESTINATION)
         overrides: dict[str, object] = SPEC | {"cwd": "/state/{session_id}"}
         requested = uuid4()
@@ -135,7 +126,7 @@ async def test_a_retry_after_a_lost_reply_delivers_the_command_again(
     session_id = uuid4()
     await register_on_fake_sandbox(engine, session_id)
     command = command_pb2.Command(command_id="durable", submit_input=command_pb2.SubmitInput(text="hi"))
-    async with asyncio.timeout(10), service_client(resources, token_file, service_provisioning(cluster)) as remote:
+    async with asyncio.timeout(10), service_client(resources, token_file) as remote:
         with pytest.raises(TimeoutError):
             await remote.command(DESTINATION, str(session_id), command)
         lost = (await peer.next(runner_control_pb2.DeliverCommandRequest)).request
@@ -270,7 +261,7 @@ async def test_destination_authority_and_incarnation(
 async def test_unlisted_callers_rejected_before_lookup(
     resources: Resources, token_file: Path, cluster: SandboxCluster, account_name: str
 ) -> None:
-    # Owning the destination does not grant service access. The same allowlist gates all RPCs.
+    # Owning the destination does not grant gateway access. The allowlist gates every RPC.
     cluster.fake.tokens[CALLER_TOKEN] = TokenVerdict(
         username=f"system:serviceaccount:{SANDBOX_NAMESPACE}:{account_name}",
         pod_name="test-unlisted-pod",
@@ -282,23 +273,8 @@ async def test_unlisted_callers_rejected_before_lookup(
     )
     cluster.fake.objects[SANDBOXES_PLURAL].clear()
     destination = sandboxes_pb2.SessionDestination(sandbox=DESTINATION, session_id="session")
-    async with service(configured, service_provisioning(cluster)) as target, dial(target) as channel:
-        sandboxes = sandbox_client(channel, token_file, namespace=SANDBOX_NAMESPACE)
+    async with service(configured) as target, dial(target) as channel:
         remote = gateway_client(channel, token_file, command_admission_timeout_s=10, control_target=target)
-        for call, request in (
-            (sandboxes.stub.ListSandboxes, Empty()),
-            (sandboxes.stub.GetSandbox, sandbox_service_pb2.GetSandboxRequest(name=SANDBOX)),
-            (sandboxes.stub.CreateSandbox, sandboxes_pb2.CreateSandboxRequest()),
-            (sandboxes.stub.SuspendSandbox, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
-            (sandboxes.stub.ResumeSandbox, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
-            (sandboxes.stub.DeleteSandbox, sandbox_service_pb2.SandboxRequest(destination=DESTINATION)),
-            (sandboxes.stub.ListTemplates, Empty()),
-            (sandboxes.stub.GrantEgress, sandbox_service_pb2.GrantEgressRequest(destination=DESTINATION)),
-            (sandboxes.stub.RevokeEgress, sandbox_service_pb2.RevokeEgressRequest()),
-        ):
-            with pytest.raises(ServiceError) as rejected:
-                await sandboxes.unary(call, request)
-            assert rejected.value.code == grpc.StatusCode.PERMISSION_DENIED
         for gateway_call, gateway_request in (
             (remote.stub.ListSessions, runner_gateway_pb2.ListSessionsRequest(destination=DESTINATION)),
             (remote.stub.ResumeSession, runner_gateway_pb2.ResumeSessionRequest(destination=destination)),
@@ -384,7 +360,7 @@ async def test_session_sandboxes_answer_from_the_registry_including_deleted_sand
     deleted = runner_gateway_pb2.SessionSandbox(
         session_id=str(deleted_id), sandbox_namespace=SANDBOX_NAMESPACE, sandbox="Deleted-Sandbox"
     )
-    async with service_client(resources, token_file, service_provisioning(cluster)) as remote:
+    async with service_client(resources, token_file) as remote:
         got = await remote.session_sandboxes({str(live_id), str(deleted_id), str(unknown_id)})
         assert sorted(got, key=lambda found: found.session_id) == sorted(
             [live, deleted], key=lambda found: found.session_id
