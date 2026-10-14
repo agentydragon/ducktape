@@ -1,7 +1,6 @@
 # Sandbox and Session control: who owns what
 
-Status: **mostly decided; see [Decisions](#decisions) for what is settled and when, and for the questions
-still open.** Where a fork below names a recommendation, it is the recommendation of the design lane, not a ruling.
+Status: **decided; see [Decisions](#decisions) for when each was settled.**
 
 Scope: the responsibilities split across the services and custom resources that run a Sandbox (Pod
 or VM) and deliver work to the Sessions in it. This covers the control Service, readiness and
@@ -538,18 +537,18 @@ decided; `CANCELLED_IN_DISPATCHER` is for a sender or a later `StopRunnerSession
 `DELIVERING_TO_RUNNER`, or in `RUNNER_ADMITTED` and not yet `HARNESS_CONFIRMED` (which can never arrive once the state
 volume is gone), has an unknown outcome and becomes `UNKNOWN`: deletion ends every non-terminal row of the Sandbox. The cleanup
 runs off the watch event, not a timer, and the Dispatcher's relist at start ends the queue of a Sandbox deleted while it
-was down. A sender reading the dispatch sees the terminal state and the reason. A new command to a missing Sandbox fails
+was down. A sender watching the dispatch sees the terminal state and the reason. A new command to a missing Sandbox fails
 the same way at once, as `OpenSession` does above. Each dispatch row is keyed to the Sandbox's name and UID, because a
 name is free again after delete: otherwise a Sandbox deleted and recreated under one name while the Dispatcher was down
 would look, on relist, like the same Sandbox, and the old queue would be delivered into the new one.
 
-**Dispatch rows are kept as long as the Sandbox exists.** Decided (operator, 2026-10-14): for now no row is deleted
-while its Sandbox exists, since it is comparatively little data, and the policy can be revisited. A row serves the
-sender (status reads and `command_id` idempotency on a retried RPC) and the `OpenSession` window above, and keeping it
-means a retried `OpenSession` or command always finds its record. The Sandbox's rows go when the Sandbox is deleted,
-driven by the CR watch event that ends its non-terminal rows (above); a `WatchDispatches` subscriber sees those terminal
-states first, and a later read of a removed row is `NOT_FOUND`. A redelivery still resolves from the runner's journal
-(D3), and history lives in the History Service.
+**Dispatch rows are kept while their Sandbox exists.** Decided (operator, 2026-10-14): for now no row is deleted while
+its Sandbox exists, since it is comparatively little data, and he is open to a different policy later. A row serves the
+sender (status reads and `command_id` idempotency on a retried RPC) and the `OpenSession` window above, so a retried
+`OpenSession` or command always finds its record for as long as the Sandbox lasts. Candidates for a later policy:
+delete terminal rows after a window, or once the History Service has them. Design default, not the operator's ruling:
+on the Sandbox's deletion event the Dispatcher ends its non-terminal rows (published on `WatchDispatches`), then deletes
+all of its rows, so a watcher sees the reason and a later `GetDispatch` is `NOT_FOUND`.
 
 **History Service dependency.** Delivery does not need it: admission is the runner's receipt, and
 placement is passed or looked up. Placement lookup and the reading of final-cursor acks (already required
@@ -576,18 +575,15 @@ and the controller reads nothing from it; a message racing a suspend is handled 
 
 **Per Session and per Sandbox.** The UI shows the idle time of a _Session_; suspension needs the aggregate over _all Sessions_ in the Sandbox. The runner computes both from the same per-Session facts: a Sandbox is busy while any Session is busy (or a background process or attached terminal runs), and its `idleSince` is when the last of them went idle. Only the Sandbox aggregate goes on the Lease. Per-Session idle times stay out of Kubernetes (the boundary in requirement 8): their number is unbounded, they change with every turn, and no controller decision needs them. The activity stream is the History Service's: it already folds the runner's events into `SessionSummary` (`last_turn_status`, `last_model_activity_at`) and serves `watch_session_summaries`, so a per-Session `idleSince`, derived from the turn start and end events it ingests, is one more folded field on that summary and the stream carries it to listeners (the UI, the notification service). It is display-only: suspension never reads it. A background process or attached terminal belongs to no Session, so it counts only in the Sandbox aggregate. While a Sandbox is suspended nothing new is ingested, so each Session reads idle since its last turn ended.
 
-**Separate service or merge with the gateway.** "Both required" is not an argument to merge:
-required-ness says nothing about failure domain, state or replica shape.
-
-| Option                    | For                                                                                                                                                                                                                                   | Against                                                                                                                                                         |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Separate service**      | Gateway stays stateless and database-free, keeps working through a Dispatcher or History outage; Dispatcher has one active owner per Sandbox without constraining gateway replicas; gateway keeps its "never wakes a Sandbox" promise | One extra hop; a second Deployment with its own database                                                                                                        |
-| In the gateway            | One fewer service                                                                                                                                                                                                                     | Gives the gateway a database and the power to resume Sandboxes; couples queue ownership to connection-holder replicas, which are sharded for a different reason |
-| In the Sandbox Controller | Nearest the desired state                                                                                                                                                                                                             | A leader-elected reconciler with no database would gain a queue; Kubernetes would hold per-Session data. Idle policy, which needs no database, does belong here |
-| A CR per queued message   | No new store                                                                                                                                                                                                                          | Per-Session data in Kubernetes, against the stated boundary; etcd write rate                                                                                    |
-
-Decided (operator, 2026-10-14): **separate**. Multiple Dispatcher replicas shard Sandboxes by a per-Sandbox Lease so each
-Sandbox has one active owner, as the gateway fences connection epochs.
+**Separate service or merge with the gateway.** Decided (operator, 2026-10-14): **separate**. "Both required" is not an
+argument to merge: required-ness says nothing about failure domain, state or replica shape. The gateway stays stateless
+and database-free, keeps working through a Dispatcher or History outage, and keeps its "never wakes a Sandbox" promise;
+the Dispatcher has one active owner per Sandbox without constraining gateway replicas. The cost is one more hop and a
+second Deployment with its own database. Multiple Dispatcher replicas shard Sandboxes by a per-Sandbox Lease, as the
+gateway fences connection epochs. Rejected: in the gateway (it would gain a database and the power to resume Sandboxes,
+and couple queue ownership to connection-holder replicas, which are sharded for a different reason); in the Sandbox
+Controller (a leader-elected reconciler with no database would gain a queue; idle policy, which needs none, does belong
+there); a CR per queued message (per-Session data in Kubernetes, against the stated boundary, at etcd's write rate).
 
 **Who may wake.** The Dispatcher knows the sender's identity, so it enforces which kinds of sender may
 resume a Sandbox (user message and notification yes; agent message no unless decided). Its ServiceAccount holds `patch` on `sandboxes` and the Dispatcher writes only `spec.running` and
@@ -791,7 +787,7 @@ sequenceDiagram
 | Removing the finalizer by hand is the only break-glass; there is no force-seal                                   | Decided | 2026-10-13 | Lifecycle      |
 | Names: Session Dispatcher, `OpenSession` (kept), `Quiesce`, `Quiesced`, `Draining`, `Flushing`                   | Decided | 2026-10-13 | below          |
 | The queue holds about 1,000 queued commands per Session; past that, `RESOURCE_EXHAUSTED`                         | Decided | 2026-10-14 | D4             |
-| Dispatch rows are kept as long as the Sandbox exists, then removed; the policy may be revisited                  | Decided | 2026-10-14 | D4             |
+| Dispatch rows are kept while their Sandbox exists                                                                | Decided | 2026-10-14 | D4             |
 | Queued commands have no TTL; a Sandbox gone from Kubernetes ends them as `FAILED`                                | Decided | 2026-10-14 | D4             |
 | No special handling of poison commands for now; revisit when one is seen                                         | Decided | 2026-10-14 | Complexities   |
 
