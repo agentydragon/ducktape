@@ -32,14 +32,15 @@ pkg_tar(
     ],
     mode = "0755",
     package_dir = "/opt/harnesses",
-    remap_paths = {
-        "external/claude_code_cli_linux_x64": "claude",
-        "external/agentplane_codex_cli_linux_x64": "codex",
-    },
     strip_prefix = ".",
+)
+
+# Symlinks in a `pkg_tar` are relative to its `package_dir`, so these get their own tar.
+pkg_tar(
+    name = "runner_harness_links",
     symlinks = {
-        "/bin/claude": "/opt/harnesses/claude/claude",
-        "/bin/codex": "/opt/harnesses/codex/bin/codex",
+        "/bin/claude": "/opt/harnesses/external/claude_code_cli_linux_x64/claude",
+        "/bin/codex": "/opt/harnesses/external/agentplane_codex_cli_linux_x64/bin/codex",
     },
 )
 
@@ -51,6 +52,7 @@ oci_image(
     tars = [
         ":runner_layers",
         ":runner_harnesses",
+        ":runner_harness_links",
         "//third_party/debian_slim:cacerts",
     ],
     user = "1000:1000",
