@@ -9,8 +9,15 @@ OpenVINO detects it as `Intel(R) AI Boost`.
 **Smoke test**:
 
 ```bash
-npu-umd-test  # bundled validation suite
+LD_LIBRARY_PATH=/run/current-system/sw/lib:/run/opengl-driver/lib \
+  npu-umd-test --gtest_filter='Driver.*:Device.*:Command*.*'
 ```
+
+The Level Zero loader and NPU userspace driver are both needed at runtime.
+The 2026-09-17 failure below was reproduced and resolved as missing library
+discovery on 2026-10-13: 55/55 filtered tests passed on the active 1.28.0
+driver, and OpenVINO GenAI generated on the NPU. See
+<../../../../cluster/docs/inference/rugged_npu_driver.md> for the full evidence.
 
 ## LLM Inference
 
@@ -22,7 +29,7 @@ See <llm_npu.md>. **Working**: llama.cpp with OpenVINO backend runs on NPU via D
 - [nixpkgs#470638](https://github.com/NixOS/nixpkgs/issues/470638) —
   `hardware.cpu.intel.npu.enable` may not be available depending on nixpkgs pin
 - NPU driver version (nixpkgs v1.28.0) may lag upstream (v1.32.0+)
-- **Level Zero driver fails to initialize (2026-09-17)**: `npu-umd-test` (the
+- **Historical Level Zero initialization failure (2026-09-17)**: `npu-umd-test` (the
   driver package's own validation suite, unrelated to anything in this repo)
   fails at the very first API call:
 
@@ -33,8 +40,6 @@ See <llm_npu.md>. **Working**: llama.cpp with OpenVINO backend runs on NPU via D
   Ruled out: kernel module (`intel_vpu`) is loaded; `dmesg` shows zero
   accel/vpu errors; `/dev/accel/accel0` is `crw-rw-rw-` (world-accessible)
   and group `render` anyway. So this is a userspace Level Zero loader/driver
-  problem, not a kernel or permissions issue — and since NixOS's own smoke
-  test hits it identically, it blocks NPU access for anything on this host,
-  not just this repo's code. Plausibly the version-lag issue above, not
-  further root-caused yet. See <llm_npu.md> for the LLM-service-specific
-  consequences (silent CPU fallback, disabled pending a fix).
+  problem, not a kernel or permissions issue. Later diagnosis identified
+  missing runtime library search paths, not driver-version lag. See
+  <llm_npu.md> for the historical LLM-service-specific consequences.
