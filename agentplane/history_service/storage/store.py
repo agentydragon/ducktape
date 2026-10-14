@@ -228,9 +228,16 @@ class Store:
                     same_except_harness = runner_pb2.Attached()
                     same_except_harness.CopyFrom(prior.attached)
                     same_except_harness.harness_state = snapshot.attached.harness_state
+                    # A later incarnation announces again at the cursor the earlier one ended at.
+                    if snapshot.attached.HasField("incarnation_uid"):
+                        same_except_harness.incarnation_uid = snapshot.attached.incarnation_uid
+                    else:
+                        same_except_harness.ClearField("incarnation_uid")
                     if same_except_harness != snapshot.attached:
                         raise HistoryConflictError("conflicting attachment snapshots at one cursor")
-                    if (
+                    if snapshot.attached.harness_state == prior.attached.harness_state:
+                        pass
+                    elif (
                         not prior.HasField("sealed")
                         and prior.attached.harness_state == runner_pb2.HARNESS_STATE_STOPPED
                         and snapshot.attached.harness_state == runner_pb2.HARNESS_STATE_RUNNING

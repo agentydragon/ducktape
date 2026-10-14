@@ -204,6 +204,23 @@ async def test_a_later_incarnation_continues_a_sealed_journal(
     assert (page.feed_state.sealed.cursor, page.feed_state.sealed.incarnation_uid) == (3, "test-incarnation-2")
 
 
+async def test_a_later_incarnation_announcing_at_the_seal_cursor_replaces_the_snapshot(engine: AsyncEngine) -> None:
+    session_id = uuid4()
+    async with ingress(engine) as stub:
+        call = await push(
+            stub, [announce(session_id, last_cursor=2), *entries(1, 2), sealed(2, incarnation_uid="test-incarnation-1")]
+        )
+        await call.acknowledged(2, sealed=True)
+        # A resumed runner has appended nothing yet, so it announces the cursor the seal ended at.
+        call = await push(stub, [announce(session_id, last_cursor=2, incarnation_uid="test-incarnation-2")])
+        await call.acknowledged(2)
+        await call.send(*entries(3))
+        await call.acknowledged(3)
+    page = await Store(engine).read_page(session_id)
+    assert page.feed_state.attached.incarnation_uid == "test-incarnation-2"
+    assert not page.feed_state.HasField("sealed")
+
+
 async def test_the_incarnation_that_sealed_a_journal_gets_the_seal_back(engine: AsyncEngine) -> None:
     session_id = uuid4()
     async with ingress(engine) as stub:
