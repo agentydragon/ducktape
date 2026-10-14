@@ -673,7 +673,6 @@ flowchart TD
     RUNNER_FACTS_ON_LEASE[Candidate: the runner publishes stage, idle and boot facts on the connection Lease]
     RUNNER_BUSY_TRACKING[Candidate: the runner knows whether the Sandbox is busy]
     RUNNER_BUSY_TRACKING --> SANDBOX_IDLE_EXPIRY
-    SEAL_RENAME[Candidate: Seal, Sealed and Sealing get names that say which fact they mean]
     QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: the controller stops reading the blocking Quiesce shape]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     SESSION_ACTIVITY_STREAM[Blocked: the notification service delivers on a Session's idle time]
@@ -721,8 +720,6 @@ flowchart TD
     RUNNER_FACTS_ON_LEASE --> QUIESCE_WITHOUT_POLLING
     RUNNER_FACTS_ON_LEASE --> SANDBOX_IDLE_EXPIRY
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
-    SEAL_RENAME -. rename before the next sealing node lands .-> QUIESCE_WITHOUT_POLLING
-    SEAL_RENAME --> QUIESCE_LEGACY_SHAPE_REMOVAL
     RUNNER_FACTS_ON_LEASE -. carries the boot result .-> BOOTSTRAP_PROGRESS_CONTRACT
     DISPATCHER_CORE --> DISPATCHER_SESSION_CREATE
     DISPATCHER_SESSION_CREATE --> PROXY_START_METHODS_DISPATCHER_ONLY
@@ -749,8 +746,8 @@ flowchart TD
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
     K3S_LIFECYCLE_SUITE[Candidate: k3s lifecycle integration suite]
-    SEAL_RENAME -. quiesce assertions .-> K3S_LIFECYCLE_SUITE
     BOOTSTRAP_PROGRESS_CONTRACT[Candidate: the Sandbox bootstrap runs when the runner starts, section 6] -. Ready implies bootstrapped .-> K3S_LIFECYCLE_SUITE
+    QUIESCE_WITHOUT_POLLING -. quiesce assertions .-> K3S_LIFECYCLE_SUITE
 ```
 
 ### `DURABLE_SESSION_LIFECYCLE` — Session lifetime and revival
@@ -769,11 +766,11 @@ connects. A command held only while the sender waits is lost if the sender goes 
 ### `K3S_LIFECYCLE_SUITE` — a k3s lifecycle integration suite
 
 **Candidate; operator, 2026-10-13 PDT: smaller k3s-based tests of the Sandbox lifecycle.** One
-shared k3s environment fixture on a BuildBuddy action (`agentplane/x/k3s_rbe_spike`), one test per
-flow, no LLM: create, bootstrap, suspend, resume, quiesce and delete, about 15 minutes on RBE. The
-flows that work today (create, suspend, resume, delete, bootstrap) can land first. The quiesce
-assertions wait for `SEAL_RENAME`, and the assertion that `Ready` implies a
-finished bootstrap for `BOOTSTRAP_PROGRESS_CONTRACT`. The disposable-environment lane owns the
+shared k3s environment fixture on a BuildBuddy action, one test per
+flow, no LLM: create, bootstrap, suspend, resume, quiesce and delete, about 15 minutes on RBE. Create,
+bootstrap, suspend, resume and delete have landed (`agentplane/x/k3s_env`). Left: the quiesce
+assertions, which wait for `QUIESCE_WITHOUT_POLLING`, and the assertion that `Ready` implies a
+finished bootstrap, for `BOOTSTRAP_PROGRESS_CONTRACT`. The disposable-environment lane owns the
 fixture. Tests that need ClusterIP Services, KubeVirt or Cilium stay elsewhere
 (`ISOLATED_ACCEPTANCE_CI`).
 
@@ -1048,25 +1045,6 @@ has a turn, an unfinished command or a setup script. Remaining: a background or 
 attached terminal or console also makes the Sandbox busy. The runner does not supervise these, so who
 reports them (the harness adapters, the VM console) is open. Test an
 attached terminal that detaches, a background process that outlives a turn, and a runner restart.
-
-### `SEAL_RENAME` — Seal, Sealed and Sealing get names that say which fact they mean
-
-**Candidate; the names are settled (operator, 2026-10-13 PDT).** "Sealed" now means three facts: the runner refuses
-new work, its journals are final, and the ingress has acknowledged them. The doc proposes
-`Runner.Quiesce`, a `Quiesced` condition that is True only when every final cursor is acknowledged
-(False with reasons `Draining` then `Flushing`), `status.quiescedIncarnation`, the phase
-`QUIESCING` (the wire enum keeps its six phases; it covers a suspend drain as well as a deletion drain), and `Ready` False with reason `Draining`; a journal is still "sealed" at its final
-cursor. This is a wire and stored-field change across the runner, gateway, controller, Sandbox
-Service, app and docs: readers accept both names before any writer emits the new one, and the
-Sandbox status field is added beside the old, switched, then removed. Land it before
-`QUIESCE_WITHOUT_POLLING` and the rest of the sealing nodes, so they are written once; it
-conflicts with nearly all of them, which is fine, but the order saves work. `Quiesce` returns at
-lameduck entry and drops the cursors, so the controller reads `Quiesce` before the runner's `Seal`
-is renamed. Rollout order: `QuiesceResponse.stage` is added; the controller image that reads both the
-legacy and the staged shape is pinned; the gateway's deletion seal goes (`CONTROLLER_SEALS`); then the
-runner's non-blocking `Quiesce` ships, the VM guest's runner wheel included in the pin order, since
-until then an empty unflushed list reads as flushed. Dropping the legacy shape is
-`QUIESCE_LEGACY_SHAPE_REMOVAL`.
 
 ### `QUIESCE_LEGACY_SHAPE_REMOVAL` — the controller stops reading the blocking `Quiesce` shape
 
