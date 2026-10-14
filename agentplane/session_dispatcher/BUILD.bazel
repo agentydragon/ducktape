@@ -139,6 +139,7 @@ py_library(
     name = "settings",
     srcs = ["settings.py"],
     deps = [
+        "//agentplane:log_levels",
         "//agentplane:subjects",
         "//util:yaml_file_settings",
         "@pypi//pydantic",

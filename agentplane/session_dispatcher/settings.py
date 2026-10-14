@@ -6,6 +6,7 @@ from typing import ClassVar
 from pydantic import Field
 from pydantic_settings import SettingsConfigDict
 
+from agentplane.log_levels import LogLevels
 from agentplane.subjects import ServiceAccountRef
 from util.yaml_file_settings import YamlFileSettings
 
@@ -30,6 +31,7 @@ class Settings(YamlFileSettings):
     )
     runner_request_timeout_s: float = Field(default=10, gt=0, le=60)
     request_timeout_s: float = Field(default=15, gt=0, le=60)
+    log_levels: LogLevels
     max_queued_per_session: int = Field(default=1000, ge=1)
     sandbox_resync_seconds: int = Field(default=300, ge=1)
     watch_lease_s: float = Field(default=300, gt=0, description="Seconds a WatchDispatches stream lasts.")
