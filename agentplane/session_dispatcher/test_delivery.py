@@ -217,14 +217,10 @@ async def test_a_wake_retry_rechecks_ownership_after_failover(
     )
     assert calls == [f"{sandbox.metadata.name}:{sandbox.metadata.uid}"]
 
-    lease = await coordination.read_namespaced_lease(
-        f"dispatcher-{sandbox.metadata.uid.hex}", SANDBOX_NAMESPACE
-    )
+    lease = await coordination.read_namespaced_lease(f"dispatcher-{sandbox.metadata.uid.hex}", SANDBOX_NAMESPACE)
     lease.spec.renew_time = datetime.now(UTC) - timedelta(seconds=60)
     await coordination.replace_namespaced_lease(lease.metadata.name, SANDBOX_NAMESPACE, lease)
-    successor = SandboxOwnershipLeases(
-        coordination, store, namespace=SANDBOX_NAMESPACE, holder_identity="successor"
-    )
+    successor = SandboxOwnershipLeases(coordination, store, namespace=SANDBOX_NAMESPACE, holder_identity="successor")
     assert await successor.acquire(SANDBOX, sandbox.metadata.uid) is not None
 
     # A later retry from the old task revalidates the Lease and stops after takeover.

@@ -118,9 +118,7 @@ class SandboxOwnershipLeases:
     async def still_owns(self, owner: SandboxOwner) -> bool:
         """Preflight external wake patches against both the live Lease and DB ownership epoch."""
         try:
-            lease = await self._coordination.read_namespaced_lease(
-                _lease_name(owner.sandbox_uid), self._namespace
-            )
+            lease = await self._coordination.read_namespaced_lease(_lease_name(owner.sandbox_uid), self._namespace)
         except k8s_client.ApiException as error:
             if error.status == 404:
                 return False

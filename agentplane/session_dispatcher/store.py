@@ -261,9 +261,7 @@ class DispatchStore:
             await notify(session, Channel.DISPATCH)
             return opening
 
-    async def note_opening_waking(
-        self, session_id: str, *, owner: SandboxOwner, incarnation: str | None
-    ) -> bool:
+    async def note_opening_waking(self, session_id: str, *, owner: SandboxOwner, incarnation: str | None) -> bool:
         """Persist the incarnation that must end before a queued Session opening can be delivered."""
         value = "" if incarnation is None else incarnation
         async with self.sessions.begin() as session:

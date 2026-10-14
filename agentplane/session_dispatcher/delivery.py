@@ -315,9 +315,7 @@ class Delivery:
                 if opening.wake_eligible:
                     await self._wake_for_opening(opening, sandbox, owner)
                 else:
-                    await self.store.note_opening_waiting(
-                        opening.session_id, Reason.SANDBOX_RESUMING, owner=owner
-                    )
+                    await self.store.note_opening_waiting(opening.session_id, Reason.SANDBOX_RESUMING, owner=owner)
                 continue
             if blocker is not None:
                 if blocker is Reason.SANDBOX_SUSPENDED and opening.wake_eligible:
@@ -349,14 +347,10 @@ class Delivery:
             notify=lambda reason: self.store.note_waiting(command_id, reason, owner=owner),
         )
 
-    async def _wake_for_opening(
-        self, opening: SessionOpening, sandbox: Sandbox, owner: SandboxOwner
-    ) -> None:
+    async def _wake_for_opening(self, opening: SessionOpening, sandbox: Sandbox, owner: SandboxOwner) -> None:
         if not sandbox.spec.wake_on_send:
             self._clear_retry(_opening_key(opening.session_id))
-            await self.store.note_opening_waiting(
-                opening.session_id, Reason.WAKE_ON_SEND_DISABLED, owner=owner
-            )
+            await self.store.note_opening_waiting(opening.session_id, Reason.WAKE_ON_SEND_DISABLED, owner=owner)
             return
         if not await self.store.note_opening_waking(
             opening.session_id, owner=owner, incarnation=_incarnation_uid(sandbox)
@@ -391,7 +385,7 @@ class Delivery:
             self._clear_retry(key)
             await notify(Reason.SANDBOX_RESUMING)
             return
-        except (SandboxTearingDownError, InventorySandboxNotFoundError):
+        except SandboxTearingDownError, InventorySandboxNotFoundError:
             self._clear_retry(key)
             await notify(Reason.SANDBOX_DELETED)
             return
@@ -409,9 +403,7 @@ class Delivery:
         self._retry_at.pop(key, None)
         self._attempts.pop(key, None)
 
-    async def _deliver_opening(
-        self, opening: SessionOpening, incarnation: str | None, owner: SandboxOwner
-    ) -> None:
+    async def _deliver_opening(self, opening: SessionOpening, incarnation: str | None, owner: SandboxOwner) -> None:
         key = _opening_key(opening.session_id)
         try:
             claimed = await self._retry_storage(
