@@ -194,12 +194,6 @@ class UnknownOutcomeReason(StrEnum):
     EXECUTOR_LOST = "executor_lost"
 
 
-class ReconciliationSource(StrEnum):
-    """Who authenticated a terminal outcome for an Execution that was `execution_unknown`."""
-
-    LATE_COMPLETION = "late_completion"
-
-
 class ActionRequestInput(BaseModel):
     """The invariant caller envelope; no owner or decision-route branch is accepted."""
 

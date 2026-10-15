@@ -232,6 +232,8 @@ class ExecutionRow(Base):
     # Set only when a terminal outcome was learned after the Execution had already
     # become `execution_unknown`; never set on a first-pass finish.
     reconciled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # These legacy columns remain mapped until writer-free Action Service images have rolled out
+    # to staging and testing; the migration runner rejects schema/model drift before then.
     reconciliation_source: Mapped[str | None] = mapped_column(Text)
     reconciled_by: Mapped[str | None] = mapped_column(Text)
 

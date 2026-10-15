@@ -98,12 +98,9 @@ has not yet been invoked. See [the cancellation API](../action_service/README.md
 | `lease_expired`             | The lease lapsed; the owning executor's own health heartbeat is fresh.     |
 | `executor_lost`             | The lease lapsed and the owning executor's health heartbeat is also stale. |
 
-`ReconciliationSource` (`reconciliation_source` on a reconciled Execution, operator/audit-only —
-not projected to callers):
-
-| Code              | Meaning                                                 |
-| ----------------- | ------------------------------------------------------- |
-| `late_completion` | The original lease-holding attempt finally reported in. |
+Late completion is recorded in `reconciled_at`. The Action Service no longer records a separate
+source code or executor identity for that transition; those legacy columns stay in the schema until
+writer-free images have replaced the current deployments and a follow-up migration removes them.
 
 None of these carry adapter/provider text; `FAILED` executions still classify by
 `type(error).__name__` as before, unrelated to this liveness mechanism.

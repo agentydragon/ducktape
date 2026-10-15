@@ -1210,16 +1210,28 @@ tombstones with a verifiable condition in code (`keepingOffset` in
 
 ```mermaid
 flowchart TD
-    ACTION_EXECUTION_AUDIT_TRIM[Decision: execution reconciliation columns]
+    ACTION_EXECUTION_AUDIT_WRITER_RETIRE[In flight: stop writing execution reconciliation attribution]
+    ACTION_EXECUTION_AUDIT_COLUMNS_DROP[Blocked: drop retired execution reconciliation columns]
+    ACTION_EXECUTION_AUDIT_WRITER_RETIRE -->|Writer-free Action Service image applied in both environments| ACTION_EXECUTION_AUDIT_COLUMNS_DROP
     REFACTOR_COHERENCE_AUDIT[Blocked: whole-refactor coherence audit]
 ```
 
-### `ACTION_EXECUTION_AUDIT_TRIM` — execution reconciliation columns
+### `ACTION_EXECUTION_AUDIT_WRITER_RETIRE` — stop writing reconciliation attribution
 
-**Decision; drops columns, so the operator decides.** `ExecutionRow.reconciled_by` and
-`reconciliation_source` in `action_service/db.py` are written but read only by a test, and
-`ReconciliationSource` has one member. Either expose `reconciled_by` in the execution view, or
-drop both columns and the enum.
+**In flight, worker, 2026-10-15 UTC.** The operator selected removal rather than exposing new audit
+fields. Remove the late-completion assignments, their single-member enum and test-only assertions;
+keep `reconciled_at`, which is already part of the Execution view. Keep the two unused database
+columns mapped until the next node's migration: the current staging Action Service has 2/2 ready pods
+and testing has 1/1, all on `devel-20261015015811-721cab8`, whose source still writes both fields.
+The Action Service migration runner verifies schema against ORM metadata, so mapping removal and the
+column-drop migration must land together only after the writer-free image has replaced those pods in
+both environments.
+
+### `ACTION_EXECUTION_AUDIT_COLUMNS_DROP` — drop retired reconciliation columns
+
+**Blocked on** `ACTION_EXECUTION_AUDIT_WRITER_RETIRE` reaching both testing and staging. In a
+separate PR, add a new migration that drops `reconciliation_source` and `reconciled_by`, then remove
+their ORM mappings. Preserve `reconciled_at` and the late-completion behavior.
 
 ### `REFACTOR_COHERENCE_AUDIT` — the refactor reads as one design
 

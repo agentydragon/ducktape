@@ -46,7 +46,6 @@ from agentplane.action_service.models import (
     ProviderVerdict,
     ProviderVote,
     ReadPrincipal,
-    ReconciliationSource,
     ServiceReaderPrincipal,
     UnknownOutcomeReason,
     Verdict,
@@ -453,8 +452,6 @@ class ActionStore:
                 execution.completed_at = now
             elif execution.state == ExecutionState.EXECUTION_UNKNOWN:
                 execution.reconciled_at = now
-                execution.reconciliation_source = ReconciliationSource.LATE_COMPLETION
-                execution.reconciled_by = executor_id
             else:
                 raise ActionConflictError(f"cannot finish execution in {execution.state}")
             execution.state = result.state

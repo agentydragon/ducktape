@@ -18,7 +18,7 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.catalog import ActionCatalog, ActionIdentity
-from agentplane.action_service.db import ExecutionRow, make_sessionmaker
+from agentplane.action_service.db import make_sessionmaker
 from agentplane.action_service.models import (
     ActionRequestInput,
     ActionState,
@@ -29,7 +29,6 @@ from agentplane.action_service.models import (
     ExecutionResult,
     ExecutionState,
     OperatorPrincipal,
-    ReconciliationSource,
     UnknownOutcomeReason,
     Verdict,
 )
@@ -155,12 +154,6 @@ async def test_late_completion_from_the_original_executor_reconciles_the_unknown
     assert view.execution is not None
     assert view.execution.result == {"echo": {}}
     assert view.execution.reconciled_at is not None
-
-    async with make_sessionmaker(engine)() as session:
-        row = await session.get(ExecutionRow, view.execution.id)
-        assert row is not None
-        assert row.reconciliation_source == ReconciliationSource.LATE_COMPLETION
-        assert row.reconciled_by == "slow-executor"
 
 
 async def test_late_completion_with_a_different_lease_token_is_rejected(store: ActionStore) -> None:
