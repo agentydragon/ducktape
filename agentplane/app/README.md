@@ -75,9 +75,9 @@ reads the feed state the same way. Sandbox lifecycle and Action review keep work
   (`ThreadStore`) composes the app database and the History Service; runners push their events to
   the History Service.
 - `threads/bridge.py`: browser-facing composition of session operations with archive synchronization.
-  `threads/runner_directory.py` selects ready Sandboxes from the app's live index and asks the Runner
-  Gateway for their UID-fenced live runner inventory, so Dispatcher-opened Sessions remain visible
-  even when they were not created through the Gateway's legacy Session registry.
+  `threads/runner_directory.py` resolves a Thread's Sandbox through the Runner Gateway and creates
+  UID-fenced clients for operations that need live runner state. The Sandbox page's retained Session
+  inventory comes from History Thread summaries, not a runner inventory RPC.
 - `api.py` is the REST surface and the OpenAPI schema `export_schema.py` emits for the frontend's
   generated client.
 - `threads/events/`: a Thread's archived events, read through the History Service. `event_log.py`

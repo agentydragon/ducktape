@@ -146,17 +146,6 @@ The recorded layout is a provisioning contract, not a claim that formatting or m
 succeeded. Guest initialization checks the declared filesystem before using a disk; the controller
 does not inspect or repair filesystems through the Kubernetes API.
 
-## Initial rollout
-
-The accepted incompatible cutoff removed the listed disposable Sandboxes and their owned storage
-under [#10493](../acceptance/debug/storage_acceptance.md#initial-workspace-cutoff); it did not migrate existing contents. #10440
-implements the retained-layout contract, and #10507 activated the selected layouts in the deployed
-templates: `DirectoryTree` for the Pod runners and `RawDiskImage`/ext4 for `runner-vm`, each with a
-Sandbox-owned workspace claim. The [storage acceptance record](../acceptance/debug/storage_acceptance.md)
-contains the testing results and read-only rollout verification. This cutoff was a one-time
-operator decision, not a policy to automatically delete idle Sandboxes. Generic DataVolume disks
-in custom VM templates remain supported.
-
 ## Formatting and conversion
 
 The VM guest initializes a new disk and mounts the filesystem. The existing guest accepts ext4

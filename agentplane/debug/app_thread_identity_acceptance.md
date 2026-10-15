@@ -14,11 +14,8 @@ No repeated live test was used to diagnose the 500. On 2026-10-15 UTC, Rai appro
 History identity correction and unconditional Dispatcher openings to activate in both testing and
 staging when their app images are pinned.
 
-The corrected VM storage acceptance passed in invocation
-[0d926436-be24-4825-88ec-de0e7561c778](https://app.buildbuddy.io/invocation/0d926436-be24-4825-88ec-de0e7561c778),
-opening Sessions through the deployed app and consuming their History event streams after projection.
-It completed fresh boot, suspend/resume, explicit VM replacement, retained-byte checks and cleanup;
-[storage evidence](../acceptance/debug/storage_acceptance.md) records the bounded scope.
+The model-free VM workspace storage fixture and its controlled-host preconditions are documented
+in the [acceptance suite](../acceptance/README.md#workspace-storage-layout-acceptance).
 The earlier run already exercised queued admission and same-ID retry before the History failure.
 Rai separately confirmed staging Thread `b3c7b389-a778-4834-b76b-3365d039ed1d` was answering.
 On the 2026-10-15 rollout refresh, both apps are Ready on `b8957c7`, containing the corrected

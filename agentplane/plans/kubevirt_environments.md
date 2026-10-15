@@ -3,21 +3,16 @@
 Status: the Sandbox Controller runs a Sandbox as a KubeVirt VM, the launcher relay policy and the
 `runner-vm` template are deployed on `agentplane-testing`, and the guest runner dials the Runner
 Gateway through the relay. The remaining acceptance gates below are independent of initial boot.
+The basic VM provider, outbound control path and halted-VM template rerender are implemented:
+`TestStartRendersAHaltedVMFromTheTemplateAsItIsThen` verifies a changed guest image applies on start
+without replacing the halted VM or its disks. The [deployed suspend/resume](../acceptance/README.md#suspend-and-resume)
+and [workspace-storage](../acceptance/README.md#workspace-storage-layout-acceptance) acceptance cases
+cover VM session continuity and workspace retention through resume and VM-object replacement. The
+open gates below concern failure, security and isolation guarantees beyond that path.
 The design and its constraints are in [VM Sandboxes](../docs/vm_sandboxes.md). Sequencing of the live checks is the
 [DAG VM lane](task_dag.md#4-vm-environment-phases); this plan keeps the gates that lane does not
 name. Warm pools, memory snapshots, live migration and arbitrary user-supplied VM specifications
 stay out of scope.
-
-## Storage acceptance
-
-The declared [storage layouts](../docs/sandbox_storage.md), template activation, incompatible
-cutoff and obsolete production DataVolume workspace retirement are complete; evidence is in
-[storage acceptance](../acceptance/debug/storage_acceptance.md). Generic DataVolume disks in custom
-VM templates remain supported. Fresh-format and retained-remount acceptance for the newer guest
-implementation passed on 2026-10-15; see [the recorded run](../acceptance/debug/storage_acceptance.md#declarative-guest-storage-acceptance).
-The separate workspace-user ownership bug remains in the task DAG. Conversion remains
-`VOLUME_LAYOUT_CONVERSION`, much later. A filesystem-backed raw `disk.img` and an ordinary Pod
-directory remain explicitly incompatible without conversion.
 
 ## Open gates
 
@@ -43,8 +38,8 @@ directory remain explicitly incompatible without conversion.
   must show credential substitution and `CONNECT`/TLS through the production gateway for LLM and
   Action traffic, not only the control routes.
 - **Isolation limits not yet exercised.** Pressure on CPU, task and I/O limits; native tool
-  cancellation; killing the runner mid-write; competing runner ownership; replacing the root image
-  after native histories exist. Test only those that bear on a stated guarantee, with a stopping
-  condition; the harness-process boundary itself is `VM_PROCESS_ISOLATION`.
+  cancellation; killing the runner mid-write; competing runner ownership. Test only those that bear
+  on a stated guarantee, with a stopping condition; the harness-process boundary itself is
+  `VM_PROCESS_ISOLATION`.
 - **Resource budgets.** Check quotas and capacity for guest RAM plus QEMU overhead, disk helpers and
   the relay, and that a guest is not scheduled on a node without KVM.

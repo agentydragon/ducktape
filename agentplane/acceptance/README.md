@@ -45,11 +45,24 @@ bazelisk test //agentplane/acceptance:test_vm_workspace_ownership --test_output=
 The result is written to
 `bazel-testlogs/agentplane/acceptance/test_vm_workspace_ownership/test.outputs/vm-workspace-ownership.json`.
 
-Verified 2026-10-15 in `agentplane-testing` against `runner-vm` image
-`devel-20261015052552-c3949a5`: the fresh workspace was absent before Session open, then owned by
-UID/GID 107 with successful `git init` and `git rev-parse` and no `safe.directory` setting. The
-one-case run passed in 224 seconds, and fixture teardown removed its Sandbox and PVC. See the
-[BuildBuddy invocation](https://app.buildbuddy.io/invocation/aef53a32-d86e-4a86-ba26-40ae9dc97708).
+## Workspace storage layout acceptance
+
+`//agentplane/acceptance:test_storage_deployed` is a model-free, testing-only fixture for the
+built-in Pod `DirectoryTree` and VM `RawDiskImage`/ext4 workspace paths. It checks Sandbox-owned
+PVC identity and layout records, marker bytes across suspend/resume, refusal of an incompatible
+claim before workload start, and retained data after VM replacement. It creates only its own
+Sandbox, template and workload, then removes them through UID-preconditioned lifecycle operations.
+Run only on the authorized controlled host, with no existing testing Sandboxes and exactly `5Gi` of
+testing storage quota already in use. Set `AGENTPLANE_STORAGE_CONTROLLER_IMAGE` to the exact
+source-verified controller image; the target refuses a mismatched deployed pin and cannot be
+redirected to staging.
+
+```bash
+bazelisk test //agentplane/acceptance:test_storage_deployed --test_output=streamed
+```
+
+The target writes `test.outputs/storage-{pod-directory,vm-raw}.json`. It is `manual` and
+`no-remote-exec`; general controlled-host setup is below.
 
 ## Suspend and resume
 
@@ -80,9 +93,19 @@ It does not delete an existing Sandbox. This completed-turn scenario does not co
 command checkpoint or interrupted setup; deterministic coverage for those boundaries lives in
 `//agentplane/runner:test_restart` and `//agentplane/runner:test_seal`.
 
-## Dispatcher replica acceptance
+## Dispatcher queue and replica acceptance
 
-On the authorized operator host, run the bounded testing-only replica case:
+The `queue` case checks authenticated submission to a stopped Sandbox, durable queueing, and
+runner admission after an explicit start. It uses a fixture Sandbox and the testing app's workload
+identity for TokenReview; it does not call app HTTP or run a model turn. Run it on the authorized
+operator host:
+
+```bash
+bazelisk test //agentplane/acceptance:test_dispatcher_deployed \
+  --test_arg=-k --test_arg=queue --test_output=streamed
+```
+
+To cover replica takeover and deletion broadcast, run the bounded testing-only replica case:
 
 ```bash
 bazelisk test //agentplane/acceptance:test_dispatcher_deployed \
@@ -96,34 +119,29 @@ the Sandbox. Finally, streams pinned to both replica Pods must receive the queue
 terminal deletion outcome. No model turn or app HTTP API is used. Authentication uses a short-lived
 token bound to an existing testing app Pod, so an app rollout during the probe revokes that token.
 
-Only the fixture Sandbox is deleted. The original replica count is restored if the Deployment UID
-and generation still match the temporary scale, preserving concurrent GitOps/operator changes.
-Evidence is written to `test.outputs/dispatcher-deployed.json`; `passed` and `cleanup_complete`
-are distinct. The `queue` case retains the original single-replica delivery check.
+The fixture Sandbox is deleted by UID; the failover case deletes only the recorded owner Pod. The
+original replica count is restored if the Deployment UID and generation still match the temporary
+scale, preserving concurrent GitOps/operator changes. Evidence is written to
+`test.outputs/dispatcher-deployed.json`; `passed` and `cleanup_complete` are distinct. The `queue`
+case retains the original single-replica delivery check.
 
-Testing config allows `agentplane-app` and `agentplane-notifications` to request wakes. The bounded
-`opted_in` case passed against testing in #10541: concurrent app `OpenSession` and notification
-`SubmitInput` shared one wake and both reached runner admission. Reuse that evidence while only
-staging's caller allowlist changes; run this case again if the wake implementation or its caller
-authorization changes. For a fresh testing acceptance, wait until the Dispatcher, migration and
-Sandbox Controller images are Ready, then run:
+The `opted_in` case covers send-triggered wake for both app `OpenSession` and notification
+`SubmitInput`. Run it after the Dispatcher, migration, Sandbox Controller, app and notification
+images are Ready and the caller allowlist matches the intended identities:
 
 ```bash
 bazelisk test //agentplane/acceptance:test_dispatcher_deployed \
   --test_arg=-k --test_arg=opted_in --test_output=streamed
 ```
 
-It creates one fresh stopped Sandbox with `wakeOnSend: true`, then concurrently submits an app
-`OpenSession` and a notification `SubmitInput` using short-lived tokens bound to their existing Pods.
-Both senders must share one `wakeGeneration`; the Dispatcher must wait for a new Ready incarnation
-before admitting the Session and input. The existing `queue` case checks that an app send against
-the default `wakeOnSend: false` stays queued with `wake_on_send_disabled` and does not mutate the
-Sandbox. The test records the deployed image references and deletes only its own Sandbox. It does
-not exercise staging. A staging allowlist does not change any existing Sandbox: send-triggered wake
-still requires that Sandbox's `spec.wakeOnSend` to be explicitly true. The app's current create API
-and form do not expose that field, so app-created Sandboxes remain opted out until the separate
-create-form follow-up lands. The Dispatcher charges at most ten distinct wake generations per
-authenticated caller per rolling minute.
+It creates one stopped Sandbox with `wakeOnSend: true`, then concurrently submits an app
+`OpenSession` and a notification `SubmitInput` using short-lived tokens bound to existing Pods. Both
+senders must share one `wakeGeneration`; the Dispatcher waits for a new Ready incarnation before
+admitting the Session and input. The `queue` case covers the default `wakeOnSend: false`, which
+leaves a send queued without changing Sandbox state. New Sandboxes default to false; the app's
+create and edit controls let the operator opt in explicitly, and changing the setting alone does
+not wake a Sandbox. These cases exercise testing, not staging. The Dispatcher charges at most ten
+distinct wake generations per authenticated caller per rolling minute.
 
 ## MCP integration
 
