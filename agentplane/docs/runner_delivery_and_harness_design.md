@@ -29,7 +29,7 @@ status; grpc-gateway forwards a terminal error as an application/json error chun
 resume, cursors and durable subscriptions remain application-owned. Full-duplex client streaming
 stays on native gRPC. The fixture's token check is not an Agentplane authorization design.
 
-The spike is in draft [PR #10662](https://github.com/agentydragon/ducktape/pull/10662) and is not
+The spike is in [PR #10662](https://github.com/agentydragon/ducktape/pull/10662) and is not
 complete until the generated Bazel target passes on RBE. It does not add a production service,
 route, API, deployment or permission change.
 

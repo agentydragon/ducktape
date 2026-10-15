@@ -1624,7 +1624,7 @@ early feedback versus execution authority? No centralization choice is made here
 
 ### `HTTP_JSON_FACADE_TOOLING_SPIKE` — prove upstream grpc-gateway integration with Bazel
 
-**In flight; draft PR [#10662](https://github.com/agentydragon/ducktape/pull/10662).** Under
+**In flight; PR [#10662](https://github.com/agentydragon/ducktape/pull/10662).** Under
 `agentplane/x/grpc_gateway/`, prove the upstream `go_proto_compiler` path using `go_proto_library`:
 generate Go at Bazel build time, without checked-in generated source or custom packaging rules. A
 bounded unary method and server-streaming watch exercise ProtoJSON/query mapping, Authorization
