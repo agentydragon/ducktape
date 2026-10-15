@@ -367,26 +367,6 @@ async def test_agent_withdrawal_clears_the_operator_queue_but_keeps_the_audit_ro
     assert decision.status_code == 409
 
 
-async def test_websocket_receives_agent_withdrawal_invalidation(
-    make_client: Callable[..., Any], make_operator_client: Callable[..., Any], console_app: dict[str, Any]
-) -> None:
-    with (
-        make_client(**console_app) as client,
-        make_operator_client(**console_app, operator_external_user_key="op-haku") as operator,
-    ):
-        agent = _static_agent_actor(client, _AGENT_TOKEN)
-        with operator.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as ws:
-            assert ws.receive_json() == {"event_type": "hello"}
-            pending = _submit_request(client, _agent_stock_add(), actor=agent)
-            assert ws.receive_json() == {"event_type": "tool_calls_changed", "tool_call_id": pending["tool_call_id"]}
-
-            _withdraw(client, pending["tool_call_id"], "no longer needed", actor=agent)
-            event = ws.receive_json()
-
-    # The operator's open drawer is woken by the retraction, so the card does not linger.
-    assert event == {"event_type": "tool_calls_changed", "tool_call_id": pending["tool_call_id"]}
-
-
 async def _join_executions(service: ToolCallApplicationService) -> None:
     await service.join_executions()
 
@@ -638,38 +618,6 @@ async def test_ledger_get_and_list_load_principal_projection_in_one_query(
         assert "rationale" not in result_sql
     finally:
         event.remove(ledger_engine.sync_engine, "before_cursor_execute", record_tool_call_query)
-
-
-async def test_two_operator_websockets_only_receive_their_interleaved_tool_calls(
-    make_operator_client, console_app: dict[str, Any]
-) -> None:
-    with (
-        make_operator_client(
-            **console_app, operator_external_user_key="websocket-operator-a", operator_username="a@example.com"
-        ) as operator_a,
-        make_operator_client(
-            **console_app, operator_external_user_key="websocket-operator-b", operator_username="b@example.com"
-        ) as operator_b,
-        operator_a.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as events_a,
-        operator_b.websocket_connect("/api/events/ws", headers={"Origin": "https://haku.test"}) as events_b,
-    ):
-        assert events_a.receive_json() == {"event_type": "hello"}
-        assert events_b.receive_json() == {"event_type": "hello"}
-        submitted = [
-            ("a", _submit(operator_a, amount=1)["tool_call_id"]),
-            ("b", _submit(operator_b, amount=2)["tool_call_id"]),
-            ("a", _submit(operator_a, amount=3)["tool_call_id"]),
-            ("b", _submit(operator_b, amount=4)["tool_call_id"]),
-        ]
-        # Each submit publishes one Operator-routed invalidation. Each socket must see only its own
-        # two call ids even when the durable writes interleave tenants.
-        received_a = [events_a.receive_json() for _ in range(2)]
-        received_b = [events_b.receive_json() for _ in range(2)]
-
-    expected_a = {call_id for owner, call_id in submitted if owner == "a"}
-    expected_b = {call_id for owner, call_id in submitted if owner == "b"}
-    assert {event["tool_call_id"] for event in received_a} == expected_a
-    assert {event["tool_call_id"] for event in received_b} == expected_b
 
 
 async def test_audit_log_is_tenant_scoped_and_redacts_secrets(

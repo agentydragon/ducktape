@@ -171,7 +171,7 @@ class ConsoleProcessConfig(BaseModel):
     haku_ui_url: str
     auth_origin: str
     # Canonical public console origin used for OAuth redirects, secure-cookie policy, and
-    # WebSocket origin checks. Required: there is no unauthenticated harness mode.
+    # exact-Origin checks on operator mutations. Required: there is no unauthenticated harness mode.
     public_base_url: str
 
     # Bootstrap path for the YAML settings source. It deliberately retains its established

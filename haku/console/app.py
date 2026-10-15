@@ -52,7 +52,6 @@ from haku.console.mcp_config import (
     validate_in_process_server_bindings,
 )
 from haku.console.models import ConfigResponse
-from haku.console.notifications import console_events
 from haku.console.settings import Settings
 from haku.console.tools import grants as grants_tools, kubernetes as kubernetes_tools
 
@@ -125,17 +124,14 @@ def create_app(
     console_config = settings
     # Postgres is required: it backs the approval ledger and the operator OAuth token stores, all
     # always constructed. Construction is lazy (no connect); migrations run once at startup (app.main /
-    # the test fixture), not here. Cross-replica fan-out (Postgres LISTEN/NOTIFY) is started by the
-    # lifespan below, since the listen loop needs a running event loop.
+    # the test fixture), not here.
     # One engine/sessionmaker for the whole console, injected into every SQLAlchemy store, so the
-    # process holds a single connection pool rather than one per store. ConsoleEventHub is not a
-    # SQLAlchemy store — it drives Postgres LISTEN/NOTIFY over its own raw psycopg connection.
+    # process holds a single connection pool rather than one per store.
     database_url = settings.database_url.get_secret_value()
     db_engine = create_async_engine(database_url, pool_pre_ping=True)
     db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
     operator_login_flows = operator_login_flow.PostgresOperatorLoginFlowStore(db_sessions)
-    console_event_hub = console_events.ConsoleEventHub(database_url, operator_identity_store=operator_identity_store)
     tool_call_ledger = approval.PostgresToolCallLedger(db_sessions)
     agent_authority = PostgresAgentAuthority(
         db_sessions,
@@ -231,7 +227,6 @@ def create_app(
     tool_calls = tool_call_service.ToolCallApplicationService(
         settings=settings,
         repository=tool_call_ledger,
-        invalidation_publisher=console_event_hub,
         executor=dispatcher,
         in_process_servers=in_process_servers,
     )
@@ -245,7 +240,6 @@ def create_app(
         )
         await agent_authority.reconcile_static_agents(static_definitions)
         async with agent_authority.expiry_maintenance():
-            await console_event_hub.start()
             try:
                 yield
             finally:
@@ -254,7 +248,6 @@ def create_app(
                 await tool_calls.aclose()
                 if kubernetes_authorization is not None:
                     await kubernetes_authorization.aclose()
-                await console_event_hub.aclose()
 
     app = FastAPI(title="Haku console", lifespan=_lifespan)
     # The capability router reads settings off app.state (see haku.console.capabilities).
@@ -267,7 +260,6 @@ def create_app(
     app.state.operator_identity_store = operator_identity_store
     app.state.operator_login_flows = operator_login_flows
     app.state.tool_call_service = tool_calls
-    app.state.console_event_hub = console_event_hub
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher
     app.state.kubernetes_authorization = kubernetes_authorization
@@ -307,7 +299,6 @@ def create_app(
     # The browser API is operator-only and recognizes the Operator session.
     operator_only = [Depends(operator_auth.require_operator), Depends(operator_auth.require_operator_mutation_origin)]
     app.include_router(capabilities.router, dependencies=operator_only)
-    app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(approval.router, dependencies=operator_only)
     app.include_router(grant_routes.router, dependencies=operator_only)
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)

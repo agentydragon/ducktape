@@ -2,8 +2,8 @@ import { Badge, Group, Loader, Stack, Text } from "@mantine/core";
 import { type JSX, useEffect, useRef, useState } from "react";
 
 import { makeRecentToolCall, toolApprovalQueueId, type RecentToolCall } from "./approval_state";
-import { useConsoleEvents } from "./console_events";
 import { displayableError, fetchPendingApprovals, type ToolCallRecord } from "./client";
+import { usePeriodicRefresh } from "./periodic_refresh";
 import { ApprovalsTab, type ShellChromeProps } from "./shell_chrome";
 import { useToolCallDecision } from "./tool_call_decision";
 
@@ -45,7 +45,7 @@ export function ApprovalsEmbedPage(): JSX.Element {
   }
 
   const toolDecisions = useToolCallDecision({ onSuccess: finishToolDecision, onSettled: refresh });
-  const liveStatus = useConsoleEvents(() => refresh());
+  usePeriodicRefresh(refresh);
 
   useEffect(() => {
     document.title = `Approvals (${pendingApprovals.length}) · Haku`;
@@ -103,11 +103,7 @@ export function ApprovalsEmbedPage(): JSX.Element {
         <Stack gap={2}>
           <Text fw={700}>Haku approvals</Text>
           <Text size="xs" c="dimmed">
-            {liveStatus === "live"
-              ? "Live updates connected"
-              : liveStatus === "offline"
-                ? "Live updates unavailable"
-                : "Connecting to live updates…"}
+            Approval list refreshes every 30 seconds
           </Text>
         </Stack>
         <Badge color={pendingApprovals.length > 0 ? "yellow" : "gray"} variant="light">

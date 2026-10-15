@@ -10,17 +10,6 @@ map $status $haku_asset_cache_control {
   default "no-store";
 }
 
-# WebSocket upgrade passthrough for the live tool-call event socket
-# (/api/events/ws). `proxy_http_version 1.1` alone is not enough — nginx only
-# forwards the Upgrade/Connection handshake headers when they're set explicitly,
-# so without this the WS handshake is silently downgraded to a plain request and
-# the socket fails (the console's approvals panel then only updates on reload).
-# `close` for non-upgrade requests keeps ordinary keepalive to the FastAPI upstream.
-map $http_upgrade $connection_upgrade {
-  default upgrade;
-  ''      close;
-}
-
 server {
   listen 8081;
   server_name _;
@@ -78,12 +67,6 @@ server {
 
   location /api/ {
     proxy_pass http://${HAKU_CONSOLE_API_UPSTREAM};
-    # Carry the WebSocket handshake through to FastAPI (/api/events/ws).
-    proxy_set_header Upgrade $http_upgrade;
-    proxy_set_header Connection $connection_upgrade;
-    # WS connections are long-lived; don't let the proxy read timeout kill an idle
-    # socket that's just waiting for the next tool-call event.
-    proxy_read_timeout 3600s;
   }
 
   location = /healthz {

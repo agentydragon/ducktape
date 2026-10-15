@@ -5,9 +5,9 @@ import { approvalDisplayFields } from "./approval_state";
 import { displayableError, fetchToolCalls, type ToolCallPage, type ToolCallRecord } from "./client";
 import { useCoalescedRefresh } from "./coalesced_refresh";
 import { PendingToolCallActions } from "./pending_tool_call_actions";
+import { usePeriodicRefresh } from "./periodic_refresh";
 import { ToolCallCard } from "./tool_call_card";
 import { useToolCallDecision } from "./tool_call_decision";
-import { useConsoleEvents } from "./console_events";
 import { useVariant } from "./variant_control";
 
 // One screenful and change, not the ledger's `le=500` cap. Every record carries its whole arguments
@@ -18,7 +18,7 @@ const HISTORY_PAGE_SIZE = 25;
 
 /** The first page, refetched over what is already loaded: the fresh page, then the rows below it
  * that it did not restate. Merging rather than replacing keeps the pages an operator scrolled
- * back through while a live event refreshes the top, and refreshes in place any call that
+ * back through while a periodic refresh updates the top, and refreshes in place any call that
  * finished since the last read.
  *
  * When the page and the loaded list have no row in common, more than a page has been submitted
@@ -88,9 +88,8 @@ export function ToolCallsPage(): JSX.Element {
   // older manual calls the client never even fetched.
   const [showAutoApproved, setShowAutoApproved] = useState(false);
 
-  // What every fetch below reads, rather than the state: the live-event callback is registered
-  // once (so it would close over a stale filter), and the checkbox handler needs the fetch to use
-  // its new value before that state has committed.
+  // What every fetch below reads, and the checkbox handler needs the fetch to use its new value
+  // before that state has committed.
   const filterRef = useRef(showAutoApproved);
   // Whether the next fetched page replaces what is loaded instead of merging over it. A ref, not
   // an argument, because a replacing request made while a refresh is in flight has to survive
@@ -98,9 +97,8 @@ export function ToolCallsPage(): JSX.Element {
   // that page over the previous filter's rows would show the two spliced together.
   const replaceRef = useRef(false);
 
-  // At most one refetch in flight, a burst of live events collapsing into one catch-up: every
-  // record carries its whole arguments and result, so overlapping fetches of the newest page cost
-  // real bandwidth for answers the next one discards.
+  // At most one refetch in flight: every record carries its whole arguments and result, so
+  // overlapping manual, decision, and periodic refreshes cost bandwidth for discarded answers.
   const { refresh, busy: refreshing } = useCoalescedRefresh(async () => {
     const replaceLoaded = replaceRef.current;
     replaceRef.current = false;
@@ -133,10 +131,8 @@ export function ToolCallsPage(): JSX.Element {
     }
   }, [loaded?.nextCursor, loadingMore]);
 
-  // Live: initial load on mount plus a refetch of the first page whenever a tool call is submitted,
-  // approved, denied, or finishes anywhere — the same WS signal the approvals panel uses. Pages
-  // already scrolled back through survive it (see `mergeNewestPage`).
-  useConsoleEvents(() => refresh());
+  // Keep the newest page current without discarding older pages the operator has already loaded.
+  usePeriodicRefresh(refresh);
 
   const decisions = useToolCallDecision({ onSettled: refresh });
 

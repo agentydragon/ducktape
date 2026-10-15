@@ -52,7 +52,6 @@ const chromeProps: ShellChromeProps = {
   onApproveScreenshot: noop,
   onDenyScreenshot: noop,
   onDismissRecentToolCall: noop,
-  liveStatus: "live",
   syncError: null,
   syncing: false,
   lastSyncAt: new Date("2026-07-20T12:34:56-07:00"),
@@ -72,7 +71,6 @@ function IndicatorFixture({ state }: { state: "current" | "syncing" | "error" })
     <div className="haku-console-shell">
       <ShellChrome
         {...chromeProps}
-        liveStatus={state === "error" ? "offline" : "live"}
         syncError={state === "error" ? "Unauthorized" : null}
         syncing={state === "syncing"}
       />

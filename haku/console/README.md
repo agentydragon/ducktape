@@ -1,6 +1,6 @@
 # haku/console — Haku's interactive console
 
-A FastAPI service serving the trusted Haku console as a React single-page app over JSON and WebSockets.
+A FastAPI service serving the trusted Haku console as a React single-page app backed by its REST API.
 The console is the operator-owned shell around Haku's cross-origin UI, the approval/audit ledger
 for privileged tool calls, and the home of Agent identity used by the Kubernetes proxy.
 
@@ -39,8 +39,8 @@ retire. There is no low-privilege console write tier: haku-ui writes its own sta
 The operator REST API (`/api/approvals/pending`, `/api/tool-calls`, and
 `POST /api/tool-calls/{tool_call_id}/decision`) remains active. It lists retained call records and
 allows already-pending work to be approved or denied; approved rows still execute through the
-configured in-process backend and record their result. The event WebSocket is only a lossy
-invalidation channel: REST remains authoritative.
+configured in-process backend and record their result. The browser refreshes these views every 30
+seconds while the ledger drains.
 
 The Console's Agent-facing MCP endpoint, Operator browser MCP client, and OAuth discovery handlers
 are retired. New MCP calls cannot enter the ledger. Existing rows and their operator decisions stay
