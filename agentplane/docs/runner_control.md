@@ -176,10 +176,12 @@ answers with the runner's own status and bytes. It has no database.
   `INVALID_ARGUMENT`, an unknown Sandbox `NOT_FOUND`.
 - **Expected identity during caller rollout.** A caller may also send all three headers
   `x-agentplane-sandbox-uid`, `x-agentplane-sandbox-owner-namespace` and
-  `x-agentplane-sandbox-owner-name`. The proxy compares them with the current Sandbox before looking
-  up its connection, and returns `NOT_FOUND` if its UID or owner changed. The group is optional while
-  old callers are being replaced; callers that need the wrapper's incarnation and owner fence send
-  all three. Requiring the group is a separate reader-removal rollout gate.
+  `x-agentplane-sandbox-owner-name`. The proxy compares them with the current Sandbox and verifies
+  its runner Pod is ready before looking up the connection, using the same read-side destination
+  checks as the wrapper. It returns `NOT_FOUND` if its UID or owner changed and `UNAVAILABLE` if the
+  runner Pod is not reachable. The group is optional while old callers are being replaced; callers
+  that need the wrapper's incarnation and owner fence send all three. Requiring the group is a
+  separate reader-removal rollout gate.
 - **Authorization.** The bearer is a `token_audience` token. The `caller_accounts` may call every
   method but `Quiesce`, which only `sandbox_controller_account` may; unset, nobody may.
 - **Holder.** A replica that does not hold the Sandbox's current connection answers `UNAVAILABLE`

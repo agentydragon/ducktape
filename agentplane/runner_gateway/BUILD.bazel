@@ -446,6 +446,7 @@ py_library(
     name = "runner_proxy",
     srcs = ["runner_proxy.py"],
     deps = [
+        ":destinations",
         ":lifecycle_control",
         "//agentplane:grpc_servicer",
         "//agentplane:subjects",
@@ -465,6 +466,7 @@ py_test(
     deps = [
         ":conftest",
         ":connection_records",
+        ":destinations",
         ":lifecycle_control",
         ":runner_control",
         ":runner_proxy",
@@ -480,6 +482,7 @@ py_test(
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",
         "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

@@ -25,6 +25,7 @@ async def service(resources: gateway_api.Resources) -> AsyncIterator[str]:
                     principals=resources.principals,
                     caller_accounts=resources.caller_accounts,
                     sandboxes=resources.destinations.sandboxes,
+                    destinations=resources.destinations,
                     control=resources.control,
                     sandbox_controller_account=None,
                 )
