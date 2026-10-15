@@ -831,6 +831,7 @@ py_test(
         ":session",
         ":store",
         "//:conftest",
+        "//agentplane:grpc_tunnel",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",

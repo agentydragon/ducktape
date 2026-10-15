@@ -458,7 +458,7 @@ class Runner:
         if session.setup_state in (runner_pb2.SETUP_STATE_NOT_REQUIRED, runner_pb2.SETUP_STATE_SUCCEEDED):
             await session.ensure_running()
 
-    async def adopt_incarnation(self, incarnation_uid: str | None) -> None:
+    async def adopt_incarnation(self, incarnation_uid: str) -> None:
         """Learn the incarnation from the gateway's `Welcome`, then take back every Session an earlier
         incarnation sealed."""
         self.store.adopt_incarnation(incarnation_uid)

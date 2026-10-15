@@ -13,6 +13,7 @@ import pytest
 import pytest_bazel
 from google.protobuf.timestamp_pb2 import Timestamp
 
+from agentplane.grpc_tunnel import local_server
 from agentplane.proto import (
     command_pb2,
     event_log_pb2,
@@ -24,7 +25,7 @@ from agentplane.proto import (
 from agentplane.runner.config import ClaudeLaunch, RunnerConfig
 from agentplane.runner.control import RunnerControlClient, RunnerService
 from agentplane.runner.harness_process import HarnessProcess
-from agentplane.runner.reconnect import StreamTiming
+from agentplane.runner.reconnect import StreamLostError, StreamTiming
 from agentplane.runner.runner import Runner
 from agentplane.runner.session import Session
 from agentplane.runner.store import IngressAcknowledgement, SessionRecord
@@ -170,6 +171,30 @@ async def test_a_redelivered_command_is_admitted_once_and_answered_from_the_jour
     assert first.admission.event.command_admitted.command == submit("test-input")
     assert (await runner.sessions[RUNNING].journal.admitted_entry("test-input")) == first.admission
     assert gateway.control.authorizations == ["Bearer test-placeholder"]
+
+
+async def test_a_welcome_without_an_incarnation_uid_is_rejected_before_serving_calls(
+    runner: Runner, gateway: Gateway
+) -> None:
+    gateway.control.incarnation_uid = ""
+    service = RunnerService(runner)
+    client = RunnerControlClient(
+        service,
+        target=gateway.endpoint.target,
+        bearer="test-placeholder",
+        timing=TIMING,
+        adopt_incarnation=runner.adopt_incarnation,
+        facts=runner.facts,
+        facts_changed=runner.facts_changed,
+    )
+    async with local_server(
+        lambda server: runner_control_pb2_grpc.add_RunnerServicer_to_server(service, server)
+    ) as runner_channel:
+        with pytest.raises(StreamLostError, match="Welcome did not name the Sandbox incarnation UID"):
+            await client.connect(runner_channel)
+
+    assert runner.store.incarnation_uid is None
+    assert gateway.control.connections == 0
 
 
 async def test_each_command_rpc_admits_its_command_and_a_command_id_belongs_to_one_operation(

@@ -109,17 +109,5 @@ async def test_a_new_incarnation_reopens_its_sealed_sessions_and_pushes_on(
         assert pushed[0].event.journal_reopened.incarnation_uid == "test-next-incarnation"
 
 
-async def test_a_gateway_that_names_no_incarnation_leaves_the_seal_to_the_state(
-    config: RunnerConfig, last_cursors: dict[str, int], gateway: Gateway
-) -> None:
-    del last_cursors
-    gateway.control.incarnation_uid = ""
-    async with running(config, gateway):
-        await RunnerDriver(gateway).quiesce()
-    async with running(config, gateway) as restarted:
-        await RunnerDriver(gateway).list_sessions()
-        assert restarted.store.lameduck
-
-
 if __name__ == "__main__":
     pytest_bazel.main()

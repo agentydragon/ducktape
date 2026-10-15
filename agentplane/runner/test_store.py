@@ -30,6 +30,18 @@ def test_a_stored_record_reproduces_the_spec_it_was_created_from(tmp_path: Path)
     assert store.read("session-1").spec() == spec
 
 
+def test_entering_lameduck_requires_the_gateway_incarnation_uid(tmp_path: Path) -> None:
+    store = SessionStore(tmp_path / "sessions")
+
+    with pytest.raises(RuntimeError, match="cannot quiesce before the gateway names its incarnation UID"):
+        store.enter_lameduck()
+    assert not store.lameduck
+
+    store.adopt_incarnation("test-incarnation")
+    store.enter_lameduck()
+    assert (store.root / "sealed").read_text() == "test-incarnation"
+
+
 def test_inherited_state_owner_descriptor_is_read_only_and_still_exclusive(tmp_path: Path) -> None:
     owner = StateOwner(tmp_path)
     assert fcntl.fcntl(owner.descriptor, fcntl.F_GETFL) & os.O_ACCMODE == os.O_RDONLY
