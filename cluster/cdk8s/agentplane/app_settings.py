@@ -28,7 +28,7 @@ from cluster.cdk8s.agentplane.egress import (
     PUBLIC_CODER_VISUALS_POLICY,
 )
 from cluster.cdk8s.model_selections import HarnessRoutes
-from model_catalog.catalog import Route
+from model_catalog.catalog import Provider, Route
 
 _THREAD_PRESET_PUBLIC_CODER_CODEX = "public-coder-codex"
 
@@ -39,6 +39,21 @@ _PUBLIC_CODER_INSTRUCTIONS = "\n\n".join(
         DUCKTAPE_PR_INSTRUCTIONS,
     ]
 )
+
+_PICKER_PROVIDER_NAMES = {
+    Provider.ANTIGRAVITY: "Antigravity",
+    Provider.GOOGLE: "Gemini",
+    Provider.OLLAMA: "cluster Ollama",
+    Provider.RUGGED_LOCAL: "rugged local",
+}
+
+
+def _picker_model_name(route: Route) -> str:
+    """Disambiguate GPT-OSS and Gemma by the provider serving this Agentplane route."""
+    if not route.model.id.startswith(("gpt-oss", "gemma4")):
+        return route.display_name
+    provider = _PICKER_PROVIDER_NAMES.get(route.upstream.provider, route.upstream.provider.value)
+    return f"{route.display_name} — {provider}"
 
 
 def settings(
@@ -54,7 +69,9 @@ def settings(
         models=ModelCatalog(
             models=[
                 ModelOption(
-                    model=route.id, display_name=route.display_name, reasoning_efforts=list(route.reasoning_efforts)
+                    model=route.id,
+                    display_name=_picker_model_name(route),
+                    reasoning_efforts=list(route.reasoning_efforts),
                 )
                 for route in models.all
             ],

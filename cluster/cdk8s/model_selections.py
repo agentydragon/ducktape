@@ -28,9 +28,15 @@ class HarnessRoutes:
 # Claude offerings are temporarily paused (#9121). Keep runner support, credentials,
 # and served routes for existing sessions; re-enable these selections after validation.
 # Testing alone offers the Claude harness a local model, so its acceptance cases run there.
-STAGING_APP_MODELS = HarnessRoutes(claude=(), codex=(*GPT6_RESPONSES_ROUTES, *OLLAMA_OPENAI_ROUTES))
+# The Agentplane Codex picker offers Qwen at 256K only; the 128K native route remains
+# available in testing for the live Claude smoke flow.
+_AGENTPLANE_OLLAMA_OPENAI_ROUTES = tuple(
+    route for route in OLLAMA_OPENAI_ROUTES if route != OLLAMA_QWEN_IQ4XS_128K.openai
+)
+
+STAGING_APP_MODELS = HarnessRoutes(claude=(), codex=(*GPT6_RESPONSES_ROUTES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES))
 TESTING_APP_MODELS = HarnessRoutes(
-    claude=(OLLAMA_QWEN_IQ4XS_128K.native,), codex=(GPT6_LUNA_RESPONSES, *OLLAMA_OPENAI_ROUTES)
+    claude=(OLLAMA_QWEN_IQ4XS_128K.native,), codex=(GPT6_LUNA_RESPONSES, *_AGENTPLANE_OLLAMA_OPENAI_ROUTES)
 )
 
 # Preserve the existing runner-owned context overrides for both native harnesses.

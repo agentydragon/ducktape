@@ -102,7 +102,7 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
     #
     # Haku launches on the local Qwen3.8 route with the wider 256K window the runner is
     # configured for; the OpenAI-compatible wire is the one that carries reasoning effort.
-    # Both Qwen context windows stay offered, so an operator can pick the 128K one here.
+    # Agentplane's Codex picker offers only the wider 256K Qwen route.
     # TODO(#9121): consider switching Haku back to a Claude default once Anthropic models and
     # the Claude adapter are wired up and validated again. Existing Haku Threads stay on Codex
     # either way: a Thread cannot move to a model with a different configured context window.
