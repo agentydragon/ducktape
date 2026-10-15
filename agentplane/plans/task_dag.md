@@ -1477,6 +1477,11 @@ These are operator-reviewable design and characterization tasks. They do not aut
 database, transport, identity or permission change. Detailed code paths and alternatives are in the
 [delivery and harness design note](../docs/runner_delivery_and_harness_design.md).
 
+**Approved transport direction (operator, 2026-10-15 UTC):** gRPC for internal APIs, a standard
+generated HTTP/JSON facade, and an ergonomic CLI, adopted incrementally by service and interface.
+Facade tooling, individual service migrations, and the CLI workflow contract remain separate work
+items below; this direction does not authorize runtime changes.
+
 ```mermaid
 flowchart LR
     DISPATCHER_HISTORY_BOUNDARY_DESIGN[Decision: Dispatcher and History boundary]
@@ -1487,15 +1492,22 @@ flowchart LR
     CODEX_APP_SERVER_MULTIPLEXING[In flight: Codex threads per process]
     CLAUDE_STREAM_SESSION_MULTIPLEXING[Characterize: Claude sessions per process]
     HARNESS_IDENTITY_DESIGN[Decision: process, store and native Session identity]
-    INTERNAL_API_SURFACE_DESIGN[Decision: internal and agent-facing API surfaces]
-    AGENT_API_TOOLING_DESIGN[Decision: scriptable agent API and commands]
+    HTTP_JSON_FACADE_TOOLING_SPIKE[Candidate: choose and prove generated HTTP/JSON facade tooling]
+    SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
+    AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
+    CNPG_FREE_K3S_INTEGRATION_TIER[Blocked: add a narrow CNPG-free K3s integration tier]
+    K3S_VM_IMAGE[Blocked: build a real VM fixture, section 10]
     DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_GATEWAY_TOPOLOGY_DESIGN
     RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state use remains .-> RUNNER_LIST_SESSIONS_RETIRE
     CODEX_APP_SERVER_MULTIPLEXING -. this lane's findings inform .-> HARNESS_IDENTITY_DESIGN
     CLAUDE_STREAM_SESSION_MULTIPLEXING -. this lane's findings inform .-> HARNESS_IDENTITY_DESIGN
+    CODEX_APP_SERVER_MULTIPLEXING -. native-child findings .-> NATIVE_SUBAGENT_EXPOSURE
+    CLAUDE_STREAM_SESSION_MULTIPLEXING -. native-child findings .-> NATIVE_SUBAGENT_EXPOSURE
     NATIVE_SUBAGENT_EXPOSURE -. child identity evidence informs .-> HARNESS_IDENTITY_DESIGN
     HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
-    INTERNAL_API_SURFACE_DESIGN --> AGENT_API_TOOLING_DESIGN
+    HTTP_JSON_FACADE_TOOLING_SPIKE --> SERVICE_API_TRANSPORT_MIGRATIONS
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN -. reviewed execution contract .-> CNPG_FREE_K3S_INTEGRATION_TIER
+    K3S_VM_IMAGE -. real VM path prerequisite .-> CNPG_FREE_K3S_INTEGRATION_TIER
 ```
 
 ### `DISPATCHER_HISTORY_BOUNDARY_DESIGN` — verify Dispatcher independence from retained History
@@ -1520,19 +1532,39 @@ that fact? No dependency or extraction is authorized by this audit.
 One evaluation goal is whether a useful Agentplane deployment can run without CNPG, potentially
 with runner-local persistence; inventory every other database consumer and say which state/feature
 can be omitted, moved or still requires a database.
-For direct admission, specify a durable runner-admitted receipt or explicit failure; a timed-out
-response is unknown, so retries need the same idempotency key and a way to resolve the outcome. Cover
-per-Session ordering, cancellation, duplicate opens, sender and replica failure, retries, offline or
-suspended Sandboxes and explicit wake policy. Runner-local persistence protects work only after the
-runner has committed admission; it does not accept work while that runner is absent. Inventory all
-database owners before making any CNPG claim: the shared cluster also serves `app`, `sandbox_commands`,
+For direct admission, require an available runner and reject while it is unavailable or suspended;
+direct admission must not wake-to-deliver or wait through long VM/image startup. The durable queue is
+the mode that may retain work and own the existing guarded wake path. A lost direct-admission reply is
+unknown, not rejection: retry the same idempotency key while the runner journal is retained. Runner
+storage loss is terminal for runner-owned state; there is no requirement to reconstruct it from a
+queue or History, and this does not imply separately retained History was also lost. Cover
+per-Session ordering, cancellation, duplicate opens, sender and replica failure, and retries. Runner-local
+persistence protects work only after the runner has committed admission; it does not accept work while
+that runner is absent. Inventory all database owners before making any CNPG claim: the shared cluster also serves `app`, `sandbox_commands`,
 `sandbox_service`, `actions`, `egress`, `notifications` and the Dispatcher; Indexing has a separate
 PostgreSQL dependency.
 
-**Recommendation for review:** preserve durable acceptance and current offline/wake semantics until
-an alternative has an identified persistence owner and equivalent failure behavior. Question: keep
-the queue, change its durable owner, or accept a narrower online-only contract? Do not implement a
-direct-RPC replacement from this design task alone.
+**Recommendation for review:** preserve the queue's durable acceptance and wake-to-deliver contract.
+If a direct mode is considered, keep it a separate online-only contract with explicit idempotent
+retry semantics and no implicit wake. Question: keep the queue, change its durable owner, or add a
+narrower direct mode? Do not implement a direct-RPC replacement from this design task alone.
+
+### `CNPG_FREE_K3S_INTEGRATION_TIER` — add a narrow database-independent integration tier
+
+**Blocked on the reviewed execution-persistence contract, actual removal of execution-database
+dependencies from the flows under test, and the real VM fixture.** Add a K3s integration tier for
+independently usable, loosely coupled Agentplane components; it is not a full-stack parity
+environment or a replacement for CNPG. Exercise only flows that can run without the removed
+dependencies. The tier may omit Notifications, History, Electric, the CNPG operator and PostgreSQL,
+without requiring those absent services' behavior in this suite or implying that every other service
+is database-free.
+
+Cover Pod and VM runner flows, adding test ingress where a selected flow needs it. Require a real
+supported VM fixture via `K3S_VM_IMAGE`; schemaless VirtualMachine CRD stubs in the existing k3s
+suite are not VM execution coverage. Keep this test target separate from runtime database removal;
+scope its included flows, omitted services and remaining state owners explicitly. A direct-admission
+contract, if selected, remains online-only and does not wake suspended Sandboxes; the durable-queue
+mode remains the owner of wake-to-deliver.
 
 ### `DISPATCHER_GATEWAY_TOPOLOGY_DESIGN` — decide where delivery and runner connection roles live
 
@@ -1565,50 +1597,63 @@ this disposition and successful caller migration; this design does not select it
 
 ### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign destination validation and send permission
 
-**Candidate decision.** Compare sender-side checks, one authoritative Dispatcher or Gateway
-execution boundary, and an intentional layered model. Keep source/subscription authorization separate
-from destination identity, owner/membership validation, send permission and the execution-time fence.
-Trace Notification subscriptions, all command senders, Dispatcher UID checks and Gateway proxy
-resolution. A candidate execution API requires Sandbox namespace, name and UID; persist all three
-through queue, wake and delivery, then reject a missing or replacement Sandbox at execution. Name-only
-discovery is separate. UID fences identity but does not authorize a caller. Evaluate owner/grant
-revocation, TOCTOU/replacement, unavailable or suspended runners, reader subscriptions versus command
-submission, and narrow credentials.
+**Candidate decision; preferred destination direction approved by operator, 2026-10-15.** Require
+submissions to carry the complete caller-provided destination tuple: Sandbox UID, optional persisted
+harness/store ID, and Session ID. Queue that tuple, locate the exact Sandbox, and let queued delivery
+wake only that target. The reachable runner rejects an unknown Session/store as a terminal outcome;
+it must not search other Sandboxes, create a Session, or fall back to a same-name replacement. Offline
+queue admission does not claim to verify live Session membership and does not need a central
+Session-to-Sandbox placement registry. Keep Kubernetes UID-to-live-connection/workload routing
+separate from session placement. Direct admission, if selected, remains online-only and does not wake;
+the queue owns wake-to-deliver.
 
-**Recommendation for review:** preserve existing checks until each layer's authority and denial
-semantics are approved; a source-read subscription must not silently grant sending or waking. Question:
-which boundary rejects stale or unauthorized destinations, what full identity and proof does it
-require, and which checks are early feedback versus execution authority? No centralization choice is
-made here.
+Still compare sender-side checks, one authoritative Dispatcher or Gateway execution boundary, and an
+intentional layered model. Keep source/subscription authorization separate from destination identity,
+owner/membership validation, send permission and the execution-time fence. Trace Notification
+subscriptions, all command senders, Dispatcher UID checks and Gateway proxy resolution. Preserve
+authentication and authorization before wake, command idempotency and outcome semantics. The exact
+address representation remains open: namespace/name plus UID or UID-based Sandbox resolution, and
+the representation of the optional store ID. UID fences identity but does not authorize a caller.
+Evaluate owner/grant revocation, TOCTOU/replacement, unavailable or suspended runners, reader
+subscriptions versus command submission, terminal unknown-target outcomes and narrow credentials.
 
-### `INTERNAL_API_SURFACE_DESIGN` — decide whether to consolidate internal APIs on gRPC
+**Recommendation for review:** implement no runtime change from the approved address direction alone.
+Preserve existing checks until each layer's authority and denial semantics are approved; a source-read
+subscription must not silently grant sending or waking. Question: which boundary rejects stale or
+unauthorized destinations, what locator and authorization proof does it require, and which checks are
+early feedback versus execution authority? No centralization choice is made here.
 
-**Candidate decision.** Compare (1) consolidating internal service APIs on gRPC and providing a
-scriptable agent CLI, (2) using gRPC internally while retaining HTTP/JSON agent APIs, and (3) a
-generated HTTP/JSON facade or transcoding layer over protobuf APIs. Inventory existing protobuf
-RPCs, FastAPI/OpenAPI routes, authentication, generators, client libraries and codegen already used
-in the repository before estimating cost. Preserve documented scriptability and independently
-usable API contracts; do not assume one protocol must serve every caller.
+### `HTTP_JSON_FACADE_TOOLING_SPIKE` — choose and prove the generated facade path
 
-**Recommendation for review:** choose only after a code-grounded inventory of generated-tool reuse,
-auth boundaries, streaming and compatibility costs. Question: which transport set gives internal
-services clear contracts while leaving agents able to drive supported workflows from scripts? No
-transport migration is authorized. Agent tooling design depends on this surface decision.
+**Candidate; approved direction recorded in the [delivery design note](../docs/runner_delivery_and_harness_design.md#api-transports-and-agent-workflows).** Compare the repository's existing protobuf and
+code-generation tools for producing a standard HTTP/JSON facade from service contracts. Use one
+bounded service operation to check generated request/response mapping, authentication and
+authorization propagation, error mapping, and streaming/cancellation behavior. Select no new facade
+framework without this code-grounded comparison; do not add a parallel hand-authored HTTP API.
+
+**Deliverable:** a reviewed tooling choice and a small, non-production proof of the generated path.
+This does not select the first production service or authorize its cutover.
+
+### `SERVICE_API_TRANSPORT_MIGRATIONS` — stage service and interface migrations independently
+
+**Blocked on `HTTP_JSON_FACADE_TOOLING_SPIKE` and a reviewed contract for each service.** Move
+internal service interfaces to gRPC and expose their generated HTTP/JSON facades incrementally, one
+service/interface at a time. Each migration needs its own caller inventory, authorization and
+behavior-preservation review, tests, rollout and rollback plan. Do not turn the approved direction
+into one repo-wide migration. No service has been selected for the first cutover.
 
 ### `AGENT_API_TOOLING_DESIGN` — preserve ergonomic, scriptable agent workflows
 
-**Candidate decision; depends on `INTERNAL_API_SURFACE_DESIGN`.** Design convenient commands and
+**Candidate; the interface direction is approved.** Design convenient CLI commands and composable
 JSON interfaces for listing Action groups and Actions, inspecting Action schemas, reading the
 authenticated caller's own Action status/results and waiting for completion, plus subscribing to or
 cancelling GitHub PR notifications. Specify auth discovery/credential scope, stable errors and exit
 codes, pagination, JSON output, streaming/reconnect, wait deadlines and cancellation semantics. Reuse
-the reviewed API/codegen choice rather than invent a parallel client stack. Update runner platform
-instructions and other prompts only after the user approves the tooling and command contract.
+the selected facade/API code generation and client tooling rather than inventing a parallel stack.
+Update runner platform instructions and other prompts alongside the reviewed CLI contract.
 
-**Recommendation for review:** make the same operations available as composable JSON for scripts and
-as concise commands for interactive agents; keep authorization and result ownership explicit.
-Question: which workflows belong in the CLI, which remain direct HTTP/JSON, and what stream/cancel
-contract can agents rely on? This is design only; no CLI, prompt or API change is authorized.
+**Deliverable:** an approved command and JSON contract with explicit authorization, error, stream,
+wait and cancellation behavior. This is design only; no CLI, prompt or API change is authorized.
 
 ### `CODEX_APP_SERVER_MULTIPLEXING` — characterize multiple threads over one app-server process
 
@@ -1624,13 +1669,14 @@ architecture and does not wait for the Claude result.
 
 ### `CLAUDE_STREAM_SESSION_MULTIPLEXING` — characterize multiple sessions over Claude stream-json
 
-**Candidate; independent investigation.** Determine whether the pinned Claude CLI can host multiple
-independently controlled native Sessions over one stream-json process. The current adapter launches
-with one `--session-id`, routes input/control over one stream and has no Agentplane session selector;
-native child task events do not prove multiplexed conversation support. Characterize frame routing,
-concurrency/isolation, cancellation scope, per-Session options/auth/workdir/config data, and
-failure/restart/`--resume` behavior from pinned-version evidence or a bounded real-binary test. Report
-unknowns; this lane does not wait for the Codex result.
+**Candidate; independent investigation.** Separately characterize native child-session discovery
+and visibility/control, and whether the pinned Claude CLI can host multiple independently
+interactive native Sessions over one stream-json process. A visible child may be read-only; child
+events do not prove independent input/cancellation or multiplexed conversation support. The current
+adapter launches with one `--session-id`, routes input/control over one stream and has no Agentplane
+session selector. Characterize frame routing, concurrency/isolation, cancellation scope, per-Session
+options/auth/workdir/config data, and failure/restart/`--resume` behavior from pinned-version
+evidence or a bounded real-binary test. Report unknowns; this lane does not wait for the Codex result.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide address, process, store and native Session identities
 

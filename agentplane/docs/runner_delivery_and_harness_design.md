@@ -1,9 +1,11 @@
 # Runner delivery boundaries and harness identity
 
-Status: **design review only.** This note records current code paths, alternatives and questions for
-operator review. It does not authorize changing runtime behavior, APIs, schemas, database ownership,
-identity mappings or caller permissions. Keep the existing security checks and durable queue until a
-replacement contract is reviewed.
+Status: **design review only.** This note records current code paths, approved direction, alternatives
+and remaining questions. The operator approved gRPC for internal APIs, a generated HTTP/JSON facade,
+and an ergonomic CLI, adopted incrementally by service and interface. This does not select a facade
+framework or authorize runtime/API cutover. Other sections do not authorize changes to behavior,
+schemas, database ownership, identity mappings or caller permissions. Keep the existing security
+checks and durable queue until a replacement contract is reviewed.
 
 The related decision nodes are in [section 14 of the task DAG](../plans/task_dag.md#14-delivery-boundaries-apis-and-harness-identity).
 The current runner contracts remain in [Session layering](thread_layering.md), the
@@ -78,6 +80,22 @@ including replacement between the Dispatcher check and proxy resolution. See
 [`destinations.py`](../runner_gateway/destinations.py), and
 [`runner_client.py`](../session_dispatcher/runner_client.py).
 
+**Approved preferred direction (operator, 2026-10-15):** every submission names its destination as
+the Sandbox UID, an optional persisted harness/store ID, and the Session ID. Queue and retry that
+tuple, locate the exact Sandbox, and let queued delivery wake only that target. Once the runner is
+reachable, it is authoritative for whether that Session/store exists; an unknown target is a
+terminal delivery failure, not a reason to search other Sandboxes, create a Session, or substitute a
+same-name replacement. This lets offline delivery rely on the caller's destination tuple rather
+than a central Session-to-Sandbox placement registry. The Kubernetes UID-to-live-connection or
+workload routing function remains separate from any session placement registry.
+
+The API representation and resolver remain open: decide whether the request carries a Kubernetes
+namespace/name locator alongside UID or resolves by UID, and how an optional store ID is represented.
+Do not claim live Session membership can be verified while the runner is unavailable. Authenticate
+and authorize the sender before waking; preserve the UID identity fence, command idempotency and
+outcome semantics. Direct admission, if selected, remains online-only and never wakes; only the
+queued mode owns wake-to-deliver.
+
 Review these alternatives without preselecting centralization:
 
 1. Keep caller-side preflight checks at subscription time and make every execution boundary enforce
@@ -94,13 +112,16 @@ Review these alternatives without preselecting centralization:
    checks at one authoritative command boundary. If this is selected, name which checks are advisory
    and which deny execution; do not silently treat duplicate checks as equivalent authority.
 
-One candidate execution contract is that every open, send, wake and other Sandbox-scoped execution API
-requires the Sandbox namespace, name and immutable UID. Persist that complete identity through any
-queued wake or delivery, and reject it at execution if the current object is absent or has another UID.
-Name-only lookup can remain a separate discovery/selection operation; it must not silently become an
-execution address. UID is an identity fence, not authorization: authenticate the caller and separately
-enforce ownership, grants and send permission. Review how owner identity and Session membership are
-bound alongside the UID, and which boundary revalidates them.
+The preferred submission address is the caller-provided Sandbox UID, optional persisted harness/store
+ID and Session ID. The exact Kubernetes locator is still open: namespace/name plus UID or UID-based
+resolution may locate the object, but the UID must fence identity. Persist the destination tuple
+through queued wake and delivery, then send only to that exact Sandbox. Name-only lookup remains a
+separate discovery/selection operation; it must not silently become an execution address. UID is an
+identity fence, not authorization: authenticate and authorize the sender before wake, and separately
+enforce any owner, grant and send permissions at the reviewed authority. The runner rejects an
+unknown Session/store when reachable; do not search/reroute, implicitly create it, or substitute a
+same-name Sandbox. Offline queue admission cannot prove live Session membership. Review which
+boundary revalidates identity and permission and how it reports terminal unknown-target outcomes.
 
 The decision must separately state: source/subscription authorization; destination namespace, name, UID
 and owner validation; current Session membership; permission to send; and the execution-time fence.
@@ -124,19 +145,25 @@ For persistence, compare the current durable queue with direct runner admission:
 
 | Concern                                 | Dispatcher queue                                                                                                             | Direct admission RPC                                                                                                                                              |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runner unavailable or Sandbox suspended | Can retain accepted work, retry after readiness, and use the reviewed wake policy.                                           | No runner can acknowledge admission. The caller needs a clear reject/defer contract or another durable owner.                                                     |
-| Lost response                           | Query/retry the same durable command ID and read Dispatcher state; runner admission can still be uncertain until reconciled. | Retry the same command ID against the runner's durable journal and distinguish unknown outcome from rejection.                                                    |
+| Runner unavailable or Sandbox suspended | Can retain accepted work, retry after readiness, and own the reviewed wake-to-deliver policy.                                | Requires an available runner. Reject if it is unavailable or suspended; do not wake it or wait for VM/image startup.                                              |
+| Lost response                           | Query/retry the same durable command ID and read Dispatcher state; runner admission can still be uncertain until reconciled. | A lost reply is unknown, not rejection. Retry the same command ID against the runner journal while that storage is retained.                                      |
 | Replica failure                         | Shared PostgreSQL rows, leases and generations recover queued/in-flight work.                                                | Caller retry or a new durable owner must survive the sender process and its failover. Runner-local journal only protects work after it is durably admitted there. |
-| Ordering and cancellation               | Queue defines per-Session order, stop behavior and delivery state.                                                           | The API must define ordering, cancellation and whether a waiting caller can hold work without reintroducing a queue.                                              |
+| Runner storage loss                     | Runner-owned state is terminally lost; the queue or History is not a promise to reconstruct it.                              | Runner-owned state is terminally lost; no queue/History reconstruction guarantee is implied. Retained History remains a separate store and may still exist.       |
+| Ordering and cancellation               | Queue defines per-Session order, stop behavior and delivery state.                                                           | The API must define ordering and cancellation without silently reintroducing a durable queue.                                                                     |
 | Offline acceptance                      | Accepted independently of a live harness, subject to current queue and wake policy.                                          | Cannot promise offline acceptance without persistence somewhere.                                                                                                  |
 
 A direct RPC can reduce one durable service database only if its caller/retry contract handles lost
 responses, idempotency, duplicate opens, suspended/offline runners, concurrency and failover. Do not
 turn a timeout into a false rejection or an admission receipt into proof of harness execution. The
-runner's journal and History evidence have different retention and availability semantics. If
-assessing a useful deployment without CNPG, explicitly inventory which other stateful services can be
-omitted or given another persistence owner; runner-local persistence cannot accept work while the
-runner is absent. Removing Dispatcher PostgreSQL alone does not remove CNPG. The current shared-CNPG databases are `app`,
+runner's journal and History evidence have different retention and availability semantics. While a
+runner journal is retained, a retry with the same command ID must distinguish an unknown reply from
+a new command. Loss of the runner's own storage ends that runner state; neither Dispatcher nor History
+is required to recreate the runner journal, and this does not claim that separately retained History
+was also lost. Any direct-admission mode is online-only and never wakes a suspended Sandbox; queued
+delivery remains the mode that may retain work and wake-to-deliver. If assessing a useful deployment
+without CNPG, explicitly inventory which other stateful services can be omitted or given another
+persistence owner; runner-local persistence cannot accept work while the runner is absent. Removing
+Dispatcher PostgreSQL alone does not remove CNPG. The current shared-CNPG databases are `app`,
 `sandbox_commands`, `sandbox_service`, `actions`, `egress`, `notifications` and `session_dispatcher`;
 the Indexing service also has a separate PostgreSQL dependency. See the
 [service database inventory](../README.md#system-overview).
@@ -145,6 +172,26 @@ The decision should recommend one of: retain the separate queue; change its boun
 preserving its contract; or replace it with a specifically defined direct-admission contract. State
 who owns idempotency, durable acceptance, unknown outcomes, retry responsibility and wake behavior
 before authorizing any queue or database removal.
+
+## API transports and agent workflows
+
+**Approved direction; implementation design remains open.** Use gRPC for internal service APIs, a
+standard generated HTTP/JSON facade over the protobuf contracts, and an ergonomic CLI for agent
+workflows. Adopt these interfaces incrementally, one service and interface at a time; do not plan a
+repo-wide cutover as one change. Reuse the repository's protobuf and code-generation tooling rather
+than maintaining a second, hand-authored HTTP API alongside the gRPC service.
+
+This settles the intended interface set, not the facade framework/transcoder, exact generation path,
+first service, API-specific contract, rollout sequence or CLI command syntax. Choose those through a
+bounded tooling spike and reviewed service plans. Keep authentication and authorization, stable errors,
+streaming and reconnect, wait deadlines and cancellation behavior consistent across the generated
+facade and CLI; a transport conversion must not weaken a service's existing permission checks.
+
+Agent tooling should support both concise commands and composable JSON for listing Action groups and
+Actions, inspecting an Action schema, reading the authenticated caller's own Action status/results,
+waiting for completion, and subscribing to or cancelling GitHub PR notifications. The detailed CLI
+contract remains a separate DAG item. No runtime API or CLI implementation is authorized by this
+direction alone.
 
 ## Harness process, store and Session identity
 
@@ -207,11 +254,13 @@ be inferred from the other.
   CI remains the runtime gate. The runner adapter still owns one thread ID per process; this
   evidence characterizes Codex and does not choose whether the runner should multiplex.
 - **Claude Code:** the adapter starts one stream-json process with one `--session-id`; inputs and
-  interrupt controls have no Agentplane-side session selector. Native child/task events are not proof
-  that one process can expose multiple independently controlled conversations. Characterize whether
-  the pinned CLI supports that capability and, if so, how frames, cancellation and native state are
-  scoped. Check concurrency/isolation, model and instruction options, auth/workdir/data separation,
-  process failure and `--resume` behavior.
+  interrupt controls have no Agentplane-side session selector. Separately establish whether native
+  child/task sessions can be discovered and represented as visible/read-only records, and whether
+  multiple independently interactive sessions can share one process. Native child/task events do
+  not prove multiplexed conversation support. Characterize the pinned CLI's discovery/control and,
+  if process multiplexing is supported, how frames, cancellation and native state are scoped. Check
+  concurrency/isolation, model and instruction options, auth/workdir/data separation, process failure
+  and `--resume` behavior.
 
 For both, the bounded result should identify supported API shape, concurrency and isolation limits,
 cancellation scope, which options/auth/workdir/data are process-wide or per Session, and failure,
@@ -225,3 +274,19 @@ Feed each characterization and the identity alternatives into
 must state which lifecycle and capabilities belong to a process, persisted store and logical/native
 Session, including whether one harness object may own multiple Sessions. No characterization,
 identity decision or design node authorizes runtime changes by itself.
+
+## CNPG-free K3s integration tier
+
+The proposed CNPG-free K3s tier is a deliberately narrow integration environment for independently
+usable, loosely coupled components. It is not a full Agentplane deployment or a replacement for
+CNPG. Once a reviewed execution contract removes the tested paths' actual execution-database
+dependencies, the tier should exercise only flows that can run without those dependencies. It may
+omit Notifications, History, Electric, the CNPG operator and PostgreSQL; it does not need parity from
+services it omits. Keep other stateful services and their data owners explicit rather than implying
+that removing one Dispatcher database removes every database dependency.
+
+Cover both Pod and VM runner paths, with test ingress where a tested flow needs it. VM coverage must
+boot a real supported VM fixture: the existing k3s suite's schemaless VirtualMachine stubs only make
+controller caches resolve and are not VM execution coverage. Keep the test-tier design and
+implementation as a separate DAG item, gated on the reviewed execution-persistence contract and
+the real VM fixture prerequisite.
