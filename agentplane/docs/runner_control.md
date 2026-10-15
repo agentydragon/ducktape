@@ -109,8 +109,8 @@ message RunnerFacts {
   new frame kind lands in its receiver before any sender uses it.
 - **The incarnation.** `Welcome.incarnation_uid` is the UID of the Pod the gateway authenticated, which
   is the Sandbox's current incarnation (a VM's virt-launcher Pod for a VM Sandbox). The runner tells
-  its Sessions' seal apart from an earlier incarnation's by it ([teardown seal](../runner/SPEC.md#teardown-seal)),
-  and keeps every seal if a `Welcome` names none, as before the field existed.
+  its Sessions' seal apart from an earlier incarnation's by it ([teardown seal](../runner/SPEC.md#teardown-seal)).
+  A `Welcome` without a UID is rejected before the runner serves calls or quiesces sessions.
 - **Later streams bind to the epoch.** Every RPC other than `Connect` carries the connection epoch
   from `Welcome` in metadata and is refused once that epoch is superseded.
 - **Message size.** gRPC's default 4 MiB per message.
