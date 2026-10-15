@@ -28,6 +28,7 @@ const live = vi.hoisted(
           namespace: "agentplane-test",
           created_at: "2026-01-01T00:00:00Z",
           operating_mode: "Running",
+          wake_on_send: false,
           service_account: { namespace: "agentplane-test", name: "startup-test" },
           preset: "test-preset",
           status: { conditions: [{ type: "Ready", status: "True" }] },

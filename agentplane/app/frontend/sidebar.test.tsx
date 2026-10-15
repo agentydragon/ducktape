@@ -64,6 +64,7 @@ function sandbox(name: string, overrides: Partial<SandboxView> = {}): SandboxVie
       status: { phase: "Running", podIP: "10.0.0.1", conditions: [{ type: "Ready", status: "True" }] },
     },
     ...overrides,
+    wake_on_send: overrides.wake_on_send ?? false,
   };
 }
 

@@ -287,6 +287,22 @@ it("shows existing wake policy and updates the displayed Sandbox incarnation", a
   expect(checkbox.checked).toBe(false);
 });
 
+it("clears the pending wake policy when the request fails at the transport", async () => {
+  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, wake_on_send: false }] };
+  const { container } = await render();
+  const checkbox = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Wake on message for test-created-sandbox"]'
+  );
+  if (!checkbox) throw new Error("Missing existing Sandbox Wake on message checkbox");
+  vi.spyOn(api, "PATCH").mockRejectedValue(new Error("Network disconnected"));
+
+  await act(async () => checkbox.click());
+
+  expect(checkbox.checked).toBe(false);
+  expect(checkbox.disabled).toBe(false);
+  expect(container.textContent).toContain("Network disconnected");
+});
+
 it("flags an invalid typed name and refuses to create", async () => {
   const { container } = await render();
   await type(input(container, "Name"), "Bad_Name");

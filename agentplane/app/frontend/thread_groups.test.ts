@@ -15,6 +15,7 @@ function sandboxView(name: string, overrides: Partial<SandboxView> = {}): Sandbo
     phase: "Creating",
     pod: null,
     ...overrides,
+    wake_on_send: overrides.wake_on_send ?? false,
   };
 }
 

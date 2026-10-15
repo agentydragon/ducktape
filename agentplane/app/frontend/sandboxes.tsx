@@ -17,7 +17,7 @@ import {
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
-import { type JSX, useEffect, useState } from "react";
+import { type JSX, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { api, displayableError, type NewSandbox, type SandboxPresetView, type SandboxView } from "./client";
@@ -61,7 +61,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [pendingWakePolicy, setPendingWakePolicy] = useState<Record<string, boolean>>({});
   const [savingWakePolicy, setSavingWakePolicy] = useState<Set<string>>(new Set());
   const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
-  const rows: SandboxView[] = live.snapshot?.sandboxes ?? [];
+  const rows: SandboxView[] = useMemo(() => live.snapshot?.sandboxes ?? [], [live.snapshot?.sandboxes]);
   useEffect(() => {
     setPendingWakePolicy((current) => {
       const next = { ...current };
@@ -156,24 +156,26 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   async function setWakePolicy(row: SandboxView, wake_on_send: boolean): Promise<void> {
     setPendingWakePolicy((current) => ({ ...current, [row.uid]: wake_on_send }));
     setSavingWakePolicy((current) => new Set(current).add(row.uid));
-    const { error: failure } = await api.PATCH("/sandboxes/{name}/wake-policy", {
-      params: { path: { name: row.name } },
-      body: { uid: row.uid, wake_on_send },
-    });
-    setSavingWakePolicy((current) => {
-      const next = new Set(current);
-      next.delete(row.uid);
-      return next;
-    });
-    if (failure) {
+    try {
+      const { error: failure } = await api.PATCH("/sandboxes/{name}/wake-policy", {
+        params: { path: { name: row.name } },
+        body: { uid: row.uid, wake_on_send },
+      });
+      if (failure) throw failure;
+      setError(null);
+    } catch (reason: unknown) {
       setPendingWakePolicy((current) => {
         const next = { ...current };
         delete next[row.uid];
         return next;
       });
-      setError(displayableError(failure));
-    } else {
-      setError(null);
+      setError(displayableError(reason));
+    } finally {
+      setSavingWakePolicy((current) => {
+        const next = new Set(current);
+        next.delete(row.uid);
+        return next;
+      });
     }
   }
 
@@ -286,6 +288,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                       {node}
                     </Text>
                     <Checkbox
+                      label="Wake on message"
                       aria-label={"Wake on message for " + row.name}
                       checked={pendingWakePolicy[row.uid] ?? row.wake_on_send ?? false}
                       disabled={

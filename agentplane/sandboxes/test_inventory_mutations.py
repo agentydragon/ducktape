@@ -143,7 +143,7 @@ async def test_wake_policy_is_uid_fenced_and_does_not_resume_or_wake(
         {"metadata": {"uid": view.uid, "resourceVersion": "1"}, "spec": {"wakeOnSend": False}},
     )
 
-    stored["metadata"]["uid"] = "replacement-incarnation"
+    stored["metadata"]["uid"] = "00000000-0000-4000-8000-000000000002"
     with pytest.raises(SandboxNotFoundError):
         await inventory.set_wake_on_send(view.name, uid=view.uid, wake_on_send=True)
 

@@ -12,6 +12,7 @@ function sandbox(conditions: { type: string; status: string }[]): SandboxView {
     namespace: "agentplane-test",
     created_at: "2026-01-01T00:00:00Z",
     operating_mode: "Running",
+    wake_on_send: false,
     service_account: { namespace: "agentplane-test", name: "test-sandbox" },
     status: { conditions },
     phase: "Running",
