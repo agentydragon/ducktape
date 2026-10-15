@@ -240,6 +240,31 @@ installs the inline Home Manager launcher. No live host activation or
 authenticated cluster end-to-end verification was performed in these router
 checks.
 
+Installed-path validation after the October 14 evening activation:
+
+- `nginx` and `llama-cpp` are active; provisioning finished successfully with all
+  nine artifacts ready, and systemd has no pending activation jobs. Provisioning
+  now runs independently of the router. The installed router uses `--offline`;
+  an actual host restart with networking unavailable has not been tested.
+- The loopback API lists seven profiles. A tiny Qwen3 4B chat returned `READY`.
+  A subsequent installed OpenCode edit attempt was stopped when available RAM
+  fell below the 8 GiB guard (6.6 GiB observed); no file edit completed. This is
+  a resource-limited attempt, not a coding-quality failure.
+- Retrying with the installed launcher's `gemma4-e2b-long-128k-experimental`
+  selector completed in 46.0 seconds on AC. Its `read` and `edit` tools changed
+  `return a - b` to `return a + b` in a temporary two-line Python function.
+  OpenCode exited zero and reported the change; minimum available RAM was
+  11.32 GiB. No commands or tests were requested from the agent. The main initial
+  prompt had 4,764 tokens; all requests reported `truncated = 0`. This is a tiny
+  tool-use smoke, not a long-context or general coding benchmark. The test model
+  was unloaded afterward.
+- Nginx rejects missing/wrong bearer tokens with HTTP 401. A request originating
+  on rugged with the exact cluster credential returns HTTP 200 and seven models.
+  Credentials were used only in memory and were not logged. A request from a
+  LiteLLM pod through the Kubernetes rugged service timed out; successful cluster
+  inference remains unverified. LiteLLM's own authenticated model list works and
+  includes the three configured rugged routes.
+
 The retained Ollama base-tag prefetch is only fallback-cache preparation: it
 does not qualify a context size or establish coding quality for Qwen3.5.
 
