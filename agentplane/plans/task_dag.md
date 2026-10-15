@@ -630,6 +630,15 @@ belongs in [the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measu
 Preserve assertions and timeouts. The expensive lifecycle workflow stays **manual-only**;
 automatic triggers require a separate reviewed change. Language rewrites require Rai's decision.
 
+**Rewrite candidate, operator note, 2026-10-15 PDT:** consider Runner Gateway in Go for
+consistency with existing Go components. Its gRPC/protobuf boundaries and generated bindings
+make it a promising bounded candidate. First measure its image/startup contribution and
+inventory the full contract: stream ownership and forwarding, authentication, Sandbox identity
+fencing, cancellation/deadlines and remaining registry persistence. Compare a Go rewrite with
+Python packaging improvements; protocol generation alone does not preserve those semantics.
+This records a candidate, not authorization to rewrite it. Account for planned wrapper/registry
+retirements so a rewrite need not recreate obsolete surfaces.
+
 ### `K3S_BUNDLED_SERVICES_SPIKE` — measure a less isolated control plane in real k3s
 
 **Unscheduled spike; operator, 2026-10-15 PDT.** Evaluate running Agentplane control-plane
