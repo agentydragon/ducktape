@@ -87,7 +87,7 @@ async def test_vm_console_to_status_tab(view: VisualPage, app: AgentplaneFixture
 async def test_queued_session_open_follows_live_projection_and_survives_return(
     view: VisualPage, app: AgentplaneFixture
 ) -> None:
-    """A queued Open follows its matching History projection; the runner inventory lists it on return."""
+    """A queued Open follows its History projection; the Sandbox table lists it on return."""
     await app.queue_open_response()
     await app.mount_app("/sandboxes/ready-sandbox?tab=sessions")
     page = view.page
