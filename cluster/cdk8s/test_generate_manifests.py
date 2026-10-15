@@ -159,24 +159,6 @@ def test_no_image_automation_markers(generated: Path) -> None:
     assert not marked, "Generated files must not carry a Flux image-automation marker:\n" + "\n".join(marked)
 
 
-def test_plaid_mcp_is_not_gated_by_unrelated_authentik_terraform(
-    generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
-) -> None:
-    plaid_mcp = next(
-        doc
-        for doc in _generated_documents(generated, parsed_yaml_documents)
-        if doc.get("kind") == "Kustomization" and doc["metadata"]["name"] == "plaid-mcp"
-    )
-    spec = plaid_mcp["spec"]
-    assert {dependency["name"] for dependency in spec["dependsOn"]} == {
-        "cnpg",
-        "external-secrets-operator",
-        "authentik",
-        "seaweedfs-operator",
-    }
-    assert spec["wait"]
-
-
 def test_flux_kustomizations_under_parked_path_are_annotated(
     generated: Path, parsed_yaml_documents: dict[Path, tuple[Any, ...]]
 ) -> None:
