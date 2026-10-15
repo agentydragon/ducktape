@@ -29,7 +29,8 @@ Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consist
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
 user experience. Finish reported bugs and red PR checks first. The next dispatch order is
 `APP_OPEN_FLAG_REMOVE` and verified runner compatibility cleanup, then `DISPATCHER_WAKE_ACTIVATION`,
-then `K3S_LIFECYCLE_SUITE` / `ISOLATED_TEST_SPIKES_RETIRE` and `K3S_STARTUP_COST`.
+then `ISOLATED_TEST_SPIKES_RETIRE` and `K3S_STARTUP_COST`. The lifecycle coverage audit found the
+requested eventual outcomes already covered; see the [suite coverage](../x/k3s_env/README.md#lifecycle-coverage).
 Audit assignment does not waive any image, embedded VM wheel, live-runner or retained-data gate.
 
 These are assignments, not claims that gated work has started. Independent config changes can
@@ -729,20 +730,7 @@ flowchart TD
     APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE
-    K3S_LIFECYCLE_SUITE[Candidate: k3s lifecycle integration suite]
-    QUIESCE_WITHOUT_POLLING -. quiesce assertions .-> K3S_LIFECYCLE_SUITE
 ```
-
-### `K3S_LIFECYCLE_SUITE` — a k3s lifecycle integration suite
-
-**Undispatched; quiesce coverage follows `QUIESCE_WITHOUT_POLLING`.** The existing model-free
-suite covers create, bootstrap execution, suspend, resume and delete in one shared k3s environment.
-Check practical eventually-consistent outcomes: Ready/Bootstrapped plus the bootstrap marker, and
-completed suspension after quiesce. Reuse existing coverage where it proves these outcomes; do not
-require precise intermediate condition timing or ordering in k3s (operator, 2026-10-15 UTC).
-Exact transition invariants belong in deterministic controller/runner tests. Keep the suite in its
-separate manual-only workflow. Performance work is `K3S_STARTUP_COST`; real KubeVirt, Cilium,
-ClusterIP routing and OIDC/Dex coverage remain explicit limitations before `TESTING_ENVIRONMENT_RETIRE`.
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
 

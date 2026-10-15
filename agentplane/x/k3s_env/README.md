@@ -23,6 +23,20 @@ The importer consumes the `oci_image` targets through `oci_layout_rloc`, combine
 descriptors with the rendered tags, and streams each distinct blob once. It does not materialize
 Docker-format `oci_load` tarballs.
 
+## Lifecycle coverage
+
+The model-free [lifecycle tests](test_lifecycle.py) wait for the Sandbox's own `Ready=True`
+condition, check a bootstrap-created file, and suspend until the effective mode is `Suspended` and
+the Pod is gone. Resume waits for Ready again and verifies the state-volume marker survived.
+The controller gates Ready on workload readiness, runner connection and bootstrap success.
+
+Exact bootstrap and seal-before-stop ordering belongs in deterministic
+[controller tests](../../sandbox_controller/controller_test.go), including
+`TestReadyWaitsForTheBootstrapAndStopsOnItsFailure` and
+`TestSuspensionWaitsForTheRunnerToQuiesce`. The 2026-10-15 coverage audit found these tests and the
+existing eventual k3s outcomes cover the requested lifecycle checks; no extra transition assertions
+or expensive rerun were needed. New quiesce behavior still needs its own focused regression tests.
+
 ## Lifecycle measurements
 
 ### OCI-layout streaming, 2026-10-14
