@@ -35,7 +35,13 @@ def test_every_service_phase_has_a_view_phase(phase: SandboxPhase, view_phase: V
 
 
 def test_absent_protobuf_mode_is_nullable_in_the_http_view() -> None:
-    view = Sandbox(name="fresh", uid=str(uuid4()), created_at=Timestamp(seconds=1), phase=SandboxPhase.UNSPECIFIED)
+    view = Sandbox(
+        name="fresh",
+        uid=str(uuid4()),
+        created_at=Timestamp(seconds=1),
+        service_account=ServiceAccount(namespace="test-namespace", name="fresh"),
+        phase=SandboxPhase.SANDBOX_PHASE_UNSPECIFIED,
+    )
 
     assert sandbox_view(view).operating_mode is None
 
@@ -45,8 +51,9 @@ def test_ready_condition_does_not_override_an_unreported_mode() -> None:
         name="fresh",
         uid=str(uuid4()),
         created_at=Timestamp(seconds=1),
+        service_account=ServiceAccount(namespace="test-namespace", name="fresh"),
         status={"conditions": [{"type": "Ready", "status": "True"}]},
-        phase=SandboxPhase.UNSPECIFIED,
+        phase=SandboxPhase.SANDBOX_PHASE_UNSPECIFIED,
     )
 
     assert not sandbox_is_ready(sandbox_view(view))
