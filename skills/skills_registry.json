@@ -100,6 +100,13 @@
       "filename": "debundle_architect.skill"
     },
     {
+      "name": "debundle_explain",
+      "pkg": "skill-debundle_explain",
+      "target": "//devinfra/js/debundle/skills/debundle_explain:debundle_explain_skill",
+      "output": "bb-out/bazel-out/k8-fastbuild/bin/devinfra/js/debundle/skills/debundle_explain/debundle_explain.skill",
+      "filename": "debundle_explain.skill"
+    },
+    {
       "name": "debundle_intake",
       "pkg": "skill-debundle_intake",
       "target": "//devinfra/js/debundle/skills/debundle_intake:debundle_intake_skill",
