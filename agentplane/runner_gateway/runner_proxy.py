@@ -14,6 +14,7 @@ import grpc
 
 from agentplane.grpc_servicer import Abort, ServicerResources, status_mapping
 from agentplane.proto import runner_control_pb2, sandboxes_pb2
+from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
 from agentplane.sandboxes.errors import SandboxNotFoundError
 from agentplane.sandboxes.reader import SandboxReader
@@ -41,6 +42,7 @@ class Resources(ServicerResources):
     """What the proxy serves from; `caller_accounts` may call every method but `Quiesce`."""
 
     sandboxes: SandboxReader
+    destinations: DestinationResolver
     control: LifecycleControl
     sandbox_controller_account: ServiceAccountRef | None
 
@@ -52,7 +54,7 @@ errors = status_mapping(
     Abort(grpc.aio.AioRpcError, lambda error: (error.code(), error.details() or "")),
     deadline="service deadline expired",
     unavailable="destination unavailable; no offline admission",
-    also_unavailable=(ConnectionNotHeldError,),
+    also_unavailable=(ConnectionNotHeldError, DestinationUnavailableError),
 )
 
 
@@ -109,12 +111,13 @@ class RunnerProxy(grpc.GenericRpcHandler):
             await authenticate(self.resources.principals, self.callers(method), context)
             name = sandbox_name(context)
             expected = expected_sandbox(context, name)
-            sandbox = (
-                await self.resources.sandboxes.get(name)
-                if expected is None
-                else await self.resources.sandboxes.incarnation(expected)
-            )
-            connection = self.resources.control.holder(UUID(sandbox.uid))
+            if expected is None:
+                sandbox = await self.resources.sandboxes.get(name)
+                sandbox_uid = sandbox.uid
+            else:
+                await self.resources.destinations.resolve(expected, writes=False)
+                sandbox_uid = expected.sandbox_uid
+            connection = self.resources.control.holder(UUID(sandbox_uid))
             if connection is None:
                 raise ConnectionNotHeldError("another replica holds this Sandbox's runner connection")
             return await connection.tunnel.forward(method, request, deadline_s=context.time_remaining())

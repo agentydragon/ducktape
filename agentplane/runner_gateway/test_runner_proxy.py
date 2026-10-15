@@ -9,10 +9,12 @@ from dataclasses import dataclass
 import grpc
 import pytest
 import pytest_bazel
+from kubernetes_asyncio import client as k8s_client
 
 from agentplane.grpc_serving import serving
 from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases
+from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
 from agentplane.runner_gateway.runner_proxy import (
@@ -75,6 +77,7 @@ def replica(
                         principals=cluster.build_principal_resolver(AUDIENCE),
                         caller_accounts=frozenset({CALLER}),
                         sandboxes=cluster.inventory,
+                        destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
                         control=control,
                         sandbox_controller_account=CONTROLLER,
                     )
@@ -244,6 +247,16 @@ async def test_expected_sandbox_identity_is_checked_before_tunneling(holder: Rep
             )
         assert incomplete.value.code() == grpc.StatusCode.INVALID_ARGUMENT
         assert len(runner.received) == 1
+
+
+async def test_expected_sandbox_identity_requires_a_ready_runner_pod(holder: Replica, cluster: SandboxCluster) -> None:
+    cluster.fake.pods[SANDBOX]["status"]["conditions"] = []
+    async with runner_on(holder) as runner, runner_stub(holder) as stub:
+        with pytest.raises(grpc.aio.AioRpcError) as unavailable:
+            await stub.ListSessions(runner_pb2.ListSessionsRequest(), metadata=identity_metadata())
+
+        assert unavailable.value.code() == grpc.StatusCode.UNAVAILABLE
+        assert not runner.received
 
 
 if __name__ == "__main__":
