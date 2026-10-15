@@ -1796,6 +1796,11 @@ data:
         name: agentplane-app
       - namespace: agentplane-staging
         name: agentplane-notifications
+    wake_caller_accounts:
+      - namespace: agentplane-staging
+        name: agentplane-app
+      - namespace: agentplane-staging
+        name: agentplane-notifications
     token_audience: agentplane-session-dispatcher
     runner_control_target: "{sandbox}-control.{namespace}.svc:8080"
     runner_token_file: /var/run/secrets/agentplane-runner-gateway/token

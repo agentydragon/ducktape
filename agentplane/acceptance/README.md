@@ -79,8 +79,12 @@ and generation still match the temporary scale, preserving concurrent GitOps/ope
 Evidence is written to `test.outputs/dispatcher-deployed.json`; `passed` and `cleanup_complete`
 are distinct. The `queue` case retains the original single-replica delivery check.
 
-After the testing-only `wake_caller_accounts` config is applied and the Dispatcher, migration and
-Sandbox Controller images are Ready, run the wake case separately:
+Testing config allows `agentplane-app` and `agentplane-notifications` to request wakes. The bounded
+`opted_in` case passed against testing in #10541: concurrent app `OpenSession` and notification
+`SubmitInput` shared one wake and both reached runner admission. Reuse that evidence while only
+staging's caller allowlist changes; run this case again if the wake implementation or its caller
+authorization changes. For a fresh testing acceptance, wait until the Dispatcher, migration and
+Sandbox Controller images are Ready, then run:
 
 ```bash
 bazelisk test //agentplane/acceptance:test_dispatcher_deployed \
@@ -93,7 +97,11 @@ Both senders must share one `wakeGeneration`; the Dispatcher must wait for a new
 before admitting the Session and input. The existing `queue` case checks that an app send against
 the default `wakeOnSend: false` stays queued with `wake_on_send_disabled` and does not mutate the
 Sandbox. The test records the deployed image references and deletes only its own Sandbox. It does
-not exercise staging or expand the caller allowlist.
+not exercise staging. A staging allowlist does not change any existing Sandbox: send-triggered wake
+still requires that Sandbox's `spec.wakeOnSend` to be explicitly true. The app's current create API
+and form do not expose that field, so app-created Sandboxes remain opted out until the separate
+create-form follow-up lands. The Dispatcher charges at most ten distinct wake generations per
+authenticated caller per rolling minute.
 
 ## MCP integration
 

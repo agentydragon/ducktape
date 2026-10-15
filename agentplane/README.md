@@ -84,7 +84,7 @@ flowchart TB
     hs -->|ingest, fold, read| hist_db
     notif -->|Sandbox reads| k8s
     dispatcher -->|Sandbox watch| k8s
-    dispatcher -.->|send wake: guarded Sandbox patch, gated off| k8s
+    dispatcher -->|send wake: guarded Sandbox patch; app and notifications callers, Sandbox opt-in| k8s
     dispatcher -->|queued commands, state, terminal-event notifications| dispatcher_db
     dispatcher_db[(session_dispatcher DB)]
     dispatcher -->|queued Session opens and commands through the runner proxy| gw

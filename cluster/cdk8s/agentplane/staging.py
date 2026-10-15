@@ -28,6 +28,7 @@ from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
 from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
+from agentplane.subjects import ServiceAccountRef
 from cluster.cdk8s import (
     agent_access_profiles,
     cilium,
@@ -38,6 +39,7 @@ from cluster.cdk8s import (
 )
 from cluster.cdk8s.agentplane import (
     actions,
+    app as app_component,
     command_sandbox,
     notifications,
     policy_controller,
@@ -394,6 +396,12 @@ ENV = Environment(
         ],
     ),
     vm_sandboxes=True,
+    wake_caller_accounts=frozenset(
+        {
+            ServiceAccountRef(namespace=STAGING_NAMESPACE, name=app_component.NAME),
+            ServiceAccountRef(namespace=STAGING_NAMESPACE, name=notifications.NAME),
+        }
+    ),
 )
 
 

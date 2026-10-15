@@ -1,4 +1,4 @@
-"""Dispatcher wake eligibility is enabled only for the approved testing senders."""
+"""Dispatcher wake eligibility is limited to the approved app and notification senders."""
 
 from typing import Any, cast
 
@@ -59,11 +59,10 @@ def test_dispatcher_deployment_and_sender_auth(
         "runner_token_file": "/var/run/secrets/agentplane-runner-gateway/token",
         "port": 8080,
     }
-    if namespace == testing.ENV.namespace:
-        expected_settings["wake_caller_accounts"] = [
-            {"namespace": namespace, "name": app.NAME},
-            {"namespace": namespace, "name": notifications.NAME},
-        ]
+    expected_settings["wake_caller_accounts"] = [
+        {"namespace": namespace, "name": app.NAME},
+        {"namespace": namespace, "name": notifications.NAME},
+    ]
     assert settings == expected_settings
     token_mount = one(mount for mount in container["volumeMounts"] if mount["name"] == "runner-gateway-token")
     assert token_mount["mountPath"] == "/var/run/secrets/agentplane-runner-gateway"
