@@ -152,7 +152,7 @@ def test_dispatcher_deployment_and_sender_auth(
     )
 
 
-def test_only_testing_app_config_enables_dispatcher_session_openings(
+def test_app_config_omits_retired_dispatcher_session_opening_flag(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
     def app_config(namespace: str) -> dict[str, Any]:
@@ -163,7 +163,7 @@ def test_only_testing_app_config_enables_dispatcher_session_openings(
         )
         return cast(dict[str, Any], yaml.safe_load(config["data"]["config.yaml"]))
 
-    assert app_config(testing.ENV.namespace)["session_dispatcher_open_sessions"] is True
+    assert "session_dispatcher_open_sessions" not in app_config(testing.ENV.namespace)
     assert "session_dispatcher_open_sessions" not in app_config(staging.ENV.namespace)
 
 

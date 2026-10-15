@@ -2878,7 +2878,6 @@ data:
     default_policy_sets:
       - basic
       - inference-experiments
-    session_dispatcher_open_sessions: true
     egress_admin_url: http://agentplane-egress-admin.agentplane-testing.svc:8081/
     action_federation:
       service_url: http://agentplane-actions.agentplane-testing.svc:8080/
