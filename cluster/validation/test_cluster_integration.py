@@ -189,20 +189,18 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         if resource.kind == "Namespace":
             expect_readers(resource)
 
-    config = staging_app_config
-    policy_sets = staging_policy_sets
     reader_roles = {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}
     actual = {
         (namespace, rule["role"]["name"])
-        for name in config["sandbox_presets"][preset]["policy_sets"]
-        for rule in policy_sets[name]
+        for name in staging_app_config["sandbox_presets"][preset]["policy_sets"]
+        for rule in staging_policy_sets[name]
         if rule["type"] == "kubernetes_role_binding" and rule["role"]["name"] in reader_roles
         for namespace in rule["namespaces"]
     }
     assert actual == expected
     policy_set_namespaces = {
         namespace
-        for rules in policy_sets.values()
+        for rules in staging_policy_sets.values()
         for rule in rules
         if rule["type"] == "kubernetes_role_binding"
         for namespace in rule["namespaces"]
@@ -222,7 +220,11 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         for doc in staging_manifest_docs
     )
 
-    for rule in (rule for name in config["sandbox_presets"][preset]["policy_sets"] for rule in policy_sets[name]):
+    for rule in (
+        rule
+        for name in staging_app_config["sandbox_presets"][preset]["policy_sets"]
+        for rule in staging_policy_sets[name]
+    ):
         assert rule.get("clusterRole") not in reader_roles, rule
         if rule.get("role", {}).get("name") in reader_roles:
             assert rule["role"]["kind"] == "ClusterRole"
@@ -267,7 +269,7 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         assert {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles"], "verbs": ["get"]} in role["rules"]
         expected_bound_roles = {
             rule["role"]["name"]
-            for rules in policy_sets.values()
+            for rules in staging_policy_sets.values()
             for rule in rules
             if rule["type"] == "kubernetes_role_binding"
             and rule["role"]["kind"] == "Role"
@@ -395,22 +397,24 @@ def staging_policy_bindings(staging_manifest_docs: list[dict]) -> list[dict]:
 
 
 def test_no_legacy_agent_diagnostic_rbac(agent_permission_resources: list[K8sResource]) -> None:
-    resources = agent_permission_resources
-    assert not any(r.kind == "ClusterPolicy" and r.name == "generate-agent-diagnostics-readers" for r in resources)
     assert not any(
-        r.kind == "ClusterRole" and r.name == "kyverno-background-controller-rolebindings" for r in resources
+        r.kind == "ClusterPolicy" and r.name == "generate-agent-diagnostics-readers" for r in agent_permission_resources
     )
     assert not any(
-        r.kind == "RoleBinding" and r.name in {"agent-readable-metadata", "agent-readable-logs"} for r in resources
+        r.kind == "ClusterRole" and r.name == "kyverno-background-controller-rolebindings"
+        for r in agent_permission_resources
+    )
+    assert not any(
+        r.kind == "RoleBinding" and r.name in {"agent-readable-metadata", "agent-readable-logs"}
+        for r in agent_permission_resources
     )
 
 
 def test_agent_diagnostic_binding_scopes(agent_permission_resources: list[K8sResource]) -> None:
-    resources = agent_permission_resources
     # Compare binding scopes directly; broad Haku roles cannot mask omissions.
     # Labels are now descriptive output of the shared policy, not an access trigger.
     expected: set[tuple[str, str, str]] = set()
-    for resource in resources:
+    for resource in agent_permission_resources:
         if resource.kind != "Namespace":
             continue
         labels = resource.metadata.labels
@@ -420,7 +424,7 @@ def test_agent_diagnostic_binding_scopes(agent_permission_resources: list[K8sRes
         elif labels.get("rbac.ducktape.io/agent-readable-metadata") == "true":
             expected.add((resource.name, "agent-diagnostics-metadata", "agent-readable-namespace-metadata"))
     actual: set[tuple[str, str, str]] = set()
-    for resource in resources:
+    for resource in agent_permission_resources:
         if isinstance(resource, RoleBindingResource) and resource.name in {
             "agent-diagnostics-metadata",
             "agent-diagnostics-logs",
@@ -531,12 +535,9 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
     staging_policy_bindings: list[dict],
     account: str,
 ) -> None:
-    rbac = agent_rbac
-    policy_sets = staging_policy_sets
-    policy_bindings = staging_policy_bindings
     # These OAuth/Actions accounts are NOT the Console profile or the managed
     # Haku preset. Preserve their independently scoped existing Kubernetes access.
-    expected = rbac.rules(
+    expected = agent_rbac.rules(
         RbacRoleRef(api_group="rbac.authorization.k8s.io", kind="Role", name="agentplane-acceptance-token"),
         "agentplane-testing",
     )
@@ -554,7 +555,7 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
             ("Role", "claude-ai-disposable-env-key-reader", "litellm"),
         ):
             expected.update(
-                rbac.rules(RbacRoleRef(api_group="rbac.authorization.k8s.io", kind=kind, name=name), namespace)
+                agent_rbac.rules(RbacRoleRef(api_group="rbac.authorization.k8s.io", kind=kind, name=name), namespace)
             )
         for resource in agent_permission_resources:
             if resource.kind != "Namespace":
@@ -565,7 +566,7 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
                 or labels.get("rbac.ducktape.io/agent-readable-logs") == "true"
             ):
                 expected.update(
-                    rbac.rules(
+                    agent_rbac.rules(
                         RbacRoleRef(
                             api_group="rbac.authorization.k8s.io",
                             kind="ClusterRole",
@@ -576,7 +577,7 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
                 )
             if labels.get("rbac.ducktape.io/agent-readable-logs") == "true":
                 expected.update(
-                    rbac.rules(
+                    agent_rbac.rules(
                         RbacRoleRef(
                             api_group="rbac.authorization.k8s.io",
                             kind="ClusterRole",
@@ -585,9 +586,15 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
                         resource.name,
                     )
                 )
-    expected.update(rbac.policy_set_permissions(policy_sets, ["agentplane-testing"]))
+    expected.update(agent_rbac.policy_set_permissions(staging_policy_sets, ["agentplane-testing"]))
     actual = policy_bound_identity(
-        rbac, policy_sets, policy_bindings, "ServiceAccount", account, "agentplane-staging", "agentplane-testing"
+        agent_rbac,
+        staging_policy_sets,
+        staging_policy_bindings,
+        "ServiceAccount",
+        account,
+        "agentplane-staging",
+        "agentplane-testing",
     )
     assert not uncovered(actual, expected)
     assert not uncovered(expected, actual)
@@ -599,28 +606,24 @@ def test_agent_permission_denials(
     staging_policy_sets: dict[str, list[dict]],
     staging_policy_bindings: list[dict],
 ) -> None:
-    rbac = agent_rbac
-    config = staging_app_config
-    policy_sets = staging_policy_sets
-    policy_bindings = staging_policy_bindings
     profiles = {
-        name: rbac.managed(config, policy_sets, name, namespace="agentplane-staging")
+        name: agent_rbac.managed(staging_app_config, staging_policy_sets, name, namespace="agentplane-staging")
         for name in ("public-coder", "finance-agent", "haku")
     }
     profiles.update(
         {
             "claude-ai": policy_bound_identity(
-                rbac,
-                policy_sets,
-                policy_bindings,
+                agent_rbac,
+                staging_policy_sets,
+                staging_policy_bindings,
                 "ServiceAccount",
                 "claude-ai",
                 "agentplane-staging",
                 "agentplane-testing",
             ),
-            "haku-console": rbac.identity("Group", "haku:access-profile:haku"),
-            "haku-oidc": rbac.identity("Group", "oidc-ksbx-groups:haku"),
-            "haku-sa": rbac.identity("ServiceAccount", "haku", "haku-sandbox"),
+            "haku-console": agent_rbac.identity("Group", "haku:access-profile:haku"),
+            "haku-oidc": agent_rbac.identity("Group", "oidc-ksbx-groups:haku"),
+            "haku-sa": agent_rbac.identity("ServiceAccount", "haku", "haku-sandbox"),
         }
     )
     denied = {
