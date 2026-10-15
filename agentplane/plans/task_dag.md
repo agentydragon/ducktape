@@ -20,7 +20,7 @@ Dispatch assignments (Rai authorized; Codex reported, 2026-10-15 UTC):
 
 | Worker                        | Assigned work and remaining gates                                                                                                |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `quiesce_progress`            | Finish the unused Session-table route removal; the destination lookup migration has merged in #10622.                          |
+| `quiesce_progress`            | Finish the unused Session-table route removal; the destination lookup migration has merged in #10622.                            |
 | `suspended_session_inventory` | Audit RPCs/fields/arguments and overlapping paths; then retire superseded isolated-test scaffolding with its coverage preserved. |
 | `suspended_session_ui`        | Migrate archive and notification wrapper reads; audit data-drop gates and prepare independently reviewable PRs where safe.       |
 | Coordinator                   | Integrate notes cleanup, burn down merged tasks and review rollout and CI evidence.                                              |
