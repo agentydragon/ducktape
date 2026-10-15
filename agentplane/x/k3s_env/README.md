@@ -2,8 +2,9 @@
 
 Does the rendered `agentplane-testing` stack come up on a bare k3s in an RBE action (no Cilium, no
 kube-proxy)? The model-free lifecycle target runs in the separate
-[`Agentplane k3s lifecycle` workflow](../../../.github/workflows/agentplane-k3s-lifecycle.yml) for
-relevant pull requests and can also be started with `workflow_dispatch`. Agents can still run it
+[`Agentplane k3s lifecycle` workflow](../../../.github/workflows/agentplane-k3s-lifecycle.yml), launched explicitly with
+`workflow_dispatch`. It does not run automatically on pull requests or pushes while its cost remains
+high. Agents can still run it
 directly with `bbr test //agentplane/x/k3s_env:test_lifecycle --test_output=all`. The separate
 `test_env` model smoke remains manual and requires `LITELLM_QWEN_KEY`.
 

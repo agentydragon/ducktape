@@ -531,8 +531,8 @@ messages, by shimming the web interface's control protocol. Builds on the viewer
 ### `ISOLATED_ACCEPTANCE_CI` — isolated acceptance tiers and their coverage gaps
 
 **In flight (Codex, 2026-10-14; separate workflow #10502 merged):** current-stack/import work is
-complete (#10467, #10482). The workflow runs `//agentplane/x/k3s_env:test_lifecycle` on relevant
-pull requests and supports manual `workflow_dispatch`, overriding the default CI exclusion of
+complete (#10467, #10482). The workflow runs `//agentplane/x/k3s_env:test_lifecycle` only through an explicit
+`workflow_dispatch` (operator, 2026-10-14), overriding the default CI exclusion of
 `manual` tests for this explicitly selected target. The later [workflow run](https://github.com/agentydragon/ducktape/actions/runs/38654313999)
 succeeded at head `e0b9da6386`; the earlier cancelled run is historical failure evidence, not the
 current workflow status. This is a model-free four-test
@@ -540,7 +540,8 @@ Sandbox lifecycle tier on BuildBuddy RBE; it does not read a model key. Keep the
 `bbr test` invocation available to agents. The separate `test_env` Qwen smoke remains manual and
 is not part of this workflow.
 
-**Performance TODO:** the four-test OCI-layout run took 704.32 seconds versus 869.98 seconds for
+**Performance TODO:** keep automatic triggers disabled until the suite is cheap enough for a
+separately reviewed change. The four-test OCI-layout run took 704.32 seconds versus 869.98 seconds for
 the earlier archive-import baseline; cProfile attributed 444.97 seconds of the current run to
 image import. These were individual shared-RBE runs, not a controlled benchmark. Investigate
 containerd import/unpack and deployment readiness before considering any broader CI use; preserve

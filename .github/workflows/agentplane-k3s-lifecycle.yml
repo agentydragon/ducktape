@@ -1,52 +1,14 @@
 name: Agentplane k3s lifecycle
 
 on:
-  pull_request:
-    paths:
-      - ".bazelrc"
-      - ".bazelversion"
-      - ".github/actions/bb-remote/action.yml"
-      - ".github/actions/setup-nix-devtools/action.yml"
-      - ".github/workflows/agentplane-k3s-lifecycle.yml"
-      - "BUILD.bazel"
-      - "MODULE.bazel"
-      - "MODULE.bazel.lock"
-      - "agentplane/acceptance/**"
-      - "agentplane/BUILD.bazel"
-      - "agentplane/action_service/**"
-      - "agentplane/app/**"
-      - "agentplane/crds/**"
-      - "agentplane/egress/**"
-      - "agentplane/history_service/**"
-      - "agentplane/llm_ingress/**"
-      - "agentplane/notification_service/**"
-      - "agentplane/policy_controller/**"
-      - "agentplane/runner/**"
-      - "agentplane/runner_gateway/**"
-      - "agentplane/sandbox_controller/**"
-      - "agentplane/sandbox_service/**"
-      - "agentplane/session_dispatcher/**"
-      - "agentplane/x/k3s_env/**"
-      - "cluster/BUILD.bazel"
-      - "cluster/cdk8s/agentplane/**"
-      - "cluster/generated/agentplane-testing/**"
-      - "devinfra/oci/**"
-      - "devinfra/python/**"
-      - "third_party/**"
-      - "util/bazel/**"
   workflow_dispatch:
 
 permissions:
   contents: read
 
-concurrency:
-  group: agentplane-k3s-lifecycle-${{ github.event.pull_request.number || github.run_id }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-
 jobs:
   test-lifecycle:
     name: Model-free Sandbox lifecycle
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 60
     env:
