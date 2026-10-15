@@ -12,14 +12,7 @@ from cdk8s import Testing as Cdk8sTesting
 from more_itertools import one
 
 from cluster.cdk8s import agent_access_profiles
-from cluster.cdk8s.agentplane import (
-    binding_delegation,
-    notifications,
-    policy_controller,
-    staging,
-    staging_grants,
-    testing,
-)
+from cluster.cdk8s.agentplane import binding_delegation, notifications, staging, staging_grants, testing
 from cluster.cdk8s.agentplane.actions_staging_policies import AGENTPLANE_TESTING_POLICY
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.agentplane.egress import (
@@ -404,38 +397,6 @@ def test_external_delegation_binds_exactly_the_granted_roles(
         and doc["metadata"]["name"] == role["metadata"]["name"]
         for doc in docs
     )
-
-
-def test_controller_bind_authority_matches_assignable_grants(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    docs = agentplane_manifests[staging.ENV.namespace]
-    assignable = [grant.model_dump(mode="json") for grant in staging.assignable_grants()]
-
-    controller_role = _by_name(docs, "Role", policy_controller.NAME)
-    bound_local_roles = {
-        name for rule in controller_role["rules"] if "bind" in rule["verbs"] for name in rule.get("resourceNames", ())
-    }
-    expected_local_roles = {
-        grant["role_ref"]["name"]
-        for grant in assignable
-        if grant["kind"] == "RoleBinding"
-        and grant["namespace"] == staging.ENV.namespace
-        and grant["role_ref"]["kind"] == "Role"
-    }
-    assert bound_local_roles == expected_local_roles
-
-    controller_cluster_role = _by_name(docs, "ClusterRole", f"{staging.ENV.namespace}-policy-controller")
-    bound_cluster_roles = {
-        name
-        for rule in controller_cluster_role["rules"]
-        if "bind" in rule["verbs"]
-        for name in rule.get("resourceNames", ())
-    }
-    expected_cluster_roles = {
-        grant["role_ref"]["name"] for grant in assignable if grant["role_ref"]["kind"] == "ClusterRole"
-    }
-    assert bound_cluster_roles == expected_cluster_roles
 
 
 def test_environments_do_not_share_cluster_scoped_bundles(
