@@ -206,7 +206,8 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
             quiescing = self._quiescing
             if quiescing is None or (quiescing.done() and (quiescing.cancelled() or quiescing.exception() is not None)):
                 self._start_quiesce()
-            return runner_pb2.QuiesceResponse(stage=int(self.runner.facts().quiesce_stage))
+            stage = runner_pb2.QuiesceStage.Name(int(self.runner.facts().quiesce_stage))
+            return runner_pb2.QuiesceResponse(stage=stage)
 
     async def _deliver(
         self, session_id: str, command: command_pb2.Command, context: grpc.aio.ServicerContext
