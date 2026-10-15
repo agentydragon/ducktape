@@ -404,7 +404,7 @@ async def test_a_quiesce_waits_for_the_admission_under_way_and_a_delivery_after_
         before = asyncio.ensure_future(service.DeliverCommand(deliver(RUNNING, submit("test-before-seal"))))
         await admitting.wait()
         sealed = await service.Quiesce(runner_pb2.QuiesceRequest())
-        assert sealed.stage == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
+        assert int(sealed.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
         assert not sealed.sessions
         await gateway.control.wait_for_facts(
             runner_control_pb2.RunnerFacts(quiesce_stage=runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING)
@@ -417,7 +417,9 @@ async def test_a_quiesce_waits_for_the_admission_under_way_and_a_delivery_after_
         admitted, refused = await asyncio.gather(before, after)
         await service.ListSessions(runner_pb2.ListSessionsRequest())
     assert runner.sessions[RUNNING].journal.sealed_cursor is not None
-    assert admitted.admission.cursor <= runner.sessions[RUNNING].journal.sealed_cursor
+    seal_cursor = runner.sessions[RUNNING].journal.sealed_cursor
+    assert seal_cursor is not None
+    assert admitted.admission.cursor <= seal_cursor
     assert quiesces == 1
     assert refused == grpc.StatusCode.ABORTED
 
@@ -495,7 +497,7 @@ async def test_quiescing_publishes_flushing_until_the_ingress_acknowledged_every
     assert not initial.sessions
     await service.ListSessions(runner_pb2.ListSessionsRequest())
     quiesced = await service.Quiesce(runner_pb2.QuiesceRequest())
-    assert quiesced.stage == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_FLUSHING
+    assert int(quiesced.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_FLUSHING
     assert not quiesced.sessions
     await gateway.control.wait_for_facts(Facts(quiesce_stage=Facts.QUIESCE_STAGE_FLUSHING))
     for session_id in runner.store.session_ids():
@@ -525,7 +527,7 @@ async def test_a_failed_quiesce_drain_retries_on_the_next_request(
     monkeypatch.setattr(runner, "quiesce", fail_once)
     service = await dial()
     first = await service.Quiesce(runner_pb2.QuiesceRequest())
-    assert first.stage == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
+    assert int(first.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
     assert not first.sessions
     await failed.wait()
     await service.ListSessions(runner_pb2.ListSessionsRequest())
@@ -572,7 +574,7 @@ async def test_quiesce_drain_survives_control_cancellation_and_reconnect(
         await gateway.control.wait_connected(1)
         first_stub = await gateway.control.runner()
         first = await first_stub.Quiesce(runner_pb2.QuiesceRequest())
-        assert first.stage == Facts.QUIESCE_STAGE_DRAINING
+        assert int(first.stage) == Facts.QUIESCE_STAGE_DRAINING
         await draining.wait()
 
         facts_before_reconnect = len(gateway.control.facts)
@@ -590,7 +592,7 @@ async def test_quiesce_drain_survives_control_cancellation_and_reconnect(
 
         second_stub = await gateway.control.runner()
         repeated = await second_stub.Quiesce(runner_pb2.QuiesceRequest())
-        assert repeated.stage == Facts.QUIESCE_STAGE_DRAINING
+        assert int(repeated.stage) == Facts.QUIESCE_STAGE_DRAINING
         assert quiesces == 1
         finish_drain.set()
         await second_stub.ListSessions(runner_pb2.ListSessionsRequest())
