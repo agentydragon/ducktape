@@ -8,7 +8,7 @@ import asyncio
 import json
 import re
 from collections.abc import AsyncIterator, Awaitable, Callable
-from contextlib import asynccontextmanager, suppress
+from contextlib import asynccontextmanager
 from dataclasses import replace
 from urllib.parse import parse_qs, urlsplit
 from uuid import UUID
@@ -1190,13 +1190,12 @@ async def output_streaming_in(thread_browser: ThreadBrowser) -> AsyncIterator[tu
             if len(delivered) >= 3:
                 three_delivered.set()
 
-    streaming = asyncio.create_task(stream())
-    try:
-        yield delivered, three_delivered
-    finally:
-        streaming.cancel()
-        with suppress(asyncio.CancelledError):
-            await streaming
+    async with asyncio.TaskGroup() as tasks:
+        streaming = tasks.create_task(stream(), name="thread-output-stream")
+        try:
+            yield delivered, three_delivered
+        finally:
+            streaming.cancel()
 
 
 async def wheel(page: Page, delta: float) -> None:
