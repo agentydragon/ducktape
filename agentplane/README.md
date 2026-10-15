@@ -33,6 +33,7 @@ an MCP approval gateway for any MCP-capable LLM product.
 ## System overview
 
 What staging runs ([`cluster/cdk8s/agentplane/`](../cluster/cdk8s/agentplane/chart.py)).
+Arrows show service traffic and API reads/writes; Pod grouping shows where processes run.
 
 ```mermaid
 flowchart TB
@@ -82,7 +83,7 @@ flowchart TB
 
     gw -->|control EndpointSlices, Leases| k8s
     hs -->|ingest, fold, read| hist_db
-    notif -->|Sandbox reads| k8s
+    notif -->|read Sandbox existence, UID and owner| k8s
     dispatcher -->|Sandbox watch| k8s
     dispatcher -->|send wake: guarded Sandbox patch; app and notifications callers, Sandbox opt-in| k8s
     dispatcher -->|queued commands, state, terminal-event notifications| dispatcher_db
@@ -93,12 +94,10 @@ flowchart TB
     notif --> actions
     notif -->|REST| github
     github -->|webhooks over an HTTPS route| notif
-    actions -->|execute: box Pods as the caller, exec| k8s
+    actions -->|create and watch box Pods as the caller; exec| k8s
     policy -->|PolicyBindings, RoleBindings| k8s
     sandboxctl -->|Sandboxes, Pods, VMs, state PVCs, PolicyBindings| k8s
-    sandboxctl -->|creates| sandbox
     sandboxctl -->|gRPC: Quiesce| gw
-    k8s -->|runs| cmd_sandbox
     cmd_sandbox -->|all outbound traffic| proxy
     actions -->|MCP servers, GitHub, web push| outside
 
