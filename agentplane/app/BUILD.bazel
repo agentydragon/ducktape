@@ -379,6 +379,7 @@ py_test(
         "//:conftest",
         "//agentplane:changes",
         "//agentplane:grpc_calls",
+        "//agentplane:subjects",
         "//agentplane/app/testing:history",
         "//agentplane/app/testing:model_test_data",
         "//agentplane/app/testing:system_status",

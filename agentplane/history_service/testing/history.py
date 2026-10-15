@@ -78,6 +78,15 @@ class History:
         )
         await self.store.bind_writer(session_id, writer)
 
+    async def clear_sandbox_identity(self, session_id: UUID) -> None:
+        """Inject a committed History row without Sandbox identity for reader error tests."""
+        async with self.sessions.begin() as session:
+            row = await session.get(SessionHistory, session_id)
+            if row is None:
+                raise ValueError("open the Session first")
+            row.sandbox_namespace = None
+            row.sandbox_name = None
+
     async def fold(self) -> None:
         """Fold every Session until none is behind, then hand the leases back for the next folder."""
         async with self._folding, self._fold:

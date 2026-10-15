@@ -71,7 +71,8 @@ from agentplane.runner.testing.scripted_model import ScriptedModel, ShellCall, T
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.testing.backend import Endpoint, runner_bearer
 from agentplane.runner_gateway.testing.control_listener import dialing
-from agentplane.sandboxes.testing.fake_inventory import FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
+from agentplane.sandboxes.testing.fake_inventory import NAMESPACE, FakeCoreV1Api, FakeCustomObjectsApi, seed_runner
+from agentplane.subjects import ServiceAccountRef
 from util.net import bind_free_port
 from util.testing.asgi import serve_app_in_loop
 
@@ -224,7 +225,7 @@ async def history_client(
 ) -> AsyncIterator[HistoryServiceClient]:
     # The History Service reads what the local runner pushes to its ingress, as deployed.
     async with (
-        ingest(service_history_db_url, runner),
+        ingest(service_history_db_url, runner, writer=ServiceAccountRef(namespace=NAMESPACE, name=SANDBOX)),
         history_service(service_history_db_url, history_token_file) as client,
     ):
         yield client
@@ -952,6 +953,7 @@ async def test_thread_resume_reports_missing_runner_recovery_state(
     app_url: str, event_logs: SeededEventLogStore, history: History
 ) -> None:
     thread_id = await event_logs.seed(SANDBOX, "missing-runner-session")
+    await history.open(thread_id, sandbox_name=SANDBOX)
     await register_gateway_session(history.engine, thread_id, sandbox=SANDBOX)
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         response = await http.post(f"/threads/{thread_id}/resume")
