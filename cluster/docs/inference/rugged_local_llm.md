@@ -963,5 +963,20 @@ and 90% of the filler text, were recovered. Native prefill was 1,141.10 seconds
 (56.00 tok/s), TTFT 1,141.59 seconds, and total request time 1,144.44 seconds.
 It generated 27 tokens at a reported 9.11 tok/s. The filler was deterministic
 random common words: this checks context transport and tiny-N retrieval, not
-repository comprehension. The >128 Ki-token request is still pending; allocating
-139,264 context does not establish completion at that input length.
+repository comprehension.
+
+The subsequent **131,907-token** request also completed with zero cached tokens,
+`truncated = 0`, and **3/3 exact codes recovered**. Native prefill was
+3,992.44 seconds (**66.54 minutes**, 33.04 tok/s), TTFT 3,996.04 seconds, and total
+request time 4,000.23 seconds. Its 27 output tokens decoded at 6.20 tok/s.
+Across the combined 64k and >128 Ki-token run, minimum sampled MemAvailable was
+4.15 GiB and maximum full PSI avg10 was 50.15%; AC remained connected and the
+revised guard did not fire. A rate-limited MoE artifact download overlapped part
+of the larger request, so this remains a shared-host observation.
+
+This establishes one completed >128 Ki-token retrieval smoke on **Qwen3.5 9B
+Q4_K_M with the installed llama.cpp build**, in addition to its short tool/edit
+checks. It does not establish reliable retrieval generally or long-context coding
+quality. The roughly one-hour cold prefill is a major interactive-use limitation;
+incremental prefix-cache behavior was not tested. The temporary server exited
+normally afterward; 9B is not yet added to the installed picker or cluster routes.
