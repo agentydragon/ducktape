@@ -20,7 +20,6 @@ Dispatch assignments (Rai authorized; Codex reported, 2026-10-15 UTC):
 
 | Worker                        | Assigned work and remaining gates                                                                                                |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `quiesce_progress`            | Remove Gateway `FindSessions` after reference and pin audit; preserve History `FindSessions` and its retained data.              |
 | `suspended_session_inventory` | Audit RPCs/fields/arguments and overlapping paths; then retire superseded isolated-test scaffolding with its coverage preserved. |
 | `suspended_session_ui`        | Migrate archive and notification wrapper reads; audit data-drop gates and prepare independently reviewable PRs where safe.       |
 | Coordinator                   | Integrate notes cleanup, burn down merged tasks and review rollout and CI evidence.                                              |
@@ -1259,7 +1258,6 @@ flowchart TD
     CONTROL_SURFACE_RETIREMENT_AUDIT --> DISPATCHER_OPEN_ALREADY_EXISTS[Candidate: reconcile opening conflict semantics before removing its list fallback]
     DISPATCHER_OPEN_ALREADY_EXISTS --> RUNNER_LIST_SESSIONS_RETIRE
     CONTROL_SURFACE_RETIREMENT_AUDIT --> DISPATCHER_OPENING_ATTACHED_RETIRE[Candidate: remove the unused persisted opening snapshot]
-    CONTROL_SURFACE_RETIREMENT_AUDIT --> GATEWAY_FIND_SESSIONS_RETIRE[In flight: remove unused Gateway registry search after reference and pin audit]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: retire redundant Gateway APIs; preserve registry for current resume checks]
     APP_ARCHIVE_RUNNER_READ_MIGRATION[Assigned: move live archive checks to the runner proxy] --> GATEWAY_WRAPPER_RETIRE
@@ -1342,15 +1340,6 @@ together. Review whether any operational use justifies retaining the stored snap
 the column with a new migration after the reader rollout, preserving each opening's Session ID,
 Sandbox identity, state, reason and timestamps.
 
-### `GATEWAY_FIND_SESSIONS_RETIRE` — remove the unused Gateway registry search
-
-**In flight; assigned to `quiesce_progress` for the independent deletion draft.** Repository search
-finds no production caller of `RunnerGateway.FindSessions`; remaining references are the Gateway
-method, client helper and tests/fake support. History `FindSessions` is used by the app for retained
-Thread inventory and has different semantics; keep it and its data. Confirm no external client or
-pinned caller image uses the Gateway method, then remove only the Gateway RPC, request/response types,
-helper, fixture support and tests together.
-
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
 **Blocked on the Dispatcher-only app image rollout, `APP_NATIVE_RESUME_CUTOVER`,
@@ -1387,9 +1376,8 @@ deleting the RPC receiver, and search for remaining wrapper callers before remov
 App and notification command sends go through Dispatcher. Move only reads whose current-state and
 incarnation checks are preserved by the proxy; the remaining caller-boundary decisions are explicit
 gates above. Retire Gateway `CreateSession`, `ResumeSession` and `SubmitCommand` only after their
-caller gates; remove Gateway `FindSessions` through its separate node. `BatchGetSessionSandboxes` has
-no production in-repo caller after #10622; remove it with the registry API only after external/pinned
-caller review. The separate Runner `ListSessions` proxy method remains under
+caller gates. `BatchGetSessionSandboxes` has no production in-repo caller after #10622; remove it with
+the registry API only after external/pinned caller review. The separate Runner `ListSessions` proxy method remains under
 `RUNNER_LIST_SESSIONS_RETIRE` for archive, Notification and Dispatcher callers. Preserve
 `session_registry.py` and its database while `ResumeSession` still reads it: only Gateway
 `CreateSession` writes rows, so the app's current direct-resume path refuses Dispatcher-opened
@@ -1412,9 +1400,9 @@ registry; production openings use Dispatcher, so their direct-resume path is cur
 native resume remains, first review how its receiver can preserve UID and owner checks for
 Dispatcher-opened Sessions. Otherwise remove `ResumeSession` with the reviewed app cutover.
 `BatchGetSessionSandboxes` has no production in-repo caller after #10622; confirm external/pinned use
-before removing its method, client helper and `SessionSandbox` wire shape. The independent
-`GATEWAY_FIND_SESSIONS_RETIRE` node handles Gateway `FindSessions`; keep History `FindSessions` and
-its retained data. Retain the registry and its data until all live readers/writers are retired and
+before removing its method, client helper and `SessionSandbox` wire shape. Gateway `FindSessions` was
+removed in #10623; keep History `FindSessions` and its retained data. Retain the registry and its data
+until all live readers/writers are retired and
 the separate operator-approved `GATEWAY_DATABASE_DROP`; never infer a missing UID from a same-name
 Sandbox.
 
