@@ -182,10 +182,9 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
         assert resumed.harness_state == runner_pb2.HARNESS_STATE_RUNNING
         await complete_turn(restarted, runner, model, session, "grpc-resumed")
         assert (await destination.list_sessions())[0].spec == opened.spec
-        with pytest.raises(RefusedError):
-            await destination.create(
-                session_id=uuid4(), spec={"harness": "HARNESS_CODEX", "cwd": "/workspace", "model": "test"}
-            )
+        with pytest.raises(ServiceError) as invalid:
+            await destination.create(session_id=uuid4(), spec=launch_spec | {"model": ""})
+        assert invalid.value.code == grpc.StatusCode.INVALID_ARGUMENT
     assert bootstrap_marker.read_text() == "B"
     assert setup_marker.read_text() == "S"
 
