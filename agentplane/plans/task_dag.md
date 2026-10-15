@@ -18,12 +18,12 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
 
-| Worker                     | Assigned work and remaining gates                                                                          |
-| -------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| `suspended_session_ui`     | Opening-field removal merged; idle until the suspended-composer wake gates clear.                          |
-| `quiesce_progress`         | Fix #10600 CI and review the wake-policy checkbox; staging caller configuration merged in #10596.          |
-| `session_defaults_cleanup` | Verify wheel/image rollout after merged #10588 and identify the remaining fresh-workspace acceptance gate. |
-| Coordinator                | Review and CI, DAG burn-down and deployment gate verification.                                             |
+| Worker                     | Assigned work and remaining gates                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `suspended_session_ui`     | Implement nonblocking runner Quiesce; deployed controllers already accept the optional response stage. |
+| `quiesce_progress`         | Implement suspended composer after merged #10600; verify checkbox app image rollout before activation. |
+| `session_defaults_cleanup` | Fresh VM workspace acceptance passed and fixture cleanup verified; publish evidence and metadata fix.  |
+| Coordinator                | Review and CI, DAG burn-down and deployment gate verification.                                         |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
@@ -39,27 +39,6 @@ with remaining gates in the body; Rai merges each PR by hand.
 
 Completed rollout evidence: [retirement and activation inventory](../sandboxes/debug/rollout_retirement.md);
 bounded [resume coverage audit](../sandboxes/debug/resume_coverage.md).
-
-## Reported VM and Session usability bugs
-
-Rai reported these against staging on 2026-10-15 UTC. Each is independently reviewable; none
-requires increasing timeouts, bypassing Git ownership checks, or creating duplicate Sessions.
-
-```mermaid
-flowchart TD
-    VM_WORKSPACE_OWNERSHIP[In flight: verify ownership fix rollout and fresh VM workspace]
-```
-
-### `VM_WORKSPACE_OWNERSHIP` — create workspaces with the harness identity
-
-**Implementation merged in #10588; rollout audit assigned to `session_defaults_cleanup`.** Missing
-workspace directories are now created with the harness identity before setup and harness launch,
-through a packaged helper and the native supervisor's privilege drop. Distinct-user Git tests and
-full PR CI passed. Existing ownership and authored data are untouched. Verify the corrected embedded
-runner wheel and guest image pins. The 2026-10-15 audit verified wheel `b7f2fca414f9` contains the
-fix and both live VM templates select image `devel-20261015052552-c3949a5`, built with that wheel.
-Testing acceptance is assigned: accept a fresh VM Session workspace without pre-creating its
-directory, recursively rewriting ownership or adding a `safe.directory` exception.
 
 ## 1. Session schema and identity follow-up
 
@@ -707,7 +686,7 @@ flowchart TD
     SANDBOX_IDLE_EXPIRY -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
-    RUNNER_NONBLOCKING_QUIESCE[Candidate: return the current stage after entering lameduck]
+    RUNNER_NONBLOCKING_QUIESCE[In flight: return the current stage after entering lameduck]
     JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE[Blocked: writer rollout and retained-journal cutoff]
     RUNNER_NONBLOCKING_QUIESCE --> QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: remove old response shape after runner rollout]
     QUIESCE_WITHOUT_POLLING[In flight: recover stalled seal progress]
@@ -909,11 +888,13 @@ restart. `AGENT_RESUME_NOTICE` tells the agent what a suspend ended.
 
 ### `RUNNER_NONBLOCKING_QUIESCE` — return after lameduck, report completion through facts
 
-**Candidate; implementation is missing, not merely awaiting an image pin.** The controller already
-accepts the optional response stage, but `runner/control.py` still awaits `runner.quiesce()` and
-`runner/runner.py` returns only Session seals. Verify accepting controller pins in both environments,
-then implement the ADR's immediate stage response with one supervised quiesce operation per
+**In flight; `suspended_session_ui`, operator dispatch 2026-10-15 UTC.** Both live controller
+Deployments are Ready on `d83486b`, whose reader accepts the optional response stage and retains the
+legacy fallback. The current `c3949a5` Pod/VM runner writer still blocks and omits the stage.
+Implement the ADR's immediate stage response with one supervised quiesce operation per
 incarnation. Preserve conditional idle refusal, admission/setup draining, and Lease-driven completion.
+Publish the lameduck fact before waiting for preceding admissions; coalesce repeated calls and observe
+background failure without tying the drain lifetime to one RPC. Keep ListSessions drain ordering.
 Use deterministic tests for repeated calls, cancellation/reconnect, and delayed ingress acknowledgement.
 Publish and pin the Pod runner and embedded VM wheel before retiring the legacy response reader.
 
@@ -997,8 +978,8 @@ for a reviewed contract that the code does not already satisfy; do not add an im
 
 ### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
 
-**Blocked on `APP_SANDBOX_WAKE_POLICY`; follow-up owned by
-`suspended_session_ui`.** Once wake-on-send works in the target environment, a suspended Session's
+**In flight; `quiesce_progress`, operator dispatch 2026-10-15 UTC. Activation retains the
+`APP_SANDBOX_WAKE_POLICY` image gate.** Once wake-on-send works in the target environment, a suspended Session's
 composer remains usable while its Sandbox still exists; suspension alone must not disable it.
 Sending queues the message and shows the Sandbox starting while the message waits. Keep normal
 access checks and deleted-Sandbox refusal. Until wake-on-send is verified, ship suspended-state
@@ -1010,13 +991,12 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `APP_SANDBOX_WAKE_POLICY` — configure wake-on-message for new and existing Sandboxes
 
-**In flight in #10600; `quiesce_progress`, operator decision 2026-10-15 UTC.** Add a creation-form checkbox
-and an existing-Sandbox checkbox that reads and updates `spec.wakeOnSend` through the app's
-authorized Kubernetes spec mutation path. Preserve the default-off policy, explicit false opt-out,
-identity/concurrency checks and no implicit wake when toggling it. The current creation path never
-writes the field, so caller allowlist activation alone does not opt app-created Sandboxes in.
-Test new creation, existing update and refused writes; capture the UI through the standard visual
-fixture. Existing Sandboxes are changed only through an explicit user action.
+**Implementation merged in #10600; app image rollout verification assigned to `quiesce_progress`.**
+Creation and existing-Sandbox checkboxes read and update `spec.wakeOnSend` through the app's
+authorized Kubernetes spec mutation path. Tests and reviewed desktop/mobile visuals passed,
+including default-off, UID fencing and transport-failure recovery. Toggling does not itself wake
+the Sandbox. Verify the app image includes this field/UI before enabling the suspended composer.
+Existing Sandboxes are changed only through an explicit user action.
 
 `wakeOnSend` is permanent user policy, not a rollout shim. Rai explicitly chose to retain this
 configuration indefinitely; it has no removal node. The obsolete Session-opening flag is separate.

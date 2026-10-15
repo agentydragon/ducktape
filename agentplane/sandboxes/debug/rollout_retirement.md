@@ -44,10 +44,14 @@ app's direct native-resume path. Each remaining compatibility removal keeps its 
   [Testing wake acceptance](../../session_dispatcher/debug/deployment_acceptance.md#testing-send-triggered-wake)
   preceded activation. Deterministic Dispatcher tests cover deletion precedence and redelivery of
   a message aborted during sealing. The permanent per-Sandbox `wakeOnSend` policy still requires
-  explicit user opt-in; #10600 exposes it in the app and remains under review.
+  explicit user opt-in; #10600 merged the app checkbox with passing tests and reviewed visuals.
 - #10588 merged the packaged fresh-workspace creation helper and native-supervisor privilege drop.
-  Distinct-user Git tests and full PR CI passed. Fresh VM Session acceptance remains gated on the
-  runner wheel and guest image rollout; existing workspace ownership is preserved. A subsequent
+  Distinct-user Git tests and full PR CI passed; existing workspace ownership is preserved. A subsequent
   read-only audit verified published wheel `b7f2fca414f9` contains the helper and both live VM
-  templates select image `devel-20261015052552-c3949a5`, built with that wheel. This clears the
-  image gate for fresh testing acceptance, not the acceptance itself.
+  templates select image `devel-20261015052552-c3949a5`, built with that wheel.
+  The merged #10604 [fresh-workspace acceptance](../../acceptance/README.md#vm-workspace-ownership)
+  passed on testing in [invocation aef53a32-d86e-4a86-ba26-40ae9dc97708](https://app.buildbuddy.io/invocation/aef53a32-d86e-4a86-ba26-40ae9dc97708).
+  It proved the target Session directory was absent before open, then both it and `.git` were owned
+  by `107:107`, with Git init/rev-parse succeeding and no `safe.directory` override. The fixture
+  Sandbox UID `00a94aaf-8312-4e5c-a9a7-1381d45a451b` and its PVC were removed by scoped teardown.
+  This was a model-free setup check on testing, not a new staging model-turn acceptance.
