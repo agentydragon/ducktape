@@ -605,12 +605,12 @@ not ad hoc grants. Test an allowed and denied operation; do not add privileges a
 ### `AGENT_PERMISSION_REQUESTS` — an Action type and approval view for permission requests
 
 **Blocked on `ACTION_SURFACES_DESIGN`; operator, 2026-10-13 PDT:
-eventually.** A specific Action type for the request instead of the Kubernetes MCP escape hatch, and
-an approval view that shows the operator the account, the sets and the duration rather than a blob of
-Kubernetes YAML. It shares with the app's sandbox-page grants the one path that writes a `PolicyBinding` for
-the operator (`EgressAccess.grant`), so an approved request creates the same kind of binding. How
-the request renders is the Action surfaces' decision: the approval view is one Action type described
-once there.
+eventually.** A specific Action type for the request instead of the retired Kubernetes MCP grants
+escape hatch, with an approval view that shows the operator the account, the sets and the duration
+rather than a blob of Kubernetes YAML. It shares with the app's sandbox-page grants the one path
+that writes a `PolicyBinding` for the operator (`EgressAccess.grant`), so an approved request creates
+the same kind of binding. How the request renders is the Action surfaces' decision: the approval
+view is one Action type described once there.
 
 ### `MANAGED_SA_RBAC` — grants for accounts without a Sandbox
 

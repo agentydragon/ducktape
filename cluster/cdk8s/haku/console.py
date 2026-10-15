@@ -20,8 +20,6 @@ from __future__ import annotations
 from cdk8s import ApiObjectMetadata, Duration, Size
 from cdk8s_plus_34 import (
     ApiResource,
-    ClusterRole,
-    ClusterRoleBinding,
     ConfigMap,
     ContainerPort,
     ContainerResources,
@@ -49,7 +47,6 @@ from cdk8s_plus_34 import (
     ServiceAccount,
     ServicePort,
     Volume,
-    k8s,
 )
 from constructs import Construct
 from prometheus_operator_crds.com.coreos.monitoring import ServiceMonitorSpecSelector
@@ -136,9 +133,8 @@ class Console(Construct):
         # the whole model with those filled in (SettingsFile's `supplied`).
         self._supplied: list[tuple[str, ...]] = []
 
-        # Narrow runtime identity: SubjectAccessReview for the Kubernetes-grant flow, plus
-        # claim/exec RBAC on the haku-sandbox pool (haku/workspaces.py). No Secret, log, exec, or SandboxTemplate access
-        # outside that pool.
+        # Narrow runtime identity: claim/exec RBAC on the haku-sandbox pool
+        # (haku/workspaces.py). No Secret, log, exec, or SandboxTemplate access outside that pool.
         service_account = ServiceAccount(
             self, "serviceaccount", metadata=ApiObjectMetadata(name=NAME, namespace=NAMESPACE), automount_token=True
         )
@@ -160,34 +156,6 @@ class Console(Construct):
         self._add_http_route()
 
     def _add_rbac(self, service_account: ServiceAccount) -> None:
-        # SubjectAccessReview is advisory only: it cannot mutate cluster state and gives the
-        # console none of the reviewed subject's authority. The proxy ServiceAccount
-        # (kube_api_proxy.py) is the only identity that executes an allowed request.
-        sar_reviewer = "haku-console-subject-access-reviewer"
-        k8s.KubeClusterRole(
-            self,
-            "sar-reviewer-role",
-            metadata=k8s.ObjectMeta(
-                name=sar_reviewer,
-                annotations={"description": "Allows Haku Console to evaluate configured Kubernetes SAR subjects."},
-            ),
-            rules=[
-                k8s.PolicyRule(
-                    api_groups=["authorization.k8s.io"], resources=["subjectaccessreviews"], verbs=["create"]
-                )
-            ],
-        )
-        ClusterRoleBinding(
-            self,
-            "sar-reviewer-binding",
-            metadata=ApiObjectMetadata(
-                name=sar_reviewer,
-                annotations={
-                    "description": "Binds only the Haku Console ServiceAccount to SubjectAccessReview creation."
-                },
-            ),
-            role=ClusterRole.from_cluster_role_name(self, "sar-reviewer-role-ref", sar_reviewer),
-        ).add_subjects(service_account)
         # Narrow metadata/configuration diagnostics for the agents. Not
         # namespace-diagnostics-reader: that broader role includes pods/log, and console
         # logs can contain operator and personal-service data.

@@ -1,9 +1,14 @@
 # Haku Kubernetes API proxy
 
+> **Current status:** Console's `/api/internal/kubernetes/authorize` endpoint was retired with the
+> grants subsystem. The deployed proxy fails closed: authorization requests to Console fail, so it
+> forwards no Kubernetes requests. The implementation details below describe the previous
+> authorization contract; they do not mean Agent Kubernetes access is enabled.
+
 This is the first, deliberately narrow implementation of the inline authorization
 proxy tracked by [#4428](https://github.com/agentydragon/ducktape/issues/4428).
-It is a separate Go binary: Haku Console remains the Kubernetes authorization
-authority, while the proxy is the only Kubernetes request path available to an Agent.
+It is a separate Go binary. While the authorization endpoint was active, Haku Console was the
+authority and the proxy was the only Kubernetes request path available to an Agent.
 
 ```text
 Agent --Haku bearer--> kube API proxy
@@ -23,7 +28,7 @@ request is sent to Kubernetes. The Console asks Kubernetes for a
 SubjectAccessReview using a fixed, deploy-configured subject; the Agent cannot
 choose the Kubernetes username or groups.
 
-## Implemented
+## Previous authorization implementation
 
 - Kubernetes apiserver's `RequestInfoFactory` maps method/path/query to API
   group, resource, subresource, namespace, object name and verb. Depending on
@@ -65,10 +70,7 @@ choose the Kubernetes username or groups.
   serves named objects through its bounded `get` handler.
 - Resource proxying, `attach` and other upgrades return `501` before
   authorization or forwarding.
-- Console exposes the typed endpoint contract at
-  `POST /api/internal/kubernetes/authorize`. It remains unavailable (and thus
-  fail-closed) until standing SAR subjects are explicitly mapped to Agent access
-  profiles.
+- The Console authorization endpoint described here has been removed. Proxy requests fail closed.
 
 ## Stream lifetime and limits
 

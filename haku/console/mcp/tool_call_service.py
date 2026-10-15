@@ -18,7 +18,7 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
-from haku.console.grants.principal import RequestPrincipal
+from haku.console.mcp.principal import RequestPrincipal
 from haku.console.mcp.execution import (
     AgentMcpExecutionCaller,
     McpExecutionCaller,

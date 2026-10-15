@@ -28,10 +28,6 @@ type ApprovalDecisionRequest = components["schemas"]["ApprovalDecisionRequest"];
 export type ToolCallRecord = components["schemas"]["ToolCallRecord"];
 export type AgentView = components["schemas"]["AgentView"];
 export type AgentListResponse = components["schemas"]["AgentListResponse"];
-export type Grant = components["schemas"]["Grant"];
-export type GrantPrincipal = Grant["subject"];
-export type GrantListResponse = components["schemas"]["GrantListResponse"];
-export type RevokeGrantResponse = components["schemas"]["RevokeGrantResponse"];
 export type EnrollmentView = components["schemas"]["EnrollmentView"];
 export type EnrollmentDecisionRequest =
   | components["schemas"]["CreateEnrollmentRequest"]
@@ -89,23 +85,6 @@ export async function updateAgentAccessProfile(agentId: string, accessProfileId:
     body: { access_profile_id: accessProfileId },
   });
   if (error || !data) throw new Error(errorDetail(error, "Failed to update Agent access profile"));
-  return data;
-}
-
-/** List every grant, or only grants declared for one exact principal. */
-export async function fetchGrants(principal?: GrantPrincipal): Promise<GrantListResponse> {
-  const { data, error } = await api.GET("/api/grants", {
-    params: { query: principal ? { principal: JSON.stringify(principal) } : {} },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to load grants"));
-  return data;
-}
-
-export async function revokeGrant(grantId: string): Promise<RevokeGrantResponse> {
-  const { data, error } = await api.POST("/api/grants/revoke", {
-    body: { grant_ids: [grantId] },
-  });
-  if (error || !data) throw new Error(errorDetail(error, "Failed to revoke grant"));
   return data;
 }
 

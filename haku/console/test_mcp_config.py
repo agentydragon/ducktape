@@ -16,16 +16,16 @@ _MANUAL_AUTHORITY_CONFIG = {
 _NO_CREDENTIAL_BACKEND = {"kind": "in_process", "credential": {"kind": "none"}}
 
 
-def test_profile_in_process_server_grants_require_configured_in_process_servers() -> None:
+def test_profile_in_process_server_ids_require_configured_in_process_servers() -> None:
     configured = {
         **_MANUAL_AUTHORITY_CONFIG,
         "mcp": {
-            "servers": {"grants": {"id": "grants", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}}
+            "servers": {"example": {"id": "example", "backend": {"kind": "in_process", "credential": {"kind": "none"}}}}
         },
-        "access_profiles": [{"id": "manual", "auto_approval_policy": "manual", "in_process_server_ids": ["grants"]}],
+        "access_profiles": [{"id": "manual", "auto_approval_policy": "manual", "in_process_server_ids": ["example"]}],
     }
     config = ConsoleConfigFile.model_validate(configured)
-    assert config.access_profiles[0].in_process_server_ids == {"grants"}
+    assert config.access_profiles[0].in_process_server_ids == {"example"}
 
     with pytest.raises(ValueError, match="unknown in-process MCP servers"):
         ConsoleConfigFile.model_validate(
@@ -65,18 +65,6 @@ def test_profile_config_rejects_unknown_static_agent_profile() -> None:
                         "operator_subject": "test-agent-operator",
                         "access_profile_id": "missing",
                     }
-                },
-            }
-        )
-
-
-def test_profile_config_rejects_unknown_kubernetes_authorization_profile() -> None:
-    with pytest.raises(ValidationError):
-        ConsoleConfigFile.model_validate(
-            {
-                **_MANUAL_AUTHORITY_CONFIG,
-                "kubernetes_authorization": {
-                    "subjects_by_access_profile": {"missing": {"username": "system:serviceaccount:ns:reader"}}
                 },
             }
         )
@@ -125,23 +113,6 @@ def test_duplicate_static_agent_ids_fail_config_validation() -> None:
             {
                 **_MANUAL_AUTHORITY_CONFIG,
                 "static_agents": {"first": agent, "second": {**agent, "display_name": "Other Agent"}},
-            }
-        )
-
-
-def test_kubernetes_server_requires_authorization_configuration() -> None:
-    with pytest.raises(ValidationError):
-        ConsoleConfigFile.model_validate(
-            {
-                **_MANUAL_AUTHORITY_CONFIG,
-                "mcp": {
-                    "servers": {
-                        "kubernetes": {
-                            "id": "kubernetes",
-                            "backend": {"kind": "in_process", "credential": {"kind": "none"}},
-                        }
-                    }
-                },
             }
         )
 

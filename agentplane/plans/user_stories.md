@@ -18,10 +18,10 @@ decision as a later input in its thread.
 
 Standing under it:
 
-- The Haku grants system already brokers exactly this for Haku tool calls: `create_grant` with
-  exact origins or namespaces plus verbs, a duration and a rationale, manual approval under the
-  agent policy, `get_tool_call` for the long poll, `withdraw_tool_call`. The agent working on
-  Agentplane lives this story from the agent's side every time it needs a key it does not hold.
+- The former Haku Console grants system brokered this for tool calls through `create_grant`,
+  manual approval, and `get_tool_call`. That integration has been retired; this story now needs an
+  active Action Service path for requesting and receiving permission decisions. The agent working
+  on Agentplane lives this story from the agent's side every time it needs a key it does not hold.
 - The [Action Service](../action_service/SPEC.md): one invariant ActionRequest, a separate human
   Decision, automatic at-most-one Execution, a namespaced Action catalog with MCP executors, and
   Action policies that auto-approve within reviewed scope.

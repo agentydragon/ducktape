@@ -100,19 +100,6 @@ ts_library(
 )
 
 ts_library(
-    name = "grant_principal",
-    srcs = ["grant_principal.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":agent_names",
-        ":client",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "operator_login",
     srcs = ["operator_login.ts"],
     isolated_typecheck = True,
@@ -600,26 +587,6 @@ haku_vitest_test(
 )
 
 ts_library(
-    name = "grants_panel",
-    srcs = ["grants_panel.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":agent_names",
-        ":client",
-        ":code_block",
-        ":grant_principal",
-        ":link",
-        ":routing",
-        ":time",
-        ":toast",
-        "//:node_modules/@mantine/core",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "settings_panel",
     srcs = ["settings_panel.tsx"],
     isolated_typecheck = True,
@@ -628,7 +595,6 @@ ts_library(
         ":async_resource",
         ":client",
         ":console_events",
-        ":grants_panel",
         ":link",
         ":time",
         ":toast",
@@ -749,7 +715,6 @@ filegroup(
         "confirm_dialog.tsx",
         "field.tsx",
         "gmail_client.ts",
-        "grants_panel.tsx",
         "grocy_client.ts",
         "haku_ui_embed.tsx",
         "icons.tsx",

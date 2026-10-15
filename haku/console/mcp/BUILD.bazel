@@ -3,10 +3,32 @@ load("//devinfra/python:defs.bzl", "py_binary", "py_library", "py_test")
 package(default_visibility = ["//visibility:public"])
 
 py_library(
+    name = "principal",
+    srcs = ["principal.py"],
+    deps = [
+        "//haku/console:tool_call_actor",
+        "@pypi//pydantic",
+    ],
+)
+
+py_test(
+    name = "test_principal",
+    srcs = ["test_principal.py"],
+    deps = [
+        ":principal",
+        "//:conftest",
+        "//haku/console:tool_call_actor",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
     name = "execution",
     srcs = ["execution.py"],
     deps = [
-        "//haku/console/grants:principal",
+        ":principal",
         "@pypi//fastmcp_slim",
         "@pypi//pydantic",
     ],
@@ -21,7 +43,7 @@ py_library(
         "//haku/console:settings",
         "//haku/console:tool_call_actor",
         "//haku/console/auto_approval:registry",
-        "//haku/console/grants:principal",
+        ":principal",
         "@ducktape_haku//haku/console:tool_calls",
     ],
 )
@@ -50,36 +72,12 @@ py_library(
 )
 
 py_library(
-    name = "in_process_server_access",
-    srcs = ["in_process_server_access.py"],
-    deps = [
-        ":execution",
-        "//haku/console:mcp_config",
-        "//haku/console:tool_call_actor",
-        "//haku/console/grants:principal",
-    ],
-)
-
-py_library(
-    name = "in_process_servers",
-    srcs = ["in_process_servers.py"],
-    deps = [
-        ":in_process_server_access",
-        "//haku/console:mcp_config",
-        "//haku/console/tools:grants",
-    ],
-)
-
-py_library(
     name = "export_tool_schemas",
     srcs = ["export_tool_schemas.py"],
     deps = [
-        ":in_process_servers",
         "//grocy_mcp:batch_tools",
         "//grocy_mcp:client",
         "//grocy_mcp:mcp_types",
-        "//haku/console/tools:grants",
-        "//haku/console/tools:kubernetes",
         "//haku/console/tools:routine",
         "//mcp_infra:request_scoped_openapi",
         "//x/google_mcp_server:gmail",
@@ -110,7 +108,7 @@ py_test(
         "//haku/console:database_schema",
         "//haku/console:mcp_config",
         "//haku/console:tool_call_actor",
-        "//haku/console/grants:principal",
+        ":principal",
         "//haku/console/identity:agent",
         "//haku/console/identity:operator_identity_store",
         "@ducktape_haku//haku/console:tool_calls",

@@ -27,7 +27,7 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
 - `approvals_embed_page.tsx` — the small-window tool-approval surface. It reuses the approvals tab
   and shared tool-call cards without mounting navigation chrome or the cross-origin Haku UI iframe;
   Agent UI bridge-only location and screenshot approvals remain in the full shell.
-- `settings_panel.tsx` — the Settings page for Agent access, grants, and deployment commit
+- `settings_panel.tsx` — the Settings page for Agent access and deployment commit
   links. MCP server status and Console Recall freshness were removed with the
   corresponding inactive deployment integrations.
 - `open_external.ts` — `openExternal(url)`: opens a link in a new tab with the opener

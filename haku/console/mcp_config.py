@@ -1,8 +1,9 @@
-"""The configured in-process MCP backends used by the approval ledger.
+"""Deploy-time configuration for Console MCP backends and auto-approval policies.
 
-The deploy-time YAML names the configured backends. This module models that config, looks entries
-up by id, and resolves each one to its registered `FastMCP` builder. New protocol requests and
-catalog refresh are retired; the dispatcher uses this config to finish already-approved rows.
+The deploy-time YAML names configured backends. This module models that config, looks entries up
+by id, and resolves each one to its registered `FastMCP` builder. The Console MCP protocol and
+catalog refresh are retired; its dispatcher remains for the approval ledger, with no production
+execution backend currently registered.
 """
 
 from __future__ import annotations
@@ -17,7 +18,6 @@ from uuid import UUID
 from fastmcp import FastMCP
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator, model_validator
 
-from haku.console.config import KubernetesAuthorizationConfig
 from haku.console.identity.naming import normalize_agent_name
 from haku.console.tool_call_actor import RuntimeActor
 from mcp_infra.prefix import MCPMountPrefix
@@ -84,13 +84,11 @@ class ExactToolsAutoApprovalPolicy(AutoApprovalPolicyBase):
         return value
 
 
-class GrantSelfListAutoApprovalPolicy(AutoApprovalPolicyBase):
-    """Conditionally auto-approve an Agent listing its OWN grants (`list_grants(principal='self')`).
+class RetiredGrantSelfListAutoApprovalPolicy(AutoApprovalPolicyBase):
+    """Read the last deployed grants policy during a rolling ConfigMap update.
 
-    Only the explicit own-scope read auto-approves; omitting `principal` or naming a principal stays
-    manual. The omitted form lists every declared grant, the named-principal form returns authority
-    declared for that exact subject, and `self` resolves the caller's trusted request principal.
-    ``include_inactive`` does not widen that principal scope.
+    The retired backend is never registered and this policy always evaluates as manual. Keeping
+    the old shape parseable lets new replicas start if they see the previous ConfigMap briefly.
     """
 
     type: Literal["grant_self_list"] = "grant_self_list"
@@ -111,7 +109,10 @@ class NeverAutoApprovalPolicy(AutoApprovalPolicyBase):
 
 
 type AutoApprovalPolicy = Annotated[
-    ExactToolsAutoApprovalPolicy | GrantSelfListAutoApprovalPolicy | AnyOfAutoApprovalPolicy | NeverAutoApprovalPolicy,
+    ExactToolsAutoApprovalPolicy
+    | RetiredGrantSelfListAutoApprovalPolicy
+    | AnyOfAutoApprovalPolicy
+    | NeverAutoApprovalPolicy,
     Field(discriminator="type"),
 ]
 
@@ -176,12 +177,6 @@ class ConsoleConfigFile(BaseModel):
     access_profiles: list[AccessProfile] = Field(min_length=1)
     default_access_profile_id: str = Field(min_length=1, pattern=r"^[a-z][a-z0-9_-]*$")
     static_agents: dict[str, StaticAgentEntry] = Field(default_factory=dict)
-    # Standing Kubernetes policy is selected by the same deploy-managed access profile that owns
-    # the Agent's other durable authority. Unset keeps the internal proxy endpoint fail-closed.
-    kubernetes_authorization: KubernetesAuthorizationConfig | None = None
-    # A deploy-reviewed fail-safe maximum for approval-created temporary grants. Tool schema bounds
-    # remain useful client guidance, but these server-side settings are authoritative.
-    kubernetes_grant_max_lifetime_seconds: int = Field(default=3600, ge=1, le=86_400)
 
     @model_validator(mode="before")
     @classmethod
@@ -281,19 +276,7 @@ class ConsoleConfigFile(BaseModel):
             profiles[profile.id] = profile
         if self.default_access_profile_id not in profiles:
             raise ValueError(f"default access profile {self.default_access_profile_id!r} is not configured")
-        if self.kubernetes_authorization is not None:
-            unknown_kubernetes_profiles = (
-                set(self.kubernetes_authorization.subjects_by_access_profile) - profiles.keys()
-            )
-            if unknown_kubernetes_profiles:
-                raise ValueError(
-                    "Kubernetes authorization references unknown access profiles "
-                    f"{sorted(unknown_kubernetes_profiles)!r}"
-                )
-
         configured_in_process_servers = {server.id for server in self.mcp.servers.values()}
-        if "kubernetes" in configured_in_process_servers and self.kubernetes_authorization is None:
-            raise ValueError("the Kubernetes in-process server requires Kubernetes authorization configuration")
         for profile in profiles.values():
             if unknown_in_process_servers := set(profile.in_process_server_ids) - configured_in_process_servers:
                 raise ValueError(
@@ -378,10 +361,16 @@ def const_in_process_server(mcp: FastMCP) -> InProcessServerRegistration:
 
 
 def validate_in_process_server_bindings(config: ConsoleConfigFile, registrations: InProcessServers) -> None:
-    """Reject missing implementations and incompatible in-process credential bindings."""
+    """Reject missing implementations and incompatible in-process credential bindings.
+
+    The previously deployed `grants` backend is an exception: newer replicas accept that legacy
+    ConfigMap entry while rolling to the ConfigMap that removes it, but never register a backend.
+    """
     for server in config.mcp.servers.values():
         registration = registrations.get(server.id)
         if registration is None:
+            if server.id == "grants":
+                continue
             raise ValueError(f"MCP server {server.id!r} has no registered in-process implementation")
         configured_kind = InProcessCredentialKind(server.backend.credential.kind)
         if configured_kind is not registration.credential_kind:

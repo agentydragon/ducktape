@@ -93,16 +93,6 @@ py_library(
 )
 
 py_library(
-    name = "agent_bearer_authority",
-    srcs = ["agent_bearer_authority.py"],
-    deps = [
-        ":authorization",
-        ":oauth_grants",
-        "//haku/console:tool_call_actor",
-    ],
-)
-
-py_library(
     name = "enrollment_routes",
     srcs = ["enrollment_routes.py"],
     deps = [

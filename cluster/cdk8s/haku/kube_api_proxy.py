@@ -202,7 +202,8 @@ class KubeApiProxy(Construct):
         # the plaintext port and from the haku-sandbox exec pool on the TLS port (its
         # kubeconfigs authenticate, and it mounts no ServiceAccount token, so this is its only
         # kubectl path); egress to DNS for the console's name only, kube-apiserver, and the
-        # public-TLS console authorization endpoint.
+        # public-TLS Console endpoint. Console authorization has been retired, so those requests
+        # fail closed before forwarding.
         NetworkPolicy(
             self,
             "networkpolicy",

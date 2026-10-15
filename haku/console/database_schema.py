@@ -22,8 +22,6 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
-from haku.console.grants.envelope import GrantEnvelopeColumns, grant_envelope_table_args
-from haku.console.grants.kubernetes.models import GrantScope, Rule
 from haku.console.identity.agent import (
     MAX_AGENT_DISPLAY_NAME_LENGTH,
     AgentStatus,
@@ -34,7 +32,7 @@ from haku.console.identity.agent import (
 )
 from haku.console.identity.operator_identity import OperatorStatus
 from haku.console.tool_calls import ToolCallStatus
-from util.sqlalchemy_types import PydanticColumn, StrEnumColumn
+from util.sqlalchemy_types import StrEnumColumn
 
 
 class Base(DeclarativeBase):
@@ -471,19 +469,32 @@ class AuthorizationGrant(Base):
     created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
-class KubernetesGrantRow(GrantEnvelopeColumns, Base):
-    """One Agent-owned, principal-scoped Kubernetes capability grant.
+class KubernetesGrantRow(Base):
+    """Retained storage mapping for historical Kubernetes grant rows.
 
-    The envelope half of the row (`GrantEnvelopeColumns`) is shared with every grant domain,
-    end fact included: status is derived from ``ended_at`` and the clock
-    (`grants.envelope.derive_status`), never stored, so expiry needs no sweeper. Scope and
-    rules are intentionally JSONB: Kubernetes evolves its resource vocabulary, while the domain
-    validates the stable namespace and RBAC-like shapes before writing.
+    The grants feature is retired, but its operator-authored Postgres records are not disposable.
+    Keep their table in metadata for schema verification and migration safety; there is no runtime
+    repository or authorization path for this table.
     """
 
     __tablename__ = "kubernetes_grants"
     __table_args__ = (
-        *grant_envelope_table_args("kubernetes_grants"),
+        CheckConstraint("btrim(source_tool_call_id) <> ''", name="ck_kubernetes_grants_source_tool_call_nonempty"),
+        CheckConstraint(
+            "(principal_kind = 'agent' AND principal_agent_id IS NOT NULL "
+            "AND principal_access_profile_id IS NULL) OR "
+            "(principal_kind = 'access_profile' AND principal_agent_id IS NULL "
+            "AND principal_access_profile_id IS NOT NULL)",
+            name="ck_kubernetes_grants_principal_shape",
+        ),
+        CheckConstraint(
+            "expires_at IS NULL OR expires_at > created_at", name="ck_kubernetes_grants_expiration_after_creation"
+        ),
+        CheckConstraint(
+            "(ended_at IS NOT NULL OR end_reason IS NULL) AND (end_reason IS NULL OR btrim(end_reason) <> '')",
+            name="ck_kubernetes_grants_end_shape",
+        ),
+        Index("idx_kubernetes_grants_source_tool_call", "source_tool_call_id"),
         CheckConstraint(
             "jsonb_typeof(rules) = 'array' AND jsonb_array_length(rules) > 0",
             name="ck_kubernetes_grants_rules_nonempty",
@@ -504,8 +515,24 @@ class KubernetesGrantRow(GrantEnvelopeColumns, Base):
         Index("idx_kubernetes_grants_access_profile_principal_expiry", "principal_access_profile_id", "expires_at"),
     )
 
-    scope: Mapped[GrantScope] = mapped_column(PydanticColumn(GrantScope), nullable=False)
-    rules: Mapped[list[Rule]] = mapped_column(PydanticColumn(list[Rule]), nullable=False)
+    grant_id: Mapped[UUID] = mapped_column(PGUUID(as_uuid=True), primary_key=True)
+    owner_agent_id: Mapped[UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=False
+    )
+    principal_kind: Mapped[str] = mapped_column(Text, nullable=False)
+    principal_agent_id: Mapped[UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agents.agent_id", ondelete="RESTRICT"), nullable=True
+    )
+    principal_access_profile_id: Mapped[str | None] = mapped_column(Text, nullable=True)
+    source_tool_call_id: Mapped[str] = mapped_column(
+        Text, ForeignKey("mcp_tool_calls.tool_call_id", ondelete="RESTRICT"), nullable=False
+    )
+    created_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ended_at: Mapped[datetime.datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    end_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    scope: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    rules: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
 
 
 class StaticCredential(Base):

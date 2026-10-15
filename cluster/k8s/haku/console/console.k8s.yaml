@@ -348,36 +348,6 @@ metadata:
 automountServiceAccountToken: true
 ---
 apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  annotations:
-    description: Allows Haku Console to evaluate configured Kubernetes SAR subjects.
-  name: haku-console-subject-access-reviewer
-rules:
-  - apiGroups:
-      - authorization.k8s.io
-    resources:
-      - subjectaccessreviews
-    verbs:
-      - create
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRoleBinding
-metadata:
-  annotations:
-    description: Binds only the Haku Console ServiceAccount to SubjectAccessReview creation.
-  name: haku-console-subject-access-reviewer
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: haku-console-subject-access-reviewer
-subjects:
-  - apiGroup: ""
-    kind: ServiceAccount
-    name: haku-console
-    namespace: haku-console
----
-apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   annotations:
@@ -460,69 +430,21 @@ metadata:
 data:
   config.yaml: |
     auto_approval_policies:
-      - id: kubernetes_reads
-        type: exact_tools
-        tools:
-          grants:
-            - kubernetes_can_i
-            - get_grant
-      - id: grants_own_list
-        type: grant_self_list
-        server: grants
-      - id: grants_whoami
-        type: exact_tools
-        tools:
-          grants:
-            - whoami
-      - id: grants_self_introspection
-        type: any_of
-        policies:
-          - grants_whoami
-          - grants_own_list
-      - id: grants_own_revoke
-        type: exact_tools
-        tools:
-          grants:
-            - revoke_grants
-      - id: haku_v1
-        type: any_of
-        policies:
-          - kubernetes_reads
-          - grants_self_introspection
-          - grants_own_revoke
       - id: manual_review
         type: never
     access_profiles:
       - id: haku
-        auto_approval_policy: haku_v1
-        in_process_server_ids:
-          - grants
+        auto_approval_policy: manual_review
       - id: manual-review
         auto_approval_policy: manual_review
-        in_process_server_ids:
-          - grants
     default_access_profile_id: manual-review
-    kubernetes_authorization:
-      subjects_by_access_profile:
-        haku:
-          username: haku:access-profile:haku
-          groups:
-            - haku:access-profile:haku
-            - system:authenticated
-    kubernetes_grant_max_lifetime_seconds: 3600
     static_agents:
       haku:
         agent_id: 8d5b0cba-a9ab-4c93-8c31-70d5c7af45c2
         display_name: Haku
         access_profile_id: haku
     mcp:
-      servers:
-        grants:
-          id: grants
-          backend:
-            kind: in_process
-            credential:
-              kind: none
+      servers: {}
 immutable: false
 ---
 apiVersion: apps/v1

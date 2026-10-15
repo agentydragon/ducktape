@@ -275,7 +275,7 @@ def test_a_field_a_later_release_adds_does_not_cost_the_previous_one_the_event()
     unknown field would make the release that adds one drop every invalidation the previous image
     is owed — including on the kinds it does understand."""
     event = ToolCallsChangedEvent.model_validate(
-        {"event_type": "tool_calls_changed", "tool_call_id": "tc_test", "server_id": "grants"}
+        {"event_type": "tool_calls_changed", "tool_call_id": "tc_test", "server_id": "legacy-server"}
     )
 
     assert event.tool_call_id == "tc_test"

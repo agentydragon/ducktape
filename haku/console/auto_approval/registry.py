@@ -16,8 +16,8 @@ from haku.console.mcp_config import (
     AutoApprovalPolicy,
     ConsoleConfigFile,
     ExactToolsAutoApprovalPolicy,
-    GrantSelfListAutoApprovalPolicy,
     NeverAutoApprovalPolicy,
+    RetiredGrantSelfListAutoApprovalPolicy,
 )
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor
 
@@ -30,23 +30,16 @@ logger = logging.getLogger(__name__)
 AGENT_AUTO_APPROVAL_ID = "agent_policy_v1"
 SCHEMA_AUTO_DENIAL_EVALUATION = "denied: arguments failed the registered tool schema"
 
-# The `grants` server's own-grant list read and the scope value that makes it click-free. Mirrors
-# `haku.console.tools.grants` (`list_grants`, `GrantPrincipalInput`) without importing the tool layer into
-# the policy engine.
-_LIST_GRANTS_TOOL = "list_grants"
-_OWN_GRANT_SCOPE = "self"
-
 
 class ToolAutoApprovalMode(IntEnum):
     """Whether the effective policy can auto-approve a tool.
 
     The ordering is intentional: an ``any_of`` policy takes the strongest mode among its members.
-    Only ``ALWAYS_AUTO_APPROVED`` may use the transparent pass-through schema; conditional and
-    manual calls retain the approval-request envelope.
+    Only ``ALWAYS_AUTO_APPROVED`` may use the transparent pass-through schema; manual calls retain
+    the approval-request envelope.
     """
 
     MANUAL_APPROVAL_REQUIRED = 0
-    CONDITIONALLY_AUTO_APPROVED = 1
     ALWAYS_AUTO_APPROVED = 2
 
 
@@ -105,6 +98,10 @@ class AutoApprovalPolicyRegistry:
         return profile.auto_approval_policy if profile is not None else None
 
     def tool_mode(self, actor: RuntimeActor, server_id: str, tool_name: str) -> ToolAutoApprovalMode:
+        if server_id == "grants":
+            # An older ConfigMap may remain during a rolling update. Its exact-tools leaves must
+            # not retain auto-approval after the server backend has been removed.
+            return ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
         if isinstance(actor, AgentActor):
             root = self._actor_root(actor)
             if root is None:
@@ -125,12 +122,8 @@ class AutoApprovalPolicyRegistry:
                     if tool_name in tools.get(server_id, ())
                     else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
                 )
-            case GrantSelfListAutoApprovalPolicy(server=server):
-                return (
-                    ToolAutoApprovalMode.CONDITIONALLY_AUTO_APPROVED
-                    if server_id == server and tool_name == _LIST_GRANTS_TOOL
-                    else ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
-                )
+            case RetiredGrantSelfListAutoApprovalPolicy():
+                return ToolAutoApprovalMode.MANUAL_APPROVAL_REQUIRED
             case AnyOfAutoApprovalPolicy(policies=members):
                 return max(
                     (self._policy_mode(member, server_id, tool_name) for member in members),
@@ -144,6 +137,8 @@ class AutoApprovalPolicyRegistry:
     ) -> tuple[str | None, str | None] | PolicyDenial:
         if not isinstance(actor, AgentActor):
             return None, None
+        if server_id == "grants":
+            return None, "manual: the grants server has been retired"
 
         root = self._actor_root(actor)
         if root is None:
@@ -189,23 +184,8 @@ class AutoApprovalPolicyRegistry:
                 if tool_name not in tools.get(server_id, ()):
                     return
                 evaluation.record(current_path, AutoApproved(f"exact tool {server_id}/{tool_name} is listed"))
-            case GrantSelfListAutoApprovalPolicy(server=server):
-                if server_id != server or tool_name != _LIST_GRANTS_TOOL:
-                    return
-                if arguments.get("principal") == _OWN_GRANT_SCOPE:
-                    evaluation.record(
-                        current_path,
-                        AutoApproved(
-                            "list_grants is scoped to the caller's own grants (principal=self), including history when requested"
-                        ),
-                    )
-                else:
-                    evaluation.record(
-                        current_path,
-                        NotAutoApproved(
-                            "list_grants auto-approves only with principal=self; all-grants and named reads are manual"
-                        ),
-                    )
+            case RetiredGrantSelfListAutoApprovalPolicy():
+                evaluation.record(current_path, NotAutoApproved("manual: the grants server has been retired"))
             case AnyOfAutoApprovalPolicy(policies=members):
                 for member in members:
                     await self._evaluate_policy(

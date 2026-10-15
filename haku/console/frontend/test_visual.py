@@ -180,38 +180,12 @@ async def test_settings(settings_view: VisualPage) -> None:
 
 
 @pytest.mark.parametrize(
-    ("tab", "ready_text"),
-    [("Agents", "Public Coder"), ("Grants", "Public Coder"), ("System", "Mixed revisions")],
-    ids=["agents", "grants", "system"],
+    ("tab", "ready_text"), [("Agents", "Public Coder"), ("System", "Mixed revisions")], ids=["agents", "system"]
 )
 async def test_settings_tab(settings_view: VisualPage, tab: str, ready_text: str) -> None:
     await settings_view.page.locator(f"[role='tab']:has-text('{tab}')").click()
     await settings_view.page.wait_for_selector(f"[role='tab'][aria-selected='true']:has-text('{tab}')", state="visible")
     await settings_view.page.wait_for_selector(f":text('{ready_text}')", state="visible")
-    await _park_pointer(settings_view)
-    await settings_view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-    await settings_view.capture()
-
-
-async def test_settings_grants_history(settings_view: VisualPage) -> None:
-    await settings_view.page.locator("[role='tab']:has-text('Grants')").click()
-    await settings_view.page.wait_for_selector("[role='tab'][aria-selected='true']:has-text('Grants')", state="visible")
-    await _park_pointer(settings_view)
-    await settings_view.page.locator(":text('History')").click()
-    await settings_view.page.wait_for_selector(
-        ":text('Pilot complete; return to standard diagnostics.')", state="visible"
-    )
-    await _park_pointer(settings_view)
-    await settings_view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
-    await settings_view.capture()
-
-
-async def test_settings_grants_revoke(settings_view: VisualPage) -> None:
-    await settings_view.page.locator("[role='tab']:has-text('Grants')").click()
-    await settings_view.page.wait_for_selector("[role='tab'][aria-selected='true']:has-text('Grants')", state="visible")
-    await _park_pointer(settings_view)
-    await settings_view.page.locator("button:has-text('Revoke') >> nth=0").click()
-    await settings_view.page.wait_for_selector(":text('Confirm')", state="visible")
     await _park_pointer(settings_view)
     await settings_view.page.wait_for_selector("[aria-label='Syncing']", state="hidden")
     await settings_view.capture()

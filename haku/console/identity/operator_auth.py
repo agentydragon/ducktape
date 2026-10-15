@@ -1,8 +1,8 @@
 """Operator **browser** authentication for haku-console (Authentik OIDC).
 
 The console authenticates the operator's browser itself via the Authentik authorization-code flow,
-storing the identity in a signed session cookie. Static Agent credentials are checked by the
-internal Kubernetes authorization endpoint; they do not authenticate to browser routes.
+storing the identity in a signed session cookie. Agent credentials do not authenticate to browser
+routes.
 
 `require_operator` guards the entire browser API (approvals, decisions, audit history, and account
 linking) with a DB-revalidated canonical Operator session.

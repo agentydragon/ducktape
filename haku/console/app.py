@@ -12,7 +12,6 @@ wires that router and serves the config endpoint. It can also mount the built SP
 from __future__ import annotations
 
 import asyncio
-import datetime
 import logging
 import os
 import sys
@@ -32,19 +31,11 @@ from starlette.middleware.sessions import SessionMiddleware
 from haku.console import capabilities
 from haku.console.database_migrate import main as migration_main, verify_schema
 from haku.console.deployment import DeploymentInfo, build_deployment_info
-from haku.console.grants import routes as grant_routes
-from haku.console.grants.catalog import GrantCatalog
-from haku.console.grants.kubernetes import proxy_authorization
-from haku.console.grants.kubernetes.authorization import KubernetesSubjectAccessReviewClient
-from haku.console.grants.kubernetes.authorization_service import KubernetesAuthorizationService
-from haku.console.grants.kubernetes.repository import PostgresGrantRepository
-from haku.console.grants.kubernetes.service import GrantService
-from haku.console.identity import agent_bearer_authority, enrollment_routes, operator_auth, operator_login_flow
+from haku.console.identity import enrollment_routes, operator_auth, operator_login_flow
 from haku.console.identity.authorization import PostgresAgentAuthority, StaticAgentDefinition, fingerprint_static_token
 from haku.console.identity.operator_identity import OperatorIdentityTrust
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp import approval, tool_call_service
-from haku.console.mcp.in_process_servers import InProcessServerDependencies, build_in_process_servers
 from haku.console.mcp_config import (
     InProcessServers,
     LoadedStaticAgent,
@@ -54,7 +45,6 @@ from haku.console.mcp_config import (
 from haku.console.models import ConfigResponse
 from haku.console.notifications import console_events
 from haku.console.settings import Settings
-from haku.console.tools import grants as grants_tools, kubernetes as kubernetes_tools
 
 # SessionMiddleware signs cookies with itsdangerous, imported inside starlette;
 # gazelle cannot see the dependency.
@@ -171,62 +161,13 @@ def create_app(
 
         return tuple([await resolve_agent(agent) for agent in loaded_static_agents])
 
-    if static_agent_definitions is not None:
-        static_agent_fingerprints = tuple(definition.token_fingerprint for definition in static_agent_definitions)
-    else:
-        assert loaded_static_agents is not None
-        static_agent_fingerprints = tuple(
-            fingerprint_static_token(agent.token.get_secret_value()) for agent in loaded_static_agents
-        )
-    static_credential_registry = agent_bearer_authority.StaticAgentCredentialRegistry(
-        fingerprints=static_agent_fingerprints
-    )
-    bearer_authority = agent_bearer_authority.build_agent_bearer_authority(
-        agent_authority=agent_authority, static_credentials=static_credential_registry
-    )
-
-    kubernetes_grants = GrantService(
-        PostgresGrantRepository(db_sessions),
-        max_lifetime=datetime.timedelta(seconds=console_config.kubernetes_grant_max_lifetime_seconds),
-    )
-    grant_catalog = GrantCatalog(
-        kubernetes_grants=kubernetes_grants,
-        kubernetes_config=console_config.kubernetes_authorization,
-        sar_client=(
-            KubernetesSubjectAccessReviewClient() if console_config.kubernetes_authorization is not None else None
-        ),
-    )
-    kubernetes_authorization = (
-        KubernetesAuthorizationService(agent_bearer_authority=bearer_authority, catalog=grant_catalog)
-        if console_config.kubernetes_authorization is not None
-        else None
-    )
-
     if in_process_servers is None:
-        # Keep the grants backend available to already-queued calls while the approval ledger
-        # drains. The agent-facing request endpoint and all new MCP submissions are retired.
-        configured_server_ids = {entry.id for entry in console_config.mcp.servers.values()}
-        in_process_servers = build_in_process_servers(
-            InProcessServerDependencies(
-                access_profiles=tuple(console_config.access_profiles),
-                # The `grants` server fronts Kubernetes grants plus the kubernetes SAR check
-                # (`kubernetes_can_i`, #4918), so it needs the kubernetes authorization service; it
-                # registers only when that is configured (as it always is in the deployed config).
-                grants=(
-                    grants_tools.GrantsToolsService(
-                        kubernetes=kubernetes_grants,
-                        catalog=grant_catalog,
-                        agents=agent_authority,
-                        can_i=kubernetes_tools.KubernetesToolsService(authorization=kubernetes_authorization),
-                    )
-                    if kubernetes_authorization is not None and grants_tools.GRANTS_SERVER_ID in configured_server_ids
-                    else None
-                ),
-            )
-        )
+        # The retired grants backend is no longer available. Keep existing call rows in the ledger
+        # for audit; any pending call that depended on that backend will fail closed on dispatch.
+        in_process_servers = {}
     validate_in_process_server_bindings(console_config, in_process_servers)
-    # Approved rows already in the ledger can still be executed while they drain. There is no
-    # MCP request surface to submit new rows or refresh server catalogs.
+    # The dispatcher remains so the approval ledger can keep its durable audit and decision APIs;
+    # this deployment currently has no configured MCP execution backend.
     dispatcher = approval.McpServerDispatcher(in_process_servers)
     tool_calls = tool_call_service.ToolCallApplicationService(
         settings=settings,
@@ -252,8 +193,6 @@ def create_app(
                 # Cancel in-flight approved-call executions (each marks its row cancelled) before the
                 # event hub they publish through is torn down.
                 await tool_calls.aclose()
-                if kubernetes_authorization is not None:
-                    await kubernetes_authorization.aclose()
                 await console_event_hub.aclose()
 
     app = FastAPI(title="Haku console", lifespan=_lifespan)
@@ -270,9 +209,6 @@ def create_app(
     app.state.console_event_hub = console_event_hub
     app.state.in_process_servers = in_process_servers
     app.state.mcp_dispatcher = dispatcher
-    app.state.kubernetes_authorization = kubernetes_authorization
-    app.state.grant_catalog = grant_catalog
-    app.state.kubernetes_grants = kubernetes_grants
 
     # Content-Security-Policy: let the console frame Haku's own UI origin (the sandboxed
     # cross-origin iframe) and Authentik's origin for the SSO redirect, and forbid the
@@ -309,12 +245,8 @@ def create_app(
     app.include_router(capabilities.router, dependencies=operator_only)
     app.include_router(console_events.router, dependencies=operator_only)
     app.include_router(approval.router, dependencies=operator_only)
-    app.include_router(grant_routes.router, dependencies=operator_only)
     app.include_router(enrollment_routes.operator_router, dependencies=operator_only)
     app.include_router(enrollment_routes.entry_router)
-    # Machine-to-machine, bearer-forwarding contract for the separate Kubernetes proxy. The
-    # endpoint remains fail-closed unless configured SAR authorization is present.
-    app.include_router(proxy_authorization.router)
 
     @app.get("/api/deployment", dependencies=operator_only)
     async def deployment() -> DeploymentInfo:

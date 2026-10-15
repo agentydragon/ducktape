@@ -40,10 +40,10 @@ The common case is a mix, split by operation class rather than by system:
 
 - **Reads direct, mutations brokered.** A GET allowlist or read-only RBAC covers the high-volume,
   low-stakes traffic; writes go through the broker with approval.
-- **Broker mints delegated grants instead of executing calls.** The grants system already does
-  this: `create_grant` asks for exact origins, or namespaces plus verbs, with a duration and a
-  rationale, and one approval yields standing authority the target then enforces per call. Approval
-  cost is paid once per grant, not once per call.
+- **Broker mints delegated grants instead of executing calls.** The former Haku Console grants
+  system did this through `create_grant`: one approval yielded standing authority for exact origins
+  or Kubernetes namespaces and verbs. That integration has been retired; a replacement broker and
+  lifecycle owner would need to be selected before this pattern is available again.
 - **Agent-requested grants.** The agent asks for additional authority on its own identity, the
   operator approves once, and the target enforces from then on. This keeps the apiserver's
   authorization semantics where they belong; the risk is authority issued that cannot be revoked
@@ -231,6 +231,7 @@ selected by this plan.
 ## Open questions
 
 - Whether raw direct traffic should be mirrored into the ledger from fence logs, or stay separate.
-- Per-agent identity provisioning per system: what it costs to mint, rotate, and revoke, and where
-  the grants system already covers it.
+- Per-agent identity provisioning per system: what it costs to mint, rotate, and revoke, and which
+  active products already cover it. Haku Console grants previously covered only a subset of these
+  cases and are retired.
 - Which of the unassessed systems have RBAC worth delegating to.

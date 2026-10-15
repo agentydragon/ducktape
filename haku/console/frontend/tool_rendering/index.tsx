@@ -23,13 +23,10 @@ import { googleCalendarResultPreviews } from "./google_calendar/responses";
 import { grocyPreviews } from "./grocy/requests";
 import { grocyResultPreviews } from "./grocy/responses";
 import { hakuRoutinePreviews } from "./haku_routine/requests";
-import { grantsPreviews } from "./grants/requests";
-import { grantsResultPreviews } from "./grants/responses";
 import { renderResultPreview, type ToolResultPreview } from "./result_entry";
 import {
   GMAIL_SERVER_ID,
   GOOGLE_CALENDAR_SERVER_ID,
-  GRANTS_SERVER_ID,
   GROCY_SERVER_ID,
   HAKU_ROUTINE_SERVER_ID,
   TANA_SERVER_ID,
@@ -45,7 +42,6 @@ type PreviewRegistryShape = {
   [GOOGLE_CALENDAR_SERVER_ID]: typeof googleCalendarPreviews;
   [GROCY_SERVER_ID]: typeof grocyPreviews;
   [HAKU_ROUTINE_SERVER_ID]: typeof hakuRoutinePreviews;
-  [GRANTS_SERVER_ID]: typeof grantsPreviews;
   [TANA_SERVER_ID]: typeof tanaPreviews;
 };
 
@@ -54,7 +50,6 @@ const REGISTRY: PreviewRegistryShape = {
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarPreviews,
   [GROCY_SERVER_ID]: grocyPreviews,
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutinePreviews,
-  [GRANTS_SERVER_ID]: grantsPreviews,
   [TANA_SERVER_ID]: tanaPreviews,
 } satisfies Record<string, Record<string, ToolPreview>>;
 
@@ -67,14 +62,12 @@ type ResultRegistryShape = {
   [GMAIL_SERVER_ID]: typeof gmailResultPreviews;
   [GOOGLE_CALENDAR_SERVER_ID]: typeof googleCalendarResultPreviews;
   [GROCY_SERVER_ID]: typeof grocyResultPreviews;
-  [GRANTS_SERVER_ID]: typeof grantsResultPreviews;
 };
 
 const RESULT_REGISTRY: ResultRegistryShape = {
   [GMAIL_SERVER_ID]: gmailResultPreviews,
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarResultPreviews,
   [GROCY_SERVER_ID]: grocyResultPreviews,
-  [GRANTS_SERVER_ID]: grantsResultPreviews,
 } satisfies Record<string, Record<string, ToolResultPreview>>;
 type ResultRegistry = typeof RESULT_REGISTRY;
 const RUNTIME_RESULT_REGISTRY: Record<string, Record<string, ToolResultPreview>> = RESULT_REGISTRY;

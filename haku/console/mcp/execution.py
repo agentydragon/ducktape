@@ -2,12 +2,11 @@
 five identity roles the tool-call domain keeps apart.
 
 `McpExecutionCaller` and `McpExecutionContext` are the runtime-actor/execution role: the trusted
-identity a Console-owned in-process tool reads at execution. The one boundary across the five roles:
-an actor is a request principal plus the accountability identities (owning Operator, exact
-credential binding) that authorization and audit read and applicability must not; grant principals
-are stored selectors those request principals are tested against; tool-call principal rows are the
-durable submitter provenance both are revalidated from. The other four definitions: the actor
-`RuntimeActor` (`tool_call_actor.py`), `RequestPrincipal` and `GrantPrincipal` (`grants/principal.py`),
+identity a Console-owned in-process tool reads at execution. The boundary between these roles:
+an actor is a request principal plus accountability identities (owning Operator and exact
+credential binding); tool-call principal rows are durable submitter provenance revalidated from
+that actor. The other definitions: the actor
+`RuntimeActor` (`tool_call_actor.py`), `RequestPrincipal` (`mcp/principal.py`),
 and the `McpToolCallPrincipal` submitter-provenance row (`database_schema.py`; wire in
 `haku/shared/haku/console/tool_calls.py`).
 
@@ -26,7 +25,7 @@ from fastmcp import Context
 from fastmcp.dependencies import CurrentContext, Depends
 from pydantic import BaseModel, ConfigDict, Field
 
-from haku.console.grants.principal import RequestPrincipal
+from haku.console.mcp.principal import RequestPrincipal
 
 _HAKU_EXECUTION_META_KEY = "haku_execution"
 _CURRENT_CONTEXT = CurrentContext()

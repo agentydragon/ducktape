@@ -3,7 +3,7 @@
 // module that captures `globalThis.fetch` (openapi-fetch does so when client.ts builds its
 // client) — harness.tsx imports this first. Paired with the `base_href` of the `:screenshots`
 // py_visual_test so the relative "/api/…" URL parses in the origin-less in-memory page.
-import { SAMPLE_DEPLOYMENT, SAMPLE_GRANTS, SAMPLE_PENDING, SAMPLE_TOOL_CALLS } from "./sample_data";
+import { SAMPLE_DEPLOYMENT, SAMPLE_PENDING, SAMPLE_TOOL_CALLS } from "./sample_data";
 import { mockOperatorMcpFetch } from "../tool_rendering/screenshot/mcp_mock";
 import { ensureLedger, recordViolation, tracked } from "../tool_rendering/screenshot/visual_network_ledger";
 import { GOOGLE_CALENDAR_MCP_FIXTURES } from "../tool_rendering/google_calendar/fixtures";
@@ -22,7 +22,6 @@ function jsonResponse(body: unknown): Response {
 const fixture = (window as unknown as { __FIXTURE__?: string }).__FIXTURE__;
 
 async function respond(input: RequestInfo | URL, init: RequestInit | undefined, url: string): Promise<Response | null> {
-  if (url.includes("/api/grants")) return jsonResponse(SAMPLE_GRANTS);
   if (url.includes("/api/agent-enrollment/agents/") && init?.method === "PUT") {
     const body = JSON.parse(String(init.body)) as { access_profile_id: string };
     return jsonResponse({

@@ -20,11 +20,10 @@ import textwrap
 import time
 from collections.abc import AsyncGenerator, Callable, Generator, Iterator
 from contextlib import contextmanager
-from datetime import datetime
 from pathlib import Path
 from tempfile import NamedTemporaryFile
 from typing import Any, cast
-from uuid import UUID, uuid4
+from uuid import UUID
 
 import itsdangerous
 import pytest
@@ -37,7 +36,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from haku.console.app import create_app
 from haku.console.config import OperatorIdentityConfig, OperatorOidcConfig
 from haku.console.database_migrate import apply_migrations
-from haku.console.database_schema import Agent, CredentialBinding, McpToolCall, McpToolCallPrincipal, StaticCredential
+from haku.console.database_schema import Agent, CredentialBinding, StaticCredential
 from haku.console.identity.authorization import fingerprint_static_token
 from haku.console.identity.operator_auth import OPERATOR_SESSION_MAX_AGE_SECONDS, SESSION_USER_KEY
 from haku.console.identity.operator_identity import (
@@ -48,7 +47,6 @@ from haku.console.identity.operator_identity import (
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.settings import Settings
 from haku.console.tool_call_actor import OperatorActor
-from haku.console.tool_calls import ToolCallStatus
 from third_party.containers import pgvector_pg18
 from util.oci import OciImage
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
@@ -214,49 +212,6 @@ async def default_agent_binding(sessions: async_sessionmaker[AsyncSession]) -> t
             .where(StaticCredential.credential_fingerprint == fingerprint_static_token(_DEFAULT_AGENT_TOKEN))
         )
         return cast(tuple[UUID, UUID], result.one())
-
-
-async def insert_approved_tool_call(
-    sessions: async_sessionmaker[AsyncSession],
-    *,
-    binding_id: UUID,
-    now: datetime,
-    # The default models a grant-creation source ToolCall on the shared `grants` server (#4918),
-    # matching the provenance pin in the grant repositories.
-    server_id: str = "grants",
-    tool_name: str = "create_grant",
-    approval_policy_id: str | None = None,
-) -> str:
-    """Insert one approved, running ToolCall with its durable principal and return its id.
-
-    The defaults are the source provenance Kubernetes grant creation requires: a manually
-    approved ``kubernetes.create_grant`` call owned by ``binding_id``.
-    """
-    tool_call_id = f"tc_{uuid4().hex}"
-    async with sessions.begin() as session:
-        session.add(
-            McpToolCall(
-                tool_call_id=tool_call_id,
-                server_id=server_id,
-                tool_name=tool_name,
-                status=ToolCallStatus.RUNNING,
-                created_at=now,
-                updated_at=now,
-                arguments_json={"duration_seconds": 300},
-                rationale="temporary diagnostic access",
-                title="Kubernetes diagnostic grant",
-                result_json=None,
-                error=None,
-                decision_note=None,
-                decision_operator_id=None,
-                withdrawal_reason=None,
-                approval_policy_id=approval_policy_id,
-                auto_approval_evaluation=None,
-                approved_at=now,
-            )
-        )
-        session.add(McpToolCallPrincipal(tool_call_id=tool_call_id, operator_id=None, binding_id=binding_id))
-    return tool_call_id
 
 
 @pytest.fixture(scope="session")

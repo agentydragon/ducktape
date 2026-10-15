@@ -8,7 +8,7 @@ still impose stricter cross-field rules. Two catalogs are emitted, selected by `
 ``--results`` flag: ``McpToolArguments`` and ``McpToolResults``.
 
 The retired `haku_routine` request wrapper is represented by its Pydantic argument/result models
-so existing approval rows remain renderable. The grants backend is still reflected in-process.
+so existing approval rows remain renderable. No Console-owned MCP execution backend is reflected.
 
 The exporter also reflects two servers that do not run in-process in haku-console: the **remote**
 ``grocy-sf`` server's custom batch tools, and ``gmail``/``google_calendar``, whose tool
@@ -37,9 +37,6 @@ from fastmcp import Client, FastMCP
 from grocy_mcp.batch_tools import build_batch_tools_mcp
 from grocy_mcp.client import GrocyClient
 from grocy_mcp.mcp_types import ServerSettings
-from haku.console.mcp.in_process_servers import InProcessServerDependencies, build_in_process_servers
-from haku.console.tools.grants import GrantsToolsService
-from haku.console.tools.kubernetes import KubernetesToolsService
 from haku.console.tools.routine import LaunchRoutineArguments, LaunchRoutineResult
 from mcp_infra.request_scoped_openapi import borrowed_http_client_provider
 from x.google_mcp_server import gmail as gmail_tools, google_calendar as google_calendar_tools
@@ -101,9 +98,8 @@ _FRONTEND_SCHEMA_KEYWORDS = frozenset(
         "oneOf",
         "pattern",
         "properties",
-        # Annotation-only (no validation semantics): pydantic stamps computed fields
-        # (e.g. the grant envelope's derived `status`) readOnly in serialization schemas;
-        # z.fromJSONSchema ignores it.
+        # Annotation-only (no validation semantics): Pydantic stamps computed fields readOnly in
+        # serialization schemas; z.fromJSONSchema ignores it.
         "readOnly",
         "required",
         "title",
@@ -127,33 +123,16 @@ class _InertCollaborator:
 def build_schema_servers() -> dict[str, FastMCP]:
     """Build every server whose tools the console renders, without live credentials.
 
-    The console's own in-process servers plus a batch-tools-only grocy-sf built for schema
-    reflection (its Grocy client is inert — registration never calls it).
+    These remote tool schemas do not connect to their services.
     """
 
     inert = _InertCollaborator()
-    # `Any` is intentional at this reflection-only boundary: no collaborator may be
-    # touched until a tool executes, and `_InertCollaborator` makes that invariant fail
-    # loudly if FastMCP ever changes its registration behavior. Grants needs an inert
-    # grant/enrollment service plus inert Kubernetes authorization.
-    dependency: Any = inert
     servers = {
-        server_id: registration.builder(None)
-        for server_id, registration in build_in_process_servers(
-            InProcessServerDependencies(
-                grants=GrantsToolsService(
-                    kubernetes=dependency,
-                    catalog=dependency,
-                    agents=dependency,
-                    can_i=KubernetesToolsService(authorization=dependency),
-                )
-            )
-        ).items()
+        GROCY_SF_SERVER_ID: build_batch_tools_mcp(
+            ServerSettings(grocy_url="https://grocy.invalid"),
+            client_provider=borrowed_http_client_provider(cast(GrocyClient, inert)),
+        )
     }
-    servers[GROCY_SF_SERVER_ID] = build_batch_tools_mcp(
-        ServerSettings(grocy_url="https://grocy.invalid"),
-        client_provider=borrowed_http_client_provider(cast(GrocyClient, inert)),
-    )
     # gmail/google_calendar build their own inert client from a None token.
     servers[gmail_tools.GMAIL_SERVER_ID] = gmail_tools.build_mcp(gmail_tools.build_gmail_client_from_token(None))
     servers[google_calendar_tools.GOOGLE_CALENDAR_SERVER_ID] = google_calendar_tools.build_mcp(

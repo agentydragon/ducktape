@@ -1,7 +1,7 @@
 // Deterministic sample data for the screenshot scenes (harness.tsx) and the API stub
 // (mock_api.ts). Kept separate so both share one source of truth.
 import { makeRecentToolCall, type RecentToolCall } from "../approval_state";
-import type { DeploymentInfo, GrantListResponse, ToolCallRecord } from "../client";
+import type { DeploymentInfo, ToolCallRecord } from "../client";
 import type { RegisteredToolPreviewFixture } from "../tool_rendering/index";
 
 const STOCK_ADD_HISTORY_FIXTURE = {
@@ -206,92 +206,6 @@ export function sampleRecentToolCalls(nowMs: number): RecentToolCall[] {
   if (!recent) throw new Error(`Expected terminal screenshot fixture, got ${record.status}`);
   return [recent];
 }
-
-export const SAMPLE_GRANTS: GrantListResponse = {
-  grants: [
-    {
-      source: {
-        kind: "database",
-        id: "50000000-0000-4000-8000-000000000005",
-        tool_call_id: "tc_0123456789abcdef01234567",
-        created_at: "2025-02-01T11:35:00Z",
-      },
-      subject: { kind: "agent", agent_id: "30000000-0000-4000-8000-000000000003" },
-      coverage: {
-        kind: "kubernetes_rules",
-        scope: { kind: "namespaces", namespaces: ["public-coder-agent"] },
-        rules: [
-          {
-            api_groups: [""],
-            resources: ["pods/log"],
-            verbs: ["get"],
-            resource_names: [],
-            non_resource_urls: [],
-          },
-          {
-            api_groups: ["apps"],
-            resources: ["deployments"],
-            verbs: ["get", "list"],
-            resource_names: [],
-            non_resource_urls: [],
-          },
-        ],
-      },
-      validity: { ends_at: "2025-02-02T02:05:00Z", status: "active", ended_at: null, end_reason: null },
-    },
-    {
-      source: {
-        kind: "database",
-        id: "50000000-0000-4000-8000-000000000007",
-        tool_call_id: "tc_0123456789abcdef01234567",
-        created_at: "2025-02-01T11:35:00Z",
-      },
-      subject: { kind: "agent", agent_id: "30000000-0000-4000-8000-000000000003" },
-      coverage: {
-        kind: "kubernetes_rules",
-        scope: { kind: "cluster" },
-        rules: [
-          {
-            api_groups: ["rbac.authorization.k8s.io"],
-            resources: ["clusterroles"],
-            verbs: ["get", "list"],
-            resource_names: [],
-            non_resource_urls: [],
-          },
-        ],
-      },
-      validity: { ends_at: "2025-02-02T02:05:00Z", status: "active", ended_at: null, end_reason: null },
-    },
-    {
-      source: {
-        kind: "database",
-        id: "50000000-0000-4000-8000-000000000006",
-        tool_call_id: "tc_1123456789abcdef01234567",
-        created_at: "2025-01-31T21:00:00Z",
-      },
-      subject: { kind: "access_profile", access_profile_id: "public-coder" },
-      coverage: {
-        kind: "kubernetes_rules",
-        scope: { kind: "cluster" },
-        rules: [
-          {
-            api_groups: [""],
-            resources: ["nodes"],
-            verbs: ["get"],
-            resource_names: ["wyrm2"],
-            non_resource_urls: [],
-          },
-        ],
-      },
-      validity: {
-        ends_at: "2025-01-31T22:00:00Z",
-        status: "ended",
-        ended_at: "2025-01-31T21:20:00Z",
-        end_reason: "Pilot complete; return to standard diagnostics.",
-      },
-    },
-  ],
-} satisfies GrantListResponse;
 
 export const SAMPLE_DEPLOYMENT: DeploymentInfo = {
   server: {

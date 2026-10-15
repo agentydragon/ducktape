@@ -11,13 +11,11 @@
 import type { ActionEntry, ToolAction } from "./action_entry";
 import { gmailActions } from "./gmail/actions";
 import { googleCalendarActions } from "./google_calendar/actions";
-import { grantsActions } from "./grants/actions";
 import { grocyActions } from "./grocy/actions";
 import { hakuRoutineActions } from "./haku_routine/actions";
 import {
   GMAIL_SERVER_ID,
   GOOGLE_CALENDAR_SERVER_ID,
-  GRANTS_SERVER_ID,
   GROCY_SERVER_ID,
   HAKU_ROUTINE_SERVER_ID,
   TANA_SERVER_ID,
@@ -29,7 +27,6 @@ const ACTIONS: Record<string, Record<string, ActionEntry>> = {
   [GOOGLE_CALENDAR_SERVER_ID]: googleCalendarActions,
   [GROCY_SERVER_ID]: grocyActions,
   [HAKU_ROUTINE_SERVER_ID]: hakuRoutineActions,
-  [GRANTS_SERVER_ID]: grantsActions,
   [TANA_SERVER_ID]: tanaActions,
 };
 

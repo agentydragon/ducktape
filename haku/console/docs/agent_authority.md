@@ -2,8 +2,8 @@
 
 The durable Postgres graph for Console Agent identities and the authorization records retained from
 the retired MCP OAuth flow. The Console's Agent-facing MCP protocol endpoint and FastMCP adapter
-have been removed; the remaining identity code supports configured Agents and Kubernetes proxy
-authorization. The operator browser login remains at `/auth/*`.
+have been removed; the remaining identity code supports configured Agents and the operator-owned
+approval/audit ledger. The operator browser login remains at `/auth/*`.
 
 Alembic revision `0081` is the single forward-only database baseline. It directly installs one
 graph shared by interactive OAuth and configured static Agents:
@@ -35,10 +35,10 @@ ToolCallPrincipal -> exactly one of operator_id | binding_id
   so queued work cannot transfer to a replacement credential.
 - An Agent stores only a nullable `access_profile_id`, naming one reviewed deployment-config
   capability bundle. Its authority dimensions are independent and default-deny: an auto-approval
-  policy decides whether a permitted call skips review; `in_process_server_ids` grants
-  credential-free Console-held servers;
-  `allowed_harnesses` grants launchable harness kinds. A server grant does not grant other
-  capabilities, and neither does auto-approval. `can_read_profiles` is the reviewed, acyclic
+  policy decides whether a permitted call skips review; `in_process_server_ids` selects
+  credential-free Console-held servers; `allowed_harnesses` selects launchable harness kinds.
+  In-process server access does not imply other capabilities, and neither does auto-approval.
+  `can_read_profiles` is the reviewed, acyclic
   conversation-visibility graph: `conversation_read_access` derives each caller's transitive read
   closure and the `haku_conversations` drilldown enforces it against the conversation's pinned
   `access_profile_id`. It grants information visibility only, never any
@@ -50,34 +50,27 @@ The Console Recall integration and `recall_index_ids` profile field were removed
 ## Retired MCP OAuth admission
 
 The Console no longer accepts MCP OAuth authorization, callback, or tool requests. Existing Agent,
-credential-binding, and grant rows remain durable; this rollout does not delete stored identity or
-tool-call data. The old DCR/token-state table also remains until after outgoing replicas have left,
-since they can still initialize it during the rolling deployment.
+credential-binding, Kubernetes grant, and tool-call rows remain durable; this rollout does not
+delete stored identity or tool-call data. Kubernetes grants are no longer listed, revoked, or used
+for authorization. The old DCR/token-state table also remains until after outgoing replicas have
+left, since they can still initialize it during the rolling deployment.
 
 ## The runtime actor
 
-Identity splits across five roles the tool-call domain keeps apart; reading the wrong one for an
+Identity splits across four roles the tool-call domain keeps apart; reading the wrong one for an
 authorization or audit decision is the failure this boundary prevents. In one sentence: an actor is
-a request principal plus the accountability identities (owning Operator, exact credential binding)
-that authorization and audit read and applicability must not; grant principals are stored selectors
-those request principals are tested against; tool-call principal rows are the durable submitter
-provenance both are revalidated from. The five, at their definitions:
+a request principal plus the accountability identities (owning Operator and exact credential
+binding); the tool-call principal row is the durable submitter provenance revalidated from that
+actor. The four, at their definitions:
 
 - **Authentication context** — `RuntimeActor` (`OperatorActor | AgentActor`, `tool_call_actor.py`):
   the actor.
-- **Request principal** — `RequestPrincipal` (`grants/principal.py`): the `agent_id`/`session_id`
-  atom the actor projects to, dropping the accountability identities applicability must not read.
-- **Grant principal** — `GrantPrincipal` = `AgentGrantPrincipal | SessionGrantPrincipal`
-  (`grants/principal.py`): the durable stored selector a request principal is tested against.
+- **Request principal** — `RequestPrincipal` (`mcp/principal.py`): the Agent and access profile
+  projected from the authenticated actor, dropping accountability identities.
 - **Submitter provenance** — `McpToolCallPrincipal` (`database_schema.py`; wire in
-  `haku/shared/haku/console/tool_calls.py`): the durable audit record both the actor and the grant
-  principal are revalidated from.
+  `haku/shared/haku/console/tool_calls.py`): the durable audit record the actor is revalidated from.
 - **Runtime actor / execution** — `McpExecutionCaller` and `McpExecutionContext`
-  (`mcp/execution.py`): the trusted identity a Console-owned in-process tool reads at execution. The
-  `grants` server's `whoami` tool returns this `McpExecutionCaller` — the caller's resolved
-  console/MCP principal — so an Agent (or Operator) can read exactly who Console authenticated it as.
-  HTTP egress separately authenticates the shared fence through its `Authorization` credential and
-  derives Agent/session identity from the live session token.
+  (`mcp/execution.py`): the trusted identity a Console-owned in-process tool reads at execution.
 
 The runtime caller is `RuntimeActor` (`OperatorActor | AgentActor`). Only the authority constructs an
 `AgentActor(agent_id, operator_id, binding_id, access_profile_id)` from durable state. Operators

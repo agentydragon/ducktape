@@ -42,8 +42,7 @@ class OperatorOidcConfig(BaseModel):
     """Authentik OIDC relying-party config for operator **browser** login.
 
     The console authenticates the operator's browser itself (Authentik authorization-code flow →
-    signed session cookie). The static Agent credentials are used by the internal Kubernetes
-    authorization proxy, independently of browser login.
+    signed session cookie). Agent credentials do not authenticate to browser routes.
     Reads `HAKU_CONSOLE__OPERATOR_OIDC__{ISSUER,CLIENT_ID,CLIENT_SECRET,SESSION_SECRET}`. The redirect
     URI is built from the top-level `public_base_url` + `/auth/callback`.
 
@@ -83,63 +82,6 @@ class OperatorIdentityConfig(BaseModel):
         if not value:
             raise ValueError("trust_domain must not be empty")
         return value
-
-
-class KubernetesAuthorizationSubject(BaseModel):
-    """The fixed Kubernetes identity used for Console SubjectAccessReviews.
-
-    This is deployment policy, not request data.  In particular, the Agent
-    bearer and the proxy request cannot choose a username or group set.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    username: str = Field(min_length=1)
-    groups: tuple[str, ...] = ()
-
-    @field_validator("username")
-    @classmethod
-    def _nonempty_username(cls, value: str) -> str:
-        value = value.strip()
-        if not value:
-            raise ValueError("Kubernetes SAR username must not be empty")
-        return value
-
-    @field_validator("groups")
-    @classmethod
-    def _distinct_groups(cls, value: tuple[str, ...]) -> tuple[str, ...]:
-        value = tuple(group.strip() for group in value)
-        if any(not group for group in value):
-            raise ValueError("Kubernetes SAR groups must not be empty")
-        if len(set(value)) != len(value):
-            raise ValueError("Kubernetes SAR groups must be distinct")
-        return value
-
-
-class KubernetesAuthorizationConfig(BaseModel):
-    """Explicit opt-in for Console-side Kubernetes SAR authorization.
-
-    ``None`` on :class:`Settings` is the production-safe default: the
-    endpoint remains unavailable and the proxy fails closed until a deploy
-    deliberately configures a standing Kubernetes subject.
-    """
-
-    model_config = ConfigDict(frozen=True, extra="forbid")
-
-    subjects_by_access_profile: dict[str, KubernetesAuthorizationSubject]
-    timeout_seconds: float = Field(default=2.0, gt=0.0)
-
-    @field_validator("subjects_by_access_profile")
-    @classmethod
-    def _nonempty_profile_subjects(
-        cls, value: dict[str, KubernetesAuthorizationSubject]
-    ) -> dict[str, KubernetesAuthorizationSubject]:
-        normalized = {profile_id.strip(): subject for profile_id, subject in value.items()}
-        if not normalized or any(not profile_id for profile_id in normalized):
-            raise ValueError("Kubernetes SAR subjects must name at least one non-empty access profile")
-        if len(normalized) != len(value):
-            raise ValueError("Kubernetes SAR access profiles must be distinct after trimming")
-        return normalized
 
 
 class ConsoleProcessConfig(BaseModel):
