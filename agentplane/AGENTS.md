@@ -35,8 +35,9 @@ Servicers, clients, auth, errors and server wiring follow [one pattern](docs/grp
 
 A PR that adds, removes, splits or renames a service or Deployment, or changes the traffic between
 them (who calls whom, over which protocol, or an edge going live), updates the
-[README system overview](README.md#system-overview) in the same PR. The diagram draws what
-staging deploys, from `cluster/cdk8s/agentplane/`; a deployed path with no traffic yet is dashed.
+[README system overview](README.md#system-overview) in the same PR. The diagrams describe service
+boundaries and traffic independently of a particular environment or replica layout. Do not turn
+them into deployment snapshots; draw a platform route dashed where the runner initiates it.
 
 ## Deployed state is disposable
 

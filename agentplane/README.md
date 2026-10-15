@@ -32,87 +32,266 @@ an MCP approval gateway for any MCP-capable LLM product.
 
 ## System overview
 
-What staging runs ([`cluster/cdk8s/agentplane/`](../cluster/cdk8s/agentplane/chart.py)).
-Arrows show service traffic and API reads/writes; Pod grouping shows where processes run.
+These diagrams show service boundaries and traffic, independent of any one environment or replica
+layout. The overview keeps the complete service map compact; the focused diagrams below show the
+API callers and data paths. API arrows point from caller to callee; labels such as `response` and
+`replication` show data moving along that edge. Dashed arrows are runner-initiated platform routes.
+The Git index is independent of the backend service graph and has no dependency on the integration app.
+
+### Overview
 
 ```mermaid
-flowchart TB
+flowchart LR
     browser([Browser])
-    mcp_client([MCP client, e.g. claude.ai])
-    github([GitHub])
     app[Integration app]
-    subgraph services[Backend services]
+    subgraph services[Agentplane services]
+        direction TB
         gw[Runner Gateway]
+        dispatcher[Session Dispatcher]
+        sandboxctl[Sandbox Controller]
+        policy[Policy Controller]
         hs[History Service]
         notif[Notification service]
         actions[Action Service]
-        policy[Policy Controller]
-        sandboxctl[Sandbox Controller]
-        dispatcher[Session Dispatcher, 2 replicas]
+        egress[Egress proxy]
+        llm[LLM ingress]
+        electric[Electric]
     end
-    subgraph sandbox[Sandbox Pod]
+    subgraph runtimes[Runner runtimes]
+      direction LR
+      subgraph sandbox[Sandbox Pod]
         runner[Runner + native drivers]
         sidecar[Egress sidecar]
+      end
+      subgraph vm_guest[VM guest]
+        guest[Guest runner + native drivers]
+      end
+      subgraph vm_sandbox[VM launcher Pod]
+        relay[Egress relay]
+      end
     end
-    subgraph vm_sandbox[VM Sandbox launcher Pod]
-        guest[Guest: runner + native drivers]
-        relay[Egress relay, added by Kyverno]
-    end
-    cmd_sandbox[Action box Pods]
-    proxy[Egress proxy]
-    llm[LLM ingress]
     k8s[Kubernetes API]
-    authentik([Authentik])
-    electric[Electric]
-    hist_db[(history DB)]
-    outside((LiteLLM, internet, cluster services))
+    subgraph independent[Independent service]
+      direction LR
+        index[Git index]
+    end
 
-    browser -->|HTTPS, SSE| app
-    mcp_client -->|MCP over OAuth| actions
-    app -->|gRPC: UID-fenced Session checks for archive and native resume| gw
-    app -->|gRPC: queued Thread commands, delivery reads, and Session openings| dispatcher
-    app -->|gRPC: Session and Thread reads, change and Session-opening watch| hs
-    app -->|HTTP| notif
-    app -->|HTTP: operator decisions| actions
-    app -->|HTTP admin port: egress decisions and a stream of when they change| proxy
-    app -->|Thread shapes for the browser| electric
-    app -->|Sandbox inventory and lifecycle, templates, policies, VM console; PolicyBinding create and delete| k8s
-    app -->|OIDC| authentik
-    electric -->|logical replication| hist_db
-    hist_db -.->|staging: WAL archive, on-demand base backups| outside
+    browser -->|HTTPS requests| app
+    app --> gw
+    app --> dispatcher
+    app --> hs
+    app --> notif
+    app --> actions
+    app --> egress
+    app --> electric
+    app --> k8s
 
-    gw -->|control EndpointSlices, Leases| k8s
-    hs -->|ingest, fold, read| hist_db
-    notif -->|read Sandbox existence, UID and owner| k8s
-    dispatcher -->|Sandbox watch| k8s
-    dispatcher -->|send wake: guarded Sandbox patch; app and notifications callers, Sandbox opt-in| k8s
-    dispatcher -->|queued commands, state, terminal-event notifications| dispatcher_db
-    dispatcher_db[(session_dispatcher DB)]
-    dispatcher -->|queued Session opens and commands through the runner proxy| gw
-    notif -->|every notice via SubmitInput; no direct Gateway fallback| dispatcher
-    notif -->|command receipts| hs
-    notif --> actions
-    notif -->|REST| github
-    github -->|webhooks over an HTTPS route| notif
-    actions -->|create and watch box Pods as the caller; exec| k8s
-    policy -->|PolicyBindings, RoleBindings| k8s
-    sandboxctl -->|Sandboxes, Pods, VMs, state PVCs, PolicyBindings| k8s
-    sandboxctl -->|gRPC: Quiesce| gw
-    cmd_sandbox -->|all outbound traffic| proxy
-    actions -->|MCP servers, GitHub, web push| outside
+    gw --> k8s
+    dispatcher --> k8s
+    dispatcher --> gw
+    policy --> k8s
+    sandboxctl --> k8s
+    sandboxctl --> gw
+    runner --> sidecar --> egress
+    guest --> relay --> egress
+    runner -.->|RunnerControl.Connect| sidecar
+    sidecar -.->|outbound platform route| gw
+    guest -.->|RunnerControl.Connect| relay
+    relay -.->|outbound platform route| gw
+    gw -->|tunneled Runner RPCs| runner
+    gw -->|tunneled Runner RPCs| guest
+    runner -.->|dials RunnerIngress.Push| sidecar
+    sidecar -.->|outbound ingress route| hs
+    guest -.->|dials RunnerIngress.Push| relay
+    relay -.->|outbound ingress route| hs
 
-    runner --> sidecar -->|all outbound traffic| proxy
-    sidecar -.->|platform route: RunnerControl Connect| gw
-    sidecar -.->|platform route: RunnerIngress Push| hs
-    guest --> relay -->|all outbound traffic| proxy
-    relay -.->|platform routes| gw
-    relay -.->|platform routes| hs
-    proxy -->|policy watches, EgressReady| k8s
-    proxy -->|MCP| actions
-    proxy -->|HTTP| notif
-    proxy -->|model calls| llm --> outside
-    proxy -->|credentials substituted| outside
+    egress --> llm
+
+    click app href "app/api.py" "Integration app API"
+    click gw href "proto/runner_gateway.proto" "Runner Gateway API"
+    click hs href "proto/history_service.proto" "History Service API"
+    click notif href "notification_service/api.py" "Notification Service API"
+    click actions href "action_service/api.py" "Action Service API"
+    click policy href "policy_controller/controller.go" "Policy Controller"
+    click sandboxctl href "sandbox_controller/controller.go" "Sandbox Controller"
+    click dispatcher href "proto/session_dispatcher.proto" "Session Dispatcher API"
+    click egress href "egress/addon.py" "Egress proxy"
+    click llm href "llm_ingress/app.py" "LLM ingress"
+    click electric href "../cluster/cdk8s/agentplane/electric.py" "Electric deployment"
+    click index href "indexing/app.py" "Git index API"
 ```
+
+The map shows every service and runtime placement. A VM guest runs the runner; its relay is in the
+separate KubeVirt launcher Pod. Detailed API dependencies appear below. The `Git index` is a
+standalone service; it polls a configured Git remote, embeds files through an embedding endpoint
+and owns a separate PostgreSQL database. See the [indexing README](indexing/README.md).
+
+### Session delivery
+
+```mermaid
+flowchart LR
+    app[Integration app]
+    dispatcher[Session Dispatcher]
+    gateway[Runner Gateway]
+    sandboxctl[Sandbox Controller]
+    k8s[Kubernetes API]
+    app -->|session opens + commands| dispatcher
+    app -->|live checks + resume| gateway
+    dispatcher -->|queued opens + commands| gateway
+    sandboxctl -->|Quiesce| gateway
+    dispatcher -->|watch + guarded wake| k8s
+```
+
+### Runner control tunnel
+
+```mermaid
+flowchart LR
+    gateway[Runner Gateway]
+    subgraph pod[Sandbox Pod]
+        runner[Runner]
+        sidecar[Egress sidecar]
+    end
+    subgraph vm_guest[VM guest]
+        guest[Guest runner]
+    end
+    subgraph vm_pod[VM launcher Pod]
+        relay[Egress relay]
+    end
+
+    runner -.->|RunnerControl.Connect| sidecar
+    sidecar -.->|outbound route| gateway
+    guest -.->|RunnerControl.Connect| relay
+    relay -.->|outbound route| gateway
+    gateway -->|tunneled Runner RPCs| runner
+    runner -->|responses + heartbeat| gateway
+    gateway -->|tunneled Runner RPCs| guest
+    guest -->|responses + heartbeat| gateway
+```
+
+The runner opens the long-lived `RunnerControl.Connect` stream through its Pod's egress sidecar or
+the VM launcher's relay. The Gateway sends `Runner` RPC calls back through that existing stream,
+and responses return there; neither Pod accepts an inbound Gateway connection.
+
+### History and browser sync
+
+```mermaid
+flowchart LR
+    browser([Browser])
+    app[Integration app]
+    history[History Service]
+    history_db[(History PostgreSQL)]
+    electric[Electric]
+    subgraph pod[Sandbox Pod]
+        runner[Runner]
+        sidecar[Egress sidecar]
+    end
+    subgraph vm_guest[VM guest]
+        guest[Guest runner]
+    end
+    subgraph vm_pod[VM launcher Pod]
+        relay[Egress relay]
+    end
+
+    browser -->|API + shape requests| app
+    app -->|gRPC reads and watch| history
+    app -->|proxied shape request| electric
+    electric -->|shape response data| app
+    app -->|API + SSE + shape data| browser
+    runner -.->|opens RunnerIngress.Push| sidecar
+    sidecar -.->|outbound platform route| history
+    guest -.->|opens RunnerIngress.Push| relay
+    relay -.->|outbound platform route| history
+    history -->|archive and fold reads / writes| history_db
+    history_db -->|logical replication data| electric
+```
+
+The app initiates each Electric HTTP request and streams the shape response through to the browser.
+The separate `History PostgreSQL → Electric → app → browser` arrows show replicated and returned data.
+
+### Notifications
+
+```mermaid
+flowchart LR
+    agent([Agent])
+    github([GitHub])
+    notifications[Notification service]
+    actions[Action Service]
+    k8s[Kubernetes API]
+    gateway[Runner Gateway]
+    dispatcher[Session Dispatcher]
+    history[History Service]
+
+    agent -->|notification API| notifications
+    github --> notifications
+    notifications --> github
+    notifications -->|Action history| actions
+    notifications -->|Sandbox identity| k8s
+    notifications -->|Session validation| gateway
+    notifications -->|SubmitInput| dispatcher
+    notifications -->|command receipts| history
+```
+
+The Notification service does not call the integration app. GitHub sends it signed webhooks; it
+makes GitHub App REST calls, reads receipt evidence from History before retrying a delivery, and
+submits every runner notice through the Session Dispatcher.
+
+### Actions and egress
+
+```mermaid
+flowchart LR
+    mcp_client([MCP client])
+    github([GitHub / web-push])
+    app[Integration app]
+    actions[Action Service]
+    k8s[Kubernetes API]
+    subgraph box[Action box Pod]
+        workload[Box workload]
+        box_sidecar[Egress sidecar]
+    end
+    subgraph sandbox[Sandbox Pod]
+        runner[Runner]
+        sidecar[Egress sidecar]
+    end
+    subgraph vm_guest[VM guest]
+        guest[Guest runner]
+    end
+    subgraph vm_pod[VM launcher Pod]
+        relay[Egress relay]
+    end
+    egress[Egress proxy]
+    llm[LLM ingress]
+    litellm[LiteLLM]
+    other((Other endpoints))
+    mcp_servers((MCP servers))
+
+    mcp_client -->|MCP over OAuth| actions
+    app -->|operator decisions| actions
+    actions -->|create + watch Pods| k8s
+    actions -->|exec via Kubernetes API| workload
+    workload --> box_sidecar --> egress
+    runner --> sidecar --> egress
+    guest --> relay --> egress
+    app -->|egress admin API| egress
+    egress -->|policy and credential watches| k8s
+    egress -->|MCP proxy| actions
+    egress -->|policy-approved requests| other
+    egress -->|model requests| llm
+    llm -->|model API + server-held key| litellm
+    actions -->|MCP calls| mcp_servers
+    actions -->|REST + web push| github
+```
+
+The egress proxy substitutes a configured credential only for the destination covered by its
+policy. LiteLLM is a separate hop behind LLM ingress; only that service holds the LiteLLM virtual key.
+
+### Service definitions
+
+The service nodes above link to their definitions in renderers that support Mermaid node links.
+These direct links are also available in Markdown views that do not:
+
+- gRPC: [Runner Gateway](proto/runner_gateway.proto), [RunnerControl and tunneled Runner RPCs](proto/runner_control.proto), [RunnerIngress](proto/runner_ingress.proto), [Session Dispatcher](proto/session_dispatcher.proto), and [History Service](proto/history_service.proto).
+- HTTP and streaming APIs: [Integration app](app/api.py), [Electric proxy](app/electric.py), [Action Service](action_service/api.py), [Notification Service](notification_service/api.py), [LLM ingress](llm_ingress/app.py), and [Git index](indexing/app.py).
+- Controllers and egress: [Sandbox Controller](sandbox_controller/controller.go), [Policy Controller](policy_controller/controller.go), [central egress proxy](egress/addon.py), [sidecar](egress/sidecar.py), and [platform routes](egress/platform_routes.py).
 
 The integration app writes Sandbox desired state and operator grants through the Kubernetes API;
 the Sandbox Controller reconciles those requests and owns `Sandbox.status`. Notifications and the
