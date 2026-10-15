@@ -100,19 +100,6 @@ ts_library(
 )
 
 ts_library(
-    name = "grant_principal",
-    srcs = ["grant_principal.tsx"],
-    isolated_typecheck = True,
-    tsconfig = TSCONFIG,
-    deps = [
-        ":agent_names",
-        ":client",
-        "//:node_modules/@types/react",
-        "//:node_modules/react",
-    ],
-)
-
-ts_library(
     name = "operator_login",
     srcs = ["operator_login.ts"],
     isolated_typecheck = True,
