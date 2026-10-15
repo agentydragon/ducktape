@@ -345,7 +345,9 @@ async def test_session_sandboxes_answer_from_the_registry_including_deleted_sand
 
 async def test_gateway_session_name_search_rpc_is_unimplemented(resources: Resources) -> None:
     async with service(resources) as target, dial(target) as channel:
-        legacy_find = channel.unary_unary("/agentplane.proto.runner_gateway.RunnerGateway/FindSessions")
+        legacy_find: grpc.aio.UnaryUnaryMultiCallable[bytes, bytes] = channel.unary_unary(
+            "/agentplane.proto.runner_gateway.RunnerGateway/FindSessions"
+        )
         with pytest.raises(grpc.aio.AioRpcError) as rejected:
             await legacy_find(b"")
     assert rejected.value.code() == grpc.StatusCode.UNIMPLEMENTED
