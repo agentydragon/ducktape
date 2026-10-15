@@ -34,15 +34,20 @@ type proofService struct {
 	gatewaypb.UnimplementedGatewayProofServer
 
 	authorizations chan string
-	deadlines      chan time.Time
+	deadlines      chan deadlineObservation
 	echoDone       chan error
 	watchDone      chan error
+}
+
+type deadlineObservation struct {
+	deadline   time.Time
+	observedAt time.Time
 }
 
 func newProofService() *proofService {
 	return &proofService{
 		authorizations: make(chan string, 8),
-		deadlines:      make(chan time.Time, 2),
+		deadlines:      make(chan deadlineObservation, 2),
 		echoDone:       make(chan error, 2),
 		watchDone:      make(chan error, 2),
 	}
@@ -74,7 +79,7 @@ func (s *proofService) Echo(ctx context.Context, req *gatewaypb.EchoRequest) (*g
 		if !ok {
 			return nil, status.Error(codes.Internal, "gateway did not set the requested deadline")
 		}
-		s.deadlines <- deadline
+		s.deadlines <- deadlineObservation{deadline: deadline, observedAt: time.Now()}
 		<-ctx.Done()
 		s.echoDone <- ctx.Err()
 		return nil, status.FromContextError(ctx.Err()).Err()
@@ -241,7 +246,12 @@ func TestGrpcTimeoutHeaderSetsUnaryDeadline(t *testing.T) {
 		body, _ := io.ReadAll(resp.Body)
 		t.Fatalf("deadline Echo status = %d, body %s; want 504", resp.StatusCode, body)
 	}
-	if _, ok := <-f.service.deadlines; !ok {
+	select {
+	case observation := <-f.service.deadlines:
+		if remaining := observation.deadline.Sub(observation.observedAt); remaining > time.Second {
+			t.Fatalf("gRPC deadline was %s after service observation, want the 100ms Grpc-Timeout rather than the HTTP client's 5s timeout", remaining)
+		}
+	case <-time.After(time.Second):
 		t.Fatal("fixture did not report the gRPC deadline")
 	}
 	if err := <-f.service.echoDone; !errors.Is(err, context.DeadlineExceeded) {
