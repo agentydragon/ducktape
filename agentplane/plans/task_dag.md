@@ -1493,7 +1493,7 @@ flowchart LR
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
     CLAUDE_STREAM_SESSION_MULTIPLEXING[Held: Claude sessions per process]
     HARNESS_IDENTITY_DESIGN[Decision: process, store and native Session identity]
-    HTTP_JSON_FACADE_TOOLING_SPIKE[Candidate: prove gRPC-Gateway integration]
+    HTTP_JSON_FACADE_TOOLING_SPIKE[In flight: prove gRPC-Gateway integration]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
     AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
     RUNNER_DELIVERY_INGRESS_ACCEPTANCE[Candidate: test queued delivery and flush with real ingress, without History]
@@ -1622,18 +1622,19 @@ subscription must not silently grant sending or waking. Question: which boundary
 unauthorized destinations, what locator and authorization proof does it require, and which checks are
 early feedback versus execution authority? No centralization choice is made here.
 
-### `HTTP_JSON_FACADE_TOOLING_SPIKE` — prove the gRPC-Gateway integration path
+### `HTTP_JSON_FACADE_TOOLING_SPIKE` — prove upstream grpc-gateway integration with Bazel
 
-**Candidate; gRPC-Gateway selected by the operator.** The [delivery design note](../docs/runner_delivery_and_harness_design.md#api-transports-and-agent-workflows)
-records the transport decision. Integrate gRPC-Gateway with the repository's protobuf/Bazel generation
-path in a small, non-production proof. Use a bounded operation and server-streaming watch to check
-request/response mapping, authentication and authorization propagation, unary and terminal stream
-errors, deadlines and cancellation. Specify reconnect/resume behavior explicitly; the facade does
-not supply durable subscriptions. Keep full-duplex paths on native gRPC and avoid a parallel
-hand-authored HTTP API.
+**In flight; draft PR [#10662](https://github.com/agentydragon/ducktape/pull/10662).** Under
+`agentplane/x/grpc_gateway/`, prove the upstream `go_proto_compiler` path using `go_proto_library`:
+generate Go at Bazel build time, without checked-in generated source or custom packaging rules. A
+bounded unary method and server-streaming watch exercise ProtoJSON/query mapping, Authorization
+propagation and actual service rejection, unary status mapping versus terminal stream errors,
+`Grpc-Timeout` propagation, and HTTP-to-gRPC cancellation. Keep full duplex on native gRPC; reconnect,
+resume and durable subscriptions remain application-owned.
 
-**Deliverable:** a demonstrated generation/integration path and its constraints. Framework selection
-is settled; the first production service and its cutover still require a reviewed migration plan.
+Exit when the Bazel test passes on RBE and review confirms the spike stays isolated from production
+APIs, deployments and authorization decisions. Until then, keep this node in flight; report any
+BuildBuddy connectivity blocker in the PR.
 
 ### `SERVICE_API_TRANSPORT_MIGRATIONS` — stage service and interface migrations independently
 
