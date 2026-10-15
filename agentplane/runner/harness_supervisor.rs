@@ -54,9 +54,10 @@ fn wait_for_harness(child: &mut Child, signals: &SigSet) -> Result<ExitStatus> {
     }
 }
 
+// Identity dropping also serves workspace preparation commands that do not join a cgroup.
 struct AgentIsolation {
-    cgroup_procs: File,
-    cgroup_kill: File,
+    cgroup_procs: Option<File>,
+    cgroup_kill: Option<File>,
     uid: u32,
     gid: u32,
 }
@@ -132,10 +133,11 @@ fn drop_agent_privileges(uid: u32, gid: u32) -> std::io::Result<()> {
 
 fn kill_cgroup(isolation: &mut Option<AgentIsolation>) -> Result<()> {
     if let Some(isolation) = isolation {
-        isolation
-            .cgroup_kill
-            .write_all(b"1\n")
-            .context("kill remaining agent cgroup processes")?;
+        if let Some(cgroup_kill) = &mut isolation.cgroup_kill {
+            cgroup_kill
+                .write_all(b"1\n")
+                .context("kill remaining agent cgroup processes")?;
+        }
     }
     Ok(())
 }
@@ -171,7 +173,8 @@ fn supervise(
     command.args(args).process_group(0);
     let cgroup_procs_fd = isolation
         .as_ref()
-        .map(|value| value.cgroup_procs.as_raw_fd());
+        .and_then(|value| value.cgroup_procs.as_ref())
+        .map(File::as_raw_fd);
     let agent_uid = isolation.as_ref().map(|value| value.uid);
     let agent_gid = isolation.as_ref().map(|value| value.gid);
     // SAFETY: the pre-exec callback only restores the signal mask with pthread_sigmask, an
@@ -268,8 +271,8 @@ fn main() {
         eprintln!("harness supervisor received incomplete agent isolation options");
         process::exit(64);
     }
-    if cgroup_procs.is_some() != uid.is_some() {
-        eprintln!("harness supervisor requires cgroup and agent identity options together");
+    if cgroup_procs.is_some() && uid.is_none() {
+        eprintln!("harness supervisor requires an agent identity when using cgroups");
         process::exit(64);
     }
     let [program, command_args @ ..] = &args[index..] else {
@@ -282,8 +285,8 @@ fn main() {
         (Some(procs), Some(kill), Some(uid), Some(gid)) => {
             let opened = (|| -> Result<AgentIsolation> {
                 Ok(AgentIsolation {
-                    cgroup_procs: OpenOptions::new().write(true).open(procs)?,
-                    cgroup_kill: OpenOptions::new().write(true).open(kill)?,
+                    cgroup_procs: Some(OpenOptions::new().write(true).open(procs)?),
+                    cgroup_kill: Some(OpenOptions::new().write(true).open(kill)?),
                     uid,
                     gid,
                 })
@@ -296,6 +299,12 @@ fn main() {
                 }
             }
         }
+        (None, None, Some(uid), Some(gid)) => Some(AgentIsolation {
+            cgroup_procs: None,
+            cgroup_kill: None,
+            uid,
+            gid,
+        }),
         (None, None, None, None) => None,
         _ => unreachable!("validated isolation options"),
     };

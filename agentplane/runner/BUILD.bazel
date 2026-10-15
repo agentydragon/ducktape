@@ -169,6 +169,7 @@ py_library(
         ":model_config",
         ":session",
         ":store",
+        ":workspace",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_control_pb2",
         "//agentplane/proto:runner_pb2",
@@ -188,6 +189,7 @@ py_library(
         ":observation",
         ":recovery",
         ":store",
+        ":workspace",
         "//agentplane/native:transport",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
@@ -196,6 +198,12 @@ py_library(
         "@pypi//protobuf",
         "@pypi//pydantic",
     ],
+)
+
+py_library(
+    name = "workspace",
+    srcs = ["workspace.py"],
+    deps = [":harness_process"],
 )
 
 py_library(
@@ -632,6 +640,19 @@ py_test(
         "//agentplane/runner/testing:launches",
         "@pypi//grpcio",
         "@pypi//protobuf",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_workspace",
+    srcs = ["test_workspace.py"],
+    deps = [
+        ":conftest",
+        ":harness_process",
+        ":workspace",
+        "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

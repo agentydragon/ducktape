@@ -28,14 +28,27 @@ class HarnessProcess:
         *,
         cwd: Path,
         environment: Mapping[str, str],
-        state_owner_descriptor: int,
+        state_owner_descriptor: int | None,
         process_isolation: AgentCgroups | None,
+        agent_uid: int | None = None,
+        agent_gid: int | None = None,
     ) -> None:
+        if (agent_uid is None) != (agent_gid is None):
+            raise ValueError("agent UID and GID must be configured together")
+        if process_isolation is not None:
+            if agent_uid is not None and (agent_uid, agent_gid) != (
+                process_isolation.agent_uid,
+                process_isolation.agent_gid,
+            ):
+                raise ValueError("explicit agent identity must match process isolation")
+            agent_uid, agent_gid = process_isolation.agent_uid, process_isolation.agent_gid
         self.command = list(command)
         self.cwd = cwd
         self.environment = dict(environment)
         self.state_owner_descriptor = state_owner_descriptor
         self.process_isolation = process_isolation
+        self.agent_uid = agent_uid
+        self.agent_gid = agent_gid
         self._process: asyncio.subprocess.Process | None = None
         self._cgroup_path: Path | None = None
         self._wait_lock = asyncio.Lock()
@@ -48,6 +61,11 @@ class HarnessProcess:
         report_reader, report_writer = os.pipe()
         os.set_inheritable(report_writer, True)
         supervisor_command = [str(_SUPERVISOR), "--native-pid-fd", str(report_writer)]
+        pass_fds = (
+            (self.state_owner_descriptor, report_writer)
+            if self.state_owner_descriptor is not None
+            else (report_writer,)
+        )
         try:
             if self.process_isolation is not None:
                 self._cgroup_path = await asyncio.to_thread(self.process_isolation.create_process_group)
@@ -57,12 +75,10 @@ class HarnessProcess:
                         str(self._cgroup_path / "cgroup.procs"),
                         "--cgroup-kill",
                         str(self._cgroup_path / "cgroup.kill"),
-                        "--agent-uid",
-                        str(self.process_isolation.agent_uid),
-                        "--agent-gid",
-                        str(self.process_isolation.agent_gid),
                     ]
                 )
+            if self.agent_uid is not None and self.agent_gid is not None:
+                supervisor_command.extend(["--agent-uid", str(self.agent_uid), "--agent-gid", str(self.agent_gid)])
             self._process = await asyncio.create_subprocess_exec(
                 *supervisor_command,
                 *self.command,
@@ -74,7 +90,7 @@ class HarnessProcess:
                 # The supervisor keeps this descriptor while it reaps a harness after the runner
                 # dies. A successor therefore cannot acquire state ownership until native work is
                 # fenced, not just until the runner PID exits.
-                pass_fds=(self.state_owner_descriptor, report_writer),
+                pass_fds=pass_fds,
                 # The harness's own tool subprocesses join its process group, so stopping the harness
                 # stops everything it started. The supervisor places the native harness in a child
                 # group and relays that stop before it exits.

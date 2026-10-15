@@ -24,6 +24,7 @@ from agentplane.runner.model_config import ModelConfigLookupError
 from agentplane.runner.observation import Observation
 from agentplane.runner.recovery import observed_items, unknown_report
 from agentplane.runner.store import SessionRecord, SessionStore
+from agentplane.runner.workspace import ensure_workspace
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -150,8 +151,13 @@ class Session:
         readers: list[asyncio.Task[None]] = []
         try:
             await self.emit(event_pb2.SetupStarted(), sources=[])
-            cwd = Path(self.record.cwd)
-            await asyncio.to_thread(cwd.mkdir, parents=True, exist_ok=True)
+            isolation = self.config.process_isolation
+            cwd = await ensure_workspace(
+                Path(self.record.cwd),
+                workspace_root=self.config.workspace_root,
+                agent_uid=isolation.agent_uid if isolation is not None else None,
+                agent_gid=isolation.agent_gid if isolation is not None else None,
+            )
             process = HarnessProcess(
                 ["/bin/sh", "-eu"],
                 cwd=cwd,
@@ -272,8 +278,13 @@ class Session:
                 raise JournalSealedError("the session is sealed")
             adapter = self.make_adapter(self)
             # The session's working directory is the spec's; a fresh one is created for the harness.
-            cwd = Path(self.record.cwd)
-            await asyncio.to_thread(cwd.mkdir, parents=True, exist_ok=True)
+            isolation = self.config.process_isolation
+            cwd = await ensure_workspace(
+                Path(self.record.cwd),
+                workspace_root=self.config.workspace_root,
+                agent_uid=isolation.agent_uid if isolation is not None else None,
+                agent_gid=isolation.agent_gid if isolation is not None else None,
+            )
             process = HarnessProcess(
                 adapter.command(),
                 cwd=cwd,

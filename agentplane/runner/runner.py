@@ -27,6 +27,7 @@ from agentplane.runner.journal import Journal, RecoveryState
 from agentplane.runner.model_config import ModelConfigLookupError
 from agentplane.runner.session import Session
 from agentplane.runner.store import IngressAcknowledgement, SessionRecord, SessionStore, StateOwner, validate_session_id
+from agentplane.runner.workspace import resolve_workspace
 
 # The generated protocol stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf
@@ -512,13 +513,7 @@ class Runner:
         return acknowledged is not None and acknowledged.sealed and acknowledged.cursor == cursor
 
     def _validate_workspace(self, cwd: str) -> None:
-        workspace_root = self.config.workspace_root
-        if workspace_root is None:
-            return
-        root = workspace_root.resolve()
-        candidate = Path(cwd).resolve()
-        if candidate == root or root not in candidate.parents:
-            raise ValueError(f"spec.cwd must be a child of {root}, not {cwd!r}")
+        resolve_workspace(Path(cwd), self.config.workspace_root)
 
     async def __aenter__(self) -> Self:
         return self
