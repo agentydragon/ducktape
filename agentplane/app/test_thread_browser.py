@@ -1154,7 +1154,7 @@ async def append_run_among_rows(thread_browser: ThreadBrowser, *, below: int) ->
 
 
 @asynccontextmanager
-async def output_streaming_in(thread_browser: ThreadBrowser) -> AsyncIterator[list[int]]:
+async def output_streaming_in(thread_browser: ThreadBrowser) -> AsyncIterator[tuple[list[int], asyncio.Event]]:
     """A call running at the tail whose output keeps arriving, each delta once the browser has it,
     for the length of the block; yields the cursors delivered so far."""
     source, page = thread_browser.source, thread_browser.page
@@ -1173,6 +1173,7 @@ async def output_streaming_in(thread_browser: ThreadBrowser) -> AsyncIterator[li
         )
     )
     delivered: list[int] = []
+    three_delivered = asyncio.Event()
 
     async def stream() -> None:
         while True:
@@ -1185,10 +1186,12 @@ async def output_streaming_in(thread_browser: ThreadBrowser) -> AsyncIterator[li
             )
             await expect_projected_cursor(page, entry.cursor)
             delivered.append(entry.cursor)
+            if len(delivered) >= 3:
+                three_delivered.set()
 
     streaming = asyncio.create_task(stream())
     try:
-        yield delivered
+        yield delivered, three_delivered
     finally:
         streaming.cancel()
         with suppress(asyncio.CancelledError):
@@ -1535,13 +1538,14 @@ async def test_opening_a_call_while_output_streams_in_keeps_it_collapsible(threa
 
     call, card = tool_call_in(run, "a")
     show_all = call.get_by_role("button", name="Show all 60 lines")
-    async with output_streaming_in(thread_browser) as delivered:
+    async with output_streaming_in(thread_browser) as (delivered, three_delivered):
         async with holding_still(page, run, rest_first=False):
             await run.locator(".agentplane-disclosure-summary").first.click()
             await expect(call).to_be_visible()
         async with holding_still(page, card, rest_first=False):
             await call.locator(".agentplane-disclosure-summary").first.click()
             await expect(show_all).to_be_visible()
+        await three_delivered.wait()
         await read_at(page, show_all, 0.3)
         await show_all.click()
         collapse = call.locator(".agentplane-output-disclosure .agentplane-disclosure-summary")
