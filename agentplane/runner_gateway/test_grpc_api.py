@@ -90,14 +90,14 @@ async def remote(cluster: SandboxCluster, resources: Resources, token_file: Path
         yield client
 
 
-async def test_managed_open_uses_the_client_session_id_and_retries_on_the_runner(
+async def test_open_uses_the_client_session_id_and_retries_on_the_runner(
     cluster: SandboxCluster, resources: Resources, token_file: Path, peer: ScriptedRunner
 ) -> None:
     async with service_client(resources, token_file) as remote:
         runner = remote.runner(DESTINATION)
-        overrides: dict[str, object] = SPEC | {"cwd": "/state/{session_id}"}
         requested = uuid4()
-        creating = asyncio.create_task(runner.create(session_id=requested, spec=overrides))
+        launch_spec: dict[str, object] = SPEC | {"cwd": f"/state/{requested}"}
+        creating = asyncio.create_task(runner.create(session_id=requested, spec=launch_spec))
         first = await peer.open()
         created = await creating
         public = created.session_id
@@ -107,7 +107,7 @@ async def test_managed_open_uses_the_client_session_id_and_retries_on_the_runner
 
         # After a lost reply the retry reaches the runner again, which confirms it against the spec
         # it recorded.
-        retrying = asyncio.create_task(runner.create(session_id=requested, spec=overrides))
+        retrying = asyncio.create_task(runner.create(session_id=requested, spec=launch_spec))
         assert await peer.open() == first
         assert await retrying == created
 
@@ -149,34 +149,7 @@ async def test_open_requires_a_client_session_id(resources: Resources, token_fil
     assert refused.value.code() == grpc.StatusCode.INVALID_ARGUMENT
 
 
-async def test_managed_open_expands_default_cwd_with_the_session_id(
-    remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: SandboxCluster
-) -> None:
-    cluster.set_binding(
-        sandboxes_pb2.SandboxBinding(
-            session_defaults=sandboxes_pb2.SessionDefaults(
-                harness=runner_pb2.HARNESS_CODEX, model="test-model", cwd="/state/workspaces/{session_id}"
-            )
-        )
-    )
-    creating = asyncio.create_task(remote.runner(DESTINATION).create(session_id=uuid4(), spec={}))
-    opened = await peer.open()
-    assert opened.spec.cwd == f"/state/workspaces/{(await creating).session_id}"
-
-
-async def test_complete_spec_opens_as_sent_and_inherits_nothing_from_the_sandbox(
-    remote: RunnerGatewayClient, peer: ScriptedRunner, cluster: SandboxCluster
-) -> None:
-    cluster.set_binding(
-        sandboxes_pb2.SandboxBinding(
-            session_defaults=sandboxes_pb2.SessionDefaults(
-                harness=runner_pb2.HARNESS_CLAUDE,
-                model="sandbox-default-model",
-                instructions="sandbox default instructions",
-                setup_script="sandbox default setup",
-            )
-        )
-    )
+async def test_complete_spec_opens_as_sent(remote: RunnerGatewayClient, peer: ScriptedRunner) -> None:
     spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, model="test-model", cwd="/state/complete")
     request = runner_gateway_pb2.CreateSessionRequest(sandbox=DESTINATION, spec=spec, session_id=str(uuid4()))
     metadata = await remote.metadata()

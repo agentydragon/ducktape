@@ -159,7 +159,6 @@ py_test(
         ":errors",
         "//:conftest",
         "//agentplane:sandbox_resource",
-        "//agentplane/proto:runner_pb2",
         "//agentplane/proto:sandboxes_pb2",
         "//agentplane/sandboxes/testing:kubernetes",
         "//agentplane/testing:fake_apiserver",

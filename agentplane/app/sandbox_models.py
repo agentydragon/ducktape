@@ -50,11 +50,10 @@ class SessionDefaults(BaseModel):
 
 
 class SandboxBinding(BaseModel):
-    """The exact reusable session defaults and bootstrap the Sandbox was created with."""
+    """The bootstrap script selected for the Sandbox."""
 
     model_config = ConfigDict(extra="forbid")
 
-    session_defaults: SessionDefaults | None = None
     bootstrap: str = Field(max_length=65_536)
 
 
@@ -111,9 +110,7 @@ class SandboxView(BaseModel):
         description="The ServiceAccount its Pod runs as, read off the Sandbox: the subject every "
         "egress and action-policy binding names it by."
     )
-    binding: SandboxBinding | None = Field(
-        default=None, description="The stored concrete session defaults and bootstrap selected for this Sandbox."
-    )
+    binding: SandboxBinding | None = Field(default=None, description="The bootstrap selected for this Sandbox.")
     preset: str | None = Field(default=None, description="The preset it was made from, when it was made from one.")
     phase: SandboxPhase = Field(
         description="Unspecified means the controller has not reported an effective mode yet. "

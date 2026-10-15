@@ -15,8 +15,10 @@ checks the caller before resolving its Sandbox destination.
 The gateway keeps no Session history; runners push their Events to the
 [History Service](../history_service/README.md)'s ingress, which serves reads.
 
-- `ListSessions`: Sandbox destination; the runner's Sessions registered in this Sandbox
-  incarnation. Runner sessions the registry does not know are left out.
+- `ListSessions`: Sandbox destination; the current runner's retained Sessions. The request verifies
+  the Sandbox namespace, name, owner and UID before reading that incarnation's runner. This is live
+  runner inventory and includes Sessions opened through the Dispatcher; it does not require a row in
+  the Gateway's public Session registry.
 - `CreateSession`: explicit Open with Sandbox destination, the client's fresh Session UUID and
   selected overrides. The UUID is the public Session ID and the runner's Session ID alike. The
   Session is registered in its Sandbox incarnation before runner contact; the gateway returns the
@@ -48,14 +50,12 @@ The gateway keeps no Session history; runners push their Events to the
 
 Session listing and command RPCs never provision, resume, or wake a Sandbox or harness.
 
-### Launch overrides and field presence
+### Complete launch spec
 
-`CreateSessionRequest.spec` uses the runner `SessionSpec`. Its `override_mask` names the exact proto
-fields to replace in stored defaults, including fields explicitly set to empty/default values. For
-example, `paths: ["model", "instructions"]` selects `spec.model` and `spec.instructions`; an empty
-instructions string clears the caller's inherited instructions, but not the runner's platform guidance.
-Nested paths, unknown paths, duplicate paths, and supplied nondefault fields outside the mask are
-refused. An empty mask means no overrides. Optional `setup_script` distinguishes omitted from empty.
+`CreateSessionRequest.spec` is the complete runner `SessionSpec`; the Gateway reads no launch defaults
+from the Sandbox. The caller resolves its configured preset before opening and sends every required
+field, including the cwd with any session ID template already expanded. Explicit empty values remain
+part of that spec. Optional `setup_script` distinguishes omitted from an explicitly empty script.
 
 The gateway sends the effective session `instructions`, stored or overridden, as the Session's task.
 The runner adds the deployment-wide platform instructions and the Session's notification

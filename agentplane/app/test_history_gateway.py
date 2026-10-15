@@ -125,5 +125,25 @@ async def test_stopped_service_never_falls_back_to_reachable_runner(
     assert not runner.sessions
 
 
+async def test_unregistered_runner_session_appears_in_sandbox_session_list(
+    cluster: SandboxCluster,
+    live_index: LiveIndex,
+    tmp_path: Path,
+    runner: Runner,
+    spec: runner_pb2.SessionSpec,
+    service_history_db_url: str,
+) -> None:
+    token_file = tmp_path / "gateway-token"
+    async with authenticated_runner_gateway(cluster, runner, token_file, database_url=service_history_db_url) as remote:
+        session_id = uuid4()
+        # Dispatcher opens through RunnerProxy instead of Gateway.CreateSession, leaving no Gateway
+        # registry row. Create that runner state directly and test the app's inventory read.
+        await runner.open_session(str(session_id), spec, None)
+        assert await remote.session_sandboxes({str(session_id)}) == []
+
+        summaries = await RunnerDirectory(live_index, remote).client(SANDBOX).list_sessions()
+        assert [summary.session_id for summary in summaries] == [str(session_id)]
+
+
 if __name__ == "__main__":
     pytest_bazel.main()

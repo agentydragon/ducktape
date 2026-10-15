@@ -16,7 +16,6 @@ from agentplane.proto.sandboxes_pb2 import (
     SandboxPhase,
     SandboxPod,
     ServiceAccount,
-    SessionDefaults,
 )
 from agentplane.sandbox_resource import OperatingMode
 
@@ -89,14 +88,9 @@ def _phase(sandbox: sandbox_resource.Sandbox) -> SandboxPhase:
 
 
 def _binding(spec: sandbox_resource.Spec) -> SandboxBinding | None:
-    if spec.session_defaults is None and spec.bootstrap is None:
+    if spec.bootstrap is None:
         return None
-    return SandboxBinding(
-        session_defaults=None
-        if spec.session_defaults is None
-        else ParseDict(spec.session_defaults.model_dump(by_alias=True, exclude_none=True), SessionDefaults()),
-        bootstrap=spec.bootstrap or "",
-    )
+    return SandboxBinding(bootstrap=spec.bootstrap)
 
 
 def _struct(value: dict[str, object]) -> Struct:
