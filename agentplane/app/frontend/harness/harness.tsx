@@ -444,6 +444,7 @@ const SPEC: SessionSpec = create(SessionSpecSchema, {
 const IDLE_THREAD = "5f1c4a2e-0000-4000-8000-000000000001";
 const UNNAMED_STOPPED_THREAD = "5f1c4a2e-0000-4000-8000-000000000000";
 const RUNNING_THREAD = "5f1c4a2e-0000-4000-8000-000000000002";
+const SUSPENDED_THREAD = "5f1c4a2e-0000-4000-8000-000000000004";
 const THREE_UNPROCESSED_THREAD = "5f1c4a2e-0000-4000-8000-000000000007";
 const ONE_UNPROCESSED_THREAD = "5f1c4a2e-0000-4000-8000-000000000008";
 const DELIVERY_FAILED_THREAD = "5f1c4a2e-0000-4000-8000-000000000009";
@@ -573,7 +574,7 @@ const THREADS_WITH_SANDBOXES: ThreadView[] = [
     harness_state: "HARNESS_STATE_STOPPED",
   },
   {
-    id: "5f1c4a2e-0000-4000-8000-000000000004",
+    id: SUSPENDED_THREAD,
     sandbox: "suspended-sandbox",
     harness: "HARNESS_CLAUDE",
     model: "harness-claude-model",
@@ -1846,7 +1847,13 @@ function rememberSettledCommands(): void {
   );
 }
 
-function rememberDispatch(): void {
+function enableSuspendedSandboxWakeOnMessage(): void {
+  const sandbox = SANDBOXES.find((candidate) => candidate.name === "suspended-sandbox");
+  if (!sandbox) throw new Error("Missing suspended Sandbox fixture");
+  sandbox.wake_on_send = true;
+}
+
+function rememberDispatch(threadId = RUNNING_THREAD): void {
   const command = create(CommandSchema, {
     commandId: "queued-dispatch",
     operation: {
@@ -1854,11 +1861,11 @@ function rememberDispatch(): void {
       value: { text: "Continue when the Sandbox is ready." },
     },
   });
-  const local = new LocalCommands(RUNNING_THREAD);
+  const local = new LocalCommands(threadId);
   local.remember(command);
   const dispatch: DispatchReceipt = {
     commandId: command.commandId,
-    sessionId: RUNNING_THREAD,
+    sessionId: threadId,
     state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
     reason: "sandbox_resuming",
     updatedAt: ago(1_000),
@@ -3115,6 +3122,7 @@ const visualHarness = {
   rememberPendingInput,
   rememberInputEcho,
   rememberSettledCommands,
+  enableSuspendedSandboxWakeOnMessage,
   rememberDispatch,
   rememberFailedDispatch,
   completedRollout(): void {

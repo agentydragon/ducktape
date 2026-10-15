@@ -1040,6 +1040,7 @@ function ProjectedSessionBody({
   thread,
   history,
   available,
+  canSendWhileSuspended,
   onStatusChange,
 }: {
   threadId: string;
@@ -1047,6 +1048,7 @@ function ProjectedSessionBody({
   thread: ThreadView;
   history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
   available: boolean;
+  canSendWhileSuspended: boolean;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const [draft, setDraft] = useState("");
@@ -1069,6 +1071,11 @@ function ProjectedSessionBody({
   const operational = view && "controls" in view.state ? view.state.operational : null;
   const running =
     available && !thread.archived && operational?.status === "active" && controls?.harness_state === "running";
+  const canSend =
+    !thread.archived &&
+    operational?.status === "active" &&
+    controls?.harness_state === "running" &&
+    (available || canSendWhileSuspended);
   const canResume =
     available &&
     !thread.archived &&
@@ -1174,7 +1181,7 @@ function ProjectedSessionBody({
   }, [draft]);
 
   function submit(): void {
-    if (!draft.trim() || !running || submitting.current) return;
+    if (!draft.trim() || !canSend || submitting.current) return;
     submitting.current = true;
     const value = create(CommandSchema, {
       commandId: crypto.randomUUID(),
@@ -1259,7 +1266,7 @@ function ProjectedSessionBody({
           autosize
           minRows={2}
           maxRows={12}
-          disabled={!running}
+          disabled={!canSend}
           onKeyDown={composerKey}
         />
         <Group className="agentplane-composer-controls" justify="space-between" gap="xs" wrap="nowrap" pb="xs">
@@ -1381,7 +1388,7 @@ function ProjectedSessionBody({
             >
               <IconPlayerStop size={16} />
             </ActionIcon>
-            <ActionIcon size="lg" aria-label="Send" disabled={!running || !draft.trim()} onClick={submit}>
+            <ActionIcon size="lg" aria-label="Send" disabled={!canSend || !draft.trim()} onClick={submit}>
               <IconSend size={16} />
             </ActionIcon>
           </Group>
@@ -1395,11 +1402,13 @@ function SyncedThread({
   threadId,
   thread,
   available,
+  canSendWhileSuspended,
   onStatusChange,
 }: {
   threadId: string;
   thread: ThreadView;
   available: boolean;
+  canSendWhileSuspended: boolean;
   onStatusChange: (status: ThreadTabTitleStatus) => void;
 }): JSX.Element {
   const { window: shown, error } = useThreadSync().useThread();
@@ -1429,6 +1438,7 @@ function SyncedThread({
         thread={thread}
         history={shown}
         available={available}
+        canSendWhileSuspended={canSendWhileSuspended}
         onStatusChange={onStatusChange}
       />
     </>
@@ -1445,6 +1455,11 @@ function sandboxNotice(sandbox: SandboxView | undefined, inventoryFresh: boolean
       : "Sandbox absent from last inventory snapshot. Current availability unknown; controls are disabled.";
   }
   if (sandboxReady(sandbox)) return null;
+  if (sandbox.phase === "Suspended" && sandbox.operating_mode === "Suspended" && inventoryFresh) {
+    return sandbox.wake_on_send
+      ? "Sandbox is suspended. Wake on message is on; submitted messages will queue while it wakes."
+      : "Sandbox is suspended. Wake on message is off; submitted messages stay queued until you resume it manually.";
+  }
   return `Last observed Sandbox and Pod: ${sandboxSummary(sandbox).label}. Showing retained Thread history; controls are disabled.`;
 }
 
@@ -1481,6 +1496,8 @@ export function ProjectedSession({
   const inventoryFresh = environment.stream.standing === "current" && environment.health?.fresh === true;
   const sandbox = environment.snapshot?.sandboxes.find((candidate) => candidate.name === thread?.sandbox);
   const notice = thread && environment.snapshot && sandboxNotice(sandbox, inventoryFresh);
+  const canSendWhileSuspended =
+    inventoryFresh && sandbox?.phase === "Suspended" && sandbox.operating_mode === "Suspended";
   useEffect(() => {
     let current = true;
     setError(null);
@@ -1543,6 +1560,7 @@ export function ProjectedSession({
               threadId={threadId}
               thread={thread}
               available={inventoryFresh && sandboxReady(sandbox)}
+              canSendWhileSuspended={canSendWhileSuspended}
               onStatusChange={setTabStatus}
             />
           </sync.Thread>

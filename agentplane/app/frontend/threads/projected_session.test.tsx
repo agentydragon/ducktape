@@ -64,7 +64,7 @@ let favicon: HTMLLinkElement;
 // whether it then drops. By default the thread's sandbox is running on a current inventory, so its
 // controls are live.
 type Inventory = SandboxView[] | null;
-function inventorySandbox(operating_mode: "Running" | "Suspended" = "Running"): SandboxView {
+function inventorySandbox(operating_mode: "Running" | "Suspended" = "Running", wake_on_send = false): SandboxView {
   const uid = "20000000-0000-4000-8000-000000000001";
   return {
     name: THREAD.sandbox,
@@ -72,7 +72,7 @@ function inventorySandbox(operating_mode: "Running" | "Suspended" = "Running"): 
     namespace: "agentplane-test",
     created_at: "2026-01-01T00:00:00Z",
     operating_mode,
-    wake_on_send: false,
+    wake_on_send,
     status: operating_mode === "Running" ? { conditions: [{ type: "Ready", status: "True" }] } : null,
     service_account: { namespace: "agentplane-test", name: THREAD.sandbox },
     phase: operating_mode,
@@ -380,7 +380,55 @@ it("sends the draft on Enter and clears it", async () => {
   expect(container.querySelector('[aria-label="Pending commands"]')).toBeNull();
 });
 
+it.each([true, false])(
+  "queues a message through the Dispatcher for a fresh suspended Sandbox with wake-on-message %s",
+  async (wakeOnSend) => {
+    sandboxes = [inventorySandbox("Suspended", wakeOnSend)];
+    const container = await render();
+    const field = composer(container);
+    expect(field.disabled).toBe(false);
+    expect(button(container, "Send").disabled).toBe(true);
+    expect(container.textContent).toContain(
+      wakeOnSend
+        ? "Wake on message is on; submitted messages will queue while it wakes."
+        : "Wake on message is off; submitted messages stay queued until you resume it manually."
+    );
+
+    await type(field, "Continue after resume");
+    await press(field, {});
+
+    expect(field.value).toBe("");
+    expect(vi.mocked(command).mock.calls).toHaveLength(1);
+    expect(vi.mocked(command).mock.calls[0]?.[0]).toBe(THREAD.id);
+    expect(sentOperations()).toMatchObject([{ case: "submitInput", value: { text: "Continue after resume" } }]);
+  }
+);
+
+it.each<[string, Inventory, boolean]>([
+  ["a stale suspended Sandbox", [inventorySandbox("Suspended", true)], false],
+  ["a missing Sandbox", [], true],
+])("does not submit through %s inventory", async (_name, inventory, fresh) => {
+  sandboxes = inventory;
+  inventoryFresh = fresh;
+  const container = await render();
+  expect(composer(container).disabled).toBe(true);
+  await type(composer(container), "Do not send");
+  await press(composer(container), {});
+  expect(command).not.toHaveBeenCalled();
+});
+
+it("keeps an archived Thread read-only when its suspended Sandbox would wake on message", async () => {
+  sandboxes = [inventorySandbox("Suspended", true)];
+  sharedThread = { archived: true };
+  const container = await render();
+  expect(composer(container).disabled).toBe(true);
+  await type(composer(container), "Do not send");
+  await press(composer(container), {});
+  expect(command).not.toHaveBeenCalled();
+});
+
 it("submits once for two Enters before the cleared draft renders, then takes the next draft", async () => {
+  sandboxes = [inventorySandbox("Suspended", true)];
   const field = composer(await render());
   await type(field, "hello");
   await act(async () => {
@@ -744,7 +792,10 @@ it("does not send a retained command whose admission it already holds", async ()
   ).toEqual(["done", "done", "done", "waiting"]);
 });
 
-it("shows a queued Dispatcher receipt and its waking reason without offering a retry", async () => {
+it.each([
+  ["sandbox_resuming", "Sandbox is waking; message is queued"],
+  ["wake_on_send_disabled", "Message is queued; wake on message is off, so resume the Sandbox manually to send it"],
+])("shows a queued Dispatcher receipt for %s without offering a retry", async (reason, expectedLabel) => {
   const queued = message("queued-by-dispatcher");
   new LocalCommands(THREAD.id).remember(queued);
   vi.mocked(command).mockResolvedValue({
@@ -753,7 +804,7 @@ it("shows a queued Dispatcher receipt and its waking reason without offering a r
       commandId: queued.commandId,
       sessionId: THREAD.id,
       state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-      reason: "sandbox_resuming",
+      reason,
       updatedAt: "2026-10-14T12:00:00Z",
       admission: null,
     },
@@ -762,14 +813,14 @@ it("shows a queued Dispatcher receipt and its waking reason without offering a r
     commandId: queued.commandId,
     sessionId: THREAD.id,
     state: "DELIVERY_STATE_QUEUED_IN_DISPATCHER",
-    reason: "sandbox_resuming",
+    reason,
     updatedAt: "2026-10-14T12:00:00Z",
     admission: null,
   });
   const container = await render();
   const row = pendingRow(container, queued.commandId);
   expect(row.querySelector('[data-stage="queued"]')).not.toBeNull();
-  expect(progressLabel(container, queued.commandId)).toBe("Sandbox is starting; message is queued");
+  expect(progressLabel(container, queued.commandId)).toBe(expectedLabel);
   expect(
     [...row.querySelectorAll(".agentplane-command-light")].map((light) => light.getAttribute("data-state"))
   ).toEqual(["done", "done", "waiting", "future"]);

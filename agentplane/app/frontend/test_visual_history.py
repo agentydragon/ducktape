@@ -21,7 +21,7 @@ from agentplane.app.frontend.testing.visual_assertions import (
     _tool_steps,
 )
 from agentplane.app.frontend.testing.visual_fixtures import DESKTOP_AND_MOBILE, MOBILE_ONLY
-from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, AgentplaneFixture, Scene
+from agentplane.app.frontend.visual_app import IDLE_THREAD, RUNNING_THREAD, SUSPENDED_THREAD, AgentplaneFixture, Scene
 from util.testing.page_capture import wait_for_stable
 from util.testing.viewports import DESKTOP, MOBILE, MOBILE_TOUCH, Viewport
 from util.testing.visual_capture import VisualPage
@@ -272,20 +272,25 @@ async def test_command_progress_semantics(view: VisualPage, app: AgentplaneFixtu
 
 
 @DESKTOP_AND_MOBILE
-async def test_dispatcher_queued_while_sandbox_resumes(
+async def test_dispatcher_queued_while_sandbox_wakes(
     view: VisualPage, app: AgentplaneFixture, viewport: Viewport
 ) -> None:
     await app.build(Scene.PENDING_COMMANDS)
-    await app.remember_dispatch()
-    await app.mount_thread(RUNNING_THREAD)
+    await app.enable_suspended_sandbox_wake_on_message()
+    await app.remember_dispatch(SUSPENDED_THREAD)
+    await app.mount_thread(SUSPENDED_THREAD)
     await view.check(context="fixture ready")
     page = view.page
+    await expect(page.get_by_role("textbox", name="Message")).to_be_enabled()
+    await expect(page.get_by_role("status")).to_contain_text("Wake on message is on")
     row = page.locator('[data-command-id="queued-dispatch"]')
-    await expect(row).to_contain_text("Sandbox is starting; message is queued")
+    await expect(row).to_contain_text("Sandbox is waking; message is queued")
     await expect(row.locator('[data-stage="queued"]')).to_be_visible()
     await expect(row.locator(".agentplane-command-light")).to_have_count(4)
     await expect(row.get_by_role("button", name="Retry")).to_have_count(0)
     await expect(row.get_by_role("button", name="Cancel")).to_have_count(0)
+    await page.get_by_role("textbox", name="Message").fill("Please wake the Sandbox and continue.")
+    await expect(page.get_by_role("button", name="Send")).to_be_enabled()
     await view.capture()
 
 

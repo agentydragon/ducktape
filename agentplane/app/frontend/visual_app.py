@@ -153,8 +153,11 @@ class AgentplaneFixture:
     async def build(self, scene: Scene) -> None:
         await self.page.evaluate("scene => window.agentplaneVisual[scene]()", scene)
 
-    async def remember_dispatch(self) -> None:
-        await self.page.evaluate("() => window.agentplaneVisual.rememberDispatch()")
+    async def enable_suspended_sandbox_wake_on_message(self) -> None:
+        await self.page.evaluate("() => window.agentplaneVisual.enableSuspendedSandboxWakeOnMessage()")
+
+    async def remember_dispatch(self, thread_id: str = RUNNING_THREAD) -> None:
+        await self.page.evaluate("threadId => window.agentplaneVisual.rememberDispatch(threadId)", thread_id)
 
     async def remember_failed_dispatch(self) -> None:
         await self.page.evaluate("() => window.agentplaneVisual.rememberFailedDispatch()")

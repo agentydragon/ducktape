@@ -59,11 +59,11 @@ export function CommandProgress({
   const reasonLabel = reason?.startsWith("wake_deadline_expired:")
     ? `Sandbox did not become Ready within 10 minutes: ${reason.slice("wake_deadline_expired:".length).trim()}`
     : reason === "sandbox_resuming"
-      ? "Sandbox is starting; message is queued"
+      ? "Sandbox is waking; message is queued"
       : reason === "wake_on_send_disabled"
-        ? "Sandbox is suspended; message is queued until it is resumed"
+        ? "Message is queued; wake on message is off, so resume the Sandbox manually to send it"
         : reason === "sandbox_suspended"
-          ? "Sandbox is suspended; message is queued"
+          ? "Sandbox is suspended; message is queued until someone resumes it"
           : reason === "sandbox_not_ready"
             ? "Sandbox is not ready; message is queued"
             : reason === "runner_refused_work"
