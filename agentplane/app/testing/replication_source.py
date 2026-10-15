@@ -45,11 +45,6 @@ class Placements:
         wanted = set(session_ids)
         return self._matching(lambda session_id, _: str(session_id) in wanted)
 
-    def find(self, request: runner_gateway_pb2.FindSessionsRequest) -> list[runner_gateway_pb2.SessionSandbox]:
-        if request.HasField("sandbox_name"):
-            return self._matching(lambda _, sandbox: sandbox == request.sandbox_name)
-        return self._matching(lambda _, sandbox: request.sandbox_name_contains.lower() in sandbox.lower())
-
     def _matching(self, keep: Callable[[UUID, str], bool]) -> list[runner_gateway_pb2.SessionSandbox]:
         return [
             runner_gateway_pb2.SessionSandbox(session_id=str(session_id), sandbox=sandbox)
@@ -147,12 +142,6 @@ class Gateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         return runner_gateway_pb2.BatchGetSessionSandboxesResponse(
             sessions=self.source.placements.get(request.session_ids)
         )
-
-    @override
-    async def FindSessions(
-        self, request: runner_gateway_pb2.FindSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> runner_gateway_pb2.FindSessionsResponse:
-        return runner_gateway_pb2.FindSessionsResponse(sessions=self.source.placements.find(request))
 
     @override
     async def ListSessions(

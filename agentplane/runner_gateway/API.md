@@ -80,14 +80,12 @@ runner's stored bootstrap result.
 
 ## Session placement
 
-`BatchGetSessionSandboxes` and `FindSessions` are open to every `caller_accounts` caller and carry
-no transcript. Each answers from the gateway's registry, deleted Sandboxes included: a Session's
-public ID, Sandbox namespace and name, and incarnation UID (empty for imported Sessions without
-one). `CreateSession` is the registry's only writer. `BatchGetSessionSandboxes` takes at most 1000
-IDs and leaves out any the gateway never registered, including Sessions opened through Dispatcher
-or directly by a runner; it is not complete Session inventory. `FindSessions` returns every
-registered Session in a Sandbox with exactly the given name, or whose name contains the given text,
-ignoring case.
+`BatchGetSessionSandboxes` is open to every `caller_accounts` caller and carries no transcript. It
+answers from the gateway's registry, deleted Sandboxes included: a Session's public ID, Sandbox
+namespace and name, and incarnation UID (empty for imported Sessions without one). It takes at most
+1000 IDs and leaves out any the gateway never registered. The Gateway does not provide name-based
+Session search; the History Service's `FindSessions` searches its retained event-backed association,
+which is a separate source and does not replace the registry's incarnation records.
 
 ## Errors and uncertain outcomes
 

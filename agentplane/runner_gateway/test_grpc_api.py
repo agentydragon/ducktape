@@ -341,15 +341,14 @@ async def test_session_sandboxes_answer_from_the_registry_including_deleted_sand
         assert sorted(got, key=lambda found: found.session_id) == sorted(
             [live, deleted], key=lambda found: found.session_id
         )
-        assert await remote.find_sessions(runner_gateway_pb2.FindSessionsRequest(sandbox_name=SANDBOX)) == [live]
-        # Case-insensitive, and a LIKE wildcard in the text is matched literally.
-        contains = runner_gateway_pb2.FindSessionsRequest(sandbox_name_contains="deleted-")
-        assert await remote.find_sessions(contains) == [deleted]
-        wildcard = runner_gateway_pb2.FindSessionsRequest(sandbox_name_contains="%")
-        assert await remote.find_sessions(wildcard) == []
-        with pytest.raises(ServiceError) as unmatched:
-            await remote.find_sessions(runner_gateway_pb2.FindSessionsRequest())
-        assert unmatched.value.code == grpc.StatusCode.INVALID_ARGUMENT
+
+
+async def test_gateway_session_name_search_rpc_is_unimplemented(resources: Resources) -> None:
+    async with service(resources) as target, dial(target) as channel:
+        legacy_find = channel.unary_unary("/agentplane.proto.runner_gateway.RunnerGateway/FindSessions")
+        with pytest.raises(grpc.aio.AioRpcError) as rejected:
+            await legacy_find(b"")
+    assert rejected.value.code() == grpc.StatusCode.UNIMPLEMENTED
 
 
 if __name__ == "__main__":

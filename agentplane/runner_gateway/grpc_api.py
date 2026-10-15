@@ -200,20 +200,6 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
                 sessions=await self.resources.sessions.sandboxes(session_ids)
             )
 
-    @override
-    async def FindSessions(
-        self, request: runner_gateway_pb2.FindSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> runner_gateway_pb2.FindSessionsResponse:
-        async with self.request(context):
-            match request.WhichOneof("sandbox"):
-                case "sandbox_name":
-                    found = await self.resources.sessions.find(sandbox_name=request.sandbox_name)
-                case "sandbox_name_contains":
-                    found = await self.resources.sessions.find(sandbox_name_contains=request.sandbox_name_contains)
-                case _:
-                    raise ValueError("a Sandbox name match is required")
-            return runner_gateway_pb2.FindSessionsResponse(sessions=found)
-
 
 def add_service(resources: Resources, server: grpc.aio.Server) -> None:
     runner_gateway_pb2_grpc.add_RunnerGatewayServicer_to_server(RunnerGateway(resources), server)

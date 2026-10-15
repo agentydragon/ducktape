@@ -51,18 +51,6 @@ class SessionRegistry:
             raise ValueError("at most 1000 Session IDs per read")
         return await self._sandboxes(Session.id.in_(session_ids))
 
-    async def find(
-        self, *, sandbox_name: str | None = None, sandbox_name_contains: str | None = None
-    ) -> list[runner_gateway_pb2.SessionSandbox]:
-        """Every Session in a Sandbox named `sandbox_name`, or whose name contains `sandbox_name_contains`."""
-        if sandbox_name:
-            if sandbox_name_contains is not None:
-                raise ValueError("exactly one Sandbox name match is required")
-            return await self._sandboxes(Session.sandbox_name == sandbox_name)
-        if not sandbox_name_contains:
-            raise ValueError("a non-empty Sandbox name match is required")
-        return await self._sandboxes(Session.sandbox_name.icontains(sandbox_name_contains, autoescape=True))
-
     async def _sandboxes(self, where: ColumnElement[bool]) -> list[runner_gateway_pb2.SessionSandbox]:
         async with self._sessions() as session:
             rows = await session.execute(

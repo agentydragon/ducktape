@@ -117,12 +117,6 @@ class RunnerGatewayClient:
         request = runner_gateway_pb2.BatchGetSessionSandboxesRequest(session_ids=sorted(session_ids))
         return list((await self.unary(self.stub.BatchGetSessionSandboxes, request)).sessions)
 
-    async def find_sessions(
-        self, request: runner_gateway_pb2.FindSessionsRequest
-    ) -> list[runner_gateway_pb2.SessionSandbox]:
-        """Every Session in a Sandbox whose name `request` matches, deleted Sandboxes included."""
-        return list((await self.unary(self.stub.FindSessions, request)).sessions)
-
     async def command(
         self, destination: SandboxDestination, session_id: str, command: command_pb2.Command
     ) -> event_log_pb2.EventEntry:
