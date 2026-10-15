@@ -16,49 +16,49 @@ let
   offlineModels = {
     qwen3_4b = {
       id = "qwen3:4b-instruct-2507-q4_K_M";
-      name = "Qwen3 4B Instruct (32k context; tool use verified)";
+      name = "Qwen3 4B | 32k | tools OK";
       context = 32768;
       output = 4096;
       toolCall = true;
     };
     gemma4_e2b = {
       id = "gemma4:e2b-it-qat";
-      name = "Gemma 4 E2B QAT (32k context; tools verified on Ollama)";
+      name = "Gemma4 E2B QAT | 32k | tools OK (Ollama)";
       context = 32768;
       output = 8192;
       toolCall = true;
     };
     gemma4_e2b_long_128k_experimental = {
       id = "gemma4:e2b-it-qat-long-128k-b128";
-      name = "Gemma 4 E2B QAT (128k experimental; Ollama retrieval 1/3)";
+      name = "Gemma4 E2B QAT | 128k EXP | recall 1/3";
       context = 131072;
       output = 4096;
       toolCall = true;
     };
     qwen35_0_8b_long_256k_experimental = {
       id = "qwen3.5:0.8b-long-256k-b256";
-      name = "Qwen3.5 0.8B Q8 (256k router experimental; tool smoke passed)";
+      name = "Qwen3.5 0.8B Q8 | 256k EXP | tools OK";
       context = 262144;
       output = 4096;
       toolCall = true;
     };
     gemma4_e4b = {
       id = "gemma4:e4b";
-      name = "Gemma 4 E4B (32k context; tool use verified)";
+      name = "Gemma4 E4B | 32k | tools OK";
       context = 32768;
       output = 4096;
       toolCall = true;
     };
     qwen2_5_coder_7b = {
       id = "qwen2.5-coder:7b";
-      name = "Qwen2.5 Coder 7B (32k context; tools unverified)";
+      name = "Qwen2.5 Coder 7B | 32k | tools untested";
       context = 32768;
       output = 4096;
       toolCall = false;
     };
     qwen3_8b = {
       id = "qwen3:8b";
-      name = "Qwen3 8B (32k context; tools unverified)";
+      name = "Qwen3 8B | 32k | tools untested";
       context = 32768;
       output = 4096;
       toolCall = false;

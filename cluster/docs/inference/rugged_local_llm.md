@@ -171,8 +171,9 @@ These are provisioning/configuration checks, not new inference
 measurements or a live validation of the service hardening.
 
 When `ducktape.localLlm.llamaRouter.enable` is true, the offline OpenCode model
-picker includes the six existing entries plus `Qwen3.5 0.8B Q8 (256k router
-experimental; tool smoke passed)`. Select the latter explicitly with:
+picker includes the six existing entries plus `Qwen3.5 0.8B Q8 | 256k EXP | tools OK`. Labels use `EXP` for experimental context settings and `tools OK` for a passed
+tool smoke, not a coding-quality claim. The 128k E2B `recall 1/3` result was
+measured on Ollama. Select the Qwen3.5 profile explicitly with:
 
 ```bash
 RUGGED_OPENCODE_MODEL=qwen3.5-0.8b-long-256k-experimental \
