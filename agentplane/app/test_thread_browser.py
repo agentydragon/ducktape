@@ -66,7 +66,7 @@ from agentplane.history_service.fold.views import ThreadFeedErrorState, ThreadOp
 from agentplane.history_service.testing.electric_service import ElectricService
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import notify
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2
+from agentplane.proto import command_pb2, event_log_pb2, event_pb2, session_dispatcher_pb2
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from util.bazel.runfiles import get_required_path
 from util.testing.undeclared_outputs import undeclared_outputs_dir
@@ -96,6 +96,16 @@ async def route_once(page: Page, url: str, handler: Callable[[Route], Awaitable[
         await handler(route)
 
     await page.route(url, first)
+
+
+def command_admission_receipt(body: str) -> event_log_pb2.EventEntry:
+    """Unwrap the documented HTTP union: a Dispatcher receipt or an archived admission."""
+    value = json.loads(body)
+    if isinstance(value, dict) and "admission" in value:
+        dispatch = json_format.ParseDict(value, session_dispatcher_pb2.Dispatch())
+        assert dispatch.HasField("admission"), "these scenarios wait for runner admission"
+        return dispatch.admission
+    return json_format.Parse(body, event_log_pb2.EventEntry())
 
 
 async def _review_screenshot(page: Page, name: str, label: str) -> None:
@@ -1916,7 +1926,7 @@ async def test_streamed_admission_survives_a_lost_http_reply_and_reload(thread_b
             response = await replies.get()
             command = await source.gateway.commands.get()
         assert response.status == 200
-        admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
+        admission = command_admission_receipt(await response.text())
         assert admission.event.command_admitted.command == command
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
         await expect_pending_message_bubble(page, command.submit_input.text)
@@ -1957,7 +1967,7 @@ async def test_lost_runner_receipt_reconciles_from_thread_without_retry(thread_b
         receipt = await receipts.get()
         original = await source.gateway.commands.get()
     assert receipt.status == 200
-    admitted = json_format.Parse(await receipt.text(), event_log_pb2.EventEntry())
+    admitted = command_admission_receipt(await receipt.text())
     assert admitted.event.command_admitted.command == original
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
     assert admitted in await expect_archived_events(thread_browser.event_logs, thread.id, source.entries)
@@ -2053,7 +2063,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
             command = await source.gateway.commands.get()
             assert (await app.replay_held()).cursor >= 5
         assert response.status == 200
-        admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
+        admission = command_admission_receipt(await response.text())
         assert admission.event.command_admitted.command == command
         assert admission == source.entries[4]
         (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
@@ -2074,7 +2084,7 @@ async def test_unobserved_committed_admission_reconciles_once_after_reload(threa
             await page.reload()
         redelivery = await redelivered.value
         assert redelivery.status == 200
-        assert json_format.Parse(await redelivery.text(), event_log_pb2.EventEntry()) == admission
+        assert command_admission_receipt(await redelivery.text()) == admission
         async with asyncio.timeout(15):
             assert (await app.replay_held()).cursor >= 5
         await expect(pending.locator("[data-command-id]")).to_have_attribute("data-command-id", command.command_id)
@@ -2128,7 +2138,7 @@ async def test_http_admission_ahead_of_replay_does_not_skip_earlier_events(threa
     async with asyncio.timeout(15):
         command = await source.gateway.commands.get()
     assert response.status == 200
-    admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
+    admission = command_admission_receipt(await response.text())
     assert admission.event.command_admitted.command == command
     assert admission == source.entries[6]
     (thread,) = await thread_browser.store.list_threads(sandbox=SANDBOX)
@@ -2191,7 +2201,7 @@ async def test_electric_reconnects_unconfirmed_command_without_reloading(thread_
             command = await source.gateway.commands.get()
             assert (await app.replay_held()).cursor >= 5
         assert response.status == 200
-        admission = json_format.Parse(await response.text(), event_log_pb2.EventEntry())
+        admission = command_admission_receipt(await response.text())
         assert admission == source.entries[4]
         assert admission.event.command_admitted.command == command
         async with page.expect_event("requestfailed", predicate=lambda request: request.url == response.url):

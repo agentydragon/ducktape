@@ -353,7 +353,11 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
                 json={"commandId": "input-1", "submitInput": {"text": "Reply with exactly: BRIDGE_OK"}},
             )
             assert retry.status_code == 200, retry.text
-            assert retry.json() == accepted.json()
+            # A retry can race History's independent archive copy: before it arrives the
+            # Dispatcher returns a Dispatch; afterward the route returns the archived entry.
+            retry_receipt = retry.json()
+            assert ("admission" in retry_receipt) != ("event" in retry_receipt)
+            assert retry_receipt.get("admission", retry_receipt) == accepted.json()["admission"]
             request = await model.request()
             assert request.user_texts[-1] == "Reply with exactly: BRIDGE_OK"
             await model.reply(request, Text("BRIDGE_OK"))

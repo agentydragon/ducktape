@@ -1001,6 +1001,7 @@ py_test(
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:event_pb2",
+        "//agentplane/proto:session_dispatcher_pb2",
         "//agentplane/runner_gateway:client",
         "//util/bazel:runfiles",
         "//util/testing:undeclared_outputs",
