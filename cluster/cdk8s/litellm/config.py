@@ -85,8 +85,8 @@ def model_entry(entry: Route | RouteAlias) -> dict:
         else:
             if info["mode"] not in ("chat", "responses"):
                 raise ValueError(f"generative limits require a chat or responses route: {route.id}")
-            # LiteLLM 1.100.1 get_max_tokens() uses max_tokens as the legacy
-            # fallback for max_output_tokens. Both come from one declaration.
+            # LiteLLM get_max_tokens() uses max_tokens as the legacy fallback
+            # for max_output_tokens. Both come from one declaration.
             info.update(max_output_tokens=limits.max_output_tokens, max_tokens=limits.max_output_tokens)
     return {"model_name": entry.id, "litellm_params": params, "model_info": info}
 

@@ -720,9 +720,9 @@ ANTIGRAVITY_ROUTES = (
 )
 ANTIGRAVITY_FLASH_LITE_ROUTES = (ANTIGRAVITY_FLASH_LITE,)
 GROQ_CHAT = Upstream(Provider.GROQ, "groq", "chat", supports_function_calling=True)
-# Exact `groq/<id>` input/output entries from our pinned LiteLLM 1.100.1 backup:
+# Exact `groq/<id>` input/output entries from the LiteLLM 1.100.1 backup snapshot:
 # https://github.com/BerriAI/litellm/blob/1dba17b10ded12ad0021edb453ba2c54e4637928/litellm/model_prices_and_context_window_backup.json
-# The 2026-10-05 remote catalogue omits these IDs. Preserve the pinned backup's
+# The 2026-10-05 remote catalogue omits these IDs. Preserve that snapshot's
 # last-known metadata explicitly, not a sibling-model guess or availability claim.
 GROQ_CHAT_ROUTES = tuple(
     Route(model, GROQ_CHAT, publish_limits=True)

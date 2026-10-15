@@ -6,7 +6,8 @@ and version-scoped; they do not authorize configuration or client-budget changes
 
 ## Evidence scope
 
-The proxy's package-local lock and upstream image pin are LiteLLM **1.100.1**.
+The proxy's package-local lock and upstream image pin are LiteLLM **1.103.0**.
+Older observations below name their original LiteLLM version where relevant.
 The root Python lock is not the proxy runtime. Relevant upstream source files are
 `utils.py`, `router.py`, `proxy/proxy_server.py`,
 `litellm_core_utils/get_model_cost_map.py`, and `llms/ollama/common_utils.py`.
@@ -58,7 +59,8 @@ For generative routes marked `publish_limits`, the ordinary cdk8s projection emi
 - `max_output_tokens` and legacy `max_tokens` from the **same**
   `Model.limits.max_output_tokens` declaration.
 
-In pinned 1.100.1, [`get_max_tokens()`](https://github.com/BerriAI/litellm/blob/v1.100.1/litellm/utils.py#L5149-L5215)
+In LiteLLM 1.100.1, which was pinned when this compatibility check ran,
+[`get_max_tokens()`](https://github.com/BerriAI/litellm/blob/v1.100.1/litellm/utils.py#L5149-L5215)
 is documented as an output limit lookup and falls back from `max_output_tokens` to
 `max_tokens`. This justifies that compatibility mapping for our generative overrides;
 it is not a universal interpretation of every provider's `maxTokens` or of embedding

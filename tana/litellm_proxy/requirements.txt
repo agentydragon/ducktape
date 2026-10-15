@@ -142,6 +142,7 @@ anyio==4.15.1 \
     --hash=sha256:9f28306018cbd6d329e64a36d58256edff76dd996fe423bc957326e578b82a94
     # via
     #   httpx
+    #   httpx2
     #   mcp
     #   openai
     #   sse-starlette
@@ -890,7 +891,12 @@ h11==0.16.0 \
     --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
     # via
     #   httpcore
+    #   httpcore2
     #   uvicorn
+h2==4.4.1 \
+    --hash=sha256:0e25f1462b23c9cb82d9eb02e28bc706dac2a68cb457c6a0d74d63c8a2a5d0e6 \
+    --hash=sha256:4e866ffb1a869ae14dd9b5e6beb5c24a13da0495ad72b65925ded182521c1516
+    # via httpx
 hf-xet==1.6.0 \
     --hash=sha256:0e6e21fa3cdfcdcd76748564bf593870a5e013f47d97cf10aed63aa222cff5b7 \
     --hash=sha256:23379c2f9ec8696d952b16414a2bae72cad86a52df869b050698ba60f538c675 \
@@ -1024,11 +1030,19 @@ hiredis==3.4.1 \
     --hash=sha256:ffa742a05493eefa1c8d37ea8296b35cc4c26a6f589540fad71c6f58322bc960 \
     --hash=sha256:fffa6cb2d713bd2ec45a1b68aa2ba37d01aefecf127acd323fbd5df564dab274
     # via litellm
+hpack==4.2.0 \
+    --hash=sha256:0895cfa3b5531fc65fe439c05eb65144f123bf7a394fcaa56aa423548d8e45c0 \
+    --hash=sha256:858ac0b02280fa582b5080d68db0899c62a80375e0e5413a74970c5e518b6986
+    # via h2
 httpcore==1.0.9 \
     --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55 \
     --hash=sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8
     # via httpx
-httpx==0.28.1 \
+httpcore2==2.13.1 \
+    --hash=sha256:e0aa977abe17e69a3b820a24542a6fa88702676d83880b8d194dcd18408e5103 \
+    --hash=sha256:e1e05d4f25f7d7d496bfb96748f6f4b67657b03da069b3a68c36069f3db73d0a
+    # via httpx2
+httpx[http2]==0.28.1 \
     --hash=sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
     # via
@@ -1036,16 +1050,21 @@ httpx==0.28.1 \
     #   fastapi-sso
     #   huggingface-hub
     #   litellm
-    #   mcp
     #   openai
-httpx-sse==0.4.3 \
-    --hash=sha256:0ac1c9fe3c0afad2e0ebb25a934a59f4c7823b60792691f779fad2c5568830fc \
-    --hash=sha256:9b1ed0127459a66014aec3c56bebd93da3c1bc8bb6618c8082039a44889a755d
-    # via mcp
+httpx2==2.13.1 \
+    --hash=sha256:6dff50fabc270ee5fd25d845d0b078ed20564579744d6d962850975996d2f9a4 \
+    --hash=sha256:e48744a19e3af5ee48313d0ce5fe941d5422fae5705ea922a4aabf94d7800dfa
+    # via
+    #   litellm
+    #   mcp
 huggingface-hub==1.31.0 \
     --hash=sha256:9dbb6a503cbe2494ea666695207e7262d410659e09134059deb83e5480864667 \
     --hash=sha256:f8e9e710a210613fa5d0f26bba6da05ef4aef9fba5a0f23f508f5ac4d08b6f90
     # via tokenizers
+hyperframe==6.1.0 \
+    --hash=sha256:b03380493a519fce58ea5af42e4a42317bf9bd425596f7a0835ffce80f1a42e5 \
+    --hash=sha256:f630908a00854a7adeabd6382b43923a4c4cd4b821fcb527e6ab9e15382a3b08
+    # via h2
 idna==3.19 \
     --hash=sha256:5e0811a4383b21dc5838069f801c4fb62113b7447663d2530d2bd6e77b49bf15 \
     --hash=sha256:815e7be7a7806d54abb586dc943addc79e8b2ee16915059658cbeff4b1b43bf4
@@ -1053,6 +1072,7 @@ idna==3.19 \
     #   anyio
     #   email-validator
     #   httpx
+    #   httpx2
     #   requests
     #   yarl
 importlib-metadata==8.9.0 \
@@ -1208,23 +1228,23 @@ jsonschema-specifications==2025.9.1 \
     --hash=sha256:98802fee3a11ee76ecaca44429fda8a41bff98b00a0f2838151b113f210cc6fe \
     --hash=sha256:b540987f239e745613c7a9176f3edb72b832a4ac465cf02712288397832b5e8d
     # via jsonschema
-litellm[proxy]==1.100.1 \
-    --hash=sha256:1d2e622a2e2eab74efd25ed356208568b783cb406f413efd083e3416b81d1606 \
-    --hash=sha256:2f45760e61a624660444d110ae6475edc959e2906914c6c308c710c8be2ca742 \
-    --hash=sha256:4e2d410538c8a0d7b58440c47d7e1a6120c3219dfb5d100f39069fa8dbce0055 \
-    --hash=sha256:63201b3ed92cbe6ff9ec26ee83436efbd67c5f6d38b2d1ece0203f04819fc4c3 \
-    --hash=sha256:8f53d917ece795e35c125ec24d342ddc2103a806c22b1f7b1517110d31f45362 \
-    --hash=sha256:d24b5fbdeb1f0b5c0a6f7f0caf7b6aa79b69c704b90daca57e3ce7d50a9d6bf4 \
-    --hash=sha256:f150a169807a1b24c0ffc5bd1838f77659bf7449db8718e65d1be1bca517825f \
-    --hash=sha256:f24ab714b58a66276623b48ed58c0fbf4e1ccd6fd127b187a049ce0c74eba8ab
+litellm[proxy]==1.103.0 \
+    --hash=sha256:235d5853865c7964b16d5ed8e6a1b665186a08b9a5a413aee7ab055f30c0ae85 \
+    --hash=sha256:301b55264f5796efca9c8e9c8f7bdefc1c06499bfc3673dd7add904813055fff \
+    --hash=sha256:4b0155e6147529b489f8ff62eacac52504be61c20ce3cc2e44b971e55b4b711f \
+    --hash=sha256:6c9f7f0e327593113624c29f555f0b37c98b4f9e378699164302a44b35e1705f \
+    --hash=sha256:6d159fc715c10fc44213dc7022ae5c875e75c1a0b72ace1d72a9a6da417f23a7 \
+    --hash=sha256:6d894e11cd993da3e450a8d3c03f60af73d2850c2e727ad7dcffad41f6c5c538 \
+    --hash=sha256:8ca94bfc2be98e3115c18d7755dcd15a0ddd56e8969f03aa823c9064d165c8a9 \
+    --hash=sha256:bc44607abc41d2b34111899860a0c7e593dfbec154b1f264539150c337bd8bf9
     # via -r tana/litellm_proxy/requirements.in
-litellm-enterprise==0.1.62 \
-    --hash=sha256:2ce78366557335de557ee72ad86c92b2b062b0e07e31dff2139576feda849489 \
-    --hash=sha256:337697160896d52079290ffe8051c3dee450653d271cb29723af6db8546eb7d9
+litellm-enterprise==0.1.69 \
+    --hash=sha256:59c93b75dcdaf51f1d8091b8a4681f1480fc6e338b2305d1adb9d55c826cf712 \
+    --hash=sha256:66b8f43ecba29de4820f8aa3c6ec53b71f9a40ddca0dc84016b72f229e022685
     # via litellm
-litellm-proxy-extras==0.4.91 \
-    --hash=sha256:5cac5f06f9addd023b5c99a05c2c4c5147eaf799d8f00567e3ee8f04e4595c0b \
-    --hash=sha256:d19fe53591b0bbd48aff24cb1a166b0c68ff2491469ceec88eaa83c6a364562d
+litellm-proxy-extras==0.4.100 \
+    --hash=sha256:71a2e917af675f98e86519669cec5c439e99993234709d0056409b8bae4b1b73 \
+    --hash=sha256:c7786d0e2f9c28a350b192d480a4a76feb9ebca915920b77dda32065fbf4a62b
     # via litellm
 markdown-it-py==4.2.0 \
     --hash=sha256:04a21681d6fbb623de53f6f364d352309d4094dd4194040a10fd51833e418d49 \
@@ -1321,10 +1341,14 @@ markupsafe==3.0.3 \
     --hash=sha256:f9e130248f4462aaa8e2552d547f36ddadbeaa573879158d721bbd33dfe4743a \
     --hash=sha256:fed51ac40f757d41b7c48425901843666a6677e3e8eb0abcff09e4ba6e664f50
     # via jinja2
-mcp==1.30.0 \
-    --hash=sha256:445414625fce5c295faa505bb11bacece661ab6f4028d57c935db57820b7a3e4 \
-    --hash=sha256:666edb5009503e1047c9d60346a756f94b261f05cc2625f23d41c728ffc484d0
+mcp==2.3.0 \
+    --hash=sha256:8b147a50441cf059dc88c684e0aeed3687f0aa0f39c6cde7b90330effd2b34d8 \
+    --hash=sha256:dd0c44c089d16453e8ae31a3877a0054d7a2314caaa81f5e0541b9b1734b2377
     # via litellm
+mcp-types==2.3.0 \
+    --hash=sha256:968efdbdaedfab06adae40d378a34395f1090c5921d4be3c9cde283aaf76d91d \
+    --hash=sha256:d1e46549edb35ee19a94940fcee6d1addd7e589ab7ea92dda83f5d84781fc362
+    # via mcp
 mdurl==0.1.2 \
     --hash=sha256:84008a41e51615a49fc9966191ff91509e3c40b939176e643fd50a5c2196b8f8 \
     --hash=sha256:bb413d29f5eea38f31dd4754dd7377d4465116fb207585f97bf925588687c1ba
@@ -1595,6 +1619,7 @@ opentelemetry-api==1.44.0 \
     --hash=sha256:94b98c893a91b88657eaac1e3ba89618cdb85be6918196705354f34728b2cdef
     # via
     #   -r tana/litellm_proxy/requirements.in
+    #   mcp
     #   opentelemetry-exporter-otlp-proto-http
     #   opentelemetry-sdk
     #   opentelemetry-semantic-conventions
@@ -1871,6 +1896,7 @@ pydantic[email]==2.13.5 \
     #   fastapi-sso
     #   litellm
     #   mcp
+    #   mcp-types
     #   openai
     #   pydantic-settings
 pydantic-core==2.46.5 \
@@ -2001,7 +2027,6 @@ pydantic-settings==2.15.0 \
     # via
     #   -r tana/litellm_proxy/requirements.in
     #   litellm
-    #   mcp
 pygments==2.21.0 \
     --hash=sha256:2363c69b61c4a97c838da3b130dcd6468f4848992b21a82f2a63ec34377137d9 \
     --hash=sha256:610ca751c9bc2492b38eb9a38a7fbc93edbbb2d7182edaf34e66ae493dee5c8c
@@ -2544,12 +2569,22 @@ tokenizers==0.23.2 \
     --hash=sha256:eb2f9c8a24da020ea8c11a01a19c1c2547912d92121ae4a01cfbca46125dee40 \
     --hash=sha256:f486f402f6f9abee5bb032553736813af0c710a86b2e0ca592634c55cea1f835
     # via litellm
+tomlkit==0.15.1 \
+    --hash=sha256:177a05aece5a8ca5266fd3c448abb47b8d352f09d477d3ca8332db4d89b24304 \
+    --hash=sha256:e25bbf38843005246210a12982776f27f99cb9be67160e14434d0c0d21ee1e97
+    # via litellm
 tqdm==4.70.1 \
     --hash=sha256:c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73 \
     --hash=sha256:cefd0eca11b2a37a3aee776544d4f4ae913f02688135b5556b8788dfa474afc4
     # via
     #   huggingface-hub
     #   openai
+truststore==0.10.5 \
+    --hash=sha256:30d36967ccaded5cbb38d602c433f53600036c79d502f4533a49b60a03bbefcd \
+    --hash=sha256:9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c
+    # via
+    #   httpcore2
+    #   httpx2
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
@@ -2562,6 +2597,7 @@ typing-extensions==4.16.0 \
     #   fastapi
     #   huggingface-hub
     #   mcp
+    #   mcp-types
     #   openai
     #   opentelemetry-api
     #   opentelemetry-exporter-otlp-proto-http

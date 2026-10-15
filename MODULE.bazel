@@ -240,10 +240,10 @@ oci.pull(
 # rebuilding that runtime from the Python wheel alone.
 oci.pull(
     name = "litellm_upstream",
-    digest = "sha256:d85c0b36e2fdd64719e7fc2692431cd5aee0814925e96c2892d1491b13189c23",
+    digest = "sha256:bd089afdcd35b894b14a93f9743cdc8b591f82da1a38dd43a010a7b0c9de5fd7",
     image = "mirror.gcr.io/litellm/litellm",
     platforms = ["linux/amd64"],
-    tag = "1.100.1",
+    tag = "1.103.0",
 )
 
 # Electric 1.8.1 for real integration tests. The original digest is not cached
