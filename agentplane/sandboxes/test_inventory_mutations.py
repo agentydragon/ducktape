@@ -12,8 +12,7 @@ from google.protobuf.json_format import MessageToDict
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.policy_sets import POLICY_SETS_PLURAL
-from agentplane.proto.runner_pb2 import HARNESS_CODEX
-from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest, SandboxPhase, SessionDefaults
+from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest, SandboxPhase
 from agentplane.sandbox_resource import PRESET_LABEL, SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandboxes.errors import (
     SandboxConflictError,
@@ -105,12 +104,7 @@ async def test_get_reads_one_sandbox_and_refuses_missing_ones(
 async def test_create_writes_a_running_sandbox_of_the_template(
     inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi
 ) -> None:
-    spec = CreateSandboxRequest(
-        name="my-task",
-        template=TEMPLATE,
-        session_defaults=SessionDefaults(harness=HARNESS_CODEX, model="test-model"),
-        bootstrap="printf boot",
-    )
+    spec = CreateSandboxRequest(name="my-task", template=TEMPLATE, bootstrap="printf boot")
     view = await inventory.create(spec, policy_sets={"test-b", "test-a"}, caller=CALLER)
 
     assert (view.name, view.operating_mode) == ("my-task", OperatingMode.RUNNING)
@@ -121,7 +115,6 @@ async def test_create_writes_a_running_sandbox_of_the_template(
         "template": TEMPLATE,
         "running": True,
         "policySets": ["test-a", "test-b"],
-        "sessionDefaults": {"harness": "HARNESS_CODEX", "model": "test-model"},
         "bootstrap": "printf boot",
     }
 

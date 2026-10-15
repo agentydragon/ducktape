@@ -36,9 +36,8 @@ message SessionDefaults {
 message CreateSandboxRequest {
   string name = 1;
   string template = 2;
-  reserved 3, 4, 5;
-  reserved "egress_policies", "action_policy_sets", "kubernetes_grants";
-  SessionDefaults session_defaults = 6;
+  reserved 3, 4, 5, 6;
+  reserved "egress_policies", "action_policy_sets", "kubernetes_grants", "session_defaults";
   string bootstrap = 7;
   // PolicySet names to bind, beside the app's defaults.
   repeated string policy_sets = 8;

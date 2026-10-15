@@ -1246,7 +1246,9 @@ flowchart TD
 
 ### `APP_SESSION_DEFAULTS_LEGACY_REMOVE` — delete legacy per-Sandbox defaults fields
 
-**Caller defaults rollout and Sandbox Service retirement are complete.** Audit remaining
+**Caller defaults rollout and Sandbox Service retirement are complete.** The unused defaults input
+and writer in shared Sandbox creation are removed; existing CR fields and read projections remain.
+Audit remaining
 CreateSession callers before removing their field mask; that part waits for the direct-open caller
 removal and its image rollout. Other unused defaults fields can be reviewed independently.
 Once every writer has stopped sending them, delete `SandboxBinding.session_defaults`, the Sandbox

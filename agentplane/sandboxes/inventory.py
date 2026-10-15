@@ -21,7 +21,6 @@ from tenacity import retry, retry_if_exception, stop_after_attempt
 from agentplane import sandbox_resource
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.policy_sets import POLICY_SETS_PLURAL
-from agentplane.proto import runner_pb2
 from agentplane.proto.sandboxes_pb2 import CreateSandboxRequest, Sandbox
 from agentplane.sandbox_resource import OperatingMode
 from agentplane.sandboxes.console import stream_console
@@ -123,13 +122,8 @@ class SandboxInventory(SandboxReader):
             raise InvalidSandboxError("valid name and template are required")
         if spec.HasField("preset") and not re.fullmatch(r"[A-Za-z0-9]([-A-Za-z0-9_.]{0,61}[A-Za-z0-9])?", spec.preset):
             raise InvalidSandboxError("preset must be a valid label value")
-        if max(len(spec.bootstrap), len(spec.session_defaults.setup_script)) > 65_536:
+        if len(spec.bootstrap) > 65_536:
             raise InvalidSandboxError("script exceeds 65536 characters")
-        if spec.session_defaults.HasField("harness") and spec.session_defaults.harness not in (
-            runner_pb2.HARNESS_CLAUDE,
-            runner_pb2.HARNESS_CODEX,
-        ):
-            raise InvalidSandboxError("unsupported harness")
         existing = await self.retry(spec, caller=caller)
         if existing is not None:
             return existing
@@ -153,11 +147,6 @@ class SandboxInventory(SandboxReader):
                 "template": spec.template,
                 "running": True,
                 "policySets": sorted(policy_sets),
-                **(
-                    {"sessionDefaults": MessageToDict(spec.session_defaults)}
-                    if spec.HasField("session_defaults")
-                    else {}
-                ),
                 **({"bootstrap": spec.bootstrap} if spec.bootstrap else {}),
             },
         }
