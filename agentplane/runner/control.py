@@ -367,7 +367,9 @@ class RunnerControlClient:
             while True:
                 self.facts_changed.clear()
                 if (facts := self.facts()) != published:
-                    await send(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.Heartbeat(facts=facts)))
+                    await send(
+                        runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.RunnerHeartbeat(facts=facts))
+                    )
                     published = facts
                 await self.facts_changed.wait()
 
@@ -376,7 +378,7 @@ class RunnerControlClient:
                 await asyncio.sleep(self.timing.heartbeat_s)
                 if loop.time() - last_frame > self.timing.liveness_s:
                     raise TimeoutError
-                await send(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.Heartbeat()))
+                await send(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.RunnerHeartbeat()))
 
         try:
             async with asyncio.TaskGroup() as tasks:

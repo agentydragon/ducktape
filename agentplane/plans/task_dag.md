@@ -745,7 +745,6 @@ flowchart TD
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
     APP_GATEWAY_SEND_REMOVE --> PROXY_START_METHODS_DISPATCHER_ONLY
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE
-    RUNNER_HEARTBEAT_SPLIT[Candidate: runner-only heartbeat type]
     INCARNATION_UID_REQUIRED --> JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE
     K3S_LIFECYCLE_SUITE[Candidate: k3s lifecycle integration suite]
     QUIESCE_WITHOUT_POLLING -. quiesce assertions .-> K3S_LIFECYCLE_SUITE
@@ -962,15 +961,6 @@ column, accepting UID-less seals. Once the separately approved storage cutoff co
 and old Pod images/VM wheels can no longer write them, remove this old-schema upgrade and missing-UID
 seal tolerance, with obsolete fixtures. Do not erase journals incidentally; if the workspace cutoff
 leaves any old state PVC, name it in a separate operator-reviewed data-disposition step first.
-
-### `RUNNER_HEARTBEAT_SPLIT` — remove runner-only facts from service heartbeats
-
-**Candidate.** Facts already travel from the runner to the gateway's incarnation-stamped connection
-Lease and are read by the controller. Only the wire-type cleanup remains: use a runner-only
-`RunnerHeartbeat` on `RunnerFrame.heartbeat`, retaining field numbers, while service heartbeats
-carry no runner facts. Update all users and generated outputs atomically; delete the shared-message
-facts field once no live caller requires that shape. This wire-compatible cleanup is not a new
-prerequisite for idle suspension or bootstrap readiness.
 
 ### `RUNNER_BUSY_TRACKING` — the runner counts terminals and background processes as busy
 

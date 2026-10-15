@@ -53,7 +53,7 @@ service Runner {
 message RunnerFrame {
   oneof frame {
     Hello hello = 1;  // first frame, exactly once
-    Heartbeat heartbeat = 3;
+    RunnerHeartbeat heartbeat = 3;
     agentplane.proto.grpc_tunnel.Reply reply = 5;  // to a `call` on this stream
   }
   reserved 2, 4;
@@ -86,8 +86,13 @@ message Welcome {
 }
 
 message Heartbeat {
-  // Only the runner sets it: sent at once when a fact changes and with its first heartbeat after every
-  // `Welcome`. Each carrying it replaces the gateway's record of all the facts.
+  reserved 1;
+  reserved "facts";
+}
+
+message RunnerHeartbeat {
+  // Sent at once when a fact changes and with its first heartbeat after every `Welcome`. Each
+  // carrying it replaces the gateway's record of all the facts.
   optional RunnerFacts facts = 1;
 }
 
