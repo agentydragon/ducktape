@@ -305,7 +305,7 @@ what happens if the process or runner fails between native creation and mapping 
 an explicit operation/idempotency key with the eventual Session address. No schema or migration is
 selected here.
 
-## Independent capability characterization
+## Harness capability characterization
 
 The current runner adapter does not select whether one native process should serve multiple
 Agentplane Sessions. Treat each harness as its own investigation; neither result should wait for or
@@ -315,18 +315,18 @@ be inferred from the other.
   [harness evidence](harness_evidence.md#codex-threads-on-one-app-server) asserts two independently
   started threads on one stdio process, concurrent turns, per-thread cancellation, selected
   per-thread options, and both threads resumed after a process restart with shared `CODEX_HOME`.
-  CI remains the runtime gate. The runner adapter still owns one thread ID per process; this
+  The scenario passed in CI on #10663. The runner adapter still owns one thread ID per process; this
   evidence characterizes Codex and does not choose whether the runner should multiplex.
 - **Claude Code:** the adapter starts one stream-json process with one `--session-id`; inputs and
-  interrupt controls have no Agentplane-side session selector. Separately establish whether native
+  interrupt controls have no Agentplane-side session selector. If selected, establish whether native
   child/task sessions can be discovered and represented as visible/read-only records, and whether
-  multiple independently interactive sessions can share one process. Native child/task events do
-  not prove multiplexed conversation support. Characterize the pinned CLI's discovery/control and,
-  if process multiplexing is supported, how frames, cancellation and native state are scoped. Check
+  multiple independently interactive sessions can share one process. Native child/task events do not
+  prove multiplexed conversation support. Characterize the pinned CLI's discovery/control and, if
+  process multiplexing is supported, how frames, cancellation and native state are scoped. Check
   concurrency/isolation, model and instruction options, auth/workdir/data separation, process failure
   and `--resume` behavior.
 
-For both, the bounded result should identify supported API shape, concurrency and isolation limits,
+If selected, each bounded result should identify supported API shape, concurrency and isolation limits,
 cancellation scope, which options/auth/workdir/data are process-wide or per Session, and failure,
 restart and resume semantics. Use the real pinned binaries and controlled loopback model endpoint
 when code or authoritative documentation is inconclusive, following

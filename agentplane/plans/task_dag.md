@@ -351,10 +351,10 @@ does not grant history read, messaging, credentials or execution of another prin
 ### `RUNNER_HARNESS_OBJECTS_DESIGN` — expose running harnesses separately from Sessions
 
 **Conditional design decision; operator, 2026-10-15 PDT.** Evaluate exposing running harnesses as
-explicit runner objects with Session-to-harness associations. Use the Codex and Claude
-multiplexing characterizations, `HARNESS_IDENTITY_DESIGN` and
-`NATIVE_SUBAGENT_EXPOSURE`; do not assume one Agentplane Session is one process, one persisted
-store, or one native conversation, or that every discovered child is independently controllable.
+explicit runner objects with Session-to-harness associations. If the operator later releases either
+Codex or held Claude characterization, use its evidence alongside `HARNESS_IDENTITY_DESIGN` and
+`NATIVE_SUBAGENT_EXPOSURE`; do not assume one Agentplane Session is one process, one persisted store,
+or one native conversation, or that every discovered child is independently controllable.
 
 Compare explicit harness identity/lifecycle with retaining Session-only projections. Specify
 which operations, options, status and authorization belong to a process incarnation, persisted
@@ -1503,7 +1503,7 @@ flowchart LR
     RUNNER_INVENTORY_AUTHORITY_DESIGN[Decision: live runner or retained inventory]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
     CODEX_APP_SERVER_MULTIPLEXING[In flight: Codex threads per process]
-    CLAUDE_STREAM_SESSION_MULTIPLEXING[Characterize: Claude sessions per process]
+    CLAUDE_STREAM_SESSION_MULTIPLEXING[Held by operator: Claude sessions per process]
     HARNESS_IDENTITY_DESIGN[Decision: process, store and native Session identity]
     HTTP_JSON_FACADE_TOOLING_SPIKE[Candidate: prove gRPC-Gateway integration]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
@@ -1685,14 +1685,16 @@ architecture and does not wait for the Claude result.
 
 ### `CLAUDE_STREAM_SESSION_MULTIPLEXING` — characterize multiple sessions over Claude stream-json
 
-**Candidate; independent investigation.** Separately characterize native child-session discovery
-and visibility/control, and whether the pinned Claude CLI can host multiple independently
-interactive native Sessions over one stream-json process. A visible child may be read-only; child
-events do not prove independent input/cancellation or multiplexed conversation support. The current
-adapter launches with one `--session-id`, routes input/control over one stream and has no Agentplane
-session selector. Characterize frame routing, concurrency/isolation, cancellation scope, per-Session
-options/auth/workdir/config data, and failure/restart/`--resume` behavior from pinned-version
-evidence or a bounded real-binary test. Report unknowns; this lane does not wait for the Codex result.
+**Held by operator; no investigation is underway.** Preserve this independent research lane for
+later selection. If released, characterize native child-session discovery and visibility/control,
+and whether the pinned Claude CLI can host multiple independently interactive native Sessions over
+one stream-json process. A visible child may be read-only; child events do not prove independent
+input/cancellation or multiplexed conversation support. The current adapter launches with one
+`--session-id`, routes input/control over one stream and has no Agentplane session selector. The
+selected investigation should characterize frame routing, concurrency/isolation, cancellation scope,
+per-Session options/auth/workdir/config data, and failure/restart/`--resume` behavior from
+pinned-version evidence or a bounded real-binary test. Report unknowns; if both lanes are released,
+they can proceed independently.
 
 ### `HARNESS_IDENTITY_DESIGN` — decide address, process, store and native Session identities
 
