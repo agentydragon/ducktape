@@ -699,6 +699,8 @@ flowchart TD
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
     VM_GUEST_DECLARATIVE_STORAGE[In flight: declarative guest disk initialization]
+    APP_THREAD_HISTORY_IDENTITY[In flight: app reads Thread Sandbox identity from History]
+    APP_THREAD_HISTORY_IDENTITY --> VM_GUEST_DECLARATIVE_STORAGE
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
@@ -728,6 +730,7 @@ flowchart TD
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     EFFECTIVE_MODE_FALLBACK_DROP[In flight: remove spec.running compatibility fallback]
     APP_SESSION_OPEN_ACTIVATION[In flight: accept testing queued opens, then activate staging]
+    APP_THREAD_HISTORY_IDENTITY --> APP_SESSION_OPEN_ACTIVATION
     APP_SESSION_DEFAULTS_LEGACY_REMOVE[Candidate: retire unused defaults after caller audit]
     APP_GATEWAY_SEND_REMOVE --> APP_OPEN_FLAG_REMOVE[Blocked: remove obsolete opening flag after config rollout]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
@@ -792,8 +795,12 @@ the selected explicit layouts before retiring the path; data drops stay in a sep
 **Rollout remaining; `vm_connection`, 2026-10-14 PDT.** #10513 merged the guest shell inventory,
 workspace disk preparation helper and declarative tmpfiles ownership. Testing exposed a missing
 device argument in the generated systemd unit: disk preparation exited before the runner started.
-#10537 supplies that argument; #10538 corrects the image workflow path filter. Wait for a guest
-image containing #10537, then run the bounded fresh-format/retained-remount check on testing.
+#10537 supplies that argument; #10538 corrects the image workflow path filter. The corrected
+`cc32a7c` guest image was published and pinned in testing; a bounded VM check confirmed the guest
+runner connected and bootstrap completed. Its first app event-stream probe then failed with the
+same app Thread identity HTTP 500 as the app OpenSession acceptance, before storage assertions.
+Wait for the testing app image containing `APP_THREAD_HISTORY_IDENTITY`, then run the bounded
+fresh-format/retained-remount check. Staging app activation is a separate gate.
 A successful Nix build or template reconciliation is not workload acceptance. No staging workload write is authorized by this assignment. Preserve the explicit layout contract and refusal of
 incompatible existing data. `autoFormat`'s recognizable-filesystem check is not equivalent to the
 zero-content scan. Runner changes additionally wait on the embedded wheel pin. The inline helper
@@ -1029,6 +1036,17 @@ destination/operation authorization for the current app and notification callers
 agent senders wait for the reviewed multiagent authority contract. Do not confuse send permission
 with wake permission or silently expand the caller allowlist during a cutover. Add the bounded
 implementation node once policy is reviewed; existing caller cutovers do not silently select policy.
+
+### `APP_THREAD_HISTORY_IDENTITY` — read Thread Sandbox identity from History
+
+**In flight; `vm_connection`, 2026-10-14 PDT.** The testing app's Thread view reads the Runner
+Gateway's SessionRegistry, but Dispatcher opens a Session through the runner proxy without adding
+that legacy row. Testing app OpenSession and VM storage probes both reached runner admission, then
+received HTTP 500 from Thread reads. #10547 changes Thread identity and filters to the writer-bound
+History record, distinguishes a direct-open Session whose History row is still pending, and keeps a
+committed row with missing Sandbox identity as an explicit error. Validate the newest correction,
+publish and pin its app image in testing, then repeat the bounded dependent acceptance cases.
+This node gates testing app reads, not staging activation or VM disk formatting itself.
 
 ### `APP_SESSION_OPEN_ACTIVATION` — activate queued app Session openings
 

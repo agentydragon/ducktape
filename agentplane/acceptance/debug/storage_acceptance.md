@@ -214,3 +214,25 @@ The diagnostic Sandbox and template were deleted with their recorded UID precond
 namespace returned to no Sandboxes or VMs and 5Gi/80Gi storage use. A candidate image correction
 supplies the device argument and adds a Nix check against the rendered VM service command. Fresh
 formatting and retained remount remain unaccepted until that image is published and pinned.
+
+### Corrected guest image: runner started; app Thread read blocked storage probe
+
+The corrected guest image `devel-20261015000402-cc32a7c` was published by successful
+[image workflow 38656456760](https://github.com/agentydragon/ducktape/actions/runs/38656456760)
+and pinned by the testing `runner-vm` template. Against Ready controller
+`devel-20261014211114-31e0b37`, the bounded VM-only
+[invocation fe213c13-1077-411e-bd2d-6ecb900b389d](https://app.buildbuddy.io/invocation/fe213c13-1077-411e-bd2d-6ecb900b389d)
+created `accept-storage-vm-raw-a2bc6b02` (Sandbox UID
+`769084ef-5d51-4f68-9b22-db8c6e572cba`). The VMI was Running/Ready and launcher 5/5 Ready.
+Its exact VMI serial console logged `runner control stream connected at epoch 1` and a 200
+model-config response; this proves the missing-argument startup failure is fixed in this image.
+
+The first `_probe` then received HTTP 500 on
+`/threads/97395b54-8ac7-4f0e-8751-4141158bfc9b/events/stream`. The testing app traceback
+ended at `ThreadStore._sandboxes` with `SessionNotRegisteredError`: the same independent app
+identity gap found by app OpenSession acceptance. The probe had not saved `first_probe`, so
+fresh-format and retained-remount assertions did not run; this is not VM storage acceptance.
+The test's exception left `cleanup_complete: false` in its partial JSON, but a subsequent API
+inventory found no testing Sandbox and quota restored to 5Gi/80Gi. No retry or timeout change
+was used. Resume this row only after the app History identity correction has an accepting
+testing image.
