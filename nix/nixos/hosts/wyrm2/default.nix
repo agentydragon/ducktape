@@ -399,7 +399,7 @@ in
 
   # Separate data disks (Proxmox virtio disks).
   # Existing data disks use autoFormat on first boot and autoResize to full size;
-  # cache and kubelet volumes are formatted explicitly before their first activation.
+  # the cache volume is formatted explicitly before its first activation.
   # virtio0=/dev/vda, virtio1=/dev/vdb, virtio2=/dev/vdc, virtio3=/dev/vdd,
   # virtio4=/dev/vde, virtio5=/dev/vdf, virtio7=/dev/vdh, virtio8=/dev/vdi,
   # virtio9=/dev/vdj, virtio10=/dev/vdk, virtio11=/dev/vdl
@@ -510,12 +510,15 @@ in
     ];
   };
   # /dev/vdl (virtio11): dedicated HDD filesystem for kubelet state and
-  # disk-backed emptyDirs. This replaces the existing /var/lib/kubelet tree, so
-  # the initial move must happen during node maintenance with pod mountpoints
-  # quiesced; do not activate this over a live pod tree.
+  # disk-backed emptyDirs. Use the raw device path because a blank disk has no
+  # filesystem label yet; systemd's makefs option needs to reach the raw device.
+  # This replaces the existing /var/lib/kubelet tree, so the initial move must
+  # happen during node maintenance with pod mountpoints quiesced; do not activate
+  # this over a live pod tree.
   fileSystems."/var/lib/kubelet" = {
-    device = "/dev/disk/by-label/wyrm2-kubelet";
+    device = "/dev/vdl";
     fsType = "ext4";
+    autoFormat = true;
     autoResize = true;
     # Let the workstation boot if the disk is absent, but kubelet's
     # RequiresMountsFor below keeps it from silently writing state to root.
