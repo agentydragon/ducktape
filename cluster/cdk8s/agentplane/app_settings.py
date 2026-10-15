@@ -12,7 +12,6 @@ from agentplane.app.model_catalog import ModelCatalog, ModelOption
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.app.settings import AppSettingsConfig
 from agentplane.runner.harness import Harness
-from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 
 # The names of the objects other modules create. `settings()` below grants the public-coder
 # preset its baseline policies, so it refers to them; each comes from the module that creates the
@@ -50,7 +49,6 @@ def settings(
     action_federation: ActionFederationSettings,
     public_coder_policy_sets: list[str],
     default_policy_sets: Set[str],
-    kubernetes_grants: dict[str, KubernetesGrant] | None = None,
     session_dispatcher_open_sessions: bool = False,
 ) -> AppSettingsConfig:
     config = AppSettingsConfig(
@@ -66,7 +64,6 @@ def settings(
                 Harness.CODEX: [route.id for route in models.codex],
             },
         ),
-        kubernetes_grants=kubernetes_grants if kubernetes_grants is not None else {},
         default_policy_sets=default_policy_sets,
         # App-owned launch-form presets. The browser expands one into editable concrete
         # template, policy, bootstrap, and SessionSpec fields; neither a Sandbox CR nor a

@@ -1499,6 +1499,7 @@ py_library(
         "//cluster/cdk8s/agentplane:db_backups",
         "//cluster/cdk8s/agentplane:generation",
         "//cluster/cdk8s/agentplane:staging",
+        "//cluster/cdk8s/agentplane:staging_grants",
         "//cluster/cdk8s/agentplane:testing",
         "//cluster/cdk8s/agentplane_index:workers",
         "//cluster/cdk8s/agents:flux_kustomizations",

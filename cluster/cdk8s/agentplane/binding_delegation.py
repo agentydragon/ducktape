@@ -16,7 +16,7 @@ from cdk8s import App, Chart
 from cdk8s_plus_34 import k8s
 from flux_kustomize.io.fluxcd.toolkit.kustomize import KustomizationSpecSourceRef, KustomizationSpecSourceRefKind
 
-from agentplane.sandboxes.kubernetes_grants import RoleBindingGrant
+from agentplane.sandboxes.kubernetes_grants import KubernetesGrant, RoleBindingGrant
 from cluster.cdk8s.agentplane import policy_controller
 from cluster.cdk8s.agentplane.environment import Environment
 from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomization_depends_on, kustomize_kustomization
@@ -26,10 +26,10 @@ from cluster.cdk8s.manifest_roots import GENERATED_ROOT
 _RBAC_GROUP = "rbac.authorization.k8s.io"
 
 
-def external_scopes(env: Environment) -> tuple[str, ...]:
+def external_scopes(env: Environment, catalog: Mapping[str, KubernetesGrant]) -> tuple[str, ...]:
     """Keep delegation for old bindings after their catalog entry is removed."""
     scopes = {
-        grant.namespace for grant in env.app_config.kubernetes_grants.values() if isinstance(grant, RoleBindingGrant)
+        grant.namespace for grant in catalog.values() if isinstance(grant, RoleBindingGrant)
     } | env.kubernetes_binding_cleanup_namespaces
     return tuple(sorted(scopes - {env.namespace}))
 
@@ -42,15 +42,15 @@ def _role_name(env: Environment) -> str:
     return f"{env.namespace}-external-bindings"
 
 
-def chart(app: App, env: Environment, target_namespace: str) -> Chart:
-    if target_namespace not in external_scopes(env):
+def chart(app: App, env: Environment, target_namespace: str, catalog: Mapping[str, KubernetesGrant]) -> Chart:
+    if target_namespace not in external_scopes(env, catalog):
         raise ValueError(f"{target_namespace!r} is not an external managed binding scope")
     scope = Chart(app, f"{env.namespace}-binding-delegation-{target_namespace}", disable_resource_name_hashes=True)
     role_name = _role_name(env)
     role_names = sorted(
         {
             grant.role_ref.name
-            for grant in env.app_config.kubernetes_grants.values()
+            for grant in catalog.values()
             if isinstance(grant, RoleBindingGrant)
             and grant.namespace == target_namespace
             and grant.role_ref.kind == "Role"
@@ -82,18 +82,23 @@ def chart(app: App, env: Environment, target_namespace: str) -> Chart:
     return scope
 
 
-def write_manifests(root: Path, env: Environment) -> None:
-    for target_namespace in external_scopes(env):
+def write_manifests(root: Path, env: Environment, catalog: Mapping[str, KubernetesGrant]) -> None:
+    for target_namespace in external_scopes(env, catalog):
         output_dir = directory(env, target_namespace)
-        manifest = write_charts(root, output_dir, partial(chart, env=env, target_namespace=target_namespace))
+        manifest = write_charts(
+            root, output_dir, partial(chart, env=env, target_namespace=target_namespace, catalog=catalog)
+        )
         write_yaml(root / output_dir / "kustomization.yaml", kustomize_kustomization(resources=[manifest]))
 
 
 def add_flux_kustomizations(
-    flux_chart: Chart, env: Environment, target_dependencies: Mapping[str, Kustomization | None]
+    flux_chart: Chart,
+    env: Environment,
+    target_dependencies: Mapping[str, Kustomization | None],
+    catalog: Mapping[str, KubernetesGrant],
 ) -> None:
     """Each target owner gates its delegation; bootstrap roots have no generated owner."""
-    scopes = external_scopes(env)
+    scopes = external_scopes(env, catalog)
     if missing := set(scopes) - target_dependencies.keys():
         raise ValueError(f"managed binding scopes lack namespace dependencies: {sorted(missing)}")
     bootstrap_scopes = {"flux-system", "ducktape-flux"}

@@ -207,7 +207,6 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         doc for doc in staging_docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
     )
     config = yaml.safe_load(app_config["data"]["config.yaml"])
-    catalog = config["kubernetes_grants"]
     policy_sets = {doc["metadata"]["name"]: doc["spec"]["rules"] for doc in staging_docs if doc["kind"] == "PolicySet"}
     reader_roles = {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}
     actual = {
@@ -218,14 +217,20 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         for namespace in rule["namespaces"]
     }
     assert actual == expected
-    expected_namespaces = {namespace for namespace, _ in expected}
-    expected_external_namespaces = expected_namespaces - {"agentplane-staging"}
-    # Delegated: every catalog grant's namespace and every retained cleanup scope.
-    expected_external_scopes = expected_external_namespaces | {
+    policy_set_namespaces = {
+        namespace
+        for rules in policy_sets.values()
+        for rule in rules
+        if rule["type"] == "kubernetes_role_binding"
+        for namespace in rule["namespaces"]
+    }
+    # Delegated: every PolicySet RoleBinding scope, the retained cleanup scopes, and the legacy
+    # static-only litellm role, whose binding remains outside PolicySets.
+    expected_external_scopes = (policy_set_namespaces - {"agentplane-staging"}) | {
         "ducktape-flux",
         "haku-console",
         "haku-sandbox",
-        "plaid-mcp",  # Finance's spend-policy and diagnostics grants, outside shared diagnostics.
+        "litellm",
     }
     assert not any(
         doc["kind"] in {"Role", "RoleBinding"}
@@ -278,12 +283,15 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         }
         assert {"apiGroups": ["rbac.authorization.k8s.io"], "resources": ["roles"], "verbs": ["get"]} in role["rules"]
         expected_bound_roles = {
-            grant["role_ref"]["name"]
-            for grant in catalog.values()
-            if grant["kind"] == "RoleBinding"
-            and grant["namespace"] == namespace
-            and grant["role_ref"]["kind"] == "Role"
+            rule["role"]["name"]
+            for rules in policy_sets.values()
+            for rule in rules
+            if rule["type"] == "kubernetes_role_binding"
+            and rule["role"]["kind"] == "Role"
+            and namespace in rule["namespaces"]
         }
+        if namespace == "litellm":
+            expected_bound_roles.add("claude-ai-disposable-env-key-reader")
         actual_bound_roles = {
             tuple(rule.get("resourceNames", []))
             for rule in role["rules"]
@@ -484,14 +492,16 @@ def test_static_managed_agent_permission_parity(
 def test_finance_spend_policy_role_is_named_get_only(
     agent_permissions: tuple[Rbac, dict, dict[str, list[dict]], list[dict]],
 ) -> None:
-    rbac, config, _, _ = agent_permissions
-    role = config["kubernetes_grants"]["spend-policy-config"]
-    assert role == {
-        "kind": "RoleBinding",
-        "namespace": "plaid-mcp",
-        "role_ref": {"kind": "Role", "name": "plaid-spend-finance-config-reader"},
+    rbac, _, policy_sets, _ = agent_permissions
+    role_rule = one(rule for rule in policy_sets["spend-policy-config"] if rule["type"] == "kubernetes_role_binding")
+    assert role_rule == {
+        "type": "kubernetes_role_binding",
+        "role": {"kind": "Role", "name": "plaid-spend-finance-config-reader"},
+        "namespaces": ["plaid-mcp"],
     }
-    assert rbac.rules(RbacRoleRef(api_group="rbac.authorization.k8s.io", **role["role_ref"]), role["namespace"]) == {
+    assert rbac.rules(
+        RbacRoleRef(api_group="rbac.authorization.k8s.io", **role_rule["role"]), one(role_rule["namespaces"])
+    ) == {
         Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy")
     }
 
@@ -525,7 +535,11 @@ def test_agent_permission_superset_and_finance_parity(
 
 @pytest.mark.parametrize("account", ["claude-ai", "haku-agent"])
 def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
-    agent_permissions: tuple[Rbac, dict, dict[str, list[dict]], list[dict]], account: str
+    agent_permissions: tuple[Rbac, dict, dict[str, list[dict]], list[dict]],
+    account: str,
+    cluster: ParsedCluster,
+    bootstrap_resources: list[K8sResource],
+    repo_root: Path,
 ) -> None:
     rbac, config, policy_sets, policy_bindings = agent_permissions
     # These OAuth/Actions accounts are NOT the Console profile or the managed
@@ -535,23 +549,49 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
         "agentplane-testing",
     )
     if account == "claude-ai":
-        catalog = config["kubernetes_grants"]
-        for key, grant in catalog.items():
-            if key in {
-                "cluster-diagnostics",
-                "coinbase-credentials",
-                "agentplane-testing-operator",
-                "agentplane-testing-login",
-                "agentplane-sandbox-read",
-                "haku-console-metadata",
-                "clickhouse-diagnostics",
-                "public-coder-agent-reader",
-                "public-coder-volsync-status",
-                "litellm-disposable-env-key",
-            } or grant["role_ref"]["name"] in {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}:
+        for kind, name, namespace in (
+            ("ClusterRole", "cluster-diagnostics-reader", None),
+            ("Role", "claude-ai-coinbase-reader", "agentplane-staging"),
+            ("Role", "agentplane-testing-operator", "agentplane-testing"),
+            ("Role", "agentplane-testing-login-reader", "public-coder-agent"),
+            ("Role", "claude-ai-sandbox-reader", "agentplane-staging"),
+            ("Role", "agent-haku-console-metadata-reader", "haku-console"),
+            ("Role", "agent-clickhouse-diagnostics-reader", "clickhouse"),
+            ("Role", "public-coder-agent-reader", "public-coder-agent"),
+            ("Role", "agent-public-coder-extended-diagnostics-reader", "public-coder-agent"),
+            ("Role", "claude-ai-disposable-env-key-reader", "litellm"),
+        ):
+            expected.update(
+                rbac.rules(RbacRoleRef(api_group="rbac.authorization.k8s.io", kind=kind, name=name), namespace)
+            )
+        resources = [resource for group in cluster.flux_kust_resources(repo_root).values() for resource in group]
+        resources.extend(bootstrap_resources)
+        for resource in resources:
+            if resource.kind != "Namespace":
+                continue
+            labels = resource.metadata.labels
+            if labels.get("rbac.ducktape.io/agent-readable-metadata") == "true" or labels.get(
+                "rbac.ducktape.io/agent-readable-logs"
+            ) == "true":
                 expected.update(
                     rbac.rules(
-                        RbacRoleRef(api_group="rbac.authorization.k8s.io", **grant["role_ref"]), grant.get("namespace")
+                        RbacRoleRef(
+                            api_group="rbac.authorization.k8s.io",
+                            kind="ClusterRole",
+                            name="agent-readable-namespace-metadata",
+                        ),
+                        resource.name,
+                    )
+                )
+            if labels.get("rbac.ducktape.io/agent-readable-logs") == "true":
+                expected.update(
+                    rbac.rules(
+                        RbacRoleRef(
+                            api_group="rbac.authorization.k8s.io",
+                            kind="ClusterRole",
+                            name="agent-readable-namespace-logs",
+                        ),
+                        resource.name,
                     )
                 )
     expected.update(rbac.policy_set_permissions(policy_sets, ["agentplane-testing"]))

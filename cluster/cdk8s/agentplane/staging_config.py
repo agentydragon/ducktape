@@ -45,7 +45,6 @@ from cluster.cdk8s.agentplane.egress_staging_credentials import (
     GOOGLE_READONLY_POLICY,
     HAKU_MAILBOX_POLICY,
 )
-from cluster.cdk8s.agentplane.sandbox_pod import TOOL_CONFIG_GRANT, tool_config_grant
 from cluster.cdk8s.model_selections import HarnessRoutes
 from model_catalog.catalog import GPT6_LUNA_RESPONSES, OLLAMA_QWEN_IQ4XS_256K
 
@@ -92,7 +91,6 @@ def config(*, namespace: str, models: HarnessRoutes, action_federation: ActionFe
             *agent_access_profiles.covering_policy_sets(agent_access_profiles.MANAGED_GRANTS["public-coder"]),
         ],
         default_policy_sets=set(DEFAULT_POLICIES),
-        kubernetes_grants={TOOL_CONFIG_GRANT: tool_config_grant(namespace), **agent_access_profiles.catalog()},
     )
     # The "haku" and "finance-agent" launch presets live only here, not in app_settings.py:
     # they name staging-only credentials (haku: forgejo-haku, haku-mailbox; finance-agent:

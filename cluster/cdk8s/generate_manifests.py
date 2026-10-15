@@ -73,6 +73,7 @@ from cluster.cdk8s.agentplane import (
     db_backups as agentplane_staging_db_backups,
     generation as agentplane_generation,
     staging,
+    staging_grants,
     testing,
 )
 from cluster.cdk8s.agentplane_index import workers as agentplane_index_workers
@@ -264,7 +265,8 @@ def generate_manifests(root: Path) -> None:
     agentplane_staging_resource_chart = agentplane_generation.write_environment_manifests(
         root, staging.ENV, staging.chart
     )
-    binding_delegation.write_manifests(root, staging.ENV)
+    staging_grant_catalog = staging_grants.catalog(staging.ENV.namespace)
+    binding_delegation.write_manifests(root, staging.ENV, staging_grant_catalog)
     agentplane_testing_resource_chart = agentplane_generation.write_environment_manifests(
         root, testing.ENV, testing.chart, litellm_credentials.agentplane_testing_chart
     )
@@ -1720,7 +1722,9 @@ def generate_manifests(root: Path) -> None:
         "tana-mcp": tana_mcp_kustomization,
         "vm-images-publisher": vm_images_publisher_kustomization,
     }
-    binding_delegation.add_flux_kustomizations(flux_chart, staging.ENV, namespace_dependencies)
+    binding_delegation.add_flux_kustomizations(
+        flux_chart, staging.ENV, namespace_dependencies, staging_grant_catalog
+    )
     agent_namespace_rbac.write_manifests(root)
     agent_namespace_rbac.add_flux_kustomizations(flux_chart, claude_rbac_kustomization)
     # Every artifact built above except the parked nodes': those Kustomizations are suspended.

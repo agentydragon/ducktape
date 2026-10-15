@@ -35,7 +35,14 @@ from cluster.cdk8s import (
     kubectl_passthrough_mcp,
     node_scheduling,
 )
-from cluster.cdk8s.agentplane import actions, command_sandbox, notifications, policy_controller, staging_config
+from cluster.cdk8s.agentplane import (
+    actions,
+    command_sandbox,
+    notifications,
+    policy_controller,
+    staging_config,
+    staging_grants,
+)
 from cluster.cdk8s.agentplane.actions_staging_policies import (
     add_staging_action_policies,
     agentplane_testing_egress_rules,
@@ -427,7 +434,7 @@ def chart(app: App) -> Chart:
     command_sandbox.CommandSandbox(chart, "command-sandbox", ENV)
     # Staging alone: the grant catalog the shared sets draw on, and the delegation of RoleBinding
     # writes in other namespaces, exist only here.
-    catalog = ENV.app_config.kubernetes_grants
+    catalog = staging_grants.catalog(ENV.namespace)
     policy_controller.PolicyController(
         chart,
         "policy-controller",

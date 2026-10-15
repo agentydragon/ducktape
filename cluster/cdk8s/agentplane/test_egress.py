@@ -12,7 +12,7 @@ from cdk8s import Testing as Cdk8sTesting
 from more_itertools import one
 
 from cluster.cdk8s import agent_access_profiles
-from cluster.cdk8s.agentplane import binding_delegation, notifications, staging, testing
+from cluster.cdk8s.agentplane import binding_delegation, notifications, staging, staging_grants, testing
 from cluster.cdk8s.agentplane.actions_staging_policies import AGENTPLANE_TESTING_POLICY
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.agentplane.egress import (
@@ -257,7 +257,9 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
 ) -> None:
     docs = agentplane_manifests[staging.ENV.namespace]
     config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
-    catalog = config["kubernetes_grants"]
+    assert "kubernetes_grants" not in config
+    grant_models = staging_grants.catalog(staging.ENV.namespace)
+    catalog = {name: grant.model_dump(mode="json") for name, grant in grant_models.items()}
     selected = _kubernetes_grants(config["sandbox_presets"][preset]["policy_sets"])
     credential_grants = (
         {"coinbase-credentials", "spend-policy-config", agent_access_profiles.PLAID_DIAGNOSTICS_POLICY}
@@ -364,23 +366,30 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
             "config.yaml"
         ]
     )
+    assert "kubernetes_grants" not in testing_config
     assert not _kubernetes_grants(testing_config["sandbox_presets"]["public-coder"]["policy_sets"])
 
 
-@pytest.mark.parametrize("target_namespace", binding_delegation.external_scopes(staging.ENV))
+@pytest.mark.parametrize(
+    "target_namespace",
+    binding_delegation.external_scopes(staging.ENV, staging_grants.catalog(staging.ENV.namespace)),
+)
 def test_external_delegation_binds_exactly_the_granted_roles(
     target_namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
 ) -> None:
     docs = agentplane_manifests[staging.ENV.namespace]
-    config = yaml.safe_load(_by_name(docs, "ConfigMap", "agentplane-app-config")["data"]["config.yaml"])
+    grant_models = staging_grants.catalog(staging.ENV.namespace)
+    catalog = {name: grant.model_dump(mode="json") for name, grant in grant_models.items()}
     granted = {
         grant["role_ref"]["name"]
-        for grant in config["kubernetes_grants"].values()
+        for grant in catalog.values()
         if grant["kind"] == "RoleBinding"
         and grant["namespace"] == target_namespace
         and grant["role_ref"]["kind"] == "Role"
     }
-    delegated = Cdk8sTesting.synth(binding_delegation.chart(Cdk8sTesting.app(), staging.ENV, target_namespace))
+    delegated = Cdk8sTesting.synth(
+        binding_delegation.chart(Cdk8sTesting.app(), staging.ENV, target_namespace, grant_models)
+    )
     role = one(doc for doc in delegated if doc["kind"] == "Role")
     assert {name for rule in role["rules"] if rule["verbs"] == ["bind"] for name in rule["resourceNames"]} == granted
     # An absent target namespace must not fail the app Kustomization's apply.

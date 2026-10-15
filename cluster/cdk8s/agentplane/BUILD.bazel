@@ -487,7 +487,6 @@ py_library(
         "//agentplane/app:presets",
         "//agentplane/app:settings",
         "//agentplane/runner:harness",
-        "//agentplane/sandboxes:kubernetes_grants",
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:model_selections",
         "//model_catalog:catalog",
@@ -530,7 +529,6 @@ py_library(
         ":app_settings",
         ":egress",
         ":egress_staging_credentials",
-        ":sandbox_pod",
         "//agentplane/app:action_federation_settings",
         "//agentplane/app:presets",
         "//agentplane/app:settings",
@@ -538,6 +536,20 @@ py_library(
         "//cluster/cdk8s:agent_access_profiles",
         "//cluster/cdk8s:model_selections",
         "//model_catalog:catalog",
+    ],
+)
+
+py_library(
+    name = "staging_grants",
+    srcs = ["staging_grants.py"],
+    visibility = [
+        "//cluster/cdk8s:__pkg__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+    deps = [
+        "//agentplane/sandboxes:kubernetes_grants",
+        "//cluster/cdk8s:agent_access_profiles",
+        ":sandbox_pod",
     ],
 )
 
@@ -613,6 +625,7 @@ py_library(
         ":runner_sandbox",
         ":sandbox_pod",
         ":staging_config",
+        ":staging_grants",
         "//agentplane/action_service:catalog",
         "//agentplane/action_service:mcp_settings",
         "//agentplane/action_service:operator_oidc_settings",
@@ -688,6 +701,7 @@ py_library(
     visibility = ["//cluster/cdk8s:__subpackages__"],
     deps = [
         ":staging",
+        ":staging_grants",
         ":testing",
         "@pypi//cdk8s",
         "@pypi//pytest",

@@ -13,7 +13,6 @@ from agentplane.app.action_federation_settings import ActionFederationSettings
 from agentplane.app.model_catalog import ModelCatalog
 from agentplane.app.presets import SandboxPreset, ThreadPreset
 from agentplane.log_levels import LogLevels
-from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from util.urls import HttpEndpointUrl
 from util.yaml_file_settings import YamlFileSettings
 
@@ -46,10 +45,6 @@ class AppSettingsConfig(YamlFileSettings):
     session_dispatcher_open_sessions: bool = Field(
         default=False,
         description="Send new Session openings to the Dispatcher. Enable only after the accepting app image is pinned.",
-    )
-    kubernetes_grants: dict[str, KubernetesGrant] = Field(
-        default_factory=dict,
-        description="The deployment's Kubernetes grant catalog, which the manifest generator expands into PolicySets.",
     )
     egress_admin_url: HttpEndpointUrl = Field(description="The egress proxy's admin port, serving /decisions.")
     action_federation: ActionFederationSettings
