@@ -328,7 +328,8 @@ async def test_the_bridge_streams_a_turn_to_every_tab_and_resumes_from_the_last_
             stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
         ):
             with attempt:
-                assert [row["sessionId"] for row in (await http.get(SESSIONS)).json()] == [thread_id]
+                threads = (await http.get("/threads", params={"sandbox": SANDBOX})).json()["threads"]
+                assert [row["id"] for row in threads] == [thread_id]
 
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(10), wait=wait_fixed(0.05), retry=retry_if_exception_type(AssertionError)
