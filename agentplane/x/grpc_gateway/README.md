@@ -18,6 +18,10 @@ ProtoJSON fields, quoted 64-bit values, query mapping, `Authorization` forwardin
 HTTP mapping for a unary error, `Grpc-Timeout` deadline propagation, the stream's terminal error
 chunk, and HTTP cancellation reaching the gRPC stream.
 
+The timeout case checks that the service receives a deadline shorter than the HTTP client's
+fallback timeout, the request maps to HTTP 504, and the server handler finishes. Its context may
+report either `Canceled` or `DeadlineExceeded` as the gateway and server timeout contexts expire.
+
 The streaming endpoint is an ordinary server stream. grpc-gateway writes newline-delimited JSON
 chunks. Once the first event has been sent, a later gRPC error is represented by a terminal JSON
 error chunk; the HTTP response has already started and stays status 200. Reconnect and resume are
