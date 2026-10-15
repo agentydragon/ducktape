@@ -113,9 +113,11 @@ PolicyBindings' runtime ServiceAccount subjects.
 
 If the threat model later requires containment after writer compromise, require an API-server
 admission check that verifies each ClusterRoleBinding's subject and role against its live
-PolicyBinding and PolicySets. A `ValidatingAdmissionPolicy` can validate request fields and supplied
-parameters but cannot fetch that dynamic cross-object relationship; this needs a validating webhook
-or another authoritative server-side source. See Kubernetes' [RBAC resource-name and bind rules](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
+PolicyBinding and PolicySets. Since expiry deletes the PolicyBinding before its native bindings, the
+cleanup path must authorize deletion from ownership data on the old ClusterRoleBinding after its
+source disappears. A `ValidatingAdmissionPolicy` can validate request fields and supplied parameters
+but cannot fetch that dynamic cross-object relationship; this needs a validating webhook or another
+authoritative server-side source. See Kubernetes' [RBAC resource-name and bind rules](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
 and [ValidatingAdmissionPolicy CEL inputs](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/).
 
 ## Extract only when another caller needs it
