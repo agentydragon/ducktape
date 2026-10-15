@@ -18,11 +18,12 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
 
-| Worker                     | Assigned work and remaining gates                                                                      |
-| -------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `suspended_session_ui`     | Implement nonblocking runner Quiesce; deployed controllers already accept the optional response stage. |
-| `session_defaults_cleanup` | Fresh VM workspace acceptance passed and fixture cleanup verified; publish evidence and metadata fix.  |
-| Coordinator                | Review and CI, DAG burn-down and deployment gate verification.                                         |
+| Worker                        | Assigned work and remaining gates                                                                      |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `suspended_session_ui`        | Implement nonblocking runner Quiesce; deployed controllers already accept the optional response stage. |
+| `session_defaults_cleanup`    | Fresh VM workspace acceptance passed and fixture cleanup verified; publish evidence and metadata fix.  |
+| `suspended_session_inventory` | Diagnose the Session list/table disappearing after Sandbox suspension and navigation back.             |
+| Coordinator                   | Review and CI, DAG burn-down and deployment gate verification.                                         |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
@@ -692,6 +693,7 @@ flowchart TD
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
+    SUSPENDED_SESSION_INVENTORY[In flight: retain the Session list after Sandbox suspension]
     VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
@@ -956,6 +958,14 @@ If required grants are desired, first define their durable identity, missing/exp
 explicit operator re-grant flow. The audit distinguishes controller-driven expiry from exact
 post-deadline denial, and projected-token renewal from grant renewal. Add implementation work only
 for a reviewed contract that the code does not already satisfy; do not add an implicit Ready gate.
+
+### `SUSPENDED_SESSION_INVENTORY` — the Session list remains visible after Sandbox suspension
+
+**In flight; `suspended_session_inventory`, operator dispatch 2026-10-15 UTC.** The user reports
+that suspending a Sandbox clears its Thread list/table after navigating back. Trace the list's
+inventory source across suspension and navigation, identify the root cause, and fix the disappearance
+while preserving the existing access and Sandbox-identity fences. Add a regression for the observed
+failure. This is separate from the suspended composer behavior, which has its own rollout evidence.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 

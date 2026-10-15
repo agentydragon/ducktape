@@ -113,4 +113,6 @@ app's direct native-resume path. Each remaining compatibility removal keeps its 
   passed the opted-in scenario: concurrent allowed app `OpenSession` and notification `SubmitInput`
   produced one wake generation and both reached runner admission. Together with the deterministic
   composer and app-bridge tests, this covers the changed contract; no separate live browser send is
-  required. No message was sent to a user Session for this rollout audit.
+  required. No message was sent to a user Session for this rollout audit. This closes the composer
+  behavior only; a separate report that suspension hides the Thread list/table is tracked as
+  `SUSPENDED_SESSION_INVENTORY` in the task DAG.
