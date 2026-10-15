@@ -193,18 +193,6 @@ spec:
                     stops. A runner that connected and is not this one has Sessions still to seal
                     before the Sandbox stops or is deleted.
                   type: string
-                quiesceAttempt:
-                  description: >-
-                    The controller's latest Quiesce request time for a runner incarnation. It bounds
-                    retries across reconciles and controller restarts.
-                  type: object
-                  required: [runnerPodUid, attemptedAt]
-                  properties:
-                    runnerPodUid:
-                      type: string
-                    attemptedAt:
-                      type: string
-                      format: date-time
                 operatingMode:
                   description: >-
                     Whether the controller runs the Sandbox: `spec.running` unless the controller suspended

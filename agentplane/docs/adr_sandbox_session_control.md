@@ -627,14 +627,14 @@ wake-on-send, so the Dispatcher can land with waking off.
 
 ### D5. Where each fact lives
 
-| Fact                                                                                                                                                      | Home                                           |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
-| Desired running, template, incarnations, conditions, `quiescedIncarnation`, the controller's last `quiesceAttempt`, the rendered spec of each incarnation | Sandbox CR (Kubernetes)                        |
-| Runner connected, boot state, `idleSince`, quiesce stage                                                                                                  | Lease annotations (Kubernetes, Sandbox-level)  |
-| Session events, directory, writing Sandbox, summaries                                                                                                     | History Service database                       |
-| Queued messages, their delivery state, queued Session creations                                                                                           | Dispatcher database                            |
-| Session journal and cursors                                                                                                                               | Runner volume, mirrored by the ingress         |
-| Per-Session final cursors and flush state                                                                                                                 | the runner journal and the ingress, never a CR |
+| Fact                                                                                                              | Home                                           |
+| ----------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| Desired running, template, incarnations, conditions, `quiescedIncarnation`, the rendered spec of each incarnation | Sandbox CR (Kubernetes)                        |
+| Runner connected, boot state, `idleSince`, quiesce stage                                                          | Lease annotations (Kubernetes, Sandbox-level)  |
+| Session events, directory, writing Sandbox, summaries                                                             | History Service database                       |
+| Queued messages, their delivery state, queued Session creations                                                   | Dispatcher database                            |
+| Session journal and cursors                                                                                       | Runner volume, mirrored by the ingress         |
+| Per-Session final cursors and flush state                                                                         | the runner journal and the ingress, never a CR |
 
 Conditions and annotations carry Sandbox-level, transitional facts only. A per-Session list in
 Kubernetes is the line not to cross.
