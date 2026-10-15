@@ -29,14 +29,7 @@ import type { InboxNoticeState } from "../thread_notices";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
-import {
-  Harness,
-  HarnessState,
-  SessionSpecSchema,
-  SessionSummarySchema,
-  type SessionSpec,
-  type SessionSummary,
-} from "../../../proto/runner_pb";
+import { Harness } from "../../../proto/runner_pb";
 import { DisclosureVisual } from "./disclosure_visual";
 import { LocalCommands } from "../threads/local_commands";
 import { streamRegistry } from "../stream_status";
@@ -434,13 +427,6 @@ function egressDecisions(): DecisionsSnapshot {
   return { watching: true, decisions: DECISIONS };
 }
 
-const SPEC: SessionSpec = create(SessionSpecSchema, {
-  harness: Harness.CLAUDE,
-  cwd: "/state/work",
-  model: "harness-claude-model",
-  reasoningEffort: "low",
-});
-
 const IDLE_THREAD = "5f1c4a2e-0000-4000-8000-000000000001";
 const UNNAMED_STOPPED_THREAD = "5f1c4a2e-0000-4000-8000-000000000000";
 const RUNNING_THREAD = "5f1c4a2e-0000-4000-8000-000000000002";
@@ -448,21 +434,6 @@ const SUSPENDED_THREAD = "5f1c4a2e-0000-4000-8000-000000000004";
 const THREE_UNPROCESSED_THREAD = "5f1c4a2e-0000-4000-8000-000000000007";
 const ONE_UNPROCESSED_THREAD = "5f1c4a2e-0000-4000-8000-000000000008";
 const DELIVERY_FAILED_THREAD = "5f1c4a2e-0000-4000-8000-000000000009";
-
-const SESSIONS: SessionSummary[] = [
-  create(SessionSummarySchema, {
-    sessionId: IDLE_THREAD,
-    spec: SPEC,
-    lastCursor: 14n,
-    harnessState: HarnessState.RUNNING,
-  }),
-  create(SessionSummarySchema, {
-    sessionId: UNNAMED_STOPPED_THREAD,
-    spec: SPEC,
-    lastCursor: 31n,
-    harnessState: HarnessState.STOPPED,
-  }),
-];
 
 /** The store's copy of the sessions: the idle one named, the stopped one not, so both renderings are on the page. */
 const THREADS: ThreadView[] = [
@@ -2446,7 +2417,6 @@ routes.push(
     /^\/actions\/([^/]+)\/decision$/,
     (match) => ({ ...ACTIONS.find((request) => request.id === match[1]), state: "allowed", version: 2 }),
   ],
-  ["GET", /^\/sandboxes\/([^/]+)\/sessions$/, () => SESSIONS.map((session) => toJson(SessionSummarySchema, session))],
   [
     "POST",
     /^\/sandboxes\/([^/]+)\/sessions$/,
@@ -2985,14 +2955,6 @@ function projectQueuedSession(): void {
     harness_state: "HARNESS_STATE_STOPPED",
     feed_status: "active",
   };
-  SESSIONS.push(
-    create(SessionSummarySchema, {
-      sessionId,
-      spec: SPEC,
-      lastCursor: 0n,
-      harnessState: HarnessState.STOPPED,
-    })
-  );
   THREADS.push(projected);
   THREADS_WITH_SANDBOXES.push(projected);
   HarnessEventSource.publish("/live/sandboxes/ready-sandbox");

@@ -181,11 +181,6 @@ def _bridge(request: Request) -> RunnerBridge:
 Bridge = Annotated[RunnerBridge, Depends(_bridge)]
 
 
-@router.get("")
-async def list_sessions(bridge: Bridge, name: str) -> list[dict[str, object]]:
-    return [MessageToDict(summary) for summary in await bridge.list_sessions(name)]
-
-
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_session(request: Request, bridge: Bridge, name: str, body: NewSession) -> dict[str, object]:
     services = request.app.state.services

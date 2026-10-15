@@ -1043,7 +1043,6 @@ flowchart TD
     CONTROL_SURFACE_RETIREMENT_AUDIT --> RUNNER_LIST_SESSIONS_RETIRE[Blocked: resolve remaining live-inventory semantics, then remove ListSessions]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
-    APP_SESSION_LIST_ROUTE_RETIRE[Assigned: remove the unused runner-backed table route] --> GATEWAY_WRAPPER_RETIRE
     APP_ARCHIVE_RUNNER_READ_MIGRATION[Assigned: move live archive checks to the runner proxy] --> GATEWAY_WRAPPER_RETIRE
     NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION[Assigned: retire notification wrapper membership reads] --> GATEWAY_WRAPPER_RETIRE
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
@@ -1126,8 +1125,8 @@ migration and `Command` stays as that event's field type.
 
 ### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
 
-**Blocked on the read-caller migration and route-retirement nodes above, the Dispatcher-only app
-image rollout and `APP_NATIVE_RESUME_CUTOVER`.** These caller migrations can proceed independently;
+**Blocked on the remaining read-caller migrations above, the Dispatcher-only app image rollout and
+`APP_NATIVE_RESUME_CUTOVER`.** These caller migrations can proceed independently;
 the native-resume decision does not block migrating reads. Pin all migrated caller images before
 deleting the RPC receiver, and search for remaining wrapper callers before removal.
 App and notification command sends go through Dispatcher; read-only calls may use the proxy. Delete the
@@ -1135,16 +1134,6 @@ App and notification command sends go through Dispatcher; read-only calls may us
 `session_lifecycle.py` and `wire.py`, obsolete client settings, projected tokens and network rules
 whose final callers are gone. Delete associated BUILD targets and tests; retain the control stream
 and runner proxy. This makes `SANDBOX_DATABASE_RENAME` moot; delete that deferred node here.
-
-### `APP_SESSION_LIST_ROUTE_RETIRE` — remove the runner-backed Sandbox table read
-
-**In flight; `quiesce_progress`, 2026-10-15 UTC.** The app image containing #10612 is Ready in both environments, with no old app
-Pods remaining. The table now uses retained History rows. Its former browser path was
-`client.listSessions` → `GET /sandboxes/{name}/sessions` → `RunnerBridge.list_sessions` →
-`RunnerGateway.ListSessions` → tunneled `Runner.ListSessions`. Delete the unused HTTP GET route and its
-schema/client/test surface. Preserve the POST opening route and opening-status read. Generate
-OpenAPI/clients through `localgen/run.sh`; do not hand-edit generated files. The bridge method stays
-only until the separate archive and native-resume migrations remove its final callers.
 
 ### `APP_ARCHIVE_RUNNER_READ_MIGRATION` — preserve live archive safety without the wrapper
 
