@@ -497,14 +497,14 @@ OLLAMA_OPENAI = Upstream(Provider.OLLAMA, "openai", "chat", supports_function_ca
 OLLAMA_NATIVE = Upstream(Provider.OLLAMA, "ollama_chat", "chat", supports_function_calling=True)
 RUGGED_LOCAL_OPENAI = Upstream(Provider.RUGGED_LOCAL, "openai", "chat")
 
-# Candidate models exposed through rugged's loopback Ollama with a declared 32,768
-# token serving budget: 28,672 input plus 4,096 output. These are the request limits
+# Candidate models served by rugged's local OpenAI-compatible router with a declared
+# 32,768-token budget: 28,672 input plus 4,096 output. These are the request limits
 # advertised to LiteLLM, not evidence of a hard request rejection or model capacity.
 _RUGGED_LOCAL_LIMITS = TokenLimits(max_input_tokens=28_672, max_output_tokens=4_096)
 RUGGED_LOCAL_QWEN3_4B = Route(
     Model("qwen3-4b-instruct-2507-q4-k-m", display_name="Qwen3 4B Instruct 2507 Q4_K_M", limits=_RUGGED_LOCAL_LIMITS),
     RUGGED_LOCAL_OPENAI,
-    upstream_model="qwen3:4b-instruct-2507-q4_K_M",
+    upstream_model="rugged-qwen3-4b-instruct-2507-q4_K_M",
     reasoning_efforts=("none",),
     default_reasoning_effort="none",
     supports_function_calling=True,
@@ -513,7 +513,7 @@ RUGGED_LOCAL_QWEN3_4B = Route(
 RUGGED_LOCAL_GEMMA4_E4B = Route(
     Model("gemma4-e4b", display_name="Gemma 4 E4B", limits=_RUGGED_LOCAL_LIMITS),
     RUGGED_LOCAL_OPENAI,
-    upstream_model="gemma4:e4b",
+    upstream_model="rugged-gemma4-e4b",
     reasoning_efforts=("none",),
     default_reasoning_effort="none",
     supports_function_calling=True,
@@ -530,7 +530,7 @@ RUGGED_LOCAL_GEMMA4_E2B_LONG_CONTEXT_EXPERIMENT = Route(
         limits=TokenLimits(max_input_tokens=126_976, max_output_tokens=4_096),
     ),
     RUGGED_LOCAL_OPENAI,
-    upstream_model="gemma4:e2b-it-qat-long-128k-b128",
+    upstream_model="rugged-gemma4-e2b-it-qat-long-128k-b128",
     reasoning_efforts=("none",),
     default_reasoning_effort="none",
     supports_function_calling=True,
@@ -788,11 +788,11 @@ MISTRAL_ROUTES = tuple(Route(model, MISTRAL_CHAT, publish_limits=True) for model
 
 # Ordered public catalog. Aliases reference routes rather than repeat their upstream
 # or metadata. Hidden harness-compatibility aliases are not advertised as model entries.
-# Rugged model facts stay catalogued above but are omitted while cluster access is paused.
+# Rugged's local routes are served through LiteLLM alongside the other providers.
 SERVED_ROUTES: tuple[Route | RouteAlias, ...] = (
     *_OLLAMA_PROXY_ROUTES,
-    # *RUGGED_LOCAL_CANDIDATE_ROUTES,
-    # *RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
+    *RUGGED_LOCAL_CANDIDATE_ROUTES,
+    *RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
     # TODO(#9574): Tana limits are unknown for this reverse-engineered gateway.
     # Restore exposure with its key lane/fallback and wrapper only after review.

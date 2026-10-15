@@ -1,22 +1,25 @@
 # Rugged local LLMs
 
-What runs on `rugged` (Core Ultra 7 268V, 30 GiB RAM shared with the iGPU, Arc 130V/140V
-iGPU, Lunar Lake NPU) with no network or cluster dependency, and how to run it. The earlier
-Ollama speed table contains single-run sanity checks; repeated measurements below identify
-their sample counts and limitations. Host config lives in `nix/nixos/hosts/rugged/` and
-`nix/home/hosts/rugged-opencode.nix`; hardware debugging in `nix/debug/rugged/hw/`.
+Local inference on `rugged` (Core Ultra 7 268V, 30 GiB RAM shared with the iGPU, Arc
+130V/140V iGPU, Lunar Lake NPU), its optional cluster route, and how to run them. The
+earlier Ollama speed table contains single-run sanity checks; repeated measurements below
+identify their sample counts and limitations. Host config lives in
+`nix/nixos/hosts/rugged/` and `nix/home/hosts/rugged-opencode.nix`; hardware debugging in
+`nix/debug/rugged/hw/`.
 
-## Current scope: local inference only
+## Current scope: local inference and opt-in cluster routes
 
-Cluster inference is parked at the user's request. The supported path is
-`rugged-opencode-offline` → `127.0.0.1:11436` → llama.cpp on the iGPU. Background
-model provisioning and all seven local picker profiles remain enabled. The
-NixOS bearer proxy is disabled, removing its Nebula listener and firewall opening
-on port 18080 after activation. LiteLLM's rugged routes are being withdrawn in a
-separate cluster change; further Nebula connectivity investigation is paused.
-The proxy module, encrypted credentials, and prior measurements are retained for
-possible future re-enablement. Historical cluster checks below do not imply that
-cluster serving is currently supported.
+The local path remains `rugged-opencode-offline` → `127.0.0.1:11436` → llama.cpp on
+the iGPU. Background model provisioning and all seven local picker profiles remain
+enabled. Cluster access is restored through three LiteLLM routes and the NixOS bearer
+proxy on port 18080; the routes are available only to keys that include the
+`cheap_experiments_models` lane. This restores the declarative route and proxy path,
+but does not establish end-to-end inference reliability. On October 14, a direct Qwen3
+4B request from a LiteLLM pod to rugged's proxy returned HTTP 200 with `READY`, while an
+unauthenticated request returned 401. That checked one backend request over the pod-to-host
+path; it did not traverse the restored LiteLLM model route, which has not been deployed.
+Nebula reliability work remains deferred; see the
+[partial-connectivity investigation](../../debug/2026-10-14-rugged-nebula-partial-connectivity.md).
 
 ## Backends
 

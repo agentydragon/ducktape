@@ -29,9 +29,8 @@ class UpstreamBinding:
 
 
 _OLLAMA_BASE = "http://ollama.ollama.svc.cluster.local:11434"
-# Keep the cluster route disabled while rugged's host bearer proxy is disabled.
-# Re-enable the commented catalog and key-lane entries together with this flag.
-RUGGED_LOCAL_LLM_ENABLED = False
+# Emit the rugged endpoint and bearer-token wiring for cluster access.
+RUGGED_LOCAL_LLM_ENABLED = True
 RUGGED_LOCAL_LLM_SERVICE = "rugged-local-llm"
 RUGGED_LOCAL_LLM_SECRET = "rugged-local-llm-bearer-token"
 RUGGED_LOCAL_LLM_PORT = 18080  # must match rugged's NixOS bearer proxy listener

@@ -60,44 +60,35 @@ def test_picker_is_narrower_than_ollama_key() -> None:
     assert any(route not in TESTING_APP_MODELS.all for route in OLLAMA_CHAT_ROUTES)
 
 
-def test_rugged_local_routes_remain_catalogued_but_are_paused() -> None:
+def test_rugged_local_candidates_are_served_and_experiment_only() -> None:
     lane = KEY_MODEL_LANES["cheap_experiments_models"]
     routes = (*RUGGED_LOCAL_CANDIDATE_ROUTES, *RUGGED_LOCAL_EXPERIMENTAL_ROUTES)
-    allowed = {route for lane in KEY_MODEL_LANES.values() for route in lane.allowed}
-    assert all(route not in SERVED_ROUTES and route not in allowed for route in routes)
+    served_rugged_routes = {
+        route
+        for route in SERVED_ROUTES
+        if isinstance(route, Route) and route.upstream.provider == Provider.RUGGED_LOCAL
+    }
+    allowed_rugged_routes = {route for route in lane.allowed if route.upstream.provider == Provider.RUGGED_LOCAL}
+    assert served_rugged_routes == set(routes)
+    assert allowed_rugged_routes == set(routes)
     assert not lane.fallbacks
-    assert all(route.upstream.provider == Provider.RUGGED_LOCAL for route in routes)
-    assert [route.id for route in RUGGED_LOCAL_CANDIDATE_ROUTES] == [
+    assert [route.id for route in routes] == [
         "rugged-local/oai-chat/qwen3-4b-instruct-2507-q4-k-m",
         "rugged-local/oai-chat/gemma4-e4b",
+        "rugged-local/oai-chat/gemma4-e2b-it-qat-long-128k-experimental",
     ]
-    assert [route.upstream_model for route in RUGGED_LOCAL_CANDIDATE_ROUTES] == [
-        "qwen3:4b-instruct-2507-q4_K_M",
-        "gemma4:e4b",
+    assert [route.upstream_model for route in routes] == [
+        "rugged-qwen3-4b-instruct-2507-q4_K_M",
+        "rugged-gemma4-e4b",
+        "rugged-gemma4-e2b-it-qat-long-128k-b128",
     ]
     assert all(
         route.model.limits == TokenLimits(max_input_tokens=28_672, max_output_tokens=4_096)
         for route in RUGGED_LOCAL_CANDIDATE_ROUTES
     )
-    assert all(route.publish_limits for route in RUGGED_LOCAL_CANDIDATE_ROUTES)
-    assert all(route.supports_function_calling is True for route in RUGGED_LOCAL_CANDIDATE_ROUTES)
-    assert all(route.reasoning_efforts == ("none",) for route in RUGGED_LOCAL_CANDIDATE_ROUTES)
-    assert all(route.default_reasoning_effort == "none" for route in RUGGED_LOCAL_CANDIDATE_ROUTES)
-
-
-def test_rugged_long_context_route_remains_catalogued_but_is_paused() -> None:
     [route] = RUGGED_LOCAL_EXPERIMENTAL_ROUTES
-    assert route not in SERVED_ROUTES
-    assert all(route not in lane.allowed for lane in KEY_MODEL_LANES.values())
-    assert route.id == "rugged-local/oai-chat/gemma4-e2b-it-qat-long-128k-experimental"
-    assert route.upstream_model == "gemma4:e2b-it-qat-long-128k-b128"
     assert route.model.limits == TokenLimits(max_input_tokens=126_976, max_output_tokens=4_096)
-    assert route.publish_limits
-    assert route.supports_function_calling is True
-    assert route.reasoning_efforts == ("none",)
-    assert route.default_reasoning_effort == "none"
-    assert route.timeout == 2_400
-    assert route.stream_timeout == 2_400
+    assert all(route.publish_limits for route in routes)
 
 
 @pytest.mark.parametrize("context_kib", [256, 512, 1024])

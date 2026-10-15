@@ -139,6 +139,7 @@ py_test(
     deps = [
         ":config",
         ":proxy",
+        ":upstreams",
         "//:conftest",
         "//model_catalog:catalog",
         "@pypi//pytest_bazel",
