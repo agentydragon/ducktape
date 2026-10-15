@@ -50,7 +50,7 @@ harness behavior, not a runner capability.
 - **`SessionStart` fires on compaction** (measured 2.1.233), with `source: "compact"`: for an
   `initialize` registration that is its only firing, mid-session, just after the context was
   discarded. `PreCompact` precedes it
-  ([compaction on the wire](claude_runtime_contracts.md#compaction-on-the-wire-measured-21233-re-verify-on-21252)).
+  ([older auto-compaction capture](../native/docs/claude_source_findings.md#auto-compaction-frames-live-capture-of-21233)).
 - **Deny, observed.** `permissionDecision: deny` with a reason: no `can_use_tool` followed, the
   model received a `tool_result` with `is_error: true` whose content is the reason verbatim,
   the turn continued, and the assistant reported the reason. Allow: no `can_use_tool` either,

@@ -147,7 +147,11 @@ On a concrete benefit over stream-json. [RemoteIO plan](claude_remote_io.md); do
 
 ### `HARNESS_INTERACTIVE_CONTROLS` — durable park, answer, recovery
 
-When selecting questions/permissions UI. Config isolation first; explicit durable parked/answered/recovered states, not fabricated replies.
+When selecting questions/permissions UI. Config isolation first; explicit durable
+parked/answered/recovered states, not fabricated replies. Claude's pinned-source findings
+distinguish transient `request_id` from durable semantic `tool_use_id`; persist the latter and
+reconstruct pending controls rather than storing resolver callbacks
+([native evidence](../native/docs/claude_source_findings.md#interactive-control-identity-static-inspection-of-21252)).
 
 ### `HARNESS_PROJECT_HOOKS` — bounded execution and control replies
 

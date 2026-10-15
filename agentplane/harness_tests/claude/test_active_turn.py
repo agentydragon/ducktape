@@ -37,9 +37,8 @@ async def test_queued_inputs_coalesce_into_one_native_user_message(
     """Claude batches compatible queued prompts with newlines, retaining the last frame UUID.
 
     With replay enabled it emits a synthetic echo for the batch leader and the final merged native
-    user message. The command-lifecycle frames remain per submitted input. The runner must
-    therefore preserve every origin from those lifecycle frames, not mistake the synthetic echo
-    for delivery.
+    user message. This assertion covers the queued receipts and echo shape; the runner must preserve
+    every origin from lifecycle evidence rather than mistake the synthetic echo for delivery.
     """
     async with claude.start(anthropic_messages, replay_user_messages=True) as run:
         initial = await run.send("Finish this first turn before taking later messages.")
@@ -103,8 +102,8 @@ async def test_interrupt_cancels_each_queued_input_before_native_message(
     """An interrupt with cancel_queued drops every queued input before it reaches the model.
 
     This pins the native per-input cancellation frames and the absence of both texts from the
-    subsequent model request. The runner can therefore settle every originating command as a
-    no-op instead of leaving a durable receipt permanently pending.
+    subsequent model request. This is native-driver evidence from which the runner can settle each
+    originating command as a no-op; the test does not exercise runner command settlement.
     """
     async with claude.start(anthropic_messages, replay_user_messages=True) as run:
         initial = await run.send("Keep this first turn active until interrupted.")
@@ -149,7 +148,7 @@ async def test_interrupt_cancels_each_queued_input_before_native_message(
 async def test_plain_interrupt_preserves_queued_inputs_for_the_next_native_request(
     claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
-    """The runner's normal Claude interrupt aborts only the active turn, not queued input.
+    """Claude's plain interrupt aborts only the active turn, not queued input.
 
     The native receipt names the still-queued UUIDs.  Their later model request contains both
     inputs as one newline-coalesced user message, so neither command is silently lost when an

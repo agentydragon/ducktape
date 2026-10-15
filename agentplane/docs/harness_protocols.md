@@ -101,23 +101,26 @@ For the first tool scenario, exercise one deterministic shell or structured tool
 native tool call, result, upstream model exchange, and workspace effect. Do not build a broad common
 tool taxonomy.
 
-Claude exposes a correlated interrupt control request. The test must distinguish the request and
-its response from the later native terminal result.
+Claude exposes a correlated interrupt control request. The active-turn tests distinguish its
+response and queue receipt from the later native terminal result.
 
-A second user frame during an active turn may be queued until a tool boundary, treated as a later
-prompt, or ignored until completion. Test a controlled active case and record what actually happens.
-Do not call it steering in a neutral API until the wire proves that distinction.
+A second user frame during an active tool joins the tool-result continuation as newline-joined
+input; the model request contains the tool result and joined text, with no separate user message.
+The [active-turn test](../harness_tests/claude/test_active_turn.py) pins this shape. Keep it distinct
+from Codex's explicit `turn/steer` and from a common steer operation.
 
-Claude does have a real enqueued state, with a withdraw operation and terminal acknowledgements
-on a per-input handle — including a coalescing rule that changes the unit of withdrawal. See
-[`claude_input_queue.md`](claude_input_queue.md) for the frames, the capability negotiation, and
-what a common facade with Codex's `thread/queue/*` could and could not promise. Nothing there is
-capture-pinned yet; that page ends with the probes to run.
+The [active-turn tests](../harness_tests/claude/test_active_turn.py) pin compatible-input
+coalescing, per-input cancellation when `cancel_queued` is set, and the `still_queued` receipt when
+it is not. The [resume test](../harness_tests/claude/test_turns.py) also pins replay of the next
+turn's joined input. Their docstrings delimit native behavior from runner guarantees. Withdrawal
+through `cancel_async_message` and cancellation granularity after coalescing remain source-only
+findings in the [native driver notes](../native/docs/claude_source_findings.md#queued-message-withdrawal-source-only).
 
-Static analysis of the pinned implementation also exposes persistence fences, SDK MCP hosting,
-permission recovery, background snapshots, managed remote delivery, and budget/fallback state
-machines. Their Agentplane constraints and current coverage are collected in
-[`claude_runtime_contracts.md`](claude_runtime_contracts.md).
+The [protocol roster](../native/docs/protocol_roster.md) and focused owner docs describe current
+coverage: [driver-hosted tools](driver_tools.md), [hooks](hooks.md), and
+[background work](background_work.md). The runner's transcript durability boundary is in its
+[specification](../runner/SPEC.md#what-the-harnesses-do-not-promise), which also records that native
+approval prompts and unsupported control requests do not block a turn.
 
 ### Resume
 

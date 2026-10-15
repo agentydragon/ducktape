@@ -9,9 +9,10 @@ settle can go to the operator's separate white-box Claude CLI reverse-engineerin
 
 ## Scripted compaction test
 
-[Compaction on the wire](../docs/claude_runtime_contracts.md#compaction-on-the-wire-measured-21233-re-verify-on-21252)
-was measured live on 2.1.233 only. Add `harness_tests/claude/test_compaction.py` against the pinned
-binary, asserting what the deleted capture test held against a recording:
+[Auto-compaction frames](docs/claude_source_findings.md#auto-compaction-frames-live-capture-of-21233)
+were measured live on 2.1.233 only. Extend the existing `harness_tests/claude/test_compaction.py`
+with a check against the pinned binary, asserting what the deleted capture test held against a
+recording:
 
 - nothing is retracted: frames before `compact_boundary` include `assistant` and `result`, and no
   inbound `uuid` repeats;
@@ -76,34 +77,25 @@ Agentplane's claim is newer. The open part is whether `id: null` still works on 
 required. Experiment: parametrize the ack id (`0`, `null`, omitted) in
 `harness_tests/claude/test_driver_tools.py` and assert the server connects and the tool is called.
 
-## Stale "not capture-pinned" statements
-
-`docs/claude_input_queue.md:171` lists `interrupt` with and without `cancel_queued` as still to
-capture, and `docs/harness_protocols.md:114-115` says nothing on that page is capture-pinned; but
-`harness_tests/claude/test_active_turn.py:101` pins `cancel_queued: true` (per-input `cancelled`)
-and `:150` pins a plain interrupt's `still_queued` receipt (2.1.252). `native/docs/protocol_roster.md:41`
-also still says "`cancel_queued=False` only". Experiment: none beyond a green run of those tests;
-reconcile the docs.
-
 ## How long does an unanswered control request wait?
 
 - `haku/cli_protocol/protocol.md:91-94` (2.1.220): an unanswered `can_use_tool` produced no
   `result` within 60 s, read as "waited on indefinitely".
 - `docs/hooks.md:31-33` (2.1.252, static reading): `hook_callback` budget is 600 s (30 s for
   `UserPromptSubmit`), and a timed-out `PreToolUse` skips the tool.
-- `docs/claude_runtime_contracts.md:218-219`: unanswered human requests stay parked across shutdown.
+- [Source findings](docs/claude_source_findings.md#interactive-control-identity-static-inspection-of-21252):
+  unanswered human requests can stay parked across shutdown.
 
 A 60 s observation cannot tell "indefinite" from any budget above 60 s, and `can_use_tool` is not a
 hook. Experiment: a scripted test leaving one `can_use_tool` and one `PreToolUse` `hook_callback`
 unanswered, recording time to `result` or timeout notice with a ceiling above 600 s.
 
-## "Capability negotiation" section title
+## Capability advertisement on the pinned CLI
 
-`docs/claude_input_queue.md:104` titles the section "Capability negotiation"; `:106-107` and
-`haku/cli_protocol/protocol.md:155-157` (2.1.220) say the CLI only advertises capabilities on
-`system/init` and `initialize` has no client-capability field. The section's table (`:109-113`,
-from `sdk.d.ts`, version unstated) lists `queued_notifications` but not `msg_lifecycle_v1`, which
-2.1.220 advertised. Experiment: a scripted test recording `system/init.capabilities` on 2.1.252.
+The older [source and capture note](docs/claude_source_findings.md#capability-advertisement-capture-of-21220)
+records that 2.1.220 advertised capabilities on `system/init`, including `msg_lifecycle_v1`, and
+that `initialize` had no client-capability field. Whether the pinned 2.1.252 build advertises the
+same set remains untested. Experiment: record `system/init.capabilities` from the pinned binary.
 
 ## Harness-neutral compaction boundaries
 

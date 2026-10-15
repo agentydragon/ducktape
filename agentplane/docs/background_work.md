@@ -46,8 +46,8 @@ The session event queue is capped at 1000 and preferentially retains lifecycle b
 terminal status under pressure. Draining stamps fresh outer `uuid`/`session_id` values, and a
 terminal notification is guarded for once-only delivery (read). On process restart, consume the
 next `background_tasks_changed` as a replace/reset rather than replaying retained edges into old
-state. See [claude_runtime_contracts.md](claude_runtime_contracts.md) for the surrounding recovery
-constraints.
+state. This is the native driver's snapshot contract; the runner currently retains these frames as
+native evidence rather than projecting a typed task registry.
 
 **What the driver can do.** `stop_task {task_id}` kills one task — confirmed, and it produced
 `background_tasks_changed` with an empty set, `task_updated {status: "killed"}` and

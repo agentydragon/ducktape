@@ -21,3 +21,6 @@ the frame constructors and launch configuration behind its harness-neutral proto
 
 What each harness exposes on its protocol, and which of it the tests cover:
 <docs/protocol_roster.md>.
+
+Version-pinned Claude findings that remain source-only or come from an older capture:
+<docs/claude_source_findings.md>.

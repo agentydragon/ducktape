@@ -70,8 +70,8 @@ in-memory `fastmcp` client, not a hand-rolled tool dispatch) and
 tool call actually produces: a list of MCP content blocks, distinct from a built-in tool's
 dict/string. This is native-driver evidence, not a runner capability; the active v2 `tools/call`
 path in 2.1.252 also does not wire the task/input-request helper scaffolding present elsewhere in
-the MCP runtime, so driver-hosted MCP task semantics must remain unsupported. See
-[claude_runtime_contracts.md](claude_runtime_contracts.md).
+the MCP runtime, so driver-hosted MCP task semantics must remain unsupported. The scripted call
+boundary is described in [`harness_tests/claude/test_driver_tools.py`](../harness_tests/claude/test_driver_tools.py).
 
 ### Changing the tool set mid-session
 

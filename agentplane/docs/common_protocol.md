@@ -42,10 +42,17 @@ inspectable. Similar native operations are not evidence of identical semantics.
 
 In particular, input coalescing/queueing, steering, interruption, resume, and runtime
 model control remain adapter responsibilities. The native constraints and evidence are
-documented alongside the relevant adapter tests and captures, including
-[Claude input queue behavior](claude_input_queue.md). Any future common enqueue,
-withdraw, or capability surface must preserve the demonstrated asymmetry. Queue
-placement in the app does not change native execution semantics.
+documented alongside the relevant adapter tests and captures. Claude's input queue and interrupt
+evidence is in the [active-turn tests](../harness_tests/claude/test_active_turn.py) and
+[resume tests](../harness_tests/claude/test_turns.py); untested withdrawal semantics are marked
+source-only in the [native findings](../native/docs/claude_source_findings.md#queued-message-withdrawal-source-only).
+Claude coalesces compatible inputs into a turn and can fold active-tool input into the tool result.
+Codex's app-server separately defines a durable `thread/queue/*` list beside `turn/steer`; its
+promotion details remain source-level and untested by our driver
+([protocol notes](harness_protocols.md#codex-app-server)). The shared `SubmitInput` is not either
+native queue API. A future common enqueue or withdraw surface must preserve these differences and
+must not imply matching cancellation granularity. Queue placement in the app does not change native
+execution semantics.
 
 ## Capture evidence contract
 

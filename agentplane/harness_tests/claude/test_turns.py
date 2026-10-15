@@ -200,8 +200,11 @@ async def test_resume_after_an_interrupted_partial_turn_replays_the_partial_turn
 async def test_resume_after_interrupt_replays_the_queued_inputs_its_next_turn_took(
     claude: ClaudeLauncher, anthropic_messages: AnthropicMessages
 ) -> None:
-    """Inputs an interrupt leaves queued run together as the next turn; a kill during that turn
-    leaves them in the resumed history, as it leaves any other turn Claude has written."""
+    """A plain-interrupt receipt leaves both UUIDs queued for the next turn.
+
+    Claude sends their newline-joined text to the model; after that turn is written and the process
+    is killed, native resume replays the joined input. This does not test selective withdrawal.
+    """
     await _seed_crashed_session(claude, anthropic_messages)
 
     async with claude.start(anthropic_messages, resume_id=CRASHED_SESSION, replay_user_messages=True) as interrupted:

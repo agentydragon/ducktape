@@ -299,7 +299,7 @@ session and a new transcript.
   closing stdin, and the runner's own termination does the same for every session, so the pod's
   SIGTERM path gives Claude an orderly flush opportunity but does not turn an earlier
   `CommandAdmitted` into proof of native persistence. See
-  [`../docs/claude_runtime_contracts.md`](../docs/claude_runtime_contracts.md).
+  the [native source findings](../native/docs/claude_source_findings.md#transcript-writer-static-inspection-of-21252).
 - Codex reports no aggregated output for a shell command that outlived its first read, and keeps a
   streamed model connection open after an interrupt; neither changes the events above.
 - Native approval prompts, user dialogs, and hook callbacks never block a turn. Claude Code's
