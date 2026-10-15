@@ -82,6 +82,7 @@ go_test(
         "controller_test.go",
         "identity_test.go",
         "launch_test.go",
+        "quiescer_test.go",
         "runner_facts_test.go",
         "state_volume_test.go",
         "vm_test.go",

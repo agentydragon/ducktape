@@ -613,7 +613,7 @@ func TestDeletionWaitsForTheRunnerToSealAndFlush(t *testing.T) {
 		t.Fatal("the Sandbox counted as sealed before the runner said so")
 	}
 	quiescer.err = nil
-	quiescer.result = QuiesceResult{Sessions: 1, Unflushed: []string{"s-1"}}
+	quiescer.result = QuiesceResult{Quiescing: true}
 	result, err = r.Reconcile(context.Background(), request)
 	if err != nil || result.RequeueAfter != quiesceDeadline || quiescer.calls != 1 {
 		t.Fatalf("a repeated reconcile is held to the saved deadline: calls=%d, %v, %v", quiescer.calls, result, err)
@@ -900,7 +900,7 @@ func TestFailedQuiesceWaitsAcrossNoStageEventsAndControllerRestart(t *testing.T)
 	}
 
 	// A controller restart and the status event from the attempt write both see the persisted deadline.
-	afterRestart := &fakeQuiescer{result: QuiesceResult{Unflushed: []string{"session-1"}}}
+	afterRestart := &fakeQuiescer{result: QuiesceResult{Quiescing: true}}
 	restarted := &Reconciler{Client: c, KubeVirt: true, Quiescer: afterRestart, Leases: c, Now: func() time.Time { return now }}
 	// A resume followed by another suspend continues this same runner's quiesce operation; it does not
 	// make a new request intent that reopens the per-incarnation retry budget.
@@ -1045,7 +1045,7 @@ func TestResumingASealedIncarnationReplacesIt(t *testing.T) {
 func TestResumingWhileTheRunnerQuiescesFinishesTheQuiesceFirst(t *testing.T) {
 	r, c := runningWithRunner(t)
 	quiescer := r.Quiescer.(*fakeQuiescer)
-	quiescer.result = QuiesceResult{Unflushed: []string{"session-1"}}
+	quiescer.result = QuiesceResult{Quiescing: true}
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
 	setRunning(t, c, true)
@@ -1054,7 +1054,7 @@ func TestResumingWhileTheRunnerQuiescesFinishesTheQuiesceFirst(t *testing.T) {
 		t.Fatal("a Sandbox whose runner refuses every Session read Ready while it was quiescing")
 	}
 
-	quiescer.result = QuiesceResult{Sessions: 1}
+	quiescer.result = QuiesceResult{}
 	quiesceSessions(t, r)
 	reconcileOnce(t, r)
 	if pod := getPod(t, c); pod != nil && string(pod.UID) == "uid-pod" {

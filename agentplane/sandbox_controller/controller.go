@@ -355,9 +355,6 @@ func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *Sandbox, runner s
 // A runner that reports `Quiesced` on the connection Lease is recorded without another call. Other
 // stage reports enqueue the Sandbox; the persisted deadline throttles calls while a stage is absent
 // or stalled.
-//
-// CLEANUP(added 2026-10-14): Remove the call's reading of a runner that reports no stage once the
-// runner's non-blocking `Quiesce` is pinned in every environment, the VM guest's wheel included.
 func (r *Reconciler) quiesce(ctx context.Context, sandbox *Sandbox, runner string) (*unready, error) {
 	lease, err := r.runnerLease(ctx, sandbox)
 	if err != nil {
@@ -389,12 +386,9 @@ func (r *Reconciler) quiesce(ctx context.Context, sandbox *Sandbox, runner strin
 	if result.Quiescing {
 		return &unready{reason: "Quiescing", message: "the runner has not finished quiescing", retryAfter: quiesceDeadline}, nil
 	}
-	if len(result.Unflushed) > 0 {
-		return &unready{reason: "Quiescing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: quiesceDeadline}, nil
-	}
 	sandbox.Status.QuiescedIncarnation = &runner
 	sandbox.Status.QuiesceAttempt = nil
-	return &unready{reason: "Quiescing", message: fmt.Sprintf("%d Sessions sealed", result.Sessions)}, nil
+	return &unready{reason: "Quiescing", message: "the runner has quiesced every Session"}, nil
 }
 
 // deleteIfLive deletes obj, that very object, unless its deletion has begun.

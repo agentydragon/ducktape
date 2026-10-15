@@ -21,12 +21,9 @@ const quiesceTimeout = 30 * time.Second
 
 // QuiesceResult is a runner's answer to a quiesce.
 type QuiesceResult struct {
-	// The runner says its quiesce is not final yet. False for a runner that does not report a stage,
-	// whose `Quiesce` blocks until Unflushed says the rest.
+	// True unless the runner explicitly reports QUIESCE_STAGE_QUIESCED. An absent or unknown stage is
+	// not final.
 	Quiescing bool
-	Sessions  int
-	// Sessions the runner's ingress has not acknowledged the seal of yet.
-	Unflushed []string
 }
 
 // Quiescer asks a Sandbox's runner to seal every Session.
@@ -68,14 +65,11 @@ func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *Sandbox) (Quiesce
 	if err != nil {
 		return QuiesceResult{}, fmt.Errorf("quiescing %s through %s: %w", sandbox.Name, target, err)
 	}
-	result := QuiesceResult{
-		Quiescing: response.Stage != nil && response.GetStage() != runnerpb.QuiesceStage_QUIESCE_STAGE_QUIESCED,
-		Sessions:  len(response.GetSessions()),
-	}
-	for _, session := range response.GetSessions() {
-		if !session.GetFlushed() {
-			result.Unflushed = append(result.Unflushed, session.GetSessionId())
-		}
-	}
-	return result, nil
+	return quiesceResult(response), nil
+}
+
+func quiesceResult(response *runnerpb.QuiesceResponse) QuiesceResult {
+	// GetStage returns UNSPECIFIED when the field is absent. That response shape predates the
+	// nonblocking protocol and cannot prove completion; do not infer it from the legacy sessions list.
+	return QuiesceResult{Quiescing: response.GetStage() != runnerpb.QuiesceStage_QUIESCE_STAGE_QUIESCED}
 }
