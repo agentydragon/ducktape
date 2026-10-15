@@ -126,8 +126,8 @@ establish that ducktape's usual remote Bazel workflow works without a network.
 
 The `ducktape.localLlm.llamaRouter.enable` module option defaults off; rugged's
 host configuration opts in and disables its Ollama backend on the shared port.
-Before the router starts, a one-shot provisioner reads the versioned Nix-store
-manifest and verifies nine pinned artifacts (six model weights and three
+An independent background provisioner reads the versioned Nix-store manifest
+and verifies nine pinned artifacts (six model weights and three
 projectors, about 24.25 GB total) under `/var/lib/rugged-llm/models/blobs`.
 Each artifact is pinned by SHA-256 and byte size. A matching blob in the old
 Ollama cache is an optional import source; it is verified and hard-linked when
@@ -145,10 +145,17 @@ the digest-addressed source URLs rather than substituting untested Hugging Face
 quantizations; neither weights nor projectors enter the Nix store.
 
 A complete cache hit is locally reverified and does not invoke the downloader
-or require network access. A cold or incomplete cache needs network access during
-activation; the provisioner has llama.cpp retries and an eight-hour systemd
-startup limit. It has no `network-online.target` dependency, so a complete cache
-can start offline. This replaces the earlier two-activation plan that required
+or require network access. A cold or incomplete cache needs network access in
+the background.
+The provisioner uses `Type=exec`, so system activation waits only for process
+startup. It retries failures after five minutes, with an eight-hour runtime
+limit per attempt. The router has no dependency on provisioning and starts even
+with an empty cache. Each verified file is atomically published at its preset
+path; subsequent model-load requests can use it without a router restart.
+Requests for missing models return HTTP 500 promptly and do not download files.
+The journal reports per-artifact checking, download start, and completion:
+`journalctl -fu rugged-llama-model-provision`. This replaces the earlier
+two-activation plan that required
 first populating all six bases through Ollama. No live host activation was
 performed as part of this change.
 
@@ -156,7 +163,11 @@ The downloader migration passed the local HTTP fixture checks for network-free
 cache reuse/import, fresh downloads, interrupted-transfer range resumption,
 checksum rejection, preservation of cached models after a later HTTP failure,
 and recovery from an invalid completed staging file. All nine host configuration
-checks passed. These are provisioning/configuration checks, not new inference
+checks passed. A separate missing-file router smoke returned HTTP 500 in 66 ms;
+a second request after creating a deliberately invalid file attempted a fresh
+load (invalid GGUF header) in 57 ms, confirming failures do not stick. This
+checks retry behavior, not successful loading of newly provisioned weights.
+These are provisioning/configuration checks, not new inference
 measurements or a live validation of the service hardening.
 
 When `ducktape.localLlm.llamaRouter.enable` is true, the offline OpenCode model

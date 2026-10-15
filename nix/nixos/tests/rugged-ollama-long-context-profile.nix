@@ -118,9 +118,9 @@ in
       router_service_installed = builtins.elem "multi-user.target" routerService.wantedBy;
       router_requires_cached_model_mount =
         routerService.unitConfig.RequiresMountsFor == "/var/lib/rugged-llm/models";
-      router_requires_independent_provisioner =
-        builtins.elem "rugged-llama-model-provision.service" routerService.requires
-        && builtins.elem "rugged-llama-model-provision.service" routerService.after;
+      router_is_independent_of_provisioner =
+        !(builtins.elem "rugged-llama-model-provision.service" routerService.requires)
+        && !(builtins.elem "rugged-llama-model-provision.service" routerService.after);
       router_reuses_the_persistent_cache_owner =
         routerService.serviceConfig.User == "ollama"
         && routerService.serviceConfig.Group == "ollama"
@@ -135,7 +135,7 @@ in
         && ruggedWithRouter.users.users.ollama.home == "/var/lib/local-llm/ollama-upstream"
         && builtins.elem "render" ruggedWithRouter.users.users.ollama.extraGroups;
       router_preserves_state_and_cache_paths =
-        nixosLib.hasInfix "rugged-llm" routerService.serviceConfig.StateDirectory
+        nixosLib.hasInfix "rugged-llm/models" routerService.serviceConfig.StateDirectory
         && nixosLib.hasInfix "llama-cpp" routerService.serviceConfig.StateDirectory
         && routerService.serviceConfig.WorkingDirectory == "/var/lib/llama-cpp"
         && routerService.serviceConfig.CacheDirectory == "llama-cpp"
@@ -152,7 +152,7 @@ in
       ollama_disabled = true;
       router_service_installed = true;
       router_requires_cached_model_mount = true;
-      router_requires_independent_provisioner = true;
+      router_is_independent_of_provisioner = true;
       router_reuses_the_persistent_cache_owner = true;
       router_preserves_state_and_cache_paths = true;
       router_keeps_model_cache_read_only = true;
@@ -167,7 +167,10 @@ in
       user = provisionService.serviceConfig.User;
       group = provisionService.serviceConfig.Group;
       state_directory = provisionService.serviceConfig.StateDirectory;
-      timeout = provisionService.serviceConfig.TimeoutStartSec;
+      timeout = provisionService.serviceConfig.RuntimeMaxSec;
+      restart = provisionService.serviceConfig.Restart;
+      restart_sec = provisionService.serviceConfig.RestartSec;
+      starts_independently = builtins.elem "multi-user.target" provisionService.wantedBy;
       umask = provisionService.serviceConfig.UMask;
       explicit_tls_ca_bundle = nixosLib.hasInfix "/etc/ssl/certs/ca-bundle.crt" provisionService.environment.SSL_CERT_FILE;
       exec_uses_pinned_manifest_and_optional_ollama_import =
@@ -191,12 +194,15 @@ in
       );
     };
     expected = {
-      type = "oneshot";
+      type = "exec";
       remain_after_exit = true;
       user = "ollama";
       group = "ollama";
       state_directory = "rugged-llm";
       timeout = "8h";
+      restart = "on-failure";
+      restart_sec = "5min";
+      starts_independently = true;
       umask = "0077";
       explicit_tls_ca_bundle = true;
       exec_uses_pinned_manifest_and_optional_ollama_import = true;

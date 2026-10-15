@@ -18,10 +18,12 @@ verify_artifact() {
 
 artifacts=$(jq -er '.artifacts | to_entries[] | [.key, .value.sha256, (.value.size_bytes | tostring), .value.url] | @tsv' "$manifest")
 while IFS=$'\t' read -r artifact_id digest size url; do
+  echo "Checking $artifact_id ($size bytes)"
   destination="$model_store/blobs/sha256-$digest"
   if [[ -e $destination || -L $destination ]]; then
     # Fail closed, preserving corrupt cache objects for inspection.
     verify_artifact "$destination" "$digest" "$size"
+    echo "Ready: $artifact_id (cached)"
     continue
   fi
 
@@ -32,6 +34,7 @@ while IFS=$'\t' read -r artifact_id digest size url; do
     if verify_artifact "$old_blob" "$digest" "$size"; then
       ln -- "$old_blob" "$staged" 2>/dev/null || cp --reflink=auto --sparse=always -- "$old_blob" "$staged"
     else
+      echo "Downloading $artifact_id ($size bytes)"
       llama download --model-url "$url" --model "$staged"
     fi
   fi
@@ -41,4 +44,5 @@ while IFS=$'\t' read -r artifact_id digest size url; do
     exit 1
   fi
   mv --no-target-directory -- "$staged" "$destination"
+  echo "Ready: $artifact_id"
 done <<<"$artifacts"

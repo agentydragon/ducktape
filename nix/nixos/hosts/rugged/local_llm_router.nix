@@ -5,7 +5,7 @@
 # No draft model is materialized, so standalone llama-server uses its
 # `spec-type=none` default rather than Ollama's MTP draft path.
 # Model artifacts are pinned by digest in llama_router_artifacts.json and are
-# provisioned into /var/lib/rugged-llm/models before the router starts.
+# provisioned into /var/lib/rugged-llm/models independently of router startup.
 {
   config,
   lib,
@@ -141,12 +141,14 @@ in
 
     systemd.services.rugged-llama-model-provision = {
       description = "Verify and provision pinned GGUF artifacts for rugged's llama.cpp router";
+      wantedBy = [ "multi-user.target" ];
       restartTriggers = [
         artifactManifestFile
         modelProvisioner
       ];
       serviceConfig = {
-        Type = "oneshot";
+        # Activation waits for exec, not multi-gigabyte downloads.
+        Type = "exec";
         RemainAfterExit = true;
         User = "ollama";
         Group = "ollama";
@@ -159,7 +161,9 @@ in
           modelStoreDir
           ollamaBlobsDir
         ];
-        TimeoutStartSec = "8h";
+        Restart = "on-failure";
+        RestartSec = "5min";
+        RuntimeMaxSec = "8h";
         TimeoutStopSec = "30s";
         ProtectSystem = "strict";
         ProtectHome = true;
@@ -184,10 +188,8 @@ in
     };
 
     systemd.services.llama-cpp = {
-      requires = [ "rugged-llama-model-provision.service" ];
       after = [
         "local-fs.target"
-        "rugged-llama-model-provision.service"
       ];
       restartTriggers = [
         artifactManifestFile
@@ -198,8 +200,9 @@ in
         User = "ollama";
         Group = "ollama";
         SupplementaryGroups = [ "render" ];
-        # Keep the provisioned model store and the module's working directory.
-        StateDirectory = lib.mkForce "rugged-llm llama-cpp";
+        # Create the read-only mount source even on an empty cache. Atomic
+        # publication by the provisioner is visible without restarting the router.
+        StateDirectory = lib.mkForce "rugged-llm rugged-llm/models llama-cpp";
         StateDirectoryMode = "0750";
         UMask = "0077";
         DynamicUser = lib.mkForce false;
