@@ -1484,7 +1484,7 @@ flowchart LR
     DISPATCHER_GATEWAY_TOPOLOGY_DESIGN[Decision: Dispatcher and Gateway topology]
     RUNNER_INVENTORY_AUTHORITY_DESIGN[Decision: live runner or retained inventory]
     DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
-    CODEX_APP_SERVER_MULTIPLEXING[Characterize: Codex threads per process]
+    CODEX_APP_SERVER_MULTIPLEXING[In flight: Codex threads per process]
     CLAUDE_STREAM_SESSION_MULTIPLEXING[Characterize: Claude sessions per process]
     HARNESS_IDENTITY_DESIGN[Decision: process, store and native Session identity]
     INTERNAL_API_SURFACE_DESIGN[Decision: internal and agent-facing API surfaces]
@@ -1612,13 +1612,15 @@ contract can agents rely on? This is design only; no CLI, prompt or API change i
 
 ### `CODEX_APP_SERVER_MULTIPLEXING` — characterize multiple threads over one app-server process
 
-**Candidate; independent investigation.** Determine whether the pinned Codex app-server can host
-multiple independently controlled threads over one stdio connection and process. The current facade
-addresses `thread/start`, `thread/resume` and turns by thread ID, but the Runner adapter owns one
-thread ID per process; no current test establishes safe multiplexing. Characterize request and
-notification routing, concurrency/isolation, cancellation scope, per-thread model/instructions,
-auth, cwd and `CODEX_HOME`, and failure/restart/resume behavior. Use pinned-version evidence or a
-bounded real-binary test. Report unknowns; this lane does not wait for the Claude result.
+**In flight; Codex, 2026-10-15 UTC; [draft PR #10663](https://github.com/agentydragon/ducktape/pull/10663).**
+The test-only real-binary scenario exercises two independently started persistent root threads on
+one stdio process: overlapping model requests, thread-attributed events, per-thread interrupt,
+selected model/instruction/workdir settings, and resuming both threads on a fresh process using the
+same `CODEX_HOME`. Pinned source evidence and the shared process/environment/auth limits are
+recorded in [harness evidence](../docs/harness_evidence.md#codex-threads-on-one-app-server). PR CI
+and the focused RBE target remain gates. Distinct authentication identities and active multi-thread
+crash recovery are not measured; this characterization does not select a Runner process/session
+architecture and does not wait for the Claude result.
 
 ### `CLAUDE_STREAM_SESSION_MULTIPLEXING` — characterize multiple sessions over Claude stream-json
 
