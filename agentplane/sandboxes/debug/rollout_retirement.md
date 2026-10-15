@@ -21,3 +21,20 @@ Read-only inventory on 2026-10-14 PDT, after #10524, #10525, #10529 and #10533 m
 These observations complete implementation/rollout nodes only for the paths named above. They do
 not complete VM fresh-format/remount acceptance, authorize deleting retained data, or remove the
 app's direct native-resume path. Each remaining compatibility removal keeps its caller/image gate.
+
+## Subsequent cleanup and rollout evidence, 2026-10-15 UTC
+
+- #10582 removed the obsolete per-Sandbox defaults and Gateway override mask after the caller/data
+  inventory. Its corrected notification fixture passed all eight cases and full PR CI. No data was deleted.
+- #10589 requires successful bootstrap before Ready; #10590 rejects Welcome without an incarnation
+  UID. The audit covered both selectable template wheels (`0a0e1373f9c2`) and the older running VM
+  wheel (`a13d9a7d58ff`): both report bootstrap facts and understand incarnation UIDs. The deployed
+  Gateway `721cab8` sends the UID. These are merged removals; historical seal-schema cleanup retains
+  its separate writer-rollout and retained-journal disposition gates.
+- Both audited wheels still omit `QuiesceResponse.stage`; current source still awaits sealing before
+  returning. Non-blocking response implementation and its rollout must precede legacy-reader removal.
+- #10593 adds explicit suspended markers to the sidebar, Thread, title and favicon. The retained
+  history/revival surfaces remain. Composer activation still follows wake-on-send acceptance.
+- #10592 removed the opening flag from generated configuration. Both live app ConfigMaps omit it;
+  testing has one Ready app replica and staging two on `b8957c7`. The final accepted-unused settings
+  field removal remains a separate patch. Staging wake-caller configuration is still pending.

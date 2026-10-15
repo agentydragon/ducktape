@@ -18,18 +18,17 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
 
-| Worker                     | Assigned work and remaining gates                                                                            |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `suspended_session_ui`     | Queued-open navigation; then suspended-state visibility. Composer still waits for wake-on-send.              |
-| `quiesce_progress`         | Missing Sandbox session-table inventory; quiesce retry correction #10580 merged after schema #10583 applied. |
-| `session_defaults_cleanup` | VM workspace ownership; defaults cleanup #10582 is in review with caller/data gates.                         |
-| Coordinator                | Review and CI; record passed VM storage acceptance; verify rollout before retiring obsolete paths.           |
+| Worker                     | Assigned work and remaining gates                                                                              |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `suspended_session_ui`     | Final opening settings-field removal after #10592 config omission reconciled; composer waits for wake-on-send. |
+| `quiesce_progress`         | Staging wake-on-send configuration; both verified compatibility removals merged.                               |
+| `session_defaults_cleanup` | Correct #10588 CI and package the workspace-creation helper normally; VM rollout/acceptance remain gated.      |
+| Coordinator                | Review and CI, DAG burn-down and deployment gate verification.                                                 |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
 user experience. Finish reported bugs and red PR checks first. The next dispatch order is
-`APP_OPEN_FLAG_REMOVE` and the runner compatibility audit (`BOOTSTRAP_UNKNOWN_HOLDS_READY`,
-`INCARNATION_UID_REQUIRED`, `QUIESCE_LEGACY_SHAPE_REMOVAL`), then `DISPATCHER_WAKE_ACTIVATION`,
+`APP_OPEN_FLAG_REMOVE` and verified runner compatibility cleanup, then `DISPATCHER_WAKE_ACTIVATION`,
 then `K3S_LIFECYCLE_SUITE` / `ISOLATED_TEST_SPIKES_RETIRE` and `K3S_STARTUP_COST`.
 Audit assignment does not waive any image, embedded VM wheel, live-runner or retained-data gate.
 
@@ -48,8 +47,6 @@ requires increasing timeouts, bypassing Git ownership checks, or creating duplic
 ```mermaid
 flowchart TD
     VM_WORKSPACE_OWNERSHIP[In flight: create workspaces with harness ownership]
-    SESSION_OPEN_NAVIGATION[In flight: follow queued opening into its Thread]
-    SANDBOX_SESSION_INVENTORY[In flight: show opened Sessions in Sandbox inventory]
 ```
 
 ### `VM_WORKSPACE_OWNERSHIP` — create workspaces with the harness identity
@@ -60,22 +57,6 @@ the parent directory owned by that identity, so Git refuses it as dubious owners
 workspace creation for setup and harness launch; preserve existing authored data and Pod behavior.
 No recursive ownership rewrite or `safe.directory` exception. Test distinct-user Git operations;
 live VM acceptance waits for the corrected embedded runner wheel and guest image pins.
-
-### `SESSION_OPEN_NAVIGATION` — follow the queued opening into its Thread
-
-**In flight; `suspended_session_ui`.** The current POST receipt stays queued even after the live
-Sandbox stream contains the projected Thread. Consume that existing event path to navigate once
-to the matching pending Session, clear the pending record, and recover correctly after remount.
-Never retry the opening POST automatically. Cover delayed projection and return navigation.
-
-### `SANDBOX_SESSION_INVENTORY` — the Sandbox table includes its opened Sessions
-
-**In flight; `quiesce_progress`.** Gateway logs confirm runner inventory contains the answering
-Session, but the legacy Gateway registry filter omits it. Dispatcher opens through the runner proxy
-and does not populate that obsolete registry. Remove the obsolete registry intersection from
-Gateway `ListSessions`, preserving its existing Sandbox UID fencing and authorization. Do not mirror registry
-state or fabricate projected-only rows. Cover Dispatcher opening followed by listing and returning
-to the Sandbox; retire the unused wrapper with `GATEWAY_WRAPPER_RETIRE`.
 
 ## 1. Session schema and identity follow-up
 
@@ -621,7 +602,6 @@ flowchart LR
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
     ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
-    BOOTSTRAP_UNKNOWN_HOLDS_READY[Blocked: remove old-runner readiness tolerance]
     SANDBOX_RBAC[Candidate: bounded deployed grant checks]
     NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
     NETWORK_WORKLOAD_IDENTITY[Unscheduled: network-level workload identity]
@@ -697,17 +677,6 @@ authorize by SPIFFE ID or workload label. Costs: SPIRE or a mesh to install, Cil
 authentication still in beta, and a second authentication scheme in every service beside projected
 tokens.
 
-### `BOOTSTRAP_UNKNOWN_HOLDS_READY` — an unreported bootstrap holds `Ready`
-
-**Blocked on every live Sandbox running a runner that reports the bootstrap fact.** The controller lets an `Unknown` `Bootstrapped` condition (reason
-`BootstrapNotReported`: the runner reported no bootstrap fact) leave `Ready` alone, because runners older
-than the Lease facts change never report it. Once none runs, `Unknown` holds `Ready` too (`Ready` False,
-reason `BootstrapNotReported`) and the gating comment in `agentplane/sandbox_controller/controller.go` goes.
-Gate: every live Sandbox's Lease carries the bootstrap annotation, or those Sandboxes were restarted on a
-current image. A `CLEANUP` tombstone naming this gate sits next to the code.
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
 ## 7. Our own Sandbox resource: Sessions that outlive their Pod
 
 A Session and its history are durable. The operator's direction (2026-10-12 PDT):
@@ -734,36 +703,31 @@ flowchart TD
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     SANDBOX_IDLE_EXPIRY -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
-    INCARNATION_UID_REQUIRED[Blocked: the runner rejects a Welcome without the incarnation UID]
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
-    QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: the controller stops reading the blocking Quiesce shape]
+    RUNNER_NONBLOCKING_QUIESCE[Candidate: return the current stage after entering lameduck]
+    JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE[Blocked: writer rollout and retained-journal cutoff]
+    RUNNER_NONBLOCKING_QUIESCE --> QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: remove old response shape after runner rollout]
+    APP_OPEN_FLAG_REMOVE[In flight: remove unused setting after config omission]
     QUIESCE_WITHOUT_POLLING[In flight: recover stalled seal progress]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
     SUSPENDED_COMPOSER[Blocked: the composer stays enabled while a Session is suspended]
-    HOSTED_THREAD_SURFACES[In flight: show suspended Sessions and retain history]
     VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
     VM_PROVIDER -. related .-> SANDBOX_SPEC_EDIT
-    HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
     DISPATCHER_WAKE_ACTIVATION --> SUSPENDED_COMPOSER
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
-    APP_SESSION_OPEN_ACTIVATION[In flight: verify both app image rollouts and queued opens]
-    APP_SESSION_DEFAULTS_LEGACY_REMOVE[In flight: retire unused defaults after caller audit]
-    APP_SESSION_OPEN_ACTIVATION -. both app image pins .-> APP_OPEN_FLAG_REMOVE[Blocked: remove accepted opening flag after config rollout]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
     APP_NATIVE_RESUME_SURFACE[Decision: explicit native-resume UI] --> APP_NATIVE_RESUME_CUTOVER[Blocked: remove direct native resume]
     APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
-    APP_SESSION_OPEN_ACTIVATION -. app caller image pins .-> PROXY_START_METHODS_DISPATCHER_ONLY
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE
-    INCARNATION_UID_REQUIRED --> JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE
     K3S_LIFECYCLE_SUITE[Candidate: k3s lifecycle integration suite]
     QUIESCE_WITHOUT_POLLING -. quiesce assertions .-> K3S_LIFECYCLE_SUITE
 ```
@@ -934,17 +898,10 @@ differently.
 
 Related: [resume coverage](../sandboxes/debug/resume_coverage.md), `SANDBOX_IDLE_EXPIRY`.
 
-### `INCARNATION_UID_REQUIRED` — the runner rejects a `Welcome` without the incarnation UID
-
-**Blocked on the gateway image that sends the UID pinned in
-every environment, and in the VM guest's runner wheel pin.** Removes the missing-UID tolerance: a
-`Welcome` without a UID ends the stream, and the `None` path in the runner store's incarnation
-adoption (marked by its `CLEANUP` tombstone) goes. Pin ordering is not relied on before this; afterwards a
-runner too old to know the field cannot meet a gateway that no longer sends it.
-
 ### `JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE` — delete the pre-incarnation seal compatibility path
 
-**Blocked on `INCARNATION_UID_REQUIRED` and a verified inventory/cutoff of old retained journals.**
+**Blocked on the required-UID runner image/wheel rollout and a verified inventory/cutoff of old retained journals.**
+The required-UID implementation merged in #10590; the cutoff and writer-image gates remain.
 `runner/journal.py` still probes `PRAGMA table_info(seal)` and adds a missing `incarnation_uid`
 column, accepting UID-less seals. Once the separately approved storage cutoff covers those journals
 and old Pod images/VM wheels can no longer write them, remove this old-schema upgrade and missing-UID
@@ -961,10 +918,22 @@ does not supervise these, so who would report them (the harness adapters, the VM
 Test an attached terminal that detaches, a background process that outlives a turn, and a runner
 restart. `AGENT_RESUME_NOTICE` tells the agent what a suspend ended.
 
+### `RUNNER_NONBLOCKING_QUIESCE` — return after lameduck, report completion through facts
+
+**Candidate; implementation is missing, not merely awaiting an image pin.** The controller already
+accepts the optional response stage, but `runner/control.py` still awaits `runner.quiesce()` and
+`runner/runner.py` returns only Session seals. Verify accepting controller pins in both environments,
+then implement the ADR's immediate stage response with one supervised quiesce operation per
+incarnation. Preserve conditional idle refusal, admission/setup draining, and Lease-driven completion.
+Use deterministic tests for repeated calls, cancellation/reconnect, and delayed ingress acknowledgement.
+Publish and pin the Pod runner and embedded VM wheel before retiring the legacy response reader.
+
 ### `QUIESCE_LEGACY_SHAPE_REMOVAL` — the controller stops reading the blocking `Quiesce` shape
 
-**Blocked on the runner's non-blocking `Quiesce` pinned in every environment, the VM guest's wheel
-included.** Deletes the controller's legacy-shape read and the tombstone marking it.
+**Blocked on `RUNNER_NONBLOCKING_QUIESCE` and its rollout to every live/selectable runner,
+the VM guest's wheel included.** The 2026-10-15 audit found both live VM wheel `a13d9a7d58ff`
+and template wheel `0a0e1373f9c2` omit the response stage. Delete the controller's legacy-shape
+read only after the replacement writer is implemented and pinned.
 
 ### `QUIESCE_WITHOUT_POLLING` — a runner that never progresses is backed off, not hammered
 
@@ -973,7 +942,8 @@ included.** Deletes the controller's legacy-shape read and the tombstone marking
 exact-revision barrier. The persisted per-incarnation attempt prevents watch
 events from bypassing the existing one-minute retry deadline, including absent/stalled stage reports
 and false-to-false condition updates. Focused controller tests cover status conflicts, completion,
-restarts and incarnation changes. Runner stage events still advance quiesce immediately.
+restarts and incarnation changes. Runner stage events still advance quiesce immediately. The missing immediate RPC response is
+tracked separately in `RUNNER_NONBLOCKING_QUIESCE`.
 
 This change does not establish ingress-wide backoff. Audit the remaining outage behavior before
 closing this node; preserve a bounded held-flush integration check only for an identified gap that
@@ -994,7 +964,7 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `DISPATCHER_WAKE_ACTIVATION` — enable send-triggered revival
 
-**Testing acceptance recorded; staging activation remains with the coordinator.** Testing caller configuration from
+**Testing acceptance recorded; staging configuration PR assigned to `quiesce_progress`.** Testing caller configuration from
 #10527 is reconciled. The opted-in wake probe passed and its fixture was cleaned (#10541);
 staging activation remains. Image and migration gates are clear: actual
 Dispatcher Pods in both environments are Ready on `31e0b37`, their migration containers exited 0,
@@ -1025,30 +995,12 @@ agent senders wait for the reviewed multiagent authority contract. Do not confus
 with wake permission or silently expand the caller allowlist during a cutover. Add the bounded
 implementation node once policy is reviewed; existing caller cutovers do not silently select policy.
 
-### `APP_SESSION_OPEN_ACTIVATION` — activate queued app Session openings
-
-**Rollout and acceptance remain; coordinator, 2026-10-15 UTC.** #10569 merged
-as `721cab8eef`, including History-backed Thread identity and Dispatcher-only commands/openings.
-Rai explicitly approved activating queued openings in **both testing and staging** with this image;
-both environments follow the same app ImagePolicy. No separate staging configuration activation or
-pre-merge live acceptance hold remains. At the 2026-10-15 02:00 UTC read-only check, both
-environments still pinned app `6dc7dca`; the merged source had not rolled out.
-Verify both app pins/readiness after publication, then run
-bounded queued-open, same-ID retry and eventual Thread-projection acceptance in testing followed by
-staging. These checks remain unfinished; the earlier probe admitted a Session but its Thread read
-failed before the identity correction. Evidence: [History identity acceptance](../debug/app_thread_identity_acceptance.md).
-
-Retain Runner Gateway Session reads and native resume, plus its receivers and other callers
-until their own caller-image gates. The accepted-but-ignored opening setting has its removal below.
-
 ### `APP_OPEN_FLAG_REMOVE` — retire the queued-opening rollout flag
 
-**Candidate; image gate verified on 2026-10-15 UTC.** Both app Deployments pin `bd12425`,
-which includes unconditional Dispatcher openings. Remove `session_dispatcher_open_sessions` from
-generated ConfigMaps. Once both environments have reconciled the omission, delete the
-accepted-but-unused app settings field and its tests. Do not delete the field while deployed config
-still sends it. Staging already omits the key; verify both reconciled configurations before deleting
-the settings field.
+**In flight; `suspended_session_ui`.** #10592 removed the generated configuration key. On
+2026-10-15 UTC, both live ConfigMaps omit it and both app Deployments are Ready on `b8957c7`.
+Remove the accepted-but-unused app setting, obsolete tests and any generator API remnants.
+The configuration omission gate is satisfied; no new rollout switch is needed.
 
 ### `APP_NATIVE_RESUME_SURFACE` — decide the explicit native-resume UI
 
@@ -1080,7 +1032,7 @@ for a reviewed contract that the code does not already satisfy; do not add an im
 
 ### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
 
-**Blocked on `DISPATCHER_WAKE_ACTIVATION` and `HOSTED_THREAD_SURFACES`; follow-up owned by
+**Blocked on `DISPATCHER_WAKE_ACTIVATION`; follow-up owned by
 `suspended_session_ui`.** Once wake-on-send works in the target environment, a suspended Session's
 composer remains usable while its Sandbox still exists; suspension alone must not disable it.
 Sending queues the message and shows the Sandbox starting while the message waits. Keep normal
@@ -1088,13 +1040,6 @@ access checks and deleted-Sandbox refusal. Until wake-on-send is verified, ship 
 visibility independently and leave composer activation sequenced afterward (operator, 2026-10-15 UTC).
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
-### `HOSTED_THREAD_SURFACES` — show and revive stopped Sessions
-
-**In flight; `suspended_session_ui`, 2026-10-15 UTC.** Sessions whose Sandbox is suspended visibly
-show that state, remain listed and retain readable History-backed conversation views. Audit existing
-surfaces before adding anything; preserve explicit Sandbox revival. Composer activation is a
-separate follow-up after wake-on-send, not a prerequisite for shipping suspension visibility.
 
 ## 8. Ownership and naming cleanup
 
@@ -1224,22 +1169,10 @@ flowchart TD
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
-    APP_SESSION_OPEN_ACTIVATION -. app caller image pins .-> GATEWAY_WRAPPER_RETIRE
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
 ```
-
-### `APP_SESSION_DEFAULTS_LEGACY_REMOVE` — delete legacy per-Sandbox defaults fields
-
-**In review: #10582, `session_defaults_cleanup`, 2026-10-15 UTC.** Receiver removals retain caller-image gates. Audit remaining
-CreateSession callers before removing their field mask; that part waits for the direct-open caller
-removal and its image rollout. Other unused defaults fields can be reviewed independently.
-Once every writer has stopped sending them, delete `SandboxBinding.session_defaults`, the Sandbox
-spec field, and obsolete shared defaults types; remove `CreateSessionRequest`'s field mask when its
-callers no longer send it. Check all repo consumers, generated schemas and pinned callers before
-receiver-field removal. Do not add old-data adoption or conversion. Any newly present authored
-values require separate disposition; this node authorizes no data drop.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
