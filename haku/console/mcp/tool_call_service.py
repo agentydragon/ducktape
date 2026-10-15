@@ -1,15 +1,14 @@
 """Application service for Haku's actor-scoped tool-call lifecycle.
 
 FastAPI and FastMCP are transport adapters. They resolve one request actor and delegate here;
-Postgres, backend MCP execution, operator-linked credentials, and event delivery implement the
-narrow ports below. Keeping orchestration independent of those adapters makes this the one place where actor
-scope is carried through policy, persistence, execution, publication, and waiting.
+Postgres, backend MCP execution, and operator-linked credentials implement the narrow ports below.
+Keeping orchestration independent of those adapters makes this the one place where actor scope is
+carried through policy, persistence, execution, and waiting.
 """
 
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import datetime
 import logging
 from collections.abc import Collection
@@ -153,14 +152,6 @@ class ToolExecutor(Protocol):
     ) -> dict[str, Any]: ...
 
 
-class ToolCallInvalidationPublisher(Protocol):
-    async def tool_call_changed(self, operator_id: UUID, tool_call_id: str) -> None: ...
-
-    def subscribe(
-        self, operator_id: UUID, tool_call_id: str
-    ) -> contextlib.AbstractAsyncContextManager[asyncio.Event]: ...
-
-
 class OperatorActorRequiredError(PermissionError):
     """Raised when an AgentActor reaches an operator-only lifecycle operation."""
 
@@ -196,13 +187,11 @@ class ToolCallApplicationService:
         *,
         settings: Settings,
         repository: ToolCallRepository,
-        invalidation_publisher: ToolCallInvalidationPublisher,
         executor: ToolExecutor,
         in_process_servers: InProcessServers,
     ) -> None:
         self._settings = settings
         self._repository = repository
-        self._invalidation_publisher = invalidation_publisher
         self._executor = executor
         self._in_process_servers = in_process_servers
         self._auto_approval_policies = AutoApprovalPolicyRegistry(settings)
@@ -234,7 +223,6 @@ class ToolCallApplicationService:
                 record.caller,
                 record.decision_note,
             )
-            await self._publish(actor.operator_id, record.tool_call_id)
             return record
         decision = await auto_approve_tool_call(
             policies=self._auto_approval_policies,
@@ -262,7 +250,6 @@ class ToolCallApplicationService:
                 record.caller,
                 record.decision_note,
             )
-            await self._publish(actor.operator_id, record.tool_call_id)
             return record
         auto_approval_policy_id, auto_approval_evaluation = decision
 
@@ -290,9 +277,7 @@ class ToolCallApplicationService:
             record.auto_approval_evaluation,
         )
         if record.status == ToolCallStatus.RUNNING:
-            record = await self._execute_and_publish(record=record, server=server, auth_token=auth_token, actor=actor)
-        else:
-            await self._publish(actor.operator_id, record.tool_call_id)
+            record = await self._execute(record=record, server=server, auth_token=auth_token, actor=actor)
         return await self._wait_terminal(record.tool_call_id, actor, req.wait_for_ms)
 
     async def execute_direct(self, *, req: SubmitToolCallRequest, actor: RuntimeActor) -> dict[str, Any]:
@@ -355,7 +340,6 @@ class ToolCallApplicationService:
         operator = self._require_operator(actor)
         if decision.decision is ApprovalDecision.DENY:
             record = await self._repository.deny(tool_call_id, decision.decision_note, actor=operator)
-            await self._publish(operator.operator_id, record.tool_call_id)
             logger.info(
                 "tool call %s denied server=%s tool=%s decision_note=%r",
                 record.tool_call_id,
@@ -372,9 +356,7 @@ class ToolCallApplicationService:
         auth_token = await self._backend_auth(server, operator.operator_id)
         running = await self._repository.mark_running(tool_call_id, decision.decision_note, actor=operator)
         # Deciding is not executing. Dispatch the tool run as a tracked background task and return the
-        # RUNNING record immediately, so approving never blocks on a slow or unreachable backend. The
-        # terminal state reaches observers the same way an auto-approved call's does: _publish (WS
-        # invalidation) plus the durable row agents poll.
+        # RUNNING record immediately, so approving never blocks on a slow or unreachable backend.
         self._dispatch_execution(record=running, server=server, auth_token=auth_token, actor=operator)
         return running
 
@@ -395,12 +377,9 @@ class ToolCallApplicationService:
             agent.agent_id,
             reason,
         )
-        # The owning operator is `agent.operator_id`: the repository's binding revalidation proves
-        # the agent is owned by it, so this is the same verified publication target `submit` uses.
-        await self._publish(agent.operator_id, record.tool_call_id)
         return record
 
-    async def _execute_and_publish(
+    async def _execute(
         self, *, record: ToolCallRecord, server: McpServerEntry, auth_token: str | None, actor: RuntimeActor
     ) -> ToolCallRecord:
         if record.status != ToolCallStatus.RUNNING:
@@ -421,9 +400,6 @@ class ToolCallApplicationService:
             updated = await self._repository.finish(record.tool_call_id, actor=actor, result=None, error=str(error))
         else:
             updated = await self._repository.finish(record.tool_call_id, actor=actor, result=result, error=None)
-        # The durable row is authoritative. One invalidation after terminal persistence is enough:
-        # observers re-read the complete record rather than replaying intermediate transitions.
-        await self._publish(execution.operator_id, updated.tool_call_id)
         logger.info(
             "tool call %s finished status=%s server=%s tool=%s",
             updated.tool_call_id,
@@ -439,9 +415,7 @@ class ToolCallApplicationService:
         self, *, record: ToolCallRecord, server: McpServerEntry, auth_token: str | None, actor: RuntimeActor
     ) -> None:
         """Run an approved call's execution as a tracked background task (see `decide`)."""
-        task = asyncio.create_task(
-            self._execute_and_publish(record=record, server=server, auth_token=auth_token, actor=actor)
-        )
+        task = asyncio.create_task(self._execute(record=record, server=server, auth_token=auth_token, actor=actor))
         self._execution_tasks.add(task)
         task.add_done_callback(self._on_execution_done)
 
@@ -460,7 +434,7 @@ class ToolCallApplicationService:
 
     def _on_execution_done(self, task: asyncio.Task[ToolCallRecord]) -> None:
         self._execution_tasks.discard(task)
-        # _execute_and_publish records failures on the row and only re-raises CancelledError, so a
+        # _execute records failures on the row and only re-raises CancelledError, so a
         # non-cancelled exception escaping here is a bug in the orchestration itself — surface it.
         if not task.cancelled() and (error := task.exception()) is not None:
             logger.error("tool-call execution task crashed", exc_info=error)
@@ -473,21 +447,12 @@ class ToolCallApplicationService:
 
     async def aclose(self) -> None:
         """Cancel in-flight execution tasks and wait for them to settle. Each terminalizes its row as
-        cancelled (see `_execute_and_publish`); with the console's Recreate rollout a bounded cancel is
-        the clean shutdown. Called from the app lifespan before the event hub closes."""
+        cancelled (see `_execute`); with the console's Recreate rollout a bounded cancel is the
+        clean shutdown. Called from the app lifespan."""
         tasks = tuple(self._execution_tasks)
         for task in tasks:
             task.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-
-    async def _publish(self, operator_id: UUID, tool_call_id: str) -> None:
-        """Best-effort invalidation after durable changes; the repository remains authoritative."""
-        try:
-            await self._invalidation_publisher.tool_call_changed(operator_id, tool_call_id)
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("failed to publish tool-call invalidation for operator %s", operator_id)
 
     async def _wait_terminal(self, tool_call_id: str, actor: RuntimeActor, wait_for_ms: int) -> ToolCallRecord:
         record = await self._repository.get(tool_call_id, actor=actor)
@@ -501,20 +466,12 @@ class ToolCallApplicationService:
             if remaining <= 0:
                 return await self._repository.get(tool_call_id, actor=actor)
 
-            # Subscribe before re-reading the authoritative row. A transition committed between
-            # the first read and subscription is then observed by the second read; a transition
-            # committed after it wakes this subscription through PostgreSQL LISTEN/NOTIFY.
-            async with self._invalidation_publisher.subscribe(actor.operator_id, tool_call_id) as changed:
-                record = await self._repository.get(tool_call_id, actor=actor)
-                if record.status in TERMINAL_STATUSES:
-                    return record
-                remaining = deadline - loop.time()
-                if remaining <= 0:
-                    return record
-                try:
-                    await asyncio.wait_for(changed.wait(), timeout=remaining)
-                except TimeoutError:
-                    return await self._repository.get(tool_call_id, actor=actor)
+            # The durable row is authoritative. Keep the bounded wait useful without a push
+            # transport by checking it at a modest interval.
+            await asyncio.sleep(min(0.25, remaining))
+            record = await self._repository.get(tool_call_id, actor=actor)
+            if record.status in TERMINAL_STATUSES:
+                return record
 
     @staticmethod
     def _require_actor(actor: RuntimeActor) -> RuntimeActor:

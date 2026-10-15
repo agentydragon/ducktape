@@ -41,15 +41,12 @@ emitted `.js`, and vitest runs the emitted `.test.js`.
 - `tool_result_field.tsx` — the result-side counterpart: a finished call's result as a
   per-server widget (`tool_rendering/<server>/responses.tsx`) over the unwrapped
   `CallToolResult` payload, else the raw-JSON `Result` field (detailed only).
-- `console_events.ts` — `useConsoleEvents(onEvent)`: the shared live signal (the `/api/events/ws`
-  WebSocket) carrying tool-call and operator-link changes. The server broadcasts typed
-  invalidations to every connected tab, so panels and the history view
-  stay live without a reload and without client-side cross-tab plumbing. It auto-reconnects with backoff,
-  refetches on reconnect to catch up, and returns a `LiveStatus` (`connecting`/`live`/`offline`)
-  the shell uses to warn when the channel is down.
+- `periodic_refresh.ts` — `usePeriodicRefresh(refresh)`: loads a REST-backed view on mount and
+  refreshes it every 30 seconds. The database remains authoritative; browser views catch up through
+  their existing REST APIs.
 - `coalesced_refresh.ts` — `useCoalescedRefresh(read)`: at most one refetch in flight, with a burst
-  of live events collapsing into a single catch-up afterwards, since overlapping fetches buy answers
-  the next one discards. Used by the history page.
+  of manual, decision, and periodic refreshes collapsing into one catch-up afterwards, since
+  overlapping fetches buy answers the next one discards. Used by the history page.
 - `client.ts` — typed `openapi-fetch` client; the types come from the backend's
   OpenAPI schema (the `:schema` target runs `//haku/console:export_schema_bin`), so
   the Pydantic models are the single source of truth for the wire contract. Includes the

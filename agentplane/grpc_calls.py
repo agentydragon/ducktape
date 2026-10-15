@@ -63,9 +63,14 @@ async def bearer(token_file: Path) -> tuple[tuple[str, str], ...]:
 
 
 async def call_unary[T](
-    call: Callable[..., Awaitable[T]], request: Message, *, token_file: Path, timeout_s: float
+    call: Callable[..., Awaitable[T]],
+    request: Message,
+    *,
+    token_file: Path,
+    timeout_s: float,
+    extra_metadata: tuple[tuple[str, str], ...] = (),
 ) -> T:
     try:
-        return await call(request, metadata=await bearer(token_file), timeout=timeout_s)
+        return await call(request, metadata=(*await bearer(token_file), *extra_metadata), timeout=timeout_s)
     except grpc.aio.AioRpcError as error:
         _raise(error)

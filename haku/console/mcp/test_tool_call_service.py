@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import asyncio
-import contextlib
 import datetime
 import hashlib
-from collections.abc import AsyncIterator, Awaitable, Callable
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -46,60 +44,6 @@ from haku.console.tool_calls import (
     ToolCallRecord,
     ToolCallStatus,
 )
-
-
-class _RecordingInvalidationPublisher:
-    def __init__(self) -> None:
-        self.publications: list[tuple[UUID, str]] = []
-        self.subscribed = asyncio.Event()
-        self._waiters: dict[tuple[UUID, str], set[asyncio.Event]] = {}
-
-    async def tool_call_changed(self, operator_id: UUID, tool_call_id: str) -> None:
-        self.publications.append((operator_id, tool_call_id))
-        for waiter in self._waiters.get((operator_id, tool_call_id), ()):
-            waiter.set()
-
-    @contextlib.asynccontextmanager
-    async def subscribe(self, operator_id: UUID, tool_call_id: str) -> AsyncIterator[asyncio.Event]:
-        key = (operator_id, tool_call_id)
-        changed = asyncio.Event()
-        self._waiters.setdefault(key, set()).add(changed)
-        self.subscribed.set()
-        try:
-            yield changed
-        finally:
-            waiters = self._waiters[key]
-            waiters.remove(changed)
-            if not waiters:
-                self._waiters.pop(key)
-
-
-class _RaisingInvalidationPublisher(_RecordingInvalidationPublisher):
-    async def tool_call_changed(self, operator_id: UUID, tool_call_id: str) -> None:
-        await super().tool_call_changed(operator_id, tool_call_id)
-        raise RuntimeError("invalidation transport unavailable")
-
-
-class _TransitionBeforeYieldInvalidationPublisher(_RecordingInvalidationPublisher):
-    def __init__(self) -> None:
-        super().__init__()
-        self.transition: Callable[[], Awaitable[None]] | None = None
-
-    @contextlib.asynccontextmanager
-    async def subscribe(self, operator_id: UUID, tool_call_id: str) -> AsyncIterator[asyncio.Event]:
-        key = (operator_id, tool_call_id)
-        changed = asyncio.Event()
-        self._waiters.setdefault(key, set()).add(changed)
-        self.subscribed.set()
-        assert self.transition is not None
-        await self.transition()
-        try:
-            yield changed
-        finally:
-            waiters = self._waiters[key]
-            waiters.remove(changed)
-            if not waiters:
-                self._waiters.pop(key)
 
 
 class _RecordingExecutor:
@@ -246,11 +190,6 @@ def ledger(migrated_sessions: async_sessionmaker[AsyncSession]) -> _RecordingLed
 
 
 @pytest.fixture
-def publisher() -> _RecordingInvalidationPublisher:
-    return _RecordingInvalidationPublisher()
-
-
-@pytest.fixture
 def executor() -> _RecordingExecutor:
     return _RecordingExecutor()
 
@@ -260,7 +199,6 @@ def _service(
     database_url: str,
     tmp_path: Path,
     ledger: PostgresToolCallLedger,
-    publisher: _RecordingInvalidationPublisher,
     executor: _RecordingExecutor,
     servers: list[dict[str, Any]] | None = None,
     in_process_servers: InProcessServers | None = None,
@@ -280,7 +218,6 @@ def _service(
     return ToolCallApplicationService(
         settings=console_settings(database_url, config_file=config_file),
         repository=ledger,
-        invalidation_publisher=publisher,
         executor=executor,
         in_process_servers=in_process_servers or {},
     )
@@ -288,16 +225,9 @@ def _service(
 
 @pytest.fixture
 def service(
-    *,
-    migrated_db_url: str,
-    tmp_path: Path,
-    ledger: _RecordingLedger,
-    publisher: _RecordingInvalidationPublisher,
-    executor: _RecordingExecutor,
+    *, migrated_db_url: str, tmp_path: Path, ledger: _RecordingLedger, executor: _RecordingExecutor
 ) -> ToolCallApplicationService:
-    return _service(
-        database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, publisher=publisher, executor=executor
-    )
+    return _service(database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, executor=executor)
 
 
 def _request(*, owner: str, wait_for_ms: int = 0) -> SubmitToolCallRequest:
@@ -314,11 +244,8 @@ async def _always_approve(**_: Any) -> tuple[str, str]:
     return "policy:test", "approved by test policy"
 
 
-async def test_operator_direct_execution_has_no_ledger_or_invalidation_side_effects(
-    actors: dict[str, RuntimeActor],
-    publisher: _RecordingInvalidationPublisher,
-    executor: _RecordingExecutor,
-    service: ToolCallApplicationService,
+async def test_operator_direct_execution_has_no_ledger_side_effects(
+    actors: dict[str, RuntimeActor], executor: _RecordingExecutor, service: ToolCallApplicationService
 ) -> None:
     operator = actors["oa"]
     assert isinstance(operator, OperatorActor)
@@ -331,7 +258,6 @@ async def test_operator_direct_execution_has_no_ledger_or_invalidation_side_effe
     assert (server_id, tool_name, arguments, token) == ("operator-backend", "mutate", {"owner": "browser"}, None)
     assert execution_context.tool_call_id is None
     assert await service.list_tool_calls(actor=operator) == []
-    assert publisher.publications == []
 
     with pytest.raises(OperatorActorRequiredError, match="operator actor required"):
         await service.execute_direct(req=_request(owner="agent"), actor=actors["aa1"])
@@ -340,7 +266,6 @@ async def test_operator_direct_execution_has_no_ledger_or_invalidation_side_effe
 async def test_two_operator_two_agent_authorization_matrix(
     *,
     actors: dict[str, RuntimeActor],
-    publisher: _RecordingInvalidationPublisher,
     executor: _RecordingExecutor,
     ledger: _RecordingLedger,
     service: ToolCallApplicationService,
@@ -403,14 +328,14 @@ async def test_two_operator_two_agent_authorization_matrix(
             )
 
     # A foreign decision is indistinguishable from a missing call and has no side effects.
-    baseline = (list(executor.executions), list(publisher.publications))
+    baseline = list(executor.executions)
     with pytest.raises(ToolCallNotFoundError, match="tool call not found"):
         await service.decide(
             tool_call_id=records["ab2"].tool_call_id,
             decision=ApprovalDecisionRequest(decision=ApprovalDecision.APPROVE),
             actor=actors["oa"],
         )
-    assert (executor.executions, publisher.publications) == baseline
+    assert executor.executions == baseline
 
     approved_a = await service.decide(
         tool_call_id=records["aa1"].tool_call_id,
@@ -451,15 +376,20 @@ async def test_two_operator_two_agent_authorization_matrix(
     ] == [ToolCallStatus.OK, ToolCallStatus.OK]
 
 
-async def test_pending_wait_uses_actor_scoped_event_invalidation(
-    actors: dict[str, RuntimeActor], publisher: _RecordingInvalidationPublisher, service: ToolCallApplicationService
+async def test_pending_wait_observes_the_durable_terminal_state(
+    actors: dict[str, RuntimeActor], service: ToolCallApplicationService
 ) -> None:
     agent = actors["aa1"]
     operator = actors["oa"]
 
-    waiting = asyncio.create_task(service.submit_and_wait(req=_request(owner="wait", wait_for_ms=1000), actor=agent))
-    await asyncio.wait_for(publisher.subscribed.wait(), timeout=1)
-    [pending] = await service.list_tool_calls(actor=agent)
+    waiting = asyncio.create_task(service.submit_and_wait(req=_request(owner="wait", wait_for_ms=5000), actor=agent))
+    pending_rows = []
+    for _ in range(100):
+        pending_rows = await service.list_tool_calls(actor=agent)
+        if pending_rows:
+            break
+        await asyncio.sleep(0.01)
+    [pending] = pending_rows
     assert pending.status is ToolCallStatus.PENDING_APPROVAL
 
     decided = await service.decide(
@@ -467,51 +397,12 @@ async def test_pending_wait_uses_actor_scoped_event_invalidation(
         decision=ApprovalDecisionRequest(decision=ApprovalDecision.APPROVE),
         actor=operator,
     )
-    completed = await asyncio.wait_for(waiting, timeout=1)
+    completed = await asyncio.wait_for(waiting, timeout=2)
 
-    # decide returns the RUNNING record; the waiting agent observes the terminal OK the background
-    # execution publishes.
+    # decide returns the RUNNING record; the waiting agent observes the terminal OK in the ledger.
     assert decided.status is ToolCallStatus.RUNNING
     assert completed.status is ToolCallStatus.OK
     await service.join_executions()
-    assert publisher._waiters == {}
-
-
-async def test_pending_wait_rereads_after_subscribing_before_waiting(
-    *,
-    migrated_db_url: str,
-    tmp_path: Path,
-    actors: dict[str, RuntimeActor],
-    ledger: _RecordingLedger,
-    executor: _RecordingExecutor,
-) -> None:
-    agent = actors["aa1"]
-    operator = actors["oa"]
-    publisher = _TransitionBeforeYieldInvalidationPublisher()
-    service = _service(
-        database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, publisher=publisher, executor=executor
-    )
-
-    # A deny is a synchronous terminal transition (unlike approve, which now dispatches execution to a
-    # background task), so it lands in the durable row within the subscribe window — exactly the
-    # race this test exercises: _wait_terminal must re-read after subscribing and observe it.
-    async def transition_after_subscription_registration() -> None:
-        [pending] = await service.list_tool_calls(actor=agent)
-        decided = await service.decide(
-            tool_call_id=pending.tool_call_id,
-            decision=ApprovalDecisionRequest(decision=ApprovalDecision.DENY, decision_note="reread race"),
-            actor=operator,
-        )
-        assert decided.status is ToolCallStatus.DENIED
-
-    publisher.transition = transition_after_subscription_registration
-
-    completed = await asyncio.wait_for(
-        service.submit_and_wait(req=_request(owner="subscribe-reread", wait_for_ms=1000), actor=agent), timeout=1
-    )
-
-    assert completed.status is ToolCallStatus.DENIED
-    assert publisher._waiters == {}
 
 
 async def test_auto_approval_finishes_as_agent(
@@ -669,46 +560,18 @@ async def test_unknown_server_is_a_transport_independent_not_found(
     assert await service.list_tool_calls(actor=actor) == []
 
 
-async def test_auto_execution_finishes_before_best_effort_invalidation_publication(
-    *,
-    migrated_db_url: str,
-    tmp_path: Path,
-    actors: dict[str, RuntimeActor],
-    ledger: _RecordingLedger,
-    executor: _RecordingExecutor,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    actor = actors["aa1"]
-    monkeypatch.setattr("haku.console.mcp.tool_call_service.auto_approve_tool_call", _always_approve)
-    publisher = _RaisingInvalidationPublisher()
-    service = _service(
-        database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, publisher=publisher, executor=executor
-    )
-
-    completed = await service.submit_and_wait(req=_request(owner="raising-publisher"), actor=actor)
-
-    assert completed.status is ToolCallStatus.OK
-    assert (await service.get(completed.tool_call_id, actor=actor)).status is ToolCallStatus.OK
-    assert ledger.finish_actors == [actor]
-    assert len(executor.executions) == 1
-    assert publisher.publications == [(actor.operator_id, completed.tool_call_id)]
-
-
 async def test_executor_cancellation_terminalizes_before_reraising(
     *,
     migrated_db_url: str,
     tmp_path: Path,
     actors: dict[str, RuntimeActor],
     ledger: _RecordingLedger,
-    publisher: _RecordingInvalidationPublisher,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     actor = actors["aa1"]
     monkeypatch.setattr("haku.console.mcp.tool_call_service.auto_approve_tool_call", _always_approve)
     executor = _CancellingExecutor()
-    service = _service(
-        database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, publisher=publisher, executor=executor
-    )
+    service = _service(database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, executor=executor)
 
     with pytest.raises(asyncio.CancelledError):
         await service.submit_and_wait(req=_request(owner="cancelled"), actor=actor)
@@ -716,21 +579,13 @@ async def test_executor_cancellation_terminalizes_before_reraising(
     [terminal] = await service.list_tool_calls(actor=actor)
     assert terminal.status is ToolCallStatus.ERROR
     assert ledger.finish_actors == [actor]
-    assert publisher.publications == [(actor.operator_id, terminal.tool_call_id)]
 
 
 async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
-    *,
-    migrated_db_url: str,
-    tmp_path: Path,
-    actors: dict[str, RuntimeActor],
-    ledger: _RecordingLedger,
-    publisher: _RecordingInvalidationPublisher,
+    *, migrated_db_url: str, tmp_path: Path, actors: dict[str, RuntimeActor], ledger: _RecordingLedger
 ) -> None:
     executor = _BlockingExecutor()
-    service = _service(
-        database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, publisher=publisher, executor=executor
-    )
+    service = _service(database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, executor=executor)
     pending = await service.submit_and_wait(req=_request(owner="aa1"), actor=actors["aa1"])
     assert pending.status is ToolCallStatus.PENDING_APPROVAL
 

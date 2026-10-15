@@ -10,8 +10,8 @@ import {
   type AgentView,
   type DeploymentInfo,
 } from "./client";
-import { useConsoleEvents } from "./console_events";
 import { ExternalLink } from "./link";
+import { POLL_REFRESH_INTERVAL_MS } from "./periodic_refresh";
 import { shortDate } from "./time";
 import { toastError, toastSuccess } from "./toast";
 
@@ -274,11 +274,11 @@ export function SettingsPanel(): JSX.Element {
     pollMs,
     formatError: displayableError,
   });
-  const agentsResource = useAsyncResource(listAgents, resourceOptions("agents"));
-  const deploymentResource = useAsyncResource(fetchDeploymentInfo, resourceOptions("system"));
+  const agentsResource = useAsyncResource(listAgents, resourceOptions("agents", POLL_REFRESH_INTERVAL_MS));
+  const deploymentResource = useAsyncResource(fetchDeploymentInfo, resourceOptions("system", POLL_REFRESH_INTERVAL_MS));
+  const agentAccessProfiles = agentsResource.data?.access_profiles ?? [];
   const refreshAgents = agentsResource.refresh;
   const refreshDeployment = deploymentResource.refresh;
-  const agentAccessProfiles = agentsResource.data?.access_profiles ?? [];
   const refreshActiveTab = useCallback(() => {
     if (activeTab === "agents") return refreshAgents();
     if (activeTab === "system") return refreshDeployment();
@@ -290,9 +290,6 @@ export function SettingsPanel(): JSX.Element {
       window.removeEventListener("popstate", restoreTab);
     };
   }, []);
-  useConsoleEvents((event) => {
-    if (event.event_type === "sync") refreshActiveTab();
-  });
   function selectTab(value: string | null) {
     if (!value || !SETTINGS_TABS.includes(value as SettingsTab)) return;
     const tab = value as SettingsTab;

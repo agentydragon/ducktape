@@ -1,6 +1,6 @@
 # haku/console — Haku's interactive console
 
-A FastAPI service serving the trusted Haku console as a React single-page app over JSON and WebSockets.
+A FastAPI service serving the trusted Haku console as a React single-page app backed by its REST API.
 The console is the operator-owned shell around Haku's cross-origin UI, the approval/audit ledger
 for privileged tool calls, and the home of Agent identity.
 
@@ -39,8 +39,8 @@ retire. There is no low-privilege console write tier: haku-ui writes its own sta
 The operator REST API (`/api/approvals/pending`, `/api/tool-calls`, and
 `POST /api/tool-calls/{tool_call_id}/decision`) remains active. It lists retained call records and
 allows already-pending work to be approved or denied. Calls requiring the retired grants backend
-cannot execute; the call records and decisions stay in Postgres for audit. The event WebSocket is
-only a lossy invalidation channel: REST remains authoritative.
+cannot execute; the call records and decisions stay in Postgres for audit. The browser refreshes
+these views every 30 seconds while the ledger drains.
 
 The Console's Agent-facing MCP endpoint, Operator browser MCP client, and OAuth discovery handlers
 are retired. New MCP calls cannot enter the ledger. Existing rows and their operator decisions stay
@@ -56,8 +56,8 @@ policy and any configured in-process server access; missing assignments fail clo
 
 ### In-process execution backend
 
-No Console-owned MCP execution backend is currently configured. The grants package, operator API,
-Settings panel, MCP tools, and Console Kubernetes authorization endpoint are retired. Historical
+No Console-owned MCP execution backend is currently configured. The grants package, Settings
+panel, grants MCP tools, and Console Kubernetes authorization endpoint are retired. Historical
 Kubernetes grant rows and MCP call records remain in Postgres; calls requiring the removed backend
 fail closed when dispatched. The Console no longer reflects or refreshes server catalogs, serves
 MCP requests, or makes browser-session reads through `/mcp`. The routine uses its separate audited
@@ -86,8 +86,8 @@ geolocation and screenshot grants, shell-owned kill switches, and residual exfil
 `frontend/tool_calls_page.tsx` renders the Operator's durable audit ledger at
 `/_console/tool-calls`. It pages newest-first by keyset cursor, defaults to 25 rows, and hides
 routine auto-approved traffic unless requested. The small page is deliberate: each row may carry
-whole argument/result payloads, so hundreds of rows make a multi-megabyte response. A live event
-refreshes only the newest page and merges it over older pages; result/argument editors initialize
+whole argument/result payloads, so hundreds of rows make a multi-megabyte response. Periodic refresh
+updates only the newest page and merges it over older pages; result/argument editors initialize
 near the viewport rather than for every retained row.
 
 ## Perimeter / deploy

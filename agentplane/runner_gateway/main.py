@@ -78,6 +78,7 @@ async def gateway(
                     principals=principals,
                     caller_accounts=settings.caller_accounts,
                     sandboxes=sandboxes,
+                    destinations=destinations,
                     control=control,
                     sandbox_controller_account=settings.sandbox_controller_account,
                 )

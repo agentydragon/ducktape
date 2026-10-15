@@ -33,9 +33,9 @@ import { SettingsPanel } from "./settings_panel";
 import { AgentEnrollmentPanel, type EnrollmentChoice } from "./agent_enrollment_panel";
 import { toastError, toastSuccess } from "./toast";
 import { useToolCallDecision } from "./tool_call_decision";
-import { useConsoleEvents } from "./console_events";
 import { redirectToOperatorLogin } from "./operator_login";
 import { useOperatorSessionDeadline, useSessionExpiringSoon } from "./operator_session";
+import { usePeriodicRefresh } from "./periodic_refresh";
 import { ToolCallsPage } from "./tool_calls_page";
 
 // Haku's own UI service — a separate, Authentik-gated origin running in haku-sandbox — embedded as
@@ -358,10 +358,8 @@ export function HakuUiEmbed({
     ...Array.from(toolDecisions.decidingToolCallIds, toolApprovalQueueId),
   ];
 
-  // Live tool-call signal: initial fetch on mount plus a refetch on every server WS event
-  // (which the server also broadcasts to every other tab, so they refresh too). Its status
-  // drives the shell's live-channel warning when the socket is down.
-  const liveStatus = useConsoleEvents(() => refreshToolApprovals());
+  // Fetch approvals on mount and periodically; operator actions update this tab immediately.
+  usePeriodicRefresh(refreshToolApprovals);
 
   const pendingApprovalCount = toolApprovals.length + geolocationApprovals.length + screenshotApprovals.length;
   useEffect(() => {
@@ -609,7 +607,6 @@ export function HakuUiEmbed({
         approvalsOpen={approvalsOpen}
         focusedToolCallId={toolCallId ?? null}
         onApprovalsOpenChange={setApprovalsOpenFromUser}
-        liveStatus={liveStatus}
         syncError={syncError}
         syncing={syncsInFlight > 0}
         lastSyncAt={lastSyncAt}

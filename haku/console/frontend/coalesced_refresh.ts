@@ -1,23 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 
-/** Runs `read` with at most one call in flight, collapsing a burst of requests into one catch-up.
+/** Runs `read` with at most one call in flight, collapsing overlapping refresh requests into one catch-up.
  *
- * Live events arrive in bursts while a view only ever shows the newest state, so overlapping
- * refetches would queue up whole pages of records for answers each of which the next one discards.
- * A request made while one is running sets a flag instead, and the runner does exactly one more
- * pass afterwards however many arrived.
+ * The history view only ever shows the newest state, so overlapping refetches would queue up whole
+ * pages of records for answers each of which the next one discards. A request made while one is
+ * running sets a flag instead, and the runner does exactly one more pass afterwards however many
+ * arrived.
  *
  * `read` owns its own errors: only the caller knows what a failure means for its view. A throw ends
- * the burst rather than being retried immediately — the live channel and the shell's periodic
- * resync bring the next one along.
+ * the burst rather than being retried immediately — the next periodic refresh or operator action
+ * brings the next one along.
  *
  * `busy` stays true for the whole burst, not per pass, so a spinner bound to it does not blink
  * between the passes of one catch-up.
  */
 export function useCoalescedRefresh(read: () => Promise<void>): { refresh: () => void; busy: boolean } {
   const [busy, setBusy] = useState(false);
-  // Held in a ref so a changing callback identity never changes `refresh`'s: it is registered with
-  // the live-event hook, which holds the first one it is given.
+  // Held in a ref so a changing callback identity never changes `refresh`'s.
   const readRef = useRef(read);
   useEffect(() => {
     readRef.current = read;
@@ -35,7 +34,7 @@ export function useCoalescedRefresh(read: () => Promise<void>): { refresh: () =>
     void (async () => {
       try {
         do {
-          // Cleared before the pass, so an event arriving during it asks for another.
+          // Cleared before the pass, so a request arriving during it asks for another.
           catchUp.current = false;
           await readRef.current();
         } while (catchUp.current);

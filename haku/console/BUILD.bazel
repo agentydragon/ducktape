@@ -167,7 +167,7 @@ py_library(
         "//haku/console/identity:operator_login_flow",
         "//haku/console/mcp:approval",
         "//haku/console/mcp:tool_call_service",
-        "//haku/console/notifications:console_events",
+        "@pypi//asyncpg",
         "@pypi//fastapi",
         "@pypi//itsdangerous",
         "@pypi//prometheus_client",

@@ -100,6 +100,19 @@ ts_library(
 )
 
 ts_library(
+    name = "grant_principal",
+    srcs = ["grant_principal.tsx"],
+    isolated_typecheck = True,
+    tsconfig = TSCONFIG,
+    deps = [
+        ":agent_names",
+        ":client",
+        "//:node_modules/@types/react",
+        "//:node_modules/react",
+    ],
+)
+
+ts_library(
     name = "operator_login",
     srcs = ["operator_login.ts"],
     isolated_typecheck = True,
@@ -239,12 +252,11 @@ ts_library(
 )
 
 ts_library(
-    name = "console_events",
-    srcs = ["console_events.ts"],
+    name = "periodic_refresh",
+    srcs = ["periodic_refresh.ts"],
     isolated_typecheck = True,
     tsconfig = TSCONFIG,
     deps = [
-        ":operator_login",
         "//:node_modules/@types/react",
         "//:node_modules/react",
     ],
@@ -539,7 +551,6 @@ ts_library(
         ":approval_state",
         ":client",
         ":code_block",
-        ":console_events",
         ":field",
         ":icons",
         ":pending_tool_call_actions",
@@ -563,8 +574,8 @@ ts_library(
         ":approval_state",
         ":client",
         ":coalesced_refresh",
-        ":console_events",
         ":pending_tool_call_actions",
+        ":periodic_refresh",
         ":toast",
         ":tool_call_card",
         ":tool_call_decision",
@@ -594,8 +605,8 @@ ts_library(
     deps = [
         ":async_resource",
         ":client",
-        ":console_events",
         ":link",
+        ":periodic_refresh",
         ":time",
         ":toast",
         "//:node_modules/@mantine/core",
@@ -629,13 +640,13 @@ ts_library(
         ":bridge",
         ":client",
         ":confirm_dialog",
-        ":console_events",
         ":geolocation",
         ":geolocation_grant",
         ":link",
         ":open_external",
         ":operator_login",
         ":operator_session",
+        ":periodic_refresh",
         ":routing",
         ":screenshot_capture",
         ":screenshot_grant",
@@ -658,7 +669,7 @@ ts_library(
     deps = [
         ":approval_state",
         ":client",
-        ":console_events",
+        ":periodic_refresh",
         ":shell_chrome",
         ":tool_call_decision",
         "//:node_modules/@mantine/core",

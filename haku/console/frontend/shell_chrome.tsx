@@ -33,7 +33,6 @@ import type { ConsoleNavigationView, ConsoleView } from "./routing";
 import { SUCCESS_COLOR } from "./theme";
 import { formatClockTime, formatTimestamp } from "./time";
 import { ToolCallCard } from "./tool_call_card";
-import type { LiveStatus } from "./console_events";
 import { useVariant, VariantControl } from "./variant_control";
 
 export interface ShellChromeProps {
@@ -56,9 +55,6 @@ export interface ShellChromeProps {
   onDismissRecentToolCall: (toolCallId: string) => void;
   view: ConsoleView;
   onNavigate: (view: ConsoleNavigationView) => void;
-  // Live tool-call WebSocket health: drives the sync-status icon that is always visible (as an
-  // ok-sync indicator) and the clickable panel that explains the current state.
-  liveStatus: LiveStatus;
   // Error message from the last REST fetch of pending approvals, or null on success. Shown in the
   // sync-status panel and turns the icon orange, so load errors are visible without a toast flood.
   syncError: string | null;
@@ -203,24 +199,14 @@ function SessionPanel({ expiresAt, onReauthenticate }: { expiresAt: Date; onReau
   );
 }
 
-// Sync-status panel: always accessible via the wifi icon in the toolbar. Shows the current
-// state of the live WebSocket channel and the last REST fetch outcome in one place, so the
-// operator never has to wonder whether the approval list is current.
+// Sync-status panel: always accessible via the sync icon in the toolbar. Shows the latest REST
+// fetch outcome, so the operator can tell whether the approval list loaded successfully.
 export type SyncState = "current" | "syncing" | "error";
 
-// Exhaustive over LiveStatus with no fallback, so a new live-channel state is a compile error
-// rather than being reported as healthy — the one answer that must never be a default here. The
-// maps below are keyed for the same reason.
-export function syncState(liveStatus: LiveStatus, syncError: string | null, syncing: boolean): SyncState {
+export function syncState(syncError: string | null, syncing: boolean, lastSyncAt: Date | null): SyncState {
   if (syncError !== null) return "error";
-  switch (liveStatus) {
-    case "offline":
-      return "error";
-    case "connecting":
-      return "syncing";
-    case "live":
-      return syncing ? "syncing" : "current";
-  }
+  if (syncing || lastSyncAt === null) return "syncing";
+  return "current";
 }
 
 // Also the sync rail button's aria-labels, which the screenshot scenes select on.
@@ -240,18 +226,15 @@ const SYNC_RAIL_COLOR: Record<SyncState, string | undefined> = {
 };
 
 function SyncStatusPanel({
-  liveStatus,
   syncError,
   syncing,
   lastSyncAt,
 }: {
-  liveStatus: LiveStatus;
   syncError: string | null;
   syncing: boolean;
   lastSyncAt: Date | null;
 }) {
-  const offline = liveStatus === "offline";
-  const state = syncState(liveStatus, syncError, syncing);
+  const state = syncState(syncError, syncing, lastSyncAt);
   return (
     <section className="haku-shell-card haku-shell-side-panel" aria-label="Sync status">
       <Stack gap="xs">
@@ -260,30 +243,22 @@ function SyncStatusPanel({
             Sync status
           </Text>
           <Badge color={SYNC_BADGE_COLOR[state]} variant="light">
-            {/* Not SYNC_STATE_LABEL: this badge splits `error` into Offline vs Fetch error, a
-                distinction SyncState deliberately collapses. */}
-            {offline ? "Offline" : syncError !== null ? "Fetch error" : SYNC_STATE_LABEL[state]}
+            {syncError !== null ? "Fetch error" : SYNC_STATE_LABEL[state]}
           </Badge>
         </Group>
-        {offline && (
-          <Text size="xs" c="dimmed">
-            The console lost its live connection, so new tool calls and approvals won&apos;t appear on their own. It
-            keeps retrying; reload the page to refresh immediately.
-          </Text>
-        )}
-        {!offline && syncError !== null && (
+        {syncError !== null && (
           <Text size="xs" c="dimmed">
             Failed to load pending approvals: {syncError}
           </Text>
         )}
-        {state === "syncing" && !offline && syncError === null && (
+        {state === "syncing" && syncError === null && (
           <Text size="xs" c="dimmed">
-            {liveStatus === "connecting" ? "Connecting to live updates…" : "Refreshing pending approvals…"}
+            Refreshing pending approvals…
           </Text>
         )}
         {state === "current" && (
           <Text size="xs" c="dimmed">
-            Live updates are connected and pending approvals are current.
+            Pending approvals refresh every 30 seconds.
           </Text>
         )}
         {lastSyncAt && (
@@ -665,7 +640,6 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
   const {
     approvalsOpen,
     onApprovalsOpenChange,
-    liveStatus,
     syncError,
     geoGranted,
     tracking,
@@ -680,7 +654,7 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
   const [openIndicator, setOpenIndicator] = useState<IndicatorPanel | null>(null);
   const pendingCount =
     props.pendingApprovals.length + props.geolocationApprovals.length + props.screenshotApprovals.length;
-  const currentSyncState = syncState(liveStatus, syncError, props.syncing);
+  const currentSyncState = syncState(syncError, props.syncing, props.lastSyncAt);
 
   useEffect(() => {
     if (
@@ -794,12 +768,7 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
         {openIndicator && (
           <div className="haku-shell-indicator-popover">
             {openIndicator === "sync-status" && (
-              <SyncStatusPanel
-                liveStatus={liveStatus}
-                syncError={syncError}
-                syncing={props.syncing}
-                lastSyncAt={props.lastSyncAt}
-              />
+              <SyncStatusPanel syncError={syncError} syncing={props.syncing} lastSyncAt={props.lastSyncAt} />
             )}
             {openIndicator === "location" && geoGranted && (
               <LocationPanel tracking={tracking} onWithdraw={onWithdrawGeolocation} />

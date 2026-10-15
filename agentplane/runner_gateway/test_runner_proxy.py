@@ -9,13 +9,22 @@ from dataclasses import dataclass
 import grpc
 import pytest
 import pytest_bazel
+from kubernetes_asyncio import client as k8s_client
 
 from agentplane.grpc_serving import serving
 from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases
+from agentplane.runner_gateway.destinations import DestinationResolver
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
-from agentplane.runner_gateway.runner_proxy import SANDBOX_HEADER, Resources, RunnerProxy
+from agentplane.runner_gateway.runner_proxy import (
+    SANDBOX_HEADER,
+    SANDBOX_OWNER_NAME_HEADER,
+    SANDBOX_OWNER_NAMESPACE_HEADER,
+    SANDBOX_UID_HEADER,
+    Resources,
+    RunnerProxy,
+)
 from agentplane.runner_gateway.testing.runner_control import (
     OTHER_REPLICA,
     REPLICA,
@@ -23,7 +32,7 @@ from agentplane.runner_gateway.testing.runner_control import (
     connected,
     serve_replica_control,
 )
-from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
+from agentplane.sandboxes.testing.kubernetes import SANDBOX, SANDBOX_UID, SandboxCluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 
@@ -68,6 +77,7 @@ def replica(
                         principals=cluster.build_principal_resolver(AUDIENCE),
                         caller_accounts=frozenset({CALLER}),
                         sandboxes=cluster.inventory,
+                        destinations=DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api)),
                         control=control,
                         sandbox_controller_account=CONTROLLER,
                     )
@@ -110,6 +120,17 @@ async def runner_on(replica: Replica) -> AsyncIterator[ScriptedRunner]:
 def metadata(account: ServiceAccountRef = CALLER, *, sandbox: str | None = SANDBOX) -> tuple[tuple[str, str], ...]:
     named = () if sandbox is None else ((SANDBOX_HEADER, sandbox),)
     return (("authorization", f"Bearer {TOKENS[account]}"), *named)
+
+
+def identity_metadata(
+    *, sandbox_uid: str = SANDBOX_UID, owner_namespace: str = SANDBOX_NAMESPACE, owner_name: str = SANDBOX
+) -> tuple[tuple[str, str], ...]:
+    return (
+        *metadata(),
+        (SANDBOX_UID_HEADER, sandbox_uid),
+        (SANDBOX_OWNER_NAMESPACE_HEADER, owner_namespace),
+        (SANDBOX_OWNER_NAME_HEADER, owner_name),
+    )
 
 
 @asynccontextmanager
@@ -203,6 +224,39 @@ async def test_a_call_that_names_no_servable_sandbox_is_refused(
             await stub.ListSessions(runner_pb2.ListSessionsRequest(), metadata=call_metadata)
         assert refused.value.code() == code
     assert not runner.received
+
+
+async def test_expected_sandbox_identity_is_checked_before_tunneling(holder: Replica) -> None:
+    async with runner_on(holder) as runner, runner_stub(holder) as stub:
+        runner.sessions["test-session"] = runner_pb2.SessionSummary(session_id="test-session")
+        listed = await stub.ListSessions(runner_pb2.ListSessionsRequest(), metadata=identity_metadata())
+        assert [row.session_id for row in listed.sessions] == ["test-session"]
+        assert len(runner.received) == 1
+
+        for call_metadata in (
+            identity_metadata(sandbox_uid="replaced-sandbox-uid"),
+            identity_metadata(owner_name="different-owner"),
+        ):
+            with pytest.raises(grpc.aio.AioRpcError) as refused:
+                await stub.ListSessions(runner_pb2.ListSessionsRequest(), metadata=call_metadata)
+            assert refused.value.code() == grpc.StatusCode.NOT_FOUND
+
+        with pytest.raises(grpc.aio.AioRpcError) as incomplete:
+            await stub.ListSessions(
+                runner_pb2.ListSessionsRequest(), metadata=(*metadata(), (SANDBOX_UID_HEADER, SANDBOX_UID))
+            )
+        assert incomplete.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+        assert len(runner.received) == 1
+
+
+async def test_expected_sandbox_identity_requires_a_ready_runner_pod(holder: Replica, cluster: SandboxCluster) -> None:
+    cluster.fake.pods[SANDBOX]["status"]["conditions"] = []
+    async with runner_on(holder) as runner, runner_stub(holder) as stub:
+        with pytest.raises(grpc.aio.AioRpcError) as unavailable:
+            await stub.ListSessions(runner_pb2.ListSessionsRequest(), metadata=identity_metadata())
+
+        assert unavailable.value.code() == grpc.StatusCode.UNAVAILABLE
+        assert not runner.received
 
 
 if __name__ == "__main__":
