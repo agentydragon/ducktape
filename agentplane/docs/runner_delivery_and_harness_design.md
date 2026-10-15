@@ -89,6 +89,12 @@ same-name replacement. This lets offline delivery rely on the caller's destinati
 than a central Session-to-Sandbox placement registry. The Kubernetes UID-to-live-connection or
 workload routing function remains separate from any session placement registry.
 
+Wake-on-send has a durable acceptance requirement: before reporting a request as queued or initiating
+wake, persist its complete destination tuple, command ID and payload. That record must survive caller
+disconnect, Dispatcher process restart and the full Sandbox image-pull/boot delay. Dispatcher queue
+acceptance is a different outcome from Runner admission; name each stage explicitly, and do not
+present the queued receipt as proof that the runner admitted or the harness consumed the command.
+
 The API representation and resolver remain open: decide whether the request carries a Kubernetes
 namespace/name locator alongside UID or resolves by UID, and how an optional store ID is represented.
 Do not claim live Session membership can be verified while the runner is unavailable. Authenticate
@@ -143,14 +149,14 @@ Do not merge merely because every queued delivery eventually calls the proxy.
 
 For persistence, compare the current durable queue with direct runner admission:
 
-| Concern                                 | Dispatcher queue                                                                                                             | Direct admission RPC                                                                                                                                              |
-| --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Runner unavailable or Sandbox suspended | Can retain accepted work, retry after readiness, and own the reviewed wake-to-deliver policy.                                | Requires an available runner. Reject if it is unavailable or suspended; do not wake it or wait for VM/image startup.                                              |
-| Lost response                           | Query/retry the same durable command ID and read Dispatcher state; runner admission can still be uncertain until reconciled. | A lost reply is unknown, not rejection. Retry the same command ID against the runner journal while that storage is retained.                                      |
-| Replica failure                         | Shared PostgreSQL rows, leases and generations recover queued/in-flight work.                                                | Caller retry or a new durable owner must survive the sender process and its failover. Runner-local journal only protects work after it is durably admitted there. |
-| Runner storage loss                     | Runner-owned state is terminally lost; the queue or History is not a promise to reconstruct it.                              | Runner-owned state is terminally lost; no queue/History reconstruction guarantee is implied. Retained History remains a separate store and may still exist.       |
-| Ordering and cancellation               | Queue defines per-Session order, stop behavior and delivery state.                                                           | The API must define ordering and cancellation without silently reintroducing a durable queue.                                                                     |
-| Offline acceptance                      | Accepted independently of a live harness, subject to current queue and wake policy.                                          | Cannot promise offline acceptance without persistence somewhere.                                                                                                  |
+| Concern                                 | Dispatcher queue                                                                                                                                        | Direct admission RPC                                                                                                                                              |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Runner unavailable or Sandbox suspended | Persist the full destination tuple, command ID and payload before queued acceptance or wake; retain through caller/Dispatcher restart and Sandbox boot. | Requires an available runner. Reject if it is unavailable or suspended; do not wake it or wait for VM/image startup.                                              |
+| Lost response                           | Query/retry the same durable command ID and read Dispatcher state; runner admission can still be uncertain until reconciled.                            | A lost reply is unknown, not rejection. Retry the same command ID against the runner journal while that storage is retained.                                      |
+| Replica failure                         | Shared PostgreSQL rows, leases and generations recover queued/in-flight work.                                                                           | Caller retry or a new durable owner must survive the sender process and its failover. Runner-local journal only protects work after it is durably admitted there. |
+| Runner storage loss                     | Runner-owned state is terminally lost; the queue or History is not a promise to reconstruct it.                                                         | Runner-owned state is terminally lost; no queue/History reconstruction guarantee is implied. Retained History remains a separate store and may still exist.       |
+| Ordering and cancellation               | Queue defines per-Session order, stop behavior and delivery state.                                                                                      | The API must define ordering and cancellation without silently reintroducing a durable queue.                                                                     |
+| Offline acceptance                      | A durable queued receipt can be returned independently of a live harness; it is not Runner admission.                                                   | Reject unavailable targets; this mode provides no offline or wake-on-send acceptance.                                                                             |
 
 A direct RPC can reduce one durable service database only if its caller/retry contract handles lost
 responses, idempotency, duplicate opens, suspended/offline runners, concurrency and failover. Do not

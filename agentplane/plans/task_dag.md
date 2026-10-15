@@ -1534,13 +1534,16 @@ with runner-local persistence; inventory every other database consumer and say w
 can be omitted, moved or still requires a database.
 For direct admission, require an available runner and reject while it is unavailable or suspended;
 direct admission must not wake-to-deliver or wait through long VM/image startup. The durable queue is
-the mode that may retain work and own the existing guarded wake path. A lost direct-admission reply is
-unknown, not rejection: retry the same idempotency key while the runner journal is retained. Runner
-storage loss is terminal for runner-owned state; there is no requirement to reconstruct it from a
-queue or History, and this does not imply separately retained History was also lost. Cover
-per-Session ordering, cancellation, duplicate opens, sender and replica failure, and retries. Runner-local
-persistence protects work only after the runner has committed admission; it does not accept work while
-that runner is absent. Inventory all database owners before making any CNPG claim: the shared cluster also serves `app`, `sandbox_commands`,
+the only mode that may retain work and own wake-to-deliver. For wake-on-send, persist the complete
+destination tuple, command ID and payload before reporting durable queue acceptance or initiating
+wake; retain it across caller disconnect, Dispatcher restart and the full image-pull/boot delay.
+Distinguish that queue receipt from later Runner admission. A lost direct-admission reply is unknown,
+not rejection: retry the same idempotency key while the runner journal is retained. Runner storage
+loss is terminal for runner-owned state; there is no requirement to reconstruct it from a queue or
+History, and this does not imply separately retained History was also lost. Cover per-Session ordering,
+cancellation, duplicate opens, sender and replica failure, and retries. Runner-local persistence
+protects work only after the runner has committed admission; it does not accept work while that runner
+is absent. Inventory all database owners before making any CNPG claim: the shared cluster also serves `app`, `sandbox_commands`,
 `sandbox_service`, `actions`, `egress`, `notifications` and the Dispatcher; Indexing has a separate
 PostgreSQL dependency.
 
@@ -1599,8 +1602,10 @@ this disposition and successful caller migration; this design does not select it
 
 **Candidate decision; preferred destination direction approved by operator, 2026-10-15.** Require
 submissions to carry the complete caller-provided destination tuple: Sandbox UID, optional persisted
-harness/store ID, and Session ID. Queue that tuple, locate the exact Sandbox, and let queued delivery
-wake only that target. The reachable runner rejects an unknown Session/store as a terminal outcome;
+harness/store ID, and Session ID. Persist the tuple, command ID and payload before reporting queued
+acceptance or initiating wake, then retain it across caller/Dispatcher restart and Sandbox boot. The
+durable queue receipt is distinct from later Runner admission. Queue that tuple, locate the exact
+Sandbox, and let queued delivery wake only that target. The reachable runner rejects an unknown Session/store as a terminal outcome;
 it must not search other Sandboxes, create a Session, or fall back to a same-name replacement. Offline
 queue admission does not claim to verify live Session membership and does not need a central
 Session-to-Sandbox placement registry. Keep Kubernetes UID-to-live-connection/workload routing
