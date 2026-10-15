@@ -23,6 +23,8 @@ execution sequence. This is a priority decision, not a technical dependency.
 - [Thread sync](thread_sync/README.md) — what is still open on the deployed Electric design (pending-command paging, body compaction, measurement), and the seams and candidates for a second implementation
 - [Task DAG](task_dag.md) — remaining work and proposed priorities, including unranked future
   harness-capability candidates, deployed acceptance, UI/history, and native recovery
+- [Runner delivery boundaries and harness identity](../docs/runner_delivery_and_harness_design.md) —
+  History versus live inventory, delivery durability and authority, and process/store/Session identity
 - [Durable SSH-backed processes](ssh_durable_processes.md) — deferred systemd-backed host daemon for processes that outlive an SSH connection
 - [Driver-provided tools and background work](driver_tools_and_background.md) — deferred seam that must reuse the Action contracts
 - [Claude RemoteIO transport](claude_remote_io.md) — evaluate an optional `--sdk-url` bridge through Agentplane egress, including compaction-summary value and recovery gates

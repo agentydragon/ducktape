@@ -236,8 +236,10 @@ flowchart TD
     AGENT_LAUNCH_POLICY_DESIGN --> AGENT_SANDBOX_LAUNCH
     NATIVE_SUBAGENT_EXPOSURE[Explore: expose native harness children as Sessions]
     RUNNER_HARNESS_OBJECTS_DESIGN[Decision: explicit running harness objects]
+    HARNESS_IDENTITY_DESIGN[Decision: process, store and native Session identity]
     NATIVE_SUBAGENT_EXPOSURE -. if multiple Sessions share a harness .-> RUNNER_HARNESS_OBJECTS_DESIGN
     NATIVE_SUBAGENT_EXPOSURE -. the native-child boundary it informs .-> MULTIAGENT_MODEL
+    HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
     GATEWAY_SESSION_REGISTRY_RETIRE[Blocked: retire the registry, section 12] -. related .-> NATIVE_SUBAGENT_EXPOSURE
 ```
 
@@ -348,18 +350,18 @@ does not grant history read, messaging, credentials or execution of another prin
 
 ### `RUNNER_HARNESS_OBJECTS_DESIGN` — expose running harnesses separately from Sessions
 
-**Conditional design decision; operator, 2026-10-15 PDT.** If a harness can own multiple
-Sessions, for example through harness-native subagents, evaluate exposing running harnesses
-as explicit runner objects with Session-to-harness associations. Use the characterization from
-`NATIVE_SUBAGENT_EXPOSURE`; do not assume one Session is one running harness or that every
-discovered child is independently controllable.
+**Conditional design decision; operator, 2026-10-15 PDT.** Evaluate exposing running harnesses as
+explicit runner objects with Session-to-harness associations. Use the Codex and Claude
+multiplexing characterizations, `HARNESS_IDENTITY_DESIGN` and
+`NATIVE_SUBAGENT_EXPOSURE`; do not assume one Agentplane Session is one process, one persisted
+store, or one native conversation, or that every discovered child is independently controllable.
 
 Compare explicit harness identity/lifecycle with retaining Session-only projections. Specify
-which operations and status belong to the harness versus a Session, how restart/exit affects
-associations and retained history, and the authorization boundary for observing or controlling
-a shared harness. Deliver a recommendation and proposed API shape for review; implementation
-and migration/retirement nodes follow only if selected. This does not unfreeze the broader
-runner durability redesign or authorize native-subagent implementation.
+which operations, options, status and authorization belong to a process incarnation, persisted
+store and logical/native Session; include concurrency, cancellation and failure/restart behavior.
+Deliver a recommendation and proposed API shape for review; implementation and migration/retirement
+nodes follow only if selected. This does not unfreeze the broader runner durability redesign or
+authorize native-subagent implementation.
 
 ### `NATIVE_SUBAGENT_EXPOSURE` — evaluate native harness children as Agentplane Sessions
 
@@ -1273,7 +1275,8 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 flowchart TD
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
     CONTROL_SURFACE_RETIREMENT_AUDIT[Assigned: audit RPCs, fields and arguments against the intended paths]
-    CONTROL_SURFACE_RETIREMENT_AUDIT --> RUNNER_LIST_SESSIONS_RETIRE[Blocked: resolve remaining live-inventory semantics, then remove ListSessions]
+    CONTROL_SURFACE_RETIREMENT_AUDIT --> RUNNER_INVENTORY_AUTHORITY_DESIGN
+    RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state caller remains .-> RUNNER_LIST_SESSIONS_RETIRE[Conditional: retire Runner.ListSessions]
     CONTROL_SURFACE_RETIREMENT_AUDIT --> DISPATCHER_OPEN_ALREADY_EXISTS[Candidate: reconcile opening conflict semantics before removing its list fallback]
     DISPATCHER_OPEN_ALREADY_EXISTS --> RUNNER_LIST_SESSIONS_RETIRE
     CONTROL_SURFACE_RETIREMENT_AUDIT --> DISPATCHER_OPENING_ATTACHED_RETIRE[Candidate: remove the unused persisted opening snapshot]
@@ -1321,23 +1324,23 @@ and owner-approved, with authored data preserved. Batch straightforward dead-sur
 separate behavior changes and data drops. This audit does not block already-specified independent
 migrations or authorize broad compatibility shims, language rewrites or speculative replacement RPCs.
 
-### `RUNNER_LIST_SESSIONS_RETIRE` — remove the live inventory RPC if its remaining purposes migrate
+### `RUNNER_LIST_SESSIONS_RETIRE` — retire live inventory only if its reviewed purposes no longer need it
 
-**Blocked on the surface audit's disposition and migration of its remaining real callers.** The
-Sandbox table uses retained History inventory. App archive safety/native resume, Notification
-membership, and the Dispatcher opening fallback still use live runner inventory; app and Notification
-now reach `Runner.ListSessions` through the per-Sandbox proxy with expected Sandbox UID and owner
-metadata (#10619), and their caller plus receiver images are deployed in both environments. Test
-drivers also use the read to order Quiesce assertions. History's retained harness state and
-namespace/name association do not preserve authoritative live state or Sandbox UID/owner checks.
-Migrate remaining callers with their live-state and identity requirements intact, then migrate tests
-and verify pinned caller images before removing the runner method/messages and helpers via normal
-generation. The
-Dispatcher fallback has a separate contract flaw: matching `OpenSession` retries return the existing
-attachment, while `ALREADY_EXISTS` means spec/setup conflict; its current ID-only list check can
-accept a conflict. Correct that before removing this caller. The Gateway wrapper may retire even if a
-narrowly justified runner live read remains; record that decision and remove this conditional node if
-so.
+**Conditional on the live-versus-retained inventory disposition in `RUNNER_INVENTORY_AUTHORITY_DESIGN`,
+the surface audit, and the separate Dispatcher conflict correction.** Runner `ListSessions` reports
+the current runner's retained Session records and live harness/setup state. The app uses it for
+archive and resume checks; Notification uses it for destination membership at subscription time;
+Dispatcher currently uses it after runner `OpenSession` returns `ALREADY_EXISTS`; test drivers also
+use it for lifecycle assertions. History inventory is retained and event-backed, may include deleted
+Sandboxes, has no Sandbox UID and may lag. It cannot replace a caller's need for current runner state.
+
+Do not treat removal as the desired outcome: if a reviewed caller still needs live presence or
+current harness state, retain or narrow the RPC. If the decision finds no remaining live-state use,
+migrate each caller with its identity and failure semantics intact, then migrate tests and verify
+pinned caller images before removing the method, messages and helpers via normal generation. The
+Dispatcher's ID-only fallback can accept a conflicting spec as a retry; correct that independently
+before removing its caller. Gateway wrapper retirement may proceed while a narrowly justified runner
+read remains.
 
 ### `DISPATCHER_OPEN_ALREADY_EXISTS` — settle opening conflicts without live-list inference
 
@@ -1470,3 +1473,188 @@ their data and identity contracts intact.
 - Existing security boundaries, data-preserving migration checks and representative deployment
   integration checks remain requirements. The freezer is not a waiver for a known data-loss or
   unauthorized-access bug; promote one when evidence makes it concrete.
+
+## 14. Delivery boundaries, APIs and harness identity
+
+These are operator-reviewable design and characterization tasks. They do not authorize a queue,
+database, transport, identity or permission change. Detailed code paths and alternatives are in the
+[delivery and harness design note](../docs/runner_delivery_and_harness_design.md).
+
+```mermaid
+flowchart LR
+    DISPATCHER_HISTORY_BOUNDARY_DESIGN[Decision: Dispatcher and History boundary]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN[Decision: durable queue or direct admission]
+    DISPATCHER_GATEWAY_TOPOLOGY_DESIGN[Decision: Dispatcher and Gateway topology]
+    RUNNER_INVENTORY_AUTHORITY_DESIGN[Decision: live runner or retained inventory]
+    DELIVERY_DESTINATION_AUTHORITY_DESIGN[Decision: destination and send authority]
+    CODEX_APP_SERVER_MULTIPLEXING[Characterize: Codex threads per process]
+    CLAUDE_STREAM_SESSION_MULTIPLEXING[Characterize: Claude sessions per process]
+    HARNESS_IDENTITY_DESIGN[Decision: process, store and native Session identity]
+    INTERNAL_API_SURFACE_DESIGN[Decision: internal and agent-facing API surfaces]
+    AGENT_API_TOOLING_DESIGN[Decision: scriptable agent API and commands]
+    DISPATCHER_PERSISTENCE_MODEL_DESIGN --> DISPATCHER_GATEWAY_TOPOLOGY_DESIGN
+    RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state use remains .-> RUNNER_LIST_SESSIONS_RETIRE
+    CODEX_APP_SERVER_MULTIPLEXING -. this lane's findings inform .-> HARNESS_IDENTITY_DESIGN
+    CLAUDE_STREAM_SESSION_MULTIPLEXING -. this lane's findings inform .-> HARNESS_IDENTITY_DESIGN
+    NATIVE_SUBAGENT_EXPOSURE -. child identity evidence informs .-> HARNESS_IDENTITY_DESIGN
+    HARNESS_IDENTITY_DESIGN --> RUNNER_HARNESS_OBJECTS_DESIGN
+    INTERNAL_API_SURFACE_DESIGN --> AGENT_API_TOOLING_DESIGN
+```
+
+### `DISPATCHER_HISTORY_BOUNDARY_DESIGN` — verify Dispatcher independence from retained History
+
+**Candidate decision.** Trace Dispatcher routing, recovery, admission and outcomes against actual
+service callers. Decide whether Dispatcher should remain independent of History; distinguish routing
+and runner state from retained Session/Thread inventory, and command outcome evidence from durable
+delivery admission. Current Dispatcher code has no History client; the app and Notifications use
+History for retained views and command outcomes. Keep
+[`NOTIFICATION_COMMAND_OUTCOME_DESIGN`](#notification_command_outcome_design--notice-delivery-without-reading-conversation-history) independent: a
+Dispatcher admission receipt is not evidence that a command reached the harness. Record the caller
+and data contract for every dependency before proposing a new edge.
+
+**Recommendation for review:** retain the current separation unless traced behavior identifies a
+required History contract that cannot be represented at the actual owner. Question: is there any
+current or approved Dispatcher operation whose correctness requires History, and which service owns
+that fact? No dependency or extraction is authorized by this audit.
+
+### `DISPATCHER_PERSISTENCE_MODEL_DESIGN` — choose durable queue or direct runner admission contract
+
+**Candidate decision.** Compare the current PostgreSQL-backed queue with direct runner admission.
+One evaluation goal is whether a useful Agentplane deployment can run without CNPG, potentially
+with runner-local persistence; inventory every other database consumer and say which state/feature
+can be omitted, moved or still requires a database.
+For direct admission, specify a durable runner-admitted receipt or explicit failure; a timed-out
+response is unknown, so retries need the same idempotency key and a way to resolve the outcome. Cover
+per-Session ordering, cancellation, duplicate opens, sender and replica failure, retries, offline or
+suspended Sandboxes and explicit wake policy. Runner-local persistence protects work only after the
+runner has committed admission; it does not accept work while that runner is absent. Inventory all
+database owners before making any CNPG claim: the shared cluster also serves `app`, `sandbox_commands`,
+`sandbox_service`, `actions`, `egress`, `notifications` and the Dispatcher; Indexing has a separate
+PostgreSQL dependency.
+
+**Recommendation for review:** preserve durable acceptance and current offline/wake semantics until
+an alternative has an identified persistence owner and equivalent failure behavior. Question: keep
+the queue, change its durable owner, or accept a narrower online-only contract? Do not implement a
+direct-RPC replacement from this design task alone.
+
+### `DISPATCHER_GATEWAY_TOPOLOGY_DESIGN` — decide where delivery and runner connection roles live
+
+**Candidate decision; depends on `DISPATCHER_PERSISTENCE_MODEL_DESIGN`.** Since current delivery
+crosses both Dispatcher and Gateway in sequence, compare separate services, co-location in one
+deployment/process with distinct APIs and state
+ownership, and a genuinely merged service. Trace all actual interlocutors and credentials, not just
+the sequential Dispatcher-to-Gateway delivery path. Compare failure domains, replica routing,
+rollout, authorization, recovery and scaling under the selected persistence model. “Merge” must say
+whether it changes API, deployment or state owner; these are independent choices.
+
+**Recommendation for review:** retain the separate responsibilities unless co-location or merger
+has a measured operational benefit and a bounded ownership contract. Question: what concrete
+operational or code boundary would change, and what behavior would remain independently owned? This
+node does not authorize deployment or service changes.
+
+### `RUNNER_INVENTORY_AUTHORITY_DESIGN` — distinguish live runner state from retained inventory
+
+**Candidate decision.** Trace every current `Runner.ListSessions` and History inventory caller. The
+runner read reports records and harness/setup state known to the current runner; History reports
+retained Events and folded Thread views, can lag, and can include deleted Sandboxes. App archive and
+resume checks, Notification subscription membership, Dispatcher `ALREADY_EXISTS` fallback, and test
+drivers use live state today for different reasons. Decide whether each requires live presence,
+retained identity/history or a narrower contract. Keep the bounded Dispatcher `ALREADY_EXISTS`
+conflict correction independent.
+
+**Recommendation for review:** retain a live read wherever an approved caller still needs live state;
+do not substitute History by name similarity. `RUNNER_LIST_SESSIONS_RETIRE` remains conditional on
+this disposition and successful caller migration; this design does not select its removal.
+
+### `DELIVERY_DESTINATION_AUTHORITY_DESIGN` — assign destination validation and send permission
+
+**Candidate decision.** Compare sender-side checks, one authoritative Dispatcher or Gateway
+execution boundary, and an intentional layered model. Keep source/subscription authorization separate
+from destination identity, owner/membership validation, send permission and the execution-time fence.
+Trace Notification subscriptions, all command senders, Dispatcher UID checks and Gateway proxy
+resolution. A candidate execution API requires Sandbox namespace, name and UID; persist all three
+through queue, wake and delivery, then reject a missing or replacement Sandbox at execution. Name-only
+discovery is separate. UID fences identity but does not authorize a caller. Evaluate owner/grant
+revocation, TOCTOU/replacement, unavailable or suspended runners, reader subscriptions versus command
+submission, and narrow credentials.
+
+**Recommendation for review:** preserve existing checks until each layer's authority and denial
+semantics are approved; a source-read subscription must not silently grant sending or waking. Question:
+which boundary rejects stale or unauthorized destinations, what full identity and proof does it
+require, and which checks are early feedback versus execution authority? No centralization choice is
+made here.
+
+### `INTERNAL_API_SURFACE_DESIGN` — decide whether to consolidate internal APIs on gRPC
+
+**Candidate decision.** Compare (1) consolidating internal service APIs on gRPC and providing a
+scriptable agent CLI, (2) using gRPC internally while retaining HTTP/JSON agent APIs, and (3) a
+generated HTTP/JSON facade or transcoding layer over protobuf APIs. Inventory existing protobuf
+RPCs, FastAPI/OpenAPI routes, authentication, generators, client libraries and codegen already used
+in the repository before estimating cost. Preserve documented scriptability and independently
+usable API contracts; do not assume one protocol must serve every caller.
+
+**Recommendation for review:** choose only after a code-grounded inventory of generated-tool reuse,
+auth boundaries, streaming and compatibility costs. Question: which transport set gives internal
+services clear contracts while leaving agents able to drive supported workflows from scripts? No
+transport migration is authorized. Agent tooling design depends on this surface decision.
+
+### `AGENT_API_TOOLING_DESIGN` — preserve ergonomic, scriptable agent workflows
+
+**Candidate decision; depends on `INTERNAL_API_SURFACE_DESIGN`.** Design convenient commands and
+JSON interfaces for listing Action groups and Actions, inspecting Action schemas, reading the
+authenticated caller's own Action status/results and waiting for completion, plus subscribing to or
+cancelling GitHub PR notifications. Specify auth discovery/credential scope, stable errors and exit
+codes, pagination, JSON output, streaming/reconnect, wait deadlines and cancellation semantics. Reuse
+the reviewed API/codegen choice rather than invent a parallel client stack. Update runner platform
+instructions and other prompts only after the user approves the tooling and command contract.
+
+**Recommendation for review:** make the same operations available as composable JSON for scripts and
+as concise commands for interactive agents; keep authorization and result ownership explicit.
+Question: which workflows belong in the CLI, which remain direct HTTP/JSON, and what stream/cancel
+contract can agents rely on? This is design only; no CLI, prompt or API change is authorized.
+
+### `CODEX_APP_SERVER_MULTIPLEXING` — characterize multiple threads over one app-server process
+
+**Candidate; independent investigation.** Determine whether the pinned Codex app-server can host
+multiple independently controlled threads over one stdio connection and process. The current facade
+addresses `thread/start`, `thread/resume` and turns by thread ID, but the Runner adapter owns one
+thread ID per process; no current test establishes safe multiplexing. Characterize request and
+notification routing, concurrency/isolation, cancellation scope, per-thread model/instructions,
+auth, cwd and `CODEX_HOME`, and failure/restart/resume behavior. Use pinned-version evidence or a
+bounded real-binary test. Report unknowns; this lane does not wait for the Claude result.
+
+### `CLAUDE_STREAM_SESSION_MULTIPLEXING` — characterize multiple sessions over Claude stream-json
+
+**Candidate; independent investigation.** Determine whether the pinned Claude CLI can host multiple
+independently controlled native Sessions over one stream-json process. The current adapter launches
+with one `--session-id`, routes input/control over one stream and has no Agentplane session selector;
+native child task events do not prove multiplexed conversation support. Characterize frame routing,
+concurrency/isolation, cancellation scope, per-Session options/auth/workdir/config data, and
+failure/restart/`--resume` behavior from pinned-version evidence or a bounded real-binary test. Report
+unknowns; this lane does not wait for the Codex result.
+
+### `HARNESS_IDENTITY_DESIGN` — decide address, process, store and native Session identities
+
+**Candidate decision.** Compare today's Sandbox UID plus Agentplane public Session ID with an opaque
+address resolved from immutable Sandbox ID, persisted harness-store ID and native Session ID within
+that store. Treat each process spawn as a distinct process incarnation; PID is insufficient. Ask
+explicitly whether a new process reusing the same persisted store is the same harness, whether native
+IDs or caller-chosen logical IDs are canonical, and how public IDs map to native IDs and discovered
+children. Consider native-ID collisions across stores, store movement, authorization binding,
+unavailable/suspended lookup, and which capabilities/lifecycle belong to each level. Do not assume
+one process equals one Session or that a store path defines identity.
+
+Keep creation idempotency separate from address identity: define operation keys, retries after a lost
+creation response, and durable mapping/crash recovery when the native ID is assigned after opening.
+The API must say which Sandbox namespace/name/UID identity is bound to a store and Session. Consider
+how that binding survives restart without making a replacement Sandbox an authorized target.
+**Recommendation for review:** represent process incarnation and persisted data lineage separately;
+retain the current public Session identity until evidence justifies another address. Question: what
+stable opaque address and mapping rules cover several native Sessions in one store without conflating
+identity and create-idempotency? No schema or migration is proposed.
+
+Feed the independent Codex and Claude characterization results, identity alternatives and native
+child evidence into [`RUNNER_HARNESS_OBJECTS_DESIGN`](#runner_harness_objects_design--expose-running-harnesses-separately-from-sessions). That decision
+must state which lifecycle, options, status, auth and cancellation belong to a process incarnation,
+persisted store and logical/native Session. Neither characterization blocks the other; neither design
+node authorizes runtime changes.
