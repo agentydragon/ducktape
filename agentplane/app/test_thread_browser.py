@@ -989,9 +989,10 @@ async def test_thread_follows_bottom_until_reader_scrolls_up(
         }"""
     )
     await expect_history_bottom(page)
-    source.append(
+    following = source.append(
         event_pb2.Event(text_delta=event_pb2.TextDelta(item_id="test-scroll-tail", text="\n\nTest following again"))
     )
+    await expect_projected_cursor(page, following.cursor)
     await expect(page.get_by_text("Test following again", exact=True)).to_have_count(1)
     await expect_history_bottom(page)
     # Increasing the viewport height must keep following too, including browser scroll clamping.
@@ -1670,6 +1671,7 @@ async def test_failed_turn_preserves_confirmed_input_and_allows_another_turn(
             ),
         )
     )
+    await expect_projected_cursor(page, failed.cursor)
     # The label leads the diagnostic in one paragraph, so the alert is what holds the diagnostic's text.
     error_text = page.get_by_role("alert").filter(has_text=diagnostic)
     await expect(error_text).to_have_count(1)
