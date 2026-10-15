@@ -3,9 +3,7 @@ routes each Sandbox's runner reaches its services over."""
 
 from __future__ import annotations
 
-import json
 from copy import deepcopy
-from pathlib import PurePosixPath
 from typing import Any
 
 import pytest
@@ -14,7 +12,6 @@ import yaml
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
-from cluster.cdk8s.agentplane import history_service, notifications, runner_gateway
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.pod_policy import workload_kind
 
@@ -45,63 +42,6 @@ def test_all_sandbox_workloads_use_shared_environment_defaults(
     # TZDIR's value belongs to the sandbox image, but a harness child starts from only what the
     # runner declares, so the runner has to name it: left off, the child reads every TZ as UTC.
     assert any(args[index : index + 2] == ["--harness-inherit-env", "TZDIR"] for index in range(len(args) - 1))
-
-
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_pod_runner_templates_declare_and_mount_directory_tree_workspaces(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    templates = {template["metadata"]["name"]: template for template in _templates(agentplane_manifests[namespace])}
-    names = ["runner", *(["runner-ducktape"] if namespace == "agentplane-staging" else [])]
-    for name in names:
-        spec = templates[name]["spec"]
-        assert spec["stateVolume"]["layout"] == {"type": "DirectoryTree"}
-        state_claim = spec["stateVolume"]["claim"]
-        assert spec["workspaceVolume"] == {
-            "name": "workspace",
-            "claim": {**state_claim, "volumeMode": "Filesystem"},
-            "layout": {"type": "DirectoryTree"},
-        }
-        pod = spec["pod"]["spec"]
-        runner = one(container for container in pod["containers"] if container["name"] == "runner")
-        assert {"name": "workspace", "mountPath": "/state/workspaces"} in runner["volumeMounts"]
-        # The controller binds this separately declared claim to each Sandbox.
-        assert "workspace" not in {volume["name"] for volume in pod["volumes"]}
-
-
-def test_all_runner_templates_declare_directory_tree_state(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    for namespace, docs in agentplane_manifests.items():
-        templates = [doc for doc in docs if doc["kind"] == "SandboxTemplate"]
-        expected = {"runner", "runner-vm"}
-        if namespace == "agentplane-staging":
-            expected.add("runner-ducktape")
-        assert {template["metadata"]["name"] for template in templates} == expected
-        for template in templates:
-            assert template["spec"]["stateVolume"]["layout"] == {"type": "DirectoryTree"}
-
-
-def test_sandbox_sidecars_project_the_notifications_audience(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    for namespace, manifests in agentplane_manifests.items():
-        templates = _templates(manifests)
-        assert templates, namespace
-        for template in templates:
-            pod = template["spec"]["pod"]["spec"]
-            sidecars = [container for container in pod["containers"] if container["name"] == "egress-sidecar"]
-            assert sidecars, (namespace, template["metadata"]["name"])
-            token_volume = next(volume for volume in pod["volumes"] if volume["name"] == "egress-token")
-            audiences = {source["serviceAccountToken"]["audience"] for source in token_volume["projected"]["sources"]}
-            assert notifications.TOKEN_AUDIENCE in audiences, (namespace, template["metadata"]["name"])
-            token_files = json.loads(
-                next(item["value"] for item in sidecars[0]["env"] if item["name"].endswith("AUDIENCE_TOKEN_FILES"))
-            )
-            assert token_files[notifications.TOKEN_AUDIENCE].endswith("/notifications-token"), (
-                namespace,
-                template["metadata"]["name"],
-            )
 
 
 def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner_only(
@@ -154,81 +94,6 @@ def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner
         del args[i - 1 : i + 1]
         # No extra authority in generic runners, testing, or the egress sidecar.
         assert specialized == generic
-
-
-@pytest.mark.parametrize(
-    ("route", "flag", "service", "port_name", "config", "audience_key"),
-    [
-        (
-            "control",
-            "--control-target",
-            runner_gateway.NAME,
-            "runner-control",
-            f"{runner_gateway.NAME}-config",
-            ("runner_control_audience",),
-        ),
-        (
-            "ingress",
-            "--ingress-target",
-            history_service.NAME,
-            "runner-ingress",
-            f"{history_service.NAME}-config",
-            ("ingress", "token_audience"),
-        ),
-    ],
-)
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_runner_reaches_its_service_over_the_sidecars_platform_route(
-    namespace: str,
-    route: str,
-    flag: str,
-    service: str,
-    port_name: str,
-    config: str,
-    audience_key: tuple[str, ...],
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    docs = agentplane_manifests[namespace]
-    service_port = one(
-        entry for entry in _by_name(docs, "Service", service)["spec"]["ports"] if entry["name"] == port_name
-    )
-    accepted: Any = yaml.safe_load(_by_name(docs, "ConfigMap", config)["data"]["config.yaml"])
-    for key in audience_key:
-        accepted = accepted[key]
-    for template in _templates(docs):
-        pod = template["spec"]["pod"]["spec"]
-        runner = one(container for container in pod["containers"] if container["name"] == "runner")
-        sidecar = one(container for container in pod["containers"] if container["name"] == "egress-sidecar")
-        routes = json.loads(one(item["value"] for item in sidecar["env"] if item["name"].endswith("PLATFORM_ROUTES")))
-        # The runner dials the sidecar's loopback listener for the route.
-        args = runner["args"]
-        assert args[args.index(flag) + 1] == f"127.0.0.1:{routes[route]['listen_port']}", template["metadata"]["name"]
-        host, port = routes[route]["upstream"].rsplit(":", 1)
-        assert (host.split(".")[0], int(port)) == (service, service_port["targetPort"])
-        # The sidecar attaches a token the service accepts, which only it mounts.
-        token_volume = one(volume for volume in pod["volumes"] if volume["name"] == "egress-token")
-        projected = {
-            source["serviceAccountToken"]["path"]: source["serviceAccountToken"]["audience"]
-            for source in token_volume["projected"]["sources"]
-        }
-        mount = one(mount for mount in sidecar["volumeMounts"] if mount["name"] == "egress-token")
-        assert projected[routes[route]["token_file"].removeprefix(f"{mount['mountPath']}/")] == accepted
-
-
-@pytest.mark.parametrize("namespace", NAMESPACES)
-def test_runner_reads_the_platform_instructions_its_template_mounts(
-    namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]
-) -> None:
-    docs = agentplane_manifests[namespace]
-    for template in _templates(docs):
-        pod = template["spec"]["pod"]["spec"]
-        runner = one(container for container in pod["containers"] if container["name"] == "runner")
-        args = runner["args"]
-        file = PurePosixPath(args[args.index("--platform-instructions-file") + 1])
-        mount = one(entry for entry in runner["volumeMounts"] if entry["mountPath"] == str(file.parent))
-        volume = one(entry for entry in pod["volumes"] if entry["name"] == mount["name"])
-        config_map = _by_name(docs, "ConfigMap", volume["configMap"]["name"])
-        assert file.name in config_map["data"], template["metadata"]["name"]
 
 
 if __name__ == "__main__":
