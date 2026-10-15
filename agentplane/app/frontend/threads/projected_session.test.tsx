@@ -699,7 +699,12 @@ it("fetches thread metadata when it is absent from the live snapshot", async () 
 it.each<[string, Inventory, { fresh?: boolean; droppedFor?: number }, string | null]>([
   ["a running sandbox", [RUNNING], {}, null],
   ["an inventory not yet heard from", null, {}, null],
-  ["a suspended sandbox", [SUSPENDED], {}, "Last observed Sandbox and Pod: Suspended."],
+  [
+    "a suspended sandbox",
+    [SUSPENDED],
+    {},
+    "Sandbox is suspended. Wake on message is off; submitted messages stay queued until you resume it manually.",
+  ],
   ["a deleted sandbox", [], {}, "Sandbox no longer exists."],
   ["a running sandbox on a stale inventory", [RUNNING], { fresh: false }, null],
   ["an absence from a stale inventory", [], { fresh: false }, ABSENT],

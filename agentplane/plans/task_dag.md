@@ -28,8 +28,9 @@ Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
 user experience. Finish reported bugs and red PR checks first. The next dispatch order is
-verified runner compatibility cleanup and `APP_SANDBOX_WAKE_POLICY` / `SUSPENDED_COMPOSER`,
-then `ISOLATED_TEST_SPIKES_RETIRE` and `K3S_STARTUP_COST`. The lifecycle coverage audit found the
+verified runner compatibility cleanup and `SUSPENDED_COMPOSER`, then `ISOLATED_TEST_SPIKES_RETIRE`
+and `K3S_STARTUP_COST`. The app wake-on-message policy is implemented and deployed; the composer
+still needs its own rollout acceptance. The lifecycle coverage audit found the
 requested eventual outcomes already covered; see the [suite coverage](../x/k3s_env/README.md#lifecycle-coverage).
 Audit assignment does not waive any image, embedded VM wheel, live-runner or retained-data gate.
 
@@ -693,7 +694,7 @@ flowchart TD
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
-    SUSPENDED_COMPOSER[Blocked: the composer stays enabled while a Session is suspended]
+    SUSPENDED_COMPOSER[In flight: the composer stays enabled while a Session is suspended]
     VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
@@ -701,7 +702,6 @@ flowchart TD
     VM_PROVIDER -. related .-> SANDBOX_SPEC_EDIT
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
-    APP_SANDBOX_WAKE_POLICY[In flight: wake-on-message checkbox for new and existing Sandboxes] --> SUSPENDED_COMPOSER
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
@@ -978,28 +978,15 @@ for a reviewed contract that the code does not already satisfy; do not add an im
 
 ### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
 
-**In flight; `quiesce_progress`, operator dispatch 2026-10-15 UTC. Activation retains the
-`APP_SANDBOX_WAKE_POLICY` image gate.** Once wake-on-send works in the target environment, a suspended Session's
-composer remains usable while its Sandbox still exists; suspension alone must not disable it.
-Sending queues the message and shows the Sandbox starting while the message waits. Keep normal
-access checks and deleted-Sandbox refusal. Until wake-on-send is verified, ship suspended-state
-visibility independently and leave composer activation sequenced afterward (operator, 2026-10-15 UTC).
-The caller-activation gate is clear: testing acceptance preceded #10596, and the staging allowlist
-has reconciled. A Sandbox with wake policy off must remain stopped and show that manual resume is needed.
+**In flight in #10608; `quiesce_progress`, operator decision 2026-10-15 UTC.** A retained Session's
+composer stays usable while a fresh inventory snapshot confirms that its Sandbox is suspended.
+Sending queues through the Dispatcher; wake-on-message requests a wake, while the default-off policy
+leaves the Sandbox stopped and tells the user to resume it manually. Preserve normal access checks,
+deleted-Sandbox refusal, and setup/archive refusals. Focused tests cover the sealed stopped/ended
+Session projection and desktop/mobile visual fixtures. The app image and staging wake caller are
+deployed; this node remains in flight until the composer image rollout and staging acceptance pass.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
-### `APP_SANDBOX_WAKE_POLICY` — configure wake-on-message for new and existing Sandboxes
-
-**Implementation merged in #10600; app image rollout verification assigned to `quiesce_progress`.**
-Creation and existing-Sandbox checkboxes read and update `spec.wakeOnSend` through the app's
-authorized Kubernetes spec mutation path. Tests and reviewed desktop/mobile visuals passed,
-including default-off, UID fencing and transport-failure recovery. Toggling does not itself wake
-the Sandbox. Verify the app image includes this field/UI before enabling the suspended composer.
-Existing Sandboxes are changed only through an explicit user action.
-
-`wakeOnSend` is permanent user policy, not a rollout shim. Rai explicitly chose to retain this
-configuration indefinitely; it has no removal node. The obsolete Session-opening flag is separate.
 
 ## 8. Ownership and naming cleanup
 

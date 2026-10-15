@@ -55,3 +55,17 @@ app's direct native-resume path. Each remaining compatibility removal keeps its 
   by `107:107`, with Git init/rev-parse succeeding and no `safe.directory` override. The fixture
   Sandbox UID `00a94aaf-8312-4e5c-a9a7-1381d45a451b` and its PVC were removed by scoped teardown.
   This was a model-free setup check on testing, not a new staging model-turn acceptance.
+
+## App wake policy and composer rollout, 2026-10-15 UTC
+
+- #10600 (`e380e62`) adds the default-off `wakeOnSend` checkbox to new and existing Sandbox UI,
+  retaining UID/resource-version checks and requiring an explicit user action to change a policy.
+  The per-Sandbox value is permanent user policy, not a rollout shim or cleanup target.
+- A read-only deployment audit found testing generation/observed generation 520 and staging
+  generation/observed generation 565 running app image
+  `devel-20261015060159-7eb6b79`. All three Ready app Pods use digest
+  `ce44cd071dbc33e12000ed10a40f84c687a2135e4ce13f475ff62c80df47d366`; source ancestry includes
+  #10600. This clears the app-image gate for the checkbox.
+- The staging Dispatcher caller allowlist and prior testing wake acceptance are already verified.
+  The suspended-composer change remains in review in #10608; its separate image rollout and staging
+  acceptance are still required. Do not treat the checkbox image gate as composer activation.
