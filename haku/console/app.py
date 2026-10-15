@@ -128,6 +128,8 @@ def create_app(
     # One engine/sessionmaker for the whole console, injected into every SQLAlchemy store, so the
     # process holds a single connection pool rather than one per store.
     database_url = settings.database_url.get_secret_value()
+    # SQLAlchemy loads asyncpg from this configured postgresql+asyncpg URL at runtime.
+    # gazelle:include_dep @pypi//asyncpg
     db_engine = create_async_engine(database_url, pool_pre_ping=True)
     db_sessions = async_sessionmaker(db_engine, expire_on_commit=False)
     operator_identity_store = PostgresOperatorIdentityStore(db_sessions, _operator_identity_trust(settings))
@@ -225,10 +227,7 @@ def create_app(
     # MCP request surface to submit new rows or refresh server catalogs.
     dispatcher = approval.McpServerDispatcher(in_process_servers)
     tool_calls = tool_call_service.ToolCallApplicationService(
-        settings=settings,
-        repository=tool_call_ledger,
-        executor=dispatcher,
-        in_process_servers=in_process_servers,
+        settings=settings, repository=tool_call_ledger, executor=dispatcher, in_process_servers=in_process_servers
     )
 
     @asynccontextmanager

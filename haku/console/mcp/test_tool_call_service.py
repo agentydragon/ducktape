@@ -225,15 +225,9 @@ def _service(
 
 @pytest.fixture
 def service(
-    *,
-    migrated_db_url: str,
-    tmp_path: Path,
-    ledger: _RecordingLedger,
-    executor: _RecordingExecutor,
+    *, migrated_db_url: str, tmp_path: Path, ledger: _RecordingLedger, executor: _RecordingExecutor
 ) -> ToolCallApplicationService:
-    return _service(
-        database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, executor=executor
-    )
+    return _service(database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, executor=executor)
 
 
 def _request(*, owner: str, wait_for_ms: int = 0) -> SubmitToolCallRequest:
@@ -251,9 +245,7 @@ async def _always_approve(**_: Any) -> tuple[str, str]:
 
 
 async def test_operator_direct_execution_has_no_ledger_side_effects(
-    actors: dict[str, RuntimeActor],
-    executor: _RecordingExecutor,
-    service: ToolCallApplicationService,
+    actors: dict[str, RuntimeActor], executor: _RecordingExecutor, service: ToolCallApplicationService
 ) -> None:
     operator = actors["oa"]
     assert isinstance(operator, OperatorActor)
@@ -590,11 +582,7 @@ async def test_executor_cancellation_terminalizes_before_reraising(
 
 
 async def test_decide_dispatches_execution_and_aclose_cancels_in_flight(
-    *,
-    migrated_db_url: str,
-    tmp_path: Path,
-    actors: dict[str, RuntimeActor],
-    ledger: _RecordingLedger,
+    *, migrated_db_url: str, tmp_path: Path, actors: dict[str, RuntimeActor], ledger: _RecordingLedger
 ) -> None:
     executor = _BlockingExecutor()
     service = _service(database_url=migrated_db_url, tmp_path=tmp_path, ledger=ledger, executor=executor)

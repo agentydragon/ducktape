@@ -768,11 +768,7 @@ export function ShellChrome(props: ShellChromeProps): JSX.Element {
         {openIndicator && (
           <div className="haku-shell-indicator-popover">
             {openIndicator === "sync-status" && (
-              <SyncStatusPanel
-                syncError={syncError}
-                syncing={props.syncing}
-                lastSyncAt={props.lastSyncAt}
-              />
+              <SyncStatusPanel syncError={syncError} syncing={props.syncing} lastSyncAt={props.lastSyncAt} />
             )}
             {openIndicator === "location" && geoGranted && (
               <LocationPanel tracking={tracking} onWithdraw={onWithdrawGeolocation} />

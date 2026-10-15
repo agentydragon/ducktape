@@ -415,9 +415,7 @@ class ToolCallApplicationService:
         self, *, record: ToolCallRecord, server: McpServerEntry, auth_token: str | None, actor: RuntimeActor
     ) -> None:
         """Run an approved call's execution as a tracked background task (see `decide`)."""
-        task = asyncio.create_task(
-            self._execute(record=record, server=server, auth_token=auth_token, actor=actor)
-        )
+        task = asyncio.create_task(self._execute(record=record, server=server, auth_token=auth_token, actor=actor))
         self._execution_tasks.add(task)
         task.add_done_callback(self._on_execution_done)
 
