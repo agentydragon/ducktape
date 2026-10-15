@@ -1029,10 +1029,31 @@ The 35B artifact is `unsloth/Qwen3.5-35B-A3B-GGUF`, revision
 (verified). It used the same 139,264 allocation, q4_0 K/V, batch/microbatch 256,
 Flash Attention, and other settings as the 9B experiment. Minimum available RAM
 was **2.55 GiB**, maximum full PSI avg10 22.29%, AC stayed connected, and the
-34.38-second process run hit no guard. **No long input was attempted:** allocation
-and a 337-token response do not establish 128k support. This used resident Vulkan
-weights, not SSD expert streaming. The temporary servers exited; 4B and 35B have
-not been added to the permanent router roster.
+34.38-second process run hit no guard. That initial trial attempted no long input.
+This used resident Vulkan weights, not SSD expert streaming. Those temporary
+servers exited; 4B and 35B have not been added to the permanent router roster.
+
+### 35B-A3B long-context follow-up (October 15, interim)
+
+Using the same artifact and settings, **35B-A3B Q3_K_M passed 3/3 needle
+retrieval at 63,907 input tokens**, with zero cached tokens and server
+`truncated = 0`. Native prefill took **1,507.187 seconds (25.12 minutes,
+42.40 tok/s)**. TTFT was 1,507.687 seconds and total request latency was
+1,510.213 seconds. The 27-token answer decoded at **10.27 tok/s** and returned
+the three exact codes in order. This is one integrity smoke, not a coding
+quality benchmark or a sustained decode measurement.
+
+The idle Gemma router child was unloaded before starting the temporary server
+on loopback port 11512. Short tool/read/edit checks passed again. Spot checks
+showed AC connected and roughly 4–5 GiB available RAM during prefill; the
+1 GiB/70% sustained-PSI guards did not stop the completed request. Exact memory
+extrema will be collected from the monitor when the process finishes, rather
+than inferred from spot checks.
+
+The next prompt, target 128,000 tokens (127,896 native content tokens before
+chat formatting), is **still running at this interim publication**. There is
+no 128k retrieval or latency result yet. Both stages use independent filler
+seeds and `cache_prompt: false`; the combined process has a four-hour deadline.
 
 ### Reproducing the capability smokes
 
@@ -1052,7 +1073,7 @@ full avg10, and power state every two seconds. Stop below 1 GiB available or at
 Monotonic timings exclude suspend: check suspend/resume logs when interpreting
 wall latency. The October 14 evening log check found no suspend during testing.
 
-The deterministic long-input recipe for target `T` (64,000 or 132,000):
+The deterministic long-input recipe for target `T` (64,000, 128,000, or 132,000):
 
 1. Seed Python `random.Random(8593 + T)`. Generate `T // 12` lines, each containing
    16 `rng.choices` from `amber birch cedar delta ember frost grove harbor iris
@@ -1078,9 +1099,9 @@ I/O without granting arbitrary code execution to the direct-API probe.
 
 ### Continuation priorities and retained evidence
 
-- **Capability:** qualify 35B-A3B Q3_K_M with a bounded direct-API long-input
-  smoke before adding it to the router. The short trial makes it a concrete
-  candidate, but its low available-memory margin is a constraint. If needed,
+- **Capability:** finish the 35B-A3B Q3_K_M 128k direct-API smoke before deciding
+  its router context profile. The 64k retrieval passed, but cold prefill took
+  25 minutes and available-memory margin remains a constraint. If needed,
   compare a harder weight quantization or expert offloading; record exact
   artifact identity and treat published unquantized scores as external estimates.
 - **Latency:** measure an incremental cached follow-up on 9B before another

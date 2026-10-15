@@ -121,9 +121,17 @@ LLAMA = (
         "Qwen3.5 35B-A3B Q3_K_M",
         "qwen3-5-35b-a3b-non-reasoning",
         23.093910424494943,
-        "337 input; long input untested",
+        "337 input; short tool response",
         (-100, 55),
         False,
+    ),
+    LlamaMeasurement(
+        "Qwen3.5 35B-A3B Q3_K_M",
+        "qwen3-5-35b-a3b-non-reasoning",
+        10.273727667978411,
+        "63,907 input; recall 3/3; prefill 25.12 min",
+        (-100, 20),
+        True,
     ),
 )
 
@@ -293,8 +301,8 @@ def main() -> None:
         0.08,
         0.07,
         "Not plotted: NPU TinyLlama ~38.65 tok/s and Qwen2.5-Coder 1.5B 45.76 tok/s lack matching AA rows.\n"
-        "Colibri Qwen3-Coder 30B-A3B lacks decode-phase timing. 35B-A3B allocation alone does not qualify long input.\n"
-        "Sources: rugged_local_llm.md (2026-10-13/14 runs); docs/artificial_analysis/cited_models_2026_10_14.csv.",
+        "Colibri Qwen3-Coder 30B-A3B lacks decode-phase timing. 35B-A3B has passed 64k retrieval; 128k remains pending.\n"
+        "Sources: rugged_local_llm.md (2026-10-13 through 15 runs); docs/artificial_analysis/cited_models_2026_10_14.csv.",
         fontsize=9,
         va="top",
     )
