@@ -547,9 +547,9 @@ py_library(
         "//cluster/cdk8s/agentplane:__pkg__",
     ],
     deps = [
+        ":sandbox_pod",
         "//agentplane/sandboxes:kubernetes_grants",
         "//cluster/cdk8s:agent_access_profiles",
-        ":sandbox_pod",
     ],
 )
 

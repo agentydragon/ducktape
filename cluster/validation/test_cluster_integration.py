@@ -501,9 +501,7 @@ def test_finance_spend_policy_role_is_named_get_only(
     }
     assert rbac.rules(
         RbacRoleRef(api_group="rbac.authorization.k8s.io", **role_rule["role"]), one(role_rule["namespaces"])
-    ) == {
-        Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy")
-    }
+    ) == {Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy")}
 
 
 def test_agent_permission_superset_and_finance_parity(
@@ -541,7 +539,7 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
     bootstrap_resources: list[K8sResource],
     repo_root: Path,
 ) -> None:
-    rbac, config, policy_sets, policy_bindings = agent_permissions
+    rbac, _, policy_sets, policy_bindings = agent_permissions
     # These OAuth/Actions accounts are NOT the Console profile or the managed
     # Haku preset. Preserve their independently scoped existing Kubernetes access.
     expected = rbac.rules(
@@ -570,9 +568,10 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
             if resource.kind != "Namespace":
                 continue
             labels = resource.metadata.labels
-            if labels.get("rbac.ducktape.io/agent-readable-metadata") == "true" or labels.get(
-                "rbac.ducktape.io/agent-readable-logs"
-            ) == "true":
+            if (
+                labels.get("rbac.ducktape.io/agent-readable-metadata") == "true"
+                or labels.get("rbac.ducktape.io/agent-readable-logs") == "true"
+            ):
                 expected.update(
                     rbac.rules(
                         RbacRoleRef(

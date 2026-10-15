@@ -1427,7 +1427,6 @@ py_library(
         ":model_catalog",
         ":presets",
         "//agentplane:log_levels",
-        "//agentplane/sandboxes:kubernetes_grants",
         "//util:urls",
         "//util:yaml_file_settings",
         "@pypi//pydantic",

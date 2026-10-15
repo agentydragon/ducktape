@@ -371,8 +371,7 @@ def test_public_diagnostics_share_haku_reads_but_not_privileged_grants(
 
 
 @pytest.mark.parametrize(
-    "target_namespace",
-    binding_delegation.external_scopes(staging.ENV, staging_grants.catalog(staging.ENV.namespace)),
+    "target_namespace", binding_delegation.external_scopes(staging.ENV, staging_grants.catalog(staging.ENV.namespace))
 )
 def test_external_delegation_binds_exactly_the_granted_roles(
     target_namespace: str, agentplane_manifests: dict[str, list[dict[str, Any]]]

@@ -1722,9 +1722,7 @@ def generate_manifests(root: Path) -> None:
         "tana-mcp": tana_mcp_kustomization,
         "vm-images-publisher": vm_images_publisher_kustomization,
     }
-    binding_delegation.add_flux_kustomizations(
-        flux_chart, staging.ENV, namespace_dependencies, staging_grant_catalog
-    )
+    binding_delegation.add_flux_kustomizations(flux_chart, staging.ENV, namespace_dependencies, staging_grant_catalog)
     agent_namespace_rbac.write_manifests(root)
     agent_namespace_rbac.add_flux_kustomizations(flux_chart, claude_rbac_kustomization)
     # Every artifact built above except the parked nodes': those Kustomizations are suspended.
