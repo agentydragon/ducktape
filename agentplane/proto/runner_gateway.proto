@@ -54,7 +54,7 @@ message FindSessionsRequest {
 }
 
 message ListSessionsRequest { agentplane.proto.sandboxes.SandboxDestination destination = 1; }
-// Runner Sessions with a registered public Session, under their public IDs.
+// The retained Runner Sessions in the requested Sandbox incarnation.
 message ListSessionsResponse { repeated agentplane.proto.runner.SessionSummary sessions = 1; }
 
 message ResumeSessionRequest { agentplane.proto.sandboxes.SessionDestination destination = 1; }

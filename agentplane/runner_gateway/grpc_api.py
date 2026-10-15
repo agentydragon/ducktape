@@ -2,7 +2,6 @@
 authority."""
 
 import asyncio
-import logging
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -24,8 +23,6 @@ from agentplane.sandboxes.errors import InventoryError, SandboxNotFoundError
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
-
-logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -107,20 +104,9 @@ class RunnerGateway(runner_gateway_pb2_grpc.RunnerGatewayServicer):
         self, request: runner_gateway_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
     ) -> runner_gateway_pb2.ListSessionsResponse:
         async with self.request(context):
-            sessions = []
-            for summary in await self.list_runner_sessions(request.destination):
-                public_id = await self.resources.sessions.public_id(
-                    summary.session_id,
-                    sandbox_namespace=self.resources.destinations.sandboxes.namespace,
-                    sandbox_name=request.destination.sandbox,
-                    sandbox_uid=UUID(request.destination.sandbox_uid),
-                )
-                if public_id is None:
-                    logger.warning("runner Session %s has no registered Session; not listed", summary.session_id)
-                    continue
-                summary.session_id = str(public_id)
-                sessions.append(summary)
-            return runner_gateway_pb2.ListSessionsResponse(sessions=sessions)
+            return runner_gateway_pb2.ListSessionsResponse(
+                sessions=await self.list_runner_sessions(request.destination)
+            )
 
     async def runner_session_id(self, destination: sandboxes_pb2.SessionDestination) -> str:
         """The runner's ID for a Session registered in the destination's Sandbox incarnation."""

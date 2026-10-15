@@ -68,7 +68,7 @@ flowchart TB
 
     browser -->|HTTPS, SSE| app
     mcp_client -->|MCP over OAuth| actions
-    app -->|gRPC: Session reads and native resume| gw
+    app -->|gRPC: UID-fenced live Session inventory and native resume| gw
     app -->|gRPC: queued Thread commands, delivery reads, and Session openings| dispatcher
     app -->|gRPC: Session and Thread reads, change and Session-opening watch| hs
     app -->|HTTP| notif

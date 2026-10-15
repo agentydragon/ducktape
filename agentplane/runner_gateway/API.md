@@ -15,8 +15,10 @@ checks the caller before resolving its Sandbox destination.
 The gateway keeps no Session history; runners push their Events to the
 [History Service](../history_service/README.md)'s ingress, which serves reads.
 
-- `ListSessions`: Sandbox destination; the runner's Sessions registered in this Sandbox
-  incarnation. Runner sessions the registry does not know are left out.
+- `ListSessions`: Sandbox destination; the current runner's retained Sessions. The request verifies
+  the Sandbox namespace, name, owner and UID before reading that incarnation's runner. This is live
+  runner inventory and includes Sessions opened through the Dispatcher; it does not require a row in
+  the Gateway's public Session registry.
 - `CreateSession`: explicit Open with Sandbox destination, the client's fresh Session UUID and
   selected overrides. The UUID is the public Session ID and the runner's Session ID alike. The
   Session is registered in its Sandbox incarnation before runner contact; the gateway returns the
