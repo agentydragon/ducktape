@@ -18,16 +18,18 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized, Codex reported, 2026-10-14):
 
-| Worker            | Assigned sequence; each successor retains its node's gates                                                                                                                        |
-| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `dispatcher`      | Finish app preset defaults/OpenSession #10517; independently activate send-triggered wake with testing acceptance before staging.                                                 |
-| `dag_burndown`    | Accept the pinned declarative VM guest on testing; activate explicit state-volume layouts in a separate PR; retain the separate k3s workflow #10502 and its RBE failure evidence. |
-| `sandbox_service` | Retire remaining Sandbox Service clients/fixtures and then service wiring; strict direct-only app image gate is clear.                                                            |
-| Coordinator       | Verify rollout gates, review integration and burn down completed DAG work.                                                                                                        |
+| Worker            | Assigned work and remaining gates                                                                                                                                   |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `vm_connection`   | VM fresh-format/retained-remount acceptance after the corrected guest image is pinned; testing wake-on-send and queued-opening acceptance, then staging activation. |
+| `image_inventory` | Publish the image inventory, then prepare app direct-command and gated direct-open cleanup PRs.                                                                     |
+| `dag_burndown`    | Measure shared Python interpreter layers using existing Bazel packaging rules; compare k3s lifecycle performance at matching source revisions.                      |
+| Coordinator       | Burn down completed nodes, finish the bounded resume coverage audit, and remove state-layout and effective-mode compatibility fallbacks.                            |
 
 These are assignments, not claims that gated work has started. Independent config changes can
 proceed while behavior PRs are under review. Publish drafts as soon as a branch has reviewable work,
 with remaining gates in the body; Rai merges each PR by hand.
+
+Completed rollout evidence: [retirement and activation inventory](../sandboxes/debug/rollout_retirement.md).
 
 ## 1. Session schema and identity follow-up
 
@@ -527,12 +529,12 @@ messages, by shimming the web interface's control protocol. Builds on the viewer
 
 ### `ISOLATED_ACCEPTANCE_CI` — isolated acceptance tiers and their coverage gaps
 
-**In flight (Codex, 2026-10-14; separate workflow #10502):** current-stack/import work is
+**In flight (Codex, 2026-10-14; separate workflow #10502 merged):** current-stack/import work is
 complete (#10467, #10482). The workflow runs `//agentplane/x/k3s_env:test_lifecycle` on relevant
 pull requests and supports manual `workflow_dispatch`, overriding the default CI exclusion of
-`manual` tests for this explicitly selected target. All four tests passed in the recorded run, but
-an RBE VM-pause failure and automatic retry consumed the outer workflow deadline; the workflow
-conclusion remains cancelled (see #10502 for invocation evidence). This is a model-free four-test
+`manual` tests for this explicitly selected target. The later [workflow run](https://github.com/agentydragon/ducktape/actions/runs/38654313999)
+succeeded at head `e0b9da6386`; the earlier cancelled run is historical failure evidence, not the
+current workflow status. This is a model-free four-test
 Sandbox lifecycle tier on BuildBuddy RBE; it does not read a model key. Keep the target's direct
 `bbr test` invocation available to agents. The separate `test_env` Qwen smoke remains manual and
 is not part of this workflow.
@@ -695,7 +697,6 @@ long-running, often-suspended Sandbox whose runner image upgrades between incarn
 flowchart TD
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage]
     NODE_LOCAL_BLOCK_STORAGE[Unscheduled: node-local block volumes on every node]
-    STATE_VOLUME_LAYOUT_ROLLOUT[In flight: activate explicit state layout declarations]
     VM_GUEST_DECLARATIVE_STORAGE[In flight: declarative guest disk initialization]
     VOLUME_LAYOUT_CONVERSION[Unscheduled: explicit offline volume conversion, much later]
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
@@ -711,7 +712,6 @@ flowchart TD
     QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: the controller stops reading the blocking Quiesce shape]
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
-    SANDBOX_SERVICE_REMOVE[In flight: remove the Sandbox Service]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     RESUME_CREDENTIALS_VALID[Blocked: grants and tokens still valid after a long suspension]
     SUSPENDED_COMPOSER[Blocked: the composer stays enabled while a Session is suspended]
@@ -719,11 +719,9 @@ flowchart TD
     HOSTED_THREAD_SURFACES[Blocked: show and revive stopped Sessions]
     VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
-    STATE_VOLUME_LAYOUT_ROLLOUT --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
     VM_PROVIDER -. related .-> SANDBOX_SPEC_EDIT
-    APP_SESSION_DEFAULTS[In flight: the app sends complete Session specs, section 12] -. keeps the preset label true .-> SANDBOX_SPEC_EDIT
     SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
     HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
@@ -733,21 +731,18 @@ flowchart TD
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
-    EFFECTIVE_MODE_FALLBACK_DROP[Blocked: remove spec.running fallback after controller rollout]
+    EFFECTIVE_MODE_FALLBACK_DROP[In flight: remove spec.running compatibility fallback]
+    STATE_VOLUME_LAYOUT_FALLBACK_REMOVE[In flight: require explicit state layouts]
+    APP_SESSION_OPEN_ACTIVATION[In flight: accept testing queued opens, then activate staging]
+    APP_SESSION_DEFAULTS_LEGACY_REMOVE[Candidate: retire unused defaults after caller audit]
+    APP_GATEWAY_SEND_REMOVE --> APP_OPEN_FLAG_REMOVE[Blocked: remove obsolete opening flag after config rollout]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
-    APP_SESSION_DEFAULTS --> APP_SESSION_OPEN_VIA_DISPATCHER
-    APP_SESSION_OPEN_VIA_DISPATCHER[In flight: queue app Session openings] --> APP_SESSION_OPEN_ACTIVATION[Blocked: activate queued app Session openings]
     APP_SESSION_OPEN_ACTIVATION --> APP_GATEWAY_SEND_REMOVE
     APP_NATIVE_RESUME_SURFACE[Decision: explicit native-resume UI] --> APP_NATIVE_RESUME_CUTOVER[Blocked: remove direct native resume]
     APP_NATIVE_RESUME_CUTOVER --> PROXY_START_METHODS_DISPATCHER_ONLY
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
-    NOTIFICATION_DISPATCHER_ROLLOUT[Waiting: strict notification sender image] --> PROXY_START_METHODS_DISPATCHER_ONLY
-    NOTIFICATION_DISPATCHER_ROLLOUT --> GATEWAY_WRAPPER_RETIRE
-    APP_SESSION_DEFAULTS --> APP_SESSION_DEFAULTS_LEGACY_REMOVE[Blocked: remove legacy per-Sandbox defaults fields]
-    SANDBOX_SERVICE_REMOVE --> APP_SESSION_DEFAULTS_LEGACY_REMOVE
     APP_GATEWAY_SEND_REMOVE --> PROXY_START_METHODS_DISPATCHER_ONLY
-    STATE_VOLUME_LAYOUT_ROLLOUT --> STATE_VOLUME_LAYOUT_FALLBACK_REMOVE
     STATE_VOLUME_BLOCK --> STATE_VOLUME_VIRTIOFS_RETIRE
     RUNNER_HEARTBEAT_SPLIT[Candidate: runner-only heartbeat type]
     INCARNATION_UID_REQUIRED --> JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE
@@ -757,11 +752,10 @@ flowchart TD
 
 ### `K3S_LIFECYCLE_SUITE` — a k3s lifecycle integration suite
 
-**Integration assertions remain; separate workflow is open in #10502.** Its four existing cases
-passed in 534.316 seconds of pytest time on 2026-10-14. An earlier RBE attempt failed while pausing
-its VM; the automatic retry consumed the outer workflow's hour deadline. That cancelled workflow
-is not green, and no timeout increase or manual retry is justified by it. Keep expensive k3s tests
-in their separate workflow, with the measured performance follow-up there. One
+**Integration assertions remain; separate workflow #10502 is merged and has a successful run.**
+Keep expensive k3s tests in that workflow. The current performance worker compares the same source
+revision with and without shared interpreter layers; the historical successful run predates Sandbox
+Service retirement and is not a matched baseline. One
 shared k3s environment fixture on a BuildBuddy action, one test per
 flow, no LLM: create, bootstrap, suspend, resume, quiesce and delete, about 15 minutes on RBE. Create,
 bootstrap, suspend, resume and delete have landed (`agentplane/x/k3s_env`). Left: the quiesce
@@ -772,7 +766,7 @@ fixture. Tests that need ClusterIP Services, KubeVirt or Cilium stay elsewhere
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
 
-**Blocked on `NODE_LOCAL_BLOCK_STORAGE` and `STATE_VOLUME_LAYOUT_ROLLOUT`.** Replace the VM's virtiofs
+**Blocked on `NODE_LOCAL_BLOCK_STORAGE`.** Replace the VM's virtiofs
 state attachment with a declared disk layout once suitable node-local storage exists. The state
 PVC holds journals and native harness persistence under `/state/sessions`, separately from the
 workspace. A disk would remove virtiofs's `107:107` ownership constraint; check all callers before
@@ -792,19 +786,10 @@ node affinity and both required volume modes. A node-local volume remains pinned
 moving it is `WORKSPACE_NODE_PORTABILITY`. This provisioner work does not gate Sandbox ownership
 or the explicit layout contract for workspace PVCs.
 
-### `STATE_VOLUME_LAYOUT_ROLLOUT` — activate explicit state layout declarations
-
-**In flight; assigned to `dag_burndown`, 2026-10-14 PDT.** The optional DirectoryTree reader and
-retained PVC identity/layout guard merged in #10509. Both environments now run controller
-`devel-20261014211114-31e0b37`; their templates still omit `stateVolume.layout`. Verify the installed
-CRD schema accepts the field, then declare `DirectoryTree` in every deployed state template and
-regenerate manifests. Check reconciliation in both environments before removing the omitted-layout
-default in `STATE_VOLUME_LAYOUT_FALLBACK_REMOVE`. This does not choose block storage, convert
-volumes or drop data; the existing mismatch and identity checks remain required.
-
 ### `STATE_VOLUME_LAYOUT_FALLBACK_REMOVE` — require explicit state layout declarations
 
-**Blocked on `STATE_VOLUME_LAYOUT_ROLLOUT` and all declaring templates and accepting images rolled out.**
+**In flight; Coordinator, 2026-10-14 PDT.** All five deployed templates declare DirectoryTree,
+and both environments run the accepting controller. The rollout gate is clear.
 Remove temporary omitted-layout defaults and their tests if the code-first rollout introduces them.
 Validate retained identity/layout before attachment. No old-data tolerant adoption or conversion;
 any incompatible data disposition is a separate operator-reviewed cutoff.
@@ -818,11 +803,12 @@ the selected explicit layouts before retiring the path; data drops stay in a sep
 
 ### `VM_GUEST_DECLARATIVE_STORAGE` — declarative guest disk initialization
 
-**Rollout remaining; `dag_burndown`, 2026-10-14.** #10513 merged the guest shell inventory,
-workspace disk preparation helper and declarative tmpfiles ownership. Its tests and Nix build
-passed. Both environments now pin `devel-20261014212650-ae038e8`. The worker is running the
-bounded fresh-format/retained-remount check on testing; configuration reconciliation alone is not
-workload acceptance. No staging workload write is authorized by this assignment. Preserve the explicit layout contract and refusal of
+**Rollout remaining; `vm_connection`, 2026-10-14 PDT.** #10513 merged the guest shell inventory,
+workspace disk preparation helper and declarative tmpfiles ownership. Testing exposed a missing
+device argument in the generated systemd unit: disk preparation exited before the runner started.
+#10537 supplies that argument; #10538 corrects the image workflow path filter. Wait for a guest
+image containing #10537, then run the bounded fresh-format/retained-remount check on testing.
+A successful Nix build or template reconciliation is not workload acceptance. No staging workload write is authorized by this assignment. Preserve the explicit layout contract and refusal of
 incompatible existing data. `autoFormat`'s recognizable-filesystem check is not equivalent to the
 zero-content scan. Runner changes additionally wait on the embedded wheel pin. The inline helper
 has the operator-requested TODO to package a proper Bazel-built executable rather than embedding
@@ -847,7 +833,7 @@ automatically; this is the explicit, operator-driven edit. Use the deployed
 workspace; `VM_PROVIDER` covers the VM side. Validate the
 retained state and workspace layouts before replacing a workload. Reject incompatible edits;
 `VOLUME_LAYOUT_CONVERSION` is a separate, much later task and does not block compatible edits. The
-preset the app records on a Sandbox as a label (`APP_SESSION_DEFAULTS`) must stay true after the edit.
+preset the app records on a Sandbox as a label must stay true after the edit.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
@@ -917,10 +903,12 @@ Firecracker with the runner as init.
 
 ### `EFFECTIVE_MODE_FALLBACK_DROP` — the Python readers stop falling back to `spec.running`
 
-**Blocked on the operating-mode controller image being pinned in both environments and existing CRs having status populated.** `Sandbox.operating_mode` in
+**In flight; Coordinator, 2026-10-14 PDT.** The accepting controller is pinned in both environments;
+the rollout inventory found no old Sandbox CRs. Preserve the legitimate pre-reconciliation absence of status. `Sandbox.operating_mode` in
 `sandbox_resource.py` reads `status.operatingMode` and falls back to `spec.running` while the controller
 has not published it. Once the controller that publishes it is pinned everywhere, make the status field
-required and delete the fallback (its `CLEANUP` marker names the same gate).
+authoritative and delete the compatibility fallback. A newly created CR must remain readable before
+its first status update; do not confuse that state with an old controller.
 
 ### `SANDBOX_IDLE_EXPIRY` — the controller suspends an idle Sandbox
 
@@ -928,7 +916,7 @@ required and delete the fallback (its `CLEANUP` marker names the same gate).
 Sandbox suspends: it is sealed, then the Pod or VM goes, freeing memory and compute, and the Sandbox, its
 ServiceAccount, bindings and state PVC stay, so `SESSION_REVIVE` resumes it on the same PVC. Nothing deletes a
 Sandbox on idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one, through
-[teardown](../sandbox_service/API.md#teardown) and the seal. What a resume gets back of the
+[the Sandbox lifecycle API](../sandboxes/README.md) and the seal. What a resume gets back of the
 workspace follows the declared [storage layout](../docs/sandbox_storage.md). Idle is a Sandbox-level fact: every Session in the Sandbox
 is idle. The control design (`docs/adr_sandbox_session_control.md`) puts the policy in the Sandbox
 controller: `spec.idleSuspendAfter`, a timer the controller measures from the `idleSince`
@@ -1036,25 +1024,10 @@ Lease facts) and never this field. Per-Session idle times stay out of Kubernetes
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `SANDBOX_SERVICE_REMOVE` — delete the Sandbox Service and its legacy clients
-
-**In flight; `sandbox_service`, 2026-10-14.** All actual app Pods in testing and staging are Ready
-on `devel-20261014212925-dba91ac`, which includes merged #10515's strict direct-only app path.
-The image gate is clear. The manifests no longer configure a Sandbox Service target or token;
-remaining app export-schema/acceptance helpers still need source cleanup. Split independently
-reviewable client/fixture and service-wiring removal PRs, preserving caller-image gates. Remove the app's
-legacy client and the Notification Service's unused `SandboxServiceSettings`. Remove the Service,
-Deployment, ServiceAccount, Role/Binding,
-TokenReview grants, network rules, image publication/Flux registration and migration-free service wiring.
-Delete its proto/service client, console/grant RPCs, server and tests, after moving any still-used shared
-inventory code into `agentplane/sandboxes/`. Search the whole repo, including acceptance and isolated
-fixtures, before deleting a shared helper or generated target. Regenerate derived files and update
-service docs and the README diagram. Preserve History Service's independently owned database; database
-renaming is deferred. No data deletion is bundled with this retirement.
-
 ### `DISPATCHER_WAKE_ACTIVATION` — enable send-triggered revival
 
-**In flight; assigned to `dispatcher`, 2026-10-14.** Image and migration gates are clear: actual
+**In flight; assigned to `vm_connection`, 2026-10-14 PDT.** Testing caller configuration from
+#10527 is reconciled. Bounded testing acceptance and staging activation remain. Image and migration gates are clear: actual
 Dispatcher Pods in both environments are Ready on `31e0b37`, their migration containers exited 0,
 and all controllers are Ready on that source. This includes the merged wake budget (#10487),
 selective native revival (#10492), and failure feedback (#10500). The prior staging runtime hold
@@ -1083,30 +1056,34 @@ agent senders wait for the reviewed multiagent authority contract. Do not confus
 with wake permission or silently expand the caller allowlist during a cutover. Add the bounded
 implementation node once policy is reviewed; existing caller cutovers do not silently select policy.
 
-### `APP_SESSION_OPEN_VIA_DISPATCHER` — route app Session creation through Dispatcher
-
-**In flight; `dispatcher`, #10517, 2026-10-14.** Resolve complete Session specs from app preset
-configuration and call the existing idempotent Dispatcher `OpenSession`. Preserve client-minted
-Session identity and display queued/opening/failure state. Verify suspended opening and ordinary
-retry; remove app-side gateway readiness and in-process waiting as queue authorities. The draft's
-`session_dispatcher_open_sessions` flag defaults off and must not be configured before its accepting
-app image is pinned. This implementation does not change explicit native resume.
-
 ### `APP_SESSION_OPEN_ACTIVATION` — activate queued app Session openings
 
-**Blocked on `APP_SESSION_OPEN_VIA_DISPATCHER` and its accepting app image being pinned and Ready.**
-Enable `session_dispatcher_open_sessions` in a separate generated-config PR. Check actual receiver,
-app and migration Pods, then verify queued opening and eventual Thread projection on testing before
-staging. Finish with both environments reconciled; direct-open fallback removal follows separately.
+**In flight; `vm_connection`, 2026-10-14 PDT.** #10517 implemented queued openings and app-owned
+Session defaults; both environments run an accepting app image. #10533 enables
+`session_dispatcher_open_sessions` on testing and its ConfigMap is reconciled. Verify queued opening
+and eventual Thread projection on testing, then enable staging in a separate generated-config PR. Finish with both environments reconciled; direct-open fallback removal follows separately.
 
 ### `APP_GATEWAY_SEND_REMOVE` — delete app direct command and Session-creation branches
 
-**Blocked on `APP_SESSION_OPEN_ACTIVATION` in both environments.** Command-send configuration from
+**Draft preparation authorized; `image_inventory`, 2026-10-14 PDT. Merge remains gated on
+`APP_SESSION_OPEN_ACTIVATION` in both environments for direct-open removal.** Direct command-send
+removal can land independently: command-send configuration from
 #10498 is already active in both environments; its [rollout evidence](../session_dispatcher/debug/deployment_acceptance.md#app-command-sender-activation)
-is complete. Remove optional Dispatcher selection, `session_dispatcher_open_sessions`, direct
-command/CreateSession branches, obsolete client methods and their tests; require Dispatcher config
-for the deployed app. Keep independently used Gateway reads and explicit native resume until their
+is complete. Remove optional Dispatcher selection and direct command branches first; require Dispatcher config
+for the deployed app. Remove direct CreateSession branches after queued-open activation. Retire the
+opening feature flag in reverse rollout order: make queued opening unconditional while still accepting
+the key, remove the key from generated manifests after that image is pinned, then delete its settings
+field after both ConfigMaps reconcile. The final flag deletion is tracked separately below.
+Delete obsolete client methods and tests in each step. Keep independently used Gateway reads and explicit native resume until their
 own cutovers. This cleanup need not wait for deciding the native-resume UI.
+
+### `APP_OPEN_FLAG_REMOVE` — retire the queued-opening rollout flag
+
+**Blocked on unconditional app queued openings and the accepting image pinned in both environments.**
+Remove `session_dispatcher_open_sessions` from generated ConfigMaps first. Once both environments
+have reconciled the omission, delete the accepted-but-unused settings field and schema/tests. This
+is the removal node for the transitional setting; do not delete the field while deployed config
+still sends it. No staging setting changes precede testing acceptance.
 
 ### `APP_NATIVE_RESUME_SURFACE` — decide the explicit native-resume UI
 
@@ -1124,14 +1101,6 @@ does not authorize silently adding that RPC. No change to Sandbox suspend/resume
 Dispatcher receiver, land and pin that before enabling its caller; otherwise remove the direct
 native-resume UI/API/client together. Preserve retained native identity/history and ordinary retries.
 Complete caller rollout before narrowing Gateway authorization or removing the legacy receiver.
-
-### `NOTIFICATION_DISPATCHER_ROLLOUT` — finish the strict notification sender rollout
-
-**Waiting on the image containing merged #10506.** Production sends already use Dispatcher; the
-old direct-send implementation was deleted and all eight acceptance cases passed in merge-tree CI.
-Actual notification Pods still run `31e0b37`, before merge `142ea35d4d`. Verify the newer image is
-pinned and Ready in both environments before retiring RPCs/permissions that an old caller image
-could use. No new feature implementation, data drop or repeat of the accepted test matrix is needed.
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
 
@@ -1286,29 +1255,21 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 
 ```mermaid
 flowchart TD
-    APP_SESSION_DEFAULTS[In flight: the app sends complete Session specs]
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
-    APP_SESSION_DEFAULTS --> GATEWAY_WRAPPER_RETIRE
     APP_GATEWAY_SEND_REMOVE --> GATEWAY_WRAPPER_RETIRE
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
 ```
 
-### `APP_SESSION_DEFAULTS` — the app sends complete Session specs
-
-**In flight; `dispatcher`, #10517, 2026-10-14.** Resolve a complete `SessionSpec` and setup script
-from app configuration selected by the Sandbox's preset label; stop new per-Sandbox defaults
-writes and UI editing. The accepted storage cutoff left no existing Sandboxes at the last audit;
-refresh before any incompatible schema removal and do not delete newly authored data implicitly.
-Retiring legacy wire/CRD fields is the separately gated cleanup below.
-
 ### `APP_SESSION_DEFAULTS_LEGACY_REMOVE` — delete legacy per-Sandbox defaults fields
 
-**Blocked on `APP_SESSION_DEFAULTS` caller rollout and remaining Sandbox Service clients removed.**
+**Caller defaults rollout and Sandbox Service retirement are complete.** Audit remaining
+CreateSession callers before removing their field mask; that part waits for the direct-open caller
+removal and its image rollout. Other unused defaults fields can be reviewed independently.
 Once every writer has stopped sending them, delete `SandboxBinding.session_defaults`, the Sandbox
 spec field, and obsolete shared defaults types; remove `CreateSessionRequest`'s field mask when its
 callers no longer send it. Check all repo consumers, generated schemas and pinned callers before
@@ -1318,7 +1279,7 @@ values require separate disposition; this node authorizes no data drop.
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
 **Blocked on `APP_GATEWAY_SEND_REMOVE`, `APP_NATIVE_RESUME_CUTOVER`,
-`NOTIFICATION_DISPATCHER_ROLLOUT` and `GATEWAY_WRAPPER_RETIRE`,
+`GATEWAY_WRAPPER_RETIRE`,
 with their caller images pinned in both environments.** Today
 the gateway's runner proxy (`runner_gateway/runner_proxy.py`) lets every configured caller account call
 every runner method except `Quiesce` and `Seal`, and the gateway wrapper calls `OpenSession` too. The
@@ -1344,8 +1305,7 @@ migration and `Command` stays as that event's field type.
 
 ### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
 
-**Blocked on `APP_SESSION_DEFAULTS`, `APP_GATEWAY_SEND_REMOVE`, `APP_NATIVE_RESUME_CUTOVER` and
-`NOTIFICATION_DISPATCHER_ROLLOUT`.**
+**Blocked on `APP_GATEWAY_SEND_REMOVE` and `APP_NATIVE_RESUME_CUTOVER`.**
 Audit and migrate every remaining wrapper read caller (including notification `ListSessions`) to
 History Service or the runner proxy, then pin those caller images before deleting the RPC receiver.
 App and notification command sends go through Dispatcher; read-only calls may use the proxy. Delete the
