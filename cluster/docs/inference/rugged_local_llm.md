@@ -1033,7 +1033,7 @@ was **2.55 GiB**, maximum full PSI avg10 22.29%, AC stayed connected, and the
 This used resident Vulkan weights, not SSD expert streaming. Those temporary
 servers exited; 4B and 35B have not been added to the permanent router roster.
 
-### 35B-A3B long-context follow-up (October 15, interim)
+### 35B-A3B long-context follow-up (October 15)
 
 Using the same artifact and settings, **35B-A3B Q3_K_M passed 3/3 needle
 retrieval at 63,907 input tokens**, with zero cached tokens and server
@@ -1044,16 +1044,27 @@ the three exact codes in order. This is one integrity smoke, not a coding
 quality benchmark or a sustained decode measurement.
 
 The idle Gemma router child was unloaded before starting the temporary server
-on loopback port 11512. Short tool/read/edit checks passed again. Spot checks
-showed AC connected and roughly 4–5 GiB available RAM during prefill; the
-1 GiB/70% sustained-PSI guards did not stop the completed request. Exact memory
-extrema will be collected from the monitor when the process finishes, rather
-than inferred from spot checks.
+on loopback port 11512. Short tool/read/edit checks passed again. AC stayed
+connected throughout. Available RAM remained at least about 3.71 GiB through
+the completed 64k stage; the 1 GiB/70% sustained-PSI guards did not stop it.
 
 The next prompt, target 128,000 tokens (127,896 native content tokens before
-chat formatting), is **still running at this interim publication**. There is
-no 128k retrieval or latency result yet. Both stages use independent filler
-seeds and `cache_prompt: false`; the combined process has a four-hour deadline.
+chat formatting), **hit the available-memory floor**, with the last completed
+prefill progress entry at 30,208 tokens. The stream ended without `[DONE]` and
+was censored: no retrieval score, completed-request latency, or decode throughput
+exists for this stage. Across the combined 2,043.78-second process, minimum
+MemAvailable was **0.91 GiB**, maximum full PSI avg10 **45.32%**, and the recorded
+stop reason was `memory_floor`. The temporary server exited and memory recovered.
+Both stages used independent filler seeds and `cache_prompt: false`, with a
+four-hour combined deadline that was not reached.
+
+The router journal showed no competing model load after the initial unload.
+The cause of memory growth is not established. The installed server's help lists
+defaults of 8,192 MiB for `--cache-ram` and 32 for `--ctx-checkpoints`; neither
+was overridden. A fresh-process 128k run with those caches explicitly bounded
+or disabled is a useful next experiment before treating this as an intrinsic
+context limit. API `cache_prompt: false` and zero reused tokens alone do not
+measure all server-side cache allocations.
 
 ### Reproducing the capability smokes
 
@@ -1099,9 +1110,10 @@ I/O without granting arbitrary code execution to the direct-API probe.
 
 ### Continuation priorities and retained evidence
 
-- **Capability:** finish the 35B-A3B Q3_K_M 128k direct-API smoke before deciding
-  its router context profile. The 64k retrieval passed, but cold prefill took
-  25 minutes and available-memory margin remains a constraint. If needed,
+- **Capability:** retry 35B-A3B Q3_K_M 128k in a fresh process with bounded server
+  caches before deciding its router context profile. The 64k retrieval passed,
+  but cold prefill took 25 minutes and the subsequent 128k attempt hit the
+  available-memory guard. If needed,
   compare a harder weight quantization or expert offloading; record exact
   artifact identity and treat published unquantized scores as external estimates.
 - **Latency:** measure an incremental cached follow-up on 9B before another

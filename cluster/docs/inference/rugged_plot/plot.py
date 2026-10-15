@@ -301,7 +301,7 @@ def main() -> None:
         0.08,
         0.07,
         "Not plotted: NPU TinyLlama ~38.65 tok/s and Qwen2.5-Coder 1.5B 45.76 tok/s lack matching AA rows.\n"
-        "Colibri Qwen3-Coder 30B-A3B lacks decode-phase timing. 35B-A3B has passed 64k retrieval; 128k remains pending.\n"
+        "Colibri Qwen3-Coder 30B-A3B lacks decode-phase timing. 35B-A3B passed 64k; 128k stopped at the memory guard.\n"
         "Sources: rugged_local_llm.md (2026-10-13 through 15 runs); docs/artificial_analysis/cited_models_2026_10_14.csv.",
         fontsize=9,
         va="top",
