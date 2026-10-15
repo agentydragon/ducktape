@@ -10,7 +10,7 @@ identify their sample counts and limitations. Host config lives in
 ## Current scope: local inference and opt-in cluster routes
 
 The local path remains `rugged-opencode-offline` → `127.0.0.1:11436` → llama.cpp on
-the iGPU. Background model provisioning and all seven local picker profiles remain
+the iGPU. Background model provisioning and local picker profiles remain
 enabled. Cluster access is restored through three LiteLLM routes and the NixOS bearer
 proxy on port 18080; the routes are available only to keys that include the
 `cheap_experiments_models` lane. On October 14, all three models returned HTTP
@@ -101,9 +101,9 @@ namespace. Ordinary OpenCode profiles keep their existing configuration.
 
 With the default Ollama backend, every offline-profile config exposes six
 models in OpenCode's picker: five base models and the experimental 131,072-context
-Gemma alias. The router-enabled profile adds Qwen3.5 0.8B as a seventh,
-experimental entry. The rugged host generation prefetches all six unique base
-tags; Qwen3 4B remains the default.
+Gemma alias. The router-enabled profile also exposes Qwen3.5 0.8B (256k
+experimental) and Qwen3.5 9B Q4_K_M (128k input smoke verified). The router's
+artifact manifest pins the downloads; Qwen3 4B remains the default.
 
 After activating that Home Manager change and caching the model, run it from
 the project directory:
@@ -986,4 +986,24 @@ Q4_K_M with the installed llama.cpp build**, in addition to its short tool/edit
 checks. It does not establish reliable retrieval generally or long-context coding
 quality. The roughly one-hour cold prefill is a major interactive-use limitation;
 incremental prefix-cache behavior was not tested. The temporary server exited
-normally afterward; 9B is not yet added to the installed picker or cluster routes.
+normally afterward.
+
+### Qwen3.5 9B in the local OpenCode picker
+
+After activating the NixOS configuration and completion of background provisioning,
+select `Qwen3.5 9B Q4 | 128k | slow prefill`, or launch directly:
+
+```bash
+RUGGED_OPENCODE_MODEL=qwen3.5-9b-128k rugged-opencode-offline
+```
+
+The router alias `qwen3.5:9b-q4_K_M-128k` uses the pinned 9B artifact above,
+text-only, 139,264 allocated tokens, q4_0 K/V cache, Flash Attention on, batch and
+microbatch 256, one slot, reasoning/speculation off, and memory fitting off.
+OpenCode advertises the same allocation with at most 4,096 output tokens.
+The 128k label describes the completed input smoke, not full-allocation validation.
+Short tool/edit checks passed; a long-context OpenCode task is unverified.
+Allow roughly an hour for cold 128k prefill under the measured conditions.
+Provisioning uses the existing asynchronous downloader and digest checks; model
+weights live under `/var/lib/rugged-llm/models`, outside `/nix/store`. The profile
+is router-only and has no additional LiteLLM route.

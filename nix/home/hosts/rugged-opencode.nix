@@ -42,6 +42,13 @@ let
       output = 4096;
       toolCall = true;
     };
+    qwen35_9b_128k = {
+      id = "qwen3.5:9b-q4_K_M-128k";
+      name = "Qwen3.5 9B Q4 | 128k | slow prefill";
+      context = 139264;
+      output = 4096;
+      toolCall = true;
+    };
     gemma4_e4b = {
       id = "gemma4:e4b";
       name = "Gemma4 E4B | 32k | tools OK";
@@ -71,7 +78,10 @@ let
         if routerEnabled then
           offlineModels
         else
-          builtins.removeAttrs offlineModels [ "qwen35_0_8b_long_256k_experimental" ];
+          builtins.removeAttrs offlineModels [
+            "qwen35_0_8b_long_256k_experimental"
+            "qwen35_9b_128k"
+          ];
     in
     builtins.toFile "rugged-opencode-offline-${key}.json" (
       builtins.toJSON {
@@ -127,6 +137,10 @@ let
   qwen35SelectorCase =
     if routerEnabled then
       ''
+        qwen3.5-9b-128k)
+          selected_model="${offlineModels.qwen35_9b_128k.id}"
+          selected_config="${offlineConfigs.qwen35_9b_128k}"
+          ;;
         qwen3.5-0.8b-long-256k-experimental)
           selected_model="${offlineModels.qwen35_0_8b_long_256k_experimental.id}"
           selected_config="${offlineConfigs.qwen35_0_8b_long_256k_experimental}"
@@ -134,8 +148,8 @@ let
       ''
     else
       ''
-        qwen3.5-0.8b-long-256k-experimental)
-          echo "Qwen3.5 0.8B requires the rugged llama.cpp router backend to be enabled" >&2
+        qwen3.5-0.8b-long-256k-experimental|qwen3.5-9b-128k)
+          echo "Qwen3.5 profiles require the rugged llama.cpp router backend to be enabled" >&2
           exit 2
           ;;
       '';

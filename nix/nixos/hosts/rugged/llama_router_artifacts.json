@@ -45,6 +45,11 @@
       "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:5ba2eb9bf28c5b5ff7a705f07bd9269f0f2dbd6cb2b4c46d5f98ed8d15d18883",
       "sha256": "5ba2eb9bf28c5b5ff7a705f07bd9269f0f2dbd6cb2b4c46d5f98ed8d15d18883",
       "size_bytes": 207346304
+    },
+    "qwen35-9b-model": {
+      "url": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q4_K_M.gguf",
+      "sha256": "03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8",
+      "size_bytes": 5680522464
     }
   },
   "profiles": {
@@ -79,6 +84,10 @@
       "alias": "qwen3.5:0.8b-long-256k-b256",
       "model_artifact": "qwen35-0.8b-model",
       "projector_artifact": "qwen35-0.8b-projector"
+    },
+    "rugged-qwen35-9b-128k": {
+      "alias": "qwen3.5:9b-q4_K_M-128k",
+      "model_artifact": "qwen35-9b-model"
     }
   }
 }

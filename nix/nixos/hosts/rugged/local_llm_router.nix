@@ -59,6 +59,7 @@ let
       profile:
       profile.section != "rugged-gemma4-e2b-it-qat-long-128k-b128"
       && profile.section != "rugged-qwen35-0.8b-256k"
+      && profile.section != "rugged-qwen35-9b-128k"
     ) modelPresets
   );
   gemmaLongProfile = builtins.head (
@@ -66,6 +67,9 @@ let
   );
   qwenLongProfile = builtins.head (
     builtins.filter (profile: profile.section == "rugged-qwen35-0.8b-256k") modelPresets
+  );
+  qwen9bProfile = builtins.head (
+    builtins.filter (profile: profile.section == "rugged-qwen35-9b-128k") modelPresets
   );
 
   modelPreset = pkgs.writeText "rugged-llama-router-models.ini" ''
@@ -99,6 +103,15 @@ let
     cache-type-k = q4_0
     cache-type-v = q4_0
     flash-attn = on
+
+    ${profilePreset qwen9bProfile}
+    ctx-size = 139264
+    batch-size = 256
+    ubatch-size = 256
+    cache-type-k = q4_0
+    cache-type-v = q4_0
+    flash-attn = on
+    fit = off
   '';
 in
 {
