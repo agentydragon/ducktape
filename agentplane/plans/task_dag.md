@@ -1096,6 +1096,13 @@ flowchart TD
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
+    SUSPENDED_SESSION_INVENTORY --> APP_SESSION_LIST_ROUTE_RETIRE[Blocked: remove the runner-backed table HTTP read]
+    APP_SESSION_LIST_ROUTE_RETIRE --> GATEWAY_WRAPPER_RETIRE
+    APP_SESSION_DESTINATION_HISTORY[Candidate: resolve Session destinations from History] --> GATEWAY_WRAPPER_RETIRE
+    APP_ARCHIVE_RUNNER_READ_MIGRATION[Candidate: move live archive checks to the runner proxy] --> GATEWAY_WRAPPER_RETIRE
+    NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION[Candidate: retire notification wrapper membership reads] --> GATEWAY_WRAPPER_RETIRE
+    APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
+    VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
@@ -1131,14 +1138,62 @@ migration and `Command` stays as that event's field type.
 
 ### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
 
-**Blocked on the Dispatcher-only app image rollout and `APP_NATIVE_RESUME_CUTOVER`.**
-Audit and migrate every remaining wrapper read caller (including notification `ListSessions`) to
-History Service or the runner proxy, then pin those caller images before deleting the RPC receiver.
+**Blocked on the read-caller migration and route-retirement nodes above, the Dispatcher-only app
+image rollout and `APP_NATIVE_RESUME_CUTOVER`.** These caller migrations can proceed independently;
+the native-resume decision does not block migrating reads. Pin all migrated caller images before
+deleting the RPC receiver, and search for remaining wrapper callers before removal.
 App and notification command sends go through Dispatcher; read-only calls may use the proxy. Delete the
 `RunnerGateway` service and proto, its client, `session_registry.py`, `destinations.py`,
 `session_lifecycle.py` and `wire.py`, obsolete client settings, projected tokens and network rules
 whose final callers are gone. Delete associated BUILD targets and tests; retain the control stream
 and runner proxy. This makes `SANDBOX_DATABASE_RENAME` moot; delete that deferred node here.
+
+### `APP_SESSION_LIST_ROUTE_RETIRE` — remove the runner-backed Sandbox table read
+
+**Blocked on `SUSPENDED_SESSION_INVENTORY` and its app image rollout.** The old browser path is
+`client.listSessions` → `GET /sandboxes/{name}/sessions` → `RunnerBridge.list_sessions` →
+`RunnerGateway.ListSessions` → tunneled `Runner.ListSessions`. Once the table uses the retained
+History inventory and its caller image is deployed, delete the unused HTTP GET route and its
+schema/client/test surface. Preserve the POST opening route and opening-status read. Generate
+OpenAPI/clients through `localgen/run.sh`; do not hand-edit generated files. The bridge method stays
+only until the separate archive and native-resume migrations remove its final callers.
+
+### `APP_SESSION_DESTINATION_HISTORY` — remove the app's registry lookup
+
+**Candidate.** `RunnerDirectory.sandbox_of` still calls wrapper `BatchGetSessionSandboxes` for
+command and native-resume routing. Resolve retained Session metadata through History instead,
+preserving missing-history refusals and existing authorization. History already carries the Sandbox
+namespace/name; verify deleted/recreated Sandbox behavior rather than treating the name as proof of
+incarnation identity. Remove the app's unused registry lookup client after the migration and track
+its deployed caller image before wrapper retirement.
+
+### `APP_ARCHIVE_RUNNER_READ_MIGRATION` — preserve live archive safety without the wrapper
+
+**Candidate.** `archive_thread` reads `RunnerBridge.list_sessions` to reject archiving a running
+harness while its Pod exists. History is eventually consistent and cannot alone prove that a
+harness has stopped. Preserve this check through the runner proxy, plus the existing refusal when
+a Pod exists but cannot be checked. A stopped/deleted Sandbox still allows retaining/archiving its
+history. Test stale History saying stopped while the live runner says running, and runner loss.
+Remove the wrapper call; do not weaken the guard to simplify the table migration.
+
+### `NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION` — retire the subscription wrapper read
+
+**Candidate.** `NotificationService.subscribe` uses wrapper `ListSessions` after checking the current
+Sandbox UID and owner. Move that read to the runner proxy while preserving those checks, or use
+History only if its retained association can prove the same identity boundary. History's current
+Sandbox reference has namespace/name, not UID/owner, so a matching name alone is insufficient.
+Test owner mismatch, replaced Sandbox UID and a Session belonging elsewhere. Remove the obsolete
+notification Gateway client/config once no callers remain; config removals precede settings-reader
+removals and receiver deletion waits for the new notification image.
+
+### `VM_CONSOLE_DEFERRED_ATTACH` — attach after VM startup makes the console available
+
+**Unscheduled; lower priority, operator report 2026-10-15 PDT.** During VM startup the console tab
+can show `Kubernetes answered 400` and remain disconnected. Treat a not-yet-attachable VM as waiting
+and attach when its lifecycle signals readiness, without reopening the tab. Distinguish startup
+from authorization failure, deleted VM, and another attached client; clean up on tab exit and never
+open competing connections. Keep the existing read-only/no-replay contract. Test the unavailable
+→ attachable transition and cancellation; do not add a periodic polling loop or bigger timeout.
 
 ### `GATEWAY_DATABASE_DROP` — drop the `sandbox_commands` database
 
