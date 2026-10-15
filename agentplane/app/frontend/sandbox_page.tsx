@@ -30,11 +30,9 @@ import {
   getSessionOpening,
   getThread,
   HttpError,
-  listSessions,
   modelsForHarness,
   harnessOptions,
   openSession,
-  RunnerUnavailableError,
   type Harness,
   type ModelCatalog,
   type SessionDefaults,
@@ -64,7 +62,7 @@ import {
 } from "./sandbox_status";
 import { SANDBOX_STATUS_MARKS } from "./status_mark";
 import { TopbarTitle } from "./topbar";
-import { HarnessState, SessionSpecSchema, SetupState, type SessionSummary } from "../../proto/runner_pb";
+import { SessionSpecSchema } from "../../proto/runner_pb";
 
 // Persist only the Session ID, never instructions or setup scripts (which can contain secrets).
 function pendingOpenKey(sandbox: string): string {
@@ -92,19 +90,32 @@ function openingStateLabel(state: string | undefined): string {
   }
 }
 
-function setupLabel(state: SetupState): string {
+function setupLabel(state: string | null | undefined): string {
   switch (state) {
-    case SetupState.UNSPECIFIED:
-    case SetupState.NOT_REQUIRED:
+    case "SETUP_STATE_UNSPECIFIED":
+    case "SETUP_STATE_NOT_REQUIRED":
+    case null:
+    case undefined:
       return "—";
-    case SetupState.RUNNING:
+    case "SETUP_STATE_RUNNING":
       return "Running";
-    case SetupState.SUCCEEDED:
+    case "SETUP_STATE_SUCCEEDED":
       return "Complete";
-    case SetupState.FAILED:
+    case "SETUP_STATE_FAILED":
       return "Failed";
-    case SetupState.INTERRUPTED:
+    case "SETUP_STATE_INTERRUPTED":
       return "Interrupted";
+    default:
+      return "Unknown";
+  }
+}
+
+function lastObservedHarnessState(thread: ThreadView): string {
+  switch (thread.harness_state) {
+    case "HARNESS_STATE_RUNNING":
+      return "Running";
+    case "HARNESS_STATE_STOPPED":
+      return "Stopped";
     default:
       return "Unknown";
   }
@@ -290,13 +301,11 @@ export function SandboxPage({
   onOpenThread: (threadId: string) => void;
   onBack: () => void;
 }): JSX.Element {
-  const [sessions, setSessions] = useState<SessionSummary[]>([]);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedTab = searchParams.get("tab");
   const tab: Tab = isTab(requestedTab) ? requestedTab : DEFAULT_TAB;
   const [error, setError] = useState<string | null>(null);
-  const [sessionList, setSessionList] = useState<"loading" | "waiting" | "ready" | { error: string }>("loading");
   const [creatingSession, setCreatingSession] = useState(false);
   const [pendingOpen, setPendingOpen] = useState<PendingOpen | null>(() => {
     const sessionId = sessionStorage.getItem(pendingOpenKey(name));
@@ -331,15 +340,12 @@ export function SandboxPage({
   const threadListing = live.snapshot?.threads ?? [];
   const threadsUnavailable = Array.isArray(threadListing) ? null : threadListing.code;
   const threads = Array.isArray(threadListing) ? threadListing : [];
-  // The store's copy of each session's thread, keyed by its id, which is the session's; it outlives
-  // the runner's own list.
+  const ready = sandboxReady(sandbox);
+  // History's retained Thread projection, keyed by its Session ID.
   const threadBySession: Record<string, ThreadView> = Object.fromEntries(threads.map((thread) => [thread.id, thread]));
   const pendingSessionId = pendingOpen?.sessionId;
   const projectedPendingThread = pendingSessionId ? threadBySession[pendingSessionId] : undefined;
-  const names = Object.fromEntries(threads.flatMap((thread) => (thread.name ? [[thread.id, thread.name]] : [])));
-  const visibleSessions = sessions.filter(
-    (session) => includeArchived || !threadBySession[session.sessionId]?.archived
-  );
+  const visibleThreads = threads.filter((thread) => includeArchived || !thread.archived);
   const openProjectedPending = useEffectEvent((sessionId: string) => {
     void openThread(sessionId, sessionId);
   });
@@ -354,47 +360,7 @@ export function SandboxPage({
     if (projectedPendingThread) openProjectedPending(pendingSessionId);
   }, [pendingSessionId, projectedPendingThread]);
 
-  // The runner answers ListSessions per request and has no stream, so the table is re-read at the
-  // moments that can change it: the Pod coming or going, and a session opening, which the store
-  // records as a thread and the stream then pushes. A harness stopping is not among them; it shows
-  // when the page next reads.
-  const ready = sandboxReady(sandbox);
-  const currentPodIp = sandbox ? podIp(sandbox) : null;
-  const podUid = sandbox?.pod?.uid;
-  const openedSessions = threads.length;
   const presetName = sandbox?.preset ?? null;
-  useEffect(() => {
-    let cancelled = false;
-    let retry: number | undefined;
-    setSessionList("loading");
-    if (!ready) {
-      setSessions([]);
-      setSessionList("waiting");
-      return;
-    }
-    async function refresh(): Promise<void> {
-      try {
-        const rows = await listSessions(name);
-        if (cancelled) return;
-        setSessions(rows);
-        setSessionList("ready");
-      } catch (reason: unknown) {
-        if (cancelled) return;
-        if (reason instanceof RunnerUnavailableError) {
-          setSessionList("waiting");
-          retry = window.setTimeout(() => void refresh(), 2000);
-        } else {
-          setSessionList({ error: displayableError(reason) });
-        }
-      }
-    }
-    void refresh();
-    return () => {
-      cancelled = true;
-      window.clearTimeout(retry);
-    };
-  }, [name, ready, currentPodIp, podUid, openedSessions]);
-
   useEffect(() => {
     void (async () => {
       const { data, error: failure } = await api.GET("/models");
@@ -649,7 +615,7 @@ export function SandboxPage({
       {error && <Text c="red">{error}</Text>}
       {live.snapshot !== null && sandbox === null && <Text c="red">There is no sandbox {name} any more.</Text>}
       {sandbox && !ready && (
-        <Text>Sandbox status: {sandboxSummary(sandbox).label}. Sessions need a ready Sandbox.</Text>
+        <Text>Sandbox status: {sandboxSummary(sandbox).label}. New sessions need a ready Sandbox.</Text>
       )}
       <Tabs
         value={tab}
@@ -682,13 +648,8 @@ export function SandboxPage({
         </Tabs.Panel>
         <Tabs.Panel value="sessions" pt="sm">
           <Stack>
-            {ready && sessionList === "loading" && <Text role="status">Loading sessions…</Text>}
-            {ready && sessionList === "waiting" && (
-              <Text role="status">Waiting for the sandbox runner to become available; retrying automatically…</Text>
-            )}
-            {typeof sessionList === "object" && <Text c="red">{sessionList.error}</Text>}
             {threadsUnavailable && (
-              <Text c="red">The Runner Gateway could not list this sandbox&apos;s threads ({threadsUnavailable}).</Text>
+              <Text c="red">History Thread summaries are unavailable ({threadsUnavailable}).</Text>
             )}
             <Group align="flex-end">
               <Select
@@ -714,7 +675,7 @@ export function SandboxPage({
               <Button
                 onClick={() => void createSession()}
                 loading={creatingSession}
-                disabled={!ready || sessionList !== "ready" || !model || !!pendingOpen}
+                disabled={!ready || !model || !!pendingOpen}
               >
                 {creatingSession ? "Creating session…" : "New session"}
               </Button>
@@ -776,53 +737,47 @@ export function SandboxPage({
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th>Session</Table.Th>
-                  <Table.Th>Harness state</Table.Th>
+                  <Table.Th>Last observed harness</Table.Th>
                   <Table.Th>Setup</Table.Th>
-                  <Table.Th>Active turn</Table.Th>
+                  <Table.Th>Last observed turn</Table.Th>
                   <Table.Th>Events</Table.Th>
                   <Table.Th />
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {visibleSessions.map((session) => {
-                  const thread = threadBySession[session.sessionId];
+                {visibleThreads.map((thread) => {
+                  const sessionId = thread.id;
+                  const running = thread.harness_state === "HARNESS_STATE_RUNNING";
                   return (
-                    <Table.Tr key={session.sessionId}>
+                    <Table.Tr key={sessionId}>
                       <Table.Td>
                         {/* The id is only useful once you're in the session's own detail view (which
                           shows it beside the name); the list links by name where one exists. */}
-                        <Button variant="subtle" onClick={() => void openThread(session.sessionId)}>
-                          {names[session.sessionId] ?? session.sessionId}
+                        <Button variant="subtle" onClick={() => void openThread(sessionId)}>
+                          {thread.name ?? sessionId}
                         </Button>
                       </Table.Td>
-                      <Table.Td>{HarnessState[session.harnessState]}</Table.Td>
-                      <Table.Td>{setupLabel(session.setupState)}</Table.Td>
-                      <Table.Td>{session.activeTurnId || "—"}</Table.Td>
-                      <Table.Td>{String(session.lastCursor)}</Table.Td>
+                      <Table.Td>{lastObservedHarnessState(thread)}</Table.Td>
+                      <Table.Td>{setupLabel(thread.setup_state)}</Table.Td>
+                      <Table.Td>{thread.active_turn_id ?? "—"}</Table.Td>
+                      <Table.Td>{String(thread.last_cursor)}</Table.Td>
                       <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
-                        {thread && (
-                          <Menu position="bottom-end">
-                            <Menu.Target>
-                              <ActionIcon variant="subtle" aria-label={`More actions for ${session.sessionId}`}>
-                                <IconDotsVertical size={16} />
-                              </ActionIcon>
-                            </Menu.Target>
-                            <Menu.Dropdown>
-                              {thread.archived ? (
-                                <Menu.Item onClick={() => void threadAct(thread.id, "unarchive")}>Unarchive</Menu.Item>
-                              ) : (
-                                <Menu.Item
-                                  disabled={session.harnessState === HarnessState.RUNNING}
-                                  onClick={() => void threadAct(thread.id, "archive")}
-                                >
-                                  {session.harnessState === HarnessState.RUNNING
-                                    ? "Stop harness before archiving"
-                                    : "Archive"}
-                                </Menu.Item>
-                              )}
-                            </Menu.Dropdown>
-                          </Menu>
-                        )}
+                        <Menu position="bottom-end">
+                          <Menu.Target>
+                            <ActionIcon variant="subtle" aria-label={`More actions for ${sessionId}`}>
+                              <IconDotsVertical size={16} />
+                            </ActionIcon>
+                          </Menu.Target>
+                          <Menu.Dropdown>
+                            {thread.archived ? (
+                              <Menu.Item onClick={() => void threadAct(thread.id, "unarchive")}>Unarchive</Menu.Item>
+                            ) : (
+                              <Menu.Item disabled={running} onClick={() => void threadAct(thread.id, "archive")}>
+                                {running ? "Stop harness before archiving" : "Archive"}
+                              </Menu.Item>
+                            )}
+                          </Menu.Dropdown>
+                        </Menu>
                       </Table.Td>
                     </Table.Tr>
                   );

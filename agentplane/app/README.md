@@ -138,8 +138,10 @@ until History projects its admission or command row; the app adds no command que
 Dispatcher and authorize the app ServiceAccount before rolling out an app image that requires this
 setting.
 
-The app lists Sessions through the Runner Gateway's authenticated, UID-fenced `ListSessions` RPC and
-explicitly resumes retained Sessions through the Gateway's Session API. Every new Session opening is
+The Sandbox page lists retained Sessions from History Thread summaries, so suspension or removal of a
+runner Pod does not clear the inventory. Harness state and turn IDs in that table are last observed
+History values; they do not assert that a harness is still running or can be resumed. Explicitly
+resuming a retained Session still uses the Runner Gateway's Session API. Every new Session opening is
 submitted to the Dispatcher with the complete Session spec. A `SessionOpening` reports queued,
 delivering, runner-admitted, or failed state, and
 `GET /sandboxes/{name}/sessions/{id}/opening` checks that durable result. Admission does not mean the
@@ -223,15 +225,17 @@ Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavai
 carries a whole `snapshot` of what it covers whenever that changes, and a `health` frame through
 the quiet in between. What is pushed: the sandbox rows, one sandbox's egress bindings, its action
 policy, and its threads, the last of these from the store rather than a watch, since the app is the
-only writer of a thread's name.
+only writer of a thread's name. The Sandbox page uses those History Thread summaries as its retained
+Session inventory; its harness and turn fields are last observed History values. Suspending or
+removing a runner Pod does not clear projected Threads, and the app does not claim their harnesses
+are still running. Archived Threads stay hidden unless the operator chooses **Show archived**.
 
 The egress tab's decisions are their own stream, `/live/sandboxes/{name}/egress/decisions`: the
 proxy announces each commit of decisions on its admin port's `/decisions/changes`, and every frame
-re-reads `/decisions` from it. The runner answers `ListSessions` per request, so the sandbox page
-re-reads the session table when the sandbox's Pod comes or goes and when a session opens (which
-reaches it as a new thread).
-An unavailable runner shows a waiting state and retries until it answers, without requiring a
-reload. Session creation displays progress and prevents duplicate clicks while the request runs.
+re-reads `/decisions` from it. Runner availability affects operations that need a live Session and
+whether the page can open a new one; it does not determine whether a retained History Thread appears
+in the table. Session creation displays progress and prevents duplicate clicks while the request
+runs.
 
 A snapshot is not a delta, and there is no resumable id: a relist replaces a kind wholesale and a
 `resourceVersion` expires, so a reconnecting tab is served a fresh snapshot instead. That leaves

@@ -71,6 +71,10 @@ vi.mock("./live", async (importOriginal) => ({
   useLive: () => live,
 }));
 
+const readySandbox = live.snapshot.sandbox as SandboxView;
+const readyPod = readySandbox.pod;
+const readyStatus = readySandbox.status;
+
 /** The Egress panel stays mounted behind its tab and follows a stream that these tests never feed. */
 class SilentEventSource extends EventTarget {
   static readonly CLOSED = 2;
@@ -96,6 +100,11 @@ afterEach(async () => {
   container.remove();
   vi.useRealTimers();
   live.snapshot.threads = [];
+  readySandbox.operating_mode = "Running";
+  readySandbox.phase = "Running";
+  readySandbox.pod = readyPod;
+  readySandbox.status = readyStatus;
+  live.snapshot.sandbox = readySandbox;
   sessionStorage.clear();
   rerender = async () => {};
   (live.snapshot.sandbox as SandboxView).binding = null;
@@ -276,18 +285,20 @@ it("uses the configured preset working directory template and setup script for l
 });
 
 it("shows an unspecified legacy setup as absent and a completed setup as complete", async () => {
-  const spec = { harness: "HARNESS_CLAUDE", cwd: "/work", model: "test-model" };
-  await render(async () =>
-    Response.json([
-      { sessionId: "legacy", spec, harnessState: "HARNESS_STATE_STOPPED" },
-      { sessionId: "prepared", spec, harnessState: "HARNESS_STATE_RUNNING", setupState: "SETUP_STATE_SUCCEEDED" },
-    ])
+  live.snapshot.threads = [
+    thread({ id: "legacy", harness_state: "HARNESS_STATE_STOPPED", setup_state: null }),
+    thread({ id: "prepared", harness_state: "HARNESS_STATE_RUNNING", setup_state: "SETUP_STATE_SUCCEEDED" }),
+  ];
+  const sessions = vi.fn<(request: Request) => Promise<Response>>(() =>
+    Promise.resolve(Response.json({ detail: "History owns the Sandbox inventory" }, { status: 500 }))
   );
+  await render(sessions);
   await vi.waitFor(() => {
     const rows = [...container.querySelectorAll("tbody tr")];
     expect(rows.find((row) => row.textContent?.includes("legacy"))?.children[2]?.textContent).toBe("—");
     expect(rows.find((row) => row.textContent?.includes("prepared"))?.children[2]?.textContent).toBe("Complete");
   });
+  expect(sessions).not.toHaveBeenCalled();
 });
 
 it("lets a later Thread override the preset reasoning default locally", async () => {
@@ -309,25 +320,68 @@ function menuItem(text: string): HTMLElement {
   return item;
 }
 
-it.each([409, 503])("recovers from runner HTTP %s without a reload", async (status) => {
-  vi.useFakeTimers();
-  const sessions = vi
-    .fn<(request: Request) => Promise<Response>>()
-    .mockResolvedValueOnce(Response.json({ detail: "runner not available" }, { status }))
-    .mockResolvedValueOnce(Response.json([{ sessionId: "existing-session" }]));
+it("keeps retained History Threads visible through ready to suspended with no runner inventory read", async () => {
+  const retained = thread({
+    id: "retained-session",
+    name: "Previously active session",
+    harness_state: "HARNESS_STATE_RUNNING",
+    active_turn_id: "turn-last-seen",
+    setup_state: "SETUP_STATE_SUCCEEDED",
+    last_cursor: 12,
+  });
+  live.snapshot.threads = [retained];
+  const sessions = vi.fn<(request: Request) => Promise<Response>>(() =>
+    Promise.resolve(Response.json({ detail: "runner inventory must not be requested" }, { status: 503 }))
+  );
   await render(sessions);
-  expect(container.querySelector('[role="status"]')?.textContent).toContain("Waiting for the sandbox runner");
-  expect(newSession().disabled).toBe(true);
-  await act(async () => vi.advanceTimersByTimeAsync(2000));
-  expect(container.textContent).toContain("existing-session");
-  expect(container.querySelector('[role="status"]')).toBeNull();
+  expect(container.textContent).toContain("Previously active session");
   expect(newSession().disabled).toBe(false);
-});
 
-it("reports non-transient session-list failures instead of treating them as startup", async () => {
-  await render(async () => Response.json({ detail: "invalid runner response" }, { status: 500 }));
-  expect(container.textContent).toContain("invalid runner response");
-  expect(container.textContent).not.toContain("Waiting for the sandbox runner");
+  readySandbox.operating_mode = "Suspended";
+  readySandbox.phase = "Suspended";
+  readySandbox.pod = null;
+  await rerender();
+
+  const retainedRow = () =>
+    [...container.querySelectorAll("tbody tr")].find((candidate) =>
+      candidate.textContent?.includes("Previously active session")
+    );
+  const actionButton = () =>
+    [...container.querySelectorAll("button")].find(
+      (node) => node.getAttribute("aria-label") === "More actions for retained-session"
+    );
+  const row = retainedRow();
+  expect(row).toBeDefined();
+  expect(row?.children[1]?.textContent).toBe("Running");
+  expect(container.textContent).toContain("Last observed harness");
+  expect(container.textContent).toContain("Last observed turn");
+  expect(row?.children[3]?.textContent).toBe("turn-last-seen");
+  expect(container.textContent).toContain("New sessions need a ready Sandbox");
+  expect(newSession().disabled).toBe(true);
+  expect(sessions).not.toHaveBeenCalled();
+
+  const menuButton = actionButton();
+  if (!menuButton) throw new Error("Missing retained Session actions menu");
+  await act(async () => menuButton.click());
+  expect((menuItem("Stop harness before archiving") as HTMLButtonElement).disabled).toBe(true);
+  await act(async () => menuButton.click());
+
+  // History outlives the Sandbox row itself. Removing the Sandbox must not hide authored Threads.
+  live.snapshot.sandbox = null;
+  await rerender();
+  expect(retainedRow()).toBeDefined();
+
+  live.snapshot.threads = [{ ...retained, harness_state: "HARNESS_STATE_STOPPED", active_turn_id: null }];
+  await rerender();
+  const stoppedMenuButton = actionButton();
+  if (!stoppedMenuButton) throw new Error("Missing retained Session actions menu after Sandbox deletion");
+  await act(async () => stoppedMenuButton.click());
+  await act(async () => menuItem("Archive").click());
+  live.snapshot.threads = [{ ...retained, archived: true, harness_state: "HARNESS_STATE_STOPPED" }];
+  await rerender();
+  expect(retainedRow()).toBeUndefined();
+  await act(async () => labeledInput("Show archived").click());
+  expect(retainedRow()).toBeDefined();
 });
 
 it("shows creation progress, prevents duplicate clicks, and does not retry failed Opens", async () => {
@@ -529,17 +583,8 @@ it("hides an archived thread's session by default, reveals it via Show archived,
 });
 
 it("disables archiving a thread while its harness is running", async () => {
-  live.snapshot.threads = [thread({ id: "existing-session" })];
-  await render(async () =>
-    Response.json([
-      {
-        sessionId: "existing-session",
-        spec: {},
-        lastCursor: "0",
-        harnessState: "HARNESS_STATE_RUNNING",
-      },
-    ])
-  );
+  live.snapshot.threads = [thread({ id: "existing-session", harness_state: "HARNESS_STATE_RUNNING" })];
+  await render(async () => Response.json({ detail: "History owns the Sandbox inventory" }, { status: 500 }));
   const menuButton = [...container.querySelectorAll("button")].find(
     (node) => node.getAttribute("aria-label") === "More actions for existing-session"
   );
@@ -578,9 +623,9 @@ it("defaults new sessions to an offered harness while retaining existing Claude 
   expect((await postedBody(sessions)).spec.harness).toBe("HARNESS_CODEX");
 });
 
-it("keeps the lifecycle controls and says so when the gateway cannot list the sandbox's threads", async () => {
+it("keeps lifecycle controls when History Thread summaries are unavailable", async () => {
   live.snapshot.threads = { kind: "unavailable", code: "UNAUTHENTICATED" };
   await render(async () => Response.json([]));
   expect(container.querySelector('[aria-label="Delete"]')).not.toBeNull();
-  expect(container.textContent).toContain("UNAUTHENTICATED");
+  expect(container.textContent).toContain("History Thread summaries are unavailable (UNAUTHENTICATED)");
 });

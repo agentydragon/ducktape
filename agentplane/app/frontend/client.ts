@@ -3,14 +3,7 @@ import createClient from "openapi-fetch";
 
 import type { components, paths } from "./api/schema";
 import { redirectToLogin } from "./operator_login";
-import {
-  AttachedSchema,
-  SessionSpecSchema,
-  SessionSummarySchema,
-  type Attached,
-  type SessionSpec,
-  type SessionSummary,
-} from "../../proto/runner_pb";
+import { AttachedSchema, SessionSpecSchema, type Attached, type SessionSpec } from "../../proto/runner_pb";
 import { CommandSchema, type Command } from "../../proto/command_pb";
 import { EventEntrySchema, type EventEntry } from "../../proto/event_log_pb";
 
@@ -239,22 +232,6 @@ export function displayableError(error: unknown): string {
   if (error instanceof Error) return error.message;
   if (typeof error === "object" && error !== null) return JSON.stringify(error);
   return String(error);
-}
-
-/**
- * The bridge's session routes carry proto-JSON of the runner protocol's messages, typed here by
- * protobuf-es from the runner and shared protocol files themselves; the OpenAPI document knows
- * them only as objects.
- */
-export class RunnerUnavailableError extends Error {}
-
-export async function listSessions(sandbox: string): Promise<SessionSummary[]> {
-  const answer = await api.GET("/sandboxes/{name}/sessions", { params: { path: { name: sandbox } } });
-  // These routes report a missing Pod address as 409 and an unavailable runner as 503.
-  if (answer.error && (answer.response.status === 409 || answer.response.status === 503)) {
-    throw new RunnerUnavailableError(displayableError(answer.error));
-  }
-  return ok(answer).map((row) => fromJson(SessionSummarySchema, row as JsonValue));
 }
 
 /**
