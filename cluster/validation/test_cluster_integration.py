@@ -381,7 +381,9 @@ def staging_app_config(staging_manifest_docs: list[dict]) -> dict:
         for doc in staging_manifest_docs
         if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
     )
-    return yaml.safe_load(app_config["data"]["config.yaml"])
+    config = yaml.safe_load(app_config["data"]["config.yaml"])
+    assert isinstance(config, dict)
+    return config
 
 
 @pytest.fixture(scope="module")
