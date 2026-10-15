@@ -180,12 +180,17 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
         except PeerRefusedError:
             await context.abort(grpc.StatusCode.PERMISSION_DENIED, "not a Sandbox Pod")
         except _StreamClosedError as closed:
+            logger.info("Runner control stream closed: code=%s detail=%s", closed.code.name, closed.detail)
             await context.abort(closed.code, closed.detail)
         except TimeoutError:
+            logger.exception("Runner control stream operation timed out")
             await context.abort(grpc.StatusCode.UNAVAILABLE, "control stream operation timed out")
         except k8s_client.ApiException:
             logger.exception("Runner control stream backend failure")
             await context.abort(grpc.StatusCode.UNAVAILABLE, "control backend unavailable")
+        except Exception:
+            logger.exception("Runner control stream handler failed unexpectedly")
+            raise
 
     async def serve(
         self,
@@ -238,6 +243,7 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
                         connection.tunnel.answer(frame.reply)
                     case kind:
                         raise _StreamClosedError(grpc.StatusCode.INVALID_ARGUMENT, f"unexpected {kind} frame")
+            logger.info("Runner control request stream ended; context_cancelled=%s", context.cancelled())
 
         async def keep_alive() -> None:
             nonlocal last_touch
@@ -262,13 +268,23 @@ class RunnerControlService(runner_control_pb2_grpc.RunnerControlServicer):
                 await send(runner_control_pb2.ServiceFrame(heartbeat=runner_control_pb2.Heartbeat()))
 
         async with self.control.connect(peer.sandbox_uid, epoch=epoch, send=call) as connection:
-            tasks = [asyncio.create_task(read(connection)), asyncio.create_task(keep_alive())]
+            tasks = [
+                asyncio.create_task(read(connection), name=f"runner-control-read:{epoch}"),
+                asyncio.create_task(keep_alive(), name=f"runner-control-keep-alive:{epoch}"),
+            ]
             try:
                 done, _ = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
             finally:
                 for task in tasks:
                     task.cancel()
                 await asyncio.gather(*tasks, return_exceptions=True)
-        # Only the reader returns, when the runner closed its side cleanly.
-        for task in done:
-            task.result()
+            # Raise the stream's actual failure before `TunnelCaller` exits, so its failure log can
+            # retain the reason while still reporting unanswered calls as outcome-unknown.
+            for task in done:
+                if task.cancelled():
+                    logger.info("Runner control stream task %s was cancelled", task.get_name())
+                elif task.exception() is None:
+                    logger.info("Runner control stream task %s returned normally", task.get_name())
+                else:
+                    logger.warning("Runner control stream task %s ended: %r", task.get_name(), task.exception())
+                task.result()

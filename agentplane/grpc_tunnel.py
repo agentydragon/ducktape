@@ -53,6 +53,7 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
         self._send = send
         self._call_ids = itertools.count(1)
         self._pending: dict[int, asyncio.Future[grpc_tunnel_pb2.Reply]] = {}
+        self._methods: dict[int, str] = {}
         self._calls: set[asyncio.Task[object]] = set()
         self._ended = False
         # Never dialed: this interceptor answers every call made on it.
@@ -65,6 +66,10 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
         self, exc_type: type[BaseException] | None, exc: BaseException | None, traceback: TracebackType | None
     ) -> None:
         self._ended = True
+        if self._pending:
+            logger.warning(
+                "Runner control tunnel ended with unanswered calls: %s; context_exception=%r", self._methods.copy(), exc
+            )
         for waiting in self._pending.values():
             if not waiting.done():
                 waiting.set_exception(
@@ -109,6 +114,7 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
             call.timeout.FromTimedelta(timedelta(seconds=deadline_s))
         waiting: asyncio.Future[grpc_tunnel_pb2.Reply] = asyncio.get_running_loop().create_future()
         self._pending[call.call_id] = waiting
+        self._methods[call.call_id] = method
         current = asyncio.current_task()
         assert current is not None
         self._calls.add(current)
@@ -116,6 +122,7 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
             try:
                 await self._send(call)
             except (grpc.RpcError, asyncio.InvalidStateError) as error:
+                logger.warning("Runner control tunnel send failed", exc_info=error)
                 raise _status(grpc.StatusCode.UNAVAILABLE, "the tunnel ended before the call was sent") from error
             try:
                 async with asyncio.timeout(deadline_s):
@@ -124,6 +131,7 @@ class TunnelCaller(grpc.aio.UnaryUnaryClientInterceptor):
                 raise _status(grpc.StatusCode.DEADLINE_EXCEEDED, "the callee did not answer in time") from error
         finally:
             del self._pending[call.call_id]
+            del self._methods[call.call_id]
             self._calls.discard(current)
         if reply.code != grpc.StatusCode.OK.value[0]:
             raise _status(_CODES.get(reply.code, grpc.StatusCode.UNKNOWN), reply.details)
