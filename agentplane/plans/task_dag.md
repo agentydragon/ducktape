@@ -18,12 +18,12 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
 
-| Worker                     | Assigned work and remaining gates                                                                  |
-| -------------------------- | -------------------------------------------------------------------------------------------------- |
-| `suspended_session_ui`     | Queued-open navigation; then suspended-state visibility. Composer still waits for wake-on-send.    |
-| `quiesce_progress`         | Missing Sandbox session-table inventory; quiesce writer #10580 waits for schema #10583 applied.    |
-| `session_defaults_cleanup` | VM workspace ownership; defaults cleanup #10582 is in review with caller/data gates.               |
-| Coordinator                | Review and CI; record passed VM storage acceptance; verify rollout before retiring obsolete paths. |
+| Worker                     | Assigned work and remaining gates                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `suspended_session_ui`     | Queued-open navigation; then suspended-state visibility. Composer still waits for wake-on-send.              |
+| `quiesce_progress`         | Missing Sandbox session-table inventory; quiesce retry correction #10580 merged after schema #10583 applied. |
+| `session_defaults_cleanup` | VM workspace ownership; defaults cleanup #10582 is in review with caller/data gates.                         |
+| Coordinator                | Review and CI; record passed VM storage acceptance; verify rollout before retiring obsolete paths.           |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
@@ -964,8 +964,9 @@ included.** Deletes the controller's legacy-shape read and the tombstone marking
 
 ### `QUIESCE_WITHOUT_POLLING` — a runner that never progresses is backed off, not hammered
 
-**In review: writer #10580 waits for optional schema #10583 to be applied and served.** Plain Flux
-`dependsOn` is not an exact-revision barrier. The persisted per-incarnation attempt prevents watch
+**Retry correction merged in #10580 after optional schema #10583 was verified served
+(2026-10-15 02:35 UTC).** The schema landed separately because plain Flux `dependsOn` is not an
+exact-revision barrier. The persisted per-incarnation attempt prevents watch
 events from bypassing the existing one-minute retry deadline, including absent/stalled stage reports
 and false-to-false condition updates. Focused controller tests cover status conflicts, completion,
 restarts and incarnation changes. Runner stage events still advance quiesce immediately.
