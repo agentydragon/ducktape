@@ -16,14 +16,12 @@ A **capstone** closes an integrated contract, not another implementation. Solid 
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
-Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
+Dispatch assignments (Codex reported, 2026-10-15 UTC):
 
-| Worker                        | Assigned work and remaining gates                                                                      |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------ |
-| `suspended_session_ui`        | Implement nonblocking runner Quiesce; deployed controllers already accept the optional response stage. |
-| `session_defaults_cleanup`    | Fresh VM workspace acceptance passed and fixture cleanup verified; publish evidence and metadata fix.  |
-| `suspended_session_inventory` | Replace the live Session-list union with History-only rows; preserve suspended Session visibility.     |
-| Coordinator                   | Review and CI, DAG burn-down and deployment gate verification.                                         |
+| Worker                                | Assigned work and remaining gates                                                                                                |
+| ------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `suspended_session_ui`                | Verify the published runner-ducktape image reaches Flux pins, then retire the legacy Quiesce reader once all runner gates clear. |
+| Coordinator and documentation workers | Remove completed DAG work and resolved investigation logs; preserve durable guidance and unresolved decisions.                   |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
@@ -38,19 +36,16 @@ These are assignments, not claims that gated work has started. Independent confi
 proceed while behavior PRs are under review. Publish drafts as soon as a branch has reviewable work,
 with remaining gates in the body; Rai merges each PR by hand.
 
-Completed rollout evidence: [retirement and activation inventory](../sandboxes/debug/rollout_retirement.md);
-bounded [resume coverage audit](../sandboxes/debug/resume_coverage.md).
-
 ## 1. Session schema and identity follow-up
 
 ```mermaid
 flowchart TD
-    APP_ALEMBIC_SQUASH[Candidate: baseline final app schema]
+    APP_ALEMBIC_SQUASH[Deferred: baseline final app schema]
 ```
 
 ### `APP_ALEMBIC_SQUASH` — consolidate the final app schema
 
-**Candidate.** Baseline only the settled schema,
+**Deferred by the operator; not dispatchable until selected.** Baseline only the settled schema,
 verify fresh and migrated databases and their deployed stamps before pruning old revisions.
 Retain the data-preserving rollback procedure. No Action Service or other database squash implied.
 
@@ -366,19 +361,11 @@ a block StorageClass does not itself make Pod and VM layouts interchangeable. Se
 
 ```mermaid
 flowchart LR
-    VM_CONTROL_NETWORKING[Blocked: integrate selected VM control path]
-    VM_PROVIDER[Candidate: production provider and API]
-    VM_EGRESS[Blocked: live launcher relay checks]
+    VM_EGRESS[Candidate: live launcher relay checks]
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM]
     VM_CONSOLE_DEFERRED_ATTACH[Unscheduled: attach the console when a starting VM becomes attachable]
-    VM_PROCESS_ISOLATION[Blocked: harness/process resource boundary]
+    VM_PROCESS_ISOLATION[Candidate: harness/process resource boundary]
     VM_LIFECYCLE[Blocked: integrated lifecycle]
-    VM_PROVIDER --> VM_CONTROL_NETWORKING
-    VM_CONTROL_NETWORKING --> VM_LIFECYCLE
-    VM_PROVIDER --> VM_PROCESS_ISOLATION
-    VM_PROVIDER --> VM_LIFECYCLE
-    VM_PROVIDER --> VM_EGRESS
-    VM_PROVIDER --> VM_RAM_SUSPEND
     STATE_VOLUME_BLOCK[Blocked: the state volume moves to block storage, section 7] -. related .-> VM_PROCESS_ISOLATION
     STATE_VOLUME_BLOCK -. related .-> VM_RAM_SUSPEND
     VM_EGRESS --> VM_LIFECYCLE
@@ -388,33 +375,13 @@ flowchart LR
     SANDBOX_VM_ISOLATION --> KUBEVIRT_EXPERIMENT_RETIRE[Blocked: delete the KubeVirt experiment]
 ```
 
-### `VM_CONTROL_NETWORKING` — integrate the reviewed connection direction
-
-**Blocked on the VM provider.** Wire
-VM control reachability/authentication to the chosen path. An outbound control stream may remove guest
-control-port exposure and endpoint discovery; retain the independently needed outbound API/credential
-proxy path. State which guest ports, endpoint discovery and network policies the chosen path
-replaces. Image packaging and process-isolation work need not wait for this decision. Verify the
-selected path on the actual VM network, not just a host-loopback transport test.
-The experiment's guest already dials out, but `runtime_acceptance` no longer runs Sessions, setup probes
-or recovery on it: those phases called the runner over a port-forward. They return driven through a
-Runner Gateway.
-
-### `VM_PROVIDER` — production provider API and lifecycle intent
-
-**Candidate.** The Sandbox Controller makes a `VirtualMachine` from a `SandboxTemplate`'s `vm`
-(`agentplane/sandbox_controller/SPEC.md` § VMs), the Runner Gateway accepts its virt-launcher Pod, and
-`agentplane-testing` has the `runner-vm` template (`cluster/cdk8s/agentplane/runner_vm.py`). Left:
-boot a Sandbox on `runner-vm` and open a Session on it. Re-type what is
-worth keeping from draft #8843 (`vm_view` status mapping, DataVolume validation, halted image
-replacement), then close it unmerged; it cannot be rebased.
-
 ### `VM_EGRESS` — check the launcher relay live
 
-**Blocked on the VM provider.** `agentplane-testing` deploys the launcher relay policy
+**Candidate.** `agentplane-testing` deploys the launcher relay policy
 (`cluster/cdk8s/agentplane/launcher_relay.py`), which copies a runner Pod's egress sidecar, routes and
-tokens into the virt-launcher of a VM controlled by one of our Sandboxes. Once the provider creates
-such a VM, check on it: no token reaches the guest; the proxy and each platform route answer the
+tokens into the virt-launcher of a VM controlled by one of our Sandboxes. Production VM creation
+and outbound control are implemented. Verify the remaining security boundaries: no token reaches
+the guest; the proxy and each platform route answer the
 guest at `10.0.2.1`; the relay is ready, which needs the VM's masquerade interface to list ports so
 kubelet's probe on 3129 is not forwarded to the guest; the runner fence admits the launcher and
 another Sandbox's guest cannot reach it; a forged launcher is refused. Do not repeat the entire
@@ -422,7 +389,7 @@ completed prototype matrix or require simultaneous cluster-wide disasters.
 
 ### `VM_PROCESS_ISOLATION` — protect control from harness processes
 
-**Blocked on the provider.** Enforce aggregate memory/process/disk budgets and process-control
+**Candidate.** Enforce aggregate memory/process/disk budgets and process-control
 boundaries. Test representative tool/harness termination and bounded exhaustion to establish which
 runner/control state survives and what needs durable recovery. This directly addresses agents
 accidentally killing their own harness; guest or container packaging alone is not that guarantee.
@@ -440,11 +407,11 @@ until pods hit the problem. Disk exhaustion is not covered and waits on #4717.
 
 ### `VM_LIFECYCLE` — integrated lifecycle verification
 
-**Blocked on provider, selected control networking, egress and isolation.** Boot the published
-guest (`agentplane-runner-vm-image.yml`) and exercise both harnesses through real service
-routes with retained-state stop/start and a representative replacement; confirm identity, replay and
-cleanup. Automated tests cover restart/concurrency branches. Additional live faults need a concrete
-unresolved platform risk, not a Cartesian product of every component crash and lifecycle operation.
+**Blocked on the remaining egress and isolation checks.** Basic VM creation, Session execution,
+retained-state suspend/resume and replacement are covered by the [acceptance suite](../acceptance/README.md).
+Combine that coverage with the remaining security/isolation results; do not repeat completed live
+runs just to assemble a capstone. Additional live faults need a concrete unresolved platform risk,
+not a Cartesian product of every component crash and lifecycle operation.
 
 ### `SANDBOX_VM_ISOLATION` — VM integration capstone
 
@@ -457,7 +424,9 @@ absence of every imaginable failure, establishes the delivered contract.
 **Blocked on the VM capstone.** Once the production provider covers it, move anything still needed
 (the acceptance driver, if it becomes the VM lifecycle test) into production code, then delete
 `cluster/cdk8s/agentplane/kubevirt_experiment/`, its launcher policy (production's is
-`launcher_relay.py`) and the manifests it generates.
+`launcher_relay.py`) and the manifests it generates. Review stale draft #8843 for any still-useful
+status mapping or validation before closing it unmerged; production VM creation and halted image
+replacement already exist, so they are not prerequisites to implement again.
 
 ### `VM_RAM_SUSPEND` — suspend a VM to disk with its RAM
 
@@ -590,20 +559,20 @@ observations. New database work follows the task-specific review and rollout req
 
 ```mermaid
 flowchart LR
-    PC_EGRESS_CREDENTIALS[Candidate: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
+    PC_EGRESS_CREDENTIALS[Deferred: caller admission configuration] --> PC_EGRESS[Blocked: controlled egress cutover]
     CLAUDE_AI_SA[Decision: review caller authority] --> MANAGED_SA_RBAC[Blocked: account-owned grants]
     AGENT_PERMISSION_REQUESTS[Blocked: an Action type and approval view for permission requests]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render, section 5]
     ACTION_SURFACES_DESIGN --> AGENT_PERMISSION_REQUESTS
-    SANDBOX_RBAC[Candidate: bounded deployed grant checks]
-    NOTIFICATION_INGRESS_BOUNDARY[Candidate: public-route security check]
+    SANDBOX_RBAC[Deferred: bounded deployed grant checks]
+    NOTIFICATION_INGRESS_BOUNDARY[Deferred: public-route security check]
     NETWORK_WORKLOAD_IDENTITY[Unscheduled: network-level workload identity]
     PC_KUBERNETES_POLICY_SET[Unscheduled: public-coder's Kubernetes access as one PolicySet]
 ```
 
 ### `PC_EGRESS_CREDENTIALS` — label public-coder's Action Service caller
 
-**Candidate; verify remaining configuration.** Admit the intended OpenClaw account to the dedicated
+**Deferred by the operator; not dispatchable until selected.** Admit the intended OpenClaw account to the dedicated
 Action Service using its configured namespace and policy bindings. A label alone is not an execution
 grant. Coordinate with the owner of the currently disabled/controlled workload before rollout.
 
@@ -649,14 +618,14 @@ public-coder until `PC_KUBERNETES_POLICY_SET`) stay Flux bindings. Test an allow
 
 ### `SANDBOX_RBAC` — bounded deployed grant checks
 
-**Candidate; security-relevant.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
+**Deferred by the operator; not dispatchable until selected.** Inspect the managed-Sandbox grant path as `PolicySet`s leave it
 and verify intended versus unrelated scope, including Role edits and credential-use boundaries,
 without recording credentials. Use [agent RBAC](../../cluster/docs/agent_rbac.md) and existing tests;
 only unresolved deployed wiring needs a live check, not a repeat of every already-covered operation.
 
 ### `NOTIFICATION_INGRESS_BOUNDARY` — bounded public-route security check
 
-**Candidate; security-relevant deployment check, not a provider failure drill.** Existing tests
+**Deferred by the operator; not dispatchable until selected.** Existing tests
 cover invalid signatures. Close the remaining route-wiring uncertainty with an unsigned webhook
 request and a private-API request through the public hostname: both must be refused, without
 creating subscriptions or inbox entries. Record the result once; no exhaustive provider matrix.
@@ -703,12 +672,9 @@ flowchart TD
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
-    SUSPENDED_SESSION_INVENTORY[In flight: retain the Session list after Sandbox suspension]
-    VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
-    VM_PROVIDER -. related .-> SANDBOX_SPEC_EDIT
     RUNNER_QUIESCE_ROLLOUT --> SANDBOX_IDLE_EXPIRY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
     VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
@@ -762,10 +728,10 @@ a generic conversion framework now.
 
 **Unscheduled; operator, 2026-10-13 PDT.** Let the operator change a Sandbox's template, including a
 switch between VM and Pod, from the app, only while the Sandbox is suspended. Each incarnation
-already reads the template as it is then (`SANDBOX_IMAGE_REPLACE`), and no spec is replaced
-automatically; this is the explicit, operator-driven edit. Use the deployed
+already reads the current template ([controller contract](../sandbox_controller/SPEC.md#vms)); no
+spec is replaced automatically; this is the explicit, operator-driven edit. Use the deployed
 [workspace layout contract](../docs/sandbox_storage.md) so a compatible kind switch keeps the
-workspace; `VM_PROVIDER` covers the VM side. Validate the
+workspace. Validate the
 retained state and workspace layouts before replacing a workload. Reject incompatible edits;
 `VOLUME_LAYOUT_CONVERSION` is a separate, much later task and does not block compatible edits. The
 preset the app records on a Sandbox as a label must stay true after the edit.
@@ -791,26 +757,10 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ```mermaid
 flowchart TD
-    VM_PROVIDER[VM provider, section 4] --> SANDBOX_IMAGE_REPLACE[Blocked: replace a VM's runner image between incarnations]
     SANDBOX_GENERIC_SPLIT[Unscheduled: split the generic Sandbox from the runner's sealing]
     SANDBOX_RUNNER_LAYERING[Unscheduled: add the runner and harnesses to a platform user's image]
     SANDBOX_GENERIC_SPLIT -. related .-> SANDBOX_RUNNER_LAYERING
 ```
-
-### `SANDBOX_IMAGE_REPLACE` — replace a VM's runner image between incarnations
-
-**Blocked on `VM_PROVIDER`; the operator's "pause, replace the image, resume" (2026-10-12 PDT).**
-Pods already behave so: each incarnation reads its `SandboxTemplate` as it starts, and a running Pod
-never changes (`agentplane/sandbox_controller/SPEC.md` § Incarnations), so a new image in the
-template, or a Sandbox switched to another template, applies at the next resume on the same state
-PVC. Left is the same for VMs once our Sandbox has them: the controller rewrites a VM's containerDisk
-only while `runStrategy: Halted`, keeping its state PVC. The state PVC's contents belong to the
-runner (operator, 2026-10-12 08:41 PDT): it versions and migrates them, or reports that it cannot,
-and the controller has no version gate. So of #8843's `ReplaceVmImage` (replaced live in
-the 2026-10-03 run) the Halted-only rewrite carries over,
-and the exact `VmTemplate.state_schema_version` match does not.
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `SANDBOX_GENERIC_SPLIT` — separate the generic Sandbox from the runner's sealing
 
@@ -873,7 +823,7 @@ message through the Dispatcher; and the wording agents act on. Test a suspend an
 background process, a terminal and workspace files, and a crash restart (no suspend) that reads
 differently.
 
-Related: [resume coverage](../sandboxes/debug/resume_coverage.md), `SANDBOX_IDLE_EXPIRY`.
+Related: [lifecycle coverage](../x/k3s_env/README.md#lifecycle-coverage), `SANDBOX_IDLE_EXPIRY`.
 
 ### `JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE` — delete the pre-incarnation seal compatibility path
 
@@ -969,16 +919,6 @@ explicit operator re-grant flow. The audit distinguishes controller-driven expir
 post-deadline denial, and projected-token renewal from grant renewal. Add implementation work only
 for a reviewed contract that the code does not already satisfy; do not add an implicit Ready gate.
 
-### `SUSPENDED_SESSION_INVENTORY` — the Session list remains visible after Sandbox suspension
-
-**In flight; `suspended_session_inventory`, operator dispatch 2026-10-15 UTC.** The user reports
-that suspending a Sandbox clears its Thread list/table after navigating back. Replace the live
-`Runner.ListSessions` table source with retained History rows so suspended Sessions remain visible.
-Preserve access and Sandbox-identity fences, and add a regression for returning to a suspended
-Sandbox. This is separate from the suspended composer behavior, which has its own rollout evidence.
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
 ## 8. Ownership and naming cleanup
 
 Cleanups that leave one database per service and names that say what things are. Each node is one
@@ -988,7 +928,7 @@ are irreplaceable, and a node that deletes a column or row stops for the operato
 
 ```mermaid
 flowchart TD
-    HISTORY_DATABASE_RENAME[Candidate: rename the sandbox_service database and role]
+    HISTORY_DATABASE_RENAME[Deferred: rename the sandbox_service database and role]
     SANDBOX_DATABASE_RENAME[Unscheduled: name the sandbox_commands database for the Runner Gateway]
     ACTION_BOX_RENAME[Unscheduled: Action boxes stop being called sandboxes]
     ACTION_BOX_IDLE_REAPER[Unscheduled: delete Action boxes nobody uses]
@@ -998,7 +938,7 @@ flowchart TD
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
-**Candidate.** Rename the `sandbox_service` database and role
+**Deferred by the operator; not dispatchable until selected.** Rename the `sandbox_service` database and role
 (and the `postgres-sandbox-service` Secret) for the History Service. Rename in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`)
 and have the CNPG `Database` and managed role adopt the new names; recreating the database under a
 new name would copy the log. Verify the History Service and Electric reconnect with no data movement.
@@ -1108,8 +1048,7 @@ flowchart TD
     CONTROL_SURFACE_RETIREMENT_AUDIT --> RUNNER_LIST_SESSIONS_RETIRE[Blocked: resolve remaining live-inventory semantics, then remove ListSessions]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
-    SUSPENDED_SESSION_INVENTORY --> APP_SESSION_LIST_ROUTE_RETIRE[Blocked: remove the runner-backed table HTTP read]
-    APP_SESSION_LIST_ROUTE_RETIRE --> GATEWAY_WRAPPER_RETIRE
+    APP_SESSION_LIST_ROUTE_RETIRE[Blocked: app image rollout before table route removal] --> GATEWAY_WRAPPER_RETIRE
     APP_SESSION_DESTINATION_HISTORY[Candidate: resolve Session destinations from History] --> GATEWAY_WRAPPER_RETIRE
     APP_ARCHIVE_RUNNER_READ_MIGRATION[Candidate: move live archive checks to the runner proxy] --> GATEWAY_WRAPPER_RETIRE
     NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION[Candidate: retire notification wrapper membership reads] --> GATEWAY_WRAPPER_RETIRE
@@ -1205,10 +1144,11 @@ and runner proxy. This makes `SANDBOX_DATABASE_RENAME` moot; delete that deferre
 
 ### `APP_SESSION_LIST_ROUTE_RETIRE` — remove the runner-backed Sandbox table read
 
-**Blocked on `SUSPENDED_SESSION_INVENTORY` and its app image rollout.** The old browser path is
+**Blocked only on the app image rollout containing merged #10612.** The table now uses retained
+History rows. Its former browser path was
 `client.listSessions` → `GET /sandboxes/{name}/sessions` → `RunnerBridge.list_sessions` →
-`RunnerGateway.ListSessions` → tunneled `Runner.ListSessions`. Once the table uses the retained
-History inventory and its caller image is deployed, delete the unused HTTP GET route and its
+`RunnerGateway.ListSessions` → tunneled `Runner.ListSessions`. Once the new caller image is deployed,
+delete the unused HTTP GET route and its
 schema/client/test surface. Preserve the POST opening route and opening-status read. Generate
 OpenAPI/clients through `localgen/run.sh`; do not hand-edit generated files. The bridge method stays
 only until the separate archive and native-resume migrations remove its final callers.
