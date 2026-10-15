@@ -1039,7 +1039,6 @@ flowchart TD
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
     APP_SESSION_LIST_ROUTE_RETIRE[Candidate: remove the unused runner-backed table route] --> GATEWAY_WRAPPER_RETIRE
-    APP_SESSION_DESTINATION_HISTORY[Candidate: resolve Session destinations from History] --> GATEWAY_WRAPPER_RETIRE
     APP_ARCHIVE_RUNNER_READ_MIGRATION[Candidate: move live archive checks to the runner proxy] --> GATEWAY_WRAPPER_RETIRE
     NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION[Candidate: retire notification wrapper membership reads] --> GATEWAY_WRAPPER_RETIRE
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
@@ -1141,15 +1140,6 @@ Pods remaining. The table now uses retained History rows. Its former browser pat
 schema/client/test surface. Preserve the POST opening route and opening-status read. Generate
 OpenAPI/clients through `localgen/run.sh`; do not hand-edit generated files. The bridge method stays
 only until the separate archive and native-resume migrations remove its final callers.
-
-### `APP_SESSION_DESTINATION_HISTORY` — remove the app's registry lookup
-
-**Candidate.** `RunnerDirectory.sandbox_of` still calls wrapper `BatchGetSessionSandboxes` for
-command and native-resume routing. Resolve retained Session metadata through History instead,
-preserving missing-history refusals and existing authorization. History already carries the Sandbox
-namespace/name; verify deleted/recreated Sandbox behavior rather than treating the name as proof of
-incarnation identity. Remove the app's unused registry lookup client after the migration and track
-its deployed caller image before wrapper retirement.
 
 ### `APP_ARCHIVE_RUNNER_READ_MIGRATION` — preserve live archive safety without the wrapper
 

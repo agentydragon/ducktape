@@ -79,7 +79,7 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
         assert launches.PLATFORM_INSTRUCTIONS in opened.attached.spec.instructions
         thread = UUID(opened.session_id)
         first = command_pb2.Command(command_id="remote-first", submit_input=command_pb2.SubmitInput(text="first"))
-        receipt = await bridge.command(thread, first)
+        receipt = await bridge.command(thread, first, sandbox=SANDBOX)
         assert isinstance(receipt, session_dispatcher_pb2.Dispatch)
         assert receipt.admission.event.command_admitted.command == first
         # The runner receipt can arrive before the independent app archive copy.
@@ -93,13 +93,15 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
         assert snapshot is not None
         assert snapshot.end is None
         second = command_pb2.Command(command_id="remote-second", submit_input=command_pb2.SubmitInput(text="second"))
-        next_receipt = await bridge.command(thread, second)
+        next_receipt = await bridge.command(thread, second, sandbox=SANDBOX)
         assert isinstance(next_receipt, session_dispatcher_pb2.Dispatch)
         assert next_receipt.admission.cursor > receipt.admission.cursor
         assert next_receipt.admission.origin.source_id == receipt.admission.origin.source_id
         await model.reply(await model.request(), Text("SECOND"))
         await bridge.command(
-            thread, command_pb2.Command(command_id="remote-stop", stop_runner_session=command_pb2.StopRunnerSession())
+            thread,
+            command_pb2.Command(command_id="remote-stop", stop_runner_session=command_pb2.StopRunnerSession()),
+            sandbox=SANDBOX,
         )
         async for attempt in AsyncRetrying(
             stop=stop_after_delay(15), wait=wait_fixed(0.1), retry=retry_if_exception_type(AssertionError)
@@ -125,7 +127,7 @@ async def test_stopped_service_never_falls_back_to_reachable_runner(
     assert not runner.sessions
 
 
-async def test_unregistered_runner_session_appears_in_sandbox_session_list(
+async def test_runner_proxy_lists_a_session_without_registry_lookup(
     cluster: SandboxCluster,
     live_index: LiveIndex,
     tmp_path: Path,
@@ -136,10 +138,9 @@ async def test_unregistered_runner_session_appears_in_sandbox_session_list(
     token_file = tmp_path / "gateway-token"
     async with authenticated_runner_gateway(cluster, runner, token_file, database_url=service_history_db_url) as remote:
         session_id = uuid4()
-        # Dispatcher opens through RunnerProxy instead of Gateway.CreateSession, leaving no Gateway
-        # registry row. Create that runner state directly and test the app's inventory read.
+        # Create runner state directly, without a Gateway.CreateSession registry row, and exercise
+        # the app's remaining runner read through the proxy.
         await runner.open_session(str(session_id), spec, None)
-        assert await remote.session_sandboxes({str(session_id)}) == []
 
         summaries = await RunnerDirectory(live_index, remote).client(SANDBOX).list_sessions()
         assert [summary.session_id for summary in summaries] == [str(session_id)]

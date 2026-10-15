@@ -34,13 +34,6 @@ class ThreadNotFoundError(Exception):
         super().__init__(f"no thread {thread_id}")
 
 
-class SessionNotRegisteredError(LookupError):
-    """An app Thread whose Session the Runner Gateway has no record of."""
-
-    def __init__(self, thread_id: UUID) -> None:
-        super().__init__(f"the Runner Gateway has no Session {thread_id}")
-
-
 class EventLogStore:
     def __init__(self, engine: AsyncEngine, *, history_reader: HistoryServiceClient, summaries: Summaries) -> None:
         self._sessions = async_sessionmaker(engine, expire_on_commit=False)

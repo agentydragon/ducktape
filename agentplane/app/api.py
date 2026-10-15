@@ -817,7 +817,9 @@ async def resume_thread(store: Store, bridge: runner_bridge.Bridge, thread_id: U
     if thread.archived:
         raise HTTPException(status.HTTP_409_CONFLICT, "an archived Thread cannot be resumed")
     return MessageToDict(
-        await bridge.resume_thread(thread_id, expected_harness=thread.harness, expected_cwd=thread.cwd)
+        await bridge.resume_thread(
+            thread_id, sandbox=thread.sandbox, expected_harness=thread.harness, expected_cwd=thread.cwd
+        )
     )
 
 

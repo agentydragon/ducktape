@@ -90,17 +90,20 @@ class RunnerBridge:
         return opening
 
     async def resume_thread(
-        self, thread_id: UUID, *, expected_harness: Harness | None, expected_cwd: str | None
+        self, thread_id: UUID, *, sandbox: str, expected_harness: Harness | None, expected_cwd: str | None
     ) -> runner_pb2.Attached:
-        """Resume the native session already bound to this Thread, using its runner-owned spec.
+        """Resume the native session already bound to this Thread in its History-backed Sandbox.
 
         The expectations are the Thread's view of its harness and workspace; None, before any
         runner attachment is folded, leaves nothing to check the retained spec against.
+        The Runner Gateway still verifies the current Sandbox UID and the Session's registered
+        incarnation before attaching.
         """
+        if not await self._event_logs.exists(thread_id):
+            raise ThreadNotFoundError(thread_id)
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise ThreadStateError(f"runner history is rejected: {snapshot.end.message}")
-        sandbox = await self._session_sandbox(thread_id)
         session_id = str(thread_id)
         sessions = await self.list_sessions(sandbox)
         summary = next((row for row in sessions if row.session_id == session_id), None)
@@ -123,7 +126,7 @@ class RunnerBridge:
         return await self._runners.client(sandbox).resume(session_id)
 
     async def command(
-        self, thread_id: UUID, command: command_pb2.Command, *, sandbox: str | None = None
+        self, thread_id: UUID, command: command_pb2.Command, *, sandbox: str
     ) -> event_log_pb2.EventEntry | session_dispatcher_pb2.Dispatch:
         """Return a Dispatcher receipt, or an archived admission for an exact retry.
 
@@ -138,9 +141,8 @@ class RunnerBridge:
         snapshot = await self._event_logs.feed_state(thread_id)
         if snapshot is not None and isinstance(snapshot.end, FeedError):
             raise ThreadStateError(f"runner history is rejected: {snapshot.end.message}")
-        target_sandbox = sandbox if sandbox is not None else await self._runners.sandbox_of(thread_id)
         try:
-            return await self._dispatcher.command(sandbox=target_sandbox, session_id=str(thread_id), command=command)
+            return await self._dispatcher.command(sandbox=sandbox, session_id=str(thread_id), command=command)
         except TimeoutError as error:
             raise DispatcherRequestTimeoutError(command.command_id) from error
 
@@ -152,11 +154,6 @@ class RunnerBridge:
         if dispatch.session_id != str(thread_id):
             raise DispatchNotFoundError(command_id)
         return dispatch
-
-    async def _session_sandbox(self, thread_id: UUID) -> str:
-        if not await self._event_logs.exists(thread_id):
-            raise ThreadNotFoundError(thread_id)
-        return await self._runners.sandbox_of(thread_id)
 
 
 def _parse[M: command_pb2.Command | runner_pb2.SessionSpec](message: M, body: dict[str, object]) -> M:

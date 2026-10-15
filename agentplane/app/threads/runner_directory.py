@@ -1,10 +1,7 @@
-"""The app's route to a Sandbox's runner; every runner operation goes through the Runner Gateway."""
-
-from uuid import UUID
+"""Resolve a live Sandbox's current runner destination; the Gateway checks its UID."""
 
 from agentplane.app.live import LiveIndex
 from agentplane.app.sandbox_models import sandbox_is_ready
-from agentplane.app.threads.events.event_log import SessionNotRegisteredError
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxRunner
 from agentplane.sandboxes.errors import SandboxNotFoundError
@@ -26,13 +23,6 @@ class RunnerDirectory:
         self._index = index
         self.gateway = gateway
         self._clients: dict[str, SandboxRunner] = {}
-
-    async def sandbox_of(self, thread_id: UUID) -> str:
-        """The Sandbox the Runner Gateway routes the Thread's Session to."""
-        found = await self.gateway.session_sandboxes({str(thread_id)})
-        if not found:
-            raise SessionNotRegisteredError(thread_id)
-        return found[0].sandbox
 
     def client(self, sandbox: str) -> SandboxRunner:
         view = self._index.sandbox_view(sandbox)

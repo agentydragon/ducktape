@@ -545,8 +545,9 @@ async def test_thread_resume_for_regular_sandbox_reaches_the_bridge(
     calls: list[tuple[UUID, Harness | None, str | None]] = []
 
     async def resume_thread(
-        thread: UUID, *, expected_harness: Harness | None, expected_cwd: str | None
+        thread: UUID, *, sandbox: str, expected_harness: Harness | None, expected_cwd: str | None
     ) -> runner_pb2.Attached:
+        assert sandbox == "live"
         calls.append((thread, expected_harness, expected_cwd))
         return runner_pb2.Attached(session_id="regular-session")
 

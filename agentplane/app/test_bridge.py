@@ -1119,7 +1119,6 @@ async def test_command_returns_dispatch_receipt_before_app_archive_catches_up(
     live_index.sandboxes[SANDBOX] = raw
     thread = await event_logs.seed(SANDBOX, SESSION)
     await history.open(thread)
-    await register_gateway_session(history.engine, thread, sandbox=SANDBOX)
     command = command_pb2.Command(
         command_id="ahead-of-archive", interrupt_turn=command_pb2.InterruptTurn(turn_id="target")
     )
@@ -1142,7 +1141,7 @@ async def test_command_returns_dispatch_receipt_before_app_archive_catches_up(
         return receipt
 
     monkeypatch.setattr(bridge._runners.gateway, "command", submit)
-    dispatch = await bridge.command(thread, command)
+    dispatch = await bridge.command(thread, command, sandbox=SANDBOX)
     assert isinstance(dispatch, session_dispatcher_pb2.Dispatch)
     assert dispatch.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
     assert dispatch.admission == receipt
@@ -1152,15 +1151,22 @@ async def test_command_returns_dispatch_receipt_before_app_archive_catches_up(
     await history.record(thread, [receipt])
     assert await content.admitted_command(thread, command) == receipt
     # The archive, not the runner, answers exact retries once it has caught up.
-    assert await bridge.command(thread, command) == receipt
+    assert await bridge.command(thread, command, sandbox=SANDBOX) == receipt
     assert called == 1
 
 
 async def test_dispatcher_command_path_queues_without_a_ready_runner_or_gateway_session_lookup(
-    runners: RunnerDirectory, event_logs: SeededEventLogStore, content: ContentStore, history: History
+    runners: RunnerDirectory,
+    event_logs: SeededEventLogStore,
+    content: ContentStore,
+    history: History,
+    store: ThreadStore,
 ) -> None:
-    thread = await event_logs.seed(SANDBOX, SESSION)
-    await history.open(thread)
+    thread = uuid4()
+    await event_logs.open(str(thread))
+    await history.open(thread, sandbox_name=SANDBOX)
+    view = await store.get_thread(thread)
+    assert view is not None
     queued = session_dispatcher_pb2.Dispatch(
         command_id="queued-by-app",
         session_id=str(thread),
@@ -1186,7 +1192,7 @@ async def test_dispatcher_command_path_queues_without_a_ready_runner_or_gateway_
     command = command_pb2.Command(
         command_id=queued.command_id, submit_input=command_pb2.SubmitInput(text="wait while starting")
     )
-    assert await bridge.command(thread, command, sandbox=SANDBOX) == queued
+    assert await bridge.command(thread, command, sandbox=view.sandbox) == queued
     assert calls == [(SANDBOX, str(thread), command)]
     assert await bridge.dispatch(thread, queued.command_id) == queued
 
@@ -1307,6 +1313,7 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
         await replicas.survivor.command(
             thread,
             command_pb2.Command(command_id="input-1", submit_input=command_pb2.SubmitInput(text="FIRST_REPLICA_TURN")),
+            sandbox=SANDBOX,
         )
         await model.reply(await model.request(), Text("FIRST_REPLICA_TURN"))
         async with asyncio.timeout(10):
@@ -1315,6 +1322,7 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
         await replicas.survivor.command(
             thread,
             command_pb2.Command(command_id="input-2", submit_input=command_pb2.SubmitInput(text="AFTER_OWNER_EXIT")),
+            sandbox=SANDBOX,
         )
         request = await model.request()
         replicas.owner_openings.cancel()
@@ -1331,6 +1339,7 @@ async def test_replica_commands_and_database_stream_survive_owner_replica_exit(
         await replicas.survivor.command(
             thread,
             command_pb2.Command(command_id="stop-after-owner", stop_runner_session=command_pb2.StopRunnerSession()),
+            sandbox=SANDBOX,
         )
         async with asyncio.timeout(10):
             await read_until(lines, "harnessExited")
@@ -1384,7 +1393,9 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
 ) -> None:
     thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), spec)).session_id)
     await replicas.survivor.command(
-        thread, command_pb2.Command(command_id="seed-input", submit_input=command_pb2.SubmitInput(text="BEFORE_RESUME"))
+        thread,
+        command_pb2.Command(command_id="seed-input", submit_input=command_pb2.SubmitInput(text="BEFORE_RESUME")),
+        sandbox=SANDBOX,
     )
     await model.reply(await model.request(), Text("BEFORE_RESUME"))
     async with aclosing(
@@ -1395,6 +1406,7 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
     await replicas.survivor.command(
         thread,
         command_pb2.Command(command_id="stop-before-resume", stop_runner_session=command_pb2.StopRunnerSession()),
+        sandbox=SANDBOX,
     )
     async with aclosing(
         follow(replicas.survivor_event_logs, replicas.survivor_changes, thread, after_cursor=0)
@@ -1417,6 +1429,7 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
             command_pb2.Command(
                 command_id="resumed-input", submit_input=command_pb2.SubmitInput(text="RESUMED_REPLICA")
             ),
+            sandbox=SANDBOX,
         )
         await model.reply(await model.request(), Text("RESUMED_REPLICA"))
         async with asyncio.timeout(10):
@@ -1427,6 +1440,7 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
         await replicas.survivor.command(
             thread,
             command_pb2.Command(command_id="stop-after-resume", stop_runner_session=command_pb2.StopRunnerSession()),
+            sandbox=SANDBOX,
         )
 
 
@@ -1442,7 +1456,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
 ) -> None:
     thread = UUID((await replicas.owner.create_session(SANDBOX, uuid4(), spec)).session_id)
     stop = command_pb2.Command(command_id="stop-for-offline", stop_runner_session=command_pb2.StopRunnerSession())
-    admitted = await replicas.survivor.command(thread, stop)
+    admitted = await replicas.survivor.command(thread, stop, sandbox=SANDBOX)
     async with aclosing(
         follow(replicas.survivor_event_logs, replicas.survivor_changes, thread, after_cursor=0)
     ) as frames:
@@ -1463,7 +1477,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
     # sandbox disappears: this answer must not attempt a new runner attachment, which with the
     # sandbox gone from the index would raise.
     assert isinstance(admitted, session_dispatcher_pb2.Dispatch)
-    assert await offline.command(thread, stop) == admitted.admission
+    assert await offline.command(thread, stop, sandbox=SANDBOX) == admitted.admission
     async with (
         asyncio.timeout(10),
         aclosing(follow(event_logs, database_updates.changes[Channel.THREADS], thread, after_cursor=0)) as frames,
@@ -1505,6 +1519,7 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     seed = await bridge.command(
         thread_id,
         command_pb2.Command(command_id="seed-before-archive", submit_input=command_pb2.SubmitInput(text="SEED")),
+        sandbox=SANDBOX,
     )
     assert isinstance(seed, session_dispatcher_pb2.Dispatch)
     assert seed.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
@@ -1521,6 +1536,7 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     await bridge.command(
         thread_id,
         command_pb2.Command(command_id="stop-before-archive", stop_runner_session=command_pb2.StopRunnerSession()),
+        sandbox=SANDBOX,
     )
     # Admission is not harness shutdown. Wait on the runner's own state, not on the
     # stalled archive, before attempting a legitimate Resume.
@@ -1532,7 +1548,10 @@ async def test_open_and_resume_reply_before_archive_catches_up(
             assert summary.harness_state == runner_pb2.HARNESS_STATE_STOPPED
     resumed = await asyncio.wait_for(
         bridge.resume_thread(
-            thread_id, expected_harness=Harness(runner_pb2.Harness.Name(spec.harness)), expected_cwd=spec.cwd
+            thread_id,
+            sandbox=SANDBOX,
+            expected_harness=Harness(runner_pb2.Harness.Name(spec.harness)),
+            expected_cwd=spec.cwd,
         ),
         timeout=10,
     )
