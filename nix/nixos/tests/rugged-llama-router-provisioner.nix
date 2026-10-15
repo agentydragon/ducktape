@@ -1,5 +1,5 @@
 # Build and run the router artifact provisioner against a localhost fixture
-# using the real pinned aria2 package, without external network access.
+# using the real pinned llama.cpp downloader, without external network access.
 #
 # Run: nix build --file nix/nixos/tests/rugged-llama-router-provisioner.nix --no-link --print-out-paths
 
@@ -9,7 +9,7 @@ let
   provisioner = pkgs.writeShellApplication {
     name = "provision-rugged-llama-router-models";
     runtimeInputs = [
-      pkgs.aria2
+      flake.packages.${pkgs.stdenv.hostPlatform.system}.llama-router
       pkgs.coreutils
       pkgs.jq
     ];

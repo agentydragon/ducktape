@@ -131,19 +131,33 @@ manifest and verifies nine pinned artifacts (six model weights and three
 projectors, about 24.25 GB total) under `/var/lib/rugged-llm/models/blobs`.
 Each artifact is pinned by SHA-256 and byte size. A matching blob in the old
 Ollama cache is an optional import source; it is verified and hard-linked when
-possible, or copied, without modifying its contents. Otherwise aria2 downloads into a staging directory,
-resumes interrupted transfers, verifies the full blob, and atomically promotes
-it to the content-addressed cache. Router presets point directly at those
+possible, or copied, without modifying its contents. Otherwise the pinned
+`llama download` command handles HTTP, retries, and
+resumable temporary downloads in a staging directory. A small adapter verifies
+the full blob against our pinned digest before atomically promoting it to the
+content-addressed cache. Router presets point directly at those
 immutable digest paths. The provisioner and router reuse the static `ollama`
-service identity; the router sees the model store read-only.
+service identity; the router sees the model store read-only. The standard NixOS
+`services.llama-cpp` module owns the serving unit (`llama-cpp.service`); host
+overrides retain render-group access and permit the Vulkan driver’s JIT. The
+existing per-model presets, aliases, and memory settings are unchanged. We keep
+the digest-addressed source URLs rather than substituting untested Hugging Face
+quantizations; neither weights nor projectors enter the Nix store.
 
-A complete cache hit is locally reverified and does not invoke aria2 or require
-network access. A cold or incomplete cache needs network access during
-activation; the provisioner has bounded aria2 retries and an eight-hour systemd
+A complete cache hit is locally reverified and does not invoke the downloader
+or require network access. A cold or incomplete cache needs network access during
+activation; the provisioner has llama.cpp retries and an eight-hour systemd
 startup limit. It has no `network-online.target` dependency, so a complete cache
 can start offline. This replaces the earlier two-activation plan that required
 first populating all six bases through Ollama. No live host activation was
 performed as part of this change.
+
+The downloader migration passed the local HTTP fixture checks for network-free
+cache reuse/import, fresh downloads, interrupted-transfer range resumption,
+checksum rejection, preservation of cached models after a later HTTP failure,
+and recovery from an invalid completed staging file. All nine host configuration
+checks passed. These are provisioning/configuration checks, not new inference
+measurements or a live validation of the service hardening.
 
 When `ducktape.localLlm.llamaRouter.enable` is true, the offline OpenCode model
 picker includes the six existing entries plus `Qwen3.5 0.8B Q8 (256k router

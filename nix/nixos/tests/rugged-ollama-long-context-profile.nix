@@ -65,7 +65,7 @@ let
     pinnedManifest.artifacts.${pinnedManifest.profiles.rugged-gemma4-e2b-it-qat-long-128k-b128.model_artifact}.sha256;
   qwenLongModelSha =
     pinnedManifest.artifacts.${(builtins.getAttr "rugged-qwen35-0.8b-256k" pinnedManifest.profiles).model_artifact}.sha256;
-  routerService = ruggedWithRouter.systemd.services.rugged-llama-router;
+  routerService = ruggedWithRouter.systemd.services.llama-cpp;
   provisionService = ruggedWithRouter.systemd.services.rugged-llama-model-provision;
 in
 {
@@ -124,7 +124,9 @@ in
       router_reuses_the_persistent_cache_owner =
         routerService.serviceConfig.User == "ollama"
         && routerService.serviceConfig.Group == "ollama"
-        && !(routerService.serviceConfig.DynamicUser or false)
+        && routerService.serviceConfig.DynamicUser == false
+        && routerService.serviceConfig.PrivateUsers == false
+        && routerService.serviceConfig.MemoryDenyWriteExecute == false
         && routerService.serviceConfig.UMask == "0077"
         && ruggedWithRouter.users.users.ollama.isSystemUser
         && ruggedWithRouter.users.users.ollama.group == "ollama"
@@ -132,10 +134,18 @@ in
         && ruggedWithRouter.users.groups.ollama.gid == rugged.users.groups.ollama.gid
         && ruggedWithRouter.users.users.ollama.home == "/var/lib/local-llm/ollama-upstream"
         && builtins.elem "render" ruggedWithRouter.users.users.ollama.extraGroups;
+      router_preserves_state_and_cache_paths =
+        nixosLib.hasInfix "rugged-llm" routerService.serviceConfig.StateDirectory
+        && nixosLib.hasInfix "llama-cpp" routerService.serviceConfig.StateDirectory
+        && routerService.serviceConfig.WorkingDirectory == "/var/lib/llama-cpp"
+        && routerService.serviceConfig.CacheDirectory == "llama-cpp"
+        && builtins.elem "LLAMA_CACHE=/var/cache/llama-cpp" routerService.serviceConfig.Environment;
       router_keeps_model_cache_read_only = builtins.elem "/var/lib/rugged-llm/models" routerService.serviceConfig.ReadOnlyPaths;
-      router_binds_shared_loopback_port_and_limits_residency =
-        builtins.match ".*--host 127\\.0\\.0\\.1 --port 11436.*--models-max 1.*" routerService.serviceConfig.ExecStart
-        != null;
+      router_uses_versioned_preset_and_limits_residency =
+        nixosLib.hasInfix "version = 1\n\n[*]" routerPreset
+        &&
+          builtins.match ".*\"--host\" \"127\\.0\\.0\\.1\" \"--port\" \"11436\".*\"--models-preset\" \"/etc/llama-router/models.ini\".*\"--models-max\" \"1\".*\"--offline\".*" routerService.serviceConfig.ExecStart
+          != null;
     };
     expected = {
       router_enabled = true;
@@ -144,8 +154,9 @@ in
       router_requires_cached_model_mount = true;
       router_requires_independent_provisioner = true;
       router_reuses_the_persistent_cache_owner = true;
+      router_preserves_state_and_cache_paths = true;
       router_keeps_model_cache_read_only = true;
-      router_binds_shared_loopback_port_and_limits_residency = true;
+      router_uses_versioned_preset_and_limits_residency = true;
     };
   };
 

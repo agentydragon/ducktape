@@ -33,7 +33,7 @@ let
   modelProvisioner = pkgs.writeShellApplication {
     name = "provision-rugged-llama-router-models";
     runtimeInputs = [
-      pkgs.aria2
+      llama-router
       pkgs.coreutils
       pkgs.jq
     ];
@@ -169,9 +169,21 @@ in
       environment.SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
     };
 
-    systemd.services.rugged-llama-router = {
-      description = "Experimental one-model-at-a-time llama.cpp router for rugged's Arc iGPU";
-      wantedBy = [ "multi-user.target" ];
+    services.llama-cpp = {
+      enable = true;
+      package = llama-router;
+      host = "127.0.0.1";
+      inherit port;
+      extraFlags = [
+        "--models-preset"
+        "/etc/llama-router/models.ini"
+        "--models-max"
+        "1"
+        "--offline"
+      ];
+    };
+
+    systemd.services.llama-cpp = {
       requires = [ "rugged-llama-model-provision.service" ];
       after = [
         "local-fs.target"
@@ -183,30 +195,18 @@ in
       ];
       unitConfig.RequiresMountsFor = modelStoreDir;
       serviceConfig = {
-        Type = "simple";
         User = "ollama";
         Group = "ollama";
         SupplementaryGroups = [ "render" ];
-        StateDirectory = "rugged-llm";
+        # Keep the provisioned model store and the module's working directory.
+        StateDirectory = lib.mkForce "rugged-llm llama-cpp";
         StateDirectoryMode = "0750";
         UMask = "0077";
-        ExecStart = lib.escapeShellArgs [
-          "${llama-router}/bin/llama-server"
-          "--host"
-          "127.0.0.1"
-          "--port"
-          (toString port)
-          "--models-preset"
-          "/etc/llama-router/models.ini"
-          "--models-max"
-          "1"
-          "--offline"
-        ];
-        Restart = "on-failure";
-        RestartSec = "5s";
-        ProtectSystem = "strict";
-        ProtectHome = true;
-        PrivateTmp = true;
+        DynamicUser = lib.mkForce false;
+        # Preserve the render group in the host namespace for Arc access.
+        PrivateUsers = lib.mkForce false;
+        # The Vulkan driver generates executable code at runtime.
+        MemoryDenyWriteExecute = lib.mkForce false;
         NoNewPrivileges = true;
         ReadOnlyPaths = [ modelStoreDir ];
       };

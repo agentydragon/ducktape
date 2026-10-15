@@ -1,4 +1,4 @@
-"""Integration-test the provisioner with aria2 against local HTTP fixtures."""
+"""Integration-test the provisioner with llama.cpp against local HTTP fixtures."""
 
 from __future__ import annotations
 
@@ -17,7 +17,18 @@ from typing import ClassVar
 class FixtureHandler(http.server.BaseHTTPRequestHandler):
     counts: ClassVar[dict[str, int]] = {}
     range_requests: ClassVar[list[str]] = []
-    content = b"GGUF fixture model bytes\n"
+    content = b"GGUF fixture model bytes\n" * 8192
+    resume_prefix = 65536
+
+    def do_HEAD(self) -> None:
+        self.counts[self.path] = self.counts.get(self.path, 0) + 1
+        if self.path == "/missing":
+            self.send_error(http.HTTPStatus.NOT_FOUND)
+            return
+        self.send_response(http.HTTPStatus.OK)
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(len(self.content)))
+        self.end_headers()
 
     def do_GET(self) -> None:
         self.counts[self.path] = self.counts.get(self.path, 0) + 1
@@ -40,9 +51,9 @@ class FixtureHandler(http.server.BaseHTTPRequestHandler):
             self.send_header("Content-Length", str(len(payload)))
             self.end_headers()
             if requested_range is None:
-                # Interrupt the first response after a prefix. aria2 should keep
-                # its control file and resume from the next byte on retry.
-                self.wfile.write(payload[:8])
+                # Interrupt the first response after a prefix. llama.cpp should keep
+                # its temporary download and resume from the next byte on retry.
+                self.wfile.write(payload[: self.resume_prefix])
                 self.wfile.flush()
                 self.close_connection = True
                 return
@@ -111,38 +122,41 @@ def main() -> None:
             require(target.stat().st_ino == source.stat().st_ino, "same-filesystem Ollama cache was not reused")
             require(FixtureHandler.counts == before, "Ollama cache import used the network")
 
-            # A second verified local hit also bypasses aria2 and the network.
+            # A second verified local hit also bypasses llama.cpp and the network.
             result = run_provisioner(helper, manifest, store, ollama_blobs)
             require(result.returncode == 0, f"verified cache hit failed: {result.stderr}")
             require(FixtureHandler.counts == before, "verified cache hit used the network")
-            # Missing artifacts download through the real aria2 binary and verify before promotion.
+            # Missing artifacts download through the real llama.cpp binary and verify before promotion.
             downloaded = root / "downloaded-store"
             download_manifest = root / "download-manifest.json"
             write_manifest(
                 download_manifest, {"download-model": artifact(f"{base_url}/download", FixtureHandler.content)}
             )
             result = run_provisioner(helper, download_manifest, downloaded, root / "no-ollama-blobs")
-            require(result.returncode == 0, f"aria2 fixture download failed: {result.stderr}")
+            require(result.returncode == 0, f"llama.cpp fixture download failed: {result.stderr}")
             downloaded_target = downloaded / "blobs" / f"sha256-{digest}"
             require(downloaded_target.read_bytes() == FixtureHandler.content, "downloaded bytes differ")
-            require(FixtureHandler.counts.get("/download", 0) == 1, "expected one actual aria2 GET")
+            require(FixtureHandler.counts.get("/download", 0) >= 1, "expected an actual llama.cpp request")
             require(
                 not list((downloaded / ".staging").glob("*.partial")), "verified partial was not atomically promoted"
             )
 
-            # A broken response leaves an aria2 control file; the retry must
+            # A broken response leaves a llama.cpp temporary file; the retry must
             # request only the remaining bytes and still verify the whole blob.
             resumed_store = root / "resumed-store"
             resumed_manifest = root / "resumed-manifest.json"
             write_manifest(resumed_manifest, {"resume-model": artifact(f"{base_url}/resume", FixtureHandler.content)})
             FixtureHandler.range_requests.clear()
             result = run_provisioner(helper, resumed_manifest, resumed_store, root / "no-ollama-blobs")
-            require(result.returncode == 0, f"aria2 partial resume failed: {result.stderr}")
+            require(result.returncode == 0, f"llama.cpp partial resume failed: {result.stderr}")
             resumed_target = resumed_store / "blobs" / f"sha256-{digest}"
             require(resumed_target.read_bytes() == FixtureHandler.content, "resumed bytes differ")
             require(
-                any(request.startswith("bytes=8-") for request in FixtureHandler.range_requests),
-                f"aria2 did not resume the interrupted transfer: {FixtureHandler.range_requests}",
+                any(
+                    request.startswith(f"bytes={FixtureHandler.resume_prefix}-")
+                    for request in FixtureHandler.range_requests
+                ),
+                f"llama.cpp did not resume the interrupted transfer: {FixtureHandler.range_requests}",
             )
 
             # A failed integrity check cannot publish a blob.
@@ -181,7 +195,7 @@ def main() -> None:
                 failure_store_target.read_bytes() == FixtureHandler.content, "failed fetch changed valid cache data"
             )
 
-            # A complete bad leftover partial is discarded, then replaced by a verified aria2 download.
+            # A complete bad leftover partial is discarded, then replaced by a verified llama.cpp download.
             recovery_store = root / "recovery-store"
             recovery_partial = recovery_store / ".staging" / f"{digest}.partial"
             recovery_partial.parent.mkdir(parents=True)
