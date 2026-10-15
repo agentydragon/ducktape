@@ -4,7 +4,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import aiohttp
@@ -20,7 +20,7 @@ from agentplane.grpc_calls import ServiceError
 from agentplane.notification_service.db import Entry, Inbox, Notice, Subscription
 from agentplane.notification_service.dispatcher_client import SessionDispatcherClient
 from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionView
-from agentplane.notification_service.service import Service
+from agentplane.notification_service.service import DestinationRejectedError, Service
 from agentplane.notification_service.settings import NoticeDebounceSettings, QuotaSettings
 from agentplane.notification_service.store import ConflictError, Store
 from agentplane.notification_service.testing.store import claimed
@@ -279,6 +279,25 @@ async def test_transient_lookup_and_owner_mismatch_cannot_confirm_staleness(serv
         assert pending.delivery_error == "OwnerMismatchError"
         assert source is not None
         assert not source.cancelled
+
+
+async def test_subscription_requires_session_membership_in_the_fenced_sandbox(service: Service) -> None:
+    cast(AsyncMock, service.sandboxes.get_without_pod).return_value = _matching_sandbox()
+    runner = _sandbox_runner()
+    cast(AsyncMock, runner.list_sessions).return_value = [runner_pb2.SessionSummary(session_id="another-session")]
+    cast(Mock, service.gateway.runner).return_value = runner
+
+    with pytest.raises(DestinationRejectedError):
+        await service.subscribe(PRINCIPAL, BODY)
+
+    cast(Mock, service.gateway.runner).assert_called_once_with(
+        SandboxDestination(
+            sandbox=BODY.destination_ref.name,
+            sandbox_uid=BODY.destination_ref.uid,
+            owner=ServiceAccount(namespace=PRINCIPAL.namespace, name=PRINCIPAL.service_account_name),
+        )
+    )
+    cast(AsyncMock, runner.list_sessions).assert_awaited_once_with()
 
 
 @pytest.mark.parametrize(

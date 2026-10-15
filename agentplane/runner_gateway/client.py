@@ -12,6 +12,7 @@ from agentplane.grpc_calls import bearer, call_unary, dial
 from agentplane.proto import (
     command_pb2,
     event_log_pb2,
+    runner_control_pb2_grpc,
     runner_gateway_pb2,
     runner_gateway_pb2_grpc,
     runner_pb2,
@@ -19,6 +20,12 @@ from agentplane.proto import (
 )
 from agentplane.proto.sandboxes_pb2 import SandboxDestination
 from agentplane.runner_gateway import wire
+from agentplane.runner_gateway.runner_proxy import (
+    SANDBOX_HEADER,
+    SANDBOX_OWNER_NAME_HEADER,
+    SANDBOX_OWNER_NAMESPACE_HEADER,
+    SANDBOX_UID_HEADER,
+)
 
 # gazelle:include_dep @pypi//protobuf
 # gazelle:include_dep @pypi//grpcio
@@ -58,6 +65,25 @@ class SandboxControlClient:
 
     def runner(self, destination: SandboxDestination) -> SandboxRunner:
         return SandboxRunner(self, destination)
+
+    async def list_sessions(self, destination: SandboxDestination) -> list[runner_pb2.SessionSummary]:
+        """Read live runner inventory through its proxy, fenced to the expected Sandbox identity."""
+        async with dial(
+            self.control_target.format(sandbox=destination.sandbox, namespace=destination.owner.namespace)
+        ) as channel:
+            response = await call_unary(
+                runner_control_pb2_grpc.RunnerStub(channel).ListSessions,
+                runner_pb2.ListSessionsRequest(),
+                token_file=self.token_file,
+                timeout_s=self.request_timeout_s,
+                extra_metadata=(
+                    (SANDBOX_HEADER, destination.sandbox),
+                    (SANDBOX_UID_HEADER, destination.sandbox_uid),
+                    (SANDBOX_OWNER_NAMESPACE_HEADER, destination.owner.namespace),
+                    (SANDBOX_OWNER_NAME_HEADER, destination.owner.name),
+                ),
+            )
+        return list(response.sessions)
 
 
 class RunnerGatewayClient:
@@ -130,12 +156,7 @@ class SandboxRunner:
         self.destination = destination
 
     async def list_sessions(self) -> list[runner_pb2.SessionSummary]:
-        result = await self.control.held_unary(
-            self.destination,
-            lambda stub: stub.ListSessions,
-            runner_gateway_pb2.ListSessionsRequest(destination=self.destination),
-        )
-        return list(result.sessions)
+        return await self.control.list_sessions(self.destination)
 
     async def create(
         self, *, session_id: UUID, spec: dict[str, object], setup_script: str | None = None

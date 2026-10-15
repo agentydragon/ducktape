@@ -36,7 +36,7 @@ from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.grpc_calls import dial
+from agentplane.grpc_calls import ServiceError, dial
 from agentplane.grpc_serving import serving
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener
@@ -954,6 +954,13 @@ async def test_a_running_thread_cannot_be_archived(
     )
     spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CLAUDE, cwd="/w", model="test-model")
     thread_id = await event_logs.seed("live", "s-1")
+    assert event_logs.history is not None
+    await event_logs.history.set_attached(
+        thread_id, runner_pb2.Attached(session_id=str(thread_id), harness_state=runner_pb2.HARNESS_STATE_STOPPED)
+    )
+    thread = await store.get_thread(thread_id)
+    assert thread is not None
+    assert thread.harness_state == "HARNESS_STATE_STOPPED"
 
     consulted: list[str] = []
 
@@ -972,6 +979,33 @@ async def test_a_running_thread_cannot_be_archived(
     assert response.status_code == 409
     # Only the running-harness refusal lists sessions; the unverifiable-Pod 409 comes before that.
     assert consulted == ["live"]
+    thread = await store.get_thread(thread_id)
+    assert thread is not None
+    assert thread.archived is False
+
+
+async def test_a_thread_is_not_archived_when_its_live_runner_cannot_be_checked(
+    bare_app: FastAPI,
+    bridge: RunnerBridge,
+    store: ThreadStore,
+    event_logs: SeededEventLogStore,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    custom_objects.objects[(SANDBOXES_PLURAL, "live")], core_v1.pods["live"] = seed_runner(
+        custom_objects, core_v1, "live"
+    )
+    thread_id = await event_logs.seed("live", "runner-loss")
+
+    async def runner_unavailable(_sandbox: str) -> list[runner_pb2.SessionSummary]:
+        raise ServiceError(grpc.StatusCode.UNAVAILABLE, "runner connection unavailable")
+
+    monkeypatch.setattr(bridge, "list_sessions", runner_unavailable)
+    async with _agent_client(bare_app) as http:
+        response = await http.post(f"/threads/{thread_id}/archive")
+
+    assert response.status_code == 503
     thread = await store.get_thread(thread_id)
     assert thread is not None
     assert thread.archived is False
