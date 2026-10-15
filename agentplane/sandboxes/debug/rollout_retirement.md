@@ -1,6 +1,35 @@
 # Sandbox Service retirement and caller rollout inventory
 
-Read-only inventory on 2026-10-14 PDT, after #10524, #10525, #10529 and #10533 merged:
+## Quiesce retry coverage audit, 2026-10-15 UTC
+
+The retry implementation (#10580) and nonblocking writer (#10609) close the retry-code audit.
+Writer rollout and legacy-reader removal remain separate gates in the task DAG; idle suspension
+still waits for writer rollout verification. This audit made no cluster changes.
+
+- The controller persists the attempt before calling the runner and enforces the per-incarnation
+  retry deadline. `TestFailedQuiesceWaitsAcrossNoStageEventsAndControllerRestart` covers watch
+  events, restart, repeated suspend/resume intent, a stalled flush and prompt Lease-driven completion.
+  `TestFailedQuiesceAttemptStatusWriteDoesNotCallRunner` and
+  `TestQuiesceAttemptDoesNotThrottleANewRunnerIncarnationDuringDeletion` cover conflict and identity
+  boundaries in [controller tests](../../sandbox_controller/controller_test.go).
+- [Runner control tests](../../runner/test_control.py) hold ingress acknowledgement to prove that
+  sealing alone stays `Flushing`, acknowledge final cursors before `Quiesced`, and cover drain failure,
+  repeated requests and cancellation/reconnect. #10609's final CI passed all 92 test targets.
+- [Ingress tests](../../runner/test_ingress.py) cover refused-session backoff without blocking other
+  Sessions, replay from the acknowledged cursor, persisted seal acknowledgement across restart,
+  and an unreachable ingress that does not block journaling or sealing. The shared
+  [reconnect loop](../../runner/reconnect.py) applies capped jittered exponential backoff to failures
+  without progress; operator-only refusals wait the maximum. This is per-stream backoff, not a
+  global ingress circuit breaker.
+
+No additional global circuit breaker or live outage drill is required to establish this contract:
+the named failure boundaries have deterministic coverage. A future aggregate retry-load problem
+would justify separate measured work. This closes the old open-ended outage-audit gate, without
+waiving writer image/VM-wheel or live-incarnation compatibility checks.
+
+## Initial retirement inventory, 2026-10-14 PDT
+
+Read-only inventory after #10524, #10525, #10529 and #10533 merged:
 
 - Testing and staging have no Sandbox Service Deployment or Pods. #10529 removed deployment
   wiring; #10524 removed its source, proto and remaining clients. History Service's independently

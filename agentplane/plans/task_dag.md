@@ -466,7 +466,7 @@ memory dump or a snapshot with memory) and whether it works with the state volum
 RAM suspension nor live migration today. Check what a resumed guest must redo: the runner's control stream and
 projected tokens (the relay reopens them per request, so rotation alone needs no restart), and the
 clock. Settle first what "seal before suspend" means when the harness keeps running across the suspend
-(`QUIESCE_WITHOUT_POLLING` assumes the Pod sequence). Where storage or the guest cannot carry it, stop/start from the state PVC stays the
+(the current quiesce stops harnesses and seals journals). Where storage or the guest cannot carry it, stop/start from the state PVC stays the
 lifecycle.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
@@ -689,7 +689,6 @@ flowchart TD
     RUNNER_QUIESCE_ROLLOUT[In flight: roll out nonblocking Quiesce implementation #10609]
     JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE[Blocked: writer rollout and retained-journal cutoff]
     RUNNER_QUIESCE_ROLLOUT --> QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: remove old response shape after runner rollout]
-    QUIESCE_WITHOUT_POLLING[In flight: recover stalled seal progress]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
@@ -698,9 +697,9 @@ flowchart TD
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
     VM_PROVIDER -. related .-> SANDBOX_SPEC_EDIT
-    QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
+    RUNNER_QUIESCE_ROLLOUT --> SANDBOX_IDLE_EXPIRY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
-    QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
+    VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
     APP_NATIVE_RESUME_SURFACE[Decision: explicit native-resume UI] --> APP_NATIVE_RESUME_CUTOVER[Blocked: remove direct native resume]
@@ -827,7 +826,7 @@ Firecracker with the runner as init.
 
 ### `SANDBOX_IDLE_EXPIRY` — the controller suspends an idle Sandbox
 
-**Blocked on the app image that reads `status.operatingMode` being pinned, `QUIESCE_WITHOUT_POLLING`; operator, 2026-10-11 and 2026-10-13 PDT.** An idle runner
+**Blocked on `RUNNER_QUIESCE_ROLLOUT`; operator, 2026-10-11 and 2026-10-13 PDT.** The app's effective-mode reader is deployed. Controller retry and runner outage coverage are complete; the nonblocking writer still needs its rollout verification. An idle runner
 Sandbox suspends: it is sealed, then the Pod or VM goes, freeing memory and compute, and the Sandbox, its
 ServiceAccount, bindings and state PVC stay, so a later resume uses the same PVC. Nothing deletes a
 Sandbox on idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one, through
@@ -901,22 +900,6 @@ remain. Require testing/staging acceptance before retiring the controller's lega
 snapshot pins, not a current inventory. Refresh the audit against every live/selectable Pod runner
 image, embedded VM wheel, and old incarnation. Delete the controller's legacy-shape read only after
 the compatible writer is deployed everywhere and testing/staging acceptance passes.
-
-### `QUIESCE_WITHOUT_POLLING` — a runner that never progresses is backed off, not hammered
-
-**Retry correction merged in #10580 after optional schema #10583 was verified served
-(2026-10-15 02:35 UTC).** The schema landed separately because plain Flux `dependsOn` is not an
-exact-revision barrier. The persisted per-incarnation attempt prevents watch
-events from bypassing the existing one-minute retry deadline, including absent/stalled stage reports
-and false-to-false condition updates. Focused controller tests cover status conflicts, completion,
-restarts and incarnation changes. Runner stage events still advance quiesce immediately. The immediate
-RPC response is implemented in #10609; its rollout is tracked in `RUNNER_QUIESCE_ROLLOUT`. Keep the
-controller reader until `QUIESCE_LEGACY_SHAPE_REMOVAL` clears its rollout and acceptance gates.
-
-This change does not establish ingress-wide backoff. Audit the remaining outage behavior before
-closing this node; preserve a bounded held-flush integration check only for an identified gap that
-focused tests do not cover. Keep the separate legacy-response removal gated on every runner image
-and the VM wheel pin. Do not turn missed-event recovery into periodic polling or extend timeouts.
 
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
