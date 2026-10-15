@@ -34,7 +34,8 @@ app's direct native-resume path. Each remaining compatibility removal keeps its 
 - Both audited wheels still omit `QuiesceResponse.stage`; current source still awaits sealing before
   returning. Non-blocking response implementation and its rollout must precede legacy-reader removal.
 - #10593 adds explicit suspended markers to the sidebar, Thread, title and favicon. The retained
-  history/revival surfaces remain. Composer activation still follows wake-on-send acceptance.
+  history/revival surfaces remain. At that point, composer activation still followed wake-on-send
+  acceptance.
 - #10592 removed the opening flag from generated configuration. Both live app ConfigMaps omitted it
   before #10598 removed the accepted-unused field and its obsolete tests. #10598 merged with Bazel,
   Nix and pre-commit checks passing; the opening rollout flag is fully removed from source.
@@ -56,7 +57,7 @@ app's direct native-resume path. Each remaining compatibility removal keeps its 
   Sandbox UID `00a94aaf-8312-4e5c-a9a7-1381d45a451b` and its PVC were removed by scoped teardown.
   This was a model-free setup check on testing, not a new staging model-turn acceptance.
 
-## App wake policy and composer rollout, 2026-10-15 UTC
+## App wake policy and suspended composer rollout, 2026-10-15 UTC
 
 - #10600 (`e380e62`) adds the default-off `wakeOnSend` checkbox to new and existing Sandbox UI,
   retaining UID/resource-version checks and requiring an explicit user action to change a policy.
@@ -66,6 +67,21 @@ app's direct native-resume path. Each remaining compatibility removal keeps its 
   `devel-20261015060159-7eb6b79`. All three Ready app Pods use digest
   `ce44cd071dbc33e12000ed10a40f84c687a2135e4ce13f475ff62c80df47d366`; source ancestry includes
   #10600. This clears the app-image gate for the checkbox.
-- The staging Dispatcher caller allowlist and prior testing wake acceptance are already verified.
-  The suspended-composer change remains in review in #10608; its separate image rollout and staging
-  acceptance are still required. Do not treat the checkbox image gate as composer activation.
+- #10608 merged as `cd4b4352623f47ffa9a420bef035aabca7e04b08`. It keeps a retained Session's
+  composer usable after a normal stopped/ended seal when fresh Sandbox inventory confirms suspension
+  and setup succeeded. The existing authenticated Dispatcher route queues input; wake-on-message
+  requests a wake, while the default-off policy leaves the message queued and tells the user to resume
+  manually. Stale or missing inventory, archived Threads and failed/interrupted/unfinished setup
+  remain blocked. Focused UI tests cover the sealed projection, both wake policies and refusals; app
+  bridge tests cover Dispatcher queueing without a ready runner or Gateway session lookup. PR CI and
+  desktop/mobile visual review passed.
+- A read-only rollout audit found testing at generation/observed generation 521/521 and staging at
+  566/566. Testing's one app Pod and staging's two app Pods are Ready on
+  `devel-20261015063016-cd4b435`, all with digest
+  `sha256:689df9e143e769475992a64e6a02cf6836513636cdeb7b3a7747615cf79c8d31`. The image tag identifies
+  the merged #10608 commit.
+- The prior testing [Dispatcher wake acceptance](../../session_dispatcher/debug/deployment_acceptance.md#testing-send-triggered-wake)
+  passed the opted-in scenario: concurrent allowed app `OpenSession` and notification `SubmitInput`
+  produced one wake generation and both reached runner admission. Together with the deterministic
+  composer and app-bridge tests, this covers the changed contract; no separate live browser send is
+  required. No message was sent to a user Session for this rollout audit.

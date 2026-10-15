@@ -21,17 +21,16 @@ Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
 | Worker                     | Assigned work and remaining gates                                                                      |
 | -------------------------- | ------------------------------------------------------------------------------------------------------ |
 | `suspended_session_ui`     | Implement nonblocking runner Quiesce; deployed controllers already accept the optional response stage. |
-| `quiesce_progress`         | Implement suspended composer after merged #10600; verify checkbox app image rollout before activation. |
 | `session_defaults_cleanup` | Fresh VM workspace acceptance passed and fixture cleanup verified; publish evidence and metadata fix.  |
 | Coordinator                | Review and CI, DAG burn-down and deployment gate verification.                                         |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
 user experience. Finish reported bugs and red PR checks first. The next dispatch order is
-verified runner compatibility cleanup and `SUSPENDED_COMPOSER`, then `ISOLATED_TEST_SPIKES_RETIRE`
-and `K3S_STARTUP_COST`. The app wake-on-message policy is implemented and deployed; the composer
-still needs its own rollout acceptance. The lifecycle coverage audit found the
-requested eventual outcomes already covered; see the [suite coverage](../x/k3s_env/README.md#lifecycle-coverage).
+verified runner compatibility cleanup, then `ISOLATED_TEST_SPIKES_RETIRE` and
+`K3S_STARTUP_COST`. The per-Sandbox wake-on-message policy and suspended composer are implemented
+and deployed. The lifecycle coverage audit found the requested eventual outcomes already covered;
+see the [suite coverage](../x/k3s_env/README.md#lifecycle-coverage).
 Audit assignment does not waive any image, embedded VM wheel, live-runner or retained-data gate.
 
 These are assignments, not claims that gated work has started. Independent config changes can
@@ -694,7 +693,6 @@ flowchart TD
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
-    SUSPENDED_COMPOSER[In flight: the composer stays enabled while a Session is suspended]
     VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
@@ -975,16 +973,6 @@ If required grants are desired, first define their durable identity, missing/exp
 explicit operator re-grant flow. The audit distinguishes controller-driven expiry from exact
 post-deadline denial, and projected-token renewal from grant renewal. Add implementation work only
 for a reviewed contract that the code does not already satisfy; do not add an implicit Ready gate.
-
-### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
-
-**In flight in #10608; `quiesce_progress`, operator decision 2026-10-15 UTC.** A retained Session's
-composer stays usable while a fresh inventory snapshot confirms that its Sandbox is suspended.
-Sending queues through the Dispatcher; wake-on-message requests a wake, while the default-off policy
-leaves the Sandbox stopped and tells the user to resume it manually. Preserve normal access checks,
-deleted-Sandbox refusal, and setup/archive refusals. Focused tests cover the sealed stopped/ended
-Session projection and desktop/mobile visual fixtures. The app image and staging wake caller are
-deployed; this node remains in flight until the composer image rollout and staging acceptance pass.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
