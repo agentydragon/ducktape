@@ -97,9 +97,26 @@ Done: no PolicySet rules or role wiring are passed into the Policy Controller co
 deployment materializes complete PolicySets and separately materializes exact-name controller RBAC
 from the assignable grant inventory.
 
-Remaining: determine whether exact role-name scoping is the right long-term ownership boundary for
-the controller, especially for its cluster-scoped `ClusterRoleBinding` authority. Native Kubernetes
-RBAC cannot scope `bind` by labels or by the kind of binding being created.
+Decision: keep exact-name `bind` rules as the explicit ceiling on which ClusterRoles can be granted,
+and treat ClusterRoleBinding reconciliation as part of the Policy Controller's trusted authority.
+RBAC cannot restrict top-level create requests by `resourceNames`, so this controller can create a
+ClusterRoleBinding for any subject to an allowlisted ClusterRole; its current unscoped `delete` rule
+can delete any ClusterRoleBinding. Labels and generated names limit normal reconciliation, not what
+this ServiceAccount can do. Namespaced RoleBinding writes already have the narrower per-namespace
+Role boundary.
+
+A separate binding writer could isolate the credential and reduce the main controller's compromise
+scope, but that writer would still need cluster-wide ClusterRoleBinding create/delete and the same
+`bind` authority. Without an admission guard, its credential could still bind any subject to an
+allowed role and delete any ClusterRoleBinding. Static ClusterRoleBindings would give up
+PolicyBindings' runtime ServiceAccount subjects.
+
+If the threat model later requires containment after writer compromise, require an API-server
+admission check that verifies each ClusterRoleBinding's subject and role against its live
+PolicyBinding and PolicySets. A `ValidatingAdmissionPolicy` can validate request fields and supplied
+parameters but cannot fetch that dynamic cross-object relationship; this needs a validating webhook
+or another authoritative server-side source. See Kubernetes' [RBAC resource-name and bind rules](https://kubernetes.io/docs/reference/access-authn-authz/rbac/)
+and [ValidatingAdmissionPolicy CEL inputs](https://kubernetes.io/docs/reference/access-authn-authz/validating-admission-policy/).
 
 ## Extract only when another caller needs it
 
