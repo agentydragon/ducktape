@@ -82,7 +82,6 @@ py_library(
         "//cluster/cdk8s/providers/prometheus_operator:service_monitor",
         "//cluster/cdk8s/providers/prometheus_operator:servicemonitor",
         "//cluster/cdk8s/providers/source_watcher:artifactgenerator",
-        "//cluster/scripts:nebula_mesh",
         "@pypi//cdk8s",
         "@pypi//cdk8s_plus_34",
         "@pypi//constructs",
@@ -135,6 +134,7 @@ py_test(
     srcs = ["test_config.py"],
     deps = [
         ":config",
+        ":proxy",
         "//:conftest",
         "//model_catalog:catalog",
         "@pypi//pytest_bazel",

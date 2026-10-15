@@ -10,7 +10,6 @@ cluster/docs/cdk8s.md.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import partial
 from pathlib import Path
 
 from cdk8s import ApiObject, ApiObjectMetadata, App, Chart, Duration, JsonPatch, Size
@@ -61,18 +60,11 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import write_charts, write_yaml
 from cluster.cdk8s.litellm import database
 from cluster.cdk8s.litellm.config import ConfigMapSpec, proxy_configs
-from cluster.cdk8s.litellm.upstreams import (
-    RUGGED_LOCAL_LLM_KEY_ENV,
-    RUGGED_LOCAL_LLM_PORT,
-    RUGGED_LOCAL_LLM_SECRET,
-    RUGGED_LOCAL_LLM_SERVICE,
-)
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.probes import http_probe
 from cluster.cdk8s.providers.prometheus_operator.service_monitor import Endpoint, ServiceMonitor
 from cluster.cdk8s.secret_ref import SecretKey, SecretRef
 from cluster.cdk8s.service_ref import Pods, Port, ServiceRef
-from cluster.scripts.nebula_mesh import Mesh
 
 _PLACEHOLDER_TAG = "unset"  # always overridden by image-pins/kustomization.yaml
 APP_DIR = f"{HAND_WRITTEN_ROOT}/litellm/app"
@@ -84,7 +76,6 @@ _MASTER_KEY = SecretRef(namespace=_NAMESPACE, name="litellm-master-key").key("ap
 # Langfuse's project keys.
 _LANGFUSE = SecretRef(namespace=_NAMESPACE, name="langfuse-secrets")
 _CONFIG_DIR = "/etc/litellm"
-_RUGGED_LOCAL_LLM_PORT = Port(name="http", number=RUGGED_LOCAL_LLM_PORT)
 
 
 @dataclass(frozen=True)
@@ -198,9 +189,6 @@ def proxy_specs() -> tuple[ProxySpec, ...]:
                     "TANA_FIREBASE_REFRESH_TOKEN",
                     SecretRef(namespace=_NAMESPACE, name="tana-firebase-refresh-token").key("refresh_token"),
                     optional=True,
-                ),
-                _SecretEnv(
-                    RUGGED_LOCAL_LLM_KEY_ENV, SecretRef(namespace=_NAMESPACE, name=RUGGED_LOCAL_LLM_SECRET).key("token")
                 ),
             ),
             startup_failure_threshold=36,
@@ -417,50 +405,19 @@ class LiteLLMServiceMonitor(Construct):
         )
 
 
-def _chart(app: App, mesh: Mesh) -> Chart:
+def _chart(app: App) -> Chart:
     (spec,) = proxy_specs()  # only one LiteLLM proxy today; extend proxy_specs() when a second lands
     chart = Chart(app, spec.name, disable_resource_name_hashes=True)
-    _rugged_local_llm_endpoint(chart, mesh)
     LiteLLMProxy(chart, "proxy", spec)
     LiteLLMServiceMonitor(chart, "monitoring", service(spec))
     return chart
 
 
-def _rugged_local_llm_endpoint(scope: Construct, mesh: Mesh) -> None:
-    host = mesh.hosts["rugged"]
-    Service(
-        scope,
-        "rugged-local-llm-service",
-        metadata=ApiObjectMetadata(name=RUGGED_LOCAL_LLM_SERVICE, namespace=_NAMESPACE),
-        cluster_ip="None",
-        ports=[_RUGGED_LOCAL_LLM_PORT.service_port()],
-    )
-    k8s.KubeEndpointSlice(
-        scope,
-        "rugged-local-llm-endpoints",
-        metadata=k8s.ObjectMeta(
-            name=RUGGED_LOCAL_LLM_SERVICE,
-            namespace=_NAMESPACE,
-            labels={
-                "kubernetes.io/service-name": RUGGED_LOCAL_LLM_SERVICE,
-                "endpointslice.kubernetes.io/managed-by": "ducktape-static",
-            },
-        ),
-        address_type="IPv4",
-        ports=[k8s.EndpointPort(name=_RUGGED_LOCAL_LLM_PORT.name, port=_RUGGED_LOCAL_LLM_PORT.number, protocol="TCP")],
-        endpoints=[
-            k8s.Endpoint(addresses=[host.nebula_ip], hostname="rugged", conditions=k8s.EndpointConditions(ready=True))
-        ],
-    )
-
-
-def write_manifests(root: Path, mesh: Mesh) -> None:
+def write_manifests(root: Path) -> None:
     write_yaml(
         root / APP_DIR / "kustomization.yaml",
         kustomize_kustomization(
-            namespace="litellm",
-            resources=[write_charts(root, APP_DIR, partial(_chart, mesh=mesh))],
-            components=["./image-pins"],
+            namespace="litellm", resources=[write_charts(root, APP_DIR, _chart)], components=["./image-pins"]
         ),
     )
 

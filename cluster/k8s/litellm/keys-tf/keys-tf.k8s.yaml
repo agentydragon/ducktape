@@ -101,9 +101,6 @@ spec:
             - ollama/olm-chat/gpt-oss-120b-128k
             - ollama/oai-chat/gemma4-31b-it-q8_0-128k
             - ollama/olm-chat/gemma4-31b-it-q8_0-128k
-            - rugged-local/oai-chat/qwen3-4b-instruct-2507-q4-k-m
-            - rugged-local/oai-chat/gemma4-e4b
-            - rugged-local/oai-chat/gemma4-e2b-it-qat-long-128k-experimental
             - anthropic-api/ant-messages/claude-haiku-4-5-20251001
             - chatgpt/ant-messages/gpt-6-luna
             - chatgpt/oai-responses/gpt-6-luna

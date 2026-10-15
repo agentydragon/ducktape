@@ -491,7 +491,7 @@ _GEMINI_EMBEDDING_001 = Model("gemini-embedding-001", limits=EmbeddingLimits(max
 GEMINI_EMBEDDING_COMPAT_ALIAS = _GEMINI_EMBEDDING_2.id
 
 
-# Canonical served routes. These are the only account/wire/model associations;
+# Canonical route identities. These are the only account/wire/model associations;
 # downstream code receives Route objects, not naming ingredients.
 OLLAMA_OPENAI = Upstream(Provider.OLLAMA, "openai", "chat", supports_function_calling=True)
 OLLAMA_NATIVE = Upstream(Provider.OLLAMA, "ollama_chat", "chat", supports_function_calling=True)
@@ -788,10 +788,9 @@ MISTRAL_ROUTES = tuple(Route(model, MISTRAL_CHAT, publish_limits=True) for model
 
 # Ordered public catalog. Aliases reference routes rather than repeat their upstream
 # or metadata. Hidden harness-compatibility aliases are not advertised as model entries.
+# Rugged model facts stay catalogued above but are omitted while cluster access is paused.
 SERVED_ROUTES: tuple[Route | RouteAlias, ...] = (
     *_OLLAMA_PROXY_ROUTES,
-    *RUGGED_LOCAL_CANDIDATE_ROUTES,
-    *RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
     # TODO(#9574): Tana limits are unknown for this reverse-engineered gateway.
     # Restore exposure with its key lane/fallback and wrapper only after review.

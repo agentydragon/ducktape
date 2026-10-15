@@ -3,7 +3,8 @@
 import pytest_bazel
 
 from cluster.cdk8s.litellm.config import main_proxy_config, model_entry
-from model_catalog.catalog import RUGGED_LOCAL_GEMMA4_E2B_LONG_CONTEXT_EXPERIMENT, RUGGED_LOCAL_QWEN3_4B, TANA_ROUTES
+from cluster.cdk8s.litellm.proxy import proxy_specs
+from model_catalog.catalog import TANA_ROUTES
 
 
 def test_tana_routes_register_the_in_process_provider() -> None:
@@ -15,14 +16,11 @@ def test_tana_routes_register_the_in_process_provider() -> None:
     assert any(item["provider"] == "tana" for item in config["litellm_settings"]["custom_provider_map"])
 
 
-def test_long_context_route_has_explicit_litellm_timeouts() -> None:
-    long_context = model_entry(RUGGED_LOCAL_GEMMA4_E2B_LONG_CONTEXT_EXPERIMENT)["litellm_params"]
-    standard = model_entry(RUGGED_LOCAL_QWEN3_4B)["litellm_params"]
-
-    assert long_context["timeout"] == 2_400
-    assert long_context["stream_timeout"] == 2_400
-    assert "timeout" not in standard
-    assert "stream_timeout" not in standard
+def test_paused_rugged_routes_are_not_registered_or_injected_into_litellm() -> None:
+    config = main_proxy_config()
+    assert not any(entry["model_name"].startswith("rugged-local/") for entry in config["model_list"])
+    [spec] = proxy_specs()
+    assert "RUGGED_LOCAL_LLM_KEY" not in {entry.name for entry in spec.env}
 
 
 if __name__ == "__main__":
