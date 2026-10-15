@@ -55,10 +55,8 @@ py_library(
         "//agentplane/app/threads/events:event_log",
         "//agentplane/postgres:wakeups",
         "//agentplane/proto:event_pb2",
-        "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",
-        "//agentplane/runner_gateway:client",
         "@pypi//protobuf",
         "@pypi//pydantic",
         "@pypi//sqlalchemy",
@@ -79,9 +77,11 @@ py_test(
         "//agentplane/proto:event_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/runner:harness",
+        "//agentplane/runner_gateway/commands:db",
         "@pypi//protobuf",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+        "@pypi//sqlalchemy",
     ],
 )
 

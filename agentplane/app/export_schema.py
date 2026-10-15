@@ -74,7 +74,7 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
     document: dict[str, Any] = create_app(
         inventory,
         RunnerBridge(runners=RunnerDirectory(live, gateway), event_logs=event_logs, content=content),
-        ThreadStore(engine, summaries, gateway=gateway),
+        ThreadStore(engine, summaries),
         ModelCatalog(
             models=[
                 ModelOption(

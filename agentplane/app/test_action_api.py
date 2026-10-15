@@ -380,7 +380,7 @@ async def review(
         replica = create_app(
             inventory,
             bridge,
-            ThreadStore(replica_engine, replica_summaries, gateway=gateway),
+            ThreadStore(replica_engine, replica_summaries),
             TEST_MODELS,
             egress,
             decisions,

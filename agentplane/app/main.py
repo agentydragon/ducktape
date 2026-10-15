@@ -184,7 +184,7 @@ async def async_main(settings: Settings) -> None:
         history_watch = HistoryWatch(
             history_watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=1
         )
-        store = ThreadStore(engine, summaries, gateway=gateway)
+        store = ThreadStore(engine, summaries)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
         runners = RunnerDirectory(live, gateway)
         session_openings = SessionOpenings(session_openings_client, event_logs, retry_interval_s=1)

@@ -722,7 +722,6 @@ py_test(
         ":sandbox_models",
         ":shutdown",
         "//:conftest",
-        "//agentplane:grpc_calls",
         "//agentplane:sandbox_resource",
         "//agentplane:subjects",
         "//agentplane/action_service:operator_oidc_settings",

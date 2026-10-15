@@ -35,6 +35,7 @@ class FeedSnapshot:
 
 @dataclass(frozen=True)
 class FoldSummary:
+    sandbox: str | None
     folded_through: int
     last_event_at: datetime | None
     last_model_activity_at: datetime | None
@@ -46,7 +47,13 @@ class FoldSummary:
 
 
 NOTHING_FOLDED = FoldSummary(
-    folded_through=0, last_event_at=None, last_model_activity_at=None, idle_since=None, last_turn_status=None, feed=None
+    sandbox=None,
+    folded_through=0,
+    last_event_at=None,
+    last_model_activity_at=None,
+    idle_since=None,
+    last_turn_status=None,
+    feed=None,
 )
 
 
@@ -55,6 +62,12 @@ class Summaries:
 
     def __init__(self, history: HistoryServiceClient) -> None:
         self._history = history
+
+    async def find(self, *, sandbox_name: str | None = None, sandbox_name_contains: str | None = None) -> set[UUID]:
+        found = await self._history.find_sessions(
+            sandbox_name=sandbox_name, sandbox_name_contains=sandbox_name_contains
+        )
+        return {UUID(session.session_id) for session in found}
 
     async def get(self, thread_id: UUID) -> FoldSummary:
         try:
@@ -95,6 +108,7 @@ def _summary(summary: history_service_pb2.SessionSummary) -> FoldSummary:
                 raise ValueError(f"attached Session summary without a feed status: {status=}")
         feed = FeedSnapshot(summary.attached, end)
     return FoldSummary(
+        sandbox=summary.sandbox.name if summary.HasField("sandbox") else None,
         folded_through=summary.folded_through,
         last_event_at=summary.last_event_at.ToDatetime(tzinfo=UTC) if summary.HasField("last_event_at") else None,
         last_model_activity_at=summary.last_model_activity_at.ToDatetime(tzinfo=UTC)
