@@ -120,20 +120,23 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
         self._quiescing: asyncio.Task[None] | None = None
 
     @asynccontextmanager
-    async def _admission(self) -> AsyncIterator[None]:
+    async def _admission(self, *, quiesce_barrier: bool = True) -> AsyncIterator[None]:
         admission = asyncio.get_running_loop().create_future()
-        self._admissions.add(admission)
+        if quiesce_barrier:
+            self._admissions.add(admission)
         try:
-            with self.runner.admitting_work():
+            with self.runner.admitting_work(quiesce_barrier=quiesce_barrier):
                 yield
         finally:
-            self._admissions.discard(admission)
+            if quiesce_barrier:
+                self._admissions.discard(admission)
             admission.set_result(None)
 
     def _quiesce_finished(self, task: asyncio.Task[None]) -> None:
         error = None if task.cancelled() else task.exception()
         if task is not self._quiescing:
             return
+        self.runner.finish_quiesce()
         if task.cancelled():
             logger.error("Runner quiesce drain was cancelled; a later Quiesce can retry")
             self._quiescing = None
@@ -143,6 +146,9 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
 
     def _start_quiesce(self) -> None:
         preceding: set[asyncio.Future[None]] = set(self._admissions)
+        # `create_task` does not run the drain until this handler yields. Mark it synchronously so
+        # the response and the next facts heartbeat cannot report QUIESCED before any seal begins.
+        self.runner.begin_quiesce()
 
         async def quiesce() -> None:
             # Ordering only: an admission's outcome is its own call's to report.
@@ -175,7 +181,7 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
             if not request.HasField("spec"):
                 raise InvalidRequestError("spec is required")
             setup_script = request.setup_script if request.HasField("setup_script") else None
-            async with self._admission():
+            async with self._admission(quiesce_barrier=False):
                 session = await finish_command(self.runner.open_session(request.session_id, request.spec, setup_script))
             return runner_control_pb2.OpenSessionResponse(attached=_attached(session))
 
