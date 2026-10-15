@@ -51,7 +51,7 @@ func testTemplate(image string) *SandboxTemplate {
 					VolumeMounts: []corev1.VolumeMount{{Name: "state", MountPath: "/state"}},
 				}}},
 			},
-			StateVolume: StateVolume{Name: "state", Claim: corev1.PersistentVolumeClaimSpec{
+			StateVolume: StateVolume{Name: "state", Layout: VolumeLayout{Type: DirectoryTree}, Claim: corev1.PersistentVolumeClaimSpec{
 				AccessModes: []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
 				Resources: corev1.VolumeResourceRequirements{Requests: corev1.ResourceList{
 					corev1.ResourceStorage: resource.MustParse("1Gi"),

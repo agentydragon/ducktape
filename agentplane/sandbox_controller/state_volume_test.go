@@ -16,39 +16,27 @@ import (
 )
 
 func TestStateVolumeCreationRecordsLayoutAndBindsIdentity(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		layout *VolumeLayout
-	}{
-		{name: "omitted"},
-		{name: "explicit", layout: &VolumeLayout{Type: DirectoryTree}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			template := testTemplate("test-image:v1")
-			template.Spec.StateVolume.Layout = test.layout
-			r, c := newReconciler(t, true, template)
-			reconcileOnce(t, r)
-
-			pvc := getPVC(t, c)
-			var record stateVolumeRecord
-			if err := json.Unmarshal([]byte(pvc.Annotations[StateVolumeRecordAnnotation]), &record); err != nil {
-				t.Fatal(err)
-			}
-			want := VolumeLayout{Type: DirectoryTree}
-			if !equality.Semantic.DeepEqual(record.Layout, want) {
-				t.Fatalf("recorded layout = %#v, want %#v", record.Layout, want)
-			}
-			if got := getSandbox(t, c).Status.Volumes.State; got.Name != pvc.Name || got.UID != string(pvc.UID) || got.Layout != want {
-				t.Fatalf("state binding = %#v, want PVC identity and %#v", got, want)
-			}
-			if getPod(t, c) == nil {
-				t.Fatal("recorded DirectoryTree state did not reach the Pod")
-			}
-		})
+	template := testTemplate("test-image:v1")
+	r, c := newReconciler(t, true, template)
+	reconcileOnce(t, r)
+	pvc := getPVC(t, c)
+	var record stateVolumeRecord
+	if err := json.Unmarshal([]byte(pvc.Annotations[StateVolumeRecordAnnotation]), &record); err != nil {
+		t.Fatal(err)
+	}
+	want := VolumeLayout{Type: DirectoryTree}
+	if !equality.Semantic.DeepEqual(record.Layout, want) {
+		t.Fatalf("recorded layout = %#v, want %#v", record.Layout, want)
+	}
+	if got := getSandbox(t, c).Status.Volumes.State; got.Name != pvc.Name || got.UID != string(pvc.UID) || got.Layout != want {
+		t.Fatalf("state binding = %#v, want PVC identity and %#v", got, want)
+	}
+	if getPod(t, c) == nil {
+		t.Fatal("recorded DirectoryTree state did not reach the Pod")
 	}
 }
 
-func TestStateVolumeAdoptsLegacyDirectoryTreeWithoutReplacingData(t *testing.T) {
+func TestStateVolumeRejectsUnrecordedOwnedClaimWithoutReplacingData(t *testing.T) {
 	template := testTemplate("test-image:v1")
 	r, c := newReconciler(t, true, template)
 	sandbox := getSandbox(t, c)
@@ -72,12 +60,11 @@ func TestStateVolumeAdoptsLegacyDirectoryTreeWithoutReplacingData(t *testing.T) 
 	if retained.UID != legacy.UID {
 		t.Fatalf("legacy PVC UID changed from %q to %q", legacy.UID, retained.UID)
 	}
-	var record stateVolumeRecord
-	if err := json.Unmarshal([]byte(retained.Annotations[StateVolumeRecordAnnotation]), &record); err != nil {
-		t.Fatal(err)
+	if _, recorded := retained.Annotations[StateVolumeRecordAnnotation]; recorded {
+		t.Fatal("unrecorded retained state was silently adopted")
 	}
-	if record.Layout.Type != DirectoryTree || getSandbox(t, c).Status.Volumes.State.UID != string(retained.UID) || getPod(t, c) == nil {
-		t.Fatalf("legacy state was not recorded and reused: record=%#v status=%#v pod=%v", record, getSandbox(t, c).Status.Volumes, getPod(t, c))
+	if getSandbox(t, c).Status.Volumes != nil || getPod(t, c) != nil || runningReason(t, c) != "VolumeLayoutMismatch" {
+		t.Fatalf("unrecorded state was attached: status=%#v pod=%v", getSandbox(t, c).Status.Volumes, getPod(t, c))
 	}
 }
 
@@ -119,7 +106,7 @@ func TestStateVolumeMismatchRetainsPVCAndRefusesResume(t *testing.T) {
 	setRunning(t, c, false)
 	reconcileOnce(t, r)
 
-	template.Spec.StateVolume.Layout = &VolumeLayout{Type: RawDiskImage, Filesystem: "ext4"}
+	template.Spec.StateVolume.Layout = VolumeLayout{Type: RawDiskImage, Filesystem: "ext4"}
 	replaceTemplate(t, c, template)
 	setRunning(t, c, true)
 	reconcileOnce(t, r)
@@ -171,16 +158,18 @@ func TestStateVolumeIdentityAndRecordMismatchesFailClosed(t *testing.T) {
 }
 
 func TestStateVolumeRejectsUnsupportedLayoutDeclarations(t *testing.T) {
-	for _, change := range []string{"raw disk image", "block filesystem", "filesystem on DirectoryTree", "Block claim"} {
+	for _, change := range []string{"omitted layout", "raw disk image", "block filesystem", "filesystem on DirectoryTree", "Block claim"} {
 		t.Run(change, func(t *testing.T) {
 			template := testTemplate("test-image:v1")
 			switch change {
+			case "omitted layout":
+				template.Spec.StateVolume.Layout = VolumeLayout{}
 			case "raw disk image":
-				template.Spec.StateVolume.Layout = &VolumeLayout{Type: RawDiskImage, Filesystem: "ext4"}
+				template.Spec.StateVolume.Layout = VolumeLayout{Type: RawDiskImage, Filesystem: "ext4"}
 			case "block filesystem":
-				template.Spec.StateVolume.Layout = &VolumeLayout{Type: BlockFilesystem, Filesystem: "ext4"}
+				template.Spec.StateVolume.Layout = VolumeLayout{Type: BlockFilesystem, Filesystem: "ext4"}
 			case "filesystem on DirectoryTree":
-				template.Spec.StateVolume.Layout = &VolumeLayout{Type: DirectoryTree, Filesystem: "ext4"}
+				template.Spec.StateVolume.Layout = VolumeLayout{Type: DirectoryTree, Filesystem: "ext4"}
 			case "Block claim":
 				mode := corev1.PersistentVolumeBlock
 				template.Spec.StateVolume.Claim.VolumeMode = &mode

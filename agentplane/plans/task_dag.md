@@ -732,7 +732,6 @@ flowchart TD
     SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
     SESSION_REVIVE --> HOSTED_THREAD_SURFACES
     EFFECTIVE_MODE_FALLBACK_DROP[In flight: remove spec.running compatibility fallback]
-    STATE_VOLUME_LAYOUT_FALLBACK_REMOVE[In flight: require explicit state layouts]
     APP_SESSION_OPEN_ACTIVATION[In flight: accept testing queued opens, then activate staging]
     APP_SESSION_DEFAULTS_LEGACY_REMOVE[Candidate: retire unused defaults after caller audit]
     APP_GATEWAY_SEND_REMOVE --> APP_OPEN_FLAG_REMOVE[Blocked: remove obsolete opening flag after config rollout]
@@ -785,14 +784,6 @@ that is not coverage of every node. `local-path` does not enforce PVC capacity. 
 node affinity and both required volume modes. A node-local volume remains pinned to its node;
 moving it is `WORKSPACE_NODE_PORTABILITY`. This provisioner work does not gate Sandbox ownership
 or the explicit layout contract for workspace PVCs.
-
-### `STATE_VOLUME_LAYOUT_FALLBACK_REMOVE` — require explicit state layout declarations
-
-**In flight; Coordinator, 2026-10-14 PDT.** All five deployed templates declare DirectoryTree,
-and both environments run the accepting controller. The rollout gate is clear.
-Remove temporary omitted-layout defaults and their tests if the code-first rollout introduces them.
-Validate retained identity/layout before attachment. No old-data tolerant adoption or conversion;
-any incompatible data disposition is a separate operator-reviewed cutoff.
 
 ### `STATE_VOLUME_VIRTIOFS_RETIRE` — delete the superseded state attachment
 

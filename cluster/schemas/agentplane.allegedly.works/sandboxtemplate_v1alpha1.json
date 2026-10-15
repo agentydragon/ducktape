@@ -42,7 +42,8 @@
           "type": "object",
           "required": [
             "name",
-            "claim"
+            "claim",
+            "layout"
           ],
           "properties": {
             "name": {
@@ -56,7 +57,7 @@
               "x-kubernetes-preserve-unknown-fields": true
             },
             "layout": {
-              "description": "The state PVC currently supports DirectoryTree only. Omission remains accepted for templates written before this field was introduced.",
+              "description": "The state PVC requires an explicit DirectoryTree layout.",
               "type": "object",
               "required": [
                 "type"

@@ -9,7 +9,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 )
 
@@ -21,19 +20,12 @@ type stateVolumeRecord struct {
 	Layout VolumeLayout `json:"layout"`
 }
 
-func stateVolumeLayout(volume StateVolume) VolumeLayout {
-	if volume.Layout != nil {
-		return *volume.Layout
-	}
-	return VolumeLayout{Type: DirectoryTree}
-}
-
 func validateStateVolume(template *SandboxTemplate) *unready {
 	state := template.Spec.StateVolume
 	if state.Name == "" {
 		return layoutMismatch("state volume name is empty")
 	}
-	layout := stateVolumeLayout(state)
+	layout := state.Layout
 	if layout.Type != DirectoryTree || layout.Filesystem != "" || claimMode(state.Claim) != corev1.PersistentVolumeFilesystem {
 		return layoutMismatch("state volume currently supports DirectoryTree on a Filesystem claim")
 	}
@@ -58,7 +50,7 @@ func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *Sandbox) (*
 		if err != nil || blocked != nil {
 			return blocked, err
 		}
-		encoded, err := json.Marshal(stateVolumeRecord{Layout: stateVolumeLayout(template.Spec.StateVolume)})
+		encoded, err := json.Marshal(stateVolumeRecord{Layout: template.Spec.StateVolume.Layout})
 		if err != nil {
 			return nil, err
 		}
@@ -91,26 +83,9 @@ func (r *Reconciler) ensureStateVolume(ctx context.Context, sandbox *Sandbox) (*
 	if claimMode(pvc.Spec) != corev1.PersistentVolumeFilesystem {
 		return layoutMismatch("the state PVC must remain a DirectoryTree on a Filesystem claim"), nil
 	}
-	if pvc.Annotations == nil {
-		pvc.Annotations = map[string]string{}
-	}
 	recordText, hasRecord := pvc.Annotations[StateVolumeRecordAnnotation]
 	if !hasRecord {
-		if binding != nil {
-			return layoutMismatch("the recorded state claim has lost its creation record"), nil
-		}
-		// Before this record existed, every controller-created state PVC was a DirectoryTree on a
-		// Filesystem claim. Recover that fixed historical contract from the owned PVC, not its template.
-		before := pvc.DeepCopy()
-		encoded, err := json.Marshal(stateVolumeRecord{Layout: VolumeLayout{Type: DirectoryTree}})
-		if err != nil {
-			return nil, err
-		}
-		pvc.Annotations[StateVolumeRecordAnnotation] = string(encoded)
-		if err := r.Patch(ctx, pvc, client.MergeFrom(before)); err != nil {
-			return nil, err
-		}
-		recordText = pvc.Annotations[StateVolumeRecordAnnotation]
+		return layoutMismatch("the state claim has no creation record"), nil
 	}
 	var recorded stateVolumeRecord
 	if err := json.Unmarshal([]byte(recordText), &recorded); err != nil ||

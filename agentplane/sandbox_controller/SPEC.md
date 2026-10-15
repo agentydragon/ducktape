@@ -9,11 +9,9 @@ a KubeVirt VirtualMachine, and the state PVC. A Sandbox is its state, running or
 
 - Every Sandbox gets one PVC, `<sandbox>-state`, created from its `SandboxTemplate`'s claim when
   the Sandbox is created, whether or not it is running.
-- `stateVolume.layout` is optional for the first accepting reader so existing templates remain valid;
-  omission means `DirectoryTree`. This reader accepts only `DirectoryTree` on a `Filesystem` claim.
+- `stateVolume.layout` is required and accepts only `DirectoryTree` on a `Filesystem` claim.
   It records the layout on the PVC and pins the claim's name, UID and layout in
-  `status.volumes.state` before attaching it. An existing controller-owned filesystem PVC without a
-  record is recorded as the historical `DirectoryTree` contract, never from the mutable template.
+  `status.volumes.state` before attaching it. An existing PVC without a creation record is rejected, including a controller-owned claim.
   A missing or changed claim, foreign PVC, lost or unsupported record, or changed UID blocks workload
   start without replacing the retained PVC.
 - The Sandbox is the PVC's controller owner, without `blockOwnerDeletion`, so the Pod going away or

@@ -15,10 +15,9 @@ import (
 // StateVolume is the volume the controller fills with the Sandbox's state PVC: a Pod's containers
 // mount it by name, and a VM guest mounts the virtiofs filesystem of that name.
 type StateVolume struct {
-	Name  string                           `json:"name"`
-	Claim corev1.PersistentVolumeClaimSpec `json:"claim"`
-	// Layout is optional while older SandboxTemplates are still accepted; omission means DirectoryTree.
-	Layout *VolumeLayout `json:"layout,omitempty"`
+	Name   string                           `json:"name"`
+	Claim  corev1.PersistentVolumeClaimSpec `json:"claim"`
+	Layout VolumeLayout                     `json:"layout"`
 }
 
 type VolumeLayoutType string

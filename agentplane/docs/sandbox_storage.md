@@ -29,22 +29,16 @@ controller adds a virtiofs filesystem. The guest must mount the corresponding di
 the checked-in runner guest currently expects a disk workspace, so a VM directory-tree workspace
 also needs suitable guest configuration before activation.
 
-The state volume has always used the fixed `DirectoryTree` contract: a Pod mounts its PVC and a VM
-mounts it through virtiofs at `/state`. The accepting controller adds optional
-`stateVolume.layout`; omission remains `DirectoryTree` for existing templates, and this release
-accepts only an explicit `DirectoryTree` on a `Filesystem` claim. It records the layout on the PVC
-and pins that PVC's name, UID and layout in `Sandbox.status.volumes.state` before attaching it.
+The state volume requires an explicit `stateVolume.layout: {type: DirectoryTree}` on a
+`Filesystem` claim: a Pod mounts its PVC and a VM mounts it through virtiofs at `/state`. The
+controller records the layout on the PVC and pins that PVC's name, UID and layout in
+`Sandbox.status.volumes.state` before attaching it.
 
-The first accepting controller also records the historical `DirectoryTree` contract for an
-existing controller-owned filesystem state PVC that has no record yet. It derives that legacy
-layout from the old controller contract and the PVC itself, never from the mutable template. A
-foreign or deleting PVC, a non-filesystem claim, an invalid record, a lost record after status has
-bound the PVC, or a changed PVC UID blocks workload start without replacing the claim. These
-records make later explicit layout changes fail closed; they do not convert or inspect volume
-contents. Do not declare `stateVolume.layout` in templates until the accepting CRD schema and
-controller images are pinned. The later fallback-removal step makes the field required after all
-templates have explicit declarations and all accepting images are pinned. A block StorageClass
-alone does not enable another state layout.
+A foreign or deleting PVC, a non-filesystem claim, a missing or invalid creation record, or a
+changed PVC UID blocks workload start without replacing the claim. An unrecorded owned PVC is
+not adopted or rewritten. These records make later explicit layout changes fail closed; they do
+not convert or inspect volume contents. A block StorageClass alone does not enable another state
+layout.
 
 Kubernetes presents a `Filesystem` claim as a mounted directory and a `Block` claim as a device.
 For a filesystem PVC attached as a KubeVirt disk, KubeVirt creates or opens a raw file named

@@ -55,7 +55,7 @@ spec:
                   x-kubernetes-preserve-unknown-fields: true
                 stateVolume:
                   type: object
-                  required: [name, claim]
+                  required: [name, claim, layout]
                   properties:
                     name:
                       description: >-
@@ -70,8 +70,7 @@ spec:
                       x-kubernetes-preserve-unknown-fields: true
                     layout:
                       description: >-
-                        The state PVC currently supports DirectoryTree only. Omission remains accepted
-                        for templates written before this field was introduced.
+                        The state PVC requires an explicit DirectoryTree layout.
                       type: object
                       required: [type]
                       oneOf:
