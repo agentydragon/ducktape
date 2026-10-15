@@ -40,18 +40,11 @@ _PUBLIC_CODER_INSTRUCTIONS = "\n\n".join(
     ]
 )
 
-_PICKER_PROVIDER_NAMES = {
-    Provider.ANTIGRAVITY: "Antigravity",
-    Provider.GOOGLE: "Gemini",
-    Provider.OLLAMA: "cluster Ollama",
-    Provider.RUGGED_LOCAL: "rugged local",
-}
+_PICKER_PROVIDER_NAMES = {Provider.CHATGPT: "ChatGPT", Provider.OLLAMA: "cluster Ollama"}
 
 
 def _picker_model_name(route: Route) -> str:
-    """Disambiguate GPT-OSS and Gemma by the provider serving this Agentplane route."""
-    if not route.model.id.startswith(("gpt-oss", "gemma4")):
-        return route.display_name
+    """Append the serving provider to every Agentplane picker entry."""
     provider = _PICKER_PROVIDER_NAMES.get(route.upstream.provider, route.upstream.provider.value)
     return f"{route.display_name} — {provider}"
 
