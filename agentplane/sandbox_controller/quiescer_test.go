@@ -6,9 +6,9 @@ import (
 	runnerpb "github.com/agentydragon/ducktape/agentplane/proto/runner"
 )
 
-func TestQuiesceResultRequiresAnExplicitFinalStage(t *testing.T) {
+func TestQuiesceResultTreatsOnlyQuiescedAsFinal(t *testing.T) {
 	stageResponse := func(stage runnerpb.QuiesceStage) *runnerpb.QuiesceResponse {
-		return &runnerpb.QuiesceResponse{Stage: &stage}
+		return &runnerpb.QuiesceResponse{Stage: stage}
 	}
 
 	tests := []struct {
@@ -16,13 +16,6 @@ func TestQuiesceResultRequiresAnExplicitFinalStage(t *testing.T) {
 		response  *runnerpb.QuiesceResponse
 		quiescing bool
 	}{
-		{
-			name: "legacy response with flushed sessions is not final",
-			response: &runnerpb.QuiesceResponse{Sessions: []*runnerpb.SessionSeal{
-				{SessionId: "session-1", Flushed: true},
-			}},
-			quiescing: true,
-		},
 		{
 			name:      "draining",
 			response:  stageResponse(runnerpb.QuiesceStage_QUIESCE_STAGE_DRAINING),

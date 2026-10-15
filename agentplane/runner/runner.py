@@ -9,6 +9,7 @@ import logging
 import os
 from collections.abc import AsyncGenerator, AsyncIterator, Awaitable, Callable, Iterator
 from contextlib import AsyncExitStack, contextmanager, suppress
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from types import TracebackType
 from typing import Self, assert_never, cast
@@ -72,6 +73,15 @@ class InitializationConflictError(Exception):
 
 class BootstrapFailedError(OpenError):
     """The Sandbox bootstrap failed or was interrupted, so no Session opens in this Sandbox."""
+
+
+@dataclass(frozen=True, slots=True)
+class SealedSession:
+    """Internal result for a journal sealed during this runner's quiesce."""
+
+    session_id: str
+    cursor: int
+    flushed: bool
 
 
 def make_adapter(session: Session) -> HarnessAdapter:
@@ -524,7 +534,7 @@ class Runner:
         for loaded in self.session_loaded:
             loaded(session)
 
-    async def quiesce(self) -> runner_pb2.QuiesceResponse:
+    async def quiesce(self) -> list[SealedSession]:
         """Sandbox teardown: refuse new work, interrupt running turns, stop every harness, seal every journal."""
         self.begin_quiesce()
         try:
@@ -532,14 +542,12 @@ class Runner:
             cursors = await asyncio.gather(*(session.seal(self.store.incarnation_uid) for session in sessions))
         finally:
             self.finish_quiesce()
-        return runner_pb2.QuiesceResponse(
-            sessions=[
-                runner_pb2.SessionSeal(
-                    session_id=session.session_id, cursor=cursor, flushed=self._flushed(session.session_id, cursor)
-                )
-                for session, cursor in zip(sessions, cursors, strict=True)
-            ]
-        )
+        return [
+            SealedSession(
+                session_id=session.session_id, cursor=cursor, flushed=self._flushed(session.session_id, cursor)
+            )
+            for session, cursor in zip(sessions, cursors, strict=True)
+        ]
 
     def begin_quiesce(self) -> None:
         """Publish a pending drain synchronously, before its supervised task first runs."""

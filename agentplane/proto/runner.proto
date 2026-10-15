@@ -115,17 +115,6 @@ message ListSessionsResponse {
   repeated SessionSummary sessions = 1;
 }
 
-// Sandbox teardown. The runner durably refuses new and resumed sessions, stops every harness and
-// setup script, then seals every session's journal at its final cursor. Sealing again returns the
-// same cursors, with each session's current `flushed`. Sealed sessions can still be read to their end.
-message SessionSeal {
-  string session_id = 1;
-  // The session's final cursor in this Sandbox incarnation.
-  uint64 cursor = 2;
-  // The runner's ingress has acknowledged the seal at `cursor`.
-  bool flushed = 3;
-}
-
 message QuiesceRequest {
   // The runner's `idle_since` as the caller last observed it. Absent: quiesce unconditionally. Present: a
   // runner that is busy, or whose `idle_since` differs at microsecond precision, refuses with `ABORTED`
@@ -146,11 +135,13 @@ enum QuiesceStage {
   QUIESCE_STAGE_QUIESCED = 3;
 }
 
+// Reports progress for a Sandbox teardown initiated by `Quiesce`. The runner durably refuses new
+// and resumed sessions, stops every harness and setup script, then seals every session journal.
+// `QUIESCE_STAGE_QUIESCED` means the ingress acknowledged every final cursor.
 message QuiesceResponse {
-  // Absent from a runner whose `Quiesce` blocks until every seal is flushed; `sessions` then says it.
-  // Present, the quiesce is final only at `QUIESCE_STAGE_QUIESCED`, and `sessions` is empty before it.
-  optional QuiesceStage stage = 2;
-  repeated SessionSeal sessions = 1;
+  QuiesceStage stage = 2;
+  reserved 1;
+  reserved "sessions";
 }
 
 // The session's journal is final: every entry through `cursor` precedes this message.

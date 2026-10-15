@@ -69,7 +69,5 @@ func (g GatewayQuiescer) Quiesce(ctx context.Context, sandbox *Sandbox) (Quiesce
 }
 
 func quiesceResult(response *runnerpb.QuiesceResponse) QuiesceResult {
-	// GetStage returns UNSPECIFIED when the field is absent. That response shape predates the
-	// nonblocking protocol and cannot prove completion; do not infer it from the legacy sessions list.
 	return QuiesceResult{Quiescing: response.GetStage() != runnerpb.QuiesceStage_QUIESCE_STAGE_QUIESCED}
 }

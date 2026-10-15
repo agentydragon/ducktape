@@ -193,10 +193,8 @@ async def test_only_the_sandbox_controller_quiesces(holder: Replica) -> None:
 
         quiescing = asyncio.ensure_future(stub.Quiesce(runner_pb2.QuiesceRequest(), metadata=metadata(CONTROLLER)))
         quiesced = await runner.next(runner_pb2.QuiesceRequest)
-        quiesced.outcome.set_result(
-            runner_pb2.QuiesceResponse(sessions=[runner_pb2.SessionSeal(session_id="test-session", cursor=3)])
-        )
-        assert [(seal.session_id, seal.cursor) for seal in (await quiescing).sessions] == [("test-session", 3)]
+        quiesced.outcome.set_result(runner_pb2.QuiesceResponse(stage=runner_pb2.QUIESCE_STAGE_QUIESCED))
+        assert (await quiescing).stage == runner_pb2.QUIESCE_STAGE_QUIESCED
 
 
 async def test_a_replica_without_the_connection_refuses_before_acting(holder: Replica, other: Replica) -> None:

@@ -27,7 +27,7 @@ from agentplane.runner.control import RunnerControlClient, RunnerService
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.model_config import ModelConfig
 from agentplane.runner.reconnect import StreamLostError, StreamTiming
-from agentplane.runner.runner import Runner
+from agentplane.runner.runner import Runner, SealedSession
 from agentplane.runner.session import Session
 from agentplane.runner.store import IngressAcknowledgement, SessionRecord
 from agentplane.runner.testing import launches
@@ -403,7 +403,7 @@ async def test_a_quiesce_waits_for_the_admission_under_way_and_a_delivery_after_
     quiesce = runner.quiesce
     quiesces = 0
 
-    async def counted_quiesce() -> runner_pb2.QuiesceResponse:
+    async def counted_quiesce() -> list[SealedSession]:
         nonlocal quiesces
         quiesces += 1
         return await quiesce()
@@ -415,13 +415,11 @@ async def test_a_quiesce_waits_for_the_admission_under_way_and_a_delivery_after_
         await admitting.wait()
         sealed = await service.Quiesce(runner_pb2.QuiesceRequest())
         assert int(sealed.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
-        assert not sealed.sessions
         await gateway.control.wait_for_facts(
             runner_control_pb2.RunnerFacts(quiesce_stage=runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING)
         )
         repeated = await service.Quiesce(runner_pb2.QuiesceRequest())
         assert repeated.stage == sealed.stage
-        assert not repeated.sessions
         after = asyncio.create_task(refusal(service.DeliverCommand(deliver(RUNNING, submit("test-after-seal")))))
         unblocked.set()
         admitted, refused = await asyncio.gather(before, after)
@@ -453,7 +451,6 @@ async def test_quiesce_does_not_wait_for_model_resolution_or_allow_a_late_sessio
     try:
         response = await service.Quiesce(runner_pb2.QuiesceRequest())
         assert int(response.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
-        assert not response.sessions
         assert not runner.store.exists("test-open-under-quiesce")
         await service.ListSessions(runner_pb2.ListSessionsRequest())
         await gateway.control.wait_for_facts(Facts(quiesce_stage=Facts.QUIESCE_STAGE_FLUSHING))
@@ -595,7 +592,7 @@ async def test_quiesce_waits_for_an_admitted_resume_to_finish(
     quiesce = runner.quiesce
     quiesces = 0
 
-    async def counted_quiesce() -> runner_pb2.QuiesceResponse:
+    async def counted_quiesce() -> list[SealedSession]:
         nonlocal quiesces
         quiesces += 1
         return await quiesce()
@@ -622,27 +619,21 @@ async def test_quiesce_waits_for_an_admitted_resume_to_finish(
         await asyncio.gather(resuming, return_exceptions=True)
 
 
-async def test_quiescing_again_returns_the_same_cursors_and_opening_is_refused(
+async def test_quiescing_again_does_not_repeat_the_drain_and_opening_is_refused(
     runner: Runner, dial: Callable[[], Awaitable[Service]], started: list[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     quiesce = runner.quiesce
     quiesces = 0
 
-    async def counted_quiesce() -> runner_pb2.QuiesceResponse:
+    async def counted_quiesce() -> list[SealedSession]:
         nonlocal quiesces
         quiesces += 1
         return await quiesce()
 
     monkeypatch.setattr(runner, "quiesce", counted_quiesce)
     service = await dial()
-    first, second = (
-        await service.Quiesce(runner_pb2.QuiesceRequest()),
-        await service.Quiesce(runner_pb2.QuiesceRequest()),
-    )
-    assert first.HasField("stage")
-    assert second.HasField("stage")
-    assert not first.sessions
-    assert not second.sessions
+    await service.Quiesce(runner_pb2.QuiesceRequest())
+    await service.Quiesce(runner_pb2.QuiesceRequest())
     await service.ListSessions(runner_pb2.ListSessionsRequest())
     assert quiesces == 1
     assert await refusal(service.OpenSession(open_session("test-new-session"))) == grpc.StatusCode.ABORTED
@@ -691,12 +682,10 @@ async def test_quiescing_publishes_flushing_until_the_ingress_acknowledged_every
     flushed = runner._flushed
     monkeypatch.setattr(runner, "_flushed", lambda _session_id, _cursor: False)
     initial = await service.Quiesce(runner_pb2.QuiesceRequest())
-    assert initial.HasField("stage")
-    assert not initial.sessions
+    assert int(initial.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
     await service.ListSessions(runner_pb2.ListSessionsRequest())
     quiesced = await service.Quiesce(runner_pb2.QuiesceRequest())
     assert int(quiesced.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_FLUSHING
-    assert not quiesced.sessions
     await gateway.control.wait_for_facts(Facts(quiesce_stage=Facts.QUIESCE_STAGE_FLUSHING))
     for session_id in runner.store.session_ids():
         cursor = runner.sessions[session_id].journal.sealed_cursor
@@ -714,7 +703,7 @@ async def test_a_failed_quiesce_drain_retries_on_the_next_request(
     failed = asyncio.Event()
     quiesces = 0
 
-    async def fail_once() -> runner_pb2.QuiesceResponse:
+    async def fail_once() -> list[SealedSession]:
         nonlocal quiesces
         quiesces += 1
         if quiesces == 1:
@@ -726,13 +715,11 @@ async def test_a_failed_quiesce_drain_retries_on_the_next_request(
     service = await dial()
     first = await service.Quiesce(runner_pb2.QuiesceRequest())
     assert int(first.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
-    assert not first.sessions
     await failed.wait()
     await service.ListSessions(runner_pb2.ListSessionsRequest())
 
     retry = await service.Quiesce(runner_pb2.QuiesceRequest())
-    assert retry.HasField("stage")
-    assert not retry.sessions
+    assert int(retry.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
     await service.ListSessions(runner_pb2.ListSessionsRequest())
     assert quiesces == 2
     acknowledge_sealed_sessions(runner)
@@ -747,7 +734,7 @@ async def test_quiesce_drain_survives_control_cancellation_and_reconnect(
     draining, finish_drain = asyncio.Event(), asyncio.Event()
     quiesces = 0
 
-    async def held_quiesce() -> runner_pb2.QuiesceResponse:
+    async def held_quiesce() -> list[SealedSession]:
         nonlocal quiesces
         quiesces += 1
         draining.set()
