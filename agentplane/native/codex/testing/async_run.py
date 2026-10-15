@@ -26,43 +26,61 @@ class CodexEvents:
                     if received == request_id:
                         return frame
 
-    async def turn_started(self, turn_id: str) -> wire.TurnStarted:
+    async def turn_started(self, turn_id: str, *, thread_id: str | None = None) -> wire.TurnStarted:
         while True:
             match await self.next():
-                case wire.TurnStarted(params=wire.TurnParams(turn=wire.Turn(id=received))) as frame:
-                    if received == turn_id:
+                case (
+                    wire.TurnStarted(
+                        params=wire.TurnParams(thread_id=received_thread, turn=wire.Turn(id=received))
+                    ) as frame
+                ):
+                    if received == turn_id and (thread_id is None or received_thread == thread_id):
                         return frame
 
-    async def turn_completed(self, turn_id: str) -> wire.TurnCompleted:
+    async def turn_completed(self, turn_id: str, *, thread_id: str | None = None) -> wire.TurnCompleted:
         while True:
             match await self.next():
-                case wire.TurnCompleted(params=wire.TurnParams(turn=wire.Turn(id=received))) as frame:
-                    if received == turn_id:
+                case (
+                    wire.TurnCompleted(
+                        params=wire.TurnParams(thread_id=received_thread, turn=wire.Turn(id=received))
+                    ) as frame
+                ):
+                    if received == turn_id and (thread_id is None or received_thread == thread_id):
                         return frame
 
-    async def command_started(self, turn_id: str) -> wire.ItemStarted:
+    async def command_started(self, turn_id: str, *, thread_id: str | None = None) -> wire.ItemStarted:
         while True:
             match await self.next():
                 case (
                     wire.ItemStarted(
-                        params=wire.ItemParams(turn_id=received_turn, item=wire.CommandExecutionItem())
+                        params=wire.ItemParams(
+                            thread_id=received_thread, turn_id=received_turn, item=wire.CommandExecutionItem()
+                        )
                     ) as frame
                 ):
-                    if received_turn == turn_id:
+                    if received_turn == turn_id and (thread_id is None or received_thread == thread_id):
                         return frame
 
-    async def agent_message_delta(self, turn_id: str) -> wire.AgentMessageDelta:
+    async def agent_message_delta(self, turn_id: str, *, thread_id: str | None = None) -> wire.AgentMessageDelta:
         while True:
             match await self.next():
-                case wire.AgentMessageDelta(params=wire.ItemDeltaParams(turn_id=received)) as frame:
-                    if received == turn_id:
+                case (
+                    wire.AgentMessageDelta(
+                        params=wire.ItemDeltaParams(thread_id=received_thread, turn_id=received)
+                    ) as frame
+                ):
+                    if received == turn_id and (thread_id is None or received_thread == thread_id):
                         return frame
 
-    async def error(self, turn_id: str) -> wire.ErrorNotification:
+    async def error(self, turn_id: str, *, thread_id: str | None = None) -> wire.ErrorNotification:
         while True:
             match await self.next():
-                case wire.ErrorNotification(params=wire.ErrorParams(turn_id=received)) as frame:
-                    if received == turn_id:
+                case (
+                    wire.ErrorNotification(
+                        params=wire.ErrorParams(thread_id=received_thread, turn_id=received)
+                    ) as frame
+                ):
+                    if received == turn_id and (thread_id is None or received_thread == thread_id):
                         return frame
 
 
@@ -75,16 +93,16 @@ class CodexTurn:
         self._events = events
 
     async def started(self) -> wire.TurnStarted:
-        return await self._events.turn_started(self.id)
+        return await self._events.turn_started(self.id, thread_id=self.thread_id)
 
     async def completed(self) -> wire.TurnCompleted:
-        return await self._events.turn_completed(self.id)
+        return await self._events.turn_completed(self.id, thread_id=self.thread_id)
 
     async def agent_message_delta(self) -> wire.AgentMessageDelta:
-        return await self._events.agent_message_delta(self.id)
+        return await self._events.agent_message_delta(self.id, thread_id=self.thread_id)
 
     async def error(self) -> wire.ErrorNotification:
-        return await self._events.error(self.id)
+        return await self._events.error(self.id, thread_id=self.thread_id)
 
 
 class CodexThread:
