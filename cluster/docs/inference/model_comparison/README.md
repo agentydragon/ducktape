@@ -51,3 +51,25 @@ Produces `fig*.svg` + `model_comparison.html` (code cells hidden). The
 `LD_LIBRARY_PATH` bit is the NixOS fix for uv's manylinux wheels — `zmq` needs
 `libstdc++.so.6`; `nix eval` resolves the current `gcc-lib` (no hardcoded store
 path).
+
+## Rugged intelligence × speed
+
+The separate [rugged plot script](../rugged_plot/plot.py) reads the dated AA CSV
+and plots recorded rugged decode rates, with completed-input context labels.
+From the repository root:
+
+```bash
+bb run //cluster/docs/inference/rugged_plot:render -- \
+  --scores "$PWD/docs/artificial_analysis/cited_models_2026_10_14.csv" \
+  --output "$PWD/cluster/docs/inference/rugged_plot/intelligence_speed.svg"
+```
+
+Use a `.png` output path for a raster image. No network fetch or new inference is
+performed by the script. Speed/context constants are transcribed from
+<../rugged_local_llm.md>; AA indices are joined by exact non-reasoning model slug.
+Missing scores or decode measurements are listed below the chart, not assigned
+zero. Error bars are observed ranges, not confidence intervals. Long-context
+labels describe separate tests, not a claim that the short-prompt decode rate
+holds over that full window. Estimated AA indices use hollow markers.
+
+![Rugged intelligence versus decode speed](../rugged_plot/intelligence_speed.svg)

@@ -1,0 +1,13 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+
+py_library(
+    name = "plot",
+    srcs = ["plot.py"],
+    deps = ["@pypi//matplotlib"],
+)
+
+py_binary(
+    name = "render",
+    main_module = "cluster.docs.inference.rugged_plot.plot",
+    deps = [":plot"],
+)
