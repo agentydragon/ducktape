@@ -7,28 +7,10 @@ import sys
 from collections.abc import AsyncIterator
 from pathlib import Path
 
+from agentplane.runner import workspace_create
 from agentplane.runner.harness_process import HarnessProcess
 
-_CREATE_BENEATH = """
-import os, sys
-
-root, *parts = sys.argv[1:]
-directory_flags = os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC | os.O_NOFOLLOW
-descriptor = os.open(root, directory_flags)
-try:
-    for part in parts:
-        if not part or part in {'.', '..'} or '/' in part:
-            raise ValueError(f'invalid workspace path component: {part!r}')
-        try:
-            os.mkdir(part, mode=0o770, dir_fd=descriptor)
-        except FileExistsError:
-            pass
-        child = os.open(part, directory_flags, dir_fd=descriptor)
-        os.close(descriptor)
-        descriptor = child
-finally:
-    os.close(descriptor)
-"""
+_WORKSPACE_CREATOR = Path(workspace_create.__file__)
 
 
 def resolve_workspace(cwd: Path, workspace_root: Path | None) -> Path:
@@ -62,7 +44,7 @@ async def ensure_workspace(
     if not relative.parts:
         raise ValueError(f"spec.cwd must be a child of {root}, not {str(cwd)!r}")
     process = HarnessProcess(
-        [sys.executable, "-I", "-c", _CREATE_BENEATH, ".", *relative.parts],
+        [sys.executable, "-I", str(_WORKSPACE_CREATOR), ".", *relative.parts],
         cwd=root,
         environment={},
         state_owner_descriptor=None,
@@ -71,6 +53,8 @@ async def ensure_workspace(
         agent_gid=agent_gid,
     )
     await process.start()
+    # HarnessProcess retains the last 4 KiB from stderr for describe_exit(), so a failed
+    # creation reports its cause while both pipes are drained to avoid child-process blockage.
     stdout = asyncio.create_task(_drain(process.output_chunks()))
     stderr = asyncio.create_task(_drain(process.stderr_byte_chunks()))
     try:

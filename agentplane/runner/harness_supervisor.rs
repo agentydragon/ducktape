@@ -132,12 +132,12 @@ fn drop_agent_privileges(uid: u32, gid: u32) -> std::io::Result<()> {
 }
 
 fn kill_cgroup(isolation: &mut Option<AgentIsolation>) -> Result<()> {
-    if let Some(isolation) = isolation {
-        if let Some(cgroup_kill) = &mut isolation.cgroup_kill {
-            cgroup_kill
-                .write_all(b"1\n")
-                .context("kill remaining agent cgroup processes")?;
-        }
+    if let Some(isolation) = isolation
+        && let Some(cgroup_kill) = &mut isolation.cgroup_kill
+    {
+        cgroup_kill
+            .write_all(b"1\n")
+            .context("kill remaining agent cgroup processes")?;
     }
     Ok(())
 }

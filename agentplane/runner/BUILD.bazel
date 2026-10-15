@@ -203,7 +203,10 @@ py_library(
 py_library(
     name = "workspace",
     srcs = ["workspace.py"],
-    deps = [":harness_process"],
+    deps = [
+        ":harness_process",
+        ":workspace_create",
+    ],
 )
 
 py_library(
@@ -942,4 +945,9 @@ py_test(
 py_library(
     name = "workspace_disk",
     srcs = ["workspace_disk.py"],
+)
+
+py_library(
+    name = "workspace_create",
+    srcs = ["workspace_create.py"],
 )
