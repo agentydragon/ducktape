@@ -45,6 +45,12 @@ bazelisk test //agentplane/acceptance:test_vm_workspace_ownership --test_output=
 The result is written to
 `bazel-testlogs/agentplane/acceptance/test_vm_workspace_ownership/test.outputs/vm-workspace-ownership.json`.
 
+Verified 2026-10-15 in `agentplane-testing` against `runner-vm` image
+`devel-20261015052552-c3949a5`: the fresh workspace was absent before Session open, then owned by
+UID/GID 107 with successful `git init` and `git rev-parse` and no `safe.directory` setting. The
+one-case run passed in 224 seconds, and fixture teardown removed its Sandbox and PVC. See the
+[BuildBuddy invocation](https://app.buildbuddy.io/invocation/aef53a32-d86e-4a86-ba26-40ae9dc97708).
+
 ## Suspend and resume
 
 `//agentplane/acceptance:test_suspend_resume` tests two Threads (Claude and Codex) in one Pod Sandbox,

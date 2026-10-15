@@ -126,7 +126,7 @@ async def test_fresh_vm_session_workspace_is_created_for_harness_identity(client
     assert f"git_owner={AGENT_UID}:{AGENT_GID} git_top={workspace}" in output, stderr
 
     evidence = {
-        "namespace": "agentplane-testing",
+        "namespace": view.namespace,
         "sandbox": view.name,
         "sandbox_uid": str(view.uid),
         "template": VM_TEMPLATE,
