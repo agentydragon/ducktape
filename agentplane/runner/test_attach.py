@@ -149,11 +149,13 @@ async def test_seal_stops_the_running_harness_and_ends_live_followers(
     await submit_input(first, "input-1", "Reply with exactly: SEED_OK")
     await model.reply(await model.request(), Text("SEED_OK"))
     await first.until(events.turn_completed)
-    (seal,) = (await driver.quiesce()).sessions
-    assert seal.session_id == "seal-1"
+    response = await driver.quiesce()
+    assert response.HasField("stage")
+    assert not response.sessions
+    seal = driver.gateway.ingress.sealed["seal-1"]
     with pytest.raises(SessionSealedError) as sealed:
         await first.until(lambda _: False)
-    assert sealed.value.cursor == seal.cursor == first.cursor
+    assert sealed.value.cursor == seal == first.cursor
     assert events.of_kind(first.seen, "harness_exited")[-1].event.harness_exited.stopped_by_runner
     assert await refusal(driver.attach("seal-1", spec=spec)) == grpc.StatusCode.ABORTED
 

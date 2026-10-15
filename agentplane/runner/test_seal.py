@@ -53,11 +53,17 @@ async def read_to_seal(session: SessionFollow) -> tuple[list[int], int]:
 
 
 async def test_seal_ends_every_session_and_refuses_resume(
-    driver: RunnerDriver, config: RunnerConfig, last_cursors: dict[str, int]
+    driver: RunnerDriver, config: RunnerConfig, gateway: Gateway, last_cursors: dict[str, int]
 ) -> None:
-    seals = {seal.session_id: seal.cursor for seal in (await driver.quiesce()).sessions}
+    response = await driver.quiesce()
+    assert response.HasField("stage")
+    assert not response.sessions
+    seals = gateway.ingress.sealed.copy()
     assert seals == last_cursors
-    assert {seal.session_id: seal.cursor for seal in (await driver.quiesce()).sessions} == seals
+    repeated = await driver.quiesce()
+    assert repeated.HasField("stage")
+    assert not repeated.sessions
+    assert gateway.ingress.sealed == seals
     session = await driver.attach("test-session-a", after_cursor=1)
     assert await read_to_seal(session) == (list(range(2, seals["test-session-a"] + 1)), seals["test-session-a"])
     for session_id in ("test-session-a", "test-session-new"):
@@ -71,7 +77,10 @@ async def test_a_restarted_runner_keeps_the_seal(
     driver = RunnerDriver(gateway)
     for _ in range(2):
         async with running(config, gateway):
-            assert {seal.session_id: seal.cursor for seal in (await driver.quiesce()).sessions} == last_cursors
+            response = await driver.quiesce()
+            assert response.HasField("stage")
+            assert not response.sessions
+            assert gateway.ingress.sealed == last_cursors
             cursors, sealed = await read_to_seal(await driver.attach("test-session-b"))
             assert sealed == cursors[-1] == last_cursors["test-session-b"]
             assert await refusal(driver.attach("test-session-b", spec=SPEC)) == grpc.StatusCode.ABORTED

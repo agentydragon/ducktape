@@ -168,8 +168,13 @@ class Runner:
             self.facts_changed.set()
 
     def _quiesce_stage(self) -> runner_control_pb2.RunnerFacts.QuiesceStage:
-        sessions = [self.sessions[session_id] for session_id in self.store.session_ids() if session_id in self.sessions]
-        if self._quiescing or any(session.journal.sealed_cursor is None for session in sessions):
+        session_ids = self.store.session_ids()
+        sessions = [self.sessions[session_id] for session_id in session_ids if session_id in self.sessions]
+        if (
+            self._quiescing
+            or len(sessions) != len(session_ids)
+            or any(session.journal.sealed_cursor is None for session in sessions)
+        ):
             return runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
         if all(self._flushed(session.session_id, cast(int, session.journal.sealed_cursor)) for session in sessions):
             return runner_control_pb2.RunnerFacts.QUIESCE_STAGE_QUIESCED
@@ -388,6 +393,7 @@ class Runner:
     def enter_lameduck(self) -> None:
         """Durably refuse everything but draining operations, across runner restarts."""
         self.store.enter_lameduck()
+        self.facts_changed.set()
 
     def enter_lameduck_if_idle_since(self, token: Timestamp) -> None:
         """Enter lameduck only if the runner is idle since `token`; a runner already in lameduck stays there.

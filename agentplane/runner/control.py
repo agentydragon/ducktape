@@ -116,7 +116,31 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
     def __init__(self, runner: Runner) -> None:
         self.runner = runner
         self._admissions: set[asyncio.Task[event_log_pb2.EventEntry]] = set()
-        self._quiescing: asyncio.Task[runner_pb2.QuiesceResponse] | None = None
+        self._quiescing: asyncio.Task[None] | None = None
+
+    def _quiesce_finished(self, task: asyncio.Task[None]) -> None:
+        error = None if task.cancelled() else task.exception()
+        if task is not self._quiescing:
+            return
+        if task.cancelled():
+            logger.error("Runner quiesce drain was cancelled; a later Quiesce can retry")
+            self._quiescing = None
+        elif error is not None:
+            logger.error("Runner quiesce drain failed; a later Quiesce can retry", exc_info=error)
+            self._quiescing = None
+
+    def _start_quiesce(self) -> None:
+        preceding = set(self._admissions)
+
+        async def quiesce() -> None:
+            # Ordering only: an admission's outcome is its own call's to report.
+            if preceding:
+                await asyncio.wait(preceding)
+            await self.runner.quiesce()
+
+        task = asyncio.create_task(quiesce(), name="runner quiesce drain")
+        self._quiescing = task
+        task.add_done_callback(self._quiesce_finished)
 
     async def _after_quiesce(self) -> None:
         # Ordering only: the Quiesce's outcome is its own call's to report.
@@ -154,19 +178,15 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
     async def _quiesce(
         self, context: grpc.aio.ServicerContext, if_idle_since: Timestamp | None
     ) -> runner_pb2.QuiesceResponse:
-        async def quiesce(preceding: set[asyncio.Task[event_log_pb2.EventEntry]]) -> runner_pb2.QuiesceResponse:
-            # Ordering only: an admission's outcome is its own call's to report.
-            if preceding:
-                await asyncio.wait(preceding)
-            return await self.runner.quiesce()
-
         async with _refusals(context):
             if if_idle_since is None:
                 self.runner.enter_lameduck()
             else:
                 self.runner.enter_lameduck_if_idle_since(if_idle_since)
-            self._quiescing = quiescing = asyncio.ensure_future(quiesce(set(self._admissions)))
-            return await finish_command(quiescing)
+            quiescing = self._quiescing
+            if quiescing is None or (quiescing.done() and (quiescing.cancelled() or quiescing.exception() is not None)):
+                self._start_quiesce()
+            return runner_pb2.QuiesceResponse(stage=self.runner.facts().quiesce_stage)
 
     async def _deliver(
         self, session_id: str, command: command_pb2.Command, context: grpc.aio.ServicerContext

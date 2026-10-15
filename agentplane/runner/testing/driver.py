@@ -155,11 +155,16 @@ class RunnerDriver:
         return list((await runner.ListSessions(runner_pb2.ListSessionsRequest())).sessions)
 
     async def quiesce(self) -> runner_pb2.QuiesceResponse:
-        """Seal the Sandbox and return once the ingress holds every session's seal, as teardown waits."""
-        sealed = await (await self.gateway.control.runner()).Quiesce(runner_pb2.QuiesceRequest())
-        for session in sealed.sessions:
+        """Request quiesce, then wait until the runner has sealed and the ingress has every Session."""
+        runner = await self.gateway.control.runner()
+        response = await runner.Quiesce(runner_pb2.QuiesceRequest())
+        sessions = await runner.ListSessions(runner_pb2.ListSessionsRequest())
+        for session in sessions.sessions:
             await self.gateway.ingress.wait_sealed(session.session_id)
-        return sealed
+        await self.gateway.control.wait_for_facts(
+            runner_control_pb2.RunnerFacts(quiesce_stage=runner_control_pb2.RunnerFacts.QUIESCE_STAGE_QUIESCED)
+        )
+        return response
 
 
 @asynccontextmanager
