@@ -50,5 +50,11 @@
     `cluster/k8s/external-creds/dreo-account.sops.yaml` to automatically configure the Dreo
     integration. Keep this Secret out of the active external-creds Kustomization until the
     provisioner consumes it.
+  - Connect Withings so Haku can read weight and sleep through the `home-assistant-reads`
+    Action set. As of 2026-10-15 this instance has no Withings config entry or entities, though
+    the legacy 15 Leroy instance may have had one. Withings is a cloud OAuth integration: a
+    Withings developer app's client ID and secret go in as application credentials, then an
+    interactive sign-in. Have the provisioner create the application credentials from a SOPS
+    secret, as for Dreo; the sign-in stays a one-time manual step.
   - Re-evaluate `przemekhys/homeassistant-operator` after its APIs leave alpha and it can
     express node placement, pod customization, and custom-component lifecycle.
