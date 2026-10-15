@@ -877,3 +877,44 @@ This establishes short inference through the deployed routes from both replicas
 and through HTTPS at this point in time. It does not establish roaming reliability,
 long-context retrieval through this router, or concurrent-load behavior. No Nebula
 topology change was made; the intermittent connectivity investigation remains deferred.
+
+## Next capability experiment: 128k with a stronger model
+
+The October 14 AA v4.3.2 snapshot suggests testing Qwen3.5 9B first, with
+4B as a lower-memory fallback, then 35B-A3B if the dense candidates are inadequate.
+Non-reasoning indices are 13.27, 10.81, and 15.12 respectively, versus Gemma E4B's
+7.46. These are **estimated external indices**, not quantization-matched local
+coding results. Sources: [AA leaderboard](https://artificialanalysis.ai/leaderboards/models),
+[9B model card](https://huggingface.co/Qwen/Qwen3.5-9B),
+[4B model card](https://huggingface.co/Qwen/Qwen3.5-4B), and
+[35B-A3B model card](https://huggingface.co/Qwen/Qwen3.5-35B-A3B).
+
+Start with Q4_K_M weights, quantized KV, one slot, and speculative drafting off.
+Nominal four-bit weight storage is roughly 4.5 GB for 9B and 17.5 GB for 35B;
+quantization metadata, unquantized tensors, runtime buffers, and cache add memory.
+MoE reduces active computation, not total weight storage. SSD expert streaming
+is a fallback experiment, with the existing slow Colibri result as a warning about
+interactive latency. Thinking mode is a separate configuration to test, not an
+assumed improvement. The primary objective is usable long-context coding, not
+maximum short-prompt decode speed.
+
+Acceptance sequence on the installed llama.cpp build:
+
+1. Verify artifact identity and a short non-thinking completion on a temporary
+   loopback server. Measure memory before advancing.
+2. Process 64k and then approximately 128k native input tokens, allocating extra
+   room for output. Use the chat API, three exact needles distributed through the
+   input, native token counts, and truncation evidence. Record prefill/decode,
+   time to first token, power state, and minimum available memory.
+3. Check a tool-call/result roundtrip and one actual file edit in a scratch task.
+   A successful short tool call does not qualify long-context agent behavior.
+4. Try 4B if 9B cannot meet memory or latency constraints. Consider 35B-A3B after
+   these results, subject to remaining compute time and memory headroom.
+
+Use the prior guard: stop the temporary server below 8 GiB host-available RAM,
+or after nine consecutive two-second samples with full memory PSI avg10 at least
+25%. Record competing workloads and power changes. Bound each experiment and the
+session; a stopped request is censored, not a completed-context result. Earlier
+4B attempts hit this guard, one amid builds, so they do not establish impossibility.
+Do not change system services for testing or replace the everyday model until
+results justify it. Commit measured outcomes here; skip full benchmark sweeps.
