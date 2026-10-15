@@ -8,7 +8,7 @@ from uuid import UUID
 
 from kubernetes_asyncio import client as k8s_client
 
-from agentplane.grpc_calls import dial
+from agentplane.grpc.calls import dial
 from agentplane.runner.runner import Runner
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.destinations import DestinationResolver

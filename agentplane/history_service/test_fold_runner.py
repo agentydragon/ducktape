@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.changes import ChangeSignal
-from agentplane.grpc_serving import add_health, serving
+from agentplane.grpc.serving import add_health, serving
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.fold.models import (
     ThreadCheckpoint,

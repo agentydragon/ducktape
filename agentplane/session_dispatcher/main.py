@@ -9,7 +9,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.grpc_serving import add_health, serving
+from agentplane.grpc.serving import add_health, serving
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.service_process import configure_logging, kubernetes_configuration, until_terminated
 from agentplane.session_dispatcher.delivery import Delivery

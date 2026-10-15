@@ -18,7 +18,7 @@ from agentplane.app.testing.thread_test_support import event_entry
 from agentplane.app.threads.events.event_log import EventLogStore, SessionAdmissionError
 from agentplane.app.threads.models import Thread
 from agentplane.app.threads.summaries import Summaries
-from agentplane.grpc_calls import ServiceError
+from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import event_pb2, history_service_pb2
 

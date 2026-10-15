@@ -144,8 +144,8 @@ py_library(
     srcs = ["gateway.py"],
     deps = [
         "//agentplane:background_task",
-        "//agentplane:grpc_serving",
-        "//agentplane:grpc_tunnel",
+        "//agentplane/grpc:serving",
+        "//agentplane/grpc:tunnel",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:grpc_tunnel_pb2",
         "//agentplane/proto:runner_control_pb2",

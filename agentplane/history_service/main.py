@@ -9,7 +9,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from agentplane.background_task import background
-from agentplane.grpc_serving import add_health, serving
+from agentplane.grpc.serving import add_health, serving
 from agentplane.history_service import ingress
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.evidence import EvidenceReader

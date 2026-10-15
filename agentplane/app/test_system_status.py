@@ -15,7 +15,7 @@ from agentplane.app.system_status import (
     grpc_health_probe,
     http_health_probe,
 )
-from agentplane.grpc_serving import add_health, serving
+from agentplane.grpc.serving import add_health, serving
 
 # The generated health stubs' own stub chain, which the mypy aspect resolves for direct deps only.
 # gazelle:include_dep @pypi//protobuf

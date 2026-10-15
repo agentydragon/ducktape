@@ -11,7 +11,7 @@ import grpc
 from google.protobuf.message import Error as ProtobufError
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.grpc_servicer import Abort, ServicerResources, status_mapping
+from agentplane.grpc.servicer import Abort, ServicerResources, status_mapping
 from agentplane.proto import command_pb2, session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.session_dispatcher.channels import Channel
 from agentplane.session_dispatcher.db import Dispatch

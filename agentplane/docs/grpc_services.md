@@ -59,14 +59,14 @@ follows it; code that differs converges on it.
 ## Errors
 
 - **Server:** one `errors(context)` async context manager per servicer module wraps each RPC body and
-  maps domain exceptions to status codes. It is built by `agentplane.grpc_servicer.status_mapping`
+  maps domain exceptions to status codes. It is built by `agentplane.grpc.servicer.status_mapping`
   from the service's own rows; the rejected-bearer, deadline and unavailable-backend rows are shared,
   each service naming only their messages. Messages are fixed strings: no exception text, Kubernetes
   response, SQL or bearer data reaches a client. Every abort logs the
   exception behind it, since the fixed message names no cause. A server fault the mapping does not know propagates;
   gRPC logs it and answers `UNKNOWN`. `context.abort` outside the mapping is for request validation
   the RPC itself performs.
-- **Client:** `agentplane.grpc_calls` logs each failed call and translates `grpc.aio.AioRpcError` in one place into a
+- **Client:** `agentplane.grpc.calls` logs each failed call and translates `grpc.aio.AioRpcError` in one place into a
   `ServiceError` carrying the status code (`DEADLINE_EXCEEDED` becomes `TimeoutError`; the Runner
   Gateway client reads `FAILED_PRECONDITION` as `RefusedError`).
 
@@ -95,8 +95,8 @@ follows it; code that differs converges on it.
 - Channels are `grpc.aio.insecure_channel`: in-cluster traffic is plaintext and identity comes from
   the bearer (or, for Sandbox workloads, from the egress proxy that substitutes it). The client's
   package says which options its channels need, through a `dial(target)` the composition root
-  calls (`agentplane/grpc_calls.py` for the Runner Gateway and History Service clients); a client
-  that receives Session Events adds `LARGE_EVENT_RECEIVE_OPTIONS` (`agentplane/grpc_options.py`).
+  calls (`agentplane/grpc/calls.py` for the Runner Gateway and History Service clients); a client
+  that receives Session Events adds `LARGE_EVENT_RECEIVE_OPTIONS` (`agentplane/grpc/options.py`).
   The invariants:
   - `grpc.use_local_subchannel_pool: 1` for every channel that is closed and dialed again to the
     same target. From the process-wide pool a new channel inherits the closed channel's connection.
@@ -113,7 +113,7 @@ Everything that holds a connection is closed by a context manager, never by a ha
   and handed to the clients over it. A process that owns several enters them on one `async with`
   or `AsyncExitStack`; a test fixture yields from inside it.
 - `grpc.aio.Server` has no context-manager form, so one shared async context manager,
-  `agentplane.grpc_serving.serving`, registers nothing itself but owns the rest: bind, `start`,
+  `agentplane.grpc.serving.serving`, registers nothing itself but owns the rest: bind, `start`,
   and `stop` with the given grace on exit. Mains and test fixtures use it rather than repeating the
   sequence.
 - Stubs hold no resources of their own and need no lifetime management.
@@ -124,7 +124,7 @@ Everything that holds a connection is closed by a context manager, never by a ha
   `stop(grace=5)` on shutdown. A second listener exists only where a network fence admits different callers to it (the
   runner-facing port).
 - Health is the standard `grpc.health.v1.Health` service on the service's own gRPC port, which
-  `agentplane.grpc_serving.add_health` registers, probed by Kubernetes' native `grpc` liveness and
+  `agentplane.grpc.serving.add_health` registers, probed by Kubernetes' native `grpc` liveness and
   readiness probes. No separate HTTP health server.
 - Tests serve on `127.0.0.1:0` with no grace, through the same context manager, which yields the
   bound port. A test builds a `grpc.aio.server()`, registers the real servicer or a fake subclass,

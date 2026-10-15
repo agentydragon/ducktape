@@ -15,7 +15,7 @@ from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.threads.bridge import RunnerBridge
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.grpc_calls import ServiceError
+from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.testing.backend import ingest
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2

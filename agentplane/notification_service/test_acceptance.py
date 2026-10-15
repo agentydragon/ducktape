@@ -31,8 +31,8 @@ from agentplane.action_service.testing.fixtures import RecordingExecutor
 from agentplane.action_service.testing.stores import action_store
 from agentplane.action_service.updates import ActionUpdateBroker
 from agentplane.changes import ChangeSignal
-from agentplane.grpc_calls import bearer, dial
-from agentplane.grpc_serving import serving
+from agentplane.grpc.calls import bearer, dial
+from agentplane.grpc.serving import serving
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.notification_service.api import create_app

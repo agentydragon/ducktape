@@ -10,7 +10,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from agentplane.grpc_calls import dial
+from agentplane.grpc.calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.api import create_app
 from agentplane.notification_service.dispatcher_client import SessionDispatcherClient

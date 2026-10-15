@@ -10,7 +10,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.background_task import background
-from agentplane.grpc_serving import serving
+from agentplane.grpc.serving import serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.sandboxes.testing.kubernetes import SandboxCluster, sandbox_cluster
 from agentplane.session_dispatcher.database_migrate import RUNNER

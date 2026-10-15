@@ -9,7 +9,7 @@ from uuid import UUID
 
 import grpc
 
-from agentplane.grpc_calls import ServiceError
+from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.proto import history_service_pb2, runner_pb2
 

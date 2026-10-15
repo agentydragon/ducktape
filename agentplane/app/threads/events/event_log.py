@@ -14,7 +14,7 @@ from agentplane.app.database_updates import Channel
 from agentplane.app.threads.events.debug import ArchivedObservation, ArchivedObservationEntry, ObservationPage
 from agentplane.app.threads.models import Thread
 from agentplane.app.threads.summaries import FeedSnapshot, Summaries
-from agentplane.grpc_calls import ServiceError
+from agentplane.grpc.calls import ServiceError
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.settled_cursors import next_stored, settled_ranges
 from agentplane.postgres.wakeups import notify

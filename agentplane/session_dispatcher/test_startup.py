@@ -11,7 +11,7 @@ import pytest
 import pytest_bazel
 from kubernetes_asyncio import client as k8s
 
-from agentplane.grpc_calls import dial
+from agentplane.grpc.calls import dial
 from agentplane.proto import runner_pb2, session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandboxes.testing.kubernetes import OWNER, SANDBOX, SANDBOX_UID, SandboxCluster
 from agentplane.session_dispatcher import main as dispatcher_main

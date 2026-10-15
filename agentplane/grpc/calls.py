@@ -10,7 +10,7 @@ from typing import Never
 import grpc
 from google.protobuf.message import Message
 
-from agentplane.grpc_options import LARGE_EVENT_RECEIVE_OPTIONS
+from agentplane.grpc.options import LARGE_EVENT_RECEIVE_OPTIONS
 
 logger = logging.getLogger(__name__)
 

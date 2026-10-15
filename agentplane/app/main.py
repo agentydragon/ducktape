@@ -44,7 +44,7 @@ from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.background_task import background
 from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.grpc_calls import dial
+from agentplane.grpc.calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.postgres.wakeups import WakeupListener

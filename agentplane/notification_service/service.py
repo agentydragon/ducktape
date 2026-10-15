@@ -12,7 +12,7 @@ from kubernetes_asyncio import client as k8s_client
 from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.grpc_calls import RefusedError
+from agentplane.grpc.calls import RefusedError
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.notification_service.channels import Channel
 from agentplane.notification_service.db import Inbox, Notice

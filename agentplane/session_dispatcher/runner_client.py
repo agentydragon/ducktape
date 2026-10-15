@@ -4,7 +4,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from agentplane.grpc_calls import bearer, dial
+from agentplane.grpc.calls import bearer, dial
 from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.runner_gateway.runner_proxy import SANDBOX_HEADER
 

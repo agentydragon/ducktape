@@ -93,7 +93,7 @@ from agentplane.app.threads.store import MAX_PAGE, InvalidPageTokenError, Thread
 from agentplane.app.threads.thread_view import ThreadView
 from agentplane.app.threads.view.content import CommandIdConflictError, ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.grpc_calls import RefusedError, ServiceError
+from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.postgres.wakeups import WakeupListener
 from agentplane.proto import runner_pb2
 from agentplane.runner.harness import Harness

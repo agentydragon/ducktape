@@ -33,8 +33,8 @@ from agentplane.app.testing.replication_source import (
 )
 from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.view.content import ContentStore
-from agentplane.grpc_calls import dial
-from agentplane.grpc_serving import serving
+from agentplane.grpc.calls import dial
+from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.testing.electric_service import (
     BrowserPostgres,

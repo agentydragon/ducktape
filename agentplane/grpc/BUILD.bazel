@@ -1,0 +1,57 @@
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+# gazelle:resolve py agentplane.proto.grpc_tunnel_pb2 //agentplane/proto:grpc_tunnel_pb2
+
+py_library(
+    name = "options",
+    srcs = ["options.py"],
+    visibility = [
+        "//agentplane:__subpackages__",
+        "//cluster/cdk8s/agentplane:__pkg__",
+    ],
+)
+
+py_library(
+    name = "calls",
+    srcs = ["calls.py"],
+    deps = [
+        ":options",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "serving",
+    srcs = ["serving.py"],
+    deps = [
+        "@pypi//grpcio",
+        "@pypi//grpcio_health_checking",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "tunnel",
+    srcs = ["tunnel.py"],
+    deps = [
+        ":serving",
+        "//agentplane/proto:grpc_tunnel_pb2",
+        "@pypi//grpcio",
+        "@pypi//protobuf",
+    ],
+)
+
+py_library(
+    name = "servicer",
+    srcs = ["servicer.py"],
+    deps = [
+        "//agentplane:subjects",
+        "//agentplane/workload_auth:grpc_caller",
+        "//agentplane/workload_auth:principal",
+        "@pypi//grpcio",
+        "@pypi//kubernetes_asyncio",
+    ],
+)

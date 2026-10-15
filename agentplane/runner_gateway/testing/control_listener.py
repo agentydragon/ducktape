@@ -9,7 +9,7 @@ import grpc
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane.background_task import background
-from agentplane.grpc_serving import serving
+from agentplane.grpc.serving import serving
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner import control as runner_control
 from agentplane.runner.reconnect import StreamTiming

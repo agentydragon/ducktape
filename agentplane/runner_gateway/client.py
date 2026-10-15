@@ -8,7 +8,7 @@ from uuid import UUID
 import grpc
 from google.protobuf.message import Message
 
-from agentplane.grpc_calls import bearer, call_unary, dial
+from agentplane.grpc.calls import bearer, call_unary, dial
 from agentplane.proto import (
     command_pb2,
     event_log_pb2,

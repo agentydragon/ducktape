@@ -21,7 +21,7 @@ import grpc
 from google.protobuf import descriptor_pool, message_factory
 from google.protobuf.message import Message
 
-from agentplane.grpc_serving import serving
+from agentplane.grpc.serving import serving
 from agentplane.proto import grpc_tunnel_pb2
 
 # gazelle:include_dep @pypi//protobuf

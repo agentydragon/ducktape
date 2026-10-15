@@ -6,7 +6,7 @@ from pathlib import Path
 import grpc
 from google.protobuf.message import Message
 
-from agentplane.grpc_calls import call_unary
+from agentplane.grpc.calls import call_unary
 from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2, session_dispatcher_pb2_grpc
 
 # gazelle:include_dep @pypi//grpcio

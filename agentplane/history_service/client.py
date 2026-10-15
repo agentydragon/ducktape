@@ -13,8 +13,8 @@ from uuid import UUID
 import grpc
 from google.protobuf.message import Message
 
-from agentplane.grpc_calls import bearer, raise_status
-from agentplane.grpc_options import LARGE_EVENT_RECEIVE_OPTIONS
+from agentplane.grpc.calls import bearer, raise_status
+from agentplane.grpc.options import LARGE_EVENT_RECEIVE_OPTIONS
 from agentplane.proto import history_service_pb2, history_service_pb2_grpc
 
 # gazelle:include_dep @pypi//protobuf

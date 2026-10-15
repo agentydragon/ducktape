@@ -15,7 +15,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 
-from agentplane.grpc_serving import serving
+from agentplane.grpc.serving import serving
 from agentplane.history_service.channels import Channel, create_wakeups
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.evidence import EvidenceReader

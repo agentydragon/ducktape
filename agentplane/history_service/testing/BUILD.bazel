@@ -10,8 +10,8 @@ py_library(
     testonly = True,
     srcs = ["backend.py"],
     deps = [
-        "//agentplane:grpc_serving",
         "//agentplane:subjects",
+        "//agentplane/grpc:serving",
         "//agentplane/history_service:channels",
         "//agentplane/history_service:client",
         "//agentplane/history_service:evidence",

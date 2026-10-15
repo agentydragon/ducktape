@@ -52,7 +52,7 @@ from agentplane.changes import ChangeSignal
 from agentplane.crd_group import GROUP, VERSION
 from agentplane.egress.decisions import Decision
 from agentplane.egress.decisions_client import DecisionsClient, DecisionsUnavailableError
-from agentplane.grpc_calls import ServiceError
+from agentplane.grpc.calls import ServiceError
 from agentplane.kubernetes_watch import Freshness
 from agentplane.policy_sets import POLICY_BINDINGS_PLURAL, POLICY_SETS_PLURAL
 from agentplane.postgres.wakeups import WakeupListener

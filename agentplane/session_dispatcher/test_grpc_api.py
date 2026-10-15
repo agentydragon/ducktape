@@ -11,8 +11,8 @@ import pytest_bazel
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane import sandbox_resource
-from agentplane.grpc_calls import dial
-from agentplane.grpc_serving import serving
+from agentplane.grpc.calls import dial
+from agentplane.grpc.serving import serving
 from agentplane.proto import session_dispatcher_pb2, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import Sandbox
 from agentplane.sandboxes.testing.kubernetes import OWNER, SANDBOX, SANDBOX_UID, SandboxCluster

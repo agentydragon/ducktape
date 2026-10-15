@@ -90,7 +90,7 @@ py_library(
     name = "summaries",
     srcs = ["summaries.py"],
     deps = [
-        "//agentplane:grpc_calls",
+        "//agentplane/grpc:calls",
         "//agentplane/history_service:client",
         "//agentplane/proto:history_service_pb2",
         "//agentplane/proto:runner_pb2",
@@ -139,7 +139,7 @@ py_library(
     name = "dispatcher_client",
     srcs = ["dispatcher_client.py"],
     deps = [
-        "//agentplane:grpc_calls",
+        "//agentplane/grpc:calls",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:session_dispatcher_pb2",

@@ -14,7 +14,7 @@ from pydantic import ValidationError
 from sqlalchemy.exc import SQLAlchemyError
 
 from agentplane.changes import ChangeSignal
-from agentplane.grpc_servicer import Abort, ServicerResources, Status, status_mapping
+from agentplane.grpc.servicer import Abort, ServicerResources, Status, status_mapping
 from agentplane.history_service.evidence import EvidenceNotFoundError, EvidenceReader
 from agentplane.history_service.storage.store import HistoryNotFoundError, Store
 from agentplane.history_service.summaries import SummaryReader

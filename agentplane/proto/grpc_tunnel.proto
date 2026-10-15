@@ -1,5 +1,5 @@
 // Unary gRPC calls carried as messages on a stream the callee dialed, so the side that dials out
-// serves (`agentplane/grpc_tunnel.py`). The carrying stream authenticates, keeps liveness and orders
+// serves (`agentplane/grpc/tunnel.py`). The carrying stream authenticates, keeps liveness and orders
 // its frames; these messages only name and answer calls.
 
 syntax = "proto3";

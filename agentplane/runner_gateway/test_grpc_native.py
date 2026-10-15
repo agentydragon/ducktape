@@ -17,7 +17,7 @@ from more_itertools import one
 from sqlalchemy.ext.asyncio import AsyncEngine
 from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, wait_fixed
 
-from agentplane.grpc_calls import RefusedError, ServiceError
+from agentplane.grpc.calls import RefusedError, ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.runner import Runner, follow_journal

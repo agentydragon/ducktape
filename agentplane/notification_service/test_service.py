@@ -16,7 +16,7 @@ from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.action_service.models import ActionEventView, ActionState
-from agentplane.grpc_calls import ServiceError
+from agentplane.grpc.calls import ServiceError
 from agentplane.notification_service.db import Entry, Inbox, Notice, Subscription
 from agentplane.notification_service.dispatcher_client import SessionDispatcherClient
 from agentplane.notification_service.models import ActionsSource, DestinationRef, Subscribe, SubscriptionView

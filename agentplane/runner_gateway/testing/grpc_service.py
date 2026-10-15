@@ -6,8 +6,8 @@ from pathlib import Path
 
 import grpc
 
-from agentplane.grpc_calls import dial
-from agentplane.grpc_serving import serving
+from agentplane.grpc.calls import dial
+from agentplane.grpc.serving import serving
 from agentplane.runner_gateway import grpc_api as gateway_api, runner_proxy
 from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
 

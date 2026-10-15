@@ -15,7 +15,7 @@ import grpc
 from google.protobuf.timestamp_pb2 import Timestamp
 from sqlalchemy.exc import SQLAlchemyError
 
-from agentplane.grpc_tunnel import local_server, relay
+from agentplane.grpc.tunnel import local_server, relay
 from agentplane.proto import (
     command_pb2,
     event_log_pb2,

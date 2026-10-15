@@ -31,25 +31,6 @@ py_library(
 )
 
 py_library(
-    name = "grpc_options",
-    srcs = ["grpc_options.py"],
-    visibility = [
-        "//agentplane:__subpackages__",
-        "//cluster/cdk8s/agentplane:__pkg__",
-    ],
-)
-
-py_library(
-    name = "grpc_calls",
-    srcs = ["grpc_calls.py"],
-    deps = [
-        ":grpc_options",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
     name = "kubernetes_watch",
     srcs = ["kubernetes_watch.py"],
 )
@@ -73,27 +54,6 @@ py_library(
         "//agentplane:__subpackages__",
         "//cluster/cdk8s:__subpackages__",
         "//cluster/validation:__pkg__",
-    ],
-)
-
-py_library(
-    name = "grpc_serving",
-    srcs = ["grpc_serving.py"],
-    deps = [
-        "@pypi//grpcio",
-        "@pypi//grpcio_health_checking",
-        "@pypi//protobuf",
-    ],
-)
-
-py_library(
-    name = "grpc_tunnel",
-    srcs = ["grpc_tunnel.py"],
-    deps = [
-        ":grpc_serving",
-        "//agentplane/proto:grpc_tunnel_pb2",
-        "@pypi//grpcio",
-        "@pypi//protobuf",
     ],
 )
 
@@ -140,18 +100,6 @@ py_test(
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
-    ],
-)
-
-py_library(
-    name = "grpc_servicer",
-    srcs = ["grpc_servicer.py"],
-    deps = [
-        ":subjects",
-        "//agentplane/workload_auth:grpc_caller",
-        "//agentplane/workload_auth:principal",
-        "@pypi//grpcio",
-        "@pypi//kubernetes_asyncio",
     ],
 )
 

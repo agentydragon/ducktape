@@ -13,7 +13,7 @@ from google.protobuf.message import Message
 from kubernetes_asyncio import client as k8s_client
 
 from agentplane import sandbox_resource
-from agentplane.grpc_tunnel import local_server
+from agentplane.grpc.tunnel import local_server
 from agentplane.proto import runner_control_pb2, runner_control_pb2_grpc, runner_pb2
 from agentplane.runner.control import RunnerControlClient
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionRecords

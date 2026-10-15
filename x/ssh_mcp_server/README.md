@@ -10,6 +10,9 @@ This standalone SSH MCP server is consumed by Agentplane's Action Service. It ex
 The server owns transport and key selection only. It does not implement a command allowlist or
 approval policy; each consumer authorizes the complete call before invoking this backend.
 
+A deferred design for SSH processes that survive a disconnect is in the
+[durable processes plan](plans/durable_processes.md).
+
 ## Configuration
 
 `SSH_MCP_CONFIG_FILE` points to YAML shaped like:

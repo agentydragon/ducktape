@@ -12,7 +12,7 @@ from uuid import UUID
 
 import grpc
 
-from agentplane.grpc_servicer import Abort, ServicerResources, status_mapping
+from agentplane.grpc.servicer import Abort, ServicerResources, status_mapping
 from agentplane.proto import runner_control_pb2, sandboxes_pb2
 from agentplane.runner_gateway.destinations import DestinationResolver, DestinationUnavailableError
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl

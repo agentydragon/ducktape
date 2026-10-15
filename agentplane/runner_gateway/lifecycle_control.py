@@ -11,7 +11,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from uuid import UUID
 
-from agentplane.grpc_tunnel import Send, TunnelCaller
+from agentplane.grpc.tunnel import Send, TunnelCaller
 from agentplane.proto import runner_control_pb2_grpc
 from agentplane.runner_gateway.connection_records import ConnectionLeases
 from agentplane.runner_gateway.destinations import DestinationUnavailableError

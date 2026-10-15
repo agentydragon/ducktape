@@ -52,8 +52,8 @@ from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.changes import ChangeSignal
 from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.grpc_calls import dial
-from agentplane.grpc_serving import serving
+from agentplane.grpc.calls import dial
+from agentplane.grpc.serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.testing.backend import history_service, ingest

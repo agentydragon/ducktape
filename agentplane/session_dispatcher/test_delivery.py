@@ -18,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane import sandbox_resource
 from agentplane.background_task import background
-from agentplane.grpc_serving import serving
+from agentplane.grpc.serving import serving
 from agentplane.proto import (
     command_pb2,
     runner_control_pb2,

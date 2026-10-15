@@ -14,7 +14,7 @@ import yaml
 from kubernetes_asyncio import client as k8s, config as k8s_config, watch as k8s_watch
 
 from agentplane.crd_group import GROUP, VERSION
-from agentplane.grpc_calls import dial
+from agentplane.grpc.calls import dial
 from agentplane.proto import runner_pb2, session_dispatcher_pb2 as pb, session_dispatcher_pb2_grpc
 from agentplane.sandbox_resource import SANDBOX_API_VERSION
 from util.net import pick_free_port

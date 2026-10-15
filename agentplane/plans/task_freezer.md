@@ -255,7 +255,7 @@ Per-task identity fork only for a concrete concurrent external-agent need. Depen
 
 ### `SSHDURABLE` — durable SSH-backed processes
 
-[Durable SSH processes](ssh_durable_processes.md) only when a host process must outlive a connection; not a Sandbox lifecycle prerequisite.
+[Durable SSH processes](../../x/ssh_mcp_server/plans/durable_processes.md) only when a host process must outlive a connection; not a Sandbox lifecycle prerequisite.
 
 ### `ANTHROPIC_INCLUDED_API_ROUTING` — use subscription-linked Anthropic API credit
 

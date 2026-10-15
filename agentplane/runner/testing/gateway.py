@@ -13,8 +13,8 @@ from typing import override
 import grpc
 
 from agentplane.background_task import background
-from agentplane.grpc_serving import serving
-from agentplane.grpc_tunnel import TunnelCaller
+from agentplane.grpc.serving import serving
+from agentplane.grpc.tunnel import TunnelCaller
 from agentplane.proto import (
     event_log_pb2,
     grpc_tunnel_pb2,
