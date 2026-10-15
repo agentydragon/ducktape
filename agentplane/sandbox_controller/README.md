@@ -5,9 +5,10 @@ Reconciles `Sandbox` into retained state and optional workspace PVCs, its own Se
 [`agentplane/crds`](../crds/BUILD.bazel). The integration app submits Sandbox desired state and
 operator grants through the Kubernetes API; this controller reconciles each Sandbox and owns its
 status. Its runner template reaches platform services over the
-egress sidecar's platform routes. `spec.sessionDefaults` is the Runner
-Gateway's to read; `spec.bootstrap` and the Sandbox's identity reach its runner through the Sandbox's
-launch ConfigMap (a Pod mounts it, a VM gets it as a disk). Deletion first has the runner seal every
+egress sidecar's platform routes. `spec.bootstrap` and the Sandbox's identity reach its runner
+through the Sandbox's launch ConfigMap (a Pod mounts it, a VM gets it as a disk). Session launch
+defaults live in the app's preset catalog and are resolved before an opening reaches the Dispatcher.
+Deletion first has the runner seal every
 Session: the controller calls `Runner.Quiesce` through the [Runner Gateway](../runner_gateway/README.md)'s
 [runner proxy](../docs/runner_control.md#runner-proxy), at the Sandbox's own control Service, and sets the
 `Quiesced` condition. Suspension seals the same way before the Pod stops, recorded as

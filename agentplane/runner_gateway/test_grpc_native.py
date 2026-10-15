@@ -19,7 +19,6 @@ from tenacity import AsyncRetrying, retry_if_exception_type, stop_after_delay, w
 
 from agentplane.grpc_calls import RefusedError, ServiceError
 from agentplane.proto import command_pb2, event_log_pb2, runner_pb2
-from agentplane.proto.sandboxes_pb2 import SandboxBinding, SessionDefaults
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.runner import Runner, follow_journal
 from agentplane.runner.testing import events, launches
@@ -123,28 +122,18 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
     token_file: Path,
     model: ScriptedModel,
     spec: runner_pb2.SessionSpec,
-    cluster: SandboxCluster,
     workspace: Path,
     runner: Runner,
 ) -> None:
     bootstrap_marker = workspace / "bootstrap-runs"
     setup_marker = workspace / "setup-runs"
-    cluster.set_binding(
-        SandboxBinding(
-            session_defaults=SessionDefaults(
-                harness=spec.harness,
-                model=spec.model,
-                reasoning_effort=spec.reasoning_effort,
-                cwd=spec.cwd,
-                instructions="Test task guidance.",
-                setup_script=f"printf S >> {shlex.quote(str(setup_marker))}",
-            )
-        )
-    )
+    spec.instructions = "Test task guidance."
+    launch_spec = MessageToDict(spec, always_print_fields_with_no_presence=True)
+    setup_script = f"printf S >> {shlex.quote(str(setup_marker))}"
     async with service_client(resources, token_file) as remote:
         destination = remote.runner(DESTINATION)
         requested = uuid4()
-        created = await destination.create(session_id=requested, spec={})
+        created = await destination.create(session_id=requested, spec=launch_spec, setup_script=setup_script)
         session = created.session_id
         async with asyncio.timeout(15):
             while (opened := await inspect(destination, session)).harness_state != runner_pb2.HARNESS_STATE_RUNNING:
@@ -152,11 +141,15 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
                 await asyncio.sleep(0.05)
         assert opened.setup_state == runner_pb2.SETUP_STATE_SUCCEEDED
         assert session in opened.spec.instructions
-        assert (await destination.create(session_id=requested, spec={})).attached.spec == opened.spec
+        assert (
+            await destination.create(session_id=requested, spec=launch_spec, setup_script=setup_script)
+        ).attached.spec == opened.spec
         assert (await destination.list_sessions())[0].spec == opened.spec
         # The runner refuses a retry whose spec differs from the one it recorded.
         with pytest.raises(RefusedError):
-            await destination.create(session_id=requested, spec={"instructions": "Different task"})
+            await destination.create(
+                session_id=requested, spec=launch_spec | {"instructions": "Different task"}, setup_script=setup_script
+            )
         assert bootstrap_marker.read_text() == "B"
         assert setup_marker.read_text() == "S"
         entries = await complete_turn(remote, runner, model, session, "grpc-notice")
@@ -179,8 +172,7 @@ async def test_launch_delivery_and_restart_preserve_evidence_and_configuration(
             entry.event.command_admitted.command.command_id
             for entry in await journal.since(0, limit=journal.last_cursor)
         ]
-    # Stop the service, change the stored defaults, and recover solely from the runner.
-    cluster.set_binding(SandboxBinding(session_defaults=SessionDefaults(model="changed")))
+    # Stop the service and recover the complete launch spec solely from the runner.
     async with service_client(resources, token_file) as restarted:
         destination = restarted.runner(DESTINATION)
         resumed = await destination.resume(session)

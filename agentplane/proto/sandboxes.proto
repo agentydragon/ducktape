@@ -3,7 +3,6 @@ syntax = "proto3";
 
 package agentplane.proto.sandboxes;
 
-import "agentplane/proto/runner.proto";
 import "google/protobuf/struct.proto";
 import "google/protobuf/timestamp.proto";
 
@@ -23,15 +22,6 @@ message SessionDestination {
   string session_id = 2;
 }
 
-message SessionDefaults {
-  optional agentplane.proto.runner.Harness harness = 1;
-  optional string model = 2;
-  optional string cwd = 3;
-  optional string reasoning_effort = 4;
-  optional string instructions = 5;
-  optional string setup_script = 6;
-}
-
 // The app resolves presets before sending this complete Sandbox request. The preset itself is only a label.
 message CreateSandboxRequest {
   string name = 1;
@@ -46,7 +36,8 @@ message CreateSandboxRequest {
 }
 
 message SandboxBinding {
-  SessionDefaults session_defaults = 1;
+  reserved 1;
+  reserved "session_defaults";
   string bootstrap = 2;
 }
 

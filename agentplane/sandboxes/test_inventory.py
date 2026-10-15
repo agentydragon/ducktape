@@ -5,8 +5,7 @@ from copy import deepcopy
 import pytest
 import pytest_bazel
 
-from agentplane.proto.runner_pb2 import HARNESS_CODEX
-from agentplane.proto.sandboxes_pb2 import SandboxBinding, SandboxPhase, SessionDefaults
+from agentplane.proto.sandboxes_pb2 import SandboxBinding, SandboxPhase
 from agentplane.sandbox_resource import QUIESCED, SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandboxes.errors import SandboxNotFoundError
 from agentplane.sandboxes.testing.kubernetes import ACCOUNT, SANDBOX, SANDBOX_UID, SandboxCluster
@@ -38,16 +37,10 @@ async def test_sandbox_is_read_without_its_pod(cluster: SandboxCluster) -> None:
         await cluster.inventory.get_without_pod("test-missing")
 
 
-async def test_sandbox_is_read_with_its_session_defaults(cluster: SandboxCluster) -> None:
-    cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["spec"] |= {
-        "sessionDefaults": {"harness": "HARNESS_CODEX", "model": "test-model", "setupScript": "printf setup"},
-        "bootstrap": "printf boot",
-    }
+async def test_sandbox_is_read_with_its_bootstrap(cluster: SandboxCluster) -> None:
+    cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["spec"]["bootstrap"] = "printf boot"
     view = await cluster.inventory.get(SANDBOX)
-    assert view.binding == SandboxBinding(
-        session_defaults=SessionDefaults(harness=HARNESS_CODEX, model="test-model", setup_script="printf setup"),
-        bootstrap="printf boot",
-    )
+    assert view.binding == SandboxBinding(bootstrap="printf boot")
     assert [sandbox.name for sandbox in await cluster.inventory.list_sandboxes()] == [SANDBOX]
 
 

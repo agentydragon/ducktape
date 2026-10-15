@@ -277,7 +277,7 @@ async def test_create_records_preset_label_and_bootstrap_without_per_sandbox_ses
     row = response.json()
     assert row["preset"] == "public-coder"
     assert row["binding"]["bootstrap"] == "mkdir -p /state/workspaces"
-    assert row["binding"]["session_defaults"] is None
+    assert "session_defaults" not in row["binding"]
     assert custom_objects.objects[(SANDBOXES_PLURAL, row["name"])]["spec"]["policySets"] == ["packages"]
 
 
