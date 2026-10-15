@@ -850,6 +850,7 @@ py_test(
         ":conftest",
         ":control",
         ":harness_process",
+        ":model_config",
         ":reconnect",
         ":runner",
         ":session",

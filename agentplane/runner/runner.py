@@ -111,6 +111,7 @@ class Runner:
         self._initialization_log: InitializationLog | None = None
         self._initialization_task: asyncio.Task[None] | None = None
         self._quiescing = False
+        self._work_admissions = 0
         # Set whenever `facts()` may have changed; the control stream clears it before reading.
         self.facts_changed = asyncio.Event()
         # Deliveries between RPC entry and their answer count as busy before the journal knows of them.
@@ -136,6 +137,17 @@ class Runner:
         return any(session.setup_state == runner_pb2.SETUP_STATE_RUNNING for session in self.sessions.values())
 
     @contextmanager
+    def admitting_work(self) -> Iterator[None]:
+        """Track a control operation until its accepted work has finished or failed."""
+        self._work_admissions += 1
+        self.note_activity()
+        try:
+            yield
+        finally:
+            self._work_admissions -= 1
+            self.note_activity()
+
+    @contextmanager
     def delivering(self) -> Iterator[None]:
         """Marks the Sandbox busy from RPC entry until the answer, before the journal records anything."""
         self._deliveries += 1
@@ -151,7 +163,8 @@ class Runner:
         bootstrap running, or any Session with a turn, an unfinished command or a setup script. Terminals
         and background processes outside those are not tracked: the runner does not supervise them."""
         busy = (
-            self._deliveries > 0
+            self._work_admissions > 0
+            or self._deliveries > 0
             or (self._initialization_log is not None and not self._initialization_log.ended)
             or any(session.busy for session in self.sessions.values())
         )
@@ -172,6 +185,7 @@ class Runner:
         sessions = [self.sessions[session_id] for session_id in session_ids if session_id in self.sessions]
         if (
             self._quiescing
+            or self._work_admissions > 0
             or len(sessions) != len(session_ids)
             or any(session.journal.sealed_cursor is None for session in sessions)
         ):

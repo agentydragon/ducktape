@@ -87,11 +87,12 @@ def _attached(session: Session) -> runner_pb2.Attached:
     return build_attached(session, session.journal.recovery_state)
 
 
-async def _admit(runner: Runner, session_id: str, command: command_pb2.Command) -> event_log_pb2.EventEntry:
+async def _admit(
+    runner: Runner, session_id: str, command: command_pb2.Command, *, in_lameduck: bool
+) -> event_log_pb2.EventEntry:
     """Admit a delivered command and return the journal's entry for it. A command already journaled
     with the same payload is answered with its existing entry, so redelivery is safe."""
     # A delivery under way when the Quiesce arrived is admitted; the Quiesce waits for it.
-    in_lameduck = runner.lameduck
     if not command.command_id or command.WhichOneof("operation") is None:
         raise InvalidRequestError("command_id and operation required")
     session = await runner.stored_session(session_id)
@@ -115,8 +116,19 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
 
     def __init__(self, runner: Runner) -> None:
         self.runner = runner
-        self._admissions: set[asyncio.Task[event_log_pb2.EventEntry]] = set()
+        self._admissions: set[asyncio.Future[None]] = set()
         self._quiescing: asyncio.Task[None] | None = None
+
+    @asynccontextmanager
+    async def _admission(self) -> AsyncIterator[None]:
+        admission = asyncio.get_running_loop().create_future()
+        self._admissions.add(admission)
+        try:
+            with self.runner.admitting_work():
+                yield
+        finally:
+            self._admissions.discard(admission)
+            admission.set_result(None)
 
     def _quiesce_finished(self, task: asyncio.Task[None]) -> None:
         error = None if task.cancelled() else task.exception()
@@ -130,7 +142,7 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
             self._quiescing = None
 
     def _start_quiesce(self) -> None:
-        preceding = set(self._admissions)
+        preceding: set[asyncio.Future[None]] = set(self._admissions)
 
         async def quiesce() -> None:
             # Ordering only: an admission's outcome is its own call's to report.
@@ -163,7 +175,8 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
             if not request.HasField("spec"):
                 raise InvalidRequestError("spec is required")
             setup_script = request.setup_script if request.HasField("setup_script") else None
-            session = await finish_command(self.runner.open_session(request.session_id, request.spec, setup_script))
+            async with self._admission():
+                session = await finish_command(self.runner.open_session(request.session_id, request.spec, setup_script))
             return runner_control_pb2.OpenSessionResponse(attached=_attached(session))
 
     @override
@@ -172,7 +185,8 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
     ) -> runner_control_pb2.ResumeSessionResponse:
         async with _refusals(context):
             self.runner.refuse_work()
-            session = await finish_command(self.runner.resume(request.session_id))
+            async with self._admission():
+                session = await finish_command(self.runner.resume(request.session_id))
             return runner_control_pb2.ResumeSessionResponse(attached=_attached(session))
 
     async def _quiesce(
@@ -193,10 +207,10 @@ class RunnerService(runner_control_pb2_grpc.RunnerServicer):
     ) -> event_log_pb2.EventEntry:
         async with _refusals(context):
             with self.runner.delivering():
-                admission = asyncio.ensure_future(_admit(self.runner, session_id, command))
-                self._admissions.add(admission)
-                admission.add_done_callback(self._admissions.discard)
-                return await finish_command(admission)
+                in_lameduck = self.runner.lameduck
+                async with self._admission():
+                    admission = asyncio.ensure_future(_admit(self.runner, session_id, command, in_lameduck=in_lameduck))
+                    return await finish_command(admission)
 
     @override
     async def Quiesce(

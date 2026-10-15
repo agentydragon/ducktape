@@ -25,6 +25,7 @@ from agentplane.proto import (
 from agentplane.runner.config import ClaudeLaunch, RunnerConfig
 from agentplane.runner.control import RunnerControlClient, RunnerService
 from agentplane.runner.harness_process import HarnessProcess
+from agentplane.runner.model_config import ModelConfig
 from agentplane.runner.reconnect import StreamLostError, StreamTiming
 from agentplane.runner.runner import Runner
 from agentplane.runner.session import Session
@@ -422,6 +423,84 @@ async def test_a_quiesce_waits_for_the_admission_under_way_and_a_delivery_after_
     assert admitted.admission.cursor <= seal_cursor
     assert quiesces == 1
     assert refused == grpc.StatusCode.ABORTED
+
+
+async def test_quiesce_waits_for_an_admitted_open_before_enumerating_sessions(
+    runner: Runner, gateway: Gateway, dial: Callable[[], Awaitable[Service]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    resolving, continue_resolution = asyncio.Event(), asyncio.Event()
+    resolve = runner.config.model_config_resolver.resolve
+
+    async def held_resolve(*, base_url: str, token: str, model: str) -> ModelConfig | None:
+        resolving.set()
+        await continue_resolution.wait()
+        return await resolve(base_url=base_url, token=token, model=model)
+
+    monkeypatch.setattr(runner.config.model_config_resolver, "resolve", held_resolve)
+    quiesce = runner.quiesce
+    quiesces = 0
+
+    async def counted_quiesce() -> runner_pb2.QuiesceResponse:
+        nonlocal quiesces
+        quiesces += 1
+        return await quiesce()
+
+    monkeypatch.setattr(runner, "quiesce", counted_quiesce)
+    service = await dial()
+    opening = asyncio.create_task(service.OpenSession(open_session("test-open-under-quiesce")))
+    await resolving.wait()
+
+    response = await service.Quiesce(runner_pb2.QuiesceRequest())
+    assert int(response.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
+    assert not response.sessions
+    await gateway.control.wait_for_facts(
+        runner_control_pb2.RunnerFacts(quiesce_stage=runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING)
+    )
+    assert not runner.store.exists("test-open-under-quiesce")
+    assert quiesces == 0
+
+    continue_resolution.set()
+    assert await refusal(opening) == grpc.StatusCode.ABORTED
+    await service.ListSessions(runner_pb2.ListSessionsRequest())
+    assert quiesces == 1
+    assert runner.sessions["test-open-under-quiesce"].journal.sealed_cursor is not None
+    await gateway.control.wait_for_facts(Facts(quiesce_stage=Facts.QUIESCE_STAGE_QUIESCED))
+
+
+async def test_quiesce_waits_for_an_admitted_resume_to_finish(
+    runner: Runner, dial: Callable[[], Awaitable[Service]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    starting, continue_start = asyncio.Event(), asyncio.Event()
+    start = runner._start
+
+    async def held_start(session: Session) -> None:
+        starting.set()
+        await continue_start.wait()
+        await start(session)
+
+    monkeypatch.setattr(runner, "_start", held_start)
+    quiesce = runner.quiesce
+    quiesces = 0
+
+    async def counted_quiesce() -> runner_pb2.QuiesceResponse:
+        nonlocal quiesces
+        quiesces += 1
+        return await quiesce()
+
+    monkeypatch.setattr(runner, "quiesce", counted_quiesce)
+    service = await dial()
+    resuming = asyncio.create_task(service.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id=STOPPED)))
+    await starting.wait()
+
+    response = await service.Quiesce(runner_pb2.QuiesceRequest())
+    assert int(response.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
+    assert quiesces == 0
+
+    continue_start.set()
+    assert await refusal(resuming) == grpc.StatusCode.ABORTED
+    await service.ListSessions(runner_pb2.ListSessionsRequest())
+    assert quiesces == 1
+    assert runner.sessions[STOPPED].journal.sealed_cursor is not None
 
 
 async def test_quiescing_again_returns_the_same_cursors_and_opening_is_refused(
