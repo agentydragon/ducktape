@@ -686,9 +686,9 @@ flowchart TD
     SANDBOX_IDLE_EXPIRY -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
-    RUNNER_NONBLOCKING_QUIESCE[In flight: return the current stage after entering lameduck]
+    RUNNER_QUIESCE_ROLLOUT[In flight: roll out nonblocking Quiesce implementation #10609]
     JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE[Blocked: writer rollout and retained-journal cutoff]
-    RUNNER_NONBLOCKING_QUIESCE --> QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: remove old response shape after runner rollout]
+    RUNNER_QUIESCE_ROLLOUT --> QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: remove old response shape after runner rollout]
     QUIESCE_WITHOUT_POLLING[In flight: recover stalled seal progress]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
@@ -886,24 +886,23 @@ does not supervise these, so who would report them (the harness adapters, the VM
 Test an attached terminal that detaches, a background process that outlives a turn, and a runner
 restart. `AGENT_RESUME_NOTICE` tells the agent what a suspend ended.
 
-### `RUNNER_NONBLOCKING_QUIESCE` — return after lameduck, report completion through facts
+### `RUNNER_QUIESCE_ROLLOUT` — deploy nonblocking Quiesce; gate legacy-reader removal
 
-**In flight; `suspended_session_ui`, operator dispatch 2026-10-15 UTC.** Both live controller
-Deployments are Ready on `d83486b`, whose reader accepts the optional response stage and retains the
-legacy fallback. The current `c3949a5` Pod/VM runner writer still blocks and omits the stage.
-Implement the ADR's immediate stage response with one supervised quiesce operation per
-incarnation. Preserve conditional idle refusal, admission/setup draining, and Lease-driven completion.
-Publish the lameduck fact before waiting for preceding admissions; coalesce repeated calls and observe
-background failure without tying the drain lifetime to one RPC. Keep ListSessions drain ordering.
-Use deterministic tests for repeated calls, cancellation/reconnect, and delayed ingress acknowledgement.
-Publish and pin the Pod runner and embedded VM wheel before retiring the legacy response reader.
+**Implementation complete in #10609; rollout remains in flight.** The runner returns the current
+stage immediately while one supervised drain continues per incarnation. The drain preserves
+conditional idle refusal, admission/setup ordering, and Lease-driven completion; deterministic tests
+cover repeated calls, cancellation/reconnect, delayed ingress acknowledgement, and admissions paused
+before durable Session creation. Track rollout until every live and selectable Pod runner image and
+the embedded VM wheel include the compatible writer, and verify that no old runner incarnations
+remain. Require testing/staging acceptance before retiring the controller's legacy response reader.
 
 ### `QUIESCE_LEGACY_SHAPE_REMOVAL` — the controller stops reading the blocking `Quiesce` shape
 
-**Blocked on `RUNNER_NONBLOCKING_QUIESCE` and its rollout to every live/selectable runner,
-the VM guest's wheel included.** The 2026-10-15 audit found both live VM wheel `a13d9a7d58ff`
-and template wheel `0a0e1373f9c2` omit the response stage. Delete the controller's legacy-shape
-read only after the replacement writer is implemented and pinned.
+**Blocked on `RUNNER_QUIESCE_ROLLOUT`.** The 2026-10-15 audit found the then-live VM wheel
+`a13d9a7d58ff` and template wheel `0a0e1373f9c2` omitted the response stage; those are historical
+snapshot pins, not a current inventory. Refresh the audit against every live/selectable Pod runner
+image, embedded VM wheel, and old incarnation. Delete the controller's legacy-shape read only after
+the compatible writer is deployed everywhere and testing/staging acceptance passes.
 
 ### `QUIESCE_WITHOUT_POLLING` — a runner that never progresses is backed off, not hammered
 
@@ -912,8 +911,9 @@ read only after the replacement writer is implemented and pinned.
 exact-revision barrier. The persisted per-incarnation attempt prevents watch
 events from bypassing the existing one-minute retry deadline, including absent/stalled stage reports
 and false-to-false condition updates. Focused controller tests cover status conflicts, completion,
-restarts and incarnation changes. Runner stage events still advance quiesce immediately. The missing immediate RPC response is
-tracked separately in `RUNNER_NONBLOCKING_QUIESCE`.
+restarts and incarnation changes. Runner stage events still advance quiesce immediately. The immediate
+RPC response is implemented in #10609; its rollout is tracked in `RUNNER_QUIESCE_ROLLOUT`. Keep the
+controller reader until `QUIESCE_LEGACY_SHAPE_REMOVAL` clears its rollout and acceptance gates.
 
 This change does not establish ingress-wide backoff. Audit the remaining outage behavior before
 closing this node; preserve a bounded held-flush integration check only for an identified gap that
