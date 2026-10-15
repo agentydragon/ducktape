@@ -16,12 +16,14 @@ A **capstone** closes an integrated contract, not another implementation. Solid 
 prerequisites; dashed arrows explicitly label scheduling holds or conditional choices. All service
 contracts remain multi-replica unless a reviewed temporary restriction says otherwise.
 
-Dispatch assignments (Codex reported, 2026-10-15 UTC):
+Dispatch assignments (Rai authorized; Codex reported, 2026-10-15 UTC):
 
-| Worker                                | Assigned work and remaining gates                                                                                        |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `suspended_session_ui`                | Remove the legacy Quiesce response reader; published Pod/VM images, embedded wheel and live incarnation gates are clear. |
-| Coordinator and documentation workers | Remove completed DAG work and resolved investigation logs; preserve durable guidance and unresolved decisions.           |
+| Worker                        | Assigned work and remaining gates                                                                                                |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `quiesce_progress`            | Finish the unused Session-table route removal; the destination lookup migration has merged in #10622.                          |
+| `suspended_session_inventory` | Audit RPCs/fields/arguments and overlapping paths; then retire superseded isolated-test scaffolding with its coverage preserved. |
+| `suspended_session_ui`        | Migrate archive and notification wrapper reads; audit data-drop gates and prepare independently reviewable PRs where safe.       |
+| Coordinator                   | Integrate notes cleanup, burn down merged tasks and review rollout and CI evidence.                                              |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
@@ -528,7 +530,7 @@ automatic triggers require a separate reviewed change. Language rewrites require
 
 ### `ISOLATED_TEST_SPIKES_RETIRE` — remove superseded isolated-test scaffolding
 
-**Candidate; fixture migration and coverage review are the work.** The manual workflow depends on the
+**Assigned; `suspended_session_inventory`, after the surface audit.** The manual workflow depends on the
 maintained `agentplane/x/k3s_env` fixture and its `test_lifecycle` target; do not remove them while
 CI invokes them. Move the retained tests into their owning package and update the workflow first,
 then delete superseded `x/k3s_rbe_spike` or `x/k3s_env` entry points, image-loader paths, BUILD
@@ -548,7 +550,7 @@ immediate deletion of the testing namespace or its volumes.
 
 ```mermaid
 flowchart LR
-    ISOLATED_TEST_SPIKES_RETIRE[Candidate: migrate retained fixtures and remove superseded scaffolding]
+    ISOLATED_TEST_SPIKES_RETIRE[Assigned: migrate retained fixtures and remove superseded scaffolding]
     TESTING_ENVIRONMENT_RETIRE[Decision: coverage replacements before testing retirement]
 ```
 
@@ -665,7 +667,7 @@ flowchart TD
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     SANDBOX_IDLE_EXPIRY[Candidate: suspend idle Sandboxes] -. related .-> AGENT_RESUME_NOTICE
-    QUIESCE_LEGACY_SHAPE_REMOVAL[In flight: remove the legacy Quiesce response reader] --> QUIESCE_RESPONSE_FIELDS_RETIRE[Blocked: controller rollout before deleting obsolete response fields]
+    QUIESCE_RESPONSE_FIELDS_RETIRE[Blocked: controller rollout before deleting obsolete response fields]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE[Blocked: writer rollout and retained-journal cutoff]
@@ -845,17 +847,9 @@ does not supervise these, so who would report them (the harness adapters, the VM
 Test an attached terminal that detaches, a background process that outlives a turn, and a runner
 restart. `AGENT_RESUME_NOTICE` tells the agent what a suspend ended.
 
-### `QUIESCE_LEGACY_SHAPE_REMOVAL` — the controller stops reading the blocking `Quiesce` shape
-
-**In flight; `suspended_session_ui`, #10615, 2026-10-15 UTC.** All live and selectable Pod/VM images now
-include the nonblocking writer from #10609, including runner-ducktape and the embedded VM wheel.
-Remove the controller's legacy response reader and obsolete fixtures; preserve conditional idle
-refusal, admission/setup ordering and Lease-driven completion. Use focused deterministic tests for
-the reader contract; a further live run needs a specific deployment uncertainty.
-
 ### `QUIESCE_RESPONSE_FIELDS_RETIRE` — delete the legacy wire seal list
 
-**Blocked on `QUIESCE_LEGACY_SHAPE_REMOVAL` and the new controller image in both environments.**
+**Blocked on the controller image containing merged #10615 in both environments.**
 The nonblocking runner sends only `QuiesceResponse.stage`, but `runner.proto` still declares the
 old `sessions` field and rollout-era optional-stage contract. After no deployed reader consumes
 that shape, remove the obsolete field and comments and reserve its field number. The runner's
@@ -1045,13 +1039,13 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 ```mermaid
 flowchart TD
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
-    CONTROL_SURFACE_RETIREMENT_AUDIT[Candidate: audit RPCs, fields and arguments against the intended paths]
+    CONTROL_SURFACE_RETIREMENT_AUDIT[Assigned: audit RPCs, fields and arguments against the intended paths]
     CONTROL_SURFACE_RETIREMENT_AUDIT --> RUNNER_LIST_SESSIONS_RETIRE[Blocked: resolve remaining live-inventory semantics, then remove ListSessions]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
-    APP_SESSION_LIST_ROUTE_RETIRE[Candidate: remove the unused runner-backed table route] --> GATEWAY_WRAPPER_RETIRE
-    APP_ARCHIVE_RUNNER_READ_MIGRATION[Candidate: move live archive checks to the runner proxy] --> GATEWAY_WRAPPER_RETIRE
-    NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION[Candidate: retire notification wrapper membership reads] --> GATEWAY_WRAPPER_RETIRE
+    APP_SESSION_LIST_ROUTE_RETIRE[Assigned: remove the unused runner-backed table route] --> GATEWAY_WRAPPER_RETIRE
+    APP_ARCHIVE_RUNNER_READ_MIGRATION[Assigned: move live archive checks to the runner proxy] --> GATEWAY_WRAPPER_RETIRE
+    NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION[Assigned: retire notification wrapper membership reads] --> GATEWAY_WRAPPER_RETIRE
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
     GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
@@ -1061,7 +1055,7 @@ flowchart TD
 
 ### `CONTROL_SURFACE_RETIREMENT_AUDIT` — converge RPCs, fields and arguments on the intended paths
 
-**Candidate; operator request 2026-10-15 PDT.** Sweep Agentplane's protobuf services/messages,
+**In flight; `suspended_session_inventory`, 2026-10-15 UTC.** Sweep Agentplane's protobuf services/messages,
 HTTP routes/client helpers, CLI arguments, settings/config keys and their producers/consumers.
 Start from the system overview: whenever two paths accomplish the same operation, ask why both
 exist. Trace their callers, authority and failure semantics; document a concrete reason for
@@ -1144,7 +1138,7 @@ and runner proxy. This makes `SANDBOX_DATABASE_RENAME` moot; delete that deferre
 
 ### `APP_SESSION_LIST_ROUTE_RETIRE` — remove the runner-backed Sandbox table read
 
-**Candidate.** The app image containing #10612 is Ready in both environments, with no old app
+**In flight; `quiesce_progress`, 2026-10-15 UTC.** The app image containing #10612 is Ready in both environments, with no old app
 Pods remaining. The table now uses retained History rows. Its former browser path was
 `client.listSessions` → `GET /sandboxes/{name}/sessions` → `RunnerBridge.list_sessions` →
 `RunnerGateway.ListSessions` → tunneled `Runner.ListSessions`. Delete the unused HTTP GET route and its
@@ -1154,7 +1148,7 @@ only until the separate archive and native-resume migrations remove its final ca
 
 ### `APP_ARCHIVE_RUNNER_READ_MIGRATION` — preserve live archive safety without the wrapper
 
-**Candidate.** `archive_thread` reads `RunnerBridge.list_sessions` to reject archiving a running
+**Assigned; `suspended_session_ui`, 2026-10-15 UTC.** `archive_thread` reads `RunnerBridge.list_sessions` to reject archiving a running
 harness while its Pod exists. History is eventually consistent and cannot alone prove that a
 harness has stopped. Preserve this check through the runner proxy, plus the existing refusal when
 a Pod exists but cannot be checked. A stopped/deleted Sandbox still allows retaining/archiving its
@@ -1163,7 +1157,7 @@ Remove the wrapper call; do not weaken the guard to simplify the table migration
 
 ### `NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION` — retire the subscription wrapper read
 
-**Candidate.** `NotificationService.subscribe` uses wrapper `ListSessions` after checking the current
+**Assigned; `suspended_session_ui`, 2026-10-15 UTC.** `NotificationService.subscribe` uses wrapper `ListSessions` after checking the current
 Sandbox UID and owner. Move that read to the runner proxy while preserving those checks, or use
 History only if its retained association can prove the same identity boundary. History's current
 Sandbox reference has namespace/name, not UID/owner, so a matching name alone is insufficient.
