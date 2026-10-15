@@ -29,7 +29,7 @@ require (
 require kubevirt.io/api v1.8.2
 
 // Direct dependency for the Agentplane grpc-gateway Bazel integration spike.
-require github.com/grpc-ecosystem/grpc-gateway/v2 v2.31.0
+require github.com/grpc-ecosystem/grpc-gateway/v2 v2.28.0
 
 // Indirect dependencies (merged from genkit and worthy go.mods)
 require (

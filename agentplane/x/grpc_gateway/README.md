@@ -3,8 +3,9 @@
 This is an isolated proof of the generated HTTP/JSON facade proposed in
 [`runner_delivery_and_harness_design.md`](../../docs/runner_delivery_and_harness_design.md).
 It wires an annotated proto through grpc-gateway's upstream Bazel compiler and runs the generated
-handler against a real in-process gRPC server. Generated Go is a Bazel build output; this directory
-does not check in generated code or add a production endpoint.
+handler against a real in-process gRPC server. It pins upstream grpc-gateway v2.28.0, whose module
+source already supplies the Bazel `go_proto_compiler` used here. Generated Go is a Bazel build
+output; this directory does not check in generated code or add a production endpoint.
 
 Run the proof with:
 
