@@ -661,15 +661,6 @@ types.requirements(
     # for type stubs whose runtime package isn't in the pip hub (or has a
     # different name). Without exclusion, Bazel fails at analysis time with
     # "no such package '@@rules_python++pip+ducktape_pypi//X'".
-    #
-    # Cleaned-up stubs (no longer need exclusion):
-    # - sqlalchemy-stubs, types-sqlalchemy: removed from pyproject.toml
-    #   (SQLAlchemy 2.0+ ships inline typing)
-    # - types-jinja2: removed from pyproject.toml (jinja2 ships py.typed)
-    # - types-toml: removed from pyproject.toml (we use tomllib, not toml)
-    # - types-paramiko, types-pytz: runtime deps added to pyproject.toml
-    #   so their stubs resolve correctly
-    #
     # TODO: Upstream fix in rules_mypy to gracefully skip stubs whose
     # runtime package isn't in the pip hub, instead of failing at load time.
     # That would eliminate the need for this exclusion list entirely.
