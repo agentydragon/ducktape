@@ -35,6 +35,19 @@ app's direct native-resume path. Each remaining compatibility removal keeps its 
   returning. Non-blocking response implementation and its rollout must precede legacy-reader removal.
 - #10593 adds explicit suspended markers to the sidebar, Thread, title and favicon. The retained
   history/revival surfaces remain. Composer activation still follows wake-on-send acceptance.
-- #10592 removed the opening flag from generated configuration. Both live app ConfigMaps omit it;
-  testing has one Ready app replica and staging two on `b8957c7`. The final accepted-unused settings
-  field removal remains a separate patch. Staging wake-caller configuration is still pending.
+- #10592 removed the opening flag from generated configuration. Both live app ConfigMaps omitted it
+  before #10598 removed the accepted-unused field and its obsolete tests. #10598 merged with Bazel,
+  Nix and pre-commit checks passing; the opening rollout flag is fully removed from source.
+- #10596 merged staging wake-caller configuration. The subsequent read-only audit found the live
+  ConfigMap allows exactly `agentplane-staging/agentplane-app` and
+  `agentplane-staging/agentplane-notifications`, with Dispatcher Ready 2/2 on `0a593c0`.
+  [Testing wake acceptance](../../session_dispatcher/debug/deployment_acceptance.md#testing-send-triggered-wake)
+  preceded activation. Deterministic Dispatcher tests cover deletion precedence and redelivery of
+  a message aborted during sealing. The permanent per-Sandbox `wakeOnSend` policy still requires
+  explicit user opt-in; #10600 exposes it in the app and remains under review.
+- #10588 merged the packaged fresh-workspace creation helper and native-supervisor privilege drop.
+  Distinct-user Git tests and full PR CI passed. Fresh VM Session acceptance remains gated on the
+  runner wheel and guest image rollout; existing workspace ownership is preserved. A subsequent
+  read-only audit verified published wheel `b7f2fca414f9` contains the helper and both live VM
+  templates select image `devel-20261015052552-c3949a5`, built with that wheel. This clears the
+  image gate for fresh testing acceptance, not the acceptance itself.

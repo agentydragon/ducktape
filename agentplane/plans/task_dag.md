@@ -18,17 +18,17 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
 
-| Worker                     | Assigned work and remaining gates                                                                              |
-| -------------------------- | -------------------------------------------------------------------------------------------------------------- |
-| `suspended_session_ui`     | Final opening settings-field removal after #10592 config omission reconciled; composer waits for wake-on-send. |
-| `quiesce_progress`         | Staging wake-on-send configuration; both verified compatibility removals merged.                               |
-| `session_defaults_cleanup` | Correct #10588 CI and package the workspace-creation helper normally; VM rollout/acceptance remain gated.      |
-| Coordinator                | Review and CI, DAG burn-down and deployment gate verification.                                                 |
+| Worker                     | Assigned work and remaining gates                                                                          |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `suspended_session_ui`     | Opening-field removal merged; idle until the suspended-composer wake gates clear.                          |
+| `quiesce_progress`         | Fix #10600 CI and review the wake-policy checkbox; staging caller configuration merged in #10596.          |
+| `session_defaults_cleanup` | Verify wheel/image rollout after merged #10588 and identify the remaining fresh-workspace acceptance gate. |
+| Coordinator                | Review and CI, DAG burn-down and deployment gate verification.                                             |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
 user experience. Finish reported bugs and red PR checks first. The next dispatch order is
-`APP_OPEN_FLAG_REMOVE` and verified runner compatibility cleanup, then `DISPATCHER_WAKE_ACTIVATION`,
+verified runner compatibility cleanup and `APP_SANDBOX_WAKE_POLICY` / `SUSPENDED_COMPOSER`,
 then `ISOLATED_TEST_SPIKES_RETIRE` and `K3S_STARTUP_COST`. The lifecycle coverage audit found the
 requested eventual outcomes already covered; see the [suite coverage](../x/k3s_env/README.md#lifecycle-coverage).
 Audit assignment does not waive any image, embedded VM wheel, live-runner or retained-data gate.
@@ -47,17 +47,19 @@ requires increasing timeouts, bypassing Git ownership checks, or creating duplic
 
 ```mermaid
 flowchart TD
-    VM_WORKSPACE_OWNERSHIP[In flight: create workspaces with harness ownership]
+    VM_WORKSPACE_OWNERSHIP[In flight: verify ownership fix rollout and fresh VM workspace]
 ```
 
 ### `VM_WORKSPACE_OWNERSHIP` — create workspaces with the harness identity
 
-**In flight; `session_defaults_cleanup`.** The root runner creates a directory on the guest's
-ext4 workspace, then setup runs as UID 107 and creates its checkout. ACL write access does not make
-the parent directory owned by that identity, so Git refuses it as dubious ownership. Correct fresh
-workspace creation for setup and harness launch; preserve existing authored data and Pod behavior.
-No recursive ownership rewrite or `safe.directory` exception. Test distinct-user Git operations;
-live VM acceptance waits for the corrected embedded runner wheel and guest image pins.
+**Implementation merged in #10588; rollout audit assigned to `session_defaults_cleanup`.** Missing
+workspace directories are now created with the harness identity before setup and harness launch,
+through a packaged helper and the native supervisor's privilege drop. Distinct-user Git tests and
+full PR CI passed. Existing ownership and authored data are untouched. Verify the corrected embedded
+runner wheel and guest image pins. The 2026-10-15 audit verified wheel `b7f2fca414f9` contains the
+fix and both live VM templates select image `devel-20261015052552-c3949a5`, built with that wheel.
+Testing acceptance is assigned: accept a fresh VM Session workspace without pre-creating its
+directory, recursively rewriting ownership or adding a `safe.directory` exception.
 
 ## 1. Session schema and identity follow-up
 
@@ -325,7 +327,7 @@ acceptance receipts in the chosen authority. Test denied pairs, spoofing and ret
 **Blocked on ingress contract/implementation.** Implement selected recipient read/delivery/ack
 operations, batching and recovery of unread work. Test revoked/deleted recipients, ordinary offline
 catch-up and duplicate delivery without leaking payloads. Do not start/resume a harness implicitly
-unless `DISPATCHER_WAKE_ACTIVATION` lets that kind of sender wake a Sandbox.
+unless the reviewed caller allowlist and per-Sandbox wake policy allow that sender to wake it.
 
 ### `AGENT_MESSAGING` — integrated messaging capstone
 
@@ -708,7 +710,6 @@ flowchart TD
     RUNNER_NONBLOCKING_QUIESCE[Candidate: return the current stage after entering lameduck]
     JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE[Blocked: writer rollout and retained-journal cutoff]
     RUNNER_NONBLOCKING_QUIESCE --> QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: remove old response shape after runner rollout]
-    APP_OPEN_FLAG_REMOVE[In flight: remove unused setting after config omission]
     QUIESCE_WITHOUT_POLLING[In flight: recover stalled seal progress]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
@@ -721,7 +722,6 @@ flowchart TD
     VM_PROVIDER -. related .-> SANDBOX_SPEC_EDIT
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
-    DISPATCHER_WAKE_ACTIVATION --> SUSPENDED_COMPOSER
     APP_SANDBOX_WAKE_POLICY[In flight: wake-on-message checkbox for new and existing Sandboxes] --> SUSPENDED_COMPOSER
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
@@ -951,23 +951,6 @@ Lease facts) and never this field. Per-Session idle times stay out of Kubernetes
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
-### `DISPATCHER_WAKE_ACTIVATION` — enable send-triggered revival
-
-**Testing acceptance recorded; staging configuration PR assigned to `quiesce_progress`.** Testing caller configuration from
-#10527 is reconciled. The opted-in wake probe passed and its fixture was cleaned (#10541);
-staging activation remains. Image and migration gates are clear: actual
-Dispatcher Pods in both environments are Ready on `31e0b37`, their migration containers exited 0,
-and all controllers are Ready on that source. This includes the merged wake budget (#10487),
-selective native revival (#10492), and failure feedback (#10500). The prior staging runtime hold
-has cleared; [diagnosis and resolution observation](../session_dispatcher/debug/staging_rollout_runtime.md)
-record its limits. Keep the shared ten-wakes-per-minute caller budget and tuning follow-up in the
-[Dispatcher contract](../session_dispatcher/README.md). Prepare a separate config PR and bounded
-testing acceptance; staging activation follows testing, not merely image readiness.
-The defaults-off wake implementation from #10463 is merged. Verify already-granted Sandbox patch RBAC and schema/image pins, then enable the approved caller
-allowlist and `wakeOnSend` configuration. Test message-during-seal, concurrent sends and deletion
-precedence on testing before staging. Keep `wakeOnSend: false` as the intentional per-Sandbox policy;
-it is not a compatibility shim to delete.
-
 ### `DISPATCHER_HARNESS_CONFIRMATION` — settle admitted inputs on a canonical confirmation
 
 **Decision, then bounded implementation.** `HARNESS_CONFIRMED` currently has no writer. Review the canonical runner/history
@@ -983,13 +966,6 @@ destination/operation authorization for the current app and notification callers
 agent senders wait for the reviewed multiagent authority contract. Do not confuse send permission
 with wake permission or silently expand the caller allowlist during a cutover. Add the bounded
 implementation node once policy is reviewed; existing caller cutovers do not silently select policy.
-
-### `APP_OPEN_FLAG_REMOVE` — retire the queued-opening rollout flag
-
-**In flight; `suspended_session_ui`.** #10592 removed the generated configuration key. On
-2026-10-15 UTC, both live ConfigMaps omit it and both app Deployments are Ready on `b8957c7`.
-Remove the accepted-but-unused app setting, obsolete tests and any generator API remnants.
-The configuration omission gate is satisfied; no new rollout switch is needed.
 
 ### `APP_NATIVE_RESUME_SURFACE` — decide the explicit native-resume UI
 
@@ -1021,18 +997,20 @@ for a reviewed contract that the code does not already satisfy; do not add an im
 
 ### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
 
-**Blocked on `DISPATCHER_WAKE_ACTIVATION` and `APP_SANDBOX_WAKE_POLICY`; follow-up owned by
+**Blocked on `APP_SANDBOX_WAKE_POLICY`; follow-up owned by
 `suspended_session_ui`.** Once wake-on-send works in the target environment, a suspended Session's
 composer remains usable while its Sandbox still exists; suspension alone must not disable it.
 Sending queues the message and shows the Sandbox starting while the message waits. Keep normal
 access checks and deleted-Sandbox refusal. Until wake-on-send is verified, ship suspended-state
 visibility independently and leave composer activation sequenced afterward (operator, 2026-10-15 UTC).
+The caller-activation gate is clear: testing acceptance preceded #10596, and the staging allowlist
+has reconciled. A Sandbox with wake policy off must remain stopped and show that manual resume is needed.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `APP_SANDBOX_WAKE_POLICY` — configure wake-on-message for new and existing Sandboxes
 
-**In flight; `quiesce_progress`, operator decision 2026-10-15 UTC.** Add a creation-form checkbox
+**In flight in #10600; `quiesce_progress`, operator decision 2026-10-15 UTC.** Add a creation-form checkbox
 and an existing-Sandbox checkbox that reads and updates `spec.wakeOnSend` through the app's
 authorized Kubernetes spec mutation path. Preserve the default-off policy, explicit false opt-out,
 identity/concurrency checks and no implicit wake when toggling it. The current creation path never
