@@ -421,8 +421,7 @@ async def test_deleted_name_is_reusable_but_not_the_old_uid(
     await inventory.suspend(previous.name, uid=previous.uid)
     # Only a controller report, not the app's desired-state patch, proves it is suspended.
     stored = custom_objects.objects[(SANDBOXES_PLURAL, previous.name)]
-    stored["status"]["operatingMode"] = "Suspended"
-    stored["status"].pop("incarnation", None)
+    stored["status"] = {"operatingMode": "Suspended"}
     await inventory.begin_teardown(previous.name, uid=previous.uid)
     assert await inventory.retry(spec, caller=CALLER) is None
     following = await inventory.create(spec, policy_sets=set(), caller=CALLER)
