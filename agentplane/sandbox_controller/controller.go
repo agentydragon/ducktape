@@ -63,9 +63,9 @@ const (
 	RenderedSpecAnnotation = "agentplane.allegedly.works/rendered-spec"
 
 	templateIndex = "spec.template"
-	// How long a quiesce that failed or is not final is left alone before the Quiesce call is repeated:
-	// a runner's stage changes and its reconnecting enqueue the Sandbox, so this covers a lost event or
-	// a stuck runner.
+	// How long a failed or unfinished quiesce is left alone before the idempotent Quiesce call is
+	// repeated. Runner facts enqueue the Sandbox on progress; this deadline recovers a lost event or a
+	// stuck runner without polling.
 	quiesceDeadline = time.Minute
 	// How soon a connection whose Lease has lapsed is looked at again: a renewal changes nothing the
 	// Lease watch enqueues on.
@@ -248,7 +248,10 @@ func (r *Reconciler) finalize(ctx context.Context, sandbox *Sandbox, w workload)
 		if err != nil || blocked != nil {
 			return w, blocked, err
 		}
-		blocked = r.quiesce(ctx, sandbox, runner)
+		blocked, err = r.quiesce(ctx, sandbox, runner)
+		if err != nil || blocked == nil {
+			return w, blocked, err
+		}
 		if blocked.retryAfter == 0 {
 			meta.SetStatusCondition(&sandbox.Status.Conditions, metav1.Condition{
 				Type: Quiesced, Status: metav1.ConditionTrue, Reason: "Quiesced", Message: blocked.message, ObservedGeneration: sandbox.Generation,
@@ -319,7 +322,7 @@ func (r *Reconciler) quiesceBeforeStop(ctx context.Context, sandbox *Sandbox, w 
 			return held, err
 		}
 	}
-	return r.quiesce(ctx, sandbox, runner), nil
+	return r.quiesce(ctx, sandbox, runner)
 }
 
 // holdSuspend holds a suspend that has not begun quiescing while the incarnation's bootstrap or any
@@ -346,45 +349,52 @@ func (r *Reconciler) holdSuspend(ctx context.Context, sandbox *Sandbox, runner s
 // quiesce asks the runner of the Pod with this UID to seal every Session and, once the ingress has
 // acknowledged each seal, records it on the Sandbox's status for the caller to write. The returned
 // unready always says why the Sandbox is still held and has no retryAfter once the seal is recorded.
-// Quiesce is idempotent, so any failure is asked again.
+// Before each call, the controller persists its attempt time so watch events and restarts cannot
+// bypass the one-minute retry deadline.
 //
-// A runner that reports a quiesce stage on the connection Lease is not asked again while it reports
-// one, and never once it reports `Quiesced`: its next stage enqueues the Sandbox.
+// A runner that reports `Quiesced` on the connection Lease is recorded without another call. Other
+// stage reports enqueue the Sandbox; the persisted deadline throttles calls while a stage is absent
+// or stalled.
 //
 // CLEANUP(added 2026-10-14): Remove the call's reading of a runner that reports no stage once the
 // runner's non-blocking `Quiesce` is pinned in every environment, the VM guest's wheel included.
-func (r *Reconciler) quiesce(ctx context.Context, sandbox *Sandbox, runner string) *unready {
+func (r *Reconciler) quiesce(ctx context.Context, sandbox *Sandbox, runner string) (*unready, error) {
 	lease, err := r.runnerLease(ctx, sandbox)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}
+		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}, nil
 	}
 	facts, err := readRunnerFacts(&lease, runner)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}
+		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}, nil
 	}
 	switch facts.Stage {
 	case QuiesceQuiesced:
 		sandbox.Status.QuiescedIncarnation = &runner
-		return &unready{reason: "Quiescing", message: "the runner has quiesced every Session"}
-	case QuiesceDraining, QuiesceFlushing:
-		if running := meta.FindStatusCondition(sandbox.Status.Conditions, Running); running != nil && running.Reason == "Quiescing" {
-			if waited := r.Now().Sub(running.LastTransitionTime.Time); waited < quiesceDeadline {
-				return &unready{reason: "Quiescing", message: "the runner is quiescing", retryAfter: quiesceDeadline - waited}
-			}
+		sandbox.Status.QuiesceAttempt = nil
+		return &unready{reason: "Quiescing", message: "the runner has quiesced every Session"}, nil
+	}
+	if attempt := sandbox.Status.QuiesceAttempt; attempt != nil && attempt.RunnerPodUID == runner {
+		if remaining := attempt.AttemptedAt.Add(quiesceDeadline).Sub(r.Now()); remaining > 0 {
+			return &unready{reason: "Quiescing", message: "the runner is quiescing", retryAfter: remaining}, nil
 		}
+	}
+	sandbox.Status.QuiesceAttempt = &QuiesceAttempt{RunnerPodUID: runner, AttemptedAt: metav1.NewTime(r.Now())}
+	if err := r.Status().Update(ctx, sandbox); err != nil {
+		return nil, fmt.Errorf("recording quiesce attempt for %s: %w", sandbox.Name, err)
 	}
 	result, err := r.Quiescer.Quiesce(ctx, sandbox)
 	if err != nil {
-		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}
+		return &unready{reason: "Quiescing", message: err.Error(), retryAfter: quiesceDeadline}, nil
 	}
 	if result.Quiescing {
-		return &unready{reason: "Quiescing", message: "the runner has not finished quiescing", retryAfter: quiesceDeadline}
+		return &unready{reason: "Quiescing", message: "the runner has not finished quiescing", retryAfter: quiesceDeadline}, nil
 	}
 	if len(result.Unflushed) > 0 {
-		return &unready{reason: "Quiescing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: quiesceDeadline}
+		return &unready{reason: "Quiescing", message: fmt.Sprintf("the ingress has not acknowledged the seal of %v", result.Unflushed), retryAfter: quiesceDeadline}, nil
 	}
 	sandbox.Status.QuiescedIncarnation = &runner
-	return &unready{reason: "Quiescing", message: fmt.Sprintf("%d Sessions sealed", result.Sessions)}
+	sandbox.Status.QuiesceAttempt = nil
+	return &unready{reason: "Quiescing", message: fmt.Sprintf("%d Sessions sealed", result.Sessions)}, nil
 }
 
 // deleteIfLive deletes obj, that very object, unless its deletion has begun.

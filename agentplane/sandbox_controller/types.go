@@ -99,11 +99,20 @@ type Incarnation struct {
 	UID  string `json:"uid"`
 }
 
+// QuiesceAttempt records when the controller last asked this runner incarnation to quiesce.
+// It lets the controller persist its retry deadline across reconciles and restarts.
+type QuiesceAttempt struct {
+	RunnerPodUID string      `json:"runnerPodUid"`
+	AttemptedAt  metav1.Time `json:"attemptedAt"`
+}
+
 type SandboxStatus struct {
 	Volumes     *SandboxVolumes `json:"volumes,omitempty"`
 	Incarnation *Incarnation    `json:"incarnation,omitempty"`
 	// The UID of the last incarnation whose runner sealed every Session, kept after it stops.
 	QuiescedIncarnation *string `json:"quiescedIncarnation,omitempty"`
+	// The latest Quiesce request, scoped to its runner incarnation, for the controller's retry deadline.
+	QuiesceAttempt *QuiesceAttempt `json:"quiesceAttempt,omitempty"`
 	// OperatingMode is whether the controller runs the Sandbox: the one derivation every reader of
 	// `spec.running` reads instead.
 	OperatingMode OperatingMode `json:"operatingMode,omitempty"`

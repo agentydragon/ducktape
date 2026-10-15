@@ -59,11 +59,12 @@ on `:8081`, and replicas elect a leader by a Lease in the namespace.
 - **The Pod is deleted before the finalizer clears**, in separate reconciles, so the PVC, which
   garbage collection removes afterwards, never goes while a container can still write to it.
 - **The runner seals, the controller asks.** The seal is a unary `Runner.Quiesce` through the gateway
-  proxy, repeated every few seconds until every seal is flushed; a runner that publishes its quiesce
-  stage on the Lease is instead left alone while it reports one, asked again only after a minute, and
-  sealed without a call once it reports `quiesced`. The controller never holds a runner
-  connection. A Sandbox with no connection Lease, the Runner Gateway's record that a runner ever
-  connected, has nothing to seal and is deleted without `Quiesced`.
+  proxy. The controller records the last request time for that runner incarnation before calling,
+  then waits up to one minute before retrying a failed or unfinished request. Runner stage changes
+  enqueue it sooner; `quiesced` completes without another call. The recorded deadline survives
+  watch events and controller restarts. The controller never holds a runner connection. A Sandbox
+  with no connection Lease, the Runner Gateway's record that a runner ever connected, has nothing to
+  seal and is deleted without `Quiesced`.
 - **`RunnerConnected` watches the Lease.** A new connection, a different runner Pod or a change in
   the runner's published facts (quiesce stage, idle-since, bootstrap state, valid only while
   the Lease's `pod-uid` is the incarnation's) enqueues the Sandbox; renewals do not. Time is not an
