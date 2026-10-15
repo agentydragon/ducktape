@@ -154,7 +154,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   }
 
   # Data disks — all on NVMe (local-zfs) unless noted.
-  # virtio0=/dev/vda, virtio1=/dev/vdb, ..., virtio10=/dev/vdk
+  # virtio0=/dev/vda, virtio1=/dev/vdb, ..., virtio11=/dev/vdl
   disk {
     datastore_id = var.storage
     interface    = "virtio0"
@@ -262,6 +262,20 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     replicate    = false
     file_format  = "raw"
   } # Wyrm2 compiler and Python caches — HDD (sccache, uv)
+  # Hotplugged imperatively because Terraform ignores disk changes while the
+  # legacy CSI attachments remain. Keep this declaration aligned with the
+  # attached volume; NixOS uses it for kubelet state, emptyDirs, and pod logs.
+  # It is not replicated or backed up: pod-local data and logs are ephemeral.
+  disk {
+    datastore_id = "tank-hdd"
+    interface    = "virtio11"
+    iothread     = true
+    discard      = "on"
+    size         = 500
+    backup       = false
+    replicate    = false
+    file_format  = "raw"
+  } # Wyrm2 kubelet pod storage — HDD
 
   network_device {
     bridge = "vmbr0"

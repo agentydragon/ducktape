@@ -399,10 +399,10 @@ in
 
   # Separate data disks (Proxmox virtio disks).
   # Existing data disks use autoFormat on first boot and autoResize to full size;
-  # the cache volume is formatted explicitly before its first activation.
+  # cache and kubelet volumes are formatted explicitly before their first activation.
   # virtio0=/dev/vda, virtio1=/dev/vdb, virtio2=/dev/vdc, virtio3=/dev/vdd,
   # virtio4=/dev/vde, virtio5=/dev/vdf, virtio7=/dev/vdh, virtio8=/dev/vdi,
-  # virtio9=/dev/vdj, virtio10=/dev/vdk
+  # virtio9=/dev/vdj, virtio10=/dev/vdk, virtio11=/dev/vdl
   fileSystems."/var/local-path-provisioner" = {
     device = "/dev/vda";
     fsType = "ext4";
@@ -509,6 +509,34 @@ in
       "x-systemd.requires-mounts-for=/var/cache/agentydragon"
     ];
   };
+  # /dev/vdl (virtio11): dedicated HDD filesystem for kubelet state and
+  # disk-backed emptyDirs. This replaces the existing /var/lib/kubelet tree, so
+  # the initial move must happen during node maintenance with pod mountpoints
+  # quiesced; do not activate this over a live pod tree.
+  fileSystems."/var/lib/kubelet" = {
+    device = "/dev/disk/by-label/wyrm2-kubelet";
+    fsType = "ext4";
+    autoResize = true;
+    # Let the workstation boot if the disk is absent, but kubelet's
+    # RequiresMountsFor below keeps it from silently writing state to root.
+    options = [
+      "nodev"
+      "nosuid"
+      "nofail"
+      "x-systemd.device-timeout=10s"
+    ];
+  };
+  # Keep Kubernetes' standard log path; the bind mount puts logs on the same
+  # filesystem as /var/lib/kubelet so kubelet sees one local-ephemeral-storage FS.
+  fileSystems."/var/log/pods" = {
+    device = "/var/lib/kubelet/pod-logs";
+    fsType = "none";
+    options = [
+      "bind"
+      "nofail"
+      "x-systemd.requires-mounts-for=/var/lib/kubelet"
+    ];
+  };
 
   # LVM for OpenEBS LVM LocalPV — thin-provisioned volumes with snapshot support.
   # OpenEBS node agent runs privileged and uses host LVM tools via nsenter.
@@ -575,6 +603,12 @@ in
         hdd = "/dev/vdg";
       }
     )
+    # Wyrm2's dedicated kubelet disk mounts are nofail so the workstation can
+    # boot if the HDD is absent. Kubelet itself must wait for both paths and
+    # fail closed rather than writing pod state back onto the root filesystem.
+    {
+      kubelet.unitConfig.RequiresMountsFor = "/var/lib/kubelet /var/log/pods";
+    }
   ];
 
   # Intermediate directories for the nested repo cache mount.
