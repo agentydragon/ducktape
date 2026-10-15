@@ -89,7 +89,7 @@ carrying the API server's audience, mounted by the sidecar alone and rotated by 
 on the hop for the proxy to substitute into `Authorization` on the rules that name it — the
 `projectedWorkloadToken` credential source (<../../egress/SPEC.md>). The proxy gains no Kubernetes
 rights, the workload sees neither token, and the container boundary holding it is the one the design
-already rests on ([identity evidence](../../docs/sandbox_egress_identity_evidence.md)). Before substituting,
+already rests on (the [ADR](../../docs/adr_sandbox_proxy_gateway.md)). Before substituting,
 the proxy reviews that token against the API server audience and requires it to resolve to the same
 Pod it authenticated, so a substituted credential provably belongs to the caller being decided.
 

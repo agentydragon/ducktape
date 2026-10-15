@@ -22,40 +22,30 @@ per-Sandbox proxy sidecar
     v
 trusted external gateway
     |
-    | TokenReview + live Pod/Sandbox correlation
+    | TokenReview + Pod-bound ServiceAccount identity
     | host/method/path/address and credential policy
     | real upstream credential substituted here only
     v
 allowlisted upstream service
 ```
 
-The sidecar receives no real upstream credential. It receives only the short-lived Kubernetes token
-needed to assert its Pod workload to the gateway. The gateway is the credential-bearing and final
-authorization boundary. It validates the token through Kubernetes TokenReview, checks the live Pod UID
-and (where the deployment path preserves it) source Pod IP, follows the controller owner to the live
-Sandbox, and then authorizes the request against explicit rules before making the upstream request.
+The sidecar receives no real upstream credential. It holds short-lived, audience-scoped Kubernetes
+tokens for the gateway and configured destinations. The gateway is the credential-bearing and final
+authorization boundary. It validates the token through Kubernetes TokenReview and authorizes the
+ServiceAccount identity the API server bound to the Pod. TokenReview returns the Pod name and UID;
+the API server rejects a token bound to a deleted or replaced Pod. The current egress gateway does
+not check the connection source address or resolve the Pod's Sandbox owner.
 
-Once Agentplane exists, its authoritative mapping can extend the gateway decision from:
-
-```text
-Pod -> Sandbox
-```
-
-to:
-
-```text
-Pod -> Sandbox -> Agentplane Thread/Agent
-```
-
-That Thread/Agent binding is a later Agentplane integration concern. It must not be implied merely by
-Kubernetes workload authentication.
+The gateway's principal is a Pod-bound ServiceAccount, not a Sandbox or Thread. A destination that
+needs Sandbox or Thread identity must resolve it through that identity's owning authority; it cannot
+infer it from workload authentication.
 
 ## Problem and constraints
 
 We wanted all of the following:
 
 - keep real upstream credentials outside the Agent's trust domain;
-- let a downstream service identify which live Sandbox workload is calling;
+- let a downstream service authenticate the Pod-bound ServiceAccount making the call;
 - support per-Sandbox/per-Thread provisioning without warm-pool reassignment ambiguity;
 - use native Kubernetes and Agent Sandbox authorities where possible;
 - keep the local relay credentialless and make the central capability narrow enough that an Agent
@@ -68,29 +58,33 @@ the Pod. A runner and a proxy sidecar share the Pod network namespace, Pod IP, a
 Therefore a policy cannot generally allow the sidecar to reach a gateway while denying the runner's TCP
 route to that same gateway.
 
-The spike tested this directly. The runner could open TCP to the verifier/gateway route, but the direct
-application request was rejected because the runner did not possess the sidecar's hidden Pod token and
-upstream credential. The result is application-authenticated capability use, not literal forced routing
-through the sidecar.
-
 ## Evidence behind the decision
 
-The retired disposable proof, preserved as
-[sandbox egress identity evidence](sandbox_egress_identity_evidence.md), established on the
-pinned cluster:
+### Identity boundary and historical evidence
 
-- only the proxy mounted the synthetic upstream Secret and projected audience-scoped Pod token;
-- the runner had no Secret/token mount, Kubernetes API authority, proxy process visibility, or proxy-root
-  access under the tested runc boundary;
-- TokenReview plus live Pod UID/IP and Sandbox owner lookup distinguished two Sandboxes;
-- a copied token from Sandbox A to Sandbox B was rejected;
-- replay, forged headers, invalid credentials, proxy/runner restart, Secret reload, and Pod replacement
-  were exercised; and
-- Sandbox suspension/resume retained the Sandbox UID but replaced the Pod UID, causing the old
-  Pod-bound token to fail.
+A retired disposable spike (proof code and manifests at commit `8e74a1184b`) ran on 2026-09-01 with
+Kubernetes v1.35.1, Agent Sandbox controller v0.5.5 and Cilium-enforced NetworkPolicies. It tested an
+ordinary runc Pod with a runner and proxy sidecar; this lab evidence is not a claim about a current
+cluster rollout or VM isolation.
 
-The proof also recorded what it did **not** establish: same-Pod route confinement, Thread identity,
-durable replay protection, SPIFFE/SPIRE availability, or VM-strength isolation.
+In that setup, only the proxy mounted the synthetic Secret and audience-scoped Pod token; the runner
+could not inspect the proxy's process or root under the tested runc boundary. The runner could open
+TCP to the verifier from the same Pod, but a direct request without the proxy token was refused. This
+confirms an application-authentication boundary, not container-level route confinement: both
+containers shared a Pod network namespace and Cilium identity.
+
+The spike's custom verifier used TokenReview claims, source-Pod-IP comparison and Sandbox-owner UID
+lookup; it rejected a copied token presented for the other Sandbox. Those source and owner checks are
+historical test behavior, not the current egress gateway contract. The production proxy relies on
+TokenReview's Pod-bound identity and authorizes the ServiceAccount subject; it does not inspect source
+IP or follow a Sandbox owner. Current behavior is specified in the [egress contract](../egress/SPEC.md#identity).
+
+The spike also exercised restarts and Pod replacement. It did not establish durable anti-replay: its
+nonce set was in verifier memory and was lost on restart. The current gateway has no request-bound
+nonce or freshness check, and does not reject duplicate client submissions. A copied Pod-bound token
+can be presented from elsewhere in the cluster while it remains valid, subject to that ServiceAccount's
+egress rules. The containers also share Kubernetes Pod and ServiceAccount identity; the spike did not
+establish SPIFFE/SPIRE availability or VM-strength isolation.
 
 ## Why this shape, and not the tempting alternatives
 
@@ -123,16 +117,15 @@ exfiltration, signing, or credential-redemption oracle.
 
 ### Not forwarded headers or source IP as the sole identity
 
-Headers supplied by the Agent are forgeable. Source IP can be useful as a correlation check in a known
-Cilium path, but it is not portable cryptographic identity and may represent a gateway/NAT path. Use
-it only alongside TokenReview and live Pod/Sandbox lookup.
+Headers supplied by the Agent are forgeable. Source IP can be a deployment-specific correlation check,
+but it is not portable cryptographic identity and may represent a gateway/NAT path. The current egress
+gateway does not use it; TokenReview supplies the Pod-bound identity that this contract authorizes.
 
 ### Not SPIFFE/SPIRE as the complete answer
 
 SPIFFE/SPIRE is a candidate workload-authentication layer, not a complete Agentplane identity design.
 It does not automatically establish the Agentplane Thread, request freshness, replay resistance, or
-real-secret exclusion. It was not installed in the spike cluster, so adopting it remains unnecessary
-for this decision.
+real-secret exclusion, so it would not replace this gateway design.
 
 ### Not mTLS alone
 
@@ -157,9 +150,9 @@ capability before startup.
 ### Not Firecracker/Kata/gVisor immediately
 
 A stronger runtime may eventually be justified by a threat model involving container escape or node
-compromise, but the driver protocol should not depend on it. The current evidence demonstrates useful
-credential exclusion under ordinary container boundaries; it does not justify adding a stronger runtime
-before that threat is concrete.
+compromise, but the driver protocol should not depend on it. The retired spike showed credential
+exclusion under its ordinary container boundary; it did not establish VM isolation or a reason to add
+a stronger runtime before that threat is concrete.
 
 ## Consequences
 
@@ -168,7 +161,7 @@ before that threat is concrete.
 - The Agent remains credentialless with respect to real upstream secrets.
 - The gateway receives a native, short-lived Kubernetes workload assertion rather than trusting Agent-
   supplied identity fields.
-- Pod replacement and Sandbox owner checks provide useful stale-object behavior.
+- TokenReview rejects a Pod-bound token after its Pod is deleted or replaced.
 - Agentplane can later add authoritative Pod/Sandbox/Thread binding without changing native harness
   semantics.
 - The proxy and gateway can be tested as narrow capabilities before integrating real upstream services.
@@ -178,18 +171,17 @@ before that threat is concrete.
 - The runner can still reach the gateway at the network layer because of shared Pod identity.
 - The gateway must be Kubernetes-aware or call an authority that is; this is not a portable standalone
   HTTP authentication scheme.
-- TokenReview and live object lookup add latency and availability dependencies.
-- Source-IP correlation is deployment-specific.
-- Durable replay control and request-bound Thread assertions still need implementation if required.
+- TokenReview adds a Kubernetes API availability dependency. The current egress gateway does not
+  correlate the caller's source address or resolve its Sandbox owner.
+- Durable request replay control and request-bound Thread assertions are absent; implement them only
+  when a product path requires those guarantees.
 - Ordinary runc isolation is not a VM-strength boundary.
 
 ## Remaining follow-up
 
-1. Add durable replay/request freshness only when the product path requires it; do not mistake the
-   spike's in-memory nonce set for production protection.
-2. Add request-body policy only when a granted operation needs a narrower request shape than
+1. Add request-body policy only when a granted operation needs a narrower request shape than
    host/method/path and credential-presentation rules provide.
-3. Bind a gateway request to the authoritative Pod/Sandbox/Thread mapping
-   only if the downstream actually needs Thread identity.
-4. Revisit gVisor/Kata/Firecracker only if measured threat or escape evidence exceeds ordinary
+2. Add durable replay protection or bind requests to an authoritative Sandbox/Thread mapping only if
+   a product path requires those guarantees.
+3. Revisit gVisor/Kata/Firecracker only if measured threat or escape evidence exceeds ordinary
    container/sidecar isolation.
