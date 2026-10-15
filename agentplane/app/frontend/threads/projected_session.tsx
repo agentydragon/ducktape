@@ -286,7 +286,7 @@ function VirtualizedHistory({
   tail?: ReactNode;
   running: boolean;
   activeTurn: string | null;
-  history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
+  history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder" | "connection">;
 }): JSX.Element {
   useEffect(() => {
     markThreadViewEvent({
@@ -756,6 +756,7 @@ function VirtualizedHistory({
       ref={viewport}
       role="region"
       aria-label="Thread history"
+      data-thread-connection={history.connection.phase}
       tabIndex={0}
       style={{ overflowY: "auto", overflowAnchor: "none", flex: 1, minHeight: 0 }}
       onWheel={(event) => {
@@ -1046,7 +1047,7 @@ function ProjectedSessionBody({
   threadId: string;
   entities: ThreadEntity[];
   thread: ThreadView;
-  history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder">;
+  history: Pick<ThreadWindow, "olderAvailable" | "loadingOlder" | "loadOlder" | "connection">;
   available: boolean;
   canSendWhileSuspended: boolean;
   onStatusChange: (status: ThreadTabTitleStatus) => void;

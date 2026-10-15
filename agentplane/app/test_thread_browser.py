@@ -1518,12 +1518,34 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     )
     model_activity = page.get_by_label("Last inferred model activity").last
     await expect(model_activity).to_have_text("Model activity: 3y ago")
+    await expect(history).to_have_attribute("data-thread-connection", "live")
+    await expect(page.locator("[data-connection]")).to_have_count(0)
+    await history.evaluate(
+        """area => {
+            const phases = [];
+            const observer = new MutationObserver(() => phases.push(area.dataset.threadConnection));
+            observer.observe(area, { attributes: true, attributeFilter: ['data-thread-connection'] });
+            window.__threadConnectionCapture = { phases, observer };
+        }"""
+    )
     await _review_screenshot(
         page,
         f"thread-output-{viewport_name}-{'following' if following else 'reading'}.png",
         f"Expanded tool output on {viewport_name} while {'following' if following else 'reading'}",
     )
     await expect(model_activity).to_have_text("Model activity: 3y ago")
+    connection_phase_changes = await page.evaluate(
+        """() => {
+            const capture = window.__threadConnectionCapture;
+            capture.observer.disconnect();
+            return capture.phases;
+        }"""
+    )
+    assert not connection_phase_changes, (
+        f"thread sync phase changed during screenshot capture: {connection_phase_changes=}"
+    )
+    await expect(history).to_have_attribute("data-thread-connection", "live")
+    await expect(page.locator("[data-connection]")).to_have_count(0)
     # At the true tail, collapsing a long block can shorten the history below its current scrollTop.
     # The browser must clamp to the new bottom; pixel-stable anchoring is asserted mid-thread, where
     # the history has room to preserve the clicked heading's position.

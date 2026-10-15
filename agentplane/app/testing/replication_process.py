@@ -147,6 +147,32 @@ class GatedConversationDelivery:
         await self._app(scope, receive, gated_send)
 
 
+class EmptyActionsStream:
+    """The browser shell's Actions badge has no configured Action Service in this fixture."""
+
+    def __init__(self, app: ASGIApp) -> None:
+        self._app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http" or scope["method"] != "GET" or scope["path"] != "/actions/stream":
+            await self._app(scope, receive, send)
+            return
+
+        await send(
+            {
+                "type": "http.response.start",
+                "status": 200,
+                "headers": [(b"content-type", b"text/event-stream"), (b"cache-control", b"no-cache")],
+            }
+        )
+        # The app shell subscribes on every route. Keep this unrelated stream healthy and empty instead
+        # of letting the intentionally unconfigured Action Service retry and draw a status spinner.
+        await send({"type": "http.response.body", "body": b"event: snapshot\ndata: []\n\n", "more_body": True})
+        while True:
+            if (await receive())["type"] == "http.disconnect":
+                return
+
+
 class ReadyServer(uvicorn.Server):
     def __init__(self, config: uvicorn.Config, connection: Connection, url: str) -> None:
         super().__init__(config)
@@ -296,6 +322,8 @@ async def _serve(
             # Authentication is tested separately; the production routes, HTTP transport, ingestion,
             # PostgreSQL notifications, and SSE generator all run here unchanged.
             app.dependency_overrides[require_caller] = lambda: CallerIdentity(CallerKind.OPERATOR, "test-operator")
+            if frontend_directory is not None:
+                app.add_middleware(EmptyActionsStream)
             if replay_after is not None:
                 app.add_middleware(
                     GatedConversationDelivery, gate=ReplayGate(replay_after, connection), event_logs=event_logs
