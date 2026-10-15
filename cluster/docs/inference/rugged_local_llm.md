@@ -262,8 +262,13 @@ Installed-path validation after the October 14 evening activation:
   on rugged with the exact cluster credential returns HTTP 200 and seven models.
   Credentials were used only in memory and were not logged. A request from a
   LiteLLM pod through the Kubernetes rugged service timed out; successful cluster
-  inference remains unverified. LiteLLM's own authenticated model list works and
-  includes the three configured rugged routes.
+  inference remains unverified. Direct pod-to-rugged TCP also times out. Source
+  Cilium records forwarded SYNs with SNAT to the source node's Nebula IP and no
+  reply; rugged's Nebula journal records repeated handshake timeouts to that
+  node and several other cluster peers. The overlay connection is therefore a
+  demonstrated blocker, while the underlying UDP/handshake failure is not yet
+  diagnosed. LiteLLM's own authenticated model list works and includes the three
+  configured rugged routes.
 
 The retained Ollama base-tag prefetch is only fallback-cache preparation: it
 does not qualify a context size or establish coding quality for Qwen3.5.
