@@ -22,9 +22,11 @@ py_library(
     deps = [
         "//agentplane/app/threads:dispatcher_client",
         "//agentplane/app/threads:runner_directory",
+        "//agentplane/app/threads/events:event_log",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:runner_pb2",
         "//agentplane/proto:session_dispatcher_pb2",
+        "@pypi//protobuf",
     ],
 )
 

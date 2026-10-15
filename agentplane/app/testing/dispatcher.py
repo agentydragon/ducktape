@@ -1,23 +1,30 @@
 """A test-only Dispatcher client adapter for runner-backed app scenarios."""
 
 from typing import override
+from uuid import UUID
+
+from google.protobuf.json_format import MessageToDict
 
 from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
+from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2
 
 
 class GatewayBackedDispatcher(SessionDispatcherClient):
-    """Keep integration tests focused on app routing while a real runner handles each command.
+    """Keep runner-backed app tests focused on app effects, using a real local Runner Gateway.
 
-    The production app never submits commands to the Runner Gateway. This adapter gives the
-    app's required Dispatcher interface to tests whose purpose is exercising runner effects;
-    Dispatcher queue and retry semantics have their own service tests.
+    This test adapter sends fixture operations to the local Runner Gateway and creates the test
+    Thread row immediately, as the old direct-open path did. It is not evidence for Dispatcher
+    queueing or app production routing; Dispatcher queue, retry, and deadline behavior have
+    separate service/client tests.
     """
 
-    def __init__(self, runners: RunnerDirectory) -> None:
+    def __init__(self, runners: RunnerDirectory, event_logs: EventLogStore) -> None:
         self.runners = runners
+        self.event_logs = event_logs
         self.dispatches: dict[str, session_dispatcher_pb2.Dispatch] = {}
+        self.openings: dict[str, session_dispatcher_pb2.SessionOpening] = {}
 
     @override
     async def command(
@@ -55,8 +62,26 @@ class GatewayBackedDispatcher(SessionDispatcherClient):
     async def open_session(
         self, *, sandbox: str, session_id: str, spec: runner_pb2.SessionSpec, setup_script: str | None
     ) -> session_dispatcher_pb2.SessionOpening:
-        raise AssertionError("these runner-backed tests keep the OpenSession gate disabled")
+        runner = self.runners.client(sandbox)
+        created = await runner.create(
+            session_id=UUID(session_id),
+            spec=MessageToDict(spec, always_print_fields_with_no_presence=True),
+            setup_script=setup_script,
+        )
+        await self.event_logs.open(created.session_id)
+        opening = session_dispatcher_pb2.SessionOpening(
+            session_id=created.session_id, sandbox=sandbox, state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
+        )
+        if created.HasField("attached"):
+            opening.attached.CopyFrom(created.attached)
+        self.openings[created.session_id] = opening
+        return opening
 
     @override
     async def get_session_opening(self, session_id: str) -> session_dispatcher_pb2.SessionOpening:
-        raise AssertionError("these runner-backed tests keep the OpenSession gate disabled")
+        return self.openings.get(
+            session_id,
+            session_dispatcher_pb2.SessionOpening(
+                session_id=session_id, state=session_dispatcher_pb2.DELIVERY_STATE_UNKNOWN
+            ),
+        )

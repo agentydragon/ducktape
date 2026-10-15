@@ -262,9 +262,9 @@ def runners(live_index: LiveIndex, gateway: RunnerGatewayClient) -> RunnerDirect
 
 
 @pytest.fixture
-def dispatcher(runners: RunnerDirectory) -> GatewayBackedDispatcher:
+def dispatcher(runners: RunnerDirectory, event_logs: SeededEventLogStore) -> GatewayBackedDispatcher:
     """The Dispatcher interface for app tests whose scenarios need a live local runner."""
-    return GatewayBackedDispatcher(runners)
+    return GatewayBackedDispatcher(runners, event_logs)
 
 
 @pytest.fixture

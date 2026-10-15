@@ -246,7 +246,10 @@ async def _serve(
             store = ThreadStore(engine, summaries)
             runners = RunnerDirectory(index, gateway)
             bridge = RunnerBridge(
-                runners=runners, event_logs=event_logs, content=content, dispatcher=GatewayBackedDispatcher(runners)
+                runners=runners,
+                event_logs=event_logs,
+                content=content,
+                dispatcher=GatewayBackedDispatcher(runners, event_logs),
             )
             history_watch = HistoryWatch(
                 watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
