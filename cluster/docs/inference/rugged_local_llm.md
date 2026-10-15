@@ -916,10 +916,52 @@ Acceptance sequence on the installed llama.cpp build:
 4. Try 4B if 9B cannot meet memory or latency constraints. Consider 35B-A3B after
    these results, subject to remaining compute time and memory headroom.
 
-Use the prior guard: stop the temporary server below 8 GiB host-available RAM,
-or after nine consecutive two-second samples with full memory PSI avg10 at least
-25%. Record competing workloads and power changes. Bound each experiment and the
+The initial probe used the prior guard (8 GiB available RAM or full memory PSI
+avg10 at least 25% for nine consecutive two-second samples). After it censored
+the 4B run despite more than 11 GiB available RAM, the user authorized a revised
+guard: stop below **1 GiB MemAvailable**, or full memory PSI avg10 at least
+**70% for nine consecutive two-second samples**. Record which guard each run used. Record competing workloads and power changes. Bound each experiment and the
 session; a stopped request is censored, not a completed-context result. Earlier
 4B attempts hit this guard, one amid builds, so they do not establish impossibility.
 Do not change system services for testing or replace the everyday model until
 results justify it. Commit measured outcomes here; skip full benchmark sweeps.
+
+### Qwen3.5 capability checks on the installed llama.cpp build
+
+October 14 follow-up, on AC: temporary text-only servers on loopback port 11512
+used the installed llama.cpp 0.6.0 binary, Q4_K_M weights, q4_0 K/V cache, Flash
+Attention on, context 139,264, batch/microbatch 256, one slot, reasoning off,
+speculative drafting off, and automatic memory fitting off. The installed router
+configuration was unchanged and its Qwen3 4B profile was also loaded during part
+of the run. These are shared-workstation observations, not an isolated benchmark.
+
+9B weights: `unsloth/Qwen3.5-9B-GGUF`, revision
+`3885219b6810b007914f3a7950a8d1b469d598a5`, `Qwen3.5-9B-Q4_K_M.gguf`,
+5,680,522,464 bytes. SHA-256 verification matched
+`03b74727a860a56338e042c4420bb3f04b2fec5734175f4cb9fa853daf52b7e8`.
+4B reused the cached Ollama GGUF digest
+`a9d0a3e1d8c91732a3812becd31f8d4a8ff57414903f226306069f0437e2ac50`.
+
+Both sizes returned `READY`, generated a valid `read_file` call, incorporated the
+returned marker into their answer, and generated a `replace_text` call that the
+scratch harness executed to change `return a + b` into `return a - b` in
+`subtract.py`. The resulting file was checked exactly. This is a tiny direct-chat
+tool smoke, not an OpenCode run or a scored coding benchmark. Short tool-response
+decode rates were approximately 25–26 tok/s for 4B and 15–16 tok/s for 9B; those
+17–44-token generations are not stable throughput estimates.
+
+The initial 4B long request was censored at 28,416 processed tokens by the old
+25%-PSI guard after about five minutes. Minimum sampled available RAM was
+11.22 GiB; full PSI peaked at 34.57%. No answer was produced, so it has no
+retrieval score. A subsequent 9B attempt was manually interrupted near its start
+to apply the user-authorized 1 GiB / 70%-PSI guard, rather than count an old-policy
+stop against the new experiment.
+
+With the revised guard, 9B completed a 63,907-token chat prompt with zero cached
+tokens and `truncated = 0`. All three exact ledger codes, inserted near 10%, 50%,
+and 90% of the filler text, were recovered. Native prefill was 1,141.10 seconds
+(56.00 tok/s), TTFT 1,141.59 seconds, and total request time 1,144.44 seconds.
+It generated 27 tokens at a reported 9.11 tok/s. The filler was deterministic
+random common words: this checks context transport and tiny-N retrieval, not
+repository comprehension. The >128 Ki-token request is still pending; allocating
+139,264 context does not establish completion at that input length.
