@@ -13,12 +13,11 @@ The local path remains `rugged-opencode-offline` → `127.0.0.1:11436` → llama
 the iGPU. Background model provisioning and all seven local picker profiles remain
 enabled. Cluster access is restored through three LiteLLM routes and the NixOS bearer
 proxy on port 18080; the routes are available only to keys that include the
-`cheap_experiments_models` lane. This restores the declarative route and proxy path,
-but does not establish end-to-end inference reliability. On October 14, a direct Qwen3
-4B request from a LiteLLM pod to rugged's proxy returned HTTP 200 with `READY`, while an
-unauthenticated request returned 401. That checked one backend request over the pod-to-host
-path; it did not traverse the restored LiteLLM model route, which has not been deployed.
-Nebula reliability work remains deferred; see the
+`cheap_experiments_models` lane. On October 14, all three models returned HTTP
+200 and `READY` through each of the two deployed LiteLLM replicas. A Qwen3 4B
+request through `https://litellm.allegedly.works/v1/chat/completions` also succeeded
+with the restricted key. See [cluster verification](#cluster-verification-after-network-recovery)
+for timings and scope. Nebula reliability work remains deferred; see the
 [partial-connectivity investigation](../../debug/2026-10-14-rugged-nebula-partial-connectivity.md).
 
 ## Backends
@@ -256,7 +255,8 @@ installs the inline Home Manager launcher. No live host activation or
 authenticated cluster end-to-end verification was performed in these router
 checks.
 
-Installed-path validation after the October 14 evening activation:
+Installed-path validation after the October 14 evening activation (before the
+network recovery and cluster verification below):
 
 - `nginx` and `llama-cpp` are active; provisioning finished successfully with all
   nine artifacts ready, and systemd has no pending activation jobs. Provisioning
@@ -811,7 +811,7 @@ tokens is too slow for interactive use. This smoke supports SSD-streaming
 feasibility, but does not characterize other cache sizes, GPU behavior,
 throughput, or agent-task quality.
 
-## Cluster serving status
+## Cluster serving history
 
 [PR #10452](https://github.com/agentydragon/ducktape/pull/10452) replaces the stale
 NPU-only route with Ollama routes behind a Nebula-bound bearer proxy. It rotates
@@ -836,6 +836,44 @@ The host module now gives the rendered template to the configured nginx user
 and group, retaining mode 0400. The underlying token secret remains root-only.
 Nix evaluation verifies the template owner matches the service user, and a
 non-root nginx configuration check passed with the actual template and a dummy
-token in an owner-readable-only fixture. Applying this ownership change and
-verifying a real cluster-to-rugged request remain pending; this session cannot
-use passwordless sudo. These checks do not establish deployed cluster access.
+token in an owner-readable-only fixture. At that point, applying this ownership change and verifying a real
+cluster-to-rugged request were pending because passwordless sudo was unavailable.
+The later activation and verification below supersede that deployment status.
+
+## Cluster verification after network recovery
+
+On October 14, [PR #10572](https://github.com/agentydragon/ducktape/pull/10572)
+restored the three opt-in routes with the current llama.cpp router model IDs and
+the host bearer proxy enabled. Flux reported both `litellm` and `litellm-keys-tf`
+Ready, and the Terraform key reconciler reported successful application. The
+already-running host proxy served these checks; no additional host switch was needed.
+
+Requests used the `litellm-key-cheap-experiments` credential in memory. Each
+replica's `/v1/models` listed all three rugged routes. Each completion requested
+`Reply with exactly READY.`, temperature 0, maximum 8 output tokens. All six
+returned HTTP 200, content `READY`, and 2 completion tokens (13 prompt tokens for
+Qwen, 14 for Gemma).
+
+| Public model ID (after `rugged-local/oai-chat/`) | ovh-ns104963 | ovh-ns104952 |
+| ------------------------------------------------ | -----------: | -----------: |
+| `gemma4-e2b-it-qat-long-128k-experimental`       |      20.89 s |      21.16 s |
+| `gemma4-e4b`                                     |      14.67 s |      23.27 s |
+| `qwen3-4b-instruct-2507-q4-k-m`                  |      16.85 s |       7.13 s |
+
+Each column is one sequential pass through the three models using that node's
+LiteLLM replica (`litellm-f466cf567-9jl82` and `litellm-f466cf567-f84q7`,
+respectively). Requests entered LiteLLM on localhost inside each pod, then used
+the configured Kubernetes Service → rugged nginx bearer proxy → llama.cpp path.
+These elapsed times include routing and model switching/loading; they are not
+decode-speed measurements or a statistically meaningful latency comparison.
+
+A subsequent Qwen request through the normal HTTPS endpoint,
+`https://litellm.allegedly.works/v1/chat/completions`, with the same restricted key
+returned HTTP 200 and `READY` in 0.41 s (13 prompt tokens, 12 cached; 2 completion
+tokens). This additionally exercised ingress with TLS verification enabled and
+the model already loaded. Earlier missing/wrong host bearer checks returned 401.
+
+This establishes short inference through the deployed routes from both replicas
+and through HTTPS at this point in time. It does not establish roaming reliability,
+long-context retrieval through this router, or concurrent-load behavior. No Nebula
+topology change was made; the intermittent connectivity investigation remains deferred.
