@@ -245,7 +245,7 @@ async def test_listen_deliver_read_ack_and_recover_lost_response_without_app(
                 source,
                 cluster.inventory,
                 github=None,
-                gateway=remote,
+                control=remote.control,
                 history=history,
                 dispatcher=dispatcher,
                 notice_debounce=NoticeDebounceSettings(quiet_seconds=0),
