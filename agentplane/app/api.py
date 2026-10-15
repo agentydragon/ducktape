@@ -67,7 +67,14 @@ from agentplane.app.operator_sessions import (
 )
 from agentplane.app.presets import PresetCatalog, SandboxPresetView
 from agentplane.app.sandbox_access import SandboxAccess
-from agentplane.app.sandbox_models import NewSandbox, SandboxView, create_request, sandbox_is_ready, sandbox_view
+from agentplane.app.sandbox_models import (
+    NewSandbox,
+    SandboxView,
+    SandboxWakePolicyChange,
+    create_request,
+    sandbox_is_ready,
+    sandbox_view,
+)
 from agentplane.app.shutdown import Drain, DrainMiddleware, Shutdown, until_done
 from agentplane.app.system_status import ComponentStatus, SystemStatusChecker
 from agentplane.app.threads import bridge as runner_bridge
@@ -348,6 +355,12 @@ async def suspend_sandbox(inventory: Inventory, name: str) -> None:
 @router.post("/{name}/resume", status_code=status.HTTP_204_NO_CONTENT)
 async def resume_sandbox(inventory: Inventory, name: str) -> None:
     await inventory.resume(name)
+
+
+@router.patch("/{name}/wake-policy", status_code=status.HTTP_204_NO_CONTENT)
+async def set_sandbox_wake_policy(inventory: Inventory, name: str, change: SandboxWakePolicyChange) -> None:
+    """Change whether messages may resume this exact Sandbox incarnation; this does not wake it."""
+    await inventory.set_wake_on_send(name, uid=str(change.uid), wake_on_send=change.wake_on_send)
 
 
 @router.delete("/{name}", status_code=status.HTTP_204_NO_CONTENT)

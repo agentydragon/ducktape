@@ -1,7 +1,8 @@
-"""The operator's writes of Sandboxes: create, suspend, resume and delete.
+"""The operator's Sandbox writes, made by the app through Kubernetes.
 
 The app makes these Kubernetes calls for the operator who asked; the Sandbox Controller acts on
-the objects without editing their spec.
+the objects without editing their spec. Wake-on-send is a durable policy, separate from the request
+to resume a stopped Sandbox.
 """
 
 from collections.abc import AsyncIterator, Set
@@ -40,6 +41,9 @@ class SandboxAccess:
 
     async def resume(self, name: str) -> None:
         await self._inventory.resume(name, uid=(await self.get(name)).uid)
+
+    async def set_wake_on_send(self, name: str, *, uid: str, wake_on_send: bool) -> None:
+        await self._inventory.set_wake_on_send(name, uid=uid, wake_on_send=wake_on_send)
 
     async def delete(self, name: str) -> None:
         await self._inventory.begin_teardown(name, uid=(await self.get(name)).uid)

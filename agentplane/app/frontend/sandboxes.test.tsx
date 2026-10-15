@@ -11,9 +11,11 @@ import { SandboxList } from "./sandboxes";
 import { DeleteButton, deletable, SuspendResume } from "./lifecycle";
 import { sandboxSummary } from "./sandbox_status";
 
+const liveSandboxData = vi.hoisted(() => ({ snapshot: null as { sandboxes: unknown[] } | null }));
+
 vi.mock("./live", () => ({
   liveSandboxesUrl: () => "/live/sandboxes",
-  useLive: () => ({ snapshot: null }),
+  useLive: () => liveSandboxData,
 }));
 
 (globalThis as typeof globalThis & { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -23,6 +25,7 @@ afterEach(async () => {
     await act(async () => root.unmount());
     container.remove();
   }
+  liveSandboxData.snapshot = null;
   vi.restoreAllMocks();
 });
 
@@ -36,6 +39,7 @@ const CREATED: SandboxView = {
   status: null,
   phase: "Creating",
   pod: null,
+  wake_on_send: false,
 };
 
 async function render(
@@ -143,6 +147,7 @@ it("pre-fills the preset's policy sets, hides picked sets, and sends the picks",
       preset: "test-preset",
       policy_sets: ["test-basic", "test-packages"],
       bootstrap: "mkdir -p /state/workspaces",
+      wake_on_send: false,
     },
   });
   expect(onOpen).toHaveBeenCalledExactlyOnceWith(CREATED.name);
@@ -238,6 +243,48 @@ it("creates under the preset-derived placeholder when the name is left empty", a
     "/sandboxes",
     expect.objectContaining({ body: expect.objectContaining({ name: "test-preset-1" }) })
   );
+});
+
+it("lets an operator opt a new Sandbox into wake on message", async () => {
+  const { container } = await render();
+  const wakeCheckbox = container.querySelector<HTMLInputElement>('input[type="checkbox"]');
+  if (!wakeCheckbox) throw new Error("Missing Wake on message checkbox");
+  expect(wakeCheckbox.checked).toBe(false);
+  await act(async () => wakeCheckbox.click());
+  expect(wakeCheckbox.checked).toBe(true);
+
+  const post = vi.spyOn(api, "POST").mockResolvedValue({ data: CREATED, response: new Response() } as never);
+  await type(input(container, "Name"), "wake-enabled");
+  const button = [...container.querySelectorAll("button")].find((node) => node.textContent === "New sandbox");
+  if (!button) throw new Error("Missing New sandbox button");
+  await act(async () => button.click());
+
+  expect(post).toHaveBeenCalledWith(
+    "/sandboxes",
+    expect.objectContaining({ body: expect.objectContaining({ wake_on_send: true }) })
+  );
+});
+
+it("shows existing wake policy and updates the displayed Sandbox incarnation", async () => {
+  liveSandboxData.snapshot = { sandboxes: [{ ...CREATED, wake_on_send: true }] };
+  const { container } = await render();
+  const checkbox = container.querySelector<HTMLInputElement>(
+    'input[aria-label="Wake on message for test-created-sandbox"]'
+  );
+  if (!checkbox) throw new Error("Missing existing Sandbox Wake on message checkbox");
+  expect(checkbox.checked).toBe(true);
+
+  const patch = vi.spyOn(api, "PATCH").mockResolvedValue({
+    data: undefined,
+    response: new Response(null, { status: 204 }),
+  } as never);
+  await act(async () => checkbox.click());
+
+  expect(patch).toHaveBeenCalledWith("/sandboxes/{name}/wake-policy", {
+    params: { path: { name: CREATED.name } },
+    body: { uid: CREATED.uid, wake_on_send: false },
+  });
+  expect(checkbox.checked).toBe(false);
 });
 
 it("flags an invalid typed name and refuses to create", async () => {

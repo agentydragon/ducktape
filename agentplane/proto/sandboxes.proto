@@ -33,6 +33,8 @@ message CreateSandboxRequest {
   repeated string policy_sets = 8;
   // The app's preset this Sandbox was made from, recorded as a label; the controller never resolves it.
   optional string preset = 9;
+  // Whether an incoming message may resume this Sandbox after suspension.
+  bool wake_on_send = 10;
 }
 
 message SandboxBinding {
@@ -77,6 +79,7 @@ message Sandbox {
   google.protobuf.Struct status = 16;
   SandboxPhase phase = 20;
   optional string preset = 21;
+  bool wake_on_send = 22;
 }
 
 // Where the Sandbox is in its lifecycle, derived from what the Sandbox Controller records: whether

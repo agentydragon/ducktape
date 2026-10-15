@@ -59,6 +59,7 @@ def sandbox_view(
         service_account=ServiceAccount(namespace=metadata.namespace, name=metadata.name),
         binding=_binding(spec),
         preset=metadata.labels.get(sandbox_resource.PRESET_LABEL),
+        wake_on_send=spec.wake_on_send,
         phase=_phase(sandbox),
         pod=_pod(pod, api_client=api_client) if pod is not None and sandbox.runs_in(pod) else None,
     )

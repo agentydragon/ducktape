@@ -148,6 +148,7 @@ class SandboxInventory(SandboxReader):
                 "template": spec.template,
                 "running": True,
                 "policySets": sorted(policy_sets),
+                "wakeOnSend": spec.wake_on_send,
                 **({"bootstrap": spec.bootstrap} if spec.bootstrap else {}),
             },
         }
@@ -175,6 +176,27 @@ class SandboxInventory(SandboxReader):
 
     async def resume(self, name: str, *, uid: str) -> None:
         await self._set_running(name, True, uid=uid)
+
+    @_retry_on_conflict
+    async def set_wake_on_send(self, name: str, *, uid: str, wake_on_send: bool) -> None:
+        """Change the durable send-wake policy on exactly the Sandbox incarnation the caller saw."""
+        sandbox = await self._incarnation(name, uid=uid)
+        if sandbox.metadata.deletion_timestamp is not None:
+            raise SandboxTearingDownError(name)
+        if sandbox.spec.wake_on_send == wake_on_send:
+            return
+        await self._custom_objects.patch_namespaced_custom_object(
+            GROUP,
+            VERSION,
+            self._namespace,
+            sandbox_resource.SANDBOXES_PLURAL,
+            name,
+            {
+                "metadata": {"uid": uid, "resourceVersion": sandbox.metadata.resource_version},
+                "spec": {"wakeOnSend": wake_on_send},
+            },
+            _content_type=_MERGE_PATCH,
+        )
 
     @_retry_on_conflict
     async def wake_for_send(

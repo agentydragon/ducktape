@@ -119,7 +119,48 @@ async def test_create_writes_a_running_sandbox_of_the_template(
         "running": True,
         "policySets": ["test-a", "test-b"],
         "bootstrap": "printf boot",
+        "wakeOnSend": False,
     }
+
+
+async def test_wake_policy_is_uid_fenced_and_does_not_resume_or_wake(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    view = await inventory.create(
+        CreateSandboxRequest(name="wake-policy", template=TEMPLATE, wake_on_send=True), policy_sets=set(), caller=CALLER
+    )
+    stored = custom_objects.objects[(SANDBOXES_PLURAL, view.name)]
+    assert stored["spec"]["wakeOnSend"] is True
+
+    await inventory.set_wake_on_send(view.name, uid=view.uid, wake_on_send=False)
+
+    assert stored["spec"]["wakeOnSend"] is False
+    assert stored["spec"]["running"] is True
+    assert stored["spec"].get("wakeGeneration", 0) == 0
+    assert custom_objects.patches[-1] == (
+        SANDBOXES_PLURAL,
+        view.name,
+        {"metadata": {"uid": view.uid, "resourceVersion": "1"}, "spec": {"wakeOnSend": False}},
+    )
+
+    stored["metadata"]["uid"] = "replacement-incarnation"
+    with pytest.raises(SandboxNotFoundError):
+        await inventory.set_wake_on_send(view.name, uid=view.uid, wake_on_send=True)
+
+
+async def test_wake_policy_refuses_a_sandbox_that_is_being_deleted(
+    inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi
+) -> None:
+    view = await inventory.create(
+        CreateSandboxRequest(name="deleting-wake-policy", template=TEMPLATE), policy_sets=set(), caller=CALLER
+    )
+    stored = custom_objects.objects[(SANDBOXES_PLURAL, view.name)]
+    stored["metadata"]["deletionTimestamp"] = "2026-09-02T10:01:00Z"
+
+    with pytest.raises(SandboxTearingDownError):
+        await inventory.set_wake_on_send(view.name, uid=view.uid, wake_on_send=True)
+
+    assert stored["spec"]["wakeOnSend"] is False
 
 
 async def test_create_records_the_preset_as_a_label_and_reads_it_back(

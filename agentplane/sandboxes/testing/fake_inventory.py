@@ -112,6 +112,9 @@ class FakeCustomObjectsApi:
         assert _content_type == "application/merge-patch+json"
         assert isinstance(body, dict)
         target = await self.get_namespaced_custom_object("", "", namespace, plural, name)
+        uid = body.get("metadata", {}).get("uid")
+        if uid is not None and uid != target["metadata"].get("uid"):
+            raise k8s_client.ApiException(status=409)
         version = body.get("metadata", {}).get("resourceVersion")
         if version is not None and version != target["metadata"].get("resourceVersion"):
             raise k8s_client.ApiException(status=409)

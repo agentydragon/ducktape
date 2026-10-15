@@ -140,6 +140,7 @@ async def test_threads_watch_stale(view: VisualPage, app: AgentplaneFixture) -> 
 @DESKTOP_AND_MOBILE
 async def test_sandboxes(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_app("/sandboxes")
+    await view.page.wait_for_selector('[aria-label="Wake on message for ready-sandbox"]', state="attached")
     await view.check(context="fixture ready")
     await view.capture(target=view.page.locator("#app"))
 

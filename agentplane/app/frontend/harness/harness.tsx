@@ -63,6 +63,7 @@ const SANDBOXES: SandboxView[] = [
     created_at: ago(3 * HOUR),
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "ready-sandbox" },
+    wake_on_send: true,
     status: { conditions: [{ type: "Ready", status: "True", reason: "PodReady", lastTransitionTime: ago(HOUR) }] },
     phase: "Running",
     pod: {
@@ -102,6 +103,7 @@ const SANDBOXES: SandboxView[] = [
     created_at: ago(2 * 60_000),
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "pending-sandbox" },
+    wake_on_send: false,
     status: { conditions: [{ type: "Ready", status: "False", reason: "PodPending" }] },
     phase: "Running",
     pod: {
@@ -145,6 +147,7 @@ const SANDBOXES: SandboxView[] = [
     created_at: ago(48 * HOUR),
     operating_mode: "Suspended",
     service_account: { namespace: "agentplane-visual", name: "suspended-sandbox" },
+    wake_on_send: false,
     status: { conditions: [{ type: "Ready", status: "False", reason: "Suspended" }] },
     phase: "Suspended",
     pod: null,
@@ -159,6 +162,7 @@ function addProvisioningSandbox(): void {
     created_at: ago(30_000),
     operating_mode: "Running",
     service_account: { namespace: "agentplane-visual", name: "test-provisioning" },
+    wake_on_send: false,
     status: null,
     phase: "Creating",
     pod: null,

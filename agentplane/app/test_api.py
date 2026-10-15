@@ -244,6 +244,8 @@ async def test_create_returns_the_new_row(client: httpx.AsyncClient, custom_obje
     assert row["operating_mode"] is None
     assert row["phase"] == "Unspecified"
     assert row["pod"] is None
+    assert row["wake_on_send"] is False
+    assert custom_objects.objects[(SANDBOXES_PLURAL, row["name"])]["spec"]["wakeOnSend"] is False
     assert (SANDBOXES_PLURAL, row["name"]) in custom_objects.objects
     # Nothing was picked, so nothing may leave it.
     assert (await client.get(f"/sandboxes/{row['name']}/egress")).json() == []
@@ -270,15 +272,23 @@ async def test_create_records_preset_label_and_bootstrap_without_per_sandbox_ses
             "policy_sets": ["packages"],
             "preset": "public-coder",
             "bootstrap": "mkdir -p /state/workspaces",
+            "wake_on_send": True,
         },
     )
 
     assert response.status_code == 201, response.text
     row = response.json()
     assert row["preset"] == "public-coder"
+    assert row["wake_on_send"] is True
     assert row["binding"]["bootstrap"] == "mkdir -p /state/workspaces"
     assert "session_defaults" not in row["binding"]
-    assert custom_objects.objects[(SANDBOXES_PLURAL, row["name"])]["spec"]["policySets"] == ["packages"]
+    assert custom_objects.objects[(SANDBOXES_PLURAL, row["name"])]["spec"] == {
+        "template": TEMPLATE,
+        "running": True,
+        "policySets": ["packages"],
+        "bootstrap": "mkdir -p /state/workspaces",
+        "wakeOnSend": True,
+    }
 
 
 async def test_create_rejects_per_sandbox_session_defaults(client: httpx.AsyncClient) -> None:
@@ -346,6 +356,28 @@ async def test_suspend_resume_apply_in_order(client: httpx.AsyncClient, custom_o
     assert (await client.get("/sandboxes/live")).json()["operating_mode"] == "Running"
     assert custom_objects.objects[(SANDBOXES_PLURAL, "live")]["spec"]["running"] is True
     assert (await client.post("/sandboxes/nope/suspend")).status_code == 404
+
+
+async def test_wake_policy_changes_only_the_policy_and_checks_the_displayed_uid(
+    client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
+) -> None:
+    stored = custom_objects.objects[(SANDBOXES_PLURAL, "live")]
+    original_running = stored["spec"]["running"]
+    original_generation = stored["spec"].get("wakeGeneration")
+    uid = stored["metadata"]["uid"]
+
+    response = await client.patch("/sandboxes/live/wake-policy", json={"uid": uid, "wake_on_send": True})
+
+    assert response.status_code == 204
+    assert stored["spec"]["wakeOnSend"] is True
+    assert stored["spec"]["running"] is original_running
+    assert stored["spec"].get("wakeGeneration") == original_generation
+    assert custom_objects.patches[-1][2]["spec"] == {"wakeOnSend": True}
+
+    replacement_uid = custom_objects.objects[(SANDBOXES_PLURAL, "fresh")]["metadata"]["uid"]
+    stale = await client.patch("/sandboxes/live/wake-policy", json={"uid": replacement_uid, "wake_on_send": False})
+    assert stale.status_code == 404
+    assert stored["spec"]["wakeOnSend"] is True
 
 
 async def test_resume_during_controller_quiescing_is_retryable_in_direct_app(

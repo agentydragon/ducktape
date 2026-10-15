@@ -67,6 +67,18 @@ class NewSandbox(BaseModel):
     preset: str | None = Field(default=None, description="The preset the form's fields were taken from, if any.")
     policy_sets: list[str] = Field(default_factory=list, description="PolicySet names to bind.")
     bootstrap: str = Field(default="", max_length=65_536, description="Runner initialization script for this Sandbox.")
+    wake_on_send: bool = Field(
+        default=False, description="Whether an incoming message may resume this Sandbox after suspension."
+    )
+
+
+class SandboxWakePolicyChange(BaseModel):
+    """The user-controlled wake policy, fenced to the Sandbox incarnation the browser displayed."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    uid: UUID
+    wake_on_send: bool
 
 
 class OwnerReferenceView(BaseModel):
@@ -112,6 +124,7 @@ class SandboxView(BaseModel):
     )
     binding: SandboxBinding | None = Field(default=None, description="The bootstrap selected for this Sandbox.")
     preset: str | None = Field(default=None, description="The preset it was made from, when it was made from one.")
+    wake_on_send: bool = Field(default=False, description="Whether an incoming message may resume this Sandbox.")
     phase: SandboxPhase = Field(
         description="Unspecified means the controller has not reported an effective mode yet. "
         "Quiescing and Tearing down mean deletion was asked for: it seals and waits for its ingress, "

@@ -2,6 +2,7 @@ import {
   ActionIcon,
   Badge,
   Button,
+  Checkbox,
   Group,
   Menu,
   MultiSelect,
@@ -32,6 +33,7 @@ const EMPTY_FORM: NewSandbox = {
   template: "",
   policy_sets: [],
   bootstrap: "",
+  wake_on_send: false,
 };
 // The picked preset, in the URL like the sandbox page's tab, so a launch form can be linked to.
 const PRESET_PARAM = "preset";
@@ -56,8 +58,23 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
   const [policySets, setPolicySets] = useState<string[]>([]);
   // The sandbox whose deletion is being confirmed, by name; deleting takes its volume with it.
   const [confirmingDelete, setConfirmingDelete] = useState<string | null>(null);
+  const [pendingWakePolicy, setPendingWakePolicy] = useState<Record<string, boolean>>({});
+  const [savingWakePolicy, setSavingWakePolicy] = useState<Set<string>>(new Set());
   const live = useLive<SandboxesSnapshot>(liveSandboxesUrl(), "Sandboxes");
   const rows: SandboxView[] = live.snapshot?.sandboxes ?? [];
+  useEffect(() => {
+    setPendingWakePolicy((current) => {
+      const next = { ...current };
+      let changed = false;
+      for (const row of rows) {
+        if (next[row.uid] === row.wake_on_send) {
+          delete next[row.uid];
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [rows]);
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedPreset = searchParams.get(PRESET_PARAM);
   // An empty Name field creates the Sandbox under this free name, derived from the preset's.
@@ -136,6 +153,30 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
     }
   }
 
+  async function setWakePolicy(row: SandboxView, wake_on_send: boolean): Promise<void> {
+    setPendingWakePolicy((current) => ({ ...current, [row.uid]: wake_on_send }));
+    setSavingWakePolicy((current) => new Set(current).add(row.uid));
+    const { error: failure } = await api.PATCH("/sandboxes/{name}/wake-policy", {
+      params: { path: { name: row.name } },
+      body: { uid: row.uid, wake_on_send },
+    });
+    setSavingWakePolicy((current) => {
+      const next = new Set(current);
+      next.delete(row.uid);
+      return next;
+    });
+    if (failure) {
+      setPendingWakePolicy((current) => {
+        const next = { ...current };
+        delete next[row.uid];
+        return next;
+      });
+      setError(displayableError(failure));
+    } else {
+      setError(null);
+    }
+  }
+
   return (
     <Stack>
       <TopbarTitle>
@@ -199,6 +240,12 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
           onChange={(picked) => setForm({ ...form, policy_sets: picked })}
           style={{ flex: "1 1 18rem" }}
         />
+        <Checkbox
+          label="Wake on message"
+          description="Allow an incoming message to resume this Sandbox if it is suspended."
+          checked={form.wake_on_send ?? false}
+          onChange={(event) => setForm({ ...form, wake_on_send: event.currentTarget.checked })}
+        />
         <Button onClick={() => void create()} disabled={nameError !== null || !form.template}>
           New sandbox
         </Button>
@@ -217,6 +264,7 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
             <Table.Th>Name</Table.Th>
             <Table.Th visibleFrom="sm">Status</Table.Th>
             <Table.Th visibleFrom="sm">Node</Table.Th>
+            <Table.Th visibleFrom="sm">Wake on message</Table.Th>
             <Table.Th />
           </Table.Tr>
         </Table.Thead>
@@ -237,10 +285,28 @@ export function SandboxList({ onOpen }: { onOpen: (name: string) => void }): JSX
                     <Text size="xs" c="dimmed">
                       {node}
                     </Text>
+                    <Checkbox
+                      aria-label={"Wake on message for " + row.name}
+                      checked={pendingWakePolicy[row.uid] ?? row.wake_on_send ?? false}
+                      disabled={
+                        savingWakePolicy.has(row.uid) || row.phase === "Quiescing" || row.phase === "Tearing down"
+                      }
+                      onChange={(event) => void setWakePolicy(row, event.currentTarget.checked)}
+                    />
                   </Stack>
                 </Table.Td>
                 <Table.Td visibleFrom="sm">{state}</Table.Td>
                 <Table.Td visibleFrom="sm">{node}</Table.Td>
+                <Table.Td visibleFrom="sm">
+                  <Checkbox
+                    aria-label={"Wake on message for " + row.name}
+                    checked={pendingWakePolicy[row.uid] ?? row.wake_on_send ?? false}
+                    disabled={
+                      savingWakePolicy.has(row.uid) || row.phase === "Quiescing" || row.phase === "Tearing down"
+                    }
+                    onChange={(event) => void setWakePolicy(row, event.currentTarget.checked)}
+                  />
+                </Table.Td>
                 <Table.Td style={{ width: "1%", whiteSpace: "nowrap" }}>
                   <Group gap="xs" wrap="nowrap" justify="flex-end">
                     <SuspendResume sandbox={row} onAct={(action) => void act(row.name, action)} />
