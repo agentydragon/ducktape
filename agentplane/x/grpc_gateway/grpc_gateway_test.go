@@ -254,8 +254,9 @@ func TestGrpcTimeoutHeaderSetsUnaryDeadline(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("fixture did not report the gRPC deadline")
 	}
-	if err := <-f.service.echoDone; !errors.Is(err, context.DeadlineExceeded) {
-		t.Fatalf("fixture Echo context error = %v, want deadline exceeded", err)
+	// The gateway's HTTP deadline and the server-side gRPC deadline can expire in either order.
+	if err := <-f.service.echoDone; !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("fixture Echo context error = %v, want cancellation when the request deadline expires", err)
 	}
 }
 
