@@ -211,6 +211,14 @@ Agentplane Session. See [`session.py`](../runner/session.py),
 [`store.py`](../runner/store.py), and the adapters
 ([Claude](../runner/claude.py), [Codex](../runner/codex.py)).
 
+The current lifecycle is Session-scoped: `Runner` keeps a map of `Session` objects; each Session's
+`ensure_running()` creates its own `HarnessProcess` and adapter using that Session's directory, and
+`Session.shutdown()` stops the process while retaining resumable Session state. Runner shutdown stops
+each Session's process separately. Therefore a Session stop currently stops only its own harness.
+Multiplexing multiple Sessions through one process would decouple those lifetimes: stopping or closing
+one Session must not terminate a process still serving other Sessions, and the process needs its own
+start, failure, restart and no-Sessions-left policy.
+
 `HarnessStarted` records `resumed` and a PID, not a unique process-incarnation ID. PID is useful
 process-local diagnostic data, but may be reused and does not identify a spawn over time. The stored
 `native_session_id` survives process restart; it is a Claude session ID or Codex thread ID, not the
@@ -230,27 +238,33 @@ Keep three axes explicit in the design:
   to that store rather than globally unique. Keep it distinct from Agentplane's public Session ID and
   any native child identity.
 
-### Alternative: exactly one harness per Runner
+### Coherent harness-ownership alternatives
 
-One option is exactly one harness per Runner, with the harness process lifetime coupled to the
-Runner. If that harness safely supports multiple independent interactive Sessions, the Runner could
-route its Sessions through one harness-level endpoint. This may simplify harness-level routing, but
-it sacrifices running mixed Codex and Claude Sessions in the same Sandbox/Runner; compare one
-per-Sandbox harness selection and homogeneous templates with the flexibility of multiple harnesses.
+One coherent option is exactly one harness type and one persisted harness store per Runner, with its
+process lifecycle coupled to the Runner. If that harness safely supports multiple independently
+interactive Sessions, all Sessions in the Runner can route through it. This is the only single-harness
+variant here that removes store-address ambiguity, but all Sessions share the store, raising isolation
+and concurrency questions. It also gives up mixed Codex and Claude Sessions in one Sandbox/Runner;
+compare per-Sandbox harness selection and homogeneous templates with multiple-harness flexibility.
 
-Separate two versions of this option. One live harness process per Runner, while retaining separate
-per-Session stores, does not remove persisted-store addressing: after a process restart, the new
-incarnation still needs to find each Session's store. One persisted harness store per Runner is the
-stronger simplification and the only version here that removes ambiguity about which store a
-Session belongs to. It also makes all Sessions share that store, so establish data isolation,
-concurrency and native identity behavior rather than treating the simplification as free.
+The other coherent option allows multiple harness processes and stores per Runner, with each process
+potentially serving multiple Sessions if the pinned harness supports it. Do not impose an arbitrary
+same-harness-type rule. This preserves mixed Codex/Claude use but requires explicit process/store
+identity and Session-to-store/process routing. Once infrastructure supports multiple processes and
+stores, a same-type-only rule adds little architectural simplification; actual resource limits and
+the harnesses' proven capabilities still constrain what can run. Restricting a deployment to one
+later is a smaller step than adding identities and routing after committing to one; this modest
+migration-flexibility advantage favors keeping the multi-harness option available, but does not
+settle the choice.
 
-In either version, a process restart creates a new process incarnation; it may reuse the same
-persisted store. Couple failure and restart behavior explicitly if the Runner and harness are one
-lifecycle unit. Native child Sessions that are merely discoverable or read-only do not establish
-that one process can host multiple independently interactive Sessions. Use the separate Codex and
-Claude characterization evidence before treating this option as viable. This is an unselected design
-alternative, not implementation authorization.
+Do not use a one-process-at-a-time, one-harness-type design that switches among per-Session stores as
+a middle ground. It retains per-Session store addressing after restart while also forbidding mixed
+harness types and coupling every Session's process availability; it combines the constraints of both
+alternatives without the fixed-store routing simplification. A process restart always creates a new
+incarnation; a persisted store can remain the same across it. Native child Sessions that are merely
+discoverable or read-only do not establish that one process can host multiple independently
+interactive Sessions. Use the separate Codex and Claude characterization evidence before evaluating
+either alternative. These are design options, not implementation authorization.
 
 Review the existing `Sandbox UID + Agentplane Session ID` address against a candidate opaque address
 whose resolved components are `immutable Sandbox UID + persisted harness-store ID + native Session

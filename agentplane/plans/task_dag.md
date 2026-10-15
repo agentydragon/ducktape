@@ -359,12 +359,19 @@ store, or one native conversation, or that every discovered child is independent
 Compare explicit harness identity/lifecycle with retaining Session-only projections. Specify
 which operations, options, status and authorization belong to a process incarnation, persisted
 store and logical/native Session; include concurrency, cancellation and failure/restart behavior.
-Compare exactly one harness per Runner, with its process lifetime coupled to the Runner, against
-multiple harnesses. Distinguish one live process per Runner from one persisted store per Runner: only
-the latter resolves which store owns a Session, while sharing that store across Sessions creates
-isolation and concurrency questions. Account for the loss of mixed Codex and Claude Sessions within
-one Sandbox/Runner if only one harness type is allowed. Use measured interactive-multiplexing and
-native-child evidence; read-only/discoverable children do not prove independent interactive control.
+Compare two coherent alternatives: one fixed harness type and persisted store per Runner, with the
+process lifecycle coupled to that Runner; or multiple processes and stores per Runner, each
+potentially serving multiple Sessions without an arbitrary same-type restriction. Do not retain the
+hybrid of one process at a time switching among per-Session stores: it retains store routing while
+also forbidding mixed harnesses. A fixed store resolves Session-to-store ambiguity but raises shared
+store isolation and concurrency questions and sacrifices mixed Codex/Claude Sessions in one
+Sandbox/Runner. Once support for N>1 processes/stores exists, a same-type-only rule adds little
+architectural simplification; resource limits and proven harness capabilities still constrain actual
+use. Restricting to one later is easier than adding multi-harness identities and routing later; treat
+that as a modest migration-flexibility advantage, not a decision.
+Use measured interactive-multiplexing and native-child evidence; read-only/discoverable children do
+not prove independent interactive control. Stopping one Session in a multiplexed design must not
+kill a process still serving other Sessions.
 Deliver a recommendation and proposed API shape for review; implementation and migration/retirement
 nodes follow only if selected. This does not unfreeze the broader runner durability redesign or
 authorize native-subagent implementation.
@@ -1700,13 +1707,17 @@ children. Consider native-ID collisions across stores, store movement, authoriza
 unavailable/suspended lookup, and which capabilities/lifecycle belong to each level. Do not assume
 one process equals one Session or that a store path defines identity.
 
-Compare an unselected simplifying option of exactly one harness per Runner with its process lifetime
-coupled to the Runner. A single live process with per-Session stores still needs store routing;
-exactly one persisted store per Runner is the variant that removes store-address ambiguity, while
-sharing it raises isolation/concurrency questions and a single harness choice sacrifices mixed Codex
-and Claude Sessions within one Sandbox. A Runner restart creates a new process incarnation even when
-the persisted store is reused. Use the independent Codex/Claude evidence to distinguish native child
-visibility from multiple independently interactive Sessions before recommending this arrangement.
+Compare two coherent ownership choices: one fixed harness type and persisted store per Runner with
+process lifecycle coupled to the Runner, or multiple processes and stores per Runner, each able to
+serve multiple Sessions when supported and without an arbitrary same-type restriction. Reject the
+hybrid of one process at a time switching among per-Session stores; it retains store routing while
+constraining harness choice. A single persisted store removes store-address ambiguity but raises
+shared-store isolation/concurrency questions and prevents mixed Codex/Claude Sessions in one
+Sandbox/Runner. A Runner restart creates a new process incarnation even when the store is reused.
+Migration flexibility mildly favors multiple-harness support because restricting to one later is
+easier than introducing process/store identity and routing later; this does not settle the choice.
+Use Codex/Claude evidence to distinguish native child visibility from multiple independently
+interactive Sessions before recommending either arrangement.
 
 Keep creation idempotency separate from address identity: define operation keys, retries after a lost
 creation response, and durable mapping/crash recovery when the native ID is assigned after opening.
