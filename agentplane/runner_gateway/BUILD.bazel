@@ -29,10 +29,12 @@ py_library(
     name = "client",
     srcs = ["client.py"],
     deps = [
+        ":runner_proxy",
         ":wire",
         "//agentplane:grpc_calls",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
+        "//agentplane/proto:runner_control_pb2_grpc",
         "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:runner_gateway_pb2_grpc",
         "//agentplane/proto:runner_pb2",
