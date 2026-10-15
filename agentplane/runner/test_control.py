@@ -447,7 +447,7 @@ async def test_quiesce_waits_for_an_admitted_open_before_enumerating_sessions(
 
     monkeypatch.setattr(runner, "quiesce", counted_quiesce)
     service = await dial()
-    opening = asyncio.create_task(service.OpenSession(open_session("test-open-under-quiesce")))
+    opening = asyncio.ensure_future(service.OpenSession(open_session("test-open-under-quiesce")))
     await resolving.wait()
 
     response = await service.Quiesce(runner_pb2.QuiesceRequest())
@@ -489,7 +489,7 @@ async def test_quiesce_waits_for_an_admitted_resume_to_finish(
 
     monkeypatch.setattr(runner, "quiesce", counted_quiesce)
     service = await dial()
-    resuming = asyncio.create_task(service.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id=STOPPED)))
+    resuming = asyncio.ensure_future(service.ResumeSession(runner_control_pb2.ResumeSessionRequest(session_id=STOPPED)))
     await starting.wait()
 
     response = await service.Quiesce(runner_pb2.QuiesceRequest())
