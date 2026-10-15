@@ -70,7 +70,10 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
     ):
         directory = RunnerDirectory(live_index, remote)
         bridge = RunnerBridge(
-            runners=directory, event_logs=event_logs, content=content, dispatcher=GatewayBackedDispatcher(directory)
+            runners=directory,
+            event_logs=event_logs,
+            content=content,
+            dispatcher=GatewayBackedDispatcher(directory, event_logs),
         )
         opened = await bridge.create_session(SANDBOX, uuid4(), spec)
         assert launches.PLATFORM_INSTRUCTIONS in opened.attached.spec.instructions

@@ -42,9 +42,10 @@ class AppSettingsConfig(YamlFileSettings):
         description="PolicySets every new Sandbox is bound to. The app creates, suspends, resumes and deletes "
         "Sandboxes through Kubernetes itself."
     )
+    # CLEANUP(added 2026-10-15): Remove after APP_OPEN_FLAG_REMOVE drops this ConfigMap key and both
+    #   environments have reconciled the omission.
     session_dispatcher_open_sessions: bool = Field(
-        default=False,
-        description="Send new Session openings to the Dispatcher. Enable only after the accepting app image is pinned.",
+        default=False, description="Accepted for rollout compatibility; new Session openings always use the Dispatcher."
     )
     egress_admin_url: HttpEndpointUrl = Field(description="The egress proxy's admin port, serving /decisions.")
     action_federation: ActionFederationSettings

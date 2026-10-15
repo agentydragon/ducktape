@@ -604,7 +604,10 @@ async def test_a_runner_that_has_not_connected_is_a_503(
             app = create_app(
                 inventory,
                 RunnerBridge(
-                    runners=runners, event_logs=event_logs, content=content, dispatcher=GatewayBackedDispatcher(runners)
+                    runners=runners,
+                    event_logs=event_logs,
+                    content=content,
+                    dispatcher=GatewayBackedDispatcher(runners, event_logs),
                 ),
                 store,
                 TEST_MODELS,

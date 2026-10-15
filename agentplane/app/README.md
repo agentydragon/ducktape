@@ -136,16 +136,18 @@ are distinct from runner admission, and neither admission nor `HARNESS_CONFIRMED
 effect. History remains the authority for command outcomes. The browser retains the command locally
 until History projects its admission or command row; the app adds no command queue. Deploy the Session
 Dispatcher and authorize the app ServiceAccount before rolling out an app image that requires this
-setting. The separate `session_dispatcher_open_sessions` gate stays default-off until its own accepting
-image and rollout are ready.
+setting.
 
 The app continues to list Sessions and explicitly resume retained native Sessions through the
-Runner Gateway. New Session openings have a separate default-off
-`session_dispatcher_open_sessions` gate: while it is off, the app opens through the Gateway; when it
-is on, it submits the complete Session spec to the Dispatcher. A `SessionOpening` reports queued,
-delivering, runner-admitted, or failed state, and `GET /sandboxes/{name}/sessions/{id}/opening`
-checks that durable result. Admission does not mean the History Service has projected a Thread yet.
-These paths have separate rollout and retirement gates.
+Runner Gateway. Every new Session opening is submitted to the Dispatcher with the complete Session
+spec. A `SessionOpening` reports queued, delivering, runner-admitted, or failed state, and
+`GET /sandboxes/{name}/sessions/{id}/opening` checks that durable result. Admission does not mean the
+History Service has projected a Thread yet. `session_dispatcher_open_sessions` remains accepted in
+app settings for rollout compatibility, but it is ignored: opening always uses the Dispatcher. Remove
+that key from generated ConfigMaps only after the unconditional app image is pinned in both
+environments; remove the accepted setting field only after both ConfigMaps reconcile without it.
+Queued-opening activation remains gated on the corrected app image and bounded testing acceptance
+before staging activation.
 
 The app copies no runner events and folds none. Each runner pushes its Sessions' events to the
 History Service's ingress, and the History Service folds them under per-Session leases

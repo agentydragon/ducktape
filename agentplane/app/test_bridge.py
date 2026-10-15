@@ -14,10 +14,11 @@ from collections.abc import AsyncIterator, Callable
 from contextlib import aclosing
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, override
 from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
+import grpc
 import httpx
 import pytest
 import pytest_bazel
@@ -52,12 +53,20 @@ from agentplane.app.threads.view.content import ContentStore
 from agentplane.changes import ChangeSignal
 from agentplane.egress.decisions_client import DecisionsClient
 from agentplane.grpc_calls import dial
+from agentplane.grpc_serving import serving
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.models import ThreadCheckpoint, ThreadEntity, ThreadPayloadChunk
 from agentplane.history_service.testing.backend import history_service, ingest
 from agentplane.history_service.testing.history import History
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.proto import command_pb2, event_log_pb2, event_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.proto import (
+    command_pb2,
+    event_log_pb2,
+    event_pb2,
+    runner_pb2,
+    session_dispatcher_pb2,
+    session_dispatcher_pb2_grpc,
+)
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
 from agentplane.runner.harness import Harness
 from agentplane.runner.runner import Runner
@@ -124,35 +133,44 @@ async def _create(http: httpx.AsyncClient, spec: runner_pb2.SessionSpec, session
     return str(opened.json()["sessionId"])
 
 
-async def test_new_session_uses_dispatcher_when_the_opening_gate_is_enabled(
-    local_runners: RunnerDirectory, event_logs: SeededEventLogStore, content: ContentStore
-) -> None:
+async def test_new_session_always_uses_dispatcher_over_grpc(tmp_path: Path, bridge: RunnerBridge) -> None:
     session_id = uuid4()
     spec = runner_pb2.SessionSpec(harness=runner_pb2.HARNESS_CODEX, model="test-model")
-    opening = session_dispatcher_pb2.SessionOpening(
-        session_id=str(session_id), sandbox=SANDBOX, state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
-    )
-    calls: list[tuple[str, str, runner_pb2.SessionSpec, str | None]] = []
+    received: list[session_dispatcher_pb2.OpenSessionRequest] = []
 
-    class Dispatcher:
-        async def open_session(
-            self, *, sandbox: str, session_id: str, spec: runner_pb2.SessionSpec, setup_script: str | None
-        ) -> session_dispatcher_pb2.SessionOpening:
-            calls.append((sandbox, session_id, spec, setup_script))
-            return opening
+    class QueuedOpenDispatcher(session_dispatcher_pb2_grpc.SessionDispatcherServicer):
+        @override
+        async def OpenSession(
+            self, request: session_dispatcher_pb2.OpenSessionRequest, _context: grpc.aio.ServicerContext
+        ) -> session_dispatcher_pb2.OpenSessionResponse:
+            received.append(request)
+            return session_dispatcher_pb2.OpenSessionResponse(
+                opening=session_dispatcher_pb2.SessionOpening(
+                    session_id=request.session_id,
+                    sandbox=request.sandbox,
+                    state=session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER,
+                    reason="sandbox_resuming",
+                )
+            )
 
-    bridge = RunnerBridge(
-        runners=local_runners,
-        event_logs=event_logs,
-        content=content,
-        dispatcher=cast(SessionDispatcherClient, Dispatcher()),
-        open_sessions_via_dispatcher=True,
-    )
+    server = grpc.aio.server()
+    session_dispatcher_pb2_grpc.add_SessionDispatcherServicer_to_server(QueuedOpenDispatcher(), server)
+    token_file = tmp_path / "dispatcher-token"
+    await asyncio.to_thread(token_file.write_text, "test-app-command-peer")
+    async with serving(server, "127.0.0.1:0", grace_s=0) as port, dial(f"127.0.0.1:{port}") as channel:
+        bridge._dispatcher = SessionDispatcherClient(channel, token_file=token_file, request_timeout_s=5)
 
-    result = await bridge.create_session(SANDBOX, session_id, spec, "bootstrap")
+        result = await bridge.create_session(SANDBOX, session_id, spec, "bootstrap")
 
-    assert result is opening
-    assert calls == [(SANDBOX, str(session_id), spec, "bootstrap")]
+    assert result.session_id == str(session_id)
+    assert result.sandbox == SANDBOX
+    assert result.state == session_dispatcher_pb2.DELIVERY_STATE_QUEUED_IN_DISPATCHER
+    assert result.reason == "sandbox_resuming"
+    assert len(received) == 1
+    assert received[0].session_id == str(session_id)
+    assert received[0].sandbox == SANDBOX
+    assert received[0].spec == spec
+    assert received[0].setup_script == "bootstrap"
 
 
 def _runner_session(runner: Runner, thread_id: str | UUID) -> Session:
@@ -266,7 +284,10 @@ async def app_url(
     server is real because SSE needs a response that streams, which an in-process ASGI transport
     would buffer."""
     bridge = RunnerBridge(
-        runners=local_runners, event_logs=event_logs, content=content, dispatcher=GatewayBackedDispatcher(local_runners)
+        runners=local_runners,
+        event_logs=event_logs,
+        content=content,
+        dispatcher=GatewayBackedDispatcher(local_runners, event_logs),
     )
     app = create_app(
         inventory,
@@ -1219,7 +1240,10 @@ async def replicas(
         summaries=Summaries(history_client),
     )
     owner = RunnerBridge(
-        runners=local_runners, event_logs=event_logs, content=content, dispatcher=GatewayBackedDispatcher(local_runners)
+        runners=local_runners,
+        event_logs=event_logs,
+        content=content,
+        dispatcher=GatewayBackedDispatcher(local_runners, event_logs),
     )
     try:
         async with (
@@ -1234,7 +1258,7 @@ async def replicas(
                 runners=survivor_runners,
                 event_logs=survivor_event_logs,
                 content=ContentStore(replica_engine, history_reader=history_client),
-                dispatcher=GatewayBackedDispatcher(survivor_runners),
+                dispatcher=GatewayBackedDispatcher(survivor_runners, survivor_event_logs),
             )
             owner_openings = asyncio.create_task(
                 SessionOpenings(owner_openings_client, event_logs, retry_interval_s=0.05).run()
@@ -1424,7 +1448,10 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
 
     del live_index.sandboxes[SANDBOX], live_index.pods[SANDBOX]
     offline = RunnerBridge(
-        runners=local_runners, event_logs=event_logs, content=content, dispatcher=GatewayBackedDispatcher(local_runners)
+        runners=local_runners,
+        event_logs=event_logs,
+        content=content,
+        dispatcher=GatewayBackedDispatcher(local_runners, event_logs),
     )
     # A lost HTTP response is retryable from the committed Thread prefix even after the
     # sandbox disappears: this answer must not attempt a new runner attachment, which with the
@@ -1453,7 +1480,10 @@ async def test_open_and_resume_reply_before_archive_catches_up(
     # Stall the runner's push to the History Service's ingress without delaying the runner itself.
     monkeypatch.setattr("agentplane.runner.ingress.IngressPusher.push", AsyncMock())
     bridge = RunnerBridge(
-        runners=local_runners, event_logs=event_logs, content=content, dispatcher=GatewayBackedDispatcher(local_runners)
+        runners=local_runners,
+        event_logs=event_logs,
+        content=content,
+        dispatcher=GatewayBackedDispatcher(local_runners, event_logs),
     )
     opened = await asyncio.wait_for(bridge.create_session(SANDBOX, uuid4(), spec), timeout=10)
     thread_id = UUID(opened.session_id)

@@ -66,13 +66,11 @@ class RunnerBridge:
         event_logs: EventLogStore,
         content: ContentStore,
         dispatcher: SessionDispatcherClient,
-        open_sessions_via_dispatcher: bool = False,
     ) -> None:
         self._runners = runners
         self._event_logs = event_logs
         self._content = content
         self._dispatcher = dispatcher
-        self._open_sessions_via_dispatcher = open_sessions_via_dispatcher
 
     async def list_sessions(self, sandbox: str) -> list[runner_pb2.SessionSummary]:
         return await self._runners.client(sandbox).list_sessions()
@@ -80,27 +78,9 @@ class RunnerBridge:
     async def create_session(
         self, sandbox: str, session_id: UUID, spec: runner_pb2.SessionSpec, setup_script: str | None = None
     ) -> session_dispatcher_pb2.SessionOpening:
-        """Open a complete Session spec, through Dispatcher when its caller setting is enabled."""
-        if self._open_sessions_via_dispatcher:
-            return await self._dispatcher.open_session(
-                sandbox=sandbox, session_id=str(session_id), spec=spec, setup_script=setup_script
-            )
-        try:
-            created = await self._runners.client(sandbox).create(
-                session_id=session_id,
-                spec=MessageToDict(spec, always_print_fields_with_no_presence=True),
-                setup_script=setup_script,
-            )
-        except (ValueError, ParseError) as error:
-            raise MalformedMessageError(f"invalid session overrides: {error}") from error
-        if created.session_id != str(session_id):
-            raise ThreadStateError("service Session ID conflicts with the retained Thread identity")
-        await self._event_logs.open(created.session_id)
-        return session_dispatcher_pb2.SessionOpening(
-            session_id=created.session_id,
-            sandbox=sandbox,
-            state=session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED,
-            attached=created.attached,
+        """Queue a complete Session spec with the Dispatcher."""
+        return await self._dispatcher.open_session(
+            sandbox=sandbox, session_id=str(session_id), spec=spec, setup_script=setup_script
         )
 
     async def session_opening(self, sandbox: str, session_id: UUID) -> session_dispatcher_pb2.SessionOpening:
