@@ -334,7 +334,8 @@ export function SandboxPage({
   // The store's copy of each session's thread, keyed by its id, which is the session's; it outlives
   // the runner's own list.
   const threadBySession: Record<string, ThreadView> = Object.fromEntries(threads.map((thread) => [thread.id, thread]));
-  const projectedPendingThread = pendingOpen ? threadBySession[pendingOpen.sessionId] : undefined;
+  const pendingSessionId = pendingOpen?.sessionId;
+  const projectedPendingThread = pendingSessionId ? threadBySession[pendingSessionId] : undefined;
   const names = Object.fromEntries(threads.flatMap((thread) => (thread.name ? [[thread.id, thread.name]] : [])));
   const visibleSessions = sessions.filter(
     (session) => includeArchived || !threadBySession[session.sessionId]?.archived
@@ -346,12 +347,12 @@ export function SandboxPage({
   // A queued Open is already durable, so the History projection stream is the event that completes
   // it. Match by the client-minted Session ID; unrelated Threads never resolve the pending attempt.
   useEffect(() => {
-    if (!pendingOpen) {
+    if (!pendingSessionId) {
       resolvingOpen.current = null;
       return;
     }
-    if (projectedPendingThread) openProjectedPending(pendingOpen.sessionId);
-  }, [pendingOpen?.sessionId, projectedPendingThread]);
+    if (projectedPendingThread) openProjectedPending(pendingSessionId);
+  }, [pendingSessionId, projectedPendingThread]);
 
   // The runner answers ListSessions per request and has no stream, so the table is re-read at the
   // moments that can change it: the Pod coming or going, and a session opening, which the store
