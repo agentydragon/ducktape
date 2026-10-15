@@ -20,7 +20,7 @@ Dispatch assignments (Rai authorized; Codex reported, 2026-10-15 UTC):
 
 | Worker                        | Assigned work and remaining gates                                                                                                |
 | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `quiesce_progress`            | Finish the unused Session-table route removal; the destination lookup migration has merged in #10622.                            |
+| `quiesce_progress`            | Remove Gateway `FindSessions` after reference and pin audit; preserve History `FindSessions` and its retained data.              |
 | `suspended_session_inventory` | Audit RPCs/fields/arguments and overlapping paths; then retire superseded isolated-test scaffolding with its coverage preserved. |
 | `suspended_session_ui`        | Migrate archive and notification wrapper reads; audit data-drop gates and prepare independently reviewable PRs where safe.       |
 | Coordinator                   | Integrate notes cleanup, burn down merged tasks and review rollout and CI evidence.                                              |
@@ -1186,6 +1186,7 @@ remove the app's `runner_gateway_lifecycle_timeout_s` only if the explicit resum
 Retire the app's unused Gateway API channel/target after pinned-client review; its token and the
 separate Sandbox control target still serve live runner reads. Remove strict config keys from
 manifests before deleting their settings readers.
+
 ### `GATEWAY_SESSION_REGISTRY_RETIRE` — retire registry consumers only after resume review
 
 **Blocked on `APP_NATIVE_RESUME_CUTOVER`, wrapper callers and external/pinned clients.** After
