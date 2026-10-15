@@ -184,7 +184,12 @@ window.fetch = async (input: RequestInfo | URL, init?: RequestInit): Promise<Res
     for (const [routeMethod, pattern, answer] of routes) {
       const match = url.pathname.match(pattern);
       if (routeMethod !== method || !match) continue;
-      const requestBody = typeof init?.body === "string" ? init.body : undefined;
+      const requestBody =
+        typeof init?.body === "string"
+          ? init.body
+          : input instanceof Request && input.body !== null
+            ? await input.clone().text()
+            : undefined;
       const body = answer(match, url.searchParams, signal, requestBody);
       if (body === UNANSWERED) {
         return new Promise<Response>((_resolve, reject) => {

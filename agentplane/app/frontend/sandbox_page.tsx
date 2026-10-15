@@ -18,7 +18,7 @@ import {
 } from "@mantine/core";
 // Per-icon subpaths, never the barrel: see tabler_icons.d.ts.
 import IconDotsVertical from "@tabler/icons-react/dist/esm/icons/IconDotsVertical.mjs";
-import { type JSX, useEffect, useEffectEvent, useMemo, useState } from "react";
+import { type JSX, useEffect, useEffectEvent, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router";
 
 import { fromJson, type JsonValue } from "@bufbuild/protobuf";
@@ -302,6 +302,7 @@ export function SandboxPage({
     const sessionId = sessionStorage.getItem(pendingOpenKey(name));
     return sessionId ? { sessionId } : null;
   });
+  const resolvingOpen = useRef<string | null>(null);
   useEffect(() => {
     const sessionId = sessionStorage.getItem(pendingOpenKey(name));
     setPendingOpen(sessionId ? { sessionId } : null);
@@ -333,10 +334,24 @@ export function SandboxPage({
   // The store's copy of each session's thread, keyed by its id, which is the session's; it outlives
   // the runner's own list.
   const threadBySession: Record<string, ThreadView> = Object.fromEntries(threads.map((thread) => [thread.id, thread]));
+  const projectedPendingThread = pendingOpen ? threadBySession[pendingOpen.sessionId] : undefined;
   const names = Object.fromEntries(threads.flatMap((thread) => (thread.name ? [[thread.id, thread.name]] : [])));
   const visibleSessions = sessions.filter(
     (session) => includeArchived || !threadBySession[session.sessionId]?.archived
   );
+  const openProjectedPending = useEffectEvent((sessionId: string) => {
+    void openThread(sessionId, sessionId);
+  });
+
+  // A queued Open is already durable, so the History projection stream is the event that completes
+  // it. Match by the client-minted Session ID; unrelated Threads never resolve the pending attempt.
+  useEffect(() => {
+    if (!pendingOpen) {
+      resolvingOpen.current = null;
+      return;
+    }
+    if (projectedPendingThread) openProjectedPending(pendingOpen.sessionId);
+  }, [pendingOpen?.sessionId, projectedPendingThread]);
 
   // The runner answers ListSessions per request and has no stream, so the table is re-read at the
   // moments that can change it: the Pod coming or going, and a session opening, which the store
@@ -493,6 +508,9 @@ export function SandboxPage({
     try {
       const opening = await openSession(name, sessionId, spec, setupScript);
       if (!opening.sessionId) throw new Error("Open returned without a Session ID");
+      // The live projection may have resolved this attempt while the Open response was in flight.
+      // Do not resurrect its pending record after navigation, or after the user forgot it.
+      if (sessionStorage.getItem(pendingOpenKey(name)) !== sessionId) return;
       rememberOpen({ sessionId, state: opening.state, reason: opening.reason });
       if (
         opening.state === "DELIVERY_STATE_RUNNER_ADMITTED" &&
@@ -539,11 +557,24 @@ export function SandboxPage({
   }
 
   async function openThread(sessionId: string, resolvedAttempt?: string): Promise<void> {
+    const attempt =
+      resolvedAttempt ?? (sessionStorage.getItem(pendingOpenKey(name)) === sessionId ? sessionId : undefined);
+    if (attempt) {
+      if (sessionStorage.getItem(pendingOpenKey(name)) !== attempt || resolvingOpen.current === attempt) return;
+      resolvingOpen.current = attempt;
+    }
     try {
       const thread = threadBySession[sessionId] ?? (await getThread(sessionId));
-      if (resolvedAttempt && sessionStorage.getItem(pendingOpenKey(name)) === resolvedAttempt) rememberOpen(null);
+      if (attempt) {
+        if (sessionStorage.getItem(pendingOpenKey(name)) !== attempt) {
+          resolvingOpen.current = null;
+          return;
+        }
+        rememberOpen(null);
+      }
       onOpenThread(thread.id);
     } catch (reason: unknown) {
+      if (attempt) resolvingOpen.current = null;
       setError(displayableError(reason));
     }
   }
