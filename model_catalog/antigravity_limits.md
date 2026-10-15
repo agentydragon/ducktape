@@ -144,3 +144,11 @@ include the configured `gemini-3.8-flash-high` or `gemini-3.7-flash-high` IDs.
 as existing then, so their prior presence remains documented even though those
 older routes are no longer published. This is model-list evidence only, not a
 generation test or proof of future availability.
+
+The configured CLIProxyAPI source did not register that live `gemini-3.8-flash-tiered`
+ID: its Antigravity model registry instead registered `gemini-3.8-flash-high`, which
+causes provider lookup to fail before the request reaches Google's generation API.
+The latest upstream release checked, v8.0.30, still registers `gemini-3.8-flash-high`
+and does not register `gemini-3.8-flash-tiered`. Keep 3.8 Flash out of our route
+registry until CLIProxyAPI upstream registers the live ID; then restore it and verify
+the end-to-end Messages route.

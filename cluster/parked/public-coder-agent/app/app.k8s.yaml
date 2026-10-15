@@ -224,17 +224,6 @@ data:
               },
               {
                 "contextWindow": 1048576,
-                "id": "antigravity/ant-messages/gemini-3.8-flash-tiered",
-                "input": [
-                  "text",
-                  "image"
-                ],
-                "maxTokens": 65536,
-                "name": "Gemini 3.8 Flash (Google Antigravity via LiteLLM)",
-                "reasoning": true
-              },
-              {
-                "contextWindow": 1048576,
                 "id": "antigravity/ant-messages/gemini-pro-agent",
                 "input": [
                   "text",

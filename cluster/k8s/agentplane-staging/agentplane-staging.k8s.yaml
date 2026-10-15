@@ -2865,9 +2865,6 @@ data:
             - medium
             - high
             - max
-        - model: antigravity/ant-messages/gemini-3.8-flash-tiered
-          display_name: Gemini 3.8 Flash — Google Antigravity
-          reasoning_efforts: []
         - model: antigravity/ant-messages/gemini-pro-agent
           display_name: Gemini 3.1 Pro (High) — Google Antigravity
           reasoning_efforts: []
@@ -2920,7 +2917,6 @@ data:
         HARNESS_CLAUDE:
           - antigravity/ant-messages/claude-opus-4-6-thinking
           - antigravity/ant-messages/claude-sonnet-4-6
-          - antigravity/ant-messages/gemini-3.8-flash-tiered
           - antigravity/ant-messages/gemini-pro-agent
           - antigravity/ant-messages/gemini-3.1-pro-low
           - antigravity/ant-messages/gemini-3.5-flash-lite
@@ -2930,7 +2926,6 @@ data:
           - chatgpt/oai-responses/gpt-6-sol
           - antigravity/ant-messages/claude-opus-4-6-thinking
           - antigravity/ant-messages/claude-sonnet-4-6
-          - antigravity/ant-messages/gemini-3.8-flash-tiered
           - antigravity/ant-messages/gemini-pro-agent
           - antigravity/ant-messages/gemini-3.1-pro-low
           - antigravity/ant-messages/gemini-3.5-flash-lite

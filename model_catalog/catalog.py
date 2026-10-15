@@ -675,16 +675,9 @@ ANTIGRAVITY_SONNET = Route(
 )
 ANTIGRAVITY_PRO = Route(_ANTIGRAVITY_PRO, ANTIGRAVITY_MESSAGES, publish_limits=True)
 ANTIGRAVITY_FLASH_LITE = Route(_ANTIGRAVITY_FLASH_LITE_35, ANTIGRAVITY_MESSAGES, publish_limits=True)
-ANTIGRAVITY_FLASH_38 = Route(
-    Model(
-        id="gemini-3.8-flash-tiered",
-        display_name="Gemini 3.8 Flash",
-        reasoning=True,
-        limits=TokenLimits(max_input_tokens=1_048_576, max_output_tokens=65_536),
-    ),
-    ANTIGRAVITY_MESSAGES,
-    publish_limits=True,
-)
+# TODO: Re-add Gemini 3.8 Flash once CLIProxyAPI's model registry catches up with
+# Antigravity's live `gemini-3.8-flash-tiered` ID. The pinned adapter only registers
+# `gemini-3.8-flash-high`, so requests using the live ID fail provider lookup.
 ANTIGRAVITY_FLASH_IMAGE = Route(
     Model(id="gemini-3.1-flash-image", display_name="Gemini 3.1 Flash Image", reasoning=False), ANTIGRAVITY_MESSAGES
 )
@@ -711,7 +704,6 @@ ANTIGRAVITY_GPT_OSS_120B_MEDIUM = Route(
 ANTIGRAVITY_ROUTES = (
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_SONNET,
-    ANTIGRAVITY_FLASH_38,
     ANTIGRAVITY_FLASH_IMAGE,
     ANTIGRAVITY_PRO,
     ANTIGRAVITY_PRO_LOW,

@@ -43,7 +43,6 @@ spec:
           allowed_models:
             - antigravity/ant-messages/claude-opus-4-6-thinking
             - antigravity/ant-messages/claude-sonnet-4-6
-            - antigravity/ant-messages/gemini-3.8-flash-tiered
             - antigravity/ant-messages/gemini-3.1-flash-image
             - antigravity/ant-messages/gemini-pro-agent
             - antigravity/ant-messages/gemini-3.1-pro-low

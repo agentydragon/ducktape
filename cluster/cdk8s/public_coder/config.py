@@ -5,7 +5,6 @@ from __future__ import annotations
 from cluster.cdk8s.openclaw_gateway import disabled_commands, session_memory_hook, trusted_proxy_gateway
 from cluster.cdk8s.public_coder.egress_proxy_url import PROXY_URL as _EGRESS_PROXY
 from model_catalog.catalog import (
-    ANTIGRAVITY_FLASH_38,
     ANTIGRAVITY_GPT_OSS_120B_MEDIUM,
     ANTIGRAVITY_OPUS,
     ANTIGRAVITY_PRO,
@@ -152,10 +151,6 @@ def config() -> dict:
                         *(
                             _model_entry(route, context_budget=200_000, output_budget=64_000)
                             for route in (ANTIGRAVITY_OPUS, ANTIGRAVITY_SONNET)
-                        ),
-                        *(
-                            _model_entry(route, context_budget=1_048_576, output_budget=65_536)
-                            for route in (ANTIGRAVITY_FLASH_38,)
                         ),
                         *(
                             _model_entry(route, context_budget=1_048_576, output_budget=65_535)
