@@ -1490,9 +1490,10 @@ These are operator-reviewable design and characterization tasks. They do not aut
 database, transport, identity or permission change. Detailed code paths and alternatives are in the
 [delivery and harness design note](../docs/runner_delivery_and_harness_design.md).
 
-**Approved transport direction (operator, 2026-10-15 UTC):** gRPC for internal APIs, a standard
-generated HTTP/JSON facade, and an ergonomic CLI, adopted incrementally by service and interface.
-Facade tooling, individual service migrations, and the CLI workflow contract remain separate work
+**Approved transport direction (operator, 2026-10-15 UTC):** gRPC for internal APIs,
+gRPC-Gateway for the generated HTTP/JSON facade, and an ergonomic CLI, adopted incrementally by
+service and interface. Use JSON server streams for watches/waits and native gRPC for full duplex.
+Facade integration, individual service migrations, and the CLI workflow contract remain separate work
 items below; this direction does not authorize runtime changes.
 
 ```mermaid
@@ -1504,7 +1505,7 @@ flowchart LR
     CODEX_APP_SERVER_MULTIPLEXING[In flight: Codex threads per process]
     CLAUDE_STREAM_SESSION_MULTIPLEXING[Characterize: Claude sessions per process]
     HARNESS_IDENTITY_DESIGN[Decision: process, store and native Session identity]
-    HTTP_JSON_FACADE_TOOLING_SPIKE[Candidate: choose and prove generated HTTP/JSON facade tooling]
+    HTTP_JSON_FACADE_TOOLING_SPIKE[Candidate: prove gRPC-Gateway integration]
     SERVICE_API_TRANSPORT_MIGRATIONS[Blocked: stage migrations per service and interface]
     AGENT_API_TOOLING_DESIGN[Decision: ergonomic CLI workflows and JSON contract]
     RUNNER_DELIVERY_INGRESS_ACCEPTANCE[Candidate: test queued delivery and flush with real ingress, without History]
@@ -1636,16 +1637,18 @@ subscription must not silently grant sending or waking. Question: which boundary
 unauthorized destinations, what locator and authorization proof does it require, and which checks are
 early feedback versus execution authority? No centralization choice is made here.
 
-### `HTTP_JSON_FACADE_TOOLING_SPIKE` — choose and prove the generated facade path
+### `HTTP_JSON_FACADE_TOOLING_SPIKE` — prove the gRPC-Gateway integration path
 
-**Candidate; approved direction recorded in the [delivery design note](../docs/runner_delivery_and_harness_design.md#api-transports-and-agent-workflows).** Compare the repository's existing protobuf and
-code-generation tools for producing a standard HTTP/JSON facade from service contracts. Use one
-bounded service operation to check generated request/response mapping, authentication and
-authorization propagation, error mapping, and streaming/cancellation behavior. Select no new facade
-framework without this code-grounded comparison; do not add a parallel hand-authored HTTP API.
+**Candidate; gRPC-Gateway selected by the operator.** The [delivery design note](../docs/runner_delivery_and_harness_design.md#api-transports-and-agent-workflows)
+records the transport decision. Integrate gRPC-Gateway with the repository's protobuf/Bazel generation
+path in a small, non-production proof. Use a bounded operation and server-streaming watch to check
+request/response mapping, authentication and authorization propagation, unary and terminal stream
+errors, deadlines and cancellation. Specify reconnect/resume behavior explicitly; the facade does
+not supply durable subscriptions. Keep full-duplex paths on native gRPC and avoid a parallel
+hand-authored HTTP API.
 
-**Deliverable:** a reviewed tooling choice and a small, non-production proof of the generated path.
-This does not select the first production service or authorize its cutover.
+**Deliverable:** a demonstrated generation/integration path and its constraints. Framework selection
+is settled; the first production service and its cutover still require a reviewed migration plan.
 
 ### `SERVICE_API_TRANSPORT_MIGRATIONS` — stage service and interface migrations independently
 

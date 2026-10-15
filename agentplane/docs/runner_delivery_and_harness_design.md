@@ -2,8 +2,8 @@
 
 Status: **design review only.** This note records current code paths, approved direction, alternatives
 and remaining questions. The operator approved gRPC for internal APIs, a generated HTTP/JSON facade,
-and an ergonomic CLI, adopted incrementally by service and interface. This does not select a facade
-framework or authorize runtime/API cutover. Other sections do not authorize changes to behavior,
+and an ergonomic CLI, adopted incrementally by service and interface. The selected HTTP/JSON
+facade is gRPC-Gateway. This does not authorize runtime/API cutover. Other sections do not authorize changes to behavior,
 schemas, database ownership, identity mappings or caller permissions. Keep the existing security
 checks and durable queue until a replacement contract is reviewed.
 
@@ -200,14 +200,18 @@ before authorizing any queue or database removal.
 ## API transports and agent workflows
 
 **Approved direction; implementation design remains open.** Use gRPC for internal service APIs, a
-standard generated HTTP/JSON facade over the protobuf contracts, and an ergonomic CLI for agent
+gRPC-Gateway-generated HTTP/JSON facade over the protobuf contracts, and an ergonomic CLI for agent
 workflows. Adopt these interfaces incrementally, one service and interface at a time; do not plan a
 repo-wide cutover as one change. Reuse the repository's protobuf and code-generation tooling rather
 than maintaining a second, hand-authored HTTP API alongside the gRPC service.
 
-This settles the intended interface set, not the facade framework/transcoder, exact generation path,
-first service, API-specific contract, rollout sequence or CLI command syntax. Choose those through a
-bounded tooling spike and reviewed service plans. Keep authentication and authorization, stable errors,
+The operator selected [gRPC-Gateway](https://github.com/grpc-ecosystem/grpc-gateway) as the facade.
+Use its newline-delimited JSON server streams for watches and waits, including terminal stream-error
+envelopes; this is not SSE framing. Keep full-duplex connections on native gRPC. Resume cursors,
+reconnection and retention remain application contracts, not guarantees supplied by the facade.
+
+The exact generation path, first service, API-specific contract, rollout sequence and CLI command
+syntax remain open. Resolve those through a bounded integration spike and reviewed service plans. Keep authentication and authorization, stable errors,
 streaming and reconnect, wait deadlines and cancellation behavior consistent across the generated
 facade and CLI; a transport conversion must not weaken a service's existing permission checks.
 
