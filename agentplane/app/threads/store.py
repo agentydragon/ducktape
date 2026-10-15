@@ -16,7 +16,7 @@ from sqlalchemy import String, cast, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from agentplane.app.database_updates import Channel
-from agentplane.app.threads.events.event_log import SessionNotRegisteredError, ThreadNotFoundError
+from agentplane.app.threads.events.event_log import ThreadNotFoundError
 from agentplane.app.threads.models import Thread
 from agentplane.app.threads.summaries import FeedError, FoldSummary, Summaries
 from agentplane.app.threads.thread_view import ThreadView
@@ -33,6 +33,13 @@ MAX_PAGE = 200
 
 class InvalidPageTokenError(ValueError):
     pass
+
+
+class HistorySandboxMissingError(LookupError):
+    """A committed History Session has no authoritative Sandbox identity."""
+
+    def __init__(self, thread_id: UUID) -> None:
+        super().__init__(f"History Session {thread_id} has no Sandbox identity")
 
 
 class Listing(BaseModel):
@@ -119,7 +126,7 @@ class ThreadStore:
         summaries = await self._summaries.many(ids)
         last = page[-1] if len(rows) > limit else None
         return ThreadPage(
-            threads=[self._view(thread, summaries[thread.id]) for thread in page],
+            threads=[self._view(thread, summaries[thread.id]) for thread in page if summaries[thread.id].present],
             next_page_token=None
             if last is None
             else PageToken(listing=listing, created_at=last.created_at, id=last.id).encode(),
@@ -143,8 +150,10 @@ class ThreadStore:
 
     @staticmethod
     def _view(thread: Thread, summary: FoldSummary) -> ThreadView:
+        if not summary.present:
+            raise ThreadNotFoundError(thread.id)
         if summary.sandbox is None:
-            raise SessionNotRegisteredError(thread.id)
+            raise HistorySandboxMissingError(thread.id)
         return _view(thread, summary, summary.sandbox)
 
     async def archived_count(self) -> int:
@@ -154,14 +163,18 @@ class ThreadStore:
     async def get_thread(self, thread_id: UUID) -> ThreadView | None:
         async with self._sessions() as session:
             thread = await session.get(Thread, thread_id)
-        return None if thread is None else self._view(thread, await self._summaries.get(thread.id))
+        if thread is None:
+            return None
+        summary = await self._summaries.get(thread.id)
+        return None if not summary.present else self._view(thread, summary)
 
     async def rename(self, thread_id: UUID, name: str | None) -> ThreadView:
         """Set or, with None, clear the thread's name."""
+        summary = await self._require_summary(thread_id)
         async with self._sessions.begin() as session:
             thread = await _set_thread(session, thread_id, name=name)
             await notify(session, Channel.THREADS)
-        return self._view(thread, await self._summaries.get(thread.id))
+        return self._view(thread, summary)
 
     async def archive(self, thread_id: UUID) -> ThreadView:
         """Hide the thread from a default listing without touching its events."""
@@ -171,10 +184,19 @@ class ThreadStore:
         return await self._set_archived(thread_id, False)
 
     async def _set_archived(self, thread_id: UUID, archived: bool) -> ThreadView:
+        summary = await self._require_summary(thread_id)
         async with self._sessions.begin() as session:
             thread = await _set_thread(session, thread_id, archived=archived)
             await notify(session, Channel.THREADS)
-        return self._view(thread, await self._summaries.get(thread.id))
+        return self._view(thread, summary)
+
+    async def _require_summary(self, thread_id: UUID) -> FoldSummary:
+        summary = await self._summaries.get(thread_id)
+        if not summary.present:
+            raise ThreadNotFoundError(thread_id)
+        if summary.sandbox is None:
+            raise HistorySandboxMissingError(thread_id)
+        return summary
 
 
 async def _set_thread(session: AsyncSession, thread_id: UUID, **values: object) -> Thread:
