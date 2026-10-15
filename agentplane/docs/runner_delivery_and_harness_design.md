@@ -17,8 +17,9 @@ and the [scripted harness capability index](../harness_tests/README.md#behaviora
 The approved transport direction is internal gRPC plus a standard generated HTTP/JSON facade and
 an ergonomic CLI, introduced incrementally by service and interface. This direction does not select
 a production service migration, auth policy, or facade deployment boundary. The bounded Bazel proof
-is in [`agentplane/x/grpc_gateway`](../x/grpc_gateway/README.md); it uses the upstream
-grpc-gateway `go_proto_compiler` with `go_proto_library`, and keeps generated Go in Bazel outputs.
+is in [`agentplane/x/grpc_gateway`](../x/grpc_gateway/README.md); it uses the upstream grpc-gateway
+Bzlmod module's `go_proto_compiler` with `go_proto_library`, pinned to v2.28.0 by commit, and keeps
+generated Go in Bazel outputs.
 
 The proof uses a real in-process gRPC service behind the generated HTTP handler. Its checks cover
 ProtoJSON and query mapping, HTTP Authorization forwarding and actual service rejection, unary error
