@@ -122,7 +122,7 @@ async def test_newest_connection_supersedes_the_previous_one(
             await second.write(HELLO)
             assert (await read_frame(second)).welcome.connection_epoch == 2
             assert await status_of(first) == grpc.StatusCode.ABORTED
-            await second.write(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.Heartbeat()))
+            await second.write(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.RunnerHeartbeat()))
             assert (await read_frame(second)).HasField("heartbeat")
 
 
@@ -243,8 +243,27 @@ async def test_only_the_sandbox_pod_connects(
 
 async def test_first_frame_must_be_hello(listener: runner_control_pb2_grpc.RunnerControlAsyncStub) -> None:
     async with connect(listener) as call:
-        await call.write(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.Heartbeat()))
+        await call.write(runner_control_pb2.RunnerFrame(heartbeat=runner_control_pb2.RunnerHeartbeat()))
         assert await status_of(call) == grpc.StatusCode.INVALID_ARGUMENT
+
+
+def test_heartbeat_wire_compatibility() -> None:
+    # Before the split, RunnerFrame.heartbeat was field 3 and its facts field was field 1.
+    runner_frame = runner_control_pb2.RunnerFrame(
+        heartbeat=runner_control_pb2.RunnerHeartbeat(
+            facts=runner_control_pb2.RunnerFacts(
+                quiesce_stage=runner_control_pb2.RunnerFacts.QUIESCE_STAGE_FLUSHING, setups_running=True
+            )
+        )
+    )
+    service_frame = runner_control_pb2.ServiceFrame(heartbeat=runner_control_pb2.Heartbeat())
+
+    runner_wire = bytes.fromhex("1a060a0408022001")
+    service_wire = bytes.fromhex("1a00")
+    assert runner_frame.SerializeToString() == runner_wire
+    assert runner_control_pb2.RunnerFrame.FromString(runner_wire) == runner_frame
+    assert service_frame.SerializeToString() == service_wire
+    assert runner_control_pb2.ServiceFrame.FromString(service_wire) == service_frame
 
 
 async def test_silent_runner_is_dropped(listener: runner_control_pb2_grpc.RunnerControlAsyncStub) -> None:
@@ -267,7 +286,7 @@ async def test_recreating_the_sandbox_ends_the_connection(
 
 def facts_frame(**fields: Any) -> runner_control_pb2.RunnerFrame:
     return runner_control_pb2.RunnerFrame(
-        heartbeat=runner_control_pb2.Heartbeat(facts=runner_control_pb2.RunnerFacts(**fields))
+        heartbeat=runner_control_pb2.RunnerHeartbeat(facts=runner_control_pb2.RunnerFacts(**fields))
     )
 
 

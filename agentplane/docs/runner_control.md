@@ -45,7 +45,7 @@ service Runner {
 message RunnerFrame {
   oneof frame {
     Hello hello = 1;                  // first frame, exactly once
-    Heartbeat heartbeat = 3;
+    RunnerHeartbeat heartbeat = 3;
     grpc_tunnel.Reply reply = 5;      // to a `call` on this stream
   }
 }
@@ -84,10 +84,15 @@ message DeliverCommandResponse {
 // another operation or payload fails `ALREADY_EXISTS`.
 
 message Heartbeat {
-  optional RunnerFacts facts = 1;     // runner only: on a change, and first after every Welcome
+  reserved 1;
+  reserved "facts";
 }
 
-// Each Heartbeat carrying it replaces the gateway's record of all the facts.
+message RunnerHeartbeat {
+  optional RunnerFacts facts = 1;     // on a change, and first after every Welcome
+}
+
+// Each RunnerHeartbeat carrying it replaces the gateway's record of all the facts.
 message RunnerFacts {
   QuiesceStage quiesce_stage = 1;     // unspecified: not quiescing
   google.protobuf.Timestamp idle_since = 2;  // absent while the Sandbox is busy
@@ -349,10 +354,11 @@ No routing record is kept: runners dial out, so nothing is routed inbound.
   A conflict means another replica won a race; it re-reads and retries, and the runner's own
   newest-connection rule decides which stream survives. It then writes the EndpointSlice with the new epoch, and only then sends `Welcome`.
   An EndpointSlice write carrying an older epoch than the one stored is skipped.
-- **Runner facts.** The holder writes the runner's latest `RunnerFacts`, which arrive on `Heartbeat`,
-  into the Lease annotations with the renewal that records liveness, so the idle time adds no write. A change of quiesce stage
-  or bootstrap result triggers that write at once. A new connection starts with none, since accepting
-  rewrites the annotations, and the runner republishes after `Welcome`; a runner gone quiet leaves
+- **Runner facts.** The holder writes the runner's latest `RunnerFacts`, which arrive on
+  `RunnerHeartbeat`, into the Lease annotations with the renewal that records liveness, so the idle
+  time adds no write. A change of quiesce stage or bootstrap result triggers that write at once. A
+  new connection starts with none, since accepting rewrites the annotations, and the runner
+  republishes after `Welcome`; a runner gone quiet leaves
   its last facts, which a reader trusts only while `pod-uid` names the incarnation it reads and the
   Lease is live. A fact value the gateway does not know ends the stream with `INVALID_ARGUMENT`, so a
   runner publishes a new value only after every gateway accepts it.
@@ -540,8 +546,9 @@ its `CommandAdmitted` entry, which the History Service holds once the runner has
 
 ## Heartbeat and liveness
 
-Each side sends `Heartbeat` on `Connect` every 10 s, and ends the stream after 30 s without any
-frame from the peer. A runner reconnects with exponential backoff and jitter, from 0.5 s up to 30 s, and
+The runner sends `RunnerHeartbeat` and the gateway sends `Heartbeat` on `Connect` every 10 s. Either
+side ends the stream after 30 s without any frame from the peer. A runner reconnects with exponential
+backoff and jitter, from 0.5 s up to 30 s, and
 retries indefinitely. A live connection is not readiness to act: it says nothing about harness
 state, an active turn or whether a command was carried out, and losing the connection proves none of
 those either.
