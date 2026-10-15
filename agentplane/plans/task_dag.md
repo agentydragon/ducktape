@@ -18,11 +18,10 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized; Codex reported, 2026-10-15 UTC):
 
-| Worker                        | Assigned work and remaining gates                                                                                                |
-| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `suspended_session_inventory` | Audit RPCs/fields/arguments and overlapping paths; then retire superseded isolated-test scaffolding with its coverage preserved. |
-| `suspended_session_ui`        | Migrate archive and notification wrapper reads; audit data-drop gates and prepare independently reviewable PRs where safe.       |
-| Coordinator                   | Integrate notes cleanup, burn down merged tasks and review rollout and CI evidence.                                              |
+| Worker                        | Assigned work and remaining gates                                                                                                         |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `suspended_session_inventory` | Finish the protobuf-field and deployment-only CLI/config audit; then retire superseded isolated-test scaffolding with coverage preserved. |
+| Coordinator                   | Integrate notes cleanup, burn down merged tasks and review rollout and CI evidence.                                                       |
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
@@ -797,7 +796,7 @@ flowchart TD
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     SANDBOX_IDLE_EXPIRY[Candidate: suspend idle Sandboxes] -. related .-> AGENT_RESUME_NOTICE
-    QUIESCE_RESPONSE_FIELDS_RETIRE[Blocked: controller rollout before deleting obsolete response fields]
+    QUIESCE_RESPONSE_FIELDS_RETIRE[Candidate: controller rollout complete; delete obsolete response fields]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE[Blocked: writer rollout and retained-journal cutoff]
@@ -1094,14 +1093,14 @@ restart. `AGENT_RESUME_NOTICE` tells the agent what a suspend ended.
 
 ### `QUIESCE_RESPONSE_FIELDS_RETIRE` — delete the legacy wire seal list
 
-**Blocked on the controller image containing merged #10615 in both environments.**
-The nonblocking runner sends only `QuiesceResponse.stage`, but `runner.proto` still declares the
-old `sessions` field and rollout-era optional-stage contract. After no deployed reader consumes
-that shape, remove the obsolete field and comments and reserve its field number. The runner's
+**Candidate; controller-reader rollout completed by #10615.** Testing runs the
+`agentplane-sandbox-controller` image tagged `...-287c8ce` at 1/1 ready, and staging runs the same
+image at 2/2 ready. Remove the obsolete `sessions` field and rollout-era optional-stage contract
+from `runner.proto`, reserve its field number, and update proxy and runner fixtures. The runner's
 internal `quiesce()` result and ingress tests still use `SessionSeal`; give that internal result an
-appropriate non-wire representation before deleting the unused protobuf message. Update proxy and
-runner fixtures, preserve seal/cursor/flush assertions, and generate bindings normally. Verify all
-remaining references before deletion; do not remove journal seal evidence or its separate retained-data gate.
+appropriate non-wire representation before deleting the unused protobuf message. Preserve
+seal/cursor/flush assertions and generate bindings normally. Verify all remaining references before
+deletion; do not remove journal seal evidence or its separate retained-data gate.
 
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
@@ -1178,12 +1177,13 @@ flowchart TD
 
 ### `HISTORY_DATABASE_RENAME` — name the database for its owner
 
-**Deferred by the operator; not dispatchable until selected.** Rename the `sandbox_service` database and role
-(and the `postgres-sandbox-service` Secret) for the History Service. Rename in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`)
-and have the CNPG `Database` and managed role adopt the new names; recreating the database under a
-new name would copy the log. Verify the History Service and Electric reconnect with no data movement.
-The `storage/migrate.py` and `cluster/cdk8s/agentplane/history_service.py` docstrings take the
-new name.
+**Deferred by the operator; not dispatchable until selected.** The old Sandbox Service is gone, but
+the `sandbox_service` database, role and `postgres-sandbox-service` Secret remain in use by the
+History Service. This is a naming cleanup, not permission to recreate or drop the database. Rename
+the database and role in place (`ALTER DATABASE`/`ALTER ROLE ... RENAME`) and have the CNPG
+`Database` and managed role adopt the new names; recreating the database under a new name would copy
+the log. Verify the History Service and Electric reconnect with no data movement. Update the
+`storage/migrate.py` and `cluster/cdk8s/agentplane/history_service.py` docstrings.
 
 ### `SANDBOX_DATABASE_RENAME` — name the Runner Gateway's database for it
 
@@ -1291,8 +1291,6 @@ flowchart TD
     CONTROL_SURFACE_RETIREMENT_AUDIT --> DISPATCHER_OPENING_ATTACHED_RETIRE[Candidate: remove the unused persisted opening snapshot]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: retire redundant Gateway APIs; preserve registry for current resume checks]
-    APP_ARCHIVE_RUNNER_READ_MIGRATION[Assigned: move live archive checks to the runner proxy] --> GATEWAY_WRAPPER_RETIRE
-    NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION[Assigned: retire notification wrapper membership reads] --> GATEWAY_WRAPPER_RETIRE
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
     GATEWAY_DATABASE_DROP[Blocked: drop the Session registry database after identity migration]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
@@ -1305,7 +1303,9 @@ flowchart TD
 
 ### `CONTROL_SURFACE_RETIREMENT_AUDIT` — converge RPCs, fields and arguments on the intended paths
 
-**In flight; `suspended_session_inventory`, 2026-10-15 UTC.** Sweep Agentplane's protobuf services/messages,
+**In flight; `suspended_session_inventory`, 2026-10-15 UTC.** The control-path inventory and
+confirmed RPC caller audit are recorded in [the control-surface audit](../docs/control_surface_retirement.md);
+the protobuf-field and deployment-only CLI/config review remains. Sweep Agentplane's protobuf services/messages,
 HTTP routes/client helpers, CLI arguments, settings/config keys and their producers/consumers.
 Start from the system overview: whenever two paths accomplish the same operation, ask why both
 exist. Trace their callers, authority and failure semantics; document a concrete reason for
@@ -1335,13 +1335,16 @@ migrations or authorize broad compatibility shims, language rewrites or speculat
 
 ### `RUNNER_LIST_SESSIONS_RETIRE` — remove the live inventory RPC if its remaining purposes migrate
 
-**Blocked on the surface audit's disposition and migration of its real callers.** The Sandbox table
-uses retained History inventory. Remaining runtime uses include app archive safety/native resume,
-Notification membership, and the Dispatcher opening fallback; test drivers also use the read to
-order Quiesce assertions. History's retained harness state and namespace/name association do not
-preserve authoritative live state or Sandbox UID/owner checks. Migrate each caller with those
-requirements intact, including Notification's UID/owner checks, then migrate tests and verify pinned
-caller images before removing the runner method/messages and helpers via normal generation. The
+**Blocked on the surface audit's disposition and migration of its remaining real callers.** The
+Sandbox table uses retained History inventory. App archive safety/native resume, Notification
+membership, and the Dispatcher opening fallback still use live runner inventory; app and Notification
+now reach `Runner.ListSessions` through the per-Sandbox proxy with expected Sandbox UID and owner
+metadata (#10619), and their caller plus receiver images are deployed in both environments. Test
+drivers also use the read to order Quiesce assertions. History's retained harness state and
+namespace/name association do not preserve authoritative live state or Sandbox UID/owner checks.
+Migrate remaining callers with their live-state and identity requirements intact, then migrate tests
+and verify pinned caller images before removing the runner method/messages and helpers via normal
+generation. The
 Dispatcher fallback has a separate contract flaw: matching `OpenSession` retries return the existing
 attachment, while `ALREADY_EXISTS` means spec/setup conflict; its current ID-only list check can
 accept a conflict. Correct that before removing this caller. The Gateway wrapper may retire even if a
@@ -1400,16 +1403,15 @@ migration and `Command` stays as that event's field type.
 
 ### `GATEWAY_WRAPPER_RETIRE` — retire redundant live operations; retain placement registry
 
-**Blocked on the remaining read-caller migrations above, the Dispatcher-only app image rollout and
-`APP_NATIVE_RESUME_CUTOVER`.** These caller migrations can proceed independently;
-the native-resume decision does not block migrating reads. Pin all migrated caller images before
-deleting the RPC receiver, and search for remaining wrapper callers before removal.
-App and notification command sends go through Dispatcher. Move only reads whose current-state and
-incarnation checks are preserved by the proxy; the remaining caller-boundary decisions are explicit
-gates above. Retire Gateway `CreateSession`, `ResumeSession` and `SubmitCommand` only after their
-caller gates. `BatchGetSessionSandboxes` has no production in-repo caller after #10622; remove it with
-the registry API only after external/pinned caller review. The separate Runner `ListSessions` proxy method remains under
-`RUNNER_LIST_SESSIONS_RETIRE` for archive, Notification and Dispatcher callers. Preserve
+**Blocked on the reviewed native-resume outcome, the corresponding app image rollout and external/
+pinned-caller review for the remaining Gateway methods.** #10619 moved app archive and Notification
+membership reads to the per-Sandbox proxy; the `agentplane-app`, `agentplane-notifications` and
+`agentplane-runner-gateway` images tagged `...-354a3e0` are Ready in testing and staging. Those reads
+are complete, while the Runner `ListSessions` method remains under `RUNNER_LIST_SESSIONS_RETIRE` for
+live inventory consumers. App and notification command sends go through Dispatcher. Retire Gateway
+`CreateSession`, `ResumeSession` and `SubmitCommand` only after their caller gates.
+`BatchGetSessionSandboxes` has no production in-repo caller; remove it with the registry API only
+after external/pinned caller review. Preserve
 `session_registry.py` and its database while `ResumeSession` still reads it: only Gateway
 `CreateSession` writes rows, so the app's current direct-resume path refuses Dispatcher-opened
 Sessions. Keep the runner control stream and proxy. Removing redundant Gateway APIs does not make
@@ -1423,38 +1425,18 @@ manifests before deleting their settings readers.
 
 ### `GATEWAY_SESSION_REGISTRY_RETIRE` — retire registry consumers only after resume review
 
-**Blocked on `APP_NATIVE_RESUME_CUTOVER`, wrapper callers and external/pinned clients.** After
-#10622, the app no longer calls `BatchGetSessionSandboxes`: it routes resume using the History-backed
-Sandbox name and a live runner list. `SandboxRunner.resume` still calls Gateway `ResumeSession`, which
+**Blocked on `APP_NATIVE_RESUME_CUTOVER`, wrapper callers and external/pinned clients.** The app no
+longer calls `BatchGetSessionSandboxes`: it routes resume using the History-backed Sandbox name and a
+live runner list. `SandboxRunner.resume` still calls Gateway `ResumeSession`, which
 requires a `session_registry` row for that Sandbox UID. Only Gateway `CreateSession` writes the
 registry; production openings use Dispatcher, so their direct-resume path is currently refused. If
 native resume remains, first review how its receiver can preserve UID and owner checks for
 Dispatcher-opened Sessions. Otherwise remove `ResumeSession` with the reviewed app cutover.
-`BatchGetSessionSandboxes` has no production in-repo caller after #10622; confirm external/pinned use
-before removing its method, client helper and `SessionSandbox` wire shape. Gateway `FindSessions` was
-removed in #10623; keep History `FindSessions` and its retained data. Retain the registry and its data
+`BatchGetSessionSandboxes` has no production in-repo caller; confirm external/pinned use before
+removing its method, client helper and `SessionSandbox` wire shape. Retain the registry and its data
 until all live readers/writers are retired and
 the separate operator-approved `GATEWAY_DATABASE_DROP`; never infer a missing UID from a same-name
 Sandbox.
-
-### `APP_ARCHIVE_RUNNER_READ_MIGRATION` — preserve live archive safety without the wrapper
-
-**Assigned; `suspended_session_ui`, 2026-10-15 UTC.** `archive_thread` reads `RunnerBridge.list_sessions` to reject archiving a running
-harness while its Pod exists. History is eventually consistent and cannot alone prove that a
-harness has stopped. Preserve this check through the runner proxy, plus the existing refusal when
-a Pod exists but cannot be checked. A stopped/deleted Sandbox still allows retaining/archiving its
-history. Test stale History saying stopped while the live runner says running, and runner loss.
-Remove the wrapper call; do not weaken the guard to simplify the table migration.
-
-### `NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION` — retire the subscription wrapper read
-
-**Assigned; `suspended_session_ui`, 2026-10-15 UTC.** `NotificationService.subscribe` uses wrapper `ListSessions` after checking the current
-Sandbox UID and owner. Move that read to the runner proxy while preserving those checks, or use
-History only if its retained association can prove the same identity boundary. History's current
-Sandbox reference has namespace/name, not UID/owner, so a matching name alone is insufficient.
-Test owner mismatch, replaced Sandbox UID and a Session belonging elsewhere. Remove the obsolete
-notification Gateway client/config once no callers remain; config removals precede settings-reader
-removals and receiver deletion waits for the new notification image.
 
 ### `GATEWAY_DATABASE_DROP` — drop the `sandbox_commands` database
 
@@ -1463,6 +1445,31 @@ its role, Secret, migration init container, old models/migrations and image publ
 the History Service holds every Session's Sandbox and all pinned gateways have stopped reading or
 writing this database. First remove strict config keys from manifests with an accepting receiver;
 only after that rollout delete their settings readers. This remains a separate data-drop PR.
+
+## 13. Namespace-local Kubernetes object names
+
+```mermaid
+flowchart TD
+    AGENTPLANE_OBJECT_NAMES[Candidate: drop redundant namespace prefixes from stateless objects]
+```
+
+### `AGENTPLANE_OBJECT_NAMES` — drop redundant prefixes from stateless Agentplane objects
+
+**Candidate.** Audit authored Kubernetes `metadata.name` values inside the `agentplane-*`
+namespaces and start with stateless objects whose names merely repeat the namespace's `agentplane-`
+prefix, such as `agentplane-staging/agentplane-sandbox-controller`. This is an inventory and staged
+rename proposal; it does not rename objects. Follow the existing
+[cdk8s naming rule](../../cluster/cdk8s/AGENTS.md): an in-namespace name carries what its namespace
+does not.
+
+For each candidate, trace generated references, selectors, Service DNS consumers, ConfigMaps and
+Secrets, ServiceAccounts and RoleBinding subjects, Flux ownership/dependencies, and monitoring
+selectors before choosing a rename. A Service rename changes its DNS name and requires coordinated
+updates to every caller; update producer and callers together, not by changing only the object name.
+Preserve the current image, configuration, readiness and rollout behavior through any replacement.
+Keep stateful objects, databases/roles, PVCs, storage objects, mirrored secrets, and names that are
+external identities out of this first pass; move those only for a separate, reviewed reason with
+their data and identity contracts intact.
 
 ## Scope and retirement of stale gates
 
