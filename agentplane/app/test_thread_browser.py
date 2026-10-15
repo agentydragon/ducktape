@@ -172,6 +172,7 @@ async def test_archived_thread_page_survives_deleted_sandbox_and_reload(
         await expect(page.get_by_role("img", name="Incomplete", exact=True)).to_have_count(1)
         await page.reload()
         await expect(page).to_have_url(url)
+        await expect_projected_cursor(page, thread_source.entries[-1].cursor)
         await expect(page.get_by_text("Test retained prefix", exact=True)).to_have_count(1)
         await expect(
             page.get_by_text(
@@ -367,6 +368,7 @@ async def test_returning_to_a_thread_reads_only_what_changed_while_the_reader_wa
         # A short viewport mounts few of the window's rows, whose bodies a reader's view reads on mounting.
         await page.set_viewport_size({**DESKTOP.size, "height": 300})
         await page.goto(f"{ingress.url}/#/threads/{threads[0]}")
+        await expect_projected_cursor(page, sources[0].entries[-1].cursor)
         await expect(page.get_by_text("Thread 0 message 129", exact=True)).to_be_visible()
         # Before the reader scrolls: the window reads the bodies of every row it holds (its 90 rows hold 89
         # messages), not only those the view mounted.
