@@ -146,7 +146,7 @@ harness-native detail is one lookup away.
 | item    | `ItemStarted` (assistant text, reasoning, tool call), `TextDelta`, `ToolArgumentsDelta`, `ToolArguments`, `ToolOutputDelta`, `ItemCompleted` |
 | native  | `Native` (direction, exact line)                                                                                                             |
 
-Connection-loss behavior pinned by `harness_tests/{claude,codex}/test_connection_loss.py` and
+Connection-loss behavior pinned by `native/{claude,codex}/test_connection_loss.py` and
 `runner/test_turns.py::test_model_connection_loss_through_runner`: with the runner driving the
 real harnesses against scripted model endpoints, both survive native retry exhaustion before
 content as one admitted input and one `FAILED` turn, then accept another input successfully.

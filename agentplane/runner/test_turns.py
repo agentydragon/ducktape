@@ -139,7 +139,7 @@ async def test_model_connection_loss_through_runner(
     session = await driver.attach(f"model-failure-{partial}", spec=spec)
     await submit_input(session, "first-input", "Reply with exactly: FIRST_OK")
     # Both runner adapters cap retries at two; see the native
-    # harness_tests/*/test_connection_loss.py for the raw retry frames.
+    # native/*/test_connection_loss.py for the raw retry frames.
     attempts = 2 if partial else 3
     for attempt in range(attempts):
         request = await model.request()
@@ -465,7 +465,7 @@ async def test_claude_interrupt_right_after_thinking_reports_it_absent_and_does_
     driver: RunnerDriver, model: ScriptedModel, spec: runner_pb2.SessionSpec
 ) -> None:
     """Claude keeps a thinking block only beside another block of its message, which the interrupt
-    came too early to write; `harness_tests/claude/test_turns.py` pins that on the real binary."""
+    came too early to write; `native/claude/test_turns.py` pins that on the real binary."""
     session = await driver.attach("interrupt-thinking-1", spec=spec)
     await submit_input(session, "input-1", "Think, then answer.")
     await model.hold_through(

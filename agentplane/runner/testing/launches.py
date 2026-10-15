@@ -8,8 +8,8 @@ from pathlib import Path
 
 import httpx
 
-from agentplane.harness_tests.claude import model as claude_model
-from agentplane.harness_tests.codex import model as codex_model
+from agentplane.native.claude.testing import model as claude_model
+from agentplane.native.codex.testing import model as codex_model
 from agentplane.proto import runner_pb2
 from agentplane.runner.config import ClaudeLaunch, CodexLaunch, RunnerConfig, ServiceEndpoint
 from agentplane.runner.model_config import HttpModelConfigResolver

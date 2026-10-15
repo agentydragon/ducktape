@@ -113,4 +113,4 @@ for snapshots.
 
 Any of these still needs an acceptance test that forces a tool OOM and shows the harness and runner
 journal survive, using the scripted scenarios and teardown rules in the
-[harness test suite](../harness_tests/README.md).
+[harness test suite](../native/README.md).

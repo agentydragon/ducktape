@@ -4,11 +4,11 @@ from __future__ import annotations
 
 import itertools
 
-from agentplane.harness_tests.codex import responses_sse
-from agentplane.harness_tests.codex.model import MODEL
-from agentplane.harness_tests.codex.requests import ResponsesRequest
-from agentplane.harness_tests.codex.responses import OpenAIResponses
-from agentplane.harness_tests.model_endpoint import ModelExchange, SseEvent
+from agentplane.native.codex.testing import responses_sse
+from agentplane.native.codex.testing.model import MODEL
+from agentplane.native.codex.testing.requests import ResponsesRequest
+from agentplane.native.codex.testing.responses import OpenAIResponses
+from agentplane.native.testing.model_endpoint import ModelExchange, SseEvent
 from agentplane.runner.testing.scripted_model import (
     Item,
     ModelRequest,

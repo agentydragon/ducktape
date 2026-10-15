@@ -823,7 +823,7 @@ http_archive(
     urls = ["https://github.com/openai/codex/archive/9e552e9d15ba52bed7077d5357f3e18e330f8f38.tar.gz"],
 )
 
-# Native Claude Code CLI driven by Agentplane's scripted harness tests (//agentplane/harness_tests).
+# Native Claude Code CLI driven by Agentplane's scripted harness tests (//agentplane/native).
 # The tests grant it only a loopback scripted model endpoint; no runtime credential is present in Bazel.
 http_archive(
     name = "claude_code_cli_linux_x64",
@@ -842,7 +842,7 @@ http_archive(
     urls = ["https://registry.npmjs.org/@anthropic-ai/claude-code-linux-x64/-/claude-code-linux-x64-2.1.292.tgz"],
 )
 
-# Codex app-server driven by Agentplane's scripted harness tests (//agentplane/harness_tests).
+# Codex app-server driven by Agentplane's scripted harness tests (//agentplane/native).
 # Keep Haku's 0.144.1 distribution above isolated from this test-only pin.
 http_archive(
     name = "agentplane_codex_cli_linux_x64",

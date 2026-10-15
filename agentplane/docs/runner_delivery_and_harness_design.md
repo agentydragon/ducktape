@@ -10,7 +10,7 @@ checks and durable queue until a replacement contract is reviewed.
 The related decision nodes are in [section 14 of the task DAG](../plans/task_dag.md#14-delivery-boundaries-apis-and-harness-identity).
 The current runner contracts remain in [Session layering](thread_layering.md), the
 [Dispatcher README](../session_dispatcher/README.md), the [Gateway API](../runner_gateway/API.md),
-and the [scripted harness capability index](../harness_tests/README.md#behavioral-coverage).
+and the [scripted harness capability index](../native/README.md#behavioral-coverage).
 
 ## Generated HTTP/JSON facade spike
 
@@ -328,7 +328,7 @@ selected here.
 
 ## Harness capability boundary
 
-The [test capability index](../harness_tests/README.md#behavioral-coverage) and its linked modules
+The [test capability index](../native/README.md#behavioral-coverage) and its linked modules
 record what the pinned binaries do in scripted scenarios. Codex's test demonstrates two root
 threads over one app-server; Claude's current suite covers one root session and does not characterize
 multiple roots in one process. The Claude multiplexing investigation remains held in the task DAG.

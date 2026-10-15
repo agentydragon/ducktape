@@ -204,7 +204,7 @@ async def test_coalesced_replay_confirms_only_the_representative_native_message(
     assert recorded.confirmed == []
 
     # This is the actual Claude replay ordering pinned by
-    # harness_tests/claude:test_active_turn: a follower echo precedes the batch's started frames.
+    # native/claude:test_active_turn: a follower echo precedes the batch's started frames.
     await adapter.on_frame(_replay(first_uuid, first_text), 3)
     await adapter.on_frame(_lifecycle(first_uuid, wire.CommandState.STARTED), 4)
     await adapter.on_frame(_lifecycle(second_uuid, wire.CommandState.STARTED), 5)

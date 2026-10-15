@@ -14,8 +14,8 @@ from typing import Any, cast
 
 import pytest
 
-from agentplane.harness_tests.claude.messages import AnthropicMessages
-from agentplane.harness_tests.codex.responses import OpenAIResponses
+from agentplane.native.claude.testing.messages import AnthropicMessages
+from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import runner_pb2
 from agentplane.runner.config import RunnerConfig
 from agentplane.runner.runner import Runner

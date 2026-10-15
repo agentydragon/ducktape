@@ -1692,7 +1692,7 @@ shared-store isolation/concurrency questions and prevents mixed Codex/Claude Ses
 Sandbox/Runner. A Runner restart creates a new process incarnation even when the store is reused.
 Migration flexibility mildly favors multiple-harness support because restricting to one later is
 easier than introducing process/store identity and routing later; this does not settle the choice.
-Use the merged Codex multi-thread result in the [harness test index](../harness_tests/README.md#behavioral-coverage),
+Use the merged Codex multi-thread result in the [harness test index](../native/README.md#behavioral-coverage),
 the held Claude root-session question, and child-identity evidence from `NATIVE_SUBAGENT_EXPOSURE`
 to distinguish native child visibility from multiple independently interactive Sessions before
 recommending either arrangement.

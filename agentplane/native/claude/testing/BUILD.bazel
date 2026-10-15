@@ -28,3 +28,55 @@ py_library(
         "@pypi//mcp_types",
     ],
 )
+
+py_library(
+    name = "anthropic_sse",
+    srcs = ["anthropic_sse.py"],
+    deps = ["//agentplane/native/testing:model_endpoint"],
+)
+
+py_library(
+    name = "frames",
+    srcs = ["frames.py"],
+    deps = [
+        "//agentplane/native/claude:blocks",
+        "//agentplane/native/claude:wire",
+    ],
+)
+
+py_library(
+    name = "harness",
+    srcs = ["harness.py"],
+    deps = [
+        ":async_run",
+        ":mcp",
+        ":messages",
+        ":model",
+        "//agentplane/native/claude:driver",
+        "//agentplane/native/claude:scenarios",
+        "//agentplane/native/claude:wire",
+    ],
+)
+
+py_library(
+    name = "messages",
+    srcs = ["messages.py"],
+    deps = [
+        ":requests",
+        "//agentplane/native/testing:model_endpoint",
+    ],
+)
+
+py_library(
+    name = "model",
+    srcs = ["model.py"],
+)
+
+py_library(
+    name = "requests",
+    srcs = ["requests.py"],
+    deps = [
+        "//agentplane/native/claude:blocks",
+        "@pypi//pydantic",
+    ],
+)

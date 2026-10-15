@@ -8,8 +8,8 @@ Agentplane capability or a tested protocol guarantee.
 ## Queued-message withdrawal (source-only)
 
 The tests cover compatible-input coalescing and the receipts for queued input around interrupts
-([active-turn tests](../../harness_tests/claude/test_active_turn.py),
-[resume test](../../harness_tests/claude/test_turns.py)). They do not exercise
+([active-turn tests](../../native/claude/test_active_turn.py),
+[resume test](../../native/claude/test_turns.py)). They do not exercise
 `cancel_async_message` or cancellation after coalescing.
 
 The published Claude Agent SDK type declarations describe `cancel_async_message` as a best-effort
@@ -49,7 +49,7 @@ compaction, the observed order was `PreCompact`, `system/status: compacting`, `S
 containing the summary. The boundary carried accounting metadata but no summary text; the following
 synthetic user frame carried that text. The [native TODO](../TODO.md#scripted-compaction-test) tracks
 the remaining scripted check. The current
-[manual-compaction test](../../harness_tests/claude/test_compaction.py) checks that `/compact`
+[manual-compaction test](../../native/claude/test_compaction.py) checks that `/compact`
 retains the standing system prompt, not this automatic-compaction sequence.
 
 ## Interactive control identity (static inspection of 2.1.252)

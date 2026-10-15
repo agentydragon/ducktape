@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import itertools
 
-from agentplane.harness_tests.claude import anthropic_sse
-from agentplane.harness_tests.claude.messages import AnthropicMessages
-from agentplane.harness_tests.claude.model import MODEL
-from agentplane.harness_tests.claude.requests import MessagesRequest
-from agentplane.harness_tests.model_endpoint import ModelExchange, SseEvent
 from agentplane.native.claude.blocks import ToolResultBlock
+from agentplane.native.claude.testing import anthropic_sse
+from agentplane.native.claude.testing.messages import AnthropicMessages
+from agentplane.native.claude.testing.model import MODEL
+from agentplane.native.claude.testing.requests import MessagesRequest
+from agentplane.native.testing.model_endpoint import ModelExchange, SseEvent
 from agentplane.runner.testing.scripted_model import (
     Item,
     ModelRequest,

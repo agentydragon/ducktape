@@ -20,7 +20,28 @@ py_test(
     deps = [
         ":async_process",
         "//:conftest",
+        "//agentplane/native:conftest",
         "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "model_endpoint",
+    srcs = ["model_endpoint.py"],
+    deps = ["@pypi//aiohttp"],
+)
+
+py_test(
+    name = "test_model_endpoint",
+    srcs = ["test_model_endpoint.py"],
+    deps = [
+        ":model_endpoint",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/claude/testing:messages",
+        "@pypi//aiohttp",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
     ],

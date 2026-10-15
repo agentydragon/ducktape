@@ -41,7 +41,7 @@ def answered_message_ids(messages: Iterable[tuple[str | None, Sequence[Block]]])
 
     Claude sends a message that holds only thinking to the model again only if another entry with
     its message id survives, whether it resumes from the transcript or goes on in the same process
-    (`harness_tests/claude/test_turns.py` pins both). A block survives only if Claude wrote it: a
+    (`native/claude/test_turns.py` pins both). A block survives only if Claude wrote it: a
     tool call interrupted mid-input, or a text block interrupted before its first content, never is.
     """
     return {message_id for message_id, blocks in messages if not holds_only_thinking(blocks)}

@@ -21,3 +21,47 @@ py_library(
     srcs = ["dynamic_tools.py"],
     deps = ["//agentplane/native/codex:wire"],
 )
+
+py_library(
+    name = "frames",
+    srcs = ["frames.py"],
+    deps = ["//agentplane/native/codex:wire"],
+)
+
+py_library(
+    name = "harness",
+    srcs = ["harness.py"],
+    deps = [
+        ":async_run",
+        ":dynamic_tools",
+        ":model",
+        ":responses",
+        "//agentplane/native/codex:scenarios",
+    ],
+)
+
+py_library(
+    name = "model",
+    srcs = ["model.py"],
+)
+
+py_library(
+    name = "requests",
+    srcs = ["requests.py"],
+    deps = ["@pypi//pydantic"],
+)
+
+py_library(
+    name = "responses",
+    srcs = ["responses.py"],
+    deps = [
+        ":requests",
+        "//agentplane/native/testing:model_endpoint",
+    ],
+)
+
+py_library(
+    name = "responses_sse",
+    srcs = ["responses_sse.py"],
+    deps = ["//agentplane/native/testing:model_endpoint"],
+)

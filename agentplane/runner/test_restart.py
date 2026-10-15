@@ -17,8 +17,8 @@ import grpc
 import pytest
 import pytest_bazel
 
-from agentplane.harness_tests.claude.messages import AnthropicMessages
-from agentplane.harness_tests.codex.responses import OpenAIResponses
+from agentplane.native.claude.testing.messages import AnthropicMessages
+from agentplane.native.codex.testing.responses import OpenAIResponses
 from agentplane.proto import event_pb2, runner_control_pb2, runner_pb2
 from agentplane.runner.harness_process import HarnessProcess
 from agentplane.runner.store import StateOwner

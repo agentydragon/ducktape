@@ -38,9 +38,261 @@ py_test(
     name = "test_wire",
     srcs = ["test_wire.py"],
     deps = [
+        ":conftest",
         ":driver",
         ":wire",
         "//:conftest",
+        "//agentplane/native:conftest",
+        "@pypi//pydantic",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//agentplane/native/codex/testing:harness",
+        "//agentplane/native/codex/testing:responses",
+        "//util/bazel:runfiles",
+        "@pypi//pytest",
+    ],
+)
+
+py_test(
+    name = "test_active_turn",
+    size = "medium",
+    srcs = ["test_active_turn.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":wire",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/codex/testing:frames",
+        "//agentplane/native/codex/testing:harness",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_compaction",
+    size = "medium",
+    srcs = ["test_compaction.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":wire",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/codex/testing:harness",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_connection_loss",
+    size = "medium",
+    srcs = ["test_connection_loss.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":scenarios",
+        ":wire",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/codex/testing:frames",
+        "//agentplane/native/codex/testing:harness",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/native/testing:model_endpoint",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_dynamic_tools",
+    size = "medium",
+    srcs = ["test_dynamic_tools.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":wire",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/codex/testing:dynamic_tools",
+        "//agentplane/native/codex/testing:frames",
+        "//agentplane/native/codex/testing:harness",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_hooks",
+    size = "medium",
+    srcs = ["test_hooks.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":scenarios",
+        ":wire",
+        "//:conftest",
+        "//agentplane/capture:codex_hook",
+        "//agentplane/native:conftest",
+        "//agentplane/native/codex/testing:frames",
+        "//agentplane/native/codex/testing:harness",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_instructions",
+    size = "medium",
+    srcs = ["test_instructions.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":wire",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/codex/testing:harness",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_multiplexing",
+    size = "medium",
+    srcs = ["test_multiplexing.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":wire",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/codex/testing:harness",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_tools",
+    size = "medium",
+    srcs = ["test_tools.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":wire",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/codex/testing:frames",
+        "//agentplane/native/codex/testing:harness",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_turns",
+    size = "medium",
+    srcs = ["test_turns.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":scenarios",
+        ":wire",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/codex/testing:frames",
+        "//agentplane/native/codex/testing:harness",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "@pypi//more_itertools",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_v2_discovery",
+    size = "medium",
+    srcs = ["test_v2_discovery.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":driver",
+        ":scenarios",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/codex/testing:harness",
+        "//agentplane/native/codex/testing:model",
+        "//agentplane/native/codex/testing:responses",
+        "//agentplane/native/codex/testing:responses_sse",
+        "//agentplane/native/testing:async_process",
         "@pypi//pydantic",
         "@pypi//pytest",
         "@pypi//pytest_bazel",

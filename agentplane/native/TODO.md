@@ -10,7 +10,7 @@ settle can go to the operator's separate white-box Claude CLI reverse-engineerin
 ## Scripted compaction test
 
 [Auto-compaction frames](docs/claude_source_findings.md#auto-compaction-frames-live-capture-of-21233)
-were measured live on 2.1.233 only. Extend the existing `harness_tests/claude/test_compaction.py`
+were measured live on 2.1.233 only. Extend the existing `native/claude/test_compaction.py`
 with a check against the pinned binary, asserting what the deleted capture test held against a
 recording:
 
@@ -42,7 +42,7 @@ summarisation request must then be recognised and answered by the script.
   `haku/cli_protocol/protocol.md:267-271` (2.1.233, the compaction run passed the flag), for hooks
   registered at `initialize`.
 
-Experiment: in `harness_tests/claude/test_hooks.py`, which already launches with the flag, assert
+Experiment: in `native/claude/test_hooks.py`, which already launches with the flag, assert
 presence or absence of `system` `hook_*` frames; a settings-file command hook as positive control
 would show whether the flag only covers hooks the CLI runs itself.
 
@@ -75,7 +75,7 @@ summary would reach only the `Native` log. Settle with the scripted compaction t
 
 Agentplane's claim is newer. The open part is whether `id: null` still works on 2.1.252 or `0` is
 required. Experiment: parametrize the ack id (`0`, `null`, omitted) in
-`harness_tests/claude/test_driver_tools.py` and assert the server connects and the tool is called.
+`native/claude/test_driver_tools.py` and assert the server connects and the tool is called.
 
 ## How long does an unanswered control request wait?
 

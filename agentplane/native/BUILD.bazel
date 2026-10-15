@@ -28,9 +28,35 @@ py_test(
     name = "test_delta_templates",
     srcs = ["test_delta_templates.py"],
     deps = [
+        ":conftest",
         ":delta_templates",
         "//:conftest",
         "@pypi//pytest",
         "@pypi//pytest_bazel",
+    ],
+)
+
+py_library(
+    name = "conftest",
+    testonly = True,
+    srcs = ["conftest.py"],
+    deps = [
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+    ],
+)
+
+test_suite(
+    name = "harness_tests",
+    tests = [
+        "//agentplane/native/claude:test_active_turn",
+        "//agentplane/native/claude:test_connection_loss",
+        "//agentplane/native/claude:test_tools",
+        "//agentplane/native/claude:test_turns",
+        "//agentplane/native/codex:test_active_turn",
+        "//agentplane/native/codex:test_connection_loss",
+        "//agentplane/native/codex:test_tools",
+        "//agentplane/native/codex:test_turns",
+        "//agentplane/native/testing:test_model_endpoint",
     ],
 )

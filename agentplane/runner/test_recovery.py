@@ -175,7 +175,7 @@ def test_claude_resume_drops_thinking_left_without_an_answer(
     tmp_path: Path, after_thinking: list[dict[str, Any]]
 ) -> None:
     """The pinned binary does not replay such thinking after a kill mid-tool or an interrupt before
-    any text (`harness_tests/claude/test_turns.py`), and a redacted block counts as thinking."""
+    any text (`native/claude/test_turns.py`), and a redacted block counts as thinking."""
     write_transcript(
         tmp_path,
         "session",

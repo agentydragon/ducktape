@@ -43,8 +43,8 @@ inspectable. Similar native operations are not evidence of identical semantics.
 In particular, input coalescing/queueing, steering, interruption, resume, and runtime
 model control remain adapter responsibilities. The native constraints and evidence are
 documented alongside the relevant adapter tests and captures. Claude's input queue and interrupt
-evidence is in the [active-turn tests](../harness_tests/claude/test_active_turn.py) and
-[resume tests](../harness_tests/claude/test_turns.py); untested withdrawal semantics are marked
+evidence is in the [active-turn tests](../native/claude/test_active_turn.py) and
+[resume tests](../native/claude/test_turns.py); untested withdrawal semantics are marked
 source-only in the [native findings](../native/docs/claude_source_findings.md#queued-message-withdrawal-source-only).
 Claude coalesces compatible inputs into a turn and can fold active-tool input into the tool result.
 Codex's app-server separately defines a durable `thread/queue/*` list beside `turn/steer`; its
@@ -60,4 +60,4 @@ A live capture preserves complete native frames in both directions, framing/file
 native request/session/thread/turn/item/tool ids, model request bodies and streamed
 chunks, and enough process-exit evidence to diagnose a failed run. It is investigation
 evidence outside Git; behavioral assertions belong in scripted tests. Refreshing pinned
-harness evidence is described in [the harness tests README](../harness_tests/README.md).
+harness evidence is described in [the harness tests README](../native/README.md).

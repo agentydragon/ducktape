@@ -66,7 +66,7 @@ def thread_resume(
 
     `base_instructions` and `instructions` are the resume's overrides for the thread's coding-agent
     policy and its developer instructions. Empty sends no key for either. The two do not behave
-    alike, and `//agentplane/harness_tests/codex:test_instructions` pins the difference.
+    alike, and `//agentplane/native/codex:test_instructions` pins the difference.
 
     `excludeTurns` omits the full turn array from this response. Agentplane only needs the thread ID
     to reconnect here; Codex retains its persisted conversation for the next model request, and

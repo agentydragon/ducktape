@@ -1,7 +1,7 @@
 """Claude Code transcripts as the pinned binary writes them.
 
 The shapes were captured from Claude Code 2.1.252 driven against a scripted model
-(`agentplane/harness_tests/claude`): every content block of one API message is its own
+(`agentplane/native/claude`): every content block of one API message is its own
 `assistant` entry, the entries share the message id, and a thinking block carries its signature.
 """
 

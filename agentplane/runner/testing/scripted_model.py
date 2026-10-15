@@ -12,7 +12,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from agentplane.harness_tests.model_endpoint import JsonResponse, ModelExchange, SseEvent, StreamableRequest
+from agentplane.native.testing.model_endpoint import JsonResponse, ModelExchange, SseEvent, StreamableRequest
 
 
 @dataclass(frozen=True)

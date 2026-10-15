@@ -10,7 +10,7 @@ one shell tool call per turn, every registered hook answered by the probe as it 
 callback timings are probe observations, not protocol guarantees. The
 ordinary scripted tests run with hooks off ([roster § Deliberately unsupported](../native/docs/protocol_roster.md)),
 but `PreToolUse` allow/deny is now also pinned by scripted tests against a mocked model endpoint —
-`harness_tests/claude/test_hooks.py` and `harness_tests/codex/test_hooks.py` — reusing
+`native/claude/test_hooks.py` and `native/codex/test_hooks.py` — reusing
 [`capture/codex_hook.py`](../capture/codex_hook.py) verbatim as Codex's spawned hook command. This
 confirms live capture's finding in CI: a `PreToolUse` decision, allow or deny, supersedes Claude's
 `can_use_tool` permission prompt entirely. The runner itself still refuses the one callback it

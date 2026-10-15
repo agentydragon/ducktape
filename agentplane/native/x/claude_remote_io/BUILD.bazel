@@ -1,0 +1,76 @@
+load("//devinfra/python:defs.bzl", "py_library", "py_test")
+
+package(default_testonly = True)
+
+py_library(
+    name = "server",
+    srcs = ["server.py"],
+    deps = ["@pypi//aiohttp"],
+)
+
+py_library(
+    name = "local_proxy",
+    srcs = ["local_proxy.py"],
+    deps = ["@pypi//cryptography"],
+)
+
+py_test(
+    name = "test_interop",
+    size = "medium",
+    srcs = ["test_interop.py"],
+    data = ["@claude_remote_io_cli_linux_x64//:claude"],  # keep: pinned real CLI under test
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",  # keep: native CLI platform
+        "@platforms//os:linux",  # keep: native CLI platform
+    ],
+    deps = [
+        ":local_proxy",
+        ":server",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/claude/testing:anthropic_sse",
+        "//agentplane/native/claude/testing:messages",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//aiohttp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_stream_json",
+    size = "medium",
+    srcs = ["test_stream_json.py"],
+    data = ["@claude_remote_io_cli_linux_x64//:claude"],  # keep: same-version native control
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",  # keep: native CLI platform
+        "@platforms//os:linux",  # keep: native CLI platform
+    ],
+    deps = [
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "//agentplane/native/claude:wire",
+        "//agentplane/native/claude/testing:anthropic_sse",
+        "//agentplane/native/claude/testing:harness",
+        "//agentplane/native/claude/testing:messages",
+        "//agentplane/native/claude/testing:model",
+        "//util/bazel:runfiles",
+        "//util/testing:undeclared_outputs",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
+    name = "test_server",
+    srcs = ["test_server.py"],
+    deps = [
+        ":server",
+        "//:conftest",
+        "//agentplane/native:conftest",
+        "@pypi//aiohttp",
+        "@pypi//pytest",
+        "@pypi//pytest_bazel",
+    ],
+)

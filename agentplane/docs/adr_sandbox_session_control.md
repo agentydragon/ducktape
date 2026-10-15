@@ -833,7 +833,7 @@ sequenceDiagram
 **Names.** Names already taken, so not used for the queue service: `inbox` is the Notification Service's (`inbox_id`,
 `InboxView`), `outbox` is the Action Service's (`action_outbox`), "mailbox" is the task DAG's word for an agent's
 receiving side, `relay` is the egress `SidecarRelay`, `queue` names the runner's and Claude's input queue
-([Claude queue tests](../harness_tests/claude/test_active_turn.py)), and `hold` is the History Service's retention hold. The Action Service also
+([Claude queue tests](../native/claude/test_active_turn.py)), and `hold` is the History Service's retention hold. The Action Service also
 has an Execution lifecycle with `pending_dispatch` and a per-replica dispatcher, so `GetDispatch` and `ListDispatches`
 share a word with it; the name stands. "Delivery Service" is the runner-up but collides with the last hop the queue
 service makes.

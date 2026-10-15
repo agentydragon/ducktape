@@ -34,7 +34,7 @@ own consumer login, OAuth refresh, credential delivery, or model routing.
 
 The recording proxy records only request/response bodies and response chunks. The scripted tests
 stand in for the endpoint with a loopback server the test drives request by request
-([`../harness_tests/model_endpoint.py`](../harness_tests/model_endpoint.py)), so the native
+([`../native/testing/model_endpoint.py`](../native/testing/model_endpoint.py)), so the native
 driver is exercised without paid inference.
 
 ## Claude Code
@@ -106,12 +106,12 @@ response and queue receipt from the later native terminal result.
 
 A second user frame during an active tool joins the tool-result continuation as newline-joined
 input; the model request contains the tool result and joined text, with no separate user message.
-The [active-turn test](../harness_tests/claude/test_active_turn.py) pins this shape. Keep it distinct
+The [active-turn test](../native/claude/test_active_turn.py) pins this shape. Keep it distinct
 from Codex's explicit `turn/steer` and from a common steer operation.
 
-The [active-turn tests](../harness_tests/claude/test_active_turn.py) pin compatible-input
+The [active-turn tests](../native/claude/test_active_turn.py) pin compatible-input
 coalescing, per-input cancellation when `cancel_queued` is set, and the `still_queued` receipt when
-it is not. The [resume test](../harness_tests/claude/test_turns.py) also pins replay of the next
+it is not. The [resume test](../native/claude/test_turns.py) also pins replay of the next
 turn's joined input. Their docstrings delimit native behavior from runner guarantees. Withdrawal
 through `cancel_async_message` and cancellation granularity after coalescing remain source-only
 findings in the [native driver notes](../native/docs/claude_source_findings.md#queued-message-withdrawal-source-only).

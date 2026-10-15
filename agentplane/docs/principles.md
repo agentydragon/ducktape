@@ -94,7 +94,7 @@ third-party binaries we do not control, so when one misbehaves the exact frames 
 received are the evidence. The runner journals those frames verbatim in both directions, and
 derived events cite the native frames they came from ([runner spec](../runner/SPEC.md)). A weird
 bug's frames can then be pulled straight out of the log and turned into a harness ↔ runner
-behavior test ([scripted harness tests](../harness_tests/README.md)). Any change that trims or
+behavior test ([scripted harness tests](../native/README.md)). Any change that trims or
 reshapes payloads must keep this boundary verbatim.
 
 Elsewhere:

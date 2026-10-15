@@ -4,8 +4,9 @@
 endpoint and records the whole exchange: the native stdio frames on both sides and the upstream
 LiteLLM request/response bodies, passed through a header-blind recording proxy that can drop the
 connection at a named SSE packet. It is a discovery tool for provider behavior. The scenarios and
-launch flags come from <../native/README.md>; the behavioral contract lives in the scripted tests
-in <../harness_tests/README.md>, whose scripts are written and repaired by reading these logs.
+launch flags come from <../native/README.md>; the behavioral contract lives in the
+[scripted tests](../native/README.md#scripted-harness-tests), whose scripts are written and repaired
+by reading these logs.
 
 The [historical harness model-metadata audit](../../model_catalog/debug/harness_model_metadata.md)
 records cross-layer Claude/Codex and LiteLLM findings from these probes. Its versioned
