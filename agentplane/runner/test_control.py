@@ -154,6 +154,15 @@ def submit(command_id: str, text: str = "test input") -> command_pb2.Command:
     return command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text=text))
 
 
+def acknowledge_sealed_sessions(runner: Runner) -> None:
+    """A test gateway's control stream does not run ingress, so acknowledge its final cursors explicitly."""
+    for session_id in runner.store.session_ids():
+        cursor = runner.sessions[session_id].journal.sealed_cursor
+        assert cursor is not None
+        runner.store.write_acknowledgement(session_id, IngressAcknowledgement(cursor=cursor, sealed=True))
+    runner.acknowledged()
+
+
 def open_session(
     session_id: str, spec: runner_pb2.SessionSpec = SPEC, setup_script: str | None = None
 ) -> runner_control_pb2.OpenSessionRequest:
@@ -553,14 +562,13 @@ async def test_quiesce_seals_a_durable_open_before_its_setup_can_start(
     monkeypatch.setattr(runner, "_load", hold_open_load)
     service = await dial()
     opening = asyncio.ensure_future(service.OpenSession(open_session(session_id, setup_script="exit 0")))
-    await load_started.wait()
-    assert runner.store.exists(session_id)
-
-    session = runner.sessions[session_id]
     try:
+        await load_started.wait()
+        assert runner.store.exists(session_id)
         response = await service.Quiesce(runner_pb2.QuiesceRequest())
         assert int(response.stage) == runner_control_pb2.RunnerFacts.QUIESCE_STAGE_DRAINING
         await service.ListSessions(runner_pb2.ListSessionsRequest())
+        session = runner.sessions[session_id]
         assert session.journal.sealed_cursor is not None
     finally:
         # The durable record was included in the drain. Releasing OpenSession's load cannot start
@@ -568,6 +576,7 @@ async def test_quiesce_seals_a_durable_open_before_its_setup_can_start(
         continue_load.set()
         await asyncio.gather(opening, return_exceptions=True)
     assert await refusal(opening) == grpc.StatusCode.ABORTED
+    session = runner.sessions[session_id]
     assert session._setup_task is None
 
 
@@ -726,6 +735,7 @@ async def test_a_failed_quiesce_drain_retries_on_the_next_request(
     assert not retry.sessions
     await service.ListSessions(runner_pb2.ListSessionsRequest())
     assert quiesces == 2
+    acknowledge_sealed_sessions(runner)
     await gateway.control.wait_for_facts(Facts(quiesce_stage=Facts.QUIESCE_STAGE_QUIESCED))
 
 
@@ -785,6 +795,7 @@ async def test_quiesce_drain_survives_control_cancellation_and_reconnect(
         assert quiesces == 1
         finish_drain.set()
         await second_stub.ListSessions(runner_pb2.ListSessionsRequest())
+        acknowledge_sealed_sessions(runner)
         await gateway.control.wait_for_facts(Facts(quiesce_stage=Facts.QUIESCE_STAGE_QUIESCED))
         assert quiesces == 1
     finally:
