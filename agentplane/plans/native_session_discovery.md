@@ -504,24 +504,27 @@ unresolved record, not guessed identity or automatic retry of old work.
 
 #### Root creation and today's service IDs
 
-`RunnerGateway.CreateSession` takes a client-minted UUID, which is the Session's public ID, its runner Session ID
-and the ID it is announced under on the ingress. See
-[`proto/runner_gateway.proto`](../proto/runner_gateway.proto).
+`RunnerGateway.CreateSession` accepts a client-minted UUID as both public and runner Session ID, then
+records its Sandbox placement. The app's current opening path is Session Dispatcher `OpenSession`;
+repository search found no production caller of Gateway `CreateSession`. The runner is authoritative
+for its retained execution state, the Gateway registry records only the placements it registers, and
+History records a Session after its ingress accepts Events. These surfaces do not form one complete
+Session inventory. See the [control-surface audit](../docs/control_surface_retirement.md).
 
-Build on that rather than introducing another creation queue or replacing the API with the
-illustrative `StartSession` name above. The runner remains authoritative about existence and native
-bindings; the Runner Gateway keeps only the Session → Sandbox route for commands, and the History
-Service's index, not a Runner Gateway registry, records which Sessions exist. A harness-minted root
-ID would be bound to the client's UUID, not replace it, rather than treating today's preselected
-`Open.session_id` as proof of native creation.
+The native-root design does not yet choose which opening authority should reserve a root ID or how
+that ID is bound to confirmed native creation. The example sequence below assumes direct Gateway
+`CreateSession` and remains a proposal, not a current app path. Review the opening authority and
+placement identity before implementing it; a harness-minted root ID would need to bind to the public
+Session ID without treating a preselected `Open.session_id` as proof of native creation.
 
 The concrete root sequences are:
 
 1. The app submits an authorized Sandbox request through Kubernetes and follows controller readiness.
-2. Client calls `CreateSession` with a fresh UUID, harness spec and override mask. Service
-   passes the UUID and launch intent to the runner, which accepts/reserves a logical root and
-   execution owner. A retry carries the same UUID; whether the runner started it is read from the
-   History Service's index. An announcement is not launch success.
+2. **If direct Gateway opening remains the selected authority,** the client calls `CreateSession`
+   with a fresh UUID, harness spec and override mask. The service passes the UUID and launch intent
+   to the runner, which accepts/reserves a logical root and execution owner. A retry carries the
+   same UUID; whether the runner started it is read from retained runner state and confirmed by
+   history as available. An announcement is not launch success.
 3. **Codex:** initialize the app-server; send `thread/start`; commit the returned thread ID as
    the native binding before reporting root readiness. No client-selected native thread ID is
    required. First user input subsequently uses `turn/start` with its own command ID.

@@ -1041,15 +1041,22 @@ flowchart TD
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
     CONTROL_SURFACE_RETIREMENT_AUDIT[Assigned: audit RPCs, fields and arguments against the intended paths]
     CONTROL_SURFACE_RETIREMENT_AUDIT --> RUNNER_LIST_SESSIONS_RETIRE[Blocked: resolve remaining live-inventory semantics, then remove ListSessions]
+    CONTROL_SURFACE_RETIREMENT_AUDIT --> DISPATCHER_OPEN_ALREADY_EXISTS[Candidate: reconcile opening conflict semantics before removing its list fallback]
+    DISPATCHER_OPEN_ALREADY_EXISTS --> RUNNER_LIST_SESSIONS_RETIRE
+    CONTROL_SURFACE_RETIREMENT_AUDIT --> DISPATCHER_OPENING_ATTACHED_RETIRE[Candidate: remove the unused persisted opening snapshot]
+    CONTROL_SURFACE_RETIREMENT_AUDIT --> GATEWAY_FIND_SESSIONS_RETIRE[In flight: remove unused Gateway registry search after reference and pin audit]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
-    GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
+    GATEWAY_WRAPPER_RETIRE[Blocked: retire redundant Gateway APIs; preserve registry for current resume checks]
     APP_ARCHIVE_RUNNER_READ_MIGRATION[Assigned: move live archive checks to the runner proxy] --> GATEWAY_WRAPPER_RETIRE
     NOTIFICATION_SESSION_MEMBERSHIP_MIGRATION[Assigned: retire notification wrapper membership reads] --> GATEWAY_WRAPPER_RETIRE
     APP_NATIVE_RESUME_CUTOVER --> GATEWAY_WRAPPER_RETIRE
-    GATEWAY_DATABASE_DROP[Blocked: drop the sandbox_commands database]
+    GATEWAY_DATABASE_DROP[Blocked: drop the Session registry database after identity migration]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: narrow proxy command authorization]
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
+    GATEWAY_SESSION_REGISTRY_RETIRE[Blocked: settle native-resume registry reader, then retire registry]
+    APP_NATIVE_RESUME_CUTOVER --> GATEWAY_SESSION_REGISTRY_RETIRE
+    GATEWAY_SESSION_REGISTRY_RETIRE --> GATEWAY_DATABASE_DROP
 ```
 
 ### `CONTROL_SURFACE_RETIREMENT_AUDIT` — converge RPCs, fields and arguments on the intended paths
@@ -1085,16 +1092,49 @@ migrations or authorize broad compatibility shims, language rewrites or speculat
 ### `RUNNER_LIST_SESSIONS_RETIRE` — remove the live inventory RPC if its remaining purposes migrate
 
 **Blocked on the surface audit's disposition and migration of its real callers.** The Sandbox table
-is moving to retained History inventory. Explicitly assess whether the underlying runner
-`ListSessions` RPC can go too, not only its `RunnerGateway` wrapper. Remaining uses include app
-archive safety/native resume, notification membership and test-driver quiesce ordering. History's
-eventual harness state and namespace/name association do not by themselves preserve authoritative
-live-state or Sandbox UID/owner checks. Settle those requirements and their intended owner before
-replacing or deleting the read; do not invent a differently named inventory RPC just to claim removal.
-Migrate callers and tests, verify pinned caller images no longer send it, then remove the service
-method, request/response messages and unused fields/helpers via normal generation. The separate
-wrapper retirement remains valid even if the audit finds a narrowly justified runner read must stay;
-record that decision and remove this conditional node if so.
+uses retained History inventory. Remaining runtime uses include app archive safety/native resume,
+Notification membership, and the Dispatcher opening fallback; test drivers also use the read to
+order Quiesce assertions. History's retained harness state and namespace/name association do not
+preserve authoritative live state or Sandbox UID/owner checks. Migrate each caller with those
+requirements intact, including Notification's UID/owner checks, then migrate tests and verify pinned
+caller images before removing the runner method/messages and helpers via normal generation. The
+Dispatcher fallback has a separate contract flaw: matching `OpenSession` retries return the existing
+attachment, while `ALREADY_EXISTS` means spec/setup conflict; its current ID-only list check can
+accept a conflict. Correct that before removing this caller. The Gateway wrapper may retire even if a
+narrowly justified runner live read remains; record that decision and remove this conditional node if
+so.
+
+### `DISPATCHER_OPEN_ALREADY_EXISTS` — settle opening conflicts without live-list inference
+
+**Candidate; identified by `CONTROL_SURFACE_RETIREMENT_AUDIT`.** `Runner.OpenSession` returns the
+existing attachment on a retry with the same spec and setup script, and returns `ALREADY_EXISTS` for
+a conflicting spec or setup. The Dispatcher currently calls `Runner.ListSessions` after
+`ALREADY_EXISTS` and accepts any matching Session ID, which can mark conflicting work admitted. Make
+the opening result follow the runner's actual conflict contract, and replace the test that models a
+lost identical-open reply as `ALREADY_EXISTS` with a retry that receives the existing attachment.
+This removes the Dispatcher caller of `Runner.ListSessions`; keep conflict and response-loss behavior
+covered before the runner list RPC is considered removable.
+
+### `DISPATCHER_OPENING_ATTACHED_RETIRE` — remove the unused persisted opening snapshot
+
+**Candidate; identified by `CONTROL_SURFACE_RETIREMENT_AUDIT`.** `SessionOpening.attached` is written
+from the successful runner `OpenSession` response and persisted in the Dispatcher's
+`session_opening.attached` column. The app and frontend expose its shape, but no production reader
+uses it; the only app-side reader is the test helper `wait_for_session_admission`. The field is a
+last opening snapshot, not a live inventory or a source of retained Thread history. Confirm no
+external or pinned client depends on it, then remove the proto/OpenAPI shape and test-helper fallback
+together. Review whether any operational use justifies retaining the stored snapshot; if not, remove
+the column with a new migration after the reader rollout, preserving each opening's Session ID,
+Sandbox identity, state, reason and timestamps.
+
+### `GATEWAY_FIND_SESSIONS_RETIRE` — remove the unused Gateway registry search
+
+**In flight; assigned to `quiesce_progress` for the independent deletion draft.** Repository search
+finds no production caller of `RunnerGateway.FindSessions`; remaining references are the Gateway
+method, client helper and tests/fake support. History `FindSessions` is used by the app for retained
+Thread inventory and has different semantics; keep it and its data. Confirm no external client or
+pinned caller image uses the Gateway method, then remove only the Gateway RPC, request/response types,
+helper, fixture support and tests together.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
@@ -1123,17 +1163,45 @@ pinned caller image sends it (the VM guest's runner wheel is a reader of the new
 The journal's `CommandAdmitted` event keeps storing the `Command` message, so stored history needs no
 migration and `Command` stays as that event's field type.
 
-### `GATEWAY_WRAPPER_RETIRE` — callers use the proxy; `RunnerGateway` goes
+### `GATEWAY_WRAPPER_RETIRE` — retire redundant live operations; retain placement registry
 
 **Blocked on the remaining read-caller migrations above, the Dispatcher-only app image rollout and
 `APP_NATIVE_RESUME_CUTOVER`.** These caller migrations can proceed independently;
 the native-resume decision does not block migrating reads. Pin all migrated caller images before
 deleting the RPC receiver, and search for remaining wrapper callers before removal.
-App and notification command sends go through Dispatcher; read-only calls may use the proxy. Delete the
-`RunnerGateway` service and proto, its client, `session_registry.py`, `destinations.py`,
-`session_lifecycle.py` and `wire.py`, obsolete client settings, projected tokens and network rules
-whose final callers are gone. Delete associated BUILD targets and tests; retain the control stream
-and runner proxy. This makes `SANDBOX_DATABASE_RENAME` moot; delete that deferred node here.
+App and notification command sends go through Dispatcher. Move only reads whose current-state and
+incarnation checks are preserved by the proxy; the remaining caller-boundary decisions are explicit
+gates above. Retire Gateway `CreateSession`, `ResumeSession` and `SubmitCommand` only after their
+caller gates; remove Gateway `FindSessions` through its separate node. `BatchGetSessionSandboxes` has
+no production in-repo caller after #10622; remove it with the registry API only after external/pinned
+caller review. The separate Runner `ListSessions` proxy method remains under
+`RUNNER_LIST_SESSIONS_RETIRE` for archive, Notification and Dispatcher callers. Preserve
+`session_registry.py` and its database while `ResumeSession` still reads it: only Gateway
+`CreateSession` writes rows, so the app's current direct-resume path refuses Dispatcher-opened
+Sessions. Keep the runner control stream and proxy. Removing redundant Gateway APIs does not make
+`SANDBOX_DATABASE_RENAME` moot while the registry remains.
+Remove the `RunnerGatewayClient.command` helper and Notification's `command_admission_timeout_s` and
+`lifecycle_timeout_s` settings with the old command/resume methods after checking pinned callers;
+remove the app's `runner_gateway_lifecycle_timeout_s` only if the explicit resume path is removed.
+Retire the app's unused Gateway API channel/target after pinned-client review; its token and the
+separate Sandbox control target still serve live runner reads. Remove strict config keys from
+manifests before deleting their settings readers.
+
+### `GATEWAY_SESSION_REGISTRY_RETIRE` — retire registry consumers only after resume review
+
+**Blocked on `APP_NATIVE_RESUME_CUTOVER`, wrapper callers and external/pinned clients.** After
+#10622, the app no longer calls `BatchGetSessionSandboxes`: it routes resume using the History-backed
+Sandbox name and a live runner list. `SandboxRunner.resume` still calls Gateway `ResumeSession`, which
+requires a `session_registry` row for that Sandbox UID. Only Gateway `CreateSession` writes the
+registry; production openings use Dispatcher, so their direct-resume path is currently refused. If
+native resume remains, first review how its receiver can preserve UID and owner checks for
+Dispatcher-opened Sessions. Otherwise remove `ResumeSession` with the reviewed app cutover.
+`BatchGetSessionSandboxes` has no production in-repo caller after #10622; confirm external/pinned use
+before removing its method, client helper and `SessionSandbox` wire shape. The independent
+`GATEWAY_FIND_SESSIONS_RETIRE` node handles Gateway `FindSessions`; keep History `FindSessions` and
+its retained data. Retain the registry and its data until all live readers/writers are retired and
+the separate operator-approved `GATEWAY_DATABASE_DROP`; never infer a missing UID from a same-name
+Sandbox.
 
 ### `APP_ARCHIVE_RUNNER_READ_MIGRATION` — preserve live archive safety without the wrapper
 
@@ -1156,7 +1224,7 @@ removals and receiver deletion waits for the new notification image.
 
 ### `GATEWAY_DATABASE_DROP` — drop the `sandbox_commands` database
 
-**Blocked on `GATEWAY_WRAPPER_RETIRE`; a data drop, merged by the operator.** Drop the database,
+**Blocked on `GATEWAY_WRAPPER_RETIRE` and `GATEWAY_SESSION_REGISTRY_RETIRE`; a data drop, merged by the operator.** Drop the database,
 its role, Secret, migration init container, old models/migrations and image publication wiring once
 the History Service holds every Session's Sandbox and all pinned gateways have stopped reading or
 writing this database. First remove strict config keys from manifests with an accepting receiver;

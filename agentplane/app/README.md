@@ -26,7 +26,7 @@ Backend responsibilities needed by another service move to an independent owner,
 app endpoint. The shared `agentplane/sandboxes` library owns Sandbox request construction; the app uses
 it directly as the requesting operator. The [Session Dispatcher](../session_dispatcher/README.md)
 owns opening and durable command delivery; the [Runner Gateway](../runner_gateway/README.md) owns the
-runner control stream, placement registry and authorized live runner access; the
+runner control stream, a legacy partial placement registry and authorized live runner access; the
 [History Service](../history_service/README.md) owns the Session Event archive and its Thread fold.
 The app is a client of each service for its distinct operation.
 Notifications depends on that backend and Actions, not this app. The app's own state is browser
@@ -36,7 +36,7 @@ service ([principles](../docs/principles.md#composable-services-not-a-platform-y
 
 The current bridge's session-scoped runner attachment is implementation state, not
 the desired product model. [Thread, runner, and harness layering](../docs/thread_layering.md) is
-the authoritative design for submission durability, the app queue decision,
+the authoritative design for Dispatcher submission receipts, runner admission, native effects,
 multi-session Thread history, and folded/Raw projections.
 
 ```sh

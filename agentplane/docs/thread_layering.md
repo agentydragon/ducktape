@@ -1,14 +1,14 @@
 # Thread, runner, and harness layering
 
-Status: **cross-layer design under review.** The materialized Thread projection and
-Electric-backed conversation sync described in [Thread view synchronization](thread_view_sync.md)
-are implemented; remaining acceptance gates and the accepted browser-cache tradeoff are recorded
-in [conversation acceptance](../debug/conversation_acceptance.md). This document remains the
-cross-layer source of truth for identities, durability, command handling, and Thread presentation.
-It distinguishes required guarantees from the open decision about accepting commands before a
-runner is available. [The runner specification](../runner/SPEC.md) describes the implemented
-runner contract; the target below is not a claim that every recovery case works today.
-Protocol changes are atomic monorepo cutovers, with no old-runner/data compatibility.
+Status: **cross-layer design under review.** The app opens Sessions and submits commands through
+Session Dispatcher; History owns retained Session/Thread views; Runner Gateway exposes a partial
+legacy placement registry and authorized live runner operations. The materialized Thread projection and Electric-backed
+conversation sync described in [Thread view synchronization](thread_view_sync.md) are implemented;
+remaining acceptance gates are in [conversation acceptance](../debug/conversation_acceptance.md).
+This document covers identity, durability, command handling and presentation, while the
+[runner specification](../runner/SPEC.md) describes the implemented runner contract. It does not
+claim every recovery case works today. Protocol changes are atomic monorepo cutovers, with no
+old-runner/data compatibility.
 
 ## Sandbox isolation boundary
 
@@ -38,8 +38,9 @@ able to trust what the page says:
   The initial design retains it losslessly; optional retention controls are a separate,
   deferred contract, never an implicit consequence of filtered delivery.
 - Sandbox lifecycle, connection health, and native harness state remain distinguishable.
-- The simple workflow is preset, message, Enter. Accepting that message before a runner
-  exists is an additional durability promise, whose implementation is a separate choice.
+- The simple workflow is preset, message, Enter. The Session Dispatcher durably accepts work while
+  a Sandbox is not ready and delivers it when the runner is available; a queued command is not proof
+  of runner admission or harness effect.
 
 Presets literally pre-fill editable fields, including Sandbox template, model,
 standing instructions, egress policies, and action policy sets. Manual creation of a
@@ -55,8 +56,10 @@ tables are `thread_*` in the History Service too, although they are keyed by pub
 ```mermaid
 flowchart LR
     F[Frontend] -->|Command| A[App]
-    A -->|same Command| G[Runner Gateway]
-    G -->|runner control stream| R[Runner journal and scheduler]
+    A -->|openings and durable commands| SD[Session Dispatcher]
+    SD -->|runner operations through proxy| G[Runner Gateway]
+    A -->|placement, live checks, explicit native resume| G
+    G -->|RunnerControl stream| R[Runner journal and scheduler]
     R --> C[Claude adapter]
     R --> D[Codex adapter]
     C <--> H1[Claude native process]
@@ -103,14 +106,17 @@ Raw evidence; the projection does not change runner Events or command admission.
 One Sandbox can host multiple Threads. A Thread may resume through several harness
 processes on that Sandbox. Current runner storage calls its durable, resumable container
 a “session”; it already spans process restarts. That existing name does not establish
-the target product Thread/incarnation relationship. The Runner Gateway's Session registry holds
-the mapping, without duplicating the log's static Sandbox on each association.
+the target product Thread/incarnation relationship. The Gateway registry maps Sessions it
+registered to Sandbox incarnations; production app openings use Dispatcher and do not populate it.
+History separately records the writer's namespace and name. App commands use the Thread's stored
+Sandbox name and send it to Dispatcher, which records the current Sandbox UID without checking the
+Session's earlier association. The complete Session-to-incarnation authority across opens, commands
+and resume remains under review in the [control-surface audit](control_surface_retirement.md).
 
 A Thread is a view/fold of one durable logical Session's Event log, with its own
-operator-set presentation; it is not a second execution source. Its id is the Runner
-Gateway's public Session UUID: `CreateSession` reserves it before runner contact, and the app
-materializes the Thread under it from the Open reply, an Open-key lookup, or the History
-Service's announcement that it recorded the Session, whichever comes first. A suspend/resume on retained storage reuses that Session ID,
+operator-set presentation; it is not a second execution source. Its id is the client-minted public
+Session UUID submitted through Dispatcher `OpenSession`; the Thread projection appears after History
+records and folds the runner's Events. A suspend/resume on retained storage reuses that Session ID,
 native conversation, and Event sequence; a fresh harness process is an incarnation,
 not another Session. Runner restart tests verify the identical ID and contiguous
 Event prefix after crash and SIGTERM; the Sandbox suspend/resume acceptance exercises
@@ -120,8 +126,9 @@ does not give a live Session caller permission to read the archive; Sandbox, pro
 and native harness identities remain separate. A portable runtime may retain this
 ID across Sandboxes only if it restores the same fenced journal and native state;
 separate copied-state tests gate that claim. For existing histories, keep the
-app UUID as the canonical public ID and import its association to the existing
-`(sandbox, runner session_id)` into the durable history authority. That runner ID remains the physical storage/runtime locator: its
+app UUID as the canonical public ID. History currently retains Sandbox namespace/name; any migration
+to preserve the prior Session-to-incarnation association must retain recorded UIDs and leave missing
+UIDs unknown instead of inferring them. The runner ID remains the physical storage/runtime locator: its
 native files, directories, and workspace paths need no rekey. The client mints its
 Session's UUID, which is the runner locator too. A future multi-Session Thread would
 need a new explicit model rather than overloading this one-to-one identity.
@@ -145,20 +152,21 @@ history while a runner is unreachable and after its Sandbox has gone away.
 
 ### Command protocol: intent, admission, then outcome
 
-| Fact                                   | Evidence                                                                                                             | Meaning                                                          |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------- |
-| Local submission                       | Browser retains the exact command and id                                                                             | Awaiting saved confirmation; not yet a server durability promise |
-| App stored, if an app outbox is chosen | Committed app command record                                                                                         | App owns eventual delivery even while the runner is unavailable  |
-| Runner admitted                        | Durable runner journal and `CommandAdmitted`, which includes the full `Command`                                      | Runner owns processing; no native effect is implied              |
-| Effect                                 | Causal `HarnessUserMessageConfirmed`, `ModelChanged`, interrupted `TurnCompleted`, or command-caused `HarnessExited` | The specifically evidenced operation took effect                 |
-| Terminal non-effect                    | `CommandFailed` or `CommandNoop`, with reason                                                                        | The command will not subsequently take effect in that scope      |
+| Fact                | Evidence                                                                                                             | Meaning                                                     |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- |
+| Local submission    | Browser retains the exact command and id                                                                             | Awaiting durable Dispatcher confirmation                    |
+| Dispatcher queued   | Committed Dispatcher record returned as a `Dispatch`                                                                 | Sender intent is durable; runner admission is not implied   |
+| Runner admitted     | Durable runner journal and `CommandAdmitted`, which includes the full `Command`                                      | Runner owns processing; no native effect is implied         |
+| Effect              | Causal `HarnessUserMessageConfirmed`, `ModelChanged`, interrupted `TurnCompleted`, or command-caused `HarnessExited` | The specifically evidenced operation took effect            |
+| Terminal non-effect | `CommandFailed` or `CommandNoop`, with reason                                                                        | The command will not subsequently take effect in that scope |
 
 A network write, timeout, or disconnected attachment is not one of the terminal
 outcomes. Absence of an observed admission means “admission not observed,” not
 “definitely never reached the runner.”
 
-Retrying the same id and payload against the same surviving runner journal is
-idempotent; a different payload under that id is rejected. This transport property
+Retrying the same id and payload against the Dispatcher returns the same durable record; the worker
+delivers with the same id to the runner, whose journal returns the original admission. A different
+payload under a known id is rejected at the corresponding owner. This transport property
 does not by itself make native execution exactly-once across a crash. The difficult
 window is native execution followed by a runner crash before durable evidence of that
 execution. Recovery needs native correlation/history or a native idempotency mechanism.
@@ -212,7 +220,7 @@ the unavailable history/recovery; do not silently manufacture continuous history
 
 Process restart with a surviving state volume is the supported recovery foundation.
 Total loss of that volume while the History Service lacks its tail is a different failure class;
-an app outbox can preserve input text but cannot recreate missing output or native
+the Dispatcher preserves queued command intent but cannot recreate missing output or native
 resume artifacts.
 
 Managed suspension must preserve the runner state and allow the tested shutdown/resume
@@ -227,26 +235,16 @@ Sandbox stays sealing. Externally deleting the only remaining storage while the 
 behind cannot carry a no-loss guarantee. A Thread's archived page still displays the history the
 History Service has.
 
-## Queue placement decision
+## Command queue ownership
 
-**Current implementation slice:** require a reachable runner for submission and
-make runner admission, history archival, replay, and UI state trustworthy first. Retain
-the app outbox as a deferred option for “submit while unavailable,” including combined
-Sandbox + Thread + first input. Its additional availability promise remains a future
-product decision.
-
-Both choices use the same generated `Command` and runner `EventEntry` payloads.
-Runner storage is required in either choice. Adding an app outbox does not remove the
-runner's native recovery obligations.
-
-|                                       | Runner admission first                                     | App outbox before runner admission                                                      |
-| ------------------------------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------- |
-| Earliest server promise               | Runner admission receipt                                   | App command transaction commits                                                         |
-| Runner unavailable                    | Preserve draft, show unavailable; no server-queued command | App owns delivery and shows waiting for runner                                          |
-| Tab closes after saved confirmation   | Runner continues; app has the input                        | Reconciler continues even if no runner exists yet                                       |
-| Authoritative pending runner commands | Fold `CommandAdmitted` and outcomes                        | Same runner fold, plus app commands without observed runner admission                   |
-| Additional durable app intent         | None for ordinary runner commands                          | Immutable command ledger and delivery reconciler                                        |
-| Combined creation plus first input    | Deferred                                                   | Requires atomic Thread/target/first-command persistence and provisioning reconciliation |
+The Session Dispatcher is the sender-facing durable queue for openings and commands. The app server
+stores Thread presentation state; the browser keeps unconfirmed submissions locally. The app sends
+commands to Dispatcher and reads queued/delivering/admitted results. Dispatcher wakes an eligible
+suspended Sandbox, waits for `Ready`, and delivers through
+the Runner Gateway proxy. A queued `Dispatch`, a runner `CommandAdmitted`, a History observation and
+a native effect remain separate facts. The app has no second command queue, and current production
+senders do not use the Gateway's legacy `SubmitCommand` wrapper; its retirement is gated in the
+[control-surface audit](control_surface_retirement.md).
 
 ### Message sketches used below
 
@@ -269,57 +267,65 @@ E(41, command_admitted { command: M }) = EventEntry {
 ```
 
 `E(n, observation)` always carries the full envelope above. `origin.sequence` and `cursor`
-have the same value; they do not advance independently. The app submits through the Runner
-Gateway's `SubmitCommand`, which reaches the runner over its control stream and returns the
-`CommandAdmitted` entry; the runner pushes every entry to the History Service with
-`RunnerIngress.Push`, whose first frame announces the Session's `Attached` snapshot. HTTP/SSE
-carry the same generated payload in protobuf JSON. Native sketches omit unrelated request fields.
+have the same value; they do not advance independently. The app submits the command through the
+Session Dispatcher and receives a durable `Dispatch`; the Dispatcher delivers to the runner through
+the Gateway proxy, and the runner later pushes `CommandAdmitted` and other entries to History with
+`RunnerIngress.Push`. HTTP/SSE carry generated payloads in protobuf JSON. Native sketches omit
+unrelated request fields.
 
-### Runner admission first
+### Dispatcher admission, runner result
 
-The browser retains a command id and payload before sending. The app relays it through the
-Runner Gateway; the product reports “saved” when the response carries the runner's durable
-`CommandAdmitted` for that exact command. That entry contains the full command and reaches the
-History Service through the runner's push, so the saved input and pending controls survive reload
-and Sandbox deletion without an app delivery queue. The bridge implements this admission response
-boundary; browser-local recovery and pending presentation are separate acceptance work.
+The browser retains a command id and payload before sending. The app submits it to Dispatcher and
+reports it as queued when the response confirms a durable `Dispatch`. That is sender intent, not
+runner admission; the runner later journals `CommandAdmitted` and pushes it to History. The app reads
+Dispatcher state through its dispatch endpoint and the conversation outcome through History.
 
-A timeout preserves the browser's local submission as “awaiting saved confirmation.”
-Reload catches up and matches by id, and delivers each command it has not seen admitted
-once more; that delivery, a return online after a failed attempt, and Retry all use the
-same id against the same surviving execution scope. Local persistence serves recovery of
-an unconfirmed submission; it does not promise server delivery after closing the tab.
-Retry into a replacement scope requires the separate successor-delivery decision.
+A timeout leaves the result uncertain. The browser retries the same command id and payload against
+Dispatcher, which returns the existing record or rejects a conflict. The worker uses the same id
+when delivering to the runner, whose journal deduplicates admitted commands. This provides durable
+queueing while the Sandbox is not ready; it does not preserve an unadmitted command after the
+Dispatcher's Sandbox-deletion outcome or prove native execution.
 
-#### Runner queues a model change
+#### Dispatcher queues a model change
 
 ```mermaid
 sequenceDiagram
     participant F as Frontend
     participant A as App
-    participant G as Runner Gateway
+    participant SD as Session Dispatcher
+    participant G as Runner Gateway proxy
     participant R as Runner and journal
     participant HS as History Service
     participant H as Codex harness
     F->>A: POST /threads/T/commands<br/>M = Command {command_id:M, change_model:{model:new-model}}
-    A->>G: SubmitCommand {sandbox:S, session_id:T, command:M}
-    G->>R: M over the control stream
+    A->>SD: ChangeModel {command_id:M, session_id:T, model:new-model}
+    SD->>SD: Persist Dispatch M
+    SD-->>A: Dispatch M queued
+    A-->>F: HTTP 200, Dispatch M
+    SD->>G: ChangeModel for T
+    G->>R: ChangeModel over the control stream
     R->>R: Persist M
-    R-->>G: E(41, command_admitted{command:M})
-    G-->>A: E41
-    A-->>F: HTTP 200, E41
-    R->>HS: Push E41
+    R-->>G: CommandAdmitted M
+    G-->>SD: Admission M
+    SD->>SD: Mark M runner-admitted
+    R->>HS: Push E(41, command_admitted{command:M})
     HS->>HS: Commit E41, fold
+    F->>A: GET /threads/T/commands/M/dispatch
+    A->>SD: GetDispatch M
+    SD-->>A: Dispatch M runner-admitted
+    A-->>F: Dispatch M runner-admitted
     A-->>F: SSE id:41, data:E41
     Note over F,H: Picker still shows applied old model. M is pending
     F->>A: POST /threads/T/commands<br/>I = Command {command_id:I, submit_input:{text:Continue the task}}
-    A->>G: SubmitCommand {sandbox:S, session_id:T, command:I}
-    G->>R: I
+    A->>SD: SubmitInput {command_id:I, session_id:T, text:Continue the task}
+    SD->>SD: Persist Dispatch I
+    SD->>G: SubmitInput for T
+    G->>R: SubmitInput over the control stream
     R->>R: Persist I
-    R-->>G: E(42, command_admitted{command:I})
-    G-->>A: E42
-    A-->>F: HTTP 200, E42
-    R->>HS: Push E42
+    R-->>G: CommandAdmitted I
+    G-->>SD: Admission I
+    SD->>SD: Mark I runner-admitted
+    R->>HS: Push E(42, command_admitted{command:I})
     A-->>F: SSE id:42, data:E42
     Note over R,H: Runner schedules when the native turn can start
     R->>H: method:turn/start, id:rpc-9<br/>params:{threadId:native-T, model:new-model,<br/>input:[{type:text, text:Continue the task}]}
@@ -338,53 +344,18 @@ the runner; network arrival order across app replicas is not a global order.
 Effects can occur in a different order. If a client needs model selection before its
 next input, it must establish admission order, not race independent requests.
 
-The app must not withhold that input until `ModelChanged`: Codex's effect depends on
-the next `turn/start`. The runner scheduler handles native dependencies. An interrupt
-targets the clicked turn and must not wait for queued inputs to finish. An outbox,
-if added, preserves required admission order without waiting for each command's effect.
+The app must not withhold that input until `ModelChanged`: Codex's effect depends on the
+next `turn/start`. The runner scheduler handles native dependencies. An interrupt targets the
+clicked turn and must not wait for queued inputs to finish. The Session Dispatcher owns sender
+delivery and ordering; the app does not maintain a second command queue.
 
-### Optional app queue
+## Session opening and command ownership
 
-The app atomically saves an immutable `Command` and its target before promising
-delivery. Existing Threads need only the command; combined creation also needs a
-Thread id, resolved Sandbox target, and runner-opening intent. Presets are resolved
-editable fields, not another runtime identity. The app submits Sandbox requests; the Sandbox
-Controller owns reconciliation and status.
-
-```mermaid
-sequenceDiagram
-    participant F as Frontend
-    participant A as App and PostgreSQL
-    participant K as Kubernetes API and Sandbox Controller
-    participant G as Runner Gateway and runner
-    participant HS as History Service
-    F->>A: Proposed create request:<br/>{sandbox_target:resolved fields, initial_command:C}
-    A->>A: Commit Thread, target, C
-    A-->>F: Proposed HTTP 201 after commit:<br/>{thread_id:T, command:C}
-    Note over F,A: Browser may close here
-    A->>K: Create Sandbox with stable name and resolved fields
-    K-->>A: Sandbox {uid:U, ...}
-    A->>G: CreateSession {destination:U, session_id:T, spec:resolved fields, bootstrap}
-    G-->>A: Attached {session_id:T, ...}
-    A->>G: SubmitCommand {sandbox:S, session_id:T, command:C}
-    G-->>A: E(n, command_admitted{command:C})
-    A->>A: Derive delivery satisfied
-    G->>HS: Runner pushes E1..Em, including<br/>E(m, harness_user_message_confirmed{origin_command_ids:[C], ...})
-    F->>A: GET Thread T, refresh pending and Sandbox state
-    A-->>F: C in app intent, exact E1..Em from the History Service,<br/>separate operational snapshot
-```
-
-“Saved by app, runner admission not observed” is an app fact. It does not appear in
-the runner's Event log. The command ledger is sufficient to reconstruct it;
-a dispatch attempt remains diagnostic and a lost response does not establish failure.
-A reconciler retries stable ids to the same journal and stops retrying on admission.
-
-An app queue needs its own cancellation/expiry and unavailable-target semantics:
-an interrupt for an old turn cannot wake a later turn, and a command cancelled before
-delivery has an app outcome, not a fabricated runner `CommandNoop`. Cancelling after
-an attempted write needs reconciliation because runner admission may be unobserved.
-These obligations are part of choosing an app queue, not details to defer after
-calling it authoritative.
+Sandbox creation and Session opening are separate operations. The app creates and manages the
+Sandbox through Kubernetes; `POST /sandboxes/{name}/sessions` sends a client-minted Session ID and
+resolved spec to Dispatcher `OpenSession`. The Dispatcher records the opening and delivers it when
+the Sandbox is ready. The first input, if any, is a separate command with its own ID and durable
+Dispatcher result; there is no app transaction that queues an initial input with Sandbox creation.
 
 ## Reconnect and catch-up
 
@@ -425,33 +396,38 @@ transaction spans a network call.
 sequenceDiagram
     participant F as Frontend
     participant A as App
-    participant G as Runner Gateway
+    participant SD as Session Dispatcher
+    participant G as Runner Gateway proxy
     participant R as Runner
     participant HS as History Service
     F->>F: Persist local Command C and id
     F->>A: POST /threads/T/commands, Command C
-    A->>G: SubmitCommand {command:C}
+    A->>SD: per-operation RPC for C
+    SD->>SD: Commit Dispatch C
+    SD-->>A: Dispatch C
+    A->>G: runner operation for C after Sandbox is Ready
     G->>R: C over the control stream
     R->>R: Persist C once
-    R-->>G: E(101, command_admitted{command:C})
-    G-->>A: E101
+    R-->>G: CommandAdmitted C
+    G-->>SD: Admission C
+    SD->>SD: Mark C runner-admitted
     A--xF: Connection lost before saved confirmation reaches browser
     Note over F: Reload
-    F->>A: GET /threads/T/events/stream?after=100
-    alt The History Service has E101
-        A-->>F: SSE id:101, data:E(101, command_admitted{command:C})
-        F->>F: Match C, retire local submission
-    else The push has not yet delivered E101
-        A-->>F: Current prefix through E100, keep following
-        F->>A: POST same Command C to same Thread/execution scope
-        A->>G: SubmitCommand {command:C}
-        G->>R: C over the control stream
-        R-->>G: Journaled E101, not persisted again
-        G-->>A: E101
-        A-->>F: HTTP 200 with E101
-        R->>HS: Push E101 and later Events
-        A-->>F: SSE id:101 with same E101
+    F->>A: GET /threads/T/commands/C/dispatch
+    A->>SD: GetDispatch C
+    alt Dispatcher has the durable Dispatch
+        SD-->>A: Current state of C
+        A-->>F: Dispatch state; continue watching History for outcomes
+    else No durable Dispatch is found
+        F->>A: POST same Command C with same ID and payload
+        A->>SD: per-operation RPC for C
+        SD->>SD: Create the one durable Dispatch for C
+        SD-->>A: Dispatch C
+        A-->>F: Dispatch C
     end
+    R->>HS: Push E101 and later Events
+    HS-->>A: Retained event prefix includes E101
+    A-->>F: SSE id:101, data:E(101, command_admitted{command:C})
 ```
 
 A browser may follow from zero on a fresh load. A saved cursor is valid only with the
@@ -464,7 +440,8 @@ the authoritative transport of history.
 
 ```mermaid
 sequenceDiagram
-    participant A as App and Runner Gateway
+    participant A as App
+    participant G as Runner Gateway
     participant HS as History Service
     participant R1 as Old runner
     participant S as Runner state volume
@@ -477,7 +454,8 @@ sequenceDiagram
     R2->>HS: Push {announce:Attached{last_cursor:N+loss-events}}
     HS-->>R2: Acknowledgement {cursor:K}
     R2->>HS: E(K+1) onward
-    A->>R2: ResumeSession {session_id:T}: stored spec
+    A->>G: POST /threads/T/resume (explicit native resume)
+    G->>R2: ResumeSession {session_id:T}: stored spec
     R2->>H: Claude argv --resume native-id, or<br/>Codex method:thread/resume, params:{threadId:native-id}
     H-->>R2: Native initialization/resume response with native-id
     R2->>S: Record evidence, reconcile only proven-safe commands
@@ -486,6 +464,9 @@ sequenceDiagram
 A harness-only crash follows the same evidence rules without replacing the runner.
 An app or History Service outage by itself never triggers native resume. A broken control
 stream or push is not a harness stop. Sharing a Thread id and counter does not prove native continuation.
+The explicit app resume route shown above currently looks up placement in the Gateway registry, which
+does not contain Dispatcher-opened Sessions; this sequence therefore cannot resolve those Threads.
+See the [control-surface audit](control_surface_retirement.md).
 
 ## Timeline, pending queue, and operational state
 
@@ -494,9 +475,9 @@ The Thread page combines three views with different meanings:
 - **Conversation:** a deterministic fold of runner Events. Confirmed user input is
   placed at its confirmation; assistant/tool items are anchored at their start and
   updated by subsequent deltas. Control effects get distinct system cards.
-- **Pending commands:** runner admissions without terminal outcomes. If the app outbox
-  is chosen, also include app-stored commands without observed runner admission. Local
-  unconfirmed submissions are visibly local until matched with durable evidence.
+- **Pending commands:** Dispatcher states before a terminal result, plus runner admissions without
+  terminal outcomes. Local unconfirmed submissions are visibly local until matched with a durable
+  Dispatcher receipt.
 - **Operational state:** Sandbox desired/observed state, bootstrap output, and runner
   connection health, including staleness. These can explain blocked work.
 
@@ -532,10 +513,10 @@ can exceed the History Service's stored prefix while the push catches up. Report
 provenance and as-of cursor separately; do not seed or overwrite a conversation or
 pending-command reducer with state from beyond its stored prefix.
 
-For an app queue, its pending snapshot joins app command records with the History Service's
-Events, reporting the included runner cursor. Reconnect refreshes that
-snapshot; a second append-only browser command feed is not inherently required. The
-frontend still consumes generated Commands and Events, not guessed delivery statuses.
+The browser retains local command IDs and payloads until it confirms a Dispatcher receipt. Its
+progress view combines that local submission with the latest Dispatcher state and History Events,
+keeping queued delivery separate from runner admission and harness effect. History remains the
+source for conversation outcomes; no second server command ledger is needed in the app.
 
 If a future single activity feed includes app admission or Kubernetes observations,
 it must be explicitly an **app activity projection**. Preserve each runner Event and
@@ -558,10 +539,10 @@ stream. The HTTP/SSE sequence diagrams above describe the current implementation
 
 The normal view loads selected assembled state and follows it through Electric. Long content is
 loaded on demand, while the browser store retains loaded rows and bodies until the Thread closes;
-bounded browser-cache retention is a deferred desire (D6), not an acceptance gate. Commands keep
-their runner-first admission semantics. Operational snapshots keep their own provenance. No second
-command queue or authoritative Event sequence is introduced. The exact runner archive remains
-available; optional archive-retention changes require a separate, explicit contract.
+bounded browser-cache retention is a deferred desire (D6), not an acceptance gate. Sender commands
+keep their Dispatcher receipt separate from runner admission and harness effect. Operational
+snapshots keep their own provenance. The exact runner archive remains available; optional
+archive-retention changes require a separate, explicit contract.
 
 ## Required harness-loss and Sandbox lifecycle cross-check
 
@@ -605,8 +586,8 @@ The [current runner specification](../runner/SPEC.md) exposes a session-scoped S
 journal with atomic command/Event commits and publication after the storage fence.
 The target runner Thread identity/cursor change and native crash recovery need implementation
 and integration evidence. Canonical Thread pages replay the archived prefix without a live runner;
-the app's saved-response boundary is the runner's admission receipt, not command effect. An app outbox is a separate decision about accepting work
-before the runner can; it does not satisfy those gates by existing.
+the app's command response confirms a Dispatcher receipt, while a later runner admission and harness
+effect require separate evidence.
 
 No cross-harness transcript portability, inferred native effects, or old-protocol
 compatibility is promised.

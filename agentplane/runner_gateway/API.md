@@ -28,7 +28,9 @@ The gateway keeps no Session history; runners push their Events to the
   Sandbox; a request without a UUID is invalid. `ResumeSession` accepts the public ID of a Session
   registered within the pinned Sandbox UID. The UUID does not apply to runner-discovered native
   child sessions. The app opens new Threads through Session Dispatcher; repository search found no
-  production caller of this Gateway `CreateSession` RPC.
+  production caller of this Gateway `CreateSession` RPC. Because Gateway `CreateSession` is the
+  registry's only writer, Dispatcher-opened Sessions do not get a Gateway registry row and cannot
+  currently be resolved by the app's explicit-resume placement lookup.
 - `CreateSession`'s setup uses the runner's existing idempotence; the Sandbox's bootstrap runs in the runner's first `OpenSession`. The response is the
   native attachment snapshot, not a claim that all setup or a model turn has completed.
 - `ResumeSession`: uses exactly the runner-retained spec, without applying today's
@@ -80,9 +82,11 @@ runner's stored bootstrap result.
 `BatchGetSessionSandboxes` and `FindSessions` are open to every `caller_accounts` caller and carry
 no transcript. Each answers from the gateway's registry, deleted Sandboxes included: a Session's
 public ID, Sandbox namespace and name, and incarnation UID (empty for imported Sessions without
-one). `BatchGetSessionSandboxes` takes at most 1000 IDs and leaves out any the gateway never
-registered; `FindSessions` returns every Session in a Sandbox with exactly the given name, or whose
-name contains the given text, ignoring case.
+one). `CreateSession` is the registry's only writer. `BatchGetSessionSandboxes` takes at most 1000
+IDs and leaves out any the gateway never registered, including Sessions opened through Dispatcher
+or directly by a runner; it is not complete Session inventory. `FindSessions` returns every
+registered Session in a Sandbox with exactly the given name, or whose name contains the given text,
+ignoring case.
 
 ## Errors and uncertain outcomes
 
@@ -110,7 +114,8 @@ Management uses `lifecycle_timeout_s` (default 300).
 [runner control stream](../docs/runner_control.md), so the gateway's network policy can admit the
 egress proxy to it alone. It accepts Pod tokens for `runner_control_audience` (default
 `agentplane-runner-control`), and `commands_database_url` names the `sandbox_commands` database,
-which holds its connection rows next to command admission.
+which currently stores the Gateway Session registry. The Gateway's `SubmitCommand` wrapper does not
+persist command rows there.
 
 Deployment must grant the gateway the appropriate Kubernetes and TokenReview permissions, and keep
 it the sole production server of the runner control stream.

@@ -36,7 +36,7 @@ not redesign storage, the History Service, or policy.
 - **Runner Gateway** (`runner_gateway/`): the `RunnerControl.Connect` listener and the proxy of the runner's `Runner`
   service. It creates, per Sandbox, a Lease (holder, epoch, liveness) and an EndpointSlice pointing at the holding
   replica (`connection_records.py`), owned by the Sandbox, and writes the runner's published quiesce stage and bootstrap result onto the Lease. It no longer creates the `<sandbox>-control` Service
-  (its `services` RBAC rule stays until the controller's image is pinned). It still wraps `Runner` with Session registry, readiness checks
+  (its `services` RBAC rule stays until the controller's image is pinned). It still wraps `Runner` with the legacy Session registry (written only by direct `CreateSession`), readiness checks
   (`destinations.py`) and a database, and its API promises that session and command RPCs never provision, resume or
   wake a Sandbox.
 - **Integration app** (`app/`): submits Sandbox desired state and operator-owned grants through the
@@ -48,8 +48,11 @@ not redesign storage, the History Service, or policy.
 - **History Service**: ingress (journals pushed by runners, acked by cursor), raw log, fold, reads; records which
   Sandbox wrote each Session. Folds `last_model_activity_at`.
 
-Message sending has no queue: the app calls `SubmitCommand`, which forwards to a running harness or fails. Nothing
-resumes a Sandbox on a message.
+The current sender path is queued: the app and Notification Service submit per-operation commands to
+Session Dispatcher, which durably records them and delivers after Sandbox readiness. The legacy
+Gateway `SubmitCommand` wrapper has no production sender in this repository. Explicit user-requested
+native resume and live runner reads still use Gateway directly; see the
+[control-surface audit](control_surface_retirement.md) for the remaining caller and authorization gates.
 
 ## Where the lines could fall
 
@@ -423,13 +426,13 @@ dependency the other path does not need).
 **Refusal codes**. The runner's gRPC code says what the Dispatcher does; the gateway proxy
 passes runner codes through. The first row is already true on `devel`, where the runner returns `ABORTED` for the lameduck refusal; only the conditional-`Quiesce` row is new.
 
-| Case                                                             | Code                  | Dispatcher                                                      |
-| ---------------------------------------------------------------- | --------------------- | --------------------------------------------------------------- |
-| Runner in lameduck refuses work                                  | `ABORTED`             | back to `QUEUED_IN_DISPATCHER`, retry after resume              |
-| Conditional `Quiesce` refused (`if_idle_since` differs, or busy) | `ABORTED`             | none: the controller resets its idle timer                      |
-| Journal sealed, setup failed, harness stopped, `BootstrapFailed` | `FAILED_PRECONDITION` | terminal: `FAILED` with the reason                              |
-| Redelivered `command_id` already admitted                        | success               | `RUNNER_ADMITTED`, or later, from the runner's answer           |
-| Runner `OpenSession` of an existing Session (`ALREADY_EXISTS`)   | `ALREADY_EXISTS`      | `ListSessions` says whether it is on this runner; if so, opened |
+| Case                                                             | Code                  | Dispatcher                                                                                                                           |
+| ---------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| Runner in lameduck refuses work                                  | `ABORTED`             | back to `QUEUED_IN_DISPATCHER`, retry after resume                                                                                   |
+| Conditional `Quiesce` refused (`if_idle_since` differs, or busy) | `ABORTED`             | none: the controller resets its idle timer                                                                                           |
+| Journal sealed, setup failed, harness stopped, `BootstrapFailed` | `FAILED_PRECONDITION` | terminal: `FAILED` with the reason                                                                                                   |
+| Redelivered `command_id` already admitted                        | success               | `RUNNER_ADMITTED`, or later, from the runner's answer                                                                                |
+| Runner `OpenSession` returns `ALREADY_EXISTS`                    | `ALREADY_EXISTS`      | Current list fallback can mistake conflicting spec/setup for a successful open; see `DISPATCHER_OPEN_ALREADY_EXISTS` in the task DAG |
 
 **Ambiguous delivery resolves on redelivery.** The runner's journal lives on the state volume and answers a
 redelivered `command_id` with its existing admission, even after the harness stopped or the journal was sealed. A
@@ -443,28 +446,26 @@ The queue service does one job: **delivery.** Accept a message durably, wake the
 Sandbox, deliver once the runner is Ready, survive the sender leaving. It needs a database, the
 Sandbox's name, the gateway and the Kubernetes API. Idle policy is the controller's (below).
 
-**Required or optional.** Decided (operator, 2026-10-14): _required for senders, not for the platform._ Everything
-that sends work to a Session (app composer, Notification Service, agent messaging) goes through the
-Dispatcher's command RPCs, so there is one set of delivery semantics: accepted, then delivered, or failed
-with a reason. A second direct path for the same senders means "sometimes queued, sometimes an
-immediate error", which the suspended composer story cannot present. The runner proxy at the
-gateway stays the only runner surface. Only the Dispatcher starts or continues work (`OpenSession`, `ResumeSession`,
-`SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`); the controller alone calls `Quiesce`; `InterruptTurn`,
-`StopRunnerSession` and reads stay open to system callers and diagnostics. Tests and diagnostics that start work go through
-the Dispatcher. Per-method authorization at the
-gateway is where "only these callers may call `SubmitInput`" and the other start-or-continue-work methods is
-enforced; it is a policy edit, not a new path.
+**Required or optional.** Decided (operator, 2026-10-14): _required for senders, not for the platform._ Production
+senders use the Dispatcher's command RPCs, so ordinary message delivery has one set of semantics:
+accepted, then delivered, or failed with a reason. The runner proxy at the Gateway remains the
+network path to the runner. The selected target is that only Dispatcher starts or continues work
+(`OpenSession`, `ResumeSession`, `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort`); the controller
+alone calls `Quiesce`; `InterruptTurn`, `StopRunnerSession` and reads stay open to system callers and
+diagnostics. The app's explicit native resume remains a current direct `ResumeSession` caller and is
+not migrated by this decision. Per-method Gateway authorization that restricts start-or-continue work
+to Dispatcher is a rollout gate, tracked in the [control-surface audit](control_surface_retirement.md).
 
-What remains of the runner surface for direct use once the Dispatcher exists:
+Target Runner surface after the remaining direct callers and authorization gate are resolved:
 
-| `Runner` method                                       | After the Dispatcher                                                                  |
-| ----------------------------------------------------- | ------------------------------------------------------------------------------------- |
-| `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` | Dispatcher only                                                                       |
-| `InterruptTurn`, `StopRunnerSession`                  | Dispatcher (senders); direct for system callers; never wake a Sandbox                 |
-| `OpenSession`                                         | Dispatcher only                                                                       |
-| `ResumeSession`                                       | Dispatcher only, as an internal step of each command RPC (the harness half of waking) |
-| `Quiesce`                                             | Sandbox Controller only                                                               |
-| `ListSessions`                                        | direct; reads need no wake                                                            |
+| `Runner` method                                       | After the Dispatcher                                                                               |
+| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| `SubmitInput`, `ChangeModel`, `ChangeReasoningEffort` | Dispatcher only                                                                                    |
+| `InterruptTurn`, `StopRunnerSession`                  | Dispatcher (senders); direct for system callers; never wake a Sandbox                              |
+| `OpenSession`                                         | Dispatcher only                                                                                    |
+| `ResumeSession`                                       | Dispatcher for command delivery; the app's explicit native resume remains direct pending migration |
+| `Quiesce`                                             | Sandbox Controller only                                                                            |
+| `ListSessions`                                        | direct; reads need no wake                                                                         |
 
 A deployment with no Dispatcher is a valid reduced configuration, because the runner, gateway and controller do
 not depend on the Dispatcher. Idle policy is the controller's, so such a Sandbox still suspends when idle, and only

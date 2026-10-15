@@ -51,18 +51,19 @@ contracts rather than a second tool-request lifecycle, and preserve per-server
 timeouts plus normalized error replies. Keep MCP task support disabled until an active `tools/call`
 path is observed using it.
 
-### C3: app-to-runner delivery is ambiguous after connection loss
+### C3: native execution can precede durable outcome evidence
 
-**Bug.** Runner events are durable and cursor-replayable, but app commands are direct gRPC writes.
-If that stream fails, the app cannot distinguish a command that never reached the runner from one
-that arrived before the acknowledgement was lost. A stable command id resolves a retry only after
-the runner has logged it.
+**Current boundary.** The Session Dispatcher durably records app command intent before runner
+delivery, so a lost app response can be resolved by the same command ID and Dispatcher receipt.
+Runner admission is also journaled and replayable. The unresolved crash window is native execution
+before its causal outcome is durably recorded; command-ID deduplication alone cannot prove exactly
+once native behavior.
 
-**Required evidence.** Exercise loss before write, after write but before acknowledgement,
-and after runner admission. Retain the same command id across retries and reload.
-[The layering design](thread_layering.md#queue-placement-decision) owns the choice of
-runner-first admission versus an app outbox; both need native crash-recovery proof.
-Lack of an observed admission does not prove that a command was never delivered.
+**Required evidence.** Exercise loss before Dispatcher commit, after commit but before its response,
+after runner admission, and native execution before outcome persistence. Retain the same command ID
+across retries and reload. [The layering design](thread_layering.md#command-queue-ownership) owns the
+sender/runner/effect boundaries; native crash recovery remains a separate proof obligation. Lack of
+an observed admission does not prove that a command was never delivered.
 
 ### C4: background state has no typed reset path
 

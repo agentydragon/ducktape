@@ -34,7 +34,7 @@ class Settings(YamlFileSettings):
     port: int = Field(default=8080, ge=1, le=65535)
     kubeconfig: Path | None = None
     commands_database_url: str = Field(
-        min_length=1, description="The `sandbox_commands` database holding command admission."
+        min_length=1, description="The `sandbox_commands` database holding the Runner Gateway Session registry."
     )
     runner_control_audience: str = Field(
         default=RUNNER_CONTROL_AUDIENCE,

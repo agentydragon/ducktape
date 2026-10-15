@@ -7,8 +7,9 @@ The runner is the shared seam over Claude Code and Codex. Exact wire fields, rep
 and journal recovery are in [the runner specification](../runner/SPEC.md). The
 cross-layer identity, command, projection, and UI contract is
 [Thread, runner, and harness layering](thread_layering.md). That document is the
-authoritative design for Thread identity, queue placement, durability boundaries,
-replica ownership, and Raw-mode ordering. An app queue is an open product choice.
+authoritative design for Thread identity, Dispatcher-owned sender queueing, durability boundaries,
+replica ownership, and Raw-mode ordering. Sender acceptance, runner admission and harness effect are
+separate facts; the app does not own a server-side command queue.
 
 ## What the runner seam owns
 

@@ -11,8 +11,8 @@ an MCP approval gateway for any MCP-capable LLM product.
 
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   and an MCP endpoint over OAuth.
-- [Runner Gateway](runner_gateway/README.md): the runner control stream, Session placement and
-  authorized live runner access.
+- [Runner Gateway](runner_gateway/README.md): the runner control stream, a legacy partial Session
+  placement registry and authorized live runner access.
 - [Session Dispatcher](session_dispatcher/README.md): the durable command queue and delivery state
   between senders and Sandbox runners.
 - [History Service](history_service/README.md): retained Session history, read by the
@@ -131,14 +131,17 @@ source are retired; the History Service retains its database and authored histor
   the `RunnerControl` stream they dial to the Runner Gateway, routed per Sandbox by its `<sandbox>-control` Service and
   `<sandbox>-runner` Lease ([runner control stream](docs/runner_control.md)).
 - **Databases.** Each service owns a database on one shared CNPG cluster: `app`,
-  `sandbox_commands` (the Runner Gateway's Session registry), `sandbox_service` (Session history,
+  `sandbox_commands` (the Runner Gateway's Session registry for sessions opened through its direct
+  `CreateSession` API; it does not cover Dispatcher openings), `sandbox_service` (Session history,
   written by the History Service), `actions`, `egress`, `notifications` and `session_dispatcher`.
   The History Service retains the existing `sandbox_service` database; no database or authored
   history is removed with the Sandbox Service Deployment. The history and Dispatcher databases are drawn.
 - **Sandbox lifecycle and runner control.** The app writes requested Sandbox state and operator
   grants to Kubernetes; the Sandbox Controller reconciles resources and owns status. The Session
-  Dispatcher owns Session openings and durable command admission/delivery state. The Runner Gateway
-  owns the runner control stream, Session placement and authorized live runner access. The controller
+  Dispatcher owns production Session openings and durable command admission/delivery state. The
+  Runner Gateway owns the runner control stream, a legacy partial Session placement registry and
+  authorized live runner access. Explicit app resume currently depends on that registry and cannot
+  resolve Dispatcher-opened Sessions; the placement authority and migration are under review. The controller
   holds deletion until the runner has sealed its Sessions through the Gateway.
 
 Status, open work and design gates: [`plans/`](plans/README.md). Implemented contracts:
