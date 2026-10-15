@@ -151,6 +151,9 @@ def test_loki_proxy_static_allowlist_covers_agent_readable_log_namespaces(
 def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
     cluster: ParsedCluster,
     bootstrap_resources: list[K8sResource],
+    staging_app_config: dict,
+    staging_policy_sets: dict[str, list[dict]],
+    staging_manifest_docs: list[dict],
     k8s_dir: Path,
     repo_root: Path,
     generated_dir: Path,
@@ -186,12 +189,8 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         if resource.kind == "Namespace":
             expect_readers(resource)
 
-    staging_docs = list(yaml.safe_load_all((k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml").read_text()))
-    app_config = one(
-        doc for doc in staging_docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
-    )
-    config = yaml.safe_load(app_config["data"]["config.yaml"])
-    policy_sets = {doc["metadata"]["name"]: doc["spec"]["rules"] for doc in staging_docs if doc["kind"] == "PolicySet"}
+    config = staging_app_config
+    policy_sets = staging_policy_sets
     reader_roles = {"agent-readable-namespace-metadata", "agent-readable-namespace-logs"}
     actual = {
         (namespace, rule["role"]["name"])
@@ -220,7 +219,7 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
         doc["kind"] in {"Role", "RoleBinding"}
         and doc["metadata"]["name"] in {"agentplane-staging-managed-bindings", "agentplane-staging-external-bindings"}
         and doc["metadata"].get("namespace") != "agentplane-staging"
-        for doc in staging_docs
+        for doc in staging_manifest_docs
     )
 
     for rule in (rule for name in config["sandbox_presets"][preset]["policy_sets"] for rule in policy_sets[name]):
@@ -354,12 +353,49 @@ def bootstrap_resources(k8s_dir: Path) -> list[K8sResource]:
 
 
 @pytest.fixture(scope="module")
-def agent_permissions(
-    cluster: ParsedCluster, bootstrap_resources: list[K8sResource], repo_root: Path, k8s_dir: Path
-) -> tuple[Rbac, dict, dict[str, list[dict]], list[dict]]:
+def agent_permission_resources(
+    cluster: ParsedCluster, bootstrap_resources: list[K8sResource], repo_root: Path
+) -> list[K8sResource]:
     # Active, rendered resources only.
     resources = [resource for group in cluster.flux_kust_resources(repo_root).values() for resource in group]
     resources.extend(bootstrap_resources)
+    return resources
+
+
+@pytest.fixture(scope="module")
+def agent_rbac(agent_permission_resources: list[K8sResource]) -> Rbac:
+    return Rbac(agent_permission_resources)
+
+
+@pytest.fixture(scope="module")
+def staging_manifest_docs(k8s_dir: Path) -> list[dict]:
+    return list(yaml.safe_load_all((k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml").read_text()))
+
+
+@pytest.fixture(scope="module")
+def staging_app_config(staging_manifest_docs: list[dict]) -> dict:
+    app_config = one(
+        doc
+        for doc in staging_manifest_docs
+        if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config"
+    )
+    return yaml.safe_load(app_config["data"]["config.yaml"])
+
+
+@pytest.fixture(scope="module")
+def staging_policy_sets(staging_manifest_docs: list[dict]) -> dict[str, list[dict]]:
+    return {
+        doc["metadata"]["name"]: doc["spec"]["rules"] for doc in staging_manifest_docs if doc["kind"] == "PolicySet"
+    }
+
+
+@pytest.fixture(scope="module")
+def staging_policy_bindings(staging_manifest_docs: list[dict]) -> list[dict]:
+    return [doc for doc in staging_manifest_docs if doc["kind"] == "PolicyBinding"]
+
+
+def test_no_legacy_agent_diagnostic_rbac(agent_permission_resources: list[K8sResource]) -> None:
+    resources = agent_permission_resources
     assert not any(r.kind == "ClusterPolicy" and r.name == "generate-agent-diagnostics-readers" for r in resources)
     assert not any(
         r.kind == "ClusterRole" and r.name == "kyverno-background-controller-rolebindings" for r in resources
@@ -367,6 +403,10 @@ def agent_permissions(
     assert not any(
         r.kind == "RoleBinding" and r.name in {"agent-readable-metadata", "agent-readable-logs"} for r in resources
     )
+
+
+def test_agent_diagnostic_binding_scopes(agent_permission_resources: list[K8sResource]) -> None:
+    resources = agent_permission_resources
     # Compare binding scopes directly; broad Haku roles cannot mask omissions.
     # Labels are now descriptive output of the shared policy, not an access trigger.
     expected: set[tuple[str, str, str]] = set()
@@ -390,15 +430,6 @@ def agent_permissions(
             assert resource.role_ref.kind == "ClusterRole"
             actual.add((resource.namespace, resource.name, resource.role_ref.name))
     assert actual == expected
-    docs = list(yaml.safe_load_all((k8s_dir / "agentplane-staging/agentplane-staging.k8s.yaml").read_text()))
-    config = yaml.safe_load(
-        one(doc for doc in docs if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-app-config")[
-            "data"
-        ]["config.yaml"]
-    )
-    policy_sets = {doc["metadata"]["name"]: doc["spec"]["rules"] for doc in docs if doc["kind"] == "PolicySet"}
-    policy_bindings = [doc for doc in docs if doc["kind"] == "PolicyBinding"]
-    return Rbac(resources), config, policy_sets, policy_bindings
 
 
 def policy_bound_identity(
@@ -434,41 +465,44 @@ def policy_bound_identity(
     ],
 )
 def test_static_managed_agent_permission_parity(
-    agent_permissions: tuple[Rbac, dict, dict[str, list[dict]], list[dict]],
+    agent_rbac: Rbac,
+    staging_app_config: dict,
+    staging_policy_sets: dict[str, list[dict]],
     kind: str,
     name: str,
     namespace: str,
     preset: str,
 ) -> None:
-    rbac, config, policy_sets, _ = agent_permissions
-    static = rbac.identity(kind, name, namespace)
-    managed = rbac.managed(config, policy_sets, preset, namespace="agentplane-staging")
+    static = agent_rbac.identity(kind, name, namespace)
+    managed = agent_rbac.managed(staging_app_config, staging_policy_sets, preset, namespace="agentplane-staging")
     assert not uncovered(static, managed)
     assert not uncovered(managed, static)
 
 
 def test_finance_spend_policy_role_is_named_get_only(
-    agent_permissions: tuple[Rbac, dict, dict[str, list[dict]], list[dict]],
+    agent_rbac: Rbac, staging_policy_sets: dict[str, list[dict]]
 ) -> None:
-    rbac, _, policy_sets, _ = agent_permissions
-    role_rule = one(rule for rule in policy_sets["spend-policy-config"] if rule["type"] == "kubernetes_role_binding")
+    role_rule = one(
+        rule for rule in staging_policy_sets["spend-policy-config"] if rule["type"] == "kubernetes_role_binding"
+    )
     assert role_rule == {
         "type": "kubernetes_role_binding",
         "role": {"kind": "Role", "name": "plaid-spend-finance-config-reader"},
         "namespaces": ["plaid-mcp"],
     }
-    assert rbac.rules(
+    assert agent_rbac.rules(
         RbacRoleRef(api_group="rbac.authorization.k8s.io", **role_rule["role"]), one(role_rule["namespaces"])
     ) == {Permission("plaid-mcp", "", "secrets", "get", "plaid-spend-policy")}
 
 
 def test_agent_permission_superset_and_finance_parity(
-    agent_permissions: tuple[Rbac, dict, dict[str, list[dict]], list[dict]],
+    agent_rbac: Rbac, staging_app_config: dict, staging_policy_sets: dict[str, list[dict]]
 ) -> None:
-    rbac, config, policy_sets, _ = agent_permissions
-    public = rbac.managed(config, policy_sets, "public-coder", namespace="agentplane-staging")
-    haku = rbac.managed(config, policy_sets, "haku", namespace="agentplane-staging")
-    finance = rbac.managed(config, policy_sets, "finance-agent", namespace="agentplane-staging")
+    public = agent_rbac.managed(staging_app_config, staging_policy_sets, "public-coder", namespace="agentplane-staging")
+    haku = agent_rbac.managed(staging_app_config, staging_policy_sets, "haku", namespace="agentplane-staging")
+    finance = agent_rbac.managed(
+        staging_app_config, staging_policy_sets, "finance-agent", namespace="agentplane-staging"
+    )
     assert not uncovered(public, haku)
     assert not uncovered(public, finance)
     plaid_diagnostics = {
@@ -491,13 +525,15 @@ def test_agent_permission_superset_and_finance_parity(
 
 @pytest.mark.parametrize("account", ["claude-ai", "haku-agent"])
 def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
-    agent_permissions: tuple[Rbac, dict, dict[str, list[dict]], list[dict]],
+    agent_rbac: Rbac,
+    agent_permission_resources: list[K8sResource],
+    staging_policy_sets: dict[str, list[dict]],
+    staging_policy_bindings: list[dict],
     account: str,
-    cluster: ParsedCluster,
-    bootstrap_resources: list[K8sResource],
-    repo_root: Path,
 ) -> None:
-    rbac, _, policy_sets, policy_bindings = agent_permissions
+    rbac = agent_rbac
+    policy_sets = staging_policy_sets
+    policy_bindings = staging_policy_bindings
     # These OAuth/Actions accounts are NOT the Console profile or the managed
     # Haku preset. Preserve their independently scoped existing Kubernetes access.
     expected = rbac.rules(
@@ -520,9 +556,7 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
             expected.update(
                 rbac.rules(RbacRoleRef(api_group="rbac.authorization.k8s.io", kind=kind, name=name), namespace)
             )
-        resources = [resource for group in cluster.flux_kust_resources(repo_root).values() for resource in group]
-        resources.extend(bootstrap_resources)
-        for resource in resources:
+        for resource in agent_permission_resources:
             if resource.kind != "Namespace":
                 continue
             labels = resource.metadata.labels
@@ -559,8 +593,16 @@ def test_legacy_agentplane_accounts_are_not_haku_profile_aliases(
     assert not uncovered(expected, actual)
 
 
-def test_agent_permission_denials(agent_permissions: tuple[Rbac, dict, dict[str, list[dict]], list[dict]]) -> None:
-    rbac, config, policy_sets, policy_bindings = agent_permissions
+def test_agent_permission_denials(
+    agent_rbac: Rbac,
+    staging_app_config: dict,
+    staging_policy_sets: dict[str, list[dict]],
+    staging_policy_bindings: list[dict],
+) -> None:
+    rbac = agent_rbac
+    config = staging_app_config
+    policy_sets = staging_policy_sets
+    policy_bindings = staging_policy_bindings
     profiles = {
         name: rbac.managed(config, policy_sets, name, namespace="agentplane-staging")
         for name in ("public-coder", "finance-agent", "haku")
