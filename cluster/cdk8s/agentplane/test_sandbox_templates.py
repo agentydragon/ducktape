@@ -159,10 +159,7 @@ def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner
 def test_model_configs_are_generated_into_the_llm_ingress_configmap(
     agentplane_manifests: dict[str, list[dict[str, Any]]],
 ) -> None:
-    expected = [
-        {"model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-128k", "total_context_budget_tokens": 128 * 1024},
-        {"model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k", "total_context_budget_tokens": 256 * 1024},
-    ]
+    expected = [{"model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k", "total_context_budget_tokens": 256 * 1024}]
     # Testing alone offers the Claude harness a local model, served on the native wire.
     expected_testing = [
         *expected,
