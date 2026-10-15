@@ -4,6 +4,7 @@ import argparse
 import csv
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Literal
 
 import matplotlib
 import matplotlib.pyplot as plt
@@ -75,7 +76,7 @@ def main() -> None:
         row = scores[slug]
         x = float(row["intelligence_index"])
         estimated = row["intelligence_index_is_estimated"] == "true"
-        style = "--" if row["creator"] == "OpenAI" else ":"
+        style: Literal["--", ":"] = "--" if row["creator"] == "OpenAI" else ":"
         ax.axvline(x, color=color, linestyle=style, linewidth=1.3, alpha=0.8, zorder=0)
         # Put close pairs on opposite sides of their lines; keep names above data.
         label_left = slug in {"gpt-35-turbo", "gpt-4o-mini"}
