@@ -240,6 +240,9 @@ async def test_a_rejected_write_inside_a_batch_is_undone_alone(journal: Journal)
 async def test_a_seal_is_final_across_reopening(journal: Journal, tmp_path: Path) -> None:
     last = await journal.append(event_pb2.HarnessExited(exit_code=0))
     follower = asyncio.create_task(journal.wait_beyond(last.cursor))
+    with pytest.raises(ValueError, match="requires a runner incarnation UID"):
+        await journal.seal("")
+    assert journal.sealed_cursor is None
     assert await journal.seal("test-incarnation") == last.cursor
     # A follower at the end learns the journal will never grow.
     await follower
@@ -255,7 +258,7 @@ async def test_a_seal_is_final_across_reopening(journal: Journal, tmp_path: Path
     async with Journal.open(tmp_path / "journal.sqlite", "test-source") as reopened:
         assert reopened.sealed_cursor == last.cursor
         assert reopened.sealed_incarnation_uid == "test-incarnation"
-        assert await reopened.seal(None) == last.cursor
+        assert await reopened.seal("test-incarnation") == last.cursor
         with pytest.raises(JournalSealedError):
             await reopened.append(event_pb2.Native(line="after reopening"))
 
@@ -275,20 +278,19 @@ async def test_reopening_a_sealed_journal_continues_it_and_survives_a_restart(jo
         assert restarted.last_cursor == last.cursor + 2
 
 
-async def test_a_seal_from_before_the_incarnation_column_opens_with_no_incarnation(tmp_path: Path) -> None:
-    path = tmp_path / "legacy.sqlite"
-    async with Journal.open(path, "test-source") as fresh:
-        last = await fresh.append(event_pb2.HarnessExited(exit_code=0))
-        await fresh.seal("test-incarnation")
-    # A state volume written by the previous release: the seal table has no incarnation column.
+async def test_a_seal_with_an_empty_incarnation_uid_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "journal.sqlite"
+    async with Journal.open(path, "test-source") as journal:
+        await journal.append(event_pb2.HarnessExited(exit_code=0))
+        await journal.seal("test-incarnation")
     connection = sqlite3.connect(path)
-    connection.execute("DROP TABLE seal")
-    connection.execute("CREATE TABLE seal (id INTEGER PRIMARY KEY, cursor INTEGER NOT NULL)")
-    connection.execute("INSERT INTO seal VALUES (1, ?)", (last.cursor,))
+    connection.execute("UPDATE seal SET incarnation_uid = '' WHERE id = 1")
     connection.commit()
     connection.close()
-    async with Journal.open(path, "test-source") as legacy:
-        assert (legacy.sealed_cursor, legacy.sealed_incarnation_uid) == (last.cursor, None)
+
+    with pytest.raises(ValueError, match="does not name a runner incarnation UID"):
+        async with Journal.open(path, "test-source"):
+            pass
 
 
 async def test_admission_dedup_uses_the_full_frozen_command(journal: Journal, tmp_path: Path) -> None:

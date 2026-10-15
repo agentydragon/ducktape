@@ -159,6 +159,11 @@ class SessionStore:
     def incarnation_uid(self) -> str | None:
         return self._incarnation_uid
 
+    def require_incarnation_uid(self) -> str:
+        if self._incarnation_uid is None:
+            raise RuntimeError("the runner cannot quiesce before the gateway names its incarnation UID")
+        return self._incarnation_uid
+
     def adopt_incarnation(self, incarnation_uid: str) -> None:
         """Learn which incarnation of its Sandbox this runner is, from the gateway's `Welcome`, before
         any call is served. The state volume outlives incarnations, so a lameduck recorded by an earlier
@@ -172,13 +177,12 @@ class SessionStore:
 
     def enter_lameduck(self) -> None:
         """Durably refuse new and resumed sessions in this incarnation, across runner restarts."""
-        if self._incarnation_uid is None:
-            raise RuntimeError("the runner cannot quiesce before the gateway names its incarnation UID")
+        incarnation_uid = self.require_incarnation_uid()
         marker = self.root / "sealed"
         if not marker.is_file():
             staged = self.root / "sealed.tmp"
             with staged.open("w") as file:
-                file.write(self._incarnation_uid)
+                file.write(incarnation_uid)
                 file.flush()
                 os.fsync(file.fileno())
             staged.replace(marker)

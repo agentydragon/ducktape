@@ -500,7 +500,7 @@ class Runner:
         setup succeeds."""
         if self.lameduck:
             # Sealing began meanwhile and may have listed the store before it held this session.
-            await session.seal(self.store.incarnation_uid)
+            await session.seal(self.store.require_incarnation_uid())
             self.refuse_work()
         if session.setup_state in (runner_pb2.SETUP_STATE_NOT_REQUIRED, runner_pb2.SETUP_STATE_SUCCEEDED):
             await session.ensure_running()
@@ -514,15 +514,10 @@ class Runner:
 
     async def _reopen_earlier_seal(self, session: Session) -> None:
         """Reopen a journal sealed by an incarnation other than this one, and have the ingress continue it.
-        A seal that names no incarnation is an earlier one's. Nothing is reopened before the incarnation is known,
-        nor while this incarnation's own lameduck stands."""
+        Nothing is reopened before the incarnation is known, nor while this incarnation's own lameduck stands."""
         incarnation_uid = self.store.incarnation_uid
-        if (
-            incarnation_uid is None
-            or self.lameduck
-            or session.journal.sealed_cursor is None
-            or session.journal.sealed_incarnation_uid == incarnation_uid
-        ):
+        seal = session.journal.seal_state
+        if incarnation_uid is None or self.lameduck or seal is None or seal.incarnation_uid == incarnation_uid:
             return
         await session.reopen(incarnation_uid)
         acknowledged = self.store.read_acknowledgement(session.session_id)
@@ -538,8 +533,9 @@ class Runner:
         """Sandbox teardown: refuse new work, interrupt running turns, stop every harness, seal every journal."""
         self.begin_quiesce()
         try:
+            incarnation_uid = self.store.require_incarnation_uid()
             sessions = [await self._load(session_id) for session_id in self.store.session_ids()]
-            cursors = await asyncio.gather(*(session.seal(self.store.incarnation_uid) for session in sessions))
+            cursors = await asyncio.gather(*(session.seal(incarnation_uid) for session in sessions))
         finally:
             self.finish_quiesce()
         return [

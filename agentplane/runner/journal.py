@@ -72,8 +72,7 @@ class Seal(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     cursor: Mapped[int]
-    # None for a seal written before the column existed, or by a runner that was never told its incarnation.
-    incarnation_uid: Mapped[str | None]
+    incarnation_uid: Mapped[str]
 
 
 class DebugCheckpoint(Base):
@@ -109,6 +108,12 @@ class RecoveryState:
     through_cursor: int
     harness_running: bool
     active_turn_id: str
+
+
+@dataclass(frozen=True)
+class _SealState:
+    cursor: int
+    incarnation_uid: str
 
 
 def _apply_checkpoint(checkpoint: Checkpoint, entry: event_log_pb2.EventEntry) -> None:
@@ -158,18 +163,12 @@ class JournalSealedError(RuntimeError):
 
 class Journal:
     def __init__(
-        self,
-        connection: AsyncConnection,
-        source_id: str,
-        state: RecoveryState,
-        sealed_cursor: int | None,
-        sealed_incarnation_uid: str | None,
+        self, connection: AsyncConnection, source_id: str, state: RecoveryState, seal: _SealState | None
     ) -> None:
         self._connection = connection
         self.source_id = source_id
         self._state = state
-        self._sealed_cursor = sealed_cursor
-        self._sealed_incarnation_uid = sealed_incarnation_uid
+        self._seal = seal
         self._lock = asyncio.Lock()
         self._changed = asyncio.Event()
         self._failure: BaseException | None = None
@@ -196,10 +195,6 @@ class Journal:
                 await connection.commit()
                 async with connection.begin():
                     await connection.run_sync(Base.metadata.create_all)
-                    # `create_all` leaves a table from an earlier release as it is; a state volume outlives releases.
-                    columns = {row[1] for row in await connection.execute(text("PRAGMA table_info(seal)"))}
-                    if "incarnation_uid" not in columns:
-                        await connection.execute(text("ALTER TABLE seal ADD COLUMN incarnation_uid VARCHAR"))
                     await connection.run_sync(ScratchBase.metadata.create_all)
                 async with AsyncSession(connection, expire_on_commit=False) as session, session.begin():
                     await session.execute(text("BEGIN"))
@@ -221,16 +216,13 @@ class Journal:
                     seal = await session.get(Seal, 1)
                     if seal is not None and seal.cursor != checkpoint.through_cursor:
                         raise ValueError("journal has Events after its seal")
+                    if seal is not None and not seal.incarnation_uid:
+                        raise ValueError("journal seal does not name a runner incarnation UID")
                     state = RecoveryState(
                         checkpoint.through_cursor, checkpoint.harness_running, checkpoint.active_turn_id
                     )
-                yield cls(
-                    connection,
-                    source_id,
-                    state,
-                    None if seal is None else seal.cursor,
-                    None if seal is None else seal.incarnation_uid,
-                )
+                    seal_state = None if seal is None else _SealState(seal.cursor, seal.incarnation_uid)
+                yield cls(connection, source_id, state, seal_state)
         finally:
             await engine.dispose()
 
@@ -252,12 +244,17 @@ class Journal:
     @property
     def sealed_cursor(self) -> int | None:
         """The final cursor once the journal is sealed; None while it is open."""
-        return self._sealed_cursor
+        return None if self._seal is None else self._seal.cursor
 
     @property
     def sealed_incarnation_uid(self) -> str | None:
-        """The incarnation that sealed the journal; None while it is open, or when the seal names none."""
-        return self._sealed_incarnation_uid
+        """The incarnation that sealed the journal; None only while the journal is open."""
+        return None if self._seal is None else self._seal.incarnation_uid
+
+    @property
+    def seal_state(self) -> _SealState | None:
+        """The persisted seal, if present; a seal always names the incarnation that wrote it."""
+        return self._seal
 
     async def since(self, after_cursor: int, *, limit: int) -> list[event_log_pb2.EventEntry]:
         through_cursor = self.last_cursor
@@ -324,21 +321,22 @@ class Journal:
 
     async def wait_beyond(self, cursor: int) -> None:
         """Return once an Event follows `cursor`, or once the journal is sealed."""
-        while self.last_cursor <= cursor and self._sealed_cursor is None:
+        while self.last_cursor <= cursor and self._seal is None:
             self._check_writable()
             await self._changed.wait()
 
-    async def seal(self, incarnation_uid: str | None) -> int:
+    async def seal(self, incarnation_uid: str) -> int:
         """Make the journal final at its current end, on behalf of `incarnation_uid`, and return that cursor;
         sealing again returns it and keeps the first incarnation."""
+        if not incarnation_uid:
+            raise ValueError("a journal seal requires a runner incarnation UID")
         async with self._committed_transaction() as (session, _):
             seal = await session.get(Seal, 1)
             if seal is None:
                 seal = Seal(id=1, cursor=self.last_cursor, incarnation_uid=incarnation_uid)
                 session.add(seal)
             # A failed commit fails the whole journal, so nothing is ever written past this cursor.
-            self._sealed_cursor = seal.cursor
-            self._sealed_incarnation_uid = seal.incarnation_uid
+            self._seal = _SealState(seal.cursor, seal.incarnation_uid)
         changed, self._changed = self._changed, asyncio.Event()
         changed.set()
         return seal.cursor
@@ -348,8 +346,7 @@ class Journal:
         recording the reopening follows the seal's cursor, in one commit."""
         async with self._committed_transaction() as (session, appended):
             await session.execute(delete(Seal))
-            self._sealed_cursor = None
-            self._sealed_incarnation_uid = None
+            self._seal = None
             await self._append(session, appended, event_pb2.JournalReopened(incarnation_uid=incarnation_uid), ())
         changed, self._changed = self._changed, asyncio.Event()
         changed.set()
@@ -486,7 +483,7 @@ class Journal:
         observation: Observation,
         sources: Sequence[int],
     ) -> event_log_pb2.EventEntry:
-        if self._sealed_cursor is not None:
+        if self._seal is not None:
             raise JournalSealedError("the journal is sealed")
         cursor = (await session.scalar(select(func.max(EventEntry.cursor))) or 0) + 1
         if cursor != self.last_cursor + len(appended) + 1:

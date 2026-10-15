@@ -110,10 +110,15 @@ class _Push:
                 self.sent = entry.cursor
                 await self.write(runner_ingress_pb2.PushFrame(entry=entry))
                 cursor = entry.cursor
+        seal = self.session.journal.seal_state
+        if seal is None:
+            raise RuntimeError("journal follower ended before the journal was sealed")
+        if cursor != seal.cursor:
+            raise RuntimeError(f"journal follower stopped at cursor {cursor} before its seal at {seal.cursor}")
         self.sealed_sent = True
         await self.write(
             runner_ingress_pb2.PushFrame(
-                sealed=runner_pb2.Sealed(cursor=cursor, incarnation_uid=self.session.journal.sealed_incarnation_uid)
+                sealed=runner_pb2.Sealed(cursor=seal.cursor, incarnation_uid=seal.incarnation_uid)
             )
         )
         async with self.writing:

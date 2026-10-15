@@ -789,7 +789,6 @@ flowchart TD
     QUIESCE_RESPONSE_FIELDS_RETIRE[Candidate: controller rollout complete; delete obsolete response fields]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
-    JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE[Blocked: writer rollout and retained-journal cutoff]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
@@ -1060,16 +1059,6 @@ background process, a terminal and workspace files, and a crash restart (no susp
 differently.
 
 Related: [lifecycle coverage](../x/k3s_env/README.md#lifecycle-coverage), `SANDBOX_IDLE_EXPIRY`.
-
-### `JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE` — delete the pre-incarnation seal compatibility path
-
-**Blocked on the required-UID runner image/wheel rollout and a verified inventory/cutoff of old retained journals.**
-The required-UID implementation merged in #10590; the cutoff and writer-image gates remain.
-`runner/journal.py` still probes `PRAGMA table_info(seal)` and adds a missing `incarnation_uid`
-column, accepting UID-less seals. Once the separately approved storage cutoff covers those journals
-and old Pod images/VM wheels can no longer write them, remove this old-schema upgrade and missing-UID
-seal tolerance, with obsolete fixtures. Do not erase journals incidentally; if the workspace cutoff
-leaves any old state PVC, name it in a separate operator-reviewed data-disposition step first.
 
 ### `RUNNER_BUSY_TRACKING` — the runner counts terminals and background processes as busy
 

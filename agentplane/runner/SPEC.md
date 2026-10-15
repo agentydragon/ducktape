@@ -121,6 +121,8 @@ Thread-page projection. Their cross-layer contract is [Thread, runner, and harne
   holds across a restart.
 - A sealed journal takes no further Events, so its commands are refused. Its ingress push sends
   every entry through the seal's cursor, then `Sealed`.
+- Every persisted seal names the nonempty incarnation UID from the authenticated `Welcome`; a seal
+  without that UID is invalid. An unsealed journal has no seal state.
 - An ordinary stop never seals, since a stopped session can resume. A seal ends this Sandbox's
   incarnation of the session's history.
 - The state volume outlives incarnations, so on each `Welcome` the runner drops a lameduck recorded under

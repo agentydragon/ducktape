@@ -308,8 +308,7 @@ incarnation, so the ingress cannot tell a continuation from a runner that wrongl
    and appends an entry recording the resume. `Attached` gains the incarnation UID; the ingress accepts a push whose UID differs from the seal's, when `last_cursor` equals the seal's
    cursor, and replaces the seal. Keeps a durable end-of-incarnation fact and the guarantee that nothing is written past
    it. Costs a wire field, three runner places and two History Service places, and the History Service must accept the
-   continuation before any runner sends it (image before config). Existing seals have no UID and count as an earlier
-   incarnation's, so Sandboxes suspended today resume.
+   continuation before any runner sends it (image before config).
 2. **The journal is never sealed; finality is the lameduck marker.** Quiesce stops the harnesses and reports
    flushed once the ingress acknowledged the last cursor; the lameduck marker, already keyed to the incarnation, makes
    the Session refuse writes. Removes the `Seal` row, the `Sealed` frame and the feed-state seal. Loses the hard
