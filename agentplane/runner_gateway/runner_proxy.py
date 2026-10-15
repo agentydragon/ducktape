@@ -13,7 +13,7 @@ from uuid import UUID
 import grpc
 
 from agentplane.grpc_servicer import Abort, ServicerResources, status_mapping
-from agentplane.proto import runner_control_pb2
+from agentplane.proto import runner_control_pb2, sandboxes_pb2
 from agentplane.runner_gateway.lifecycle_control import ConnectionNotHeldError, LifecycleControl
 from agentplane.sandboxes.errors import SandboxNotFoundError
 from agentplane.sandboxes.reader import SandboxReader
@@ -27,6 +27,10 @@ from agentplane.workload_auth.grpc_caller import authenticate
 # gRPC servers do not expose the dialed `:authority`, so callers name the Sandbox in this header, the
 # same name their target carries (`<sandbox>-control.<namespace>.svc`).
 SANDBOX_HEADER = "x-agentplane-sandbox"
+SANDBOX_UID_HEADER = "x-agentplane-sandbox-uid"
+SANDBOX_OWNER_NAMESPACE_HEADER = "x-agentplane-sandbox-owner-namespace"
+SANDBOX_OWNER_NAME_HEADER = "x-agentplane-sandbox-owner-name"
+_IDENTITY_HEADERS = (SANDBOX_UID_HEADER, SANDBOX_OWNER_NAMESPACE_HEADER, SANDBOX_OWNER_NAME_HEADER)
 
 _RUNNER = runner_control_pb2.DESCRIPTOR.services_by_name["Runner"]
 _CONTROLLER_ONLY = {f"/{_RUNNER.full_name}/Quiesce"}
@@ -43,7 +47,7 @@ class Resources(ServicerResources):
 
 errors = status_mapping(
     Abort(SandboxNotFoundError, (grpc.StatusCode.NOT_FOUND, "sandbox not found")),
-    Abort(ValueError, (grpc.StatusCode.INVALID_ARGUMENT, f"exactly one {SANDBOX_HEADER} header is required")),
+    Abort(ValueError, (grpc.StatusCode.INVALID_ARGUMENT, "invalid Sandbox identity metadata")),
     # The runner's own refusal, or the connection's loss or deadline, as the runner connection reported it.
     Abort(grpc.aio.AioRpcError, lambda error: (error.code(), error.details() or "")),
     deadline="service deadline expired",
@@ -57,6 +61,24 @@ def sandbox_name(context: grpc.aio.ServicerContext) -> str:
     if len(names) != 1 or not isinstance(names[0], str) or not names[0]:
         raise ValueError(f"exactly one {SANDBOX_HEADER} header is required")
     return names[0]
+
+
+def expected_sandbox(context: grpc.aio.ServicerContext, name: str) -> sandboxes_pb2.SandboxDestination | None:
+    """Optional rollout fence; when present, the complete expected identity must match the live Sandbox."""
+    values = {
+        header: [value for key, value in context.invocation_metadata() or () if key == header]
+        for header in _IDENTITY_HEADERS
+    }
+    if not any(values.values()):
+        return None
+    if any(len(found) != 1 or not isinstance(found[0], str) or not found[0] for found in values.values()):
+        raise ValueError("all Sandbox identity headers must appear exactly once")
+    uid = values[SANDBOX_UID_HEADER][0]
+    owner_namespace = values[SANDBOX_OWNER_NAMESPACE_HEADER][0]
+    owner_name = values[SANDBOX_OWNER_NAME_HEADER][0]
+    return sandboxes_pb2.SandboxDestination(
+        sandbox=name, sandbox_uid=uid, owner=sandboxes_pb2.ServiceAccount(namespace=owner_namespace, name=owner_name)
+    )
 
 
 class RunnerProxy(grpc.GenericRpcHandler):
@@ -85,7 +107,13 @@ class RunnerProxy(grpc.GenericRpcHandler):
     async def forward(self, method: str, request: bytes, context: grpc.aio.ServicerContext) -> bytes:
         async with errors(context):
             await authenticate(self.resources.principals, self.callers(method), context)
-            sandbox = await self.resources.sandboxes.get(sandbox_name(context))
+            name = sandbox_name(context)
+            expected = expected_sandbox(context, name)
+            sandbox = (
+                await self.resources.sandboxes.get(name)
+                if expected is None
+                else await self.resources.sandboxes.incarnation(expected)
+            )
             connection = self.resources.control.holder(UUID(sandbox.uid))
             if connection is None:
                 raise ConnectionNotHeldError("another replica holds this Sandbox's runner connection")
