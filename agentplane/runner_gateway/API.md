@@ -90,7 +90,10 @@ which is a separate source and does not replace the registry's incarnation recor
 ## Errors and uncertain outcomes
 
 Errors use the shared gRPC status mapping; `ALREADY_EXISTS` also indicates that a `SubmitCommand`
-command ID already belongs to a different submission.
+command ID already belongs to a different submission. Runner RPC status codes and details pass
+through unchanged. In particular, `UNAVAILABLE` after the control stream ends before a reply means
+the mutation's outcome is unknown; it does not establish that the destination was unavailable before
+the runner acted.
 
 Neither a successful write nor a timeout proves admission/rejection. A mutation may commit before
 its response is lost. Settle a command by retrying it with the unchanged ID/payload; admission is

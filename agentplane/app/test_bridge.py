@@ -10,7 +10,8 @@ import logging
 import os
 import shlex
 import signal
-from collections.abc import AsyncIterator, Callable
+import traceback
+from collections.abc import AsyncIterator, Callable, Iterator
 from contextlib import aclosing
 from dataclasses import dataclass
 from pathlib import Path
@@ -87,6 +88,40 @@ from util.testing.asgi import serve_app_in_loop
 SANDBOX = "bridge-test-sandbox"
 SESSION = "8e414bdd-1310-4687-b768-3f1d69047122"
 SESSIONS = f"/sandboxes/{SANDBOX}/sessions"
+
+
+@pytest.fixture(autouse=True)
+def capture_control_stream_logs(request: pytest.FixtureRequest, caplog: pytest.LogCaptureFixture) -> Iterator[None]:
+    """Keep control-stream and gRPC status logs from a failed bridge test, including fixture teardown."""
+    relevant_loggers = {
+        "agentplane.grpc.servicer",
+        "agentplane.grpc.tunnel",
+        "agentplane.runner.control",
+        "agentplane.runner_gateway.runner_control",
+    }
+    for logger_name in relevant_loggers:
+        caplog.set_level(logging.INFO, logger=logger_name)
+
+    yield
+
+    if (evidence := FailureEvidence.for_failed_call(request)) is None:
+        return
+    evidence.write_json(
+        "control-stream-logs.json",
+        [
+            {
+                "time": record.created,
+                "level": record.levelname,
+                "logger": record.name,
+                "message": record.getMessage(),
+                "exception": (
+                    "".join(traceback.format_exception(*record.exc_info)) if record.exc_info is not None else None
+                ),
+            }
+            for record in (*caplog.get_records("setup"), *caplog.get_records("call"), *caplog.get_records("teardown"))
+            if record.name in relevant_loggers
+        ],
+    )
 
 
 @pytest.fixture

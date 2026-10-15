@@ -16,6 +16,7 @@ from kubernetes_asyncio import client as k8s_client
 from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane.grpc.calls import RefusedError, ServiceError
+from agentplane.grpc.tunnel import TunnelCaller
 from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, runner_pb2
 from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases
@@ -124,6 +125,22 @@ def client(token_file: Path, target: str, *, control_target: str) -> AbstractAsy
     return connect(target, token_file, command_admission_timeout_s=10, control_target=control_target)
 
 
+async def test_tunnel_send_preserves_grpc_status_and_detail() -> None:
+    upstream = grpc.aio.AioRpcError(
+        grpc.StatusCode.INTERNAL, grpc.aio.Metadata(), grpc.aio.Metadata(), "control stream write failed"
+    )
+
+    async def fail_send(_call: object) -> None:
+        raise upstream
+
+    async with TunnelCaller(fail_send) as tunnel:
+        with pytest.raises(grpc.aio.AioRpcError) as failed:
+            await tunnel.forward("/agentplane.proto.Runner/ResumeSession", b"request", deadline_s=None)
+
+    assert failed.value.code() == grpc.StatusCode.INTERNAL
+    assert failed.value.details() == "control stream write failed"
+
+
 async def test_a_create_whose_harness_failed_is_confirmed_and_started_on_retry(
     holder: Replica, other: Replica, token_file: Path
 ) -> None:
@@ -135,7 +152,7 @@ async def test_a_create_whose_harness_failed_is_confirmed_and_started_on_retry(
         opened = await runner.next(runner_control_pb2.OpenSessionRequest)
         session_id = opened.request.session_id
         # A harness that failed to launch.
-        opened.outcome.set_result(grpc.StatusCode.UNKNOWN)
+        opened.outcome.set_result(grpc.StatusCode.FAILED_PRECONDITION)
         with pytest.raises(RefusedError):
             await first
         # The runner created the Session and could not start it; asked again it confirms it and
@@ -203,6 +220,7 @@ async def test_a_lost_connection_fails_its_call(holder: Replica, token_file: Pat
         with pytest.raises(ServiceError) as lost:
             await creating
         assert lost.value.code == grpc.StatusCode.UNAVAILABLE
+        assert str(lost.value) == "UNAVAILABLE: the tunnel ended before the callee answered"
 
 
 COMMAND = command_pb2.Command(command_id="test-command", submit_input=command_pb2.SubmitInput(text="test input"))

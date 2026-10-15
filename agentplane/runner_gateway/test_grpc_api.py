@@ -172,6 +172,25 @@ async def test_complete_spec_still_needs_harness_cwd_and_model(remote: RunnerGat
     assert refused.value.code() == grpc.StatusCode.INVALID_ARGUMENT
 
 
+@pytest.mark.parametrize("status", [grpc.StatusCode.INTERNAL, grpc.StatusCode.UNKNOWN, grpc.StatusCode.UNAVAILABLE])
+async def test_runner_status_and_detail_are_preserved(
+    remote: RunnerGatewayClient, peer: ScriptedRunner, engine: AsyncEngine, status: grpc.StatusCode
+) -> None:
+    session_id = uuid4()
+    await register_on_fake_sandbox(engine, session_id)
+    request = runner_gateway_pb2.ResumeSessionRequest(
+        destination=sandboxes_pb2.SessionDestination(sandbox=DESTINATION, session_id=str(session_id))
+    )
+    call = asyncio.create_task(remote.stub.ResumeSession(request, metadata=await remote.metadata(), timeout=5))
+    runner_call = await peer.next(runner_control_pb2.ResumeSessionRequest)
+    runner_call.outcome.set_result(status)
+
+    with pytest.raises(grpc.aio.AioRpcError) as rejected:
+        await call
+    assert rejected.value.code() == status
+    assert rejected.value.details() == "test runner refuses the call"
+
+
 async def test_command_uses_runner_ack_budget_not_unary_request_budget(
     resources: Resources, token_file: Path, peer: ScriptedRunner, engine: AsyncEngine
 ) -> None:

@@ -269,6 +269,7 @@ py_test(
         "//:conftest",
         "//agentplane:subjects",
         "//agentplane/grpc:calls",
+        "//agentplane/grpc:tunnel",
         "//agentplane/proto:command_pb2",
         "//agentplane/proto:event_log_pb2",
         "//agentplane/proto:runner_control_pb2",
