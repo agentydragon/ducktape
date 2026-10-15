@@ -736,8 +736,19 @@ async def _interrupt_and_recover(http: httpx.AsyncClient, runner: Runner, thread
     )
     if mode != "interrupt":
         await _stored_events(http, thread_id, until="harnessExited")
-        resumed = await http.post(f"/threads/{thread_id}/resume")
-        assert resumed.status_code == 200, resumed.text
+        # A runner control stream can end after the runner starts the harness but before the
+        # gateway receives the reply. Resume is idempotent, so retry that ambiguous UNAVAILABLE
+        # while the runner reconnects; a persistent outage still fails this test after 10 seconds.
+        deadline = asyncio.get_running_loop().time() + 10
+        while True:
+            resumed = await http.post(f"/threads/{thread_id}/resume")
+            detail = resumed.json().get("detail") if resumed.status_code == 503 else None
+            if detail != "UNAVAILABLE: destination unavailable; no offline admission":
+                assert resumed.status_code == 200, resumed.text
+                break
+            remaining = deadline - asyncio.get_running_loop().time()
+            assert remaining > 0, f"runner control stayed unavailable while resuming: {resumed.text}"
+            await asyncio.sleep(min(0.05, remaining))
         assert resumed.json()["sessionId"] == thread_id
     else:
         assert session.process is process
