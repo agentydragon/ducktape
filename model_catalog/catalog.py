@@ -791,6 +791,8 @@ MISTRAL_ROUTES = tuple(Route(model, MISTRAL_CHAT, publish_limits=True) for model
 # Rugged model facts stay catalogued above but are omitted while cluster access is paused.
 SERVED_ROUTES: tuple[Route | RouteAlias, ...] = (
     *_OLLAMA_PROXY_ROUTES,
+    # *RUGGED_LOCAL_CANDIDATE_ROUTES,
+    # *RUGGED_LOCAL_EXPERIMENTAL_ROUTES,
     OLLAMA_EMBEDDING_ROUTE,
     # TODO(#9574): Tana limits are unknown for this reverse-engineered gateway.
     # Restore exposure with its key lane/fallback and wrapper only after review.

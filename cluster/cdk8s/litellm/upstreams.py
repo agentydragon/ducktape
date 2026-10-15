@@ -16,6 +16,7 @@ from model_catalog.catalog import (
     OLLAMA_EMBED,
     OLLAMA_NATIVE,
     OLLAMA_OPENAI,
+    RUGGED_LOCAL_OPENAI,
     TANA_MESSAGES,
     Upstream,
 )
@@ -28,6 +29,14 @@ class UpstreamBinding:
 
 
 _OLLAMA_BASE = "http://ollama.ollama.svc.cluster.local:11434"
+# Keep the cluster route disabled while rugged's host bearer proxy is disabled.
+# Re-enable the commented catalog and key-lane entries together with this flag.
+RUGGED_LOCAL_LLM_ENABLED = False
+RUGGED_LOCAL_LLM_SERVICE = "rugged-local-llm"
+RUGGED_LOCAL_LLM_SECRET = "rugged-local-llm-bearer-token"
+RUGGED_LOCAL_LLM_PORT = 18080  # must match rugged's NixOS bearer proxy listener
+RUGGED_LOCAL_LLM_API_BASE = f"http://{RUGGED_LOCAL_LLM_SERVICE}.litellm.svc.cluster.local:{RUGGED_LOCAL_LLM_PORT}/v1"
+RUGGED_LOCAL_LLM_KEY_ENV = "RUGGED_LOCAL_LLM_KEY"
 _CLIPROXY_BASE = "http://cli-proxy-api.cli-proxy-api.svc.cluster.local:8317"
 
 UPSTREAM_BINDINGS: dict[Upstream, UpstreamBinding] = {
@@ -47,4 +56,7 @@ UPSTREAM_BINDINGS: dict[Upstream, UpstreamBinding] = {
     ),
     OLLAMA_NATIVE: UpstreamBinding(api_base=_OLLAMA_BASE, api_key=None),
     OLLAMA_OPENAI: UpstreamBinding(api_base=f"{_OLLAMA_BASE}/v1", api_key="ollama"),
+    RUGGED_LOCAL_OPENAI: UpstreamBinding(
+        api_base=RUGGED_LOCAL_LLM_API_BASE, api_key=f"os.environ/{RUGGED_LOCAL_LLM_KEY_ENV}"
+    ),
 }
