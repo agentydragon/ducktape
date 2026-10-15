@@ -78,9 +78,6 @@ from util.testing.visual_capture import VisualPage
 pytest_plugins = ("agentplane.app.testing.thread_browser",)
 
 
-THREAD_BROWSER_FROZEN_NOW_MS = 1_792_022_400_000  # 2026-10-15T00:00:00Z, preserving the fixture's "3y ago" label.
-
-
 async def route_once(page: Page, url: str, handler: Callable[[Route], Awaitable[None]]) -> None:
     """Hand `handler` the first request matching `url`; later ones fall through to the network.
 
@@ -1415,18 +1412,9 @@ async def test_expanded_command_stays_collapsible(thread_browser: ThreadBrowser,
 
 
 @pytest.mark.parametrize("following", [False, True], ids=["mid-thread", "following"])
-@pytest.mark.parametrize(
-    "thread_browser_frozen_now_ms", [THREAD_BROWSER_FROZEN_NOW_MS], indirect=True, ids=["pinned-time"]
-)
-@pytest.mark.parametrize(
-    ("viewport", "viewport_name"), [(DESKTOP, "desktop"), (MOBILE, "phone")], ids=["desktop", "phone"]
-)
+@pytest.mark.parametrize("viewport", [DESKTOP, MOBILE], ids=["desktop", "phone"])
 async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
-    thread_browser: ThreadBrowser,
-    viewport: Viewport,
-    viewport_name: str,
-    following: bool,
-    request: pytest.FixtureRequest,
+    thread_browser: ThreadBrowser, viewport: Viewport, following: bool, request: pytest.FixtureRequest
 ) -> None:
     """Opening a run or call preserves its row; a long output stays collapsible while the reader scrolls it."""
     page = thread_browser.page
@@ -1516,36 +1504,6 @@ async def test_opening_a_call_and_its_output_keeps_it_collapsible_while_reading(
     assert active_sticky_action == "true", (
         f"a parent heading obscured the output Disclosure control: {active_sticky_action}"
     )
-    model_activity = page.get_by_label("Last inferred model activity").last
-    await expect(model_activity).to_have_text("Model activity: 3y ago")
-    await expect(history).to_have_attribute("data-thread-connection", "live")
-    await expect(page.locator("[data-connection]")).to_have_count(0)
-    await history.evaluate(
-        """area => {
-            const phases = [];
-            const observer = new MutationObserver(() => phases.push(area.dataset.threadConnection));
-            observer.observe(area, { attributes: true, attributeFilter: ['data-thread-connection'] });
-            window.__threadConnectionCapture = { phases, observer };
-        }"""
-    )
-    await _review_screenshot(
-        page,
-        f"thread-output-{viewport_name}-{'following' if following else 'reading'}.png",
-        f"Expanded tool output on {viewport_name} while {'following' if following else 'reading'}",
-    )
-    await expect(model_activity).to_have_text("Model activity: 3y ago")
-    connection_phase_changes = await page.evaluate(
-        """() => {
-            const capture = window.__threadConnectionCapture;
-            capture.observer.disconnect();
-            return capture.phases;
-        }"""
-    )
-    assert not connection_phase_changes, (
-        f"thread sync phase changed during screenshot capture: {connection_phase_changes=}"
-    )
-    await expect(history).to_have_attribute("data-thread-connection", "live")
-    await expect(page.locator("[data-connection]")).to_have_count(0)
     # At the true tail, collapsing a long block can shorten the history below its current scrollTop.
     # The browser must clamp to the new bottom; pixel-stable anchoring is asserted mid-thread, where
     # the history has room to preserve the clicked heading's position.

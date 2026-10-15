@@ -525,10 +525,12 @@ async def test_open_tool_calls_and_output_session_shell_calls_open(shell_calls: 
     view = shell_calls
     page = view.page
     await _open_tool_run(page)
-    await expect(
-        page.locator(".agentplane-output-disclosure .agentplane-disclosure-summary[aria-expanded='true']").first
-    ).to_be_attached()
-    await expect(page.locator("[data-clamped='true']").first).to_be_attached()
+    call = page.locator(".agentplane-step-details").filter(has_text="step 16")
+    output_control = call.locator(".agentplane-output-disclosure .agentplane-disclosure-summary[aria-expanded='true']")
+    output = call.locator(".agentplane-output-disclosure .agentplane-code-block")
+    await _in_viewport(output_control)
+    await expect(output).to_contain_text("step 16")
+    await _in_viewport(output)
     await view.capture(target=view.page.locator("#app"))
 
 
