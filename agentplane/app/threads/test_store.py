@@ -5,6 +5,7 @@ from uuid import UUID
 
 import pytest
 import pytest_bazel
+from sqlalchemy import delete
 
 from agentplane.app.testing.history import SeededEventLogStore
 from agentplane.app.testing.thread_test_support import SPEC, event_entry
@@ -12,6 +13,7 @@ from agentplane.app.threads.store import InvalidPageTokenError, ThreadStore
 from agentplane.history_service.testing.history import History
 from agentplane.proto import event_pb2, runner_pb2
 from agentplane.runner.harness import Harness
+from agentplane.runner_gateway.commands.db import Session as GatewaySession
 
 # gazelle:include_dep @pypi//protobuf
 
@@ -60,6 +62,20 @@ async def test_thread_views_and_operator_edits_need_no_raw_events(
     assert [v.id for v in await store.list_threads()] == [other]
     assert {v.id for v in await store.list_threads(include_archived=True)} == {thread, other}
     assert not (await store.unarchive(thread)).archived
+
+
+async def test_thread_identity_comes_from_history_without_gateway_registration(
+    store: ThreadStore, event_logs: SeededEventLogStore, history: History
+) -> None:
+    thread = await seed_thread(event_logs, history, sandbox="history-owned", session="history-only", cursor=2)
+    async with history.sessions.begin() as session:
+        await session.execute(delete(GatewaySession).where(GatewaySession.id == thread))
+
+    view = await store.get_thread(thread)
+    assert view is not None
+    assert view.sandbox == "history-owned"
+    assert [item.id for item in await store.list_threads(sandbox="history-owned")] == [thread]
+    assert [item.id for item in (await store.list_page(limit=20, search="HISTORY-OWNED")).threads] == [thread]
 
 
 @pytest.mark.parametrize(

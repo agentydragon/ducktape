@@ -68,10 +68,9 @@ from agentplane.app.threads.store import ThreadStore
 from agentplane.app.threads.summaries import Summaries
 from agentplane.app.threads.view.content import ContentStore
 from agentplane.egress.decisions_client import DecisionsClient
-from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
+from agentplane.runner_gateway.client import RunnerGatewayClient
 from agentplane.sandbox_resource import SANDBOXES_PLURAL, OperatingMode
 from agentplane.sandboxes.testing.fake_inventory import (
     NAMESPACE,
@@ -242,26 +241,15 @@ async def test_a_policy_the_service_cannot_be_asked_for_is_said_so_in_the_frame(
     assert frame == ActionPolicyUnavailable(code=code)
 
 
-async def test_threads_the_gateway_cannot_list_are_said_so_in_the_frame(
-    engine: AsyncEngine, summaries: Summaries, tmp_path: Path
+async def test_threads_the_history_service_cannot_list_are_said_so_in_the_frame(
+    engine: AsyncEngine, tmp_path: Path
 ) -> None:
     """The sandbox stream still carries the sandbox, and so its lifecycle controls, when the Runner
-    Gateway cannot say which Sessions run in it."""
+    History Service cannot say which Sessions ran in it."""
     (token := tmp_path / "token").write_text("test-token")
     port = pick_free_port()
-    async with dial(f"127.0.0.1:{port}") as channel:
-        unreachable = RunnerGatewayClient(
-            channel,
-            token_file=token,
-            command_admission_timeout_s=5,
-            request_timeout_s=5,
-            control=SandboxControlClient(
-                control_target=f"127.0.0.1:{port}", token_file=token, request_timeout_s=5, lifecycle_timeout_s=5
-            ),
-        )
-        frame = await threads_frame(
-            ThreadStore(engine, summaries, gateway=unreachable), "runner-1", include_archived=False
-        )
+    async with HistoryServiceClient(f"127.0.0.1:{port}", token_file=token, request_timeout_s=0.5) as unreachable:
+        frame = await threads_frame(ThreadStore(engine, Summaries(unreachable)), "runner-1", include_archived=False)
     assert frame == ThreadsUnavailable(code="UNAVAILABLE")
 
 
@@ -329,7 +317,7 @@ def app(
     return create_app(
         inventory,
         RunnerBridge(runners=RunnerDirectory(live_index, gateway), event_logs=event_logs, content=content),
-        ThreadStore(engine, summaries, gateway=gateway),
+        ThreadStore(engine, summaries),
         TEST_MODELS,
         egress,
         decisions,

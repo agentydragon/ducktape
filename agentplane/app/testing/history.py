@@ -74,7 +74,7 @@ class SeededEventLogStore(EventLogStore):
         `session_id` is an alias."""
         public_id = fixture_session_id(sandbox, session_id)
         if self.history is not None:
-            await self.history.open(public_id)
+            await self.history.open(public_id, sandbox_name=sandbox)
             if isinstance(self.gateway, Placements):
                 self.gateway.sandboxes[public_id] = sandbox
             else:

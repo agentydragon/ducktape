@@ -33,7 +33,7 @@ from agentplane.history_service.fold.views import EntityKind
 from agentplane.history_service.fold_runner import FoldRunner
 from agentplane.history_service.storage.database_migrate import RUNNER
 from agentplane.history_service.storage.db import SessionHistory
-from agentplane.history_service.storage.store import Store
+from agentplane.history_service.storage.store import Store, Writer
 from agentplane.history_service.testing.sessions import WRITER
 from agentplane.postgres.wakeups import notify
 from agentplane.proto import event_log_pb2, history_service_pb2, runner_pb2
@@ -68,12 +68,15 @@ class History:
         self._folding = asyncio.Lock()
         self._attachments: dict[UUID, runner_pb2.Attached] = {}
 
-    async def open(self, session_id: UUID) -> None:
+    async def open(self, session_id: UUID, *, sandbox_name: str | None = None) -> None:
         """Bind the Session to the test writer unless a writer already pushed it."""
         async with self.sessions() as session:
             if await session.get(SessionHistory, session_id) is not None:
                 return
-        await self.store.bind_writer(session_id, WRITER)
+        writer = (
+            WRITER if sandbox_name is None else Writer(namespace=WRITER.namespace, name=sandbox_name, uid=WRITER.uid)
+        )
+        await self.store.bind_writer(session_id, writer)
 
     async def fold(self) -> None:
         """Fold every Session until none is behind, then hand the leases back for the next folder."""

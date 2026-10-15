@@ -135,7 +135,7 @@ def summaries(history_client: HistoryServiceClient) -> Summaries:
 
 @pytest.fixture
 def store(engine: AsyncEngine, summaries: Summaries, gateway: RunnerGatewayClient) -> ThreadStore:
-    return ThreadStore(engine, summaries, gateway=gateway)
+    return ThreadStore(engine, summaries)
 
 
 @pytest.fixture
@@ -204,7 +204,7 @@ async def replica(
     async with managed_async_engine(connect(db_url)) as engine:
         summaries = Summaries(history_client)
         yield Replica(
-            ThreadStore(engine, summaries, gateway=gateway),
+            ThreadStore(engine, summaries),
             SeededEventLogStore(
                 engine,
                 history=event_logs.history,

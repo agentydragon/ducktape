@@ -242,7 +242,7 @@ async def _serve(
                     lifecycle_timeout_s=10,
                 ),
             )
-            store = ThreadStore(engine, summaries, gateway=gateway)
+            store = ThreadStore(engine, summaries)
             bridge = RunnerBridge(runners=RunnerDirectory(index, gateway), event_logs=event_logs, content=content)
             history_watch = HistoryWatch(
                 watch_client, database_updates.changes[Channel.THREADS].notify, retry_interval_s=0.05
