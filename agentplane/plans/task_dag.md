@@ -29,7 +29,8 @@ These are assignments, not claims that gated work has started. Independent confi
 proceed while behavior PRs are under review. Publish drafts as soon as a branch has reviewable work,
 with remaining gates in the body; Rai merges each PR by hand.
 
-Completed rollout evidence: [retirement and activation inventory](../sandboxes/debug/rollout_retirement.md).
+Completed rollout evidence: [retirement and activation inventory](../sandboxes/debug/rollout_retirement.md);
+bounded [resume coverage audit](../sandboxes/debug/resume_coverage.md).
 
 ## 1. Session schema and identity follow-up
 
@@ -702,9 +703,7 @@ flowchart TD
     SANDBOX_SPEC_EDIT[Unscheduled: edit a suspended Sandbox's template or kind]
     WORKSPACE_NODE_PORTABILITY[Unscheduled: move a workspace between nodes]
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
-    SESSION_REVIVE[Blocked: start a stopped Sandbox again]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
-    SESSION_REVIVE -. related .-> AGENT_RESUME_NOTICE
     SANDBOX_IDLE_EXPIRY -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     INCARNATION_UID_REQUIRED[Blocked: the runner rejects a Welcome without the incarnation UID]
@@ -713,24 +712,20 @@ flowchart TD
     QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
-    RESUME_CREDENTIALS_VALID[Blocked: grants and tokens still valid after a long suspension]
+    RESUME_CREDENTIALS_VALID[Candidate: grants and tokens still valid after a long suspension]
     SUSPENDED_COMPOSER[Blocked: the composer stays enabled while a Session is suspended]
-    THREAD_SUCCESSOR_DELIVERY[Blocked: commands unsettled across incarnations]
-    HOSTED_THREAD_SURFACES[Blocked: show and revive stopped Sessions]
+    THREAD_SUCCESSOR_DELIVERY[Candidate: commands unsettled across incarnations]
+    HOSTED_THREAD_SURFACES[Candidate: show and revive stopped Sessions]
     VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
     WORKSPACE_NODE_PORTABILITY -. related .-> SANDBOX_ARCHIVE
     VM_PROVIDER -. related .-> SANDBOX_SPEC_EDIT
-    SANDBOX_IDLE_EXPIRY -. resumed by .-> SESSION_REVIVE
     HOSTED_THREAD_SURFACES --> SUSPENDED_COMPOSER
     QUIESCE_WITHOUT_POLLING --> SANDBOX_IDLE_EXPIRY
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes, section 12] --> PROXY_START_METHODS_DISPATCHER_ONLY
     DISPATCHER_WAKE_ACTIVATION --> SUSPENDED_COMPOSER
-    SESSION_REVIVE --> RESUME_CREDENTIALS_VALID
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
-    SESSION_REVIVE --> THREAD_SUCCESSOR_DELIVERY
-    SESSION_REVIVE --> HOSTED_THREAD_SURFACES
     EFFECTIVE_MODE_FALLBACK_DROP[In flight: remove spec.running compatibility fallback]
     STATE_VOLUME_LAYOUT_FALLBACK_REMOVE[In flight: require explicit state layouts]
     APP_SESSION_OPEN_ACTIVATION[In flight: accept testing queued opens, then activate staging]
@@ -914,7 +909,7 @@ its first status update; do not confuse that state with an old controller.
 
 **Blocked on the app image that reads `status.operatingMode` being pinned, `QUIESCE_WITHOUT_POLLING`; operator, 2026-10-11 and 2026-10-13 PDT.** An idle runner
 Sandbox suspends: it is sealed, then the Pod or VM goes, freeing memory and compute, and the Sandbox, its
-ServiceAccount, bindings and state PVC stay, so `SESSION_REVIVE` resumes it on the same PVC. Nothing deletes a
+ServiceAccount, bindings and state PVC stay, so a later resume uses the same PVC. Nothing deletes a
 Sandbox on idleness or any timer (operator, 2026-10-13 PDT): only the operator deletes one, through
 [the Sandbox lifecycle API](../sandboxes/README.md) and the seal. What a resume gets back of the
 workspace follows the declared [storage layout](../docs/sandbox_storage.md). Idle is a Sandbox-level fact: every Session in the Sandbox
@@ -929,19 +924,6 @@ for a Sandbox already in lameduck; `FAILED_PRECONDITION` is terminal), and there
 no ingress-health gate. Suspension waits for the Sandbox bootstrap and every
 Session's setup (running setups are a runner fact; the Sandbox is `Ready` False with reason `SuspendPending`); deletion does not wait. A Sandbox that is quiescing refuses resume. Action Service boxes are `ACTION_BOX_IDLE_REAPER`'s, which
 only ever deletes.
-
-Control design: [ADR](../docs/adr_sandbox_session_control.md).
-
-### `SESSION_REVIVE` — start a stopped Sandbox again
-
-**Acceptance audit remaining.** Same-state-PVC VM Codex resume with changed workload UID, unchanged
-Session identity, journal continuation and native recall has passed; do not repeat that implementation
-or scenario as an open gate. Audit deterministic coverage for concurrent resume, interrupted setup
-and incompatible retained storage; add only missing contract coverage. Current setup handling refuses
-a failed/interrupted setup rather than restarting it. Long-stop credential validity belongs to
-`RESUME_CREDENTIALS_VALID`; accepted workspace/replacement evidence is in the storage acceptance
-note. Dormant harness restoration is covered by merged #10492 (`runner/test_restart.py`). Remove this node once its bounded coverage audit
-is complete; a missing live version of an adequately automated case is not another gate.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
@@ -960,7 +942,7 @@ message through the Dispatcher; and the wording agents act on. Test a suspend an
 background process, a terminal and workspace files, and a crash restart (no suspend) that reads
 differently.
 
-Related: `SESSION_REVIVE`, `SANDBOX_IDLE_EXPIRY`.
+Related: [resume coverage](../sandboxes/debug/resume_coverage.md), `SANDBOX_IDLE_EXPIRY`.
 
 ### `INCARNATION_UID_REQUIRED` — the runner rejects a `Welcome` without the incarnation UID
 
@@ -1027,7 +1009,8 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 ### `DISPATCHER_WAKE_ACTIVATION` — enable send-triggered revival
 
 **In flight; assigned to `vm_connection`, 2026-10-14 PDT.** Testing caller configuration from
-#10527 is reconciled. Bounded testing acceptance and staging activation remain. Image and migration gates are clear: actual
+#10527 is reconciled. The opted-in wake probe passed and its fixture was cleaned (#10541);
+staging activation remains. Image and migration gates are clear: actual
 Dispatcher Pods in both environments are Ready on `31e0b37`, their migration containers exited 0,
 and all controllers are Ready on that source. This includes the merged wake budget (#10487),
 selective native revival (#10492), and failure feedback (#10500). The prior staging runtime hold
@@ -1061,7 +1044,11 @@ implementation node once policy is reviewed; existing caller cutovers do not sil
 **In flight; `vm_connection`, 2026-10-14 PDT.** #10517 implemented queued openings and app-owned
 Session defaults; both environments run an accepting app image. #10533 enables
 `session_dispatcher_open_sessions` on testing and its ConfigMap is reconciled. Verify queued opening
-and eventual Thread projection on testing, then enable staging in a separate generated-config PR. Finish with both environments reconciled; direct-open fallback removal follows separately.
+and eventual Thread projection on testing, then enable staging in a separate generated-config PR.
+The current probe admitted the opening and accepted a same-ID retry, but the Thread read returned
+HTTP 500: it still required a Gateway registry row that Dispatcher openings do not create. Move
+that read to authoritative History identity, pin the correction, and repeat the bounded app check
+before staging activation. No new compatibility fallback or data deletion belongs in that correction. Finish with both environments reconciled; direct-open fallback removal follows separately.
 
 ### `APP_GATEWAY_SEND_REMOVE` — delete app direct command and Session-creation branches
 
@@ -1104,7 +1091,7 @@ Complete caller rollout before narrowing Gateway authorization or removing the l
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
 
-**Blocked on `SESSION_REVIVE`.** A Sandbox that resumes hours or days later must come up with egress
+**Candidate; basic revival coverage is complete.** A Sandbox that resumes hours or days later must come up with egress
 grants, `PolicyBinding`s and projected tokens still valid, or it looks broken. Check each
 expiring thing the Sandbox holds, and make a resume refresh or refuse with a reason, never come up
 half-granted. Grants made from the app can carry an `expiresAt`.
@@ -1119,7 +1106,7 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `THREAD_SUCCESSOR_DELIVERY` — commands unsettled across incarnations
 
-**Blocked on revival.** A command whose admission was ambiguous when an incarnation ended is
+**Candidate; basic revival coverage is complete.** A command whose admission was ambiguous when an incarnation ended is
 redelivered to the next one, which resolves the ambiguity (the runner deduplicates on the command
 ID). It is `unknown` only when the Sandbox was deleted. Moved from the freezer.
 
@@ -1127,8 +1114,8 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `HOSTED_THREAD_SURFACES` — show and revive stopped Sessions
 
-**Blocked on revival.** The app lists Sessions whose Sandbox has no
-running incarnation, reads their history from the History Service, and offers an explicit revive,.
+**Candidate; basic revival coverage is complete.** The app lists Sessions whose Sandbox has no
+running incarnation, reads their history from the History Service, and offers explicit Sandbox revival.
 Moved from the freezer.
 
 ## 8. Ownership and naming cleanup

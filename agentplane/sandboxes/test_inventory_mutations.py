@@ -223,6 +223,46 @@ async def test_resume_wakes_an_idle_suspended_sandbox_by_bumping_the_generation(
     ]
 
 
+@pytest.mark.parametrize("idle_suspended", [False, True], ids=["explicit-stop", "idle-stop"])
+async def test_concurrent_resumes_increment_the_wake_generation_once(
+    inventory: SandboxInventory,
+    custom_objects: FakeCustomObjectsApi,
+    core_v1: FakeCoreV1Api,
+    monkeypatch: pytest.MonkeyPatch,
+    idle_suspended: bool,
+) -> None:
+    _populate_one_of_each_state(custom_objects, core_v1)
+    paused = custom_objects.objects[(SANDBOXES_PLURAL, "paused")]
+    paused["spec"].update(running=idle_suspended, wakeGeneration=4)
+    paused["status"]["operatingMode"] = "Suspended"
+    if idle_suspended:
+        paused["status"].update(suspendedBy="Idle", suspendedAtWakeGeneration=4)
+    original_patch = custom_objects.patch_namespaced_custom_object
+    both_read = asyncio.Barrier(2)
+    attempted_versions: list[str] = []
+
+    async def patch_after_both_reads(
+        group: str, version: str, namespace: str, plural: str, name: str, body: object, *, _content_type: str
+    ) -> object:
+        assert isinstance(body, dict)
+        resource_version = body["metadata"]["resourceVersion"]
+        attempted_versions.append(resource_version)
+        if resource_version == "1":
+            await both_read.wait()
+        return await original_patch(group, version, namespace, plural, name, body, _content_type=_content_type)
+
+    monkeypatch.setattr(custom_objects, "patch_namespaced_custom_object", patch_after_both_reads)
+    uid = paused["metadata"]["uid"]
+    async with asyncio.timeout(10):
+        await asyncio.gather(inventory.resume("paused", uid=uid), inventory.resume("paused", uid=uid))
+
+    assert attempted_versions == ["1", "1"]
+    assert len(custom_objects.patches) == 1
+    assert paused["metadata"]["uid"] == uid
+    assert paused["spec"]["running"] is True
+    assert paused["spec"]["wakeGeneration"] == 5
+
+
 async def test_resume_refuses_to_race_the_controller_quiescing_an_incarnation(
     inventory: SandboxInventory, custom_objects: FakeCustomObjectsApi, core_v1: FakeCoreV1Api
 ) -> None:
