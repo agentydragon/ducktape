@@ -1,0 +1,29 @@
+load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("//devinfra/python:defs.bzl", "py_library")
+
+package(default_visibility = ["//agentplane:__subpackages__"])
+
+# A minimal binary gives every Agentplane Python image one stable runfiles path for the
+# pinned hermetic interpreter. Its entrypoint and default layer are intentionally not shipped.
+py_library(
+    name = "runtime_probe",
+    srcs = ["runtime_probe.py"],
+)
+
+aspect_py_binary(
+    name = "runtime_image_bin",
+    main = "runtime_probe.py",
+    deps = [":runtime_probe"],
+)
+
+py_image_layer(
+    name = "runtime_layers",
+    binary = ":runtime_image_bin",
+    group = "1000",
+    owner = "1000",
+)
+
+filegroup(
+    name = "runtime_interpreter_layer",
+    srcs = [":runtime_layers_interpreter"],
+)
