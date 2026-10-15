@@ -5,8 +5,8 @@ Status: **implemented; acceptance incomplete.** The server-side fold in
 transactional writer. The integration uses Electric through its published TypeScript client:
 one shape per thread and per payload field, with the browser's window loaded as subsets of them.
 See [app implementation notes](../app/README.md) for endpoints and storage details.
-The [conversation acceptance matrix](../debug/conversation_acceptance.md) records the evidence and
-remaining gates. Bounded browser-cache retention is the deferred D6 desire, not a gate; the current
+The [conversation acceptance record](../debug/conversation_acceptance.md) lists the remaining
+unverified gates. Bounded browser-cache retention is the deferred D6 desire, not a gate; the current
 store retains loaded rows and bodies until the Thread closes. Server-memory acceptance remains a
 separate gate.
 

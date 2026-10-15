@@ -213,8 +213,8 @@ same-ID retries, and failed/noop outcomes after history eviction and explicit di
 Fault injection holds actual Electric responses while ingestion continues. A suffix the fold
 cannot apply preserves verified history, reports the verified cursor, and disables controls.
 Scrolling checks cover live growth, reader anchors, desktop/phone layouts, and returning to the
-bottom before a queued scroll event. Larger history-window, collection-retention and resource
-proofs are tracked in [the acceptance matrix](../debug/conversation_acceptance.md).
+bottom before a queued scroll event. The remaining server-memory, off-window traffic and Electric
+availability gates are listed in [the acceptance record](../debug/conversation_acceptance.md).
 
 Staging runs two app replicas on separate nodes with `RollingUpdate` (`maxUnavailable: 0`,
 `maxSurge: 1`) and a PodDisruptionBudget of one available; testing stays at one replica.
