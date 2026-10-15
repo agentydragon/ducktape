@@ -31,6 +31,48 @@ steering, acknowledgement, or successful-completion semantics that the native pr
 An unrecognized native kind remains a named `Unknown*` value so captures can reveal protocol drift
 without silently discarding it.
 
+## Codex threads on one app-server
+
+The harness test binary is `@openai/codex` 0.157.0 from `MODULE.bazel`; the corresponding upstream
+`rust-v0.157.0` tag resolves to source commit
+[`00c972ed`](https://github.com/openai/codex/tree/00c972ed5d6ff6499317fd41b7f23605b8e6850d).
+At that revision, [`ThreadStartParams`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L62-L188)
+creates a thread with its own `cwd`, model and developer instructions;
+[`TurnStartParams`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/v2/turn.rs#L167-L284)
+and [`TurnInterruptParams`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/v2/turn.rs#L327-L335)
+address a `threadId`, while
+[`TurnStartedNotification`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/v2/turn.rs#L532-L552)
+returns it. The server keeps a set of thread IDs per connection in
+[`ThreadStateManager`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server/src/thread_state.rs#L343-L346)
+and attaches each started thread to the requesting connection in
+[`thread_start_task`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server/src/request_processors/thread_processor.rs#L1562-L1577).
+[`turn_start_inner`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server/src/request_processors/turn_processor.rs#L522-L530)
+loads the requested thread before submitting input, and
+[`turn_interrupt_inner`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server/src/request_processors/turn_processor.rs#L1595-L1635)
+loads and interrupts that thread. `thread/resume` by ID reloads a stopped thread and rejoins an
+already running one, as specified in
+[`ThreadResumeParams`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server-protocol/src/protocol/v2/thread.rs#L335-L353).
+
+`test_independent_threads_share_a_process_and_resume_by_thread_id` drives two separately started,
+persisted threads through one `CodexRun` and one stdio process. It holds both model requests open,
+checks each request's thread ID, model and developer instruction, runs `pwd` in the second thread's
+workspace, interrupts the first thread, and completes the second. It then starts a fresh process with
+the same `CODEX_HOME`, resumes both thread IDs over its one connection, and completes a follow-up
+turn on each. Turn start/completion notifications and the interrupt request are checked against
+their thread and turn IDs. These are independent root threads created with `thread/start`, not
+native child tasks or read-only projections.
+
+This proves concurrent turn routing and thread-scoped cancellation for the pinned binary. The
+tested options are model, reasoning effort, developer instructions and working directory; it does
+not establish isolation for every thread option. Both threads share the process's `CODEX_HOME`,
+environment, configured provider and API key. The protocol has no per-thread credential field, and
+this test does not compare authentication identities. A process is their shared failure domain;
+the app-server shuts down its managed threads together in
+[`ThreadProcessor::shutdown_threads`](https://github.com/openai/codex/blob/00c972ed5d6ff6499317fd41b7f23605b8e6850d/codex-rs/app-server/src/request_processors/thread_processor.rs#L1281-L1291),
+while the test's cross-process resume is a graceful restart after both turns settle. Active
+multi-thread crash recovery is not measured here.
+The result characterizes the upstream protocol and does not select a runner process/session model.
+
 ## Native subagents
 
 Opt-in scenarios script a real native delegation and settle every child model exchange: the

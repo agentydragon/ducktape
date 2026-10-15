@@ -202,6 +202,10 @@ class AsyncNativeProcess:
         records = (self.logs / "stdout.jsonl").read_text().splitlines()
         return [json.loads(json.loads(line)["text"]) for line in records]
 
+    def stdin_frames(self) -> list[dict[str, Any]]:
+        records = (self.logs / "stdin.jsonl").read_text().splitlines()
+        return [json.loads(json.loads(line)["text"]) for line in records]
+
     async def _stdout(self) -> None:
         assert self.process is not None
         assert self.process.stdout is not None

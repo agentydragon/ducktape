@@ -83,6 +83,28 @@ py_test(
 )
 
 py_test(
+    name = "test_multiplexing",
+    size = "medium",
+    srcs = ["test_multiplexing.py"],
+    data = ["@agentplane_codex_cli_linux_x64//:files"],  # keep: the pinned native harness the test drives
+    target_compatible_with = [
+        "@platforms//cpu:x86_64",
+        "@platforms//os:linux",
+    ],
+    deps = [
+        ":conftest",
+        ":harness",
+        ":model",
+        ":responses",
+        ":responses_sse",
+        "//:conftest",
+        "//agentplane/harness_tests:conftest",
+        "//agentplane/native/codex:wire",
+        "@pypi//pytest_bazel",
+    ],
+)
+
+py_test(
     name = "test_connection_loss",
     size = "medium",
     srcs = ["test_connection_loss.py"],

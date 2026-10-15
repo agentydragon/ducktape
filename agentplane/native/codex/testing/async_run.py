@@ -87,8 +87,25 @@ class CodexTurn:
         return await self._events.error(self.id)
 
 
+class CodexThread:
+    """One independently addressed thread on a Codex app-server run."""
+
+    def __init__(self, run: CodexRun, thread_id: str):
+        self._run = run
+        self.thread_id = thread_id
+
+    async def start_turn(self, text: str, *, model: str | None = None, effort: str | None = None) -> CodexTurn:
+        return await self._run._start_turn(self.thread_id, text, model=model, effort=effort)
+
+    async def steer(self, turn: CodexTurn, text: str) -> wire.Response:
+        return await self._run._steer(self.thread_id, turn, text)
+
+    async def interrupt(self, turn: CodexTurn) -> wire.Response:
+        return await self._run._interrupt(self.thread_id, turn)
+
+
 class CodexRun:
-    """One native Codex app-server process, initialized around one started or resumed thread."""
+    """One native Codex app-server process with independently addressed threads."""
 
     def __init__(
         self,
@@ -194,11 +211,55 @@ class CodexRun:
     def events(self) -> CodexEvents:
         return CodexEvents(self._native().frames())
 
+    def client_frames(self) -> list[dict[str, Any]]:
+        return self._native().stdin_frames()
+
     def native_frames(self) -> list[dict[str, Any]]:
         return self._native().stdout_frames()
 
+    def thread(self) -> CodexThread:
+        return CodexThread(self, self.thread_id)
+
+    async def start_thread(
+        self,
+        *,
+        cwd: str | None = None,
+        model: str | None = None,
+        effort: str | None = None,
+        persist: bool | None = None,
+        config: dict[str, object] | None = None,
+        instructions: str | None = None,
+    ) -> CodexThread:
+        """Start another thread through this run's existing app-server connection."""
+        response = _require(
+            await self._codex().start_thread(
+                cwd=self._thread_cwd if cwd is None else cwd,
+                model=self._model if model is None else model,
+                effort=self._effort if effort is None else effort,
+                persist=self._persist if persist is None else persist,
+                config=self._config if config is None else config,
+                instructions=self._instructions if instructions is None else instructions,
+                dynamic_tools=self._dynamic_tools,
+            )
+        )
+        return CodexThread(self, _response_thread_id(response))
+
+    async def resume_thread(
+        self, thread_id: str, *, base_instructions: str = "", instructions: str = ""
+    ) -> CodexThread:
+        response = _require(
+            await self._codex().resume_thread(
+                thread_id=thread_id, base_instructions=base_instructions, instructions=instructions
+            )
+        )
+        return CodexThread(self, _response_thread_id(response))
+
     async def start_turn(self, text: str, *, model: str | None = None, effort: str | None = None) -> CodexTurn:
-        thread_id = self.thread_id
+        return await self._start_turn(self.thread_id, text, model=model, effort=effort)
+
+    async def _start_turn(
+        self, thread_id: str, text: str, *, model: str | None = None, effort: str | None = None
+    ) -> CodexTurn:
         events = self.events()
         response = _require(await self._codex().start_turn(thread_id=thread_id, text=text, model=model, effort=effort))
         result = wire.TurnResult.model_validate(response.result)
@@ -209,11 +270,17 @@ class CodexRun:
         return _require(await self._codex().compact_thread(thread_id=self.thread_id))
 
     async def steer(self, turn: CodexTurn, text: str) -> wire.Response:
-        self._assert_turn(turn)
+        return await self._steer(self.thread_id, turn, text)
+
+    async def _steer(self, thread_id: str, turn: CodexTurn, text: str) -> wire.Response:
+        self._assert_turn(thread_id, turn)
         return _require(await self._codex().steer(thread_id=turn.thread_id, turn_id=turn.id, text=text))
 
     async def interrupt(self, turn: CodexTurn) -> wire.Response:
-        self._assert_turn(turn)
+        return await self._interrupt(self.thread_id, turn)
+
+    async def _interrupt(self, thread_id: str, turn: CodexTurn) -> wire.Response:
+        self._assert_turn(thread_id, turn)
         return _require(await self._codex().interrupt(thread_id=turn.thread_id, turn_id=turn.id))
 
     async def crash(self) -> int:
@@ -222,8 +289,8 @@ class CodexRun:
     async def _initialize(self) -> None:
         _require(await self._codex().initialize(experimental_api=self._dynamic_tools is not None))
 
-    def _assert_turn(self, turn: CodexTurn) -> None:
-        if turn.thread_id != self.thread_id:
+    def _assert_turn(self, thread_id: str, turn: CodexTurn) -> None:
+        if turn.thread_id != thread_id:
             raise ValueError(f"turn {turn.id} does not belong to this Codex run")
 
 

@@ -196,17 +196,16 @@ selected here.
 
 ## Independent capability characterization
 
-The current driver does not settle whether one native process can serve multiple independent
+The current runner adapter does not select whether one native process should serve multiple
 Agentplane Sessions. Treat each harness as its own investigation; neither result should wait for or
 be inferred from the other.
 
-- **Codex app-server:** `CodexHarness` supports `thread/start`, `thread/resume` and per-request
-  `thread_id`; the runner adapter currently keeps one `_thread_id` and one `CodexHarness` per
-  Agentplane Session. The protocol roster does not characterize multiple independent threads on one
-  stdio process. Test or find authoritative pinned-version evidence for multiplexing over one
-  connection, request/notification routing, concurrent turns, per-thread cancellation and options,
-  and thread resume after process restart using shared `CODEX_HOME`. A method accepting `thread_id`
-  is not proof of safe concurrent multiplexing.
+- **Codex app-server:** the real-binary characterization in
+  [harness evidence](harness_evidence.md#codex-threads-on-one-app-server) covers two independently
+  started threads on one stdio process, concurrent turns, per-thread cancellation, selected
+  per-thread options, and both threads resumed after a process restart with shared `CODEX_HOME`.
+  The runner adapter still owns one thread ID per process; this evidence characterizes Codex and
+  does not choose whether the runner should multiplex.
 - **Claude Code:** the adapter starts one stream-json process with one `--session-id`; inputs and
   interrupt controls have no Agentplane-side session selector. Native child/task events are not proof
   that one process can expose multiple independently controlled conversations. Characterize whether
