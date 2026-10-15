@@ -174,7 +174,7 @@ async def test_a_redelivered_command_is_admitted_once_and_answered_from_the_jour
 
 
 async def test_a_welcome_without_an_incarnation_uid_is_rejected_before_serving_calls(
-    runner: Runner, gateway: Gateway
+    runner: Runner, gateway: Gateway, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     gateway.control.incarnation_uid = ""
     service = RunnerService(runner)
@@ -187,6 +187,11 @@ async def test_a_welcome_without_an_incarnation_uid_is_rejected_before_serving_c
         facts=runner.facts,
         facts_changed=runner.facts_changed,
     )
+
+    async def serving_calls(*_: object) -> None:
+        pytest.fail("the runner must reject Welcome before serving calls")
+
+    monkeypatch.setattr(client, "serve", serving_calls)
     async with local_server(
         lambda server: runner_control_pb2_grpc.add_RunnerServicer_to_server(service, server)
     ) as runner_channel:
@@ -194,7 +199,6 @@ async def test_a_welcome_without_an_incarnation_uid_is_rejected_before_serving_c
             await client.connect(runner_channel)
 
     assert runner.store.incarnation_uid is None
-    assert gateway.control.connections == 0
 
 
 async def test_each_command_rpc_admits_its_command_and_a_command_id_belongs_to_one_operation(
