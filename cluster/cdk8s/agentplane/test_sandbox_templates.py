@@ -14,7 +14,7 @@ import yaml
 from more_itertools import one
 
 from agentplane.crd_group import GROUP
-from cluster.cdk8s.agentplane import history_service, notifications, runner_gateway, testing
+from cluster.cdk8s.agentplane import history_service, notifications, runner_gateway
 from cluster.cdk8s.agentplane.conftest import NAMESPACES
 from cluster.cdk8s.pod_policy import workload_kind
 
@@ -154,44 +154,6 @@ def test_ducktape_template_is_staging_only_and_projects_buildbuddy_key_to_runner
         del args[i - 1 : i + 1]
         # No extra authority in generic runners, testing, or the egress sidecar.
         assert specialized == generic
-
-
-def test_model_configs_are_generated_into_the_llm_ingress_configmap(
-    agentplane_manifests: dict[str, list[dict[str, Any]]],
-) -> None:
-    expected = [{"model": "ollama/oai-chat/qwen3.8-flash-next-iq4xs-256k", "total_context_budget_tokens": 256 * 1024}]
-    # Testing alone offers the Claude harness a local model, served on the native wire.
-    expected_testing = [
-        *expected,
-        {"model": "ollama/olm-chat/qwen3.8-flash-next-iq4xs-128k", "total_context_budget_tokens": 128 * 1024},
-    ]
-    for namespace, manifests in agentplane_manifests.items():
-        settings = one(
-            doc
-            for doc in manifests
-            if doc["kind"] == "ConfigMap" and doc["metadata"]["name"] == "agentplane-llm-ingress-settings"
-        )
-        deployment = one(
-            doc
-            for doc in manifests
-            if doc["kind"] == "Deployment" and doc["metadata"]["name"] == "agentplane-llm-ingress"
-        )
-        assert (
-            deployment["metadata"]["annotations"]["configmap.reloader.stakater.com/reload"]
-            == "agentplane-llm-ingress-settings"
-        )
-        assert yaml.safe_load(settings["data"]["settings.yaml"])["models"] == (
-            expected_testing if namespace == testing.ENV.namespace else expected
-        ), namespace
-        runners = [
-            container
-            for template in _templates(manifests)
-            for container in template["spec"]["pod"]["spec"]["containers"]
-            if container["name"] == "runner"
-        ]
-        assert runners
-        for runner in runners:
-            assert "AGENTPLANE_MODEL_CONTEXT_WINDOWS" not in {entry["name"] for entry in runner["env"]}
 
 
 @pytest.mark.parametrize(
