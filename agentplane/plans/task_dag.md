@@ -1124,6 +1124,10 @@ flowchart TD
 
 **Candidate; operator request 2026-10-15 PDT.** Sweep Agentplane's protobuf services/messages,
 HTTP routes/client helpers, CLI arguments, settings/config keys and their producers/consumers.
+Start from the system overview: whenever two paths accomplish the same operation, ask why both
+exist. Trace their callers, authority and failure semantics; document a concrete reason for
+intentional coexistence, or identify the canonical path and the migration/removal of the other.
+Different transport names alone do not justify duplicate ways to perform the same work.
 Compare each with the decided owners: Dispatcher for starting/continuing Session work, History
 for retained inventory/history, controller for Sandbox reconciliation, and runner proxy only for
 operations that still belong at the runner. Include both `RunnerGateway.ListSessions` and

@@ -55,6 +55,15 @@ What the base must not do is make such a bundle the only supported way to config
 to require it? Can a user still see and change each part separately, and does any authority attach
 to the name rather than to the parts?
 
+## Explain overlapping paths
+
+When two paths in the system overview accomplish the same operation, ask why both exist. Identify
+their callers, authority and failure semantics. Intentional coexistence needs a concrete reason;
+a transitional path needs a migration and removal node in the task DAG. Different transports or
+clients can justify separate surfaces, but do not by themselves justify duplicate backend ownership.
+
+**Question for a proposal:** if another path already performs this operation, why should both remain?
+
 ## Keep options open; avoid hard-to-reverse choices
 
 Prefer the design that leaves the most choices available later, and be wary of one that is hard
