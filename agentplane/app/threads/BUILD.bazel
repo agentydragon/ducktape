@@ -105,7 +105,6 @@ py_library(
     deps = [
         "//agentplane/app:live",
         "//agentplane/app:sandbox_models",
-        "//agentplane/proto:runner_gateway_pb2",
         "//agentplane/proto:sandboxes_pb2",
         "//agentplane/runner_gateway:client",
         "//agentplane/sandboxes:errors",

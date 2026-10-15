@@ -59,19 +59,14 @@ class GitHubSettings(BaseModel):
 
 class RunnerGatewaySettings(BaseModel):
     model_config = ConfigDict(extra="forbid", hide_input_in_errors=True)
-    target: str = Field(description="Runner Gateway gRPC host:port for read-only session validation.")
+    # CLEANUP(added 2026-10-15): Remove after notifications manifests stop setting the API target once this image rolls out.
+    target: str | None = Field(default=None, description="Accepted during rollout; notifications use control Services.")
     control_target: str = Field(
         description="Each Sandbox's control Service, a template of `{sandbox}` and `{namespace}` such as "
         "`{sandbox}-control.{namespace}.svc:8080`. Lifecycle calls go there, to the replica holding the "
         "runner connection."
     )
     request_timeout_s: PositiveSeconds = 5
-    lifecycle_timeout_s: PositiveSeconds = 310
-    command_admission_timeout_s: PositiveSeconds = Field(
-        default=20,
-        description="Seconds to wait for the runner admission receipt via the Runner Gateway; keep above its "
-        "runner_admission_ack_timeout_s budget.",
-    )
     token_file: Path = Field(
         description="Path to the rotating projected ServiceAccount token used to authenticate to the Runner Gateway."
     )

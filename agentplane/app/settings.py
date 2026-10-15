@@ -64,7 +64,7 @@ class Settings(AppSettingsConfig):
         "so a sandbox shares a namespace with neither the app, its database, nor the rules that govern it."
     )
     runner_gateway_target: str = Field(
-        min_length=1, description="The Runner Gateway's gRPC host:port, serving Sessions."
+        min_length=1, description="The Runner Gateway's gRPC host:port, used by the health-status probe."
     )
     session_dispatcher_target: str = Field(
         min_length=1, description="Required Session Dispatcher gRPC host:port for Thread commands."

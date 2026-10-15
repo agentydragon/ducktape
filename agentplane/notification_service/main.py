@@ -20,7 +20,7 @@ from agentplane.notification_service.sources.actions import ActionServiceClient
 from agentplane.notification_service.sources.github.client import GitHubClient
 from agentplane.notification_service.sources.github.source import GitHub
 from agentplane.notification_service.store import Store
-from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
+from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandboxes.reader import SandboxReader
 from agentplane.service_process import configure_logging, kubernetes_configuration
 from agentplane.workload_auth.principal import WorkloadPrincipalResolver
@@ -49,7 +49,6 @@ async def serve(settings: Settings) -> None:
                 base_url=str(settings.actions.url), timeout=settings.actions.request_timeout_s, follow_redirects=False
             ) as http,
             AsyncExitStack() as github_stack,
-            dial(settings.runner_gateway.target) as gateway_channel,
             HistoryServiceClient(
                 settings.history_service.target,
                 token_file=settings.history_service.token_file,
@@ -75,17 +74,10 @@ async def serve(settings: Settings) -> None:
                         core_v1=k8s_client.CoreV1Api(kube),
                     ),
                     github,
-                    gateway=RunnerGatewayClient(
-                        gateway_channel,
+                    control=SandboxControlClient(
+                        control_target=settings.runner_gateway.control_target,
                         token_file=settings.runner_gateway.token_file,
-                        command_admission_timeout_s=settings.runner_gateway.command_admission_timeout_s,
                         request_timeout_s=settings.runner_gateway.request_timeout_s,
-                        control=SandboxControlClient(
-                            control_target=settings.runner_gateway.control_target,
-                            token_file=settings.runner_gateway.token_file,
-                            request_timeout_s=settings.runner_gateway.request_timeout_s,
-                            lifecycle_timeout_s=settings.runner_gateway.lifecycle_timeout_s,
-                        ),
                     ),
                     history=history,
                     dispatcher=dispatcher,

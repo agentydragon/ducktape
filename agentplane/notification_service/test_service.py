@@ -285,12 +285,12 @@ async def test_subscription_requires_session_membership_in_the_fenced_sandbox(se
     cast(AsyncMock, service.sandboxes.get_without_pod).return_value = _matching_sandbox()
     runner = _sandbox_runner()
     cast(AsyncMock, runner.list_sessions).return_value = [runner_pb2.SessionSummary(session_id="another-session")]
-    cast(Mock, service.gateway.runner).return_value = runner
+    cast(Mock, service.control.runner).return_value = runner
 
     with pytest.raises(DestinationRejectedError):
         await service.subscribe(PRINCIPAL, BODY)
 
-    cast(Mock, service.gateway.runner).assert_called_once_with(
+    cast(Mock, service.control.runner).assert_called_once_with(
         SandboxDestination(
             sandbox=BODY.destination_ref.name,
             sandbox_uid=BODY.destination_ref.uid,
@@ -360,7 +360,6 @@ async def test_ack_before_dispatch_suppresses_notice_even_when_harness_is_stoppe
     assert page.notice.error == "suppressed: acknowledged before submission"
     cast(AsyncMock, runner.list_sessions).assert_not_awaited()
     cast(AsyncMock, service.dispatcher.submit_input).assert_not_awaited()
-    cast(AsyncMock, service.gateway.command).assert_not_awaited()
 
 
 async def test_dispatcher_retries_keep_the_notice_id_and_queued_is_not_admitted(service: Service) -> None:
@@ -391,10 +390,9 @@ async def test_dispatcher_retries_keep_the_notice_id_and_queued_is_not_admitted(
     assert not page.notice.admitted
     assert not page.notice.confirmed
     assert page.notice.error is None
-    cast(AsyncMock, service.gateway.command).assert_not_awaited()
 
 
-async def test_dispatcher_terminal_outcome_is_persisted_without_gateway_fallback(service: Service) -> None:
+async def test_dispatcher_terminal_outcome_is_persisted(service: Service) -> None:
     claim, subscription, notice = await _dispatcher_notice(service)
     dispatcher = cast(SessionDispatcherClient, service.dispatcher)
     cast(AsyncMock, dispatcher.submit_input).return_value = session_dispatcher_pb2.Dispatch(
@@ -406,10 +404,9 @@ async def test_dispatcher_terminal_outcome_is_persisted_without_gateway_fallback
     page = await service.store.read(PRINCIPAL.account, subscription.inbox_id, 0, 128)
     assert page.notice is not None
     assert page.notice.error == "Dispatcher DELIVERY_STATE_FAILED: sandbox_deleted"
-    cast(AsyncMock, service.gateway.command).assert_not_awaited()
 
 
-async def test_dispatcher_authentication_failure_never_falls_back_to_gateway(service: Service) -> None:
+async def test_dispatcher_authentication_failure_is_propagated(service: Service) -> None:
     claim, _, notice = await _dispatcher_notice(service)
     dispatcher = cast(SessionDispatcherClient, service.dispatcher)
     cast(AsyncMock, dispatcher.submit_input).side_effect = ServiceError(
@@ -418,7 +415,6 @@ async def test_dispatcher_authentication_failure_never_falls_back_to_gateway(ser
 
     with pytest.raises(ServiceError, match="unauthenticated"):
         await service.deliver(claim, _sandbox_runner(), notice)
-    cast(AsyncMock, service.gateway.command).assert_not_awaited()
 
 
 if __name__ == "__main__":

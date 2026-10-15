@@ -1,15 +1,13 @@
-"""Resolve a live Sandbox's current runner destination; the Gateway checks its UID."""
+"""Resolve a live Sandbox's current runner destination for its control Service."""
+
+# gazelle:include_dep @pypi//protobuf
+# gazelle:include_dep @pypi//types_protobuf
 
 from agentplane.app.live import LiveIndex
 from agentplane.app.sandbox_models import sandbox_is_ready
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
-from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxRunner
+from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.sandboxes.errors import SandboxNotFoundError
-
-# gazelle:include_dep @pypi//protobuf
-# gazelle:include_dep @pypi//types_protobuf
-# The gateway's message stubs, which the mypy aspect resolves for direct deps only.
-# gazelle:include_dep //agentplane/proto:runner_gateway_pb2
 
 
 class SandboxNotReachableError(Exception):
@@ -19,9 +17,9 @@ class SandboxNotReachableError(Exception):
 
 
 class RunnerDirectory:
-    def __init__(self, index: LiveIndex, gateway: RunnerGatewayClient) -> None:
+    def __init__(self, index: LiveIndex, control: SandboxControlClient) -> None:
         self._index = index
-        self.gateway = gateway
+        self.control = control
         self._clients: dict[str, SandboxRunner] = {}
 
     def client(self, sandbox: str) -> SandboxRunner:
@@ -36,5 +34,5 @@ class RunnerDirectory:
             sandbox_uid=str(view.uid),
         )
         if str(view.uid) not in self._clients:
-            self._clients[str(view.uid)] = self.gateway.runner(destination)
+            self._clients[str(view.uid)] = self.control.runner(destination)
         return self._clients[str(view.uid)]

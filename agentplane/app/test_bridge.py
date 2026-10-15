@@ -259,12 +259,13 @@ async def local_runners(
     live_index.sandboxes[SANDBOX] = raw
     async with dialing(runner, gateway_endpoint.control_target, runner_bearer(SANDBOX)):
         await asyncio.to_thread(gateway_endpoint.wait_connected, UUID(raw["metadata"]["uid"]))
-        yield RunnerDirectory(live_index, gateway)
+        yield RunnerDirectory(live_index, gateway.control)
 
 
 @pytest.fixture
 async def app_url(
     local_runners: RunnerDirectory,
+    gateway: RunnerGatewayClient,
     inventory: SandboxAccess,
     store: ThreadStore,
     database_updates: WakeupListener,
@@ -288,7 +289,7 @@ async def app_url(
         runners=local_runners,
         event_logs=event_logs,
         content=content,
-        dispatcher=GatewayBackedDispatcher(local_runners, event_logs),
+        dispatcher=GatewayBackedDispatcher(local_runners, gateway, event_logs),
     )
     app = create_app(
         inventory,
@@ -1021,7 +1022,11 @@ async def test_the_bridge_reports_what_the_runner_refuses(app_url: str) -> None:
 
 
 async def test_thread_command_reports_id_conflict_after_runner_admitted_before_app_copied_it(
-    app_url: str, local_runners: RunnerDirectory, spec: runner_pb2.SessionSpec, failed_bridge_state: None
+    app_url: str,
+    local_runners: RunnerDirectory,
+    gateway: RunnerGatewayClient,
+    spec: runner_pb2.SessionSpec,
+    failed_bridge_state: None,
 ) -> None:
     """An app prefix lag must still preserve the runner's id-conflict verdict as a 409."""
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
@@ -1030,7 +1035,7 @@ async def test_thread_command_reports_id_conflict_after_runner_admitted_before_a
         command_id="reused-before-copy", interrupt_turn=command_pb2.InterruptTurn(turn_id="first-target")
     )
     # Admitted through the Runner Gateway, not the app.
-    await local_runners.gateway.command(local_runners.client(SANDBOX).destination, str(thread), original)
+    await gateway.command(local_runners.client(SANDBOX).destination, str(thread), original)
 
     async with httpx.AsyncClient(base_url=app_url, timeout=60, headers=AGENT_AUTH) as http:
         conflict = await http.post(
@@ -1108,6 +1113,7 @@ async def test_dispatcher_timeout_is_not_an_internal_server_error(
 
 async def test_command_returns_dispatch_receipt_before_app_archive_catches_up(
     bridge: RunnerBridge,
+    gateway: RunnerGatewayClient,
     event_logs: SeededEventLogStore,
     content: ContentStore,
     history: History,
@@ -1141,7 +1147,7 @@ async def test_command_returns_dispatch_receipt_before_app_archive_catches_up(
         assert candidate == command
         return receipt
 
-    monkeypatch.setattr(bridge._runners.gateway, "command", submit)
+    monkeypatch.setattr(gateway, "command", submit)
     dispatch = await bridge.command(thread, command, sandbox=SANDBOX)
     assert isinstance(dispatch, session_dispatcher_pb2.Dispatch)
     assert dispatch.state == session_dispatcher_pb2.DELIVERY_STATE_RUNNER_ADMITTED
@@ -1233,6 +1239,7 @@ class Replicas:
 @pytest.fixture
 async def replicas(
     gateway_endpoint: Endpoint,
+    gateway: RunnerGatewayClient,
     local_runners: RunnerDirectory,
     live_index: LiveIndex,
     runner: Runner,
@@ -1256,7 +1263,7 @@ async def replicas(
         runners=local_runners,
         event_logs=event_logs,
         content=content,
-        dispatcher=GatewayBackedDispatcher(local_runners, event_logs),
+        dispatcher=GatewayBackedDispatcher(local_runners, gateway, event_logs),
     )
     try:
         async with (
@@ -1266,12 +1273,13 @@ async def replicas(
             history_client.new_client() as owner_openings_client,
             history_client.new_client() as survivor_openings_client,
         ):
-            survivor_runners = RunnerDirectory(live_index, gateway_endpoint.gateway(survivor_channel))
+            survivor_gateway = gateway_endpoint.gateway(survivor_channel)
+            survivor_runners = RunnerDirectory(live_index, survivor_gateway.control)
             survivor = RunnerBridge(
                 runners=survivor_runners,
                 event_logs=survivor_event_logs,
                 content=ContentStore(replica_engine, history_reader=history_client),
-                dispatcher=GatewayBackedDispatcher(survivor_runners, survivor_event_logs),
+                dispatcher=GatewayBackedDispatcher(survivor_runners, survivor_gateway, survivor_event_logs),
             )
             owner_openings = asyncio.create_task(
                 SessionOpenings(owner_openings_client, event_logs, retry_interval_s=0.05).run()
@@ -1448,6 +1456,7 @@ async def test_resumed_session_stream_does_not_end_at_previous_shutdown(
 async def test_stored_thread_stream_does_not_require_reachable_runner(
     replicas: Replicas,
     local_runners: RunnerDirectory,
+    gateway: RunnerGatewayClient,
     live_index: LiveIndex,
     event_logs: SeededEventLogStore,
     database_updates: WakeupListener,
@@ -1472,7 +1481,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
         runners=local_runners,
         event_logs=event_logs,
         content=content,
-        dispatcher=GatewayBackedDispatcher(local_runners, event_logs),
+        dispatcher=GatewayBackedDispatcher(local_runners, gateway, event_logs),
     )
     # A lost HTTP response is retryable from the committed Thread prefix even after the
     # sandbox disappears: this answer must not attempt a new runner attachment, which with the
@@ -1491,6 +1500,7 @@ async def test_stored_thread_stream_does_not_require_reachable_runner(
 
 async def test_open_and_resume_reply_before_archive_catches_up(
     local_runners: RunnerDirectory,
+    gateway: RunnerGatewayClient,
     event_logs: SeededEventLogStore,
     store: ThreadStore,
     content: ContentStore,
@@ -1505,7 +1515,7 @@ async def test_open_and_resume_reply_before_archive_catches_up(
         runners=local_runners,
         event_logs=event_logs,
         content=content,
-        dispatcher=GatewayBackedDispatcher(local_runners, event_logs),
+        dispatcher=GatewayBackedDispatcher(local_runners, gateway, event_logs),
     )
     opened = await asyncio.wait_for(bridge.create_session(SANDBOX, uuid4(), spec), timeout=10)
     thread_id = UUID(opened.session_id)

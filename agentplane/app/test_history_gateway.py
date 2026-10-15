@@ -68,12 +68,12 @@ async def test_production_bridge_archives_native_evidence_across_bounded_service
         ) as remote,
         ingest(service_history_db_url, runner),
     ):
-        directory = RunnerDirectory(live_index, remote)
+        directory = RunnerDirectory(live_index, remote.control)
         bridge = RunnerBridge(
             runners=directory,
             event_logs=event_logs,
             content=content,
-            dispatcher=GatewayBackedDispatcher(directory, event_logs),
+            dispatcher=GatewayBackedDispatcher(directory, remote, event_logs),
         )
         opened = await bridge.create_session(SANDBOX, uuid4(), spec)
         assert launches.PLATFORM_INSTRUCTIONS in opened.attached.spec.instructions
@@ -126,12 +126,12 @@ async def test_history_resume_rejects_a_recreated_sandbox_incarnation(
     async with authenticated_runner_gateway(
         cluster, runner, tmp_path / "gateway-token", database_url=service_history_db_url
     ) as remote:
-        directory = RunnerDirectory(live_index, remote)
+        directory = RunnerDirectory(live_index, remote.control)
         bridge = RunnerBridge(
             runners=directory,
             event_logs=event_logs,
             content=content,
-            dispatcher=GatewayBackedDispatcher(directory, event_logs),
+            dispatcher=GatewayBackedDispatcher(directory, remote, event_logs),
         )
         opening = await bridge.create_session(SANDBOX, uuid4(), spec)
         thread_id = UUID(opening.session_id)
@@ -156,7 +156,7 @@ async def test_stopped_service_never_falls_back_to_reachable_runner(
     async with authenticated_runner_gateway(
         cluster, runner, tmp_path / "gateway-token", database_url=service_history_db_url
     ) as remote:
-        directory = RunnerDirectory(live_index, remote)
+        directory = RunnerDirectory(live_index, remote.control)
         assert await directory.client(SANDBOX).list_sessions() == []
     # Each call to the Sandbox's runner dials its control Service anew, here with the gateway gone.
     with pytest.raises(ServiceError):
@@ -179,7 +179,7 @@ async def test_runner_proxy_lists_a_session_without_registry_lookup(
         # the app's remaining runner read through the proxy.
         await runner.open_session(str(session_id), spec, None)
 
-        summaries = await RunnerDirectory(live_index, remote).client(SANDBOX).list_sessions()
+        summaries = await RunnerDirectory(live_index, remote.control).client(SANDBOX).list_sessions()
         assert [summary.session_id for summary in summaries] == [str(session_id)]
 
 

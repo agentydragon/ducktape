@@ -48,7 +48,7 @@ from agentplane.grpc_calls import dial
 from agentplane.history_service.client import HistoryServiceClient
 from agentplane.kubernetes_watch import STALE_AFTER_CYCLES, Freshness
 from agentplane.postgres.wakeups import WakeupListener
-from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
+from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandboxes.inventory import SandboxInventory
 from agentplane.service_process import configure_logging, kubernetes_configuration
 from agentplane.subjects import ServiceAccountRef
@@ -136,16 +136,11 @@ async def async_main(settings: Settings) -> None:
             default_policy_sets=settings.default_policy_sets,
             caller=ServiceAccountRef(namespace=settings.sandbox_namespace, name="agentplane-app"),
         )
-        gateway = RunnerGatewayClient(
-            gateway_channel,
+        runner_control = SandboxControlClient(
+            control_target=settings.runner_gateway_control_target,
             token_file=settings.runner_gateway_token_file,
             request_timeout_s=settings.runner_gateway_request_timeout_s,
-            control=SandboxControlClient(
-                control_target=settings.runner_gateway_control_target,
-                token_file=settings.runner_gateway_token_file,
-                request_timeout_s=settings.runner_gateway_request_timeout_s,
-                lifecycle_timeout_s=settings.runner_gateway_lifecycle_timeout_s,
-            ),
+            lifecycle_timeout_s=settings.runner_gateway_lifecycle_timeout_s,
         )
         dispatcher = SessionDispatcherClient(
             dispatcher_channel,
@@ -177,7 +172,7 @@ async def async_main(settings: Settings) -> None:
         )
         store = ThreadStore(engine, summaries)
         event_logs = EventLogStore(engine, history_reader=history, summaries=summaries)
-        runners = RunnerDirectory(live, gateway)
+        runners = RunnerDirectory(live, runner_control)
         session_openings = SessionOpenings(session_openings_client, event_logs, retry_interval_s=1)
         bridge = RunnerBridge(runners=runners, event_logs=event_logs, content=content, dispatcher=dispatcher)
 

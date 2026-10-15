@@ -19,7 +19,7 @@ from agentplane.notification_service.sources.github.source import GitHub
 from agentplane.notification_service.store import Store
 from agentplane.runner.testing.failure_journal import pytest_runtest_makereport
 from agentplane.runner.testing.fixtures import config, endpoint, harness, model, runner, spec, workspace
-from agentplane.runner_gateway.client import RunnerGatewayClient
+from agentplane.runner_gateway.client import SandboxControlClient
 from agentplane.sandboxes.reader import SandboxReader
 from agentplane.session_dispatcher.database_migrate import RUNNER as DISPATCHER_MIGRATIONS
 from util.testing.postgres import DatabaseClones, PostgresDatabaseTemplate
@@ -76,7 +76,7 @@ def service(store: Store) -> Service:
         create_autospec(ActionServiceClient),
         create_autospec(SandboxReader, instance=True, namespace="test"),
         github=None,
-        gateway=create_autospec(RunnerGatewayClient),
+        control=create_autospec(SandboxControlClient),
         history=create_autospec(HistoryServiceClient),
         dispatcher=create_autospec(SessionDispatcherClient),
         notice_debounce=NoticeDebounceSettings(),
@@ -101,7 +101,7 @@ def restart(engine: AsyncEngine) -> Callable[[Service], Service]:
             service.actions,
             service.sandboxes,
             github,
-            gateway=service.gateway,
+            control=service.control,
             history=service.history,
             dispatcher=service.dispatcher,
             notice_debounce=service.notice_debounce,

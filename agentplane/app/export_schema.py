@@ -42,24 +42,18 @@ from agentplane.history_service.client import HistoryServiceClient
 from agentplane.history_service.fold.views import ThreadEntityView
 from agentplane.kubernetes_watch import Freshness
 from agentplane.runner.harness import Harness
-from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxControlClient
+from agentplane.runner_gateway.client import SandboxControlClient
 
 
 def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channel) -> dict[str, Any]:
     # Only routes and models shape the document; the service clients are never called.
     # Schema export never makes an RPC; the timeouts are inert placeholder arguments, not runtime defaults.
     inventory = cast(SandboxAccess, None)
-    gateway = RunnerGatewayClient(
-        channel,
+    control = SandboxControlClient(
+        control_target="schema.invalid:8080",
         token_file=Path("/schema-unused-token"),
-        command_admission_timeout_s=1,
         request_timeout_s=1,
-        control=SandboxControlClient(
-            control_target="schema.invalid:8080",
-            token_file=Path("/schema-unused-token"),
-            request_timeout_s=1,
-            lifecycle_timeout_s=1,
-        ),
+        lifecycle_timeout_s=1,
     )
     dispatcher = SessionDispatcherClient(channel, token_file=Path("/schema-unused-token"), request_timeout_s=1)
     history = HistoryServiceClient("schema.invalid:8080", token_file=Path("/schema-unused-token"), request_timeout_s=1)
@@ -76,7 +70,7 @@ def _openapi_document(api_client: k8s_client.ApiClient, channel: grpc.aio.Channe
     document: dict[str, Any] = create_app(
         inventory,
         RunnerBridge(
-            runners=RunnerDirectory(live, gateway), event_logs=event_logs, content=content, dispatcher=dispatcher
+            runners=RunnerDirectory(live, control), event_logs=event_logs, content=content, dispatcher=dispatcher
         ),
         ThreadStore(engine, summaries),
         ModelCatalog(

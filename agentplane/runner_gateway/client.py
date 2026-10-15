@@ -37,7 +37,7 @@ class SandboxControlClient:
     it refuses with UNAVAILABLE, and the caller's retry resolves the control Service again."""
 
     def __init__(
-        self, *, control_target: str, token_file: Path, request_timeout_s: float, lifecycle_timeout_s: float
+        self, *, control_target: str, token_file: Path, request_timeout_s: float, lifecycle_timeout_s: float = 310
     ) -> None:
         # A template of `{sandbox}` and `{namespace}`: `{sandbox}-control.{namespace}.svc:8080`.
         self.control_target = control_target

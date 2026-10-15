@@ -319,7 +319,10 @@ def app(
     return create_app(
         inventory,
         RunnerBridge(
-            runners=RunnerDirectory(live_index, gateway), event_logs=event_logs, content=content, dispatcher=dispatcher
+            runners=RunnerDirectory(live_index, gateway.control),
+            event_logs=event_logs,
+            content=content,
+            dispatcher=dispatcher,
         ),
         ThreadStore(engine, summaries),
         TEST_MODELS,

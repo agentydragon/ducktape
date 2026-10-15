@@ -258,13 +258,15 @@ def core_v1() -> FakeCoreV1Api:
 @pytest.fixture
 def runners(live_index: LiveIndex, gateway: RunnerGatewayClient) -> RunnerDirectory:
     """The runners `live_index` shows, dialled on a port nothing listens on."""
-    return RunnerDirectory(live_index, gateway)
+    return RunnerDirectory(live_index, gateway.control)
 
 
 @pytest.fixture
-def dispatcher(runners: RunnerDirectory, event_logs: SeededEventLogStore) -> GatewayBackedDispatcher:
+def dispatcher(
+    runners: RunnerDirectory, gateway: RunnerGatewayClient, event_logs: SeededEventLogStore
+) -> GatewayBackedDispatcher:
     """The Dispatcher interface for app tests whose scenarios need a live local runner."""
-    return GatewayBackedDispatcher(runners, event_logs)
+    return GatewayBackedDispatcher(runners, gateway, event_logs)
 
 
 @pytest.fixture

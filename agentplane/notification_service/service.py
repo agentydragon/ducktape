@@ -37,7 +37,7 @@ from agentplane.notification_service.sources.github.state import RefreshDeferred
 from agentplane.notification_service.store import ClaimLostError, ConflictError, QuotaError, Store
 from agentplane.proto import event_log_pb2, session_dispatcher_pb2
 from agentplane.proto.sandboxes_pb2 import SandboxDestination, ServiceAccount
-from agentplane.runner_gateway.client import RunnerGatewayClient, SandboxRunner
+from agentplane.runner_gateway.client import SandboxControlClient, SandboxRunner
 from agentplane.sandboxes.errors import SandboxNotFoundError
 from agentplane.sandboxes.reader import SandboxReader
 from agentplane.subjects import ServiceAccountRef
@@ -90,7 +90,7 @@ class Service:
         sandboxes: SandboxReader,
         github: GitHub | None,
         *,
-        gateway: RunnerGatewayClient,
+        control: SandboxControlClient,
         history: HistoryServiceClient,
         dispatcher: SessionDispatcherClient,
         notice_debounce: NoticeDebounceSettings,
@@ -98,7 +98,7 @@ class Service:
         operator_reader_account: str | None,
     ) -> None:
         self.store, self.actions, self.sandboxes, self.history = store, actions, sandboxes, history
-        self.gateway = gateway
+        self.control = control
         self.dispatcher = dispatcher
         self.github = github
         self.operator_reader_account = operator_reader_account
@@ -116,7 +116,7 @@ class Service:
             raise StaleDestinationError("uid_changed")
         if sandbox.service_account != ServiceAccount(namespace=owner.namespace, name=owner.name):
             raise OwnerMismatchError
-        return self.gateway.runner(
+        return self.control.runner(
             SandboxDestination(sandbox=destination.name, sandbox_uid=destination.uid, owner=sandbox.service_account)
         )
 

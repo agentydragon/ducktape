@@ -9,6 +9,7 @@ from agentplane.app.threads.dispatcher_client import SessionDispatcherClient
 from agentplane.app.threads.events.event_log import EventLogStore
 from agentplane.app.threads.runner_directory import RunnerDirectory
 from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.runner_gateway.client import RunnerGatewayClient
 
 
 class GatewayBackedDispatcher(SessionDispatcherClient):
@@ -20,8 +21,9 @@ class GatewayBackedDispatcher(SessionDispatcherClient):
     separate service/client tests.
     """
 
-    def __init__(self, runners: RunnerDirectory, event_logs: EventLogStore) -> None:
+    def __init__(self, runners: RunnerDirectory, gateway: RunnerGatewayClient, event_logs: EventLogStore) -> None:
         self.runners = runners
+        self.gateway = gateway
         self.event_logs = event_logs
         self.dispatches: dict[str, session_dispatcher_pb2.Dispatch] = {}
         self.openings: dict[str, session_dispatcher_pb2.SessionOpening] = {}
@@ -31,7 +33,7 @@ class GatewayBackedDispatcher(SessionDispatcherClient):
         self, *, sandbox: str, session_id: str, command: command_pb2.Command
     ) -> session_dispatcher_pb2.Dispatch:
         runner = self.runners.client(sandbox)
-        admission = await self.runners.gateway.command(runner.destination, session_id, command)
+        admission = await self.gateway.command(runner.destination, session_id, command)
         operation = {
             "submit_input": session_dispatcher_pb2.OPERATION_SUBMIT_INPUT,
             "change_model": session_dispatcher_pb2.OPERATION_CHANGE_MODEL,

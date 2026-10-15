@@ -67,7 +67,7 @@ notice_debounce:
     assert settings.notice_debounce == NoticeDebounceSettings(quiet_seconds=3, max_wait_seconds=15)
     assert str(settings.actions.url) == "http://actions/"
     assert settings.actions.token_file == Path("/tokens/actions")
-    assert settings.runner_gateway.command_admission_timeout_s == 20
+    assert settings.runner_gateway.target == "gateway:8080"
     assert settings.session_dispatcher == SessionDispatcherSettings(
         target="dispatcher:8080", token_file=Path("/tokens/dispatcher"), request_timeout_s=15
     )
@@ -77,18 +77,24 @@ notice_debounce:
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_QUOTAS__ENTRIES_PER_INBOX", "750")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_ACTIONS__URL", "http://overridden-actions")
     monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_NOTICE_DEBOUNCE__QUIET_SECONDS", "0")
-    monkeypatch.setenv("AGENTPLANE_NOTIFICATIONS_RUNNER_GATEWAY__COMMAND_ADMISSION_TIMEOUT_S", "22")
     settings = Settings(_cli_parse_args=False)
     assert settings.quotas == QuotaSettings(
         inboxes_per_account=18, active_subscriptions_per_inbox=36, entries_per_inbox=750
     )
     assert settings.notice_debounce == NoticeDebounceSettings(quiet_seconds=0, max_wait_seconds=15)
     assert str(settings.actions.url) == "http://overridden-actions/"
-    assert settings.runner_gateway.command_admission_timeout_s == 22
     with settings_file.open("a") as file:
         file.write("unknown_setting: true\n")
     with pytest.raises(ValidationError, match="Extra inputs"):
         Settings(_cli_parse_args=False)
+
+
+def test_unused_gateway_api_target_is_optional_during_rollout(settings_file: Path) -> None:
+    settings_file.write_text(settings_file.read_text().replace("  target: gateway:8080\n", ""))
+
+    settings = Settings(database_url="postgresql://unused", _cli_parse_args=False)
+
+    assert settings.runner_gateway.target is None
 
 
 def test_dispatcher_configuration_is_required_and_complete(settings_file: Path) -> None:
