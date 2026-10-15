@@ -1,12 +1,11 @@
 # Experimental single-model llama.cpp router on rugged's Intel Arc iGPU.
-# Keep disabled until the separate router build passes sequential load/eviction
-# and tool-call checks; production Ollama remains the default backend.
-# Model presets preserve the six existing OpenCode/LiteLLM client IDs as explicit
-# aliases. Qwen3.5's 262,144-token profile is experimental pending long-context
-# verification. No draft model is materialized, so standalone llama-server uses
-# its `spec-type=none` default rather than Ollama's MTP draft path.
-# Before switching backends, use the declared Ollama prefetch configuration to
-# cache all six unique base tags. The router reads that cache without changing it.
+# Five base profiles preserve the existing 32k OpenCode/LiteLLM client IDs;
+# longer-context aliases below remain experimental pending further qualification.
+# Qwen3.5's 262,144-token profile is experimental pending long-context verification.
+# No draft model is materialized, so standalone llama-server uses its
+# `spec-type=none` default rather than Ollama's MTP draft path.
+# Model artifacts are pinned by digest in llama_router_artifacts.json and are
+# provisioned into /var/lib/rugged-llm/models before the router starts.
 {
   config,
   lib,
@@ -18,57 +17,56 @@ let
   cfg = config.ducktape.localLlm.llamaRouter;
   ollamaHomeDir = "/var/lib/local-llm/ollama-upstream";
   ollamaModelsDir = "${ollamaHomeDir}/models";
-  routerStateDir = "/var/lib/rugged-llama-router";
-  routerModelsDir = "${routerStateDir}/models";
+  ollamaBlobsDir = "${ollamaModelsDir}/blobs";
+  modelStoreStateDir = "/var/lib/rugged-llm";
+  modelStoreDir = "${modelStoreStateDir}/models";
+  modelBlobsDir = "${modelStoreDir}/blobs";
   port = 11436;
 
-  modelPreparation = pkgs.writeShellApplication {
-    name = "prepare-rugged-llama-router-models";
+  artifactManifest = builtins.fromJSON (builtins.readFile ./llama_router_artifacts.json);
+  artifactManifestFile = pkgs.writeText "rugged-llama-router-artifacts.json" (
+    builtins.readFile ./llama_router_artifacts.json
+  );
+  artifactBlobPath =
+    artifactId: "${modelBlobsDir}/sha256-${artifactManifest.artifacts.${artifactId}.sha256}";
+
+  modelProvisioner = pkgs.writeShellApplication {
+    name = "provision-rugged-llama-router-models";
     runtimeInputs = [
+      pkgs.aria2
       pkgs.coreutils
       pkgs.jq
     ];
-    text = builtins.readFile ./prepare_llama_router_models.sh;
+    text = builtins.readFile ./provision_llama_router_models.sh;
   };
 
-  modelPresets = [
-    {
-      section = "rugged-qwen3-4b-instruct-2507-q4_K_M";
-      alias = "qwen3:4b-instruct-2507-q4_K_M";
-      source = "rugged-qwen3-4b-instruct-2507-q4_K_M";
-      hasProjector = false;
-    }
-    {
-      section = "rugged-gemma4-e2b-it-qat";
-      alias = "gemma4:e2b-it-qat";
-      source = "rugged-gemma4-e2b-it-qat";
-      hasProjector = true;
-    }
-    {
-      section = "rugged-gemma4-e4b";
-      alias = "gemma4:e4b";
-      source = "rugged-gemma4-e4b";
-      hasProjector = true;
-    }
-    {
-      section = "rugged-qwen2.5-coder-7b";
-      alias = "qwen2.5-coder:7b";
-      source = "rugged-qwen2.5-coder-7b";
-      hasProjector = false;
-    }
-    {
-      section = "rugged-qwen3-8b";
-      alias = "qwen3:8b";
-      source = "rugged-qwen3-8b";
-      hasProjector = false;
-    }
-  ];
-  baseModelPresets = lib.concatMapStringsSep "\n" (profile: ''
+  modelPresets = lib.mapAttrsToList (section: profile: {
+    inherit section;
+    inherit (profile) alias;
+    modelArtifact = profile.model_artifact;
+    projectorArtifact = profile.projector_artifact or null;
+  }) artifactManifest.profiles;
+  profilePreset = profile: ''
     [${profile.section}]
     alias = ${profile.alias}
-    model = ${routerModelsDir}/${profile.source}/model.gguf
-    ${lib.optionalString profile.hasProjector "mmproj = ${routerModelsDir}/${profile.source}/mmproj.gguf"}
-  '') modelPresets;
+    model = ${artifactBlobPath profile.modelArtifact}
+    ${lib.optionalString (
+      profile.projectorArtifact != null
+    ) "mmproj = ${artifactBlobPath profile.projectorArtifact}"}
+  '';
+  baseModelPresets = lib.concatMapStringsSep "\n" profilePreset (
+    builtins.filter (
+      profile:
+      profile.section != "rugged-gemma4-e2b-it-qat-long-128k-b128"
+      && profile.section != "rugged-qwen35-0.8b-256k"
+    ) modelPresets
+  );
+  gemmaLongProfile = builtins.head (
+    builtins.filter (profile: profile.section == "rugged-gemma4-e2b-it-qat-long-128k-b128") modelPresets
+  );
+  qwenLongProfile = builtins.head (
+    builtins.filter (profile: profile.section == "rugged-qwen35-0.8b-256k") modelPresets
+  );
 
   modelPreset = pkgs.writeText "rugged-llama-router-models.ini" ''
     version = 1
@@ -89,18 +87,12 @@ let
 
     ${baseModelPresets}
 
-    [rugged-gemma4-e2b-it-qat-long-128k-b128]
-    alias = gemma4:e2b-it-qat-long-128k-b128
-    model = ${routerModelsDir}/rugged-gemma4-e2b-it-qat-long-128k-b128/model.gguf
-    mmproj = ${routerModelsDir}/rugged-gemma4-e2b-it-qat-long-128k-b128/mmproj.gguf
+    ${profilePreset gemmaLongProfile}
     ctx-size = 131072
     batch-size = 128
     ubatch-size = 128
 
-    [rugged-qwen35-0.8b-256k]
-    alias = qwen3.5:0.8b-long-256k-b256
-    model = ${routerModelsDir}/rugged-qwen35-0.8b-256k/model.gguf
-    mmproj = ${routerModelsDir}/rugged-qwen35-0.8b-256k/mmproj.gguf
+    ${profilePreset qwenLongProfile}
     ctx-size = 262144
     batch-size = 256
     ubatch-size = 256
@@ -136,29 +128,68 @@ in
       extraGroups = [ "render" ];
     };
 
-    environment.etc."llama-router/models.ini" = {
-      source = modelPreset;
-      mode = "0444";
+    environment.etc = {
+      "llama-router/models.ini" = {
+        source = modelPreset;
+        mode = "0444";
+      };
+      "llama-router/artifacts.json" = {
+        source = artifactManifestFile;
+        mode = "0444";
+      };
+    };
+
+    systemd.services.rugged-llama-model-provision = {
+      description = "Verify and provision pinned GGUF artifacts for rugged's llama.cpp router";
+      restartTriggers = [
+        artifactManifestFile
+        modelProvisioner
+      ];
+      serviceConfig = {
+        Type = "oneshot";
+        RemainAfterExit = true;
+        User = "ollama";
+        Group = "ollama";
+        StateDirectory = "rugged-llm";
+        StateDirectoryMode = "0750";
+        UMask = "0077";
+        ExecStart = lib.escapeShellArgs [
+          (lib.getExe modelProvisioner)
+          "/etc/llama-router/artifacts.json"
+          modelStoreDir
+          ollamaBlobsDir
+        ];
+        TimeoutStartSec = "8h";
+        TimeoutStopSec = "30s";
+        ProtectSystem = "strict";
+        ProtectHome = true;
+        PrivateTmp = true;
+        NoNewPrivileges = true;
+      };
+      environment.SSL_CERT_FILE = "${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt";
     };
 
     systemd.services.rugged-llama-router = {
       description = "Experimental one-model-at-a-time llama.cpp router for rugged's Arc iGPU";
       wantedBy = [ "multi-user.target" ];
-      after = [ "local-fs.target" ];
-      unitConfig.RequiresMountsFor = ollamaModelsDir;
+      requires = [ "rugged-llama-model-provision.service" ];
+      after = [
+        "local-fs.target"
+        "rugged-llama-model-provision.service"
+      ];
+      restartTriggers = [
+        artifactManifestFile
+        modelPreset
+      ];
+      unitConfig.RequiresMountsFor = modelStoreDir;
       serviceConfig = {
         Type = "simple";
         User = "ollama";
         Group = "ollama";
         SupplementaryGroups = [ "render" ];
-        StateDirectory = "rugged-llama-router";
+        StateDirectory = "rugged-llm";
         StateDirectoryMode = "0750";
         UMask = "0077";
-        ExecStartPre = lib.escapeShellArgs [
-          (lib.getExe modelPreparation)
-          ollamaModelsDir
-          routerStateDir
-        ];
         ExecStart = lib.escapeShellArgs [
           "${llama-router}/bin/llama-server"
           "--host"
@@ -177,7 +208,7 @@ in
         ProtectHome = true;
         PrivateTmp = true;
         NoNewPrivileges = true;
-        ReadOnlyPaths = [ ollamaModelsDir ];
+        ReadOnlyPaths = [ modelStoreDir ];
       };
     };
   };

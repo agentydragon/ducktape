@@ -124,16 +124,26 @@ The project toolchain and dependencies must also be available locally. The
 verified task uses a frozen Python standard-library test suite; this does not
 establish that ducktape's usual remote Bazel workflow works without a network.
 
-The router remains disabled by default. To prepare its cache, first activate the
-host configuration with Ollama enabled; the declared prefetch unit ensures all
-six unique base tags are cached: Qwen3 4B, Gemma E2B, Gemma E4B, Qwen2.5-Coder
-7B, Qwen3 8B, and Qwen3.5 0.8B. The Gemma 128k alias shares the E2B base.
-Router activation materializes links to those existing Ollama blobs while
-keeping the blob cache read-only. It does not download models, change blob
-permissions, or require manual `ollama pull` commands. The router reuses the
-persistent `ollama` service identity because the cache files are created with a
-restrictive umask. Switch Ollama to the mutually-exclusive router on port 11436
-only after the prefetch generation has activated and all six bases are present.
+The `ducktape.localLlm.llamaRouter.enable` module option defaults off; rugged's
+host configuration opts in and disables its Ollama backend on the shared port.
+Before the router starts, a one-shot provisioner reads the versioned Nix-store
+manifest and verifies nine pinned artifacts (six model weights and three
+projectors, about 24.25 GB total) under `/var/lib/rugged-llm/models/blobs`.
+Each artifact is pinned by SHA-256 and byte size. A matching blob in the old
+Ollama cache is an optional import source; it is verified and hard-linked when
+possible, or copied, without modifying its contents. Otherwise aria2 downloads into a staging directory,
+resumes interrupted transfers, verifies the full blob, and atomically promotes
+it to the content-addressed cache. Router presets point directly at those
+immutable digest paths. The provisioner and router reuse the static `ollama`
+service identity; the router sees the model store read-only.
+
+A complete cache hit is locally reverified and does not invoke aria2 or require
+network access. A cold or incomplete cache needs network access during
+activation; the provisioner has bounded aria2 retries and an eight-hour systemd
+startup limit. It has no `network-online.target` dependency, so a complete cache
+can start offline. This replaces the earlier two-activation plan that required
+first populating all six bases through Ollama. No live host activation was
+performed as part of this change.
 
 When `ducktape.localLlm.llamaRouter.enable` is true, the offline OpenCode model
 picker includes the six existing entries plus `Qwen3.5 0.8B Q8 (256k router
@@ -166,9 +176,9 @@ tool-choice compatibility. This run did not exercise Gemma or Qwen3.5 presets,
 sequential model eviction, or long-context processing. Available host memory
 fell below the 8 GiB guard during the Qwen4 smoke; the router was stopped and no
 router process or iGPU allocation remained, but available memory stayed below
-the guard amid concurrent host workloads. The optional backend is therefore
-kept disabled; do not switch the host until all picker profiles needed in use
-have passed runtime and memory checks.
+the guard amid concurrent host workloads. At that point I kept the optional
+backend disabled pending runtime and memory checks. Later short sequential
+checks are recorded below; they do not qualify long-context quality.
 
 After memory recovered, a follow-up on the same standalone build completed
 Gemma's 131,072-context tiny request and switched directly to Qwen3.5 0.8B at
@@ -195,15 +205,17 @@ The test router and its listener were stopped afterward. Short router checks
 now cover the default Qwen3 4B, Gemma 128k, E4B 32k, and Qwen3.5 256k profiles;
 the other picker profiles and long inputs still need standalone qualification.
 
-As of the follow-up, the live host still had its older Ollama generation, only
-Qwen3 4B and Gemma E2B cached, and nginx failed. Activating the merged Ollama
-generation is required to populate all six bases and apply the nginx secret
-ownership fix before a router switch. NixOS activation also installs the inline
-Home Manager launcher. No live host activation or authenticated cluster
-end-to-end verification was performed in these router checks.
+At the time of the follow-up checks, the live host still had its older Ollama
+generation, only Qwen3 4B and Gemma E2B cached, and nginx failed. The new
+provisioner removes the requirement to activate Ollama first to populate the
+router's cache. The already-merged nginx secret ownership fix is in the same
+NixOS generation and will apply on its normal activation. NixOS activation also
+installs the inline Home Manager launcher. No live host activation or
+authenticated cluster end-to-end verification was performed in these router
+checks.
 
-The new base-tag prefetch is only cache preparation: it does not qualify a
-context size or establish coding quality for Qwen3.5.
+The retained Ollama base-tag prefetch is only fallback-cache preparation: it
+does not qualify a context size or establish coding quality for Qwen3.5.
 
 The tool-discovery failure came from combining deprecated `agent.tools` settings
 with permissions: the resulting trailing wildcard denial suppressed all tools.

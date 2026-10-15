@@ -1,0 +1,84 @@
+{
+  "version": 1,
+  "artifacts": {
+    "qwen3-4b-model": {
+      "url": "https://registry.ollama.ai/v2/library/qwen3/blobs/sha256:85e4a5b7b8ef0e48af0e8658f5aaab9c2324c76c1641493f4d1e25fce54b18b9",
+      "sha256": "85e4a5b7b8ef0e48af0e8658f5aaab9c2324c76c1641493f4d1e25fce54b18b9",
+      "size_bytes": 2497280480
+    },
+    "gemma-e2b-model": {
+      "url": "https://registry.ollama.ai/v2/library/gemma4/blobs/sha256:3646b4c147cd235a44d91df1546d3b7d8e29b547dbe4e1f80856419aa455e6fd",
+      "sha256": "3646b4c147cd235a44d91df1546d3b7d8e29b547dbe4e1f80856419aa455e6fd",
+      "size_bytes": 3349514112
+    },
+    "gemma-e2b-projector": {
+      "url": "https://registry.ollama.ai/v2/library/gemma4/blobs/sha256:58c187648007cab392bd5678b87e862c3e8794017deb945feea2cf256195e96a",
+      "sha256": "58c187648007cab392bd5678b87e862c3e8794017deb945feea2cf256195e96a",
+      "size_bytes": 986833312
+    },
+    "gemma-e4b-model": {
+      "url": "https://registry.ollama.ai/v2/library/gemma4/blobs/sha256:370c2879f17648d337b0ab4e208fdce348e24d1060064e93d7645daafd56d39c",
+      "sha256": "370c2879f17648d337b0ab4e208fdce348e24d1060064e93d7645daafd56d39c",
+      "size_bytes": 5493439296
+    },
+    "gemma-e4b-projector": {
+      "url": "https://registry.ollama.ai/v2/library/gemma4/blobs/sha256:4cb21b935cd7e79daed76f3154e82f2f160ad7a9d8d22cb5f14c7b93d5fb38ba",
+      "sha256": "4cb21b935cd7e79daed76f3154e82f2f160ad7a9d8d22cb5f14c7b93d5fb38ba",
+      "size_bytes": 991552256
+    },
+    "qwen25-coder-7b-model": {
+      "url": "https://registry.ollama.ai/v2/library/qwen2.5-coder/blobs/sha256:60e05f2100071479f596b964f89f510f057ce397ea22f2833a0cfe029bfc2463",
+      "sha256": "60e05f2100071479f596b964f89f510f057ce397ea22f2833a0cfe029bfc2463",
+      "size_bytes": 4683074048
+    },
+    "qwen3-8b-model": {
+      "url": "https://registry.ollama.ai/v2/library/qwen3/blobs/sha256:a3de86cd1c132c822487ededd47a324c50491393e6565cd14bafa40d0b8e686f",
+      "sha256": "a3de86cd1c132c822487ededd47a324c50491393e6565cd14bafa40d0b8e686f",
+      "size_bytes": 5225374496
+    },
+    "qwen35-0.8b-model": {
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:889ea3b9143cdc32146c7d530ce5f3d452ec18069086f6f4167ce9ae72a9691f",
+      "sha256": "889ea3b9143cdc32146c7d530ce5f3d452ec18069086f6f4167ce9ae72a9691f",
+      "size_bytes": 811843520
+    },
+    "qwen35-0.8b-projector": {
+      "url": "https://registry.ollama.ai/v2/library/qwen3.5/blobs/sha256:5ba2eb9bf28c5b5ff7a705f07bd9269f0f2dbd6cb2b4c46d5f98ed8d15d18883",
+      "sha256": "5ba2eb9bf28c5b5ff7a705f07bd9269f0f2dbd6cb2b4c46d5f98ed8d15d18883",
+      "size_bytes": 207346304
+    }
+  },
+  "profiles": {
+    "rugged-qwen3-4b-instruct-2507-q4_K_M": {
+      "alias": "qwen3:4b-instruct-2507-q4_K_M",
+      "model_artifact": "qwen3-4b-model"
+    },
+    "rugged-gemma4-e2b-it-qat": {
+      "alias": "gemma4:e2b-it-qat",
+      "model_artifact": "gemma-e2b-model",
+      "projector_artifact": "gemma-e2b-projector"
+    },
+    "rugged-gemma4-e4b": {
+      "alias": "gemma4:e4b",
+      "model_artifact": "gemma-e4b-model",
+      "projector_artifact": "gemma-e4b-projector"
+    },
+    "rugged-qwen2.5-coder-7b": {
+      "alias": "qwen2.5-coder:7b",
+      "model_artifact": "qwen25-coder-7b-model"
+    },
+    "rugged-qwen3-8b": {
+      "alias": "qwen3:8b",
+      "model_artifact": "qwen3-8b-model"
+    },
+    "rugged-gemma4-e2b-it-qat-long-128k-b128": {
+      "alias": "gemma4:e2b-it-qat-long-128k-b128",
+      "model_artifact": "gemma-e2b-model",
+      "projector_artifact": "gemma-e2b-projector"
+    },
+    "rugged-qwen35-0.8b-256k": {
+      "alias": "qwen3.5:0.8b-long-256k-b256",
+      "model_artifact": "qwen35-0.8b-model",
+      "projector_artifact": "qwen35-0.8b-projector"
+    }
+  }
+}
