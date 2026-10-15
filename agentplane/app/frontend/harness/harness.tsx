@@ -2845,6 +2845,10 @@ class HarnessEventSource extends EventTarget {
       this.dispatchEvent(new MessageEvent("snapshot", { data: JSON.stringify(snapshot) }));
       return;
     }
+    if (/^\/sandboxes\/[^/]+\/console\/stream$/.test(url.pathname)) {
+      this.dispatchEvent(new MessageEvent("output", { data: JSON.stringify(btoa("guest console output\r\n")) }));
+      return;
+    }
     if (url.pathname === "/push/subscriptions/stream") {
       const browsers = flags.has("pushBrowserAdded")
         ? [{ endpoint: "https://push.example/browser", user_agent: "Second browser", created_at: ago(0) }]

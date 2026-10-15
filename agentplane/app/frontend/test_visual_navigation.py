@@ -67,6 +67,23 @@ async def test_current_sandbox_highlight(view: VisualPage, app: AgentplaneFixtur
     await view.capture(target=page.locator("#app"))
 
 
+async def test_vm_console_to_status_tab(view: VisualPage, app: AgentplaneFixture) -> None:
+    """Leaving the live VM console for Status unmounts its stream and keeps the page mounted."""
+    await app.mount_app("/sandboxes/ready-sandbox?tab=console")
+    page = view.page
+    await expect(page.get_by_role("tab", name="Console")).to_have_attribute("aria-selected", "true")
+    await expect(page.get_by_label("Console output")).to_be_visible()
+    await expect(page.get_by_label("Console output")).to_contain_text("guest console output")
+    await view.check(context="console attached before changing tabs")
+    await view.capture(name="vm-console-before-status", target=page.locator("#app"))
+
+    await page.get_by_role("tab", name="Status").click()
+    await expect(page.get_by_role("tab", name="Status")).to_have_attribute("aria-selected", "true")
+    await expect(page.get_by_role("heading", name="Status")).to_be_visible()
+    await view.check(context="after changing from VM console to Status")
+    await view.capture(name="vm-console-to-status", target=page.locator("#app"))
+
+
 @DESKTOP_AND_MOBILE
 async def test_debug_tools_in_sidebar_footer(view: VisualPage, app: AgentplaneFixture) -> None:
     await app.mount_thread(IDLE_THREAD)
