@@ -29,7 +29,6 @@ import type { InboxNoticeState } from "../thread_notices";
 import { EventSchema, ItemKind, RecoveryDisposition, TurnStatus } from "../../../proto/event_pb";
 import { CommandSchema } from "../../../proto/command_pb";
 import { EventEntrySchema } from "../../../proto/event_log_pb";
-import { Harness } from "../../../proto/runner_pb";
 import { DisclosureVisual } from "./disclosure_visual";
 import { LocalCommands } from "../threads/local_commands";
 import { streamRegistry } from "../stream_status";
