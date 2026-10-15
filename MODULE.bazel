@@ -664,7 +664,7 @@ types.requirements(
     #
     # Cleaned-up stubs (no longer need exclusion):
     # - sqlalchemy-stubs, types-sqlalchemy: removed from pyproject.toml
-    #   (SQLAlchemy 2.0+ provides types via sqlalchemy[mypy])
+    #   (SQLAlchemy 2.0+ ships inline typing)
     # - types-jinja2: removed from pyproject.toml (jinja2 ships py.typed)
     # - types-toml: removed from pyproject.toml (we use tomllib, not toml)
     # - types-paramiko, types-pytz: runtime deps added to pyproject.toml
