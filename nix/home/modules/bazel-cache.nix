@@ -1,16 +1,12 @@
-# Shared Bazel disk cache across local worktrees and CLI agent sessions.
+# Shared Bazel caches across local worktrees and CLI agent sessions.
 #
 # Each Bazel output base is single-owner (one per worktree/session, locked, and
 # not shareable). Bazel already defaults output_base, output_user_root, and the
 # downloaded-archive repository_cache into ~/.cache/bazel/_bazel_$USER. This
 # module adds the local action cache/CAS for local and no-RBE debugging builds.
-#
-# Deliberately does not share repo_contents_cache across output bases: fetched
-# trees can contain absolute symlinks into their producing output base, so a
-# shared entry breaks every consumer once that base is GC'd. Bazel 8.6 leaves
-# repo_contents_cache empty (disabled) by default, so no flag is needed to keep
-# it off — this module simply never enables it. See
-# devinfra/docs/bazel_worktree_cache_sharing.md.
+# Bazel 9 also has a local repo_contents_cache; hosts can pin its path and GC
+# policy here. See devinfra/docs/bazel_worktree_cache_sharing.md for its scope
+# and the remaining symlink-safety follow-up.
 #
 # The bazelisk binary cache needs no wiring here: it already defaults to the
 # user-global ~/.cache/bazelisk, and its Claude-sandbox write grant lives with
@@ -25,6 +21,7 @@ let
   bazelCacheRoot = "${config.xdg.cacheHome}/bazel";
   bazelOutputUserRoot = "${bazelCacheRoot}/_bazel_${config.home.username}";
   bazelDiskCache = "${bazelOutputUserRoot}/cache/disk";
+  bazelRepositoryContentsCache = "${bazelOutputUserRoot}/cache/repos/v1/contents";
 in
 {
   options.ducktape.bazelCache = {
@@ -39,6 +36,28 @@ in
         ~/.cache/bazel/_bazel_$USER/cache/disk shares a smaller SSD with the output bases.
       '';
     };
+
+    repoContentsCache = lib.mkOption {
+      type = lib.types.nullOr lib.types.str;
+      default = null;
+      example = bazelRepositoryContentsCache;
+      description = ''
+        Optional explicit path for Bazel's --repo_contents_cache. Null leaves
+        Bazel's version-specific default unchanged.
+      '';
+    };
+
+    repoContentsCacheGcMaxAge = lib.mkOption {
+      type = lib.types.str;
+      default = "14d";
+      description = "Value for Bazel's --repo_contents_cache_gc_max_age.";
+    };
+
+    repoContentsCacheGcIdleDelay = lib.mkOption {
+      type = lib.types.str;
+      default = "5m";
+      description = "Value for Bazel's --repo_contents_cache_gc_idle_delay.";
+    };
   };
 
   config = lib.mkIf cfg.enable {
@@ -48,10 +67,18 @@ in
       build --disk_cache=${bazelDiskCache}
       build --experimental_disk_cache_gc_max_size=${cfg.diskCacheGcMaxSize}
       build --experimental_disk_cache_gc_max_age=14d
+      ${lib.optionalString (cfg.repoContentsCache != null) ''
+        common --repo_contents_cache=${cfg.repoContentsCache}
+        common --repo_contents_cache_gc_max_age=${cfg.repoContentsCacheGcMaxAge}
+        common --repo_contents_cache_gc_idle_delay=${cfg.repoContentsCacheGcIdleDelay}
+      ''}
     '';
 
     home.activation.bazelCacheDirs = lib.hm.dag.entryAfter [ "writeBoundary" ] ''
       mkdir -p '${bazelDiskCache}'
+      ${lib.optionalString (cfg.repoContentsCache != null) ''
+        mkdir -p '${cfg.repoContentsCache}'
+      ''}
     '';
   };
 }

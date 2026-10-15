@@ -20,6 +20,9 @@ expensive content cache underneath separate output bases:
   all Bazel state under one mount, but each worktree still receives a separate
   hashed output base.
 - `--repository_cache`: downloaded external repository archives.
+- `--repo_contents_cache`: fetched external repository trees that Bazel can
+  reuse across workspaces when their repository rules declare reproducible
+  results.
 - `--disk_cache`: local action cache/CAS. This is less important when `--config=rbe`
   uses remote execution and remote cache, but it helps local builds, no-RBE
   debugging, and actions that are not downloaded from the remote cache.
@@ -28,13 +31,22 @@ expensive content cache underneath separate output bases:
 Remote execution/cache already shares action work across machines. It does not
 share local analysis state between worktrees.
 
-Do not enable `--repo_contents_cache`. Unlike the archive-only repository
-cache, it snapshots complete fetched trees. Repository rules can put absolute
-symlinks in those trees: rules_python's hermetic `python` link and Gazelle's
-helper repositories have both pointed back into the output base that produced
-the cache entry. Reusing that entry makes every consumer depend on the
-producer's output base; deleting the producer then yields dangling links and
-repository-fetch failures. Bazel `8.6.0` does not relocate those links.
+Bazel 9.2 defaults `--repo_contents_cache` to `<repository_cache>/contents`,
+with a 14-day maximum age and a 5-minute idle delay. Wyrm2 now pins that default
+path explicitly in its Home Manager config; it lands on the existing 100G HDD
+mount alongside downloaded archives. This cache has age-based GC only, with no
+size ceiling, so monitor the mount's free space. Bazel 9.2 already uses this
+default path unless overridden; Wyrm2's explicit setting pins the location and
+GC policy.
+
+The repo contents cache makes only eligible repository trees shareable; it
+does not make output bases themselves shareable. Earlier local investigation
+found repository trees containing absolute symlinks into their producing
+output base (including rules_python's hermetic `python` link and Gazelle helper
+repositories). Bazel's repo contents cache uses repository metadata to decide
+which trees are reusable, but those specific symlink cases have not yet been
+revalidated on Bazel 9.2. The follow-up tracks checking them and deciding
+whether to explicitly configure the cache on other hosts.
 
 ## Output-base Lifecycle
 
@@ -102,15 +114,16 @@ same filesystem.
 ## Implementation
 
 Lives in the shared `nix/home/modules/bazel-cache.nix` module (option
-`ducktape.bazelCache`), enabled by both `rugged` and `wyrm2`. Bazel already
-defaults `--output_user_root`, per-worktree `--output_base`, and the archive
-`--repository_cache` into the shared `~/.cache/bazel/_bazel_$USER` tree. The
-module enables only the action `--disk_cache`; it never sets
-`--repo_contents_cache`, which Bazel leaves disabled by default. The one per-host knob is
-`diskCacheGcMaxSize` — `wyrm2` lowers it from the `200G` default because its
-`cache/disk` shares a 150G SSD with the per-worktree output bases. The module
-owns the exact rc flags and directory-creation wiring; this doc does not restate
-them.
+`ducktape.bazelCache`), enabled by both `rugged` and `wyrm2`. Bazel defaults
+`--output_user_root`, per-worktree `--output_base`, and the archive
+`--repository_cache` into `~/.cache/bazel/_bazel_$USER`. Bazel 9 also defaults
+the repo contents cache to a `contents` subdirectory of the repository cache.
+The module pins that path and its GC settings only when a host sets
+`repoContentsCache`; Wyrm2 does so, while other hosts retain Bazel's own
+defaults. The module owns the exact rc flags and directory-creation wiring.
+The other per-host knob is `diskCacheGcMaxSize` — Wyrm2 lowers it from the
+`200G` default because its `cache/disk` shares a 150G SSD with per-worktree
+output bases.
 
 For long local debugging loops, consider adding this temporarily rather than
 globally:

@@ -189,9 +189,8 @@ non-Docker live target that needs credentials or services from the actual host.
 `bazelisk run` and `bb run` build through RBE but execute the requested binary
 on the caller.
 
-Local cache layout — including why the shared host cache deliberately does not
-share `--repo_contents_cache` across output bases — is owned by the User layer;
-see <bazel_worktree_cache_sharing.md>.
+Local cache layout and `--repo_contents_cache` policy are owned by the User
+layer; see <bazel_worktree_cache_sharing.md>.
 
 ## Verification
 
