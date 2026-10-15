@@ -220,7 +220,6 @@ py_library(
         "//haku/console/identity:authorization",
         "//util/testing:postgres",
         "//util/testing:postgres_fixtures",
-        "@ducktape_haku//haku/console:tool_calls",
         "@pypi//fastapi",
         # SessionMiddleware (starlette) signs the operator session cookie with itsdangerous;
         # operator_session_cookie mints one for tests.

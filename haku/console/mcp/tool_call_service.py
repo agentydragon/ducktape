@@ -18,13 +18,13 @@ from typing import Any, Protocol
 from uuid import UUID
 
 from haku.console.auto_approval.registry import AutoApprovalPolicyRegistry, PolicyDenial, auto_approve_tool_call
-from haku.console.mcp.principal import RequestPrincipal
 from haku.console.mcp.execution import (
     AgentMcpExecutionCaller,
     McpExecutionCaller,
     McpExecutionContext,
     OperatorMcpExecutionCaller,
 )
+from haku.console.mcp.principal import RequestPrincipal
 from haku.console.mcp_config import InProcessServers, McpServerEntry, NoCredential, _server_entry
 from haku.console.settings import Settings
 from haku.console.tool_call_actor import AgentActor, OperatorActor, RuntimeActor

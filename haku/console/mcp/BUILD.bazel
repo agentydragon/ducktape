@@ -17,6 +17,7 @@ py_test(
     deps = [
         ":principal",
         "//:conftest",
+        "//haku/console:conftest",
         "//haku/console:tool_call_actor",
         "@pypi//pydantic",
         "@pypi//pytest",
@@ -39,11 +40,11 @@ py_library(
     srcs = ["tool_call_service.py"],
     deps = [
         ":execution",
+        ":principal",
         "//haku/console:mcp_config",
         "//haku/console:settings",
         "//haku/console:tool_call_actor",
         "//haku/console/auto_approval:registry",
-        ":principal",
         "@ducktape_haku//haku/console:tool_calls",
     ],
 )
@@ -102,13 +103,13 @@ py_test(
     deps = [
         ":approval",
         ":execution",
+        ":principal",
         ":tool_call_service",
         "//:conftest",
         "//haku/console:conftest",
         "//haku/console:database_schema",
         "//haku/console:mcp_config",
         "//haku/console:tool_call_actor",
-        ":principal",
         "//haku/console/identity:agent",
         "//haku/console/identity:operator_identity_store",
         "@ducktape_haku//haku/console:tool_calls",

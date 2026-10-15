@@ -19,11 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
 from haku.console.conftest import console_settings, write_config
 from haku.console.database_schema import Agent, AgentNameReservation, CredentialBinding, StaticCredential
-from haku.console.mcp.principal import RequestPrincipal
 from haku.console.identity.agent import AgentStatus, CredentialBindingStatus, CredentialKind
 from haku.console.identity.operator_identity_store import PostgresOperatorIdentityStore
 from haku.console.mcp.approval import PostgresToolCallLedger
 from haku.console.mcp.execution import AgentMcpExecutionCaller, McpExecutionContext
+from haku.console.mcp.principal import RequestPrincipal
 from haku.console.mcp.tool_call_service import (
     AgentActorRequiredError,
     OperatorActorRequiredError,

@@ -25,5 +25,4 @@ describe("generated MCP tool result schemas", () => {
       mcpToolResultSchema("google_calendar", "list_events").safeParse({ events: [result], summary: "Family" }).success
     ).toBe(true);
   });
-
 });
