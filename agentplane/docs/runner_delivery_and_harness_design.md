@@ -230,6 +230,28 @@ Keep three axes explicit in the design:
   to that store rather than globally unique. Keep it distinct from Agentplane's public Session ID and
   any native child identity.
 
+### Alternative: exactly one harness per Runner
+
+One option is exactly one harness per Runner, with the harness process lifetime coupled to the
+Runner. If that harness safely supports multiple independent interactive Sessions, the Runner could
+route its Sessions through one harness-level endpoint. This may simplify harness-level routing, but
+it sacrifices running mixed Codex and Claude Sessions in the same Sandbox/Runner; compare one
+per-Sandbox harness selection and homogeneous templates with the flexibility of multiple harnesses.
+
+Separate two versions of this option. One live harness process per Runner, while retaining separate
+per-Session stores, does not remove persisted-store addressing: after a process restart, the new
+incarnation still needs to find each Session's store. One persisted harness store per Runner is the
+stronger simplification and the only version here that removes ambiguity about which store a
+Session belongs to. It also makes all Sessions share that store, so establish data isolation,
+concurrency and native identity behavior rather than treating the simplification as free.
+
+In either version, a process restart creates a new process incarnation; it may reuse the same
+persisted store. Couple failure and restart behavior explicitly if the Runner and harness are one
+lifecycle unit. Native child Sessions that are merely discoverable or read-only do not establish
+that one process can host multiple independently interactive Sessions. Use the separate Codex and
+Claude characterization evidence before treating this option as viable. This is an unselected design
+alternative, not implementation authorization.
+
 Review the existing `Sandbox UID + Agentplane Session ID` address against a candidate opaque address
 whose resolved components are `immutable Sandbox UID + persisted harness-store ID + native Session
 ID within that store`. Decide whether native IDs or client-chosen public IDs are canonical, how a
