@@ -1186,7 +1186,6 @@ remove the app's `runner_gateway_lifecycle_timeout_s` only if the explicit resum
 Retire the app's unused Gateway API channel/target after pinned-client review; its token and the
 separate Sandbox control target still serve live runner reads. Remove strict config keys from
 manifests before deleting their settings readers.
-
 ### `GATEWAY_SESSION_REGISTRY_RETIRE` — retire registry consumers only after resume review
 
 **Blocked on `APP_NATIVE_RESUME_CUTOVER`, wrapper callers and external/pinned clients.** After

@@ -464,9 +464,10 @@ sequenceDiagram
 A harness-only crash follows the same evidence rules without replacing the runner.
 An app or History Service outage by itself never triggers native resume. A broken control
 stream or push is not a harness stop. Sharing a Thread id and counter does not prove native continuation.
-The explicit app resume route shown above currently looks up placement in the Gateway registry, which
-does not contain Dispatcher-opened Sessions; this sequence therefore cannot resolve those Threads.
-See the [control-surface audit](control_surface_retirement.md).
+The explicit app resume route now gets the Sandbox name from the History Thread and checks the live
+runner, but its final Gateway `ResumeSession` call still requires a registry row. Only Gateway
+`CreateSession` writes the registry, so the route refuses Dispatcher-opened Sessions. See the
+[control-surface audit](control_surface_retirement.md).
 
 ## Timeline, pending queue, and operational state
 

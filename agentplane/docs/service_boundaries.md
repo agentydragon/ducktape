@@ -50,9 +50,9 @@ presentation state and projections, but those must not become hidden sources of 
   Sandbox `spec` and operator-owned `PolicyBinding` grants through Kubernetes. It reads Sandbox
   projections for the UI, opens Sessions and submits commands through the Session Dispatcher, uses
   the Runner Gateway for placement and authorized live runner operations, and reads Session history
-  and Threads from the History Service. The current explicit-resume placement lookup uses the legacy
-  Gateway registry, which is not populated by Dispatcher openings; see the
-  [control-surface audit](control_surface_retirement.md).
+  and Threads from the History Service. After #10622, resume routing gets the Sandbox name from the
+  History Thread; the final Gateway `ResumeSession` call still requires a registry row that
+  Dispatcher openings do not create. See the [control-surface audit](control_surface_retirement.md).
 - **Sandbox Controller:** reconciles requested Sandbox state into ServiceAccounts, Pods or VMs,
   state volumes and controller-owned grants. It owns `Sandbox.status`, including quiescing facts,
   and asks the Runner Gateway to seal Sessions before stopping or deleting a runner.

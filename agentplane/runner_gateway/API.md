@@ -29,8 +29,9 @@ The gateway keeps no Session history; runners push their Events to the
   registered within the pinned Sandbox UID. The UUID does not apply to runner-discovered native
   child sessions. The app opens new Threads through Session Dispatcher; repository search found no
   production caller of this Gateway `CreateSession` RPC. Because Gateway `CreateSession` is the
-  registry's only writer, Dispatcher-opened Sessions do not get a Gateway registry row and cannot
-  currently be resolved by the app's explicit-resume placement lookup.
+  registry's only writer, Dispatcher-opened Sessions do not get a registry row. After #10622 the app
+  obtains their Sandbox name from History, but its final `ResumeSession` call still fails the Gateway
+  registry check for those Sessions.
 - `CreateSession`'s setup uses the runner's existing idempotence; the Sandbox's bootstrap runs in the runner's first `OpenSession`. The response is the
   native attachment snapshot, not a claim that all setup or a model turn has completed.
 - `ResumeSession`: uses exactly the runner-retained spec, without applying today's
