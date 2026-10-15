@@ -27,7 +27,11 @@ Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
 
 Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
 without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
-user experience. No new k3s implementation/profiling lane is dispatched in this round.
+user experience. Finish reported bugs and red PR checks first. The next dispatch order is
+`APP_OPEN_FLAG_REMOVE` and the runner compatibility audit (`BOOTSTRAP_UNKNOWN_HOLDS_READY`,
+`INCARNATION_UID_REQUIRED`, `QUIESCE_LEGACY_SHAPE_REMOVAL`), then `DISPATCHER_WAKE_ACTIVATION`,
+then `K3S_LIFECYCLE_SUITE` / `ISOLATED_TEST_SPIKES_RETIRE` and `K3S_STARTUP_COST`.
+Audit assignment does not waive any image, embedded VM wheel, live-runner or retained-data gate.
 
 These are assignments, not claims that gated work has started. Independent config changes can
 proceed while behavior PRs are under review. Publish drafts as soon as a branch has reviewable work,
@@ -68,8 +72,8 @@ Never retry the opening POST automatically. Cover delayed projection and return 
 
 **In flight; `quiesce_progress`.** Gateway logs confirm runner inventory contains the answering
 Session, but the legacy Gateway registry filter omits it. Dispatcher opens through the runner proxy
-and does not populate that obsolete registry. Move the app inventory read to the existing
-authenticated runner proxy, preserving Sandbox UID fencing and authorization. Do not mirror registry
+and does not populate that obsolete registry. Remove the obsolete registry intersection from
+Gateway `ListSessions`, preserving its existing Sandbox UID fencing and authorization. Do not mirror registry
 state or fabricate projected-only rows. Cover Dispatcher opening followed by listing and returning
 to the Sandbox; retire the unused wrapper with `GATEWAY_WRAPPER_RETIRE`.
 
@@ -1039,8 +1043,8 @@ until their own caller-image gates. The accepted-but-ignored opening setting has
 
 ### `APP_OPEN_FLAG_REMOVE` — retire the queued-opening rollout flag
 
-**Blocked on the unconditional-open app image being pinned in both environments.**
-After the unconditional-open app image is pinned, remove `session_dispatcher_open_sessions` from
+**Candidate; image gate verified on 2026-10-15 UTC.** Both app Deployments pin `bd12425`,
+which includes unconditional Dispatcher openings. Remove `session_dispatcher_open_sessions` from
 generated ConfigMaps. Once both environments have reconciled the omission, delete the
 accepted-but-unused app settings field and its tests. Do not delete the field while deployed config
 still sends it. Staging already omits the key; verify both reconciled configurations before deleting
