@@ -4,6 +4,8 @@ the fake API server."""
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
+from typing import cast, override
 from uuid import UUID
 
 import grpc
@@ -16,7 +18,22 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 
 from agentplane import sandbox_resource
 from agentplane.background_task import background
-from agentplane.proto import command_pb2, runner_pb2, session_dispatcher_pb2
+from agentplane.grpc_serving import serving
+from agentplane.proto import (
+    command_pb2,
+    runner_control_pb2,
+    runner_control_pb2_grpc,
+    runner_pb2,
+    session_dispatcher_pb2,
+)
+from agentplane.runner.config import ClaudeLaunch, RunnerConfig
+from agentplane.runner.control import RunnerService
+from agentplane.runner.harness_process import HarnessProcess
+from agentplane.runner.runner import Runner
+from agentplane.runner.session import Session
+from agentplane.runner.store import SessionRecord
+from agentplane.runner.testing import launches
+from agentplane.runner.testing.adapters import UnexpectedAdapter
 from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
 from agentplane.session_dispatcher import delivery as delivery_module
 from agentplane.session_dispatcher.channels import Channel
@@ -38,6 +55,50 @@ from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE
 
 SESSION = "test-session"
 WAKE_CALLER = ServiceAccountRef(namespace="agentplane", name="test-app")
+
+
+class RecordingAdapter(UnexpectedAdapter):
+    def __init__(self) -> None:
+        self.submitted: list[tuple[str, str]] = []
+        self.submitted_event = asyncio.Event()
+
+    @override
+    async def submit(self, command_id: str, text: str) -> None:
+        self.submitted.append((command_id, text))
+        self.submitted_event.set()
+
+
+class RunningProcess:
+    def __init__(self) -> None:
+        self.running = True
+
+    async def stop(self) -> None:
+        self.running = False
+
+
+class LostReplyRunnerService(RunnerService):
+    """A real RunnerService that can lose a reply after its journal committed the command."""
+
+    def __init__(self, runner: Runner, *, lose_reply: bool) -> None:
+        super().__init__(runner)
+        self.lose_reply = lose_reply
+        self.admitted = asyncio.Event()
+        self.release_reply = asyncio.Event()
+        self.submit_requests: list[runner_control_pb2.SubmitInputRequest] = []
+
+    @override
+    async def SubmitInput(
+        self, request: runner_control_pb2.SubmitInputRequest, context: grpc.aio.ServicerContext
+    ) -> runner_control_pb2.SubmitInputResponse:
+        recorded = runner_control_pb2.SubmitInputRequest()
+        recorded.CopyFrom(request)
+        self.submit_requests.append(recorded)
+        response = await super().SubmitInput(request, context)
+        if self.lose_reply:
+            self.admitted.set()
+            await self.release_reply.wait()
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "admission reply lost")
+        return response
 
 
 @pytest.fixture(autouse=True)
@@ -679,6 +740,133 @@ async def test_an_unreachable_runner_is_tried_again(
     await enqueue(store, sandboxes, "retried")
     await wait_for(store, "retried", DeliveryState.RUNNER_ADMITTED)
     assert [call for call, _ in runner[0].calls] == ["SubmitInput", "SubmitInput"]
+
+
+async def test_a_lost_admission_reply_is_resolved_by_the_next_incarnations_journal(
+    store: DispatchStore,
+    sandboxes: SandboxWatch,
+    cluster: SandboxCluster,
+    runner_client: RunnerClient,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Redelivery returns the same admission; recovery may replay unconfirmed native input."""
+    monkeypatch.setattr(delivery_module, "RETRY_INITIAL_S", 0.01)
+    command_id = "lost-reply-across-incarnations"
+    text = "the same immutable payload"
+    state_dir = tmp_path / "runner-state"
+    spec = runner_pb2.SessionSpec(
+        harness=runner_pb2.HARNESS_CLAUDE, cwd=str(tmp_path / "workspace"), model="test-model"
+    )
+    runner_config = RunnerConfig(
+        state_dir=state_dir,
+        launch=launches.SANDBOX_LAUNCH,
+        model_config_resolver=launches.unconfigured_models(),
+        claude=ClaudeLaunch(
+            binary=tmp_path / "test-unlaunched-harness",
+            base_url="http://agentplane-test-endpoint.invalid",
+            auth_token="test-token",
+        ),
+    )
+
+    first_runner = Runner(runner_config)
+    first_runner.store.adopt_incarnation("pod-1")
+    first_runner.store.write(SESSION, SessionRecord.from_spec(spec))
+    first_session = await first_runner._load(SESSION)
+    first_adapter = RecordingAdapter()
+    first_session.adapter = first_adapter
+    first_session.process = cast(HarnessProcess, RunningProcess())
+    first_service = LostReplyRunnerService(first_runner, lose_reply=True)
+    first_server = grpc.aio.server()
+    runner_control_pb2_grpc.add_RunnerServicer_to_server(first_service, first_server)
+
+    successor_runner: Runner | None = None
+    first_runner_stopped = False
+    try:
+        async with serving(first_server, "127.0.0.1:0", grace_s=0) as first_port:
+            runner_client.control_target = f"127.0.0.1:{first_port}"
+            set_sandbox(cluster, ready=True, incarnation="pod-1")
+            await wait_for_sandbox(
+                sandboxes,
+                lambda sandbox: (
+                    sandbox.ready
+                    and sandbox.status.incarnation is not None
+                    and sandbox.status.incarnation.uid == "pod-1"
+                ),
+            )
+            sandbox = sandboxes.get_sandbox(SANDBOX)
+            assert sandbox is not None
+            await store.enqueue(
+                session_id=SESSION,
+                sandbox_name=SANDBOX,
+                sandbox_uid=sandbox.metadata.uid,
+                command=command_pb2.Command(command_id=command_id, submit_input=command_pb2.SubmitInput(text=text)),
+            )
+            await asyncio.wait_for(first_service.admitted.wait(), timeout=10)
+            await asyncio.wait_for(first_adapter.submitted_event.wait(), timeout=10)
+            first_admission = await first_session.journal.admitted_entry(command_id)
+
+            # End the old incarnation through the real RunnerService, sealing its journal before handoff.
+            async with grpc.aio.insecure_channel(f"127.0.0.1:{first_port}") as channel:
+                stub: runner_control_pb2_grpc.RunnerAsyncStub = runner_control_pb2_grpc.RunnerStub(channel)
+                await stub.Quiesce(runner_pb2.QuiesceRequest(), timeout=10)
+            await first_runner.stop()
+            first_runner_stopped = True
+
+            successor_runner = Runner(runner_config)
+            successor_runner.store.adopt_incarnation("pod-2")
+            await successor_runner.startup()
+            successor_session = successor_runner.sessions[SESSION]
+            successor_adapter = RecordingAdapter()
+
+            async def attach_test_harness(session: Session) -> None:
+                """Stand in for harness startup, then exercise real pending-command recovery."""
+                session.adapter = successor_adapter
+                session.process = cast(HarnessProcess, RunningProcess())
+                await session._reconcile_commands(recovering=True)
+
+            monkeypatch.setattr(Session, "ensure_running", attach_test_harness)
+            successor_service = LostReplyRunnerService(successor_runner, lose_reply=False)
+            successor_server = grpc.aio.server()
+            runner_control_pb2_grpc.add_RunnerServicer_to_server(successor_service, successor_server)
+            async with serving(successor_server, "127.0.0.1:0", grace_s=0) as successor_port:
+                runner_client.control_target = f"127.0.0.1:{successor_port}"
+                set_sandbox(cluster, ready=True, incarnation="pod-2")
+                await wait_for_sandbox(
+                    sandboxes,
+                    lambda sandbox: (
+                        sandbox.ready
+                        and sandbox.status.incarnation is not None
+                        and sandbox.status.incarnation.uid == "pod-2"
+                    ),
+                )
+
+                # The old RPC reports a lost reply; the Dispatcher retries against pod-2.
+                first_service.release_reply.set()
+                row = await asyncio.wait_for(wait_for(store, command_id, DeliveryState.RUNNER_ADMITTED), timeout=10)
+                await asyncio.wait_for(successor_adapter.submitted_event.wait(), timeout=10)
+
+                expected_request = runner_control_pb2.SubmitInputRequest(
+                    session_id=SESSION, command_id=command_id, text=text
+                )
+                assert first_service.submit_requests == [expected_request]
+                assert successor_service.submit_requests == [expected_request]
+                # The journal deduplicates admission; pending native work follows normal recovery and may replay.
+                assert first_adapter.submitted == successor_adapter.submitted == [(command_id, text)]
+                assert row.admission == first_admission
+                entries = await successor_session.journal.since(0, limit=100)
+                assert [
+                    entry.event.command_admitted.command.command_id
+                    for entry in entries
+                    if entry.event.WhichOneof("observation") == "command_admitted"
+                ] == [command_id]
+                assert await successor_session.journal.admitted_entry(command_id) == first_admission
+    finally:
+        first_service.release_reply.set()
+        if successor_runner is not None:
+            await successor_runner.stop()
+        if not first_runner_stopped:
+            await first_runner.stop()
 
 
 async def test_a_command_the_runner_refuses_fails_with_its_status(
