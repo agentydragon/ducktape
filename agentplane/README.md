@@ -11,8 +11,8 @@ an MCP approval gateway for any MCP-capable LLM product.
 
 - [Action Service](action_service/README.md): ActionRequests, Decisions, auto-approval policies,
   and an MCP endpoint over OAuth.
-- [Runner Gateway](runner_gateway/README.md): the runner control stream, Sessions, and command
-  admission and delivery.
+- [Runner Gateway](runner_gateway/README.md): the runner control stream, Session placement and
+  authorized live runner access.
 - [Session Dispatcher](session_dispatcher/README.md): the durable command queue and delivery state
   between senders and Sandbox runners.
 - [History Service](history_service/README.md): retained Session history, read by the
@@ -136,9 +136,10 @@ source are retired; the History Service retains its database and authored histor
   The History Service retains the existing `sandbox_service` database; no database or authored
   history is removed with the Sandbox Service Deployment. The history and Dispatcher databases are drawn.
 - **Sandbox lifecycle and runner control.** The app writes requested Sandbox state and operator
-  grants to Kubernetes; the Sandbox Controller reconciles resources and owns status. The Runner
-  Gateway owns Sessions, commands and the runner control stream. The controller holds deletion
-  until the runner has sealed its Sessions through the Gateway.
+  grants to Kubernetes; the Sandbox Controller reconciles resources and owns status. The Session
+  Dispatcher owns Session openings and durable command admission/delivery state. The Runner Gateway
+  owns the runner control stream, Session placement and authorized live runner access. The controller
+  holds deletion until the runner has sealed its Sessions through the Gateway.
 
 Status, open work and design gates: [`plans/`](plans/README.md). Implemented contracts:
 [`docs/`](docs/).

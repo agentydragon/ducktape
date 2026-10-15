@@ -13,7 +13,9 @@ and shared infrastructure, never services to the app.
 ```mermaid
 flowchart LR
     App[Integration app] --> Kubernetes[Kubernetes API: Sandbox spec and operator grants]
-    App --> Gateway[Runner Gateway]
+    App -->|live checks, placement, native resume| Gateway[Runner Gateway]
+    App -->|openings and durable commands| Dispatcher[Session Dispatcher]
+    Dispatcher -->|delivery through runner proxy| Gateway
     App --> History[History Service]
     App --> Notifications[Notification service]
     App --> Actions[Action Service]
@@ -46,14 +48,16 @@ presentation state and projections, but those must not become hidden sources of 
 
 - **Integration app:** user-facing composition and interaction. As the requesting operator, it writes
   Sandbox `spec` and operator-owned `PolicyBinding` grants through Kubernetes. It reads Sandbox
-  projections for the UI, calls the Runner Gateway for Sessions and commands, and reads Session
-  history and Threads from the History Service.
+  projections for the UI, opens Sessions and submits commands through the Session Dispatcher, uses
+  the Runner Gateway for placement and authorized live runner operations, and reads Session history
+  and Threads from the History Service.
 - **Sandbox Controller:** reconciles requested Sandbox state into ServiceAccounts, Pods or VMs,
   state volumes and controller-owned grants. It owns `Sandbox.status`, including quiescing facts,
   and asks the Runner Gateway to seal Sessions before stopping or deleting a runner.
-- **Runner Gateway:** runner control stream, verified destination bindings, Session registry,
-  authorized runner-session access, command admission and delivery, receipt reads, the
-  `sandbox_commands` database, and read-only Sandbox inventory.
+- **Runner Gateway:** runner control stream, verified destination bindings, Session placement
+  registry, authorized live runner access, and read-only Sandbox inventory. Its legacy command
+  wrapper and command database remain on the retirement path after remaining callers migrate; the
+  Dispatcher owns sender-facing durable command admission and delivery state.
 - **History Service:** the Session Event archive, the ingress runners push their journals to, the
   Thread fold of each Session, and the read API over both. It retains the existing `sandbox_service`
   PostgreSQL database and its authored history.
@@ -70,10 +74,12 @@ to runners. Thread identities never enter Runner Gateway APIs.
 
 ## Session access without the app
 
-The Runner Gateway resolves explicit session destinations, exposes authorized command delivery and
-receipt reads, and distinguishes available, unavailable, and permanently removed destinations
-without querying the app. The Sandbox Controller reconciles each submitted desired state and uses the
-Gateway's runner proxy for quiescing; neither service depends on the app process to continue its work.
+The Runner Gateway resolves explicit session destinations and distinguishes available, unavailable,
+and permanently removed destinations without querying the app. The Session Dispatcher owns durable
+sender-facing command admission and delivery state, and uses the Gateway's runner proxy to reach the
+runner. The Gateway still exposes a legacy command-admission wrapper while its retirement is gated
+on caller migration. The Sandbox Controller reconciles each submitted desired state and uses
+the Gateway's runner proxy for quiescing; neither service depends on the app process to continue its work.
 Notification-triggered wake and durable acceptance for offline destinations are separate features
 with their own rollout gates. Do not create another runner-command queue as a side effect of a
 service-boundary change.

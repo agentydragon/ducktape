@@ -27,7 +27,8 @@ The gateway keeps no Session history; runners push their Events to the
   returns the Session again; the runner refuses changed inputs and the gateway refuses another
   Sandbox; a request without a UUID is invalid. `ResumeSession` accepts the public ID of a Session
   registered within the pinned Sandbox UID. The UUID does not apply to runner-discovered native
-  child sessions. The app opens every new Thread through it.
+  child sessions. The app opens new Threads through Session Dispatcher; repository search found no
+  production caller of this Gateway `CreateSession` RPC.
 - `CreateSession`'s setup uses the runner's existing idempotence; the Sandbox's bootstrap runs in the runner's first `OpenSession`. The response is the
   native attachment snapshot, not a claim that all setup or a model turn has completed.
 - `ResumeSession`: uses exactly the runner-retained spec, without applying today's
