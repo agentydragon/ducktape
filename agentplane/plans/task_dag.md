@@ -1104,6 +1104,8 @@ until the gateway is the `Connect` listener plus a proxy of `Runner` with per-me
 ```mermaid
 flowchart TD
     RUNNER_COMMAND_RPCS[Blocked: DeliverCommand goes once nothing calls it]
+    CONTROL_SURFACE_RETIREMENT_AUDIT[Candidate: audit RPCs, fields and arguments against the intended paths]
+    CONTROL_SURFACE_RETIREMENT_AUDIT --> RUNNER_LIST_SESSIONS_RETIRE[Blocked: resolve remaining live-inventory semantics, then remove ListSessions]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: callers use the proxy; RunnerGateway goes]
     SUSPENDED_SESSION_INVENTORY --> APP_SESSION_LIST_ROUTE_RETIRE[Blocked: remove the runner-backed table HTTP read]
@@ -1117,6 +1119,46 @@ flowchart TD
     GATEWAY_WRAPPER_RETIRE --> PROXY_START_METHODS_DISPATCHER_ONLY
     GATEWAY_WRAPPER_RETIRE --> GATEWAY_DATABASE_DROP
 ```
+
+### `CONTROL_SURFACE_RETIREMENT_AUDIT` — converge RPCs, fields and arguments on the intended paths
+
+**Candidate; operator request 2026-10-15 PDT.** Sweep Agentplane's protobuf services/messages,
+HTTP routes/client helpers, CLI arguments, settings/config keys and their producers/consumers.
+Compare each with the decided owners: Dispatcher for starting/continuing Session work, History
+for retained inventory/history, controller for Sandbox reconciliation, and runner proxy only for
+operations that still belong at the runner. Include both `RunnerGateway.ListSessions` and
+`Runner.ListSessions`; migrating a wrapper call to the proxy is not proof that the underlying RPC
+should survive.
+
+Deliver an evidence-backed inventory in component docs: surface, purpose, real callers and writers,
+intended replacement, keep/migrate/delete/decision disposition, and removal prerequisites. Trace
+tests, generated schemas/clients, deployment config, templates and VM wheels as well as production
+code; distinguish real runtime callers from fixtures. Audit obsolete request/response fields,
+duplicated command envelopes, identity/default overrides and accepted-unused flags, not just RPC
+names. Do not infer that a field is dead merely because one client omits it or stale data still
+contains it.
+
+Create specific unfinished migration/retirement nodes for confirmed findings, through deletion of
+old clients, receiver methods, fields, settings, BUILD targets and obsolete tests. Keep pending
+contract decisions explicit. Receiver removal waits for all caller images; writer changes wait
+for compatible readers, including separately pinned guest wheels. Stored-data removal is separate
+and owner-approved, with authored data preserved. Batch straightforward dead-surface cleanup;
+separate behavior changes and data drops. This audit does not block already-specified independent
+migrations or authorize broad compatibility shims, language rewrites or speculative replacement RPCs.
+
+### `RUNNER_LIST_SESSIONS_RETIRE` — remove the live inventory RPC if its remaining purposes migrate
+
+**Blocked on the surface audit's disposition and migration of its real callers.** The Sandbox table
+is moving to retained History inventory. Explicitly assess whether the underlying runner
+`ListSessions` RPC can go too, not only its `RunnerGateway` wrapper. Remaining uses include app
+archive safety/native resume, notification membership and test-driver quiesce ordering. History's
+eventual harness state and namespace/name association do not by themselves preserve authoritative
+live-state or Sandbox UID/owner checks. Settle those requirements and their intended owner before
+replacing or deleting the read; do not invent a differently named inventory RPC just to claim removal.
+Migrate callers and tests, verify pinned caller images no longer send it, then remove the service
+method, request/response messages and unused fields/helpers via normal generation. The separate
+wrapper retirement remains valid even if the audit finds a narrowly justified runner read must stay;
+record that decision and remove this conditional node if so.
 
 ### `PROXY_START_METHODS_DISPATCHER_ONLY` — only the Dispatcher starts or continues work through the proxy
 
