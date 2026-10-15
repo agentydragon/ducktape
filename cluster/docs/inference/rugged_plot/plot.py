@@ -32,9 +32,9 @@ AC = (
     ),
     Measurement("Gemma 4 E4B", "gemma-4-e4b-non-reasoning", 14.0, 11.1, 15.7, "~21k input / 32k allocation", (16, 5)),
     Measurement(
-        "Qwen2.5-Coder 7B", "qwen2-5-coder-7b-instruct", 5.4, 5.2, 5.4, "~21k input / 32k allocation", (-110, -42)
+        "Qwen2.5-Coder 7B", "qwen2-5-coder-7b-instruct", 5.4, 5.2, 5.4, "~21k input / 32k allocation", (-110, -16)
     ),
-    Measurement("Qwen3 8B", "qwen3-8b-instruct", 4.7, 4.3, 4.8, "~21k input / 32k allocation", (16, -40)),
+    Measurement("Qwen3 8B", "qwen3-8b-instruct", 4.7, 4.3, 4.8, "~21k input / 32k allocation", (16, -18)),
     Measurement(
         "Gemma 4 E2B QAT",
         "gemma-4-e2b-non-reasoning",
@@ -77,6 +77,20 @@ def main() -> None:
         estimated = row["intelligence_index_is_estimated"] == "true"
         style = "--" if row["creator"] == "OpenAI" else ":"
         ax.axvline(x, color=color, linestyle=style, linewidth=1.3, alpha=0.8, zorder=0)
+        # Put close pairs on opposite sides of their lines; keep names above data.
+        label_left = slug in {"gpt-35-turbo", "gpt-4o-mini"}
+        ax.annotate(
+            row["model"],
+            xy=(x, 0.98),
+            xycoords=ax.get_xaxis_transform(),
+            xytext=(-4 if label_left else 4, 0),
+            textcoords="offset points",
+            rotation=90,
+            ha="right" if label_left else "left",
+            va="top",
+            fontsize=9,
+            color=color,
+        )
         suffix = " (est.)" if estimated else ""
         reference_handles.append(
             Line2D([], [], color=color, linestyle=style, label=f"{row['model']} — {x:.2f}{suffix}")
@@ -130,7 +144,7 @@ def main() -> None:
         xlabel="Artificial Analysis Intelligence Index v4.3.2 (rugged models: non-reasoning; references: as labeled)",
         ylabel="Measured decode tokens/second on rugged",
         xlim=(4.8, 11.4),
-        ylim=(0, 40),
+        ylim=(0, 60),
     )
     ax.set_title("Rugged: intelligence × decode speed, with demonstrated context", fontsize=15, pad=18)
     ax.grid(alpha=0.22)
@@ -143,7 +157,7 @@ def main() -> None:
                 markerfacecolor="white",
                 color="#2266aa",
                 linestyle="none",
-                label="Ollama Vulkan, AC short prompts: median and observed range, n=3",
+                label="Ollama Vulkan, AC short prompts\nMedian and observed range, n=3",
             ),
             Line2D(
                 [],
@@ -152,10 +166,11 @@ def main() -> None:
                 markerfacecolor="white",
                 color="#bd6500",
                 linestyle="none",
-                label="Ollama Vulkan, one long prompt: 34.2 minutes prefill, AC, n=1",
+                label="Ollama Vulkan, one long prompt\n34.2 minutes prefill, AC, n=1",
             ),
         ],
-        loc="upper right",
+        loc="upper left",
+        bbox_to_anchor=(1.02, 0.48),
         fontsize=9,
     )
     fig.text(
