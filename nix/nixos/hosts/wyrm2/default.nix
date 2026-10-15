@@ -398,9 +398,11 @@ in
   };
 
   # Separate data disks (Proxmox virtio disks).
-  # autoFormat creates ext4 on first boot; autoResize grows to full disk size.
+  # Existing data disks use autoFormat on first boot and autoResize to full size;
+  # the cache volume is formatted explicitly before its first activation.
   # virtio0=/dev/vda, virtio1=/dev/vdb, virtio2=/dev/vdc, virtio3=/dev/vdd,
-  # virtio4=/dev/vde, virtio5=/dev/vdf, virtio7=/dev/vdh, virtio8=/dev/vdi, virtio9=/dev/vdj
+  # virtio4=/dev/vde, virtio5=/dev/vdf, virtio7=/dev/vdh, virtio8=/dev/vdi,
+  # virtio9=/dev/vdj, virtio10=/dev/vdk
   fileSystems."/var/local-path-provisioner" = {
     device = "/dev/vda";
     fsType = "ext4";
@@ -473,6 +475,38 @@ in
       "nosuid"
       "nofail"
       "x-systemd.device-timeout=10s"
+    ];
+  };
+  # /dev/vdk (virtio10): dedicated HDD volume for rebuildable compiler/Python caches.
+  # The separate filesystem keeps their growth off root; cache paths stay stable via
+  # bind mounts, so existing tools and the running desktop session need no reconfig.
+  fileSystems."/var/cache/agentydragon" = {
+    device = "/dev/disk/by-label/wyrm2-cache";
+    fsType = "ext4";
+    autoResize = true;
+    options = [
+      "nodev"
+      "nosuid"
+      "nofail"
+      "x-systemd.device-timeout=10s"
+    ];
+  };
+  fileSystems."/home/agentydragon/.cache/sccache" = {
+    device = "/var/cache/agentydragon/sccache";
+    fsType = "none";
+    options = [
+      "bind"
+      "nofail"
+      "x-systemd.requires-mounts-for=/var/cache/agentydragon"
+    ];
+  };
+  fileSystems."/home/agentydragon/.cache/uv" = {
+    device = "/var/cache/agentydragon/uv";
+    fsType = "none";
+    options = [
+      "bind"
+      "nofail"
+      "x-systemd.requires-mounts-for=/var/cache/agentydragon"
     ];
   };
 
@@ -558,6 +592,12 @@ in
     "d /games 0755 agentydragon users -"
     # Host inference experiments store reproducible model artifacts here.
     "d /var/lib/llm-models-ssd 0755 agentydragon users -"
+    # Dedicated cache volume mount and bind-mount targets.
+    "d /var/cache/agentydragon 0755 agentydragon users -"
+    "d /var/cache/agentydragon/sccache 0755 agentydragon users -"
+    "d /var/cache/agentydragon/uv 0755 agentydragon users -"
+    "d /home/agentydragon/.cache/sccache 0755 agentydragon users -"
+    "d /home/agentydragon/.cache/uv 0755 agentydragon users -"
     # gnome-remote-desktop system daemon reads $XDG_DATA_HOME/gnome-remote-desktop/grd.conf
     # (= /var/lib/gnome-remote-desktop/.local/share/gnome-remote-desktop/grd.conf); symlink
     # grdConf there so it enables RDP at startup. tmpfiles runs before graphical.target,

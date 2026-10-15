@@ -154,7 +154,7 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
   }
 
   # Data disks — all on NVMe (local-zfs) unless noted.
-  # virtio0=/dev/vda, virtio1=/dev/vdb, ..., virtio9=/dev/vdj
+  # virtio0=/dev/vda, virtio1=/dev/vdb, ..., virtio10=/dev/vdk
   disk {
     datastore_id = var.storage
     interface    = "virtio0"
@@ -248,6 +248,20 @@ resource "proxmox_virtual_environment_vm" "wyrm2" {
     replicate    = false
     file_format  = "raw"
   } # alloy-node WAL (/var/lib/alloy-node) — HDD
+  # Hotplugged imperatively via `qm set 110 --virtio10 ...` because Terraform
+  # ignores disk changes while legacy CSI attachments remain. Keep this declaration
+  # aligned with the attached volume; NixOS mounts it at /var/cache/agentydragon.
+  # Rebuildable caches do not need Proxmox backups or replication.
+  disk {
+    datastore_id = "tank-hdd"
+    interface    = "virtio10"
+    iothread     = true
+    discard      = "on"
+    size         = 200
+    backup       = false
+    replicate    = false
+    file_format  = "raw"
+  } # Wyrm2 compiler and Python caches — HDD (sccache, uv)
 
   network_device {
     bridge = "vmbr0"

@@ -83,3 +83,7 @@ would remain a Home Manager service.
 - [ ] Split the `&ci` age recipient into `&ducktape-ci` and `&gaffer-ci` so the
       gaffer writer token isn't decryptable by ducktape CI's age key (TODO already
       noted in `.sops.yaml`).
+
+- [ ] Move Wyrm2 `/home` to a separate VM volume during a convenient maintenance
+      window. Preserve existing home data and define a rollback path; account for
+      GNOME session state, mount ordering, and services that use the current home.
