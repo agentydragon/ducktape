@@ -18,12 +18,16 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
 
-| Worker               | Assigned work and remaining gates                                                                     |
-| -------------------- | ----------------------------------------------------------------------------------------------------- |
-| `vm_connection`      | Verify post-#10569 image pins; then VM fresh-format/retained-remount and queued-opening acceptance.   |
-| `successor_delivery` | Joined Dispatcher redelivery and runner journal-admission deduplication coverage across incarnations. |
-| `resume_credentials` | Audit retained grants and projected tokens; propose the unresolved grant-on-resume contract.          |
-| Coordinator          | Burn down merged work and verify rollout gates before config or receiver cleanup.                     |
+| Worker                     | Assigned work and remaining gates                                                                                                        |
+| -------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `suspended_session_ui`     | Show suspended Session state; enable its composer only after wake-on-send works in that environment.                                     |
+| `quiesce_progress`         | Close stalled-ingress/seal recovery gaps without polling or longer timeouts.                                                             |
+| `session_defaults_cleanup` | Remove unused defaults fields after caller audit; retain receiver-image and authored-data gates.                                         |
+| Coordinator                | Prioritize usable VMs: testing fresh-format/remount, then staging Session/turn acceptance; retire obsolete paths after verified rollout. |
+
+Operator priority (2026-10-15 UTC): usable VM Sandboxes in staging and a consistent implementation
+without obsolete code, shims or settings. A booted VM or connected runner alone is not the complete
+user experience. No new k3s implementation/profiling lane is dispatched in this round.
 
 These are assignments, not claims that gated work has started. Independent config changes can
 proceed while behavior PRs are under review. Publish drafts as soon as a branch has reviewable work,
@@ -694,13 +698,13 @@ flowchart TD
     INCARNATION_UID_REQUIRED[Blocked: the runner rejects a Welcome without the incarnation UID]
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: the controller stops reading the blocking Quiesce shape]
-    QUIESCE_WITHOUT_POLLING[Candidate: back off when seal progress stalls]
+    QUIESCE_WITHOUT_POLLING[In flight: recover stalled seal progress]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
     RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
     SUSPENDED_COMPOSER[Blocked: the composer stays enabled while a Session is suspended]
     THREAD_SUCCESSOR_DELIVERY[In flight: admission deduplication across incarnations]
-    HOSTED_THREAD_SURFACES[Candidate: show and revive stopped Sessions]
+    HOSTED_THREAD_SURFACES[In flight: show suspended Sessions and retain history]
     VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
     VOLUME_LAYOUT_CONVERSION -. future incompatible edits only .-> SANDBOX_SPEC_EDIT
@@ -712,7 +716,7 @@ flowchart TD
     DISPATCHER_WAKE_ACTIVATION --> SUSPENDED_COMPOSER
     QUIESCE_WITHOUT_POLLING -. seal before a RAM suspend is its own question .-> VM_RAM_SUSPEND[Unscheduled: suspend a VM to disk with its RAM, section 4]
     APP_SESSION_OPEN_ACTIVATION[In flight: verify both app image rollouts and queued opens]
-    APP_SESSION_DEFAULTS_LEGACY_REMOVE[Candidate: retire unused defaults after caller audit]
+    APP_SESSION_DEFAULTS_LEGACY_REMOVE[In flight: retire unused defaults after caller audit]
     APP_SESSION_OPEN_ACTIVATION -. both app image pins .-> APP_OPEN_FLAG_REMOVE[Blocked: remove accepted opening flag after config rollout]
     DISPATCHER_HARNESS_CONFIRMATION[Decision: settle harness-confirmed inputs]
     DISPATCHER_SEND_AUTHORIZATION[Decision: scoped sender admission]
@@ -728,13 +732,14 @@ flowchart TD
 
 ### `K3S_LIFECYCLE_SUITE` — a k3s lifecycle integration suite
 
-**Candidate for bootstrap assertions; quiesce assertions wait on `QUIESCE_WITHOUT_POLLING`.**
-The existing model-free suite covers create, bootstrap execution, suspend, resume and delete in one
-shared k3s environment. Add the assertion that `Ready` implies finished bootstrap, then the selected
-quiesce completion assertions. These are the remaining integration gaps, not another fixture or CI
-workflow. Keep the suite in its separate manual-only workflow. Performance work is
-`K3S_STARTUP_COST`; real KubeVirt, Cilium, ClusterIP routing and OIDC/Dex coverage remain explicit
-limitations to resolve before `TESTING_ENVIRONMENT_RETIRE`.
+**Undispatched; quiesce coverage follows `QUIESCE_WITHOUT_POLLING`.** The existing model-free
+suite covers create, bootstrap execution, suspend, resume and delete in one shared k3s environment.
+Check practical eventually-consistent outcomes: Ready/Bootstrapped plus the bootstrap marker, and
+completed suspension after quiesce. Reuse existing coverage where it proves these outcomes; do not
+require precise intermediate condition timing or ordering in k3s (operator, 2026-10-15 UTC).
+Exact transition invariants belong in deterministic controller/runner tests. Keep the suite in its
+separate manual-only workflow. Performance work is `K3S_STARTUP_COST`; real KubeVirt, Cilium,
+ClusterIP routing and OIDC/Dex coverage remain explicit limitations before `TESTING_ENVIRONMENT_RETIRE`.
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
 
@@ -767,7 +772,7 @@ the selected explicit layouts before retiring the path; data drops stay in a sep
 
 ### `VM_GUEST_DECLARATIVE_STORAGE` — declarative guest disk initialization
 
-**Rollout remaining; `vm_connection`, 2026-10-14 PDT.** #10513 merged the guest shell inventory,
+**Acceptance remaining; coordinator, 2026-10-15 UTC.** #10513 merged the guest shell inventory,
 workspace disk preparation helper and declarative tmpfiles ownership. Testing exposed a missing
 device argument in the generated systemd unit: disk preparation exited before the runner started.
 #10537 supplies that argument; #10538 corrects the image workflow path filter. The corrected
@@ -943,7 +948,7 @@ included.** Deletes the controller's legacy-shape read and the tombstone marking
 
 ### `QUIESCE_WITHOUT_POLLING` — a runner that never progresses is backed off, not hammered
 
-**Candidate; the Lease-facts images are pinned in testing and staging.** The
+**In flight; `quiesce_progress`, 2026-10-15 UTC.** The Lease-facts images are pinned in testing and staging. The
 controller already calls once and reacts to the Lease stage events, re-issuing the idempotent call
 only at a one-minute deadline. What is left: while the ingress is down the controller backs off
 instead of retrying per Sandbox, and a live test (a Sandbox with a Session whose flush is held
@@ -964,7 +969,7 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `DISPATCHER_WAKE_ACTIVATION` — enable send-triggered revival
 
-**In flight; assigned to `vm_connection`, 2026-10-14 PDT.** Testing caller configuration from
+**Testing acceptance recorded; staging activation remains with the coordinator.** Testing caller configuration from
 #10527 is reconciled. The opted-in wake probe passed and its fixture was cleaned (#10541);
 staging activation remains. Image and migration gates are clear: actual
 Dispatcher Pods in both environments are Ready on `31e0b37`, their migration containers exited 0,
@@ -997,7 +1002,7 @@ implementation node once policy is reviewed; existing caller cutovers do not sil
 
 ### `APP_SESSION_OPEN_ACTIVATION` — activate queued app Session openings
 
-**Rollout and acceptance remain; coordinator and `vm_connection`, 2026-10-15 UTC.** #10569 merged
+**Rollout and acceptance remain; coordinator, 2026-10-15 UTC.** #10569 merged
 as `721cab8eef`, including History-backed Thread identity and Dispatcher-only commands/openings.
 Rai explicitly approved activating queued openings in **both testing and staging** with this image;
 both environments follow the same app ImagePolicy. No separate staging configuration activation or
@@ -1039,26 +1044,29 @@ Complete caller rollout before narrowing Gateway authorization or removing the l
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
 
-**Decision; audit assigned to `resume_credentials`, 2026-10-15 UTC.** Are app-created runtime
+**Decision; the [credential audit](../debug/resume_credentials_valid.md) is published in merged #10573.** Are app-created runtime
 `PolicyBinding`s optional additive capabilities, or prerequisites for useful resume? The current
 app adds independent expiring grants; Sandbox resume does not renew them. Recommend preserving
 that additive model: expiry and revocation remain authoritative, with no automatic re-grant.
 If required grants are desired, first define their durable identity, missing/expired status and
-explicit operator re-grant flow. The audit must distinguish controller-driven expiry from exact
+explicit operator re-grant flow. The audit distinguishes controller-driven expiry from exact
 post-deadline denial, and projected-token renewal from grant renewal. Add implementation work only
 for a reviewed contract that the code does not already satisfy; do not add an implicit Ready gate.
 
 ### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
 
-**Blocked on `DISPATCHER_WAKE_ACTIVATION` and `HOSTED_THREAD_SURFACES`.** App command sends already use Dispatcher. A suspended
-Session in the app has an enabled composer; sending queues the message and shows that the Sandbox
-is starting and the message waits.
+**Blocked on `DISPATCHER_WAKE_ACTIVATION` and `HOSTED_THREAD_SURFACES`; follow-up owned by
+`suspended_session_ui`.** Once wake-on-send works in the target environment, a suspended Session's
+composer remains usable while its Sandbox still exists; suspension alone must not disable it.
+Sending queues the message and shows the Sandbox starting while the message waits. Keep normal
+access checks and deleted-Sandbox refusal. Until wake-on-send is verified, ship suspended-state
+visibility independently and leave composer activation sequenced afterward (operator, 2026-10-15 UTC).
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `THREAD_SUCCESSOR_DELIVERY` — commands unsettled across incarnations
 
-**In flight; `successor_delivery`, 2026-10-15 UTC.** Join the real Dispatcher retry and runner
+**In review: #10574; joined targeted test passed, awaiting merge.** Join the real Dispatcher retry and runner
 journal paths in a lost-admission-reply test across incarnation replacement. Preserve the command
 ID/payload and original durable admission cursor; no second admission is written. Deletion remains
 the terminal `unknown` case. This is admission deduplication, not a promise of exactly-once native
@@ -1068,9 +1076,10 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `HOSTED_THREAD_SURFACES` — show and revive stopped Sessions
 
-**Candidate; basic revival coverage is complete.** The app lists Sessions whose Sandbox has no
-running incarnation, reads their history from the History Service, and offers explicit Sandbox revival.
-Moved from the freezer.
+**In flight; `suspended_session_ui`, 2026-10-15 UTC.** Sessions whose Sandbox is suspended visibly
+show that state, remain listed and retain readable History-backed conversation views. Audit existing
+surfaces before adding anything; preserve explicit Sandbox revival. Composer activation is a
+separate follow-up after wake-on-send, not a prerequisite for shipping suspension visibility.
 
 ## 8. Ownership and naming cleanup
 
@@ -1208,7 +1217,7 @@ flowchart TD
 
 ### `APP_SESSION_DEFAULTS_LEGACY_REMOVE` — delete legacy per-Sandbox defaults fields
 
-**Candidate for unused CR fields; receiver removals retain caller-image gates.** Audit remaining
+**In flight; `session_defaults_cleanup`, 2026-10-15 UTC.** Receiver removals retain caller-image gates. Audit remaining
 CreateSession callers before removing their field mask; that part waits for the direct-open caller
 removal and its image rollout. Other unused defaults fields can be reviewed independently.
 Once every writer has stopped sending them, delete `SandboxBinding.session_defaults`, the Sandbox
