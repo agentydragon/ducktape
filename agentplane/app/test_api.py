@@ -176,6 +176,7 @@ def app(bare_app: FastAPI, custom_objects: FakeCustomObjectsApi, core_v1: FakeCo
     custom_objects.objects[(SANDBOXES_PLURAL, "live")] = sandbox("live", conditions=READY)
     core_v1.pods["live"] = pod("live", phase="Running", ready=True, ip="10.0.0.7")
     custom_objects.objects[(SANDBOXES_PLURAL, "fresh")] = sandbox("fresh")
+    custom_objects.objects[(SANDBOXES_PLURAL, "fresh")]["status"].pop("operatingMode")
     custom_objects.objects[(POLICY_SETS_PLURAL, "github")] = egress_policy_set(
         "github", [{"hosts": ["api.github.com"], "methods": ["GET"]}]
     )
@@ -218,14 +219,16 @@ async def test_list_reports_separate_resource_statuses(client: httpx.AsyncClient
     rows = {row["name"]: row for row in response.json()}
     assert rows["live"]["operating_mode"] == "Running"
     assert rows["live"]["pod"]["status"]["phase"] == "Running"
-    assert rows["fresh"]["operating_mode"] == "Running"
+    assert rows["fresh"]["operating_mode"] is None
+    assert rows["fresh"]["phase"] == "Unspecified"
     assert rows["fresh"]["pod"] is None
 
 
 async def test_get_returns_the_row_or_404(client: httpx.AsyncClient) -> None:
     row = (await client.get("/sandboxes/live")).json()
 
-    assert row["operating_mode"] == "Running"
+    assert row["operating_mode"] is None
+    assert row["phase"] == "Unspecified"
     assert row["pod"]["name"] == "live"
     assert row["pod"]["status"]["podIP"] == "10.0.0.7"
     assert row["pod"]["status"]["containerStatuses"][0]["state"] == {"running": {}}
@@ -238,7 +241,8 @@ async def test_create_returns_the_new_row(client: httpx.AsyncClient, custom_obje
     assert response.status_code == 201
     row = response.json()
     assert row["name"] == "demo"
-    assert row["operating_mode"] == "Running"
+    assert row["operating_mode"] is None
+    assert row["phase"] == "Unspecified"
     assert row["pod"] is None
     assert (SANDBOXES_PLURAL, row["name"]) in custom_objects.objects
     # Nothing was picked, so nothing may leave it.
@@ -332,8 +336,13 @@ async def test_create_rejects_invalid_requests(
 
 async def test_suspend_resume_apply_in_order(client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi) -> None:
     assert (await client.post("/sandboxes/live/suspend")).status_code == 204
+    # The desired patch is not an effective-mode report.
+    assert (await client.get("/sandboxes/live")).json()["operating_mode"] == "Running"
+    custom_objects.objects[(SANDBOXES_PLURAL, "live")]["status"]["operatingMode"] = "Suspended"
     assert (await client.get("/sandboxes/live")).json()["operating_mode"] == "Suspended"
     assert (await client.post("/sandboxes/live/resume")).status_code == 204
+    assert (await client.get("/sandboxes/live")).json()["operating_mode"] == "Suspended"
+    custom_objects.objects[(SANDBOXES_PLURAL, "live")]["status"]["operatingMode"] = "Running"
     assert (await client.get("/sandboxes/live")).json()["operating_mode"] == "Running"
     assert custom_objects.objects[(SANDBOXES_PLURAL, "live")]["spec"]["running"] is True
     assert (await client.post("/sandboxes/nope/suspend")).status_code == 404
@@ -371,6 +380,10 @@ async def test_resume_during_controller_quiescing_is_retryable_in_direct_app(
 async def test_delete_starts_teardown_once_the_sandbox_is_suspended(
     client: httpx.AsyncClient, custom_objects: FakeCustomObjectsApi
 ) -> None:
+    # A newly created Sandbox is readable, but its unreported mode is not evidence that it is suspended.
+    assert (await client.delete("/sandboxes/fresh")).status_code == 409
+    assert (SANDBOXES_PLURAL, "fresh") in custom_objects.objects
+
     custom_objects.objects[(SANDBOXES_PLURAL, "live")]["metadata"]["finalizers"] = ["test-finalizer"]
     assert (await client.delete("/sandboxes/live")).status_code == 409
     assert (await client.get("/sandboxes/live")).json()["phase"] == "Running"

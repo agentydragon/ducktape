@@ -275,6 +275,25 @@ async def test_a_command_waits_for_the_sandbox_to_be_ready(
     await wait_for(store, "waiting", DeliveryState.RUNNER_ADMITTED)
 
 
+async def test_a_send_stays_queued_until_initial_controller_mode_is_reported(
+    store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster
+) -> None:
+    stored = cluster.fake.objects[sandbox_resource.SANDBOXES_PLURAL][SANDBOX]
+    stored["status"].pop("operatingMode", None)
+    stored["status"].pop("incarnation", None)
+    stored["status"].pop("conditions", None)
+    stored["spec"]["wakeOnSend"] = True
+    cluster.fake.put(sandbox_resource.SANDBOXES_PLURAL, stored)
+
+    await enqueue(store, sandboxes, "unreported-mode", wake_eligible=True)
+    row = await wait_for(store, "unreported-mode", DeliveryState.QUEUED_IN_DISPATCHER, Reason.SANDBOX_NOT_READY)
+
+    assert row.wake_from_incarnation is None
+    assert row.wake_requested_at is None
+    assert stored["spec"]["running"] is True
+    assert stored["spec"].get("wakeGeneration", 0) == 0
+
+
 async def test_a_stop_for_a_suspended_sandbox_has_nothing_to_stop(
     store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster
 ) -> None:

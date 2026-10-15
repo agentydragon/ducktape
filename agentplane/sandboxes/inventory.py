@@ -27,6 +27,7 @@ from agentplane.sandboxes.console import stream_console
 from agentplane.sandboxes.errors import (
     InvalidSandboxError,
     SandboxConflictError,
+    SandboxModeUnknownError,
     SandboxNotFoundError,
     SandboxQuiescingError,
     SandboxRunningError,
@@ -181,8 +182,9 @@ class SandboxInventory(SandboxReader):
     ) -> bool:
         """Request the shared guarded resume only when this Sandbox explicitly allows send wakes.
 
-        `False` means the durable command should stay queued. A true result can still be waiting for
-        the controller to create a Ready incarnation; callers must continue watching the Sandbox.
+        `False` means wake-on-send is disabled. A true result can still be waiting for the controller
+        to create a Ready incarnation; callers must continue watching the Sandbox. An unreported
+        controller mode raises `SandboxModeUnknownError` without marking a wake accepted.
         """
         sandbox = await self._incarnation(name, uid=uid)
         if sandbox.metadata.deletion_timestamp is not None:
@@ -191,6 +193,8 @@ class SandboxInventory(SandboxReader):
             return False
         if sandbox.running_reason() == "Quiescing":
             raise SandboxQuiescingError(name)
+        if sandbox.operating_mode is None:
+            raise SandboxModeUnknownError(name)
         if sandbox.operating_mode is OperatingMode.SUSPENDED:
             await self._request_resume(sandbox, name=name, uid=uid, before_resume=before_resume)
         return True
@@ -204,6 +208,8 @@ class SandboxInventory(SandboxReader):
         sandbox = await self._incarnation(name, uid=uid)
         if sandbox.metadata.deletion_timestamp is not None:
             return
+        if sandbox.operating_mode is None:
+            raise SandboxModeUnknownError(name)
         if sandbox.operating_mode is OperatingMode.RUNNING:
             raise SandboxRunningError(name)
         await self._custom_objects.delete_namespaced_custom_object(

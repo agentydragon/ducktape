@@ -32,12 +32,21 @@ export function SuspendResume({
   onAct: (action: "suspend" | "resume") => void;
 }): JSX.Element {
   const resume = sandbox.operating_mode === "Suspended";
+  const modeUnknown = sandbox.operating_mode === null || sandbox.operating_mode === undefined;
+  const disabled = deleting(sandbox) || modeUnknown;
+  const label = deleting(sandbox)
+    ? "Sandbox deleting"
+    : modeUnknown
+      ? "Waiting for controller status"
+      : resume
+        ? "Resume"
+        : "Suspend";
   return (
-    <Tooltip label={deleting(sandbox) ? "Sandbox deleting" : resume ? "Resume" : "Suspend"} withArrow>
+    <Tooltip label={label} withArrow>
       <ActionIcon
         variant="light"
-        aria-label={resume ? "Resume" : "Suspend"}
-        disabled={deleting(sandbox)}
+        aria-label={modeUnknown ? "Sandbox mode unavailable" : resume ? "Resume" : "Suspend"}
+        disabled={disabled}
         onClick={() => onAct(resume ? "resume" : "suspend")}
       >
         {resume ? <IconPlayerPlay size={16} /> : <IconPlayerPause size={16} />}

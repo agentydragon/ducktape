@@ -68,12 +68,16 @@ export function podIp(sandbox: SandboxView): string | null {
   return rawString(sandbox.pod?.status?.podIP);
 }
 
-/** The Sandbox Controller's own `Ready` condition: no caller reads into the incarnation. */
+/** The Sandbox Controller's reported running mode and `Ready` condition; no caller reads into the incarnation. */
 export function sandboxReady(sandbox: SandboxView | null | undefined): boolean {
-  return !!sandbox && rawConditions(rawObject(sandbox.status)).some((c) => c.type === "Ready" && c.status === "True");
+  return (
+    sandbox?.operating_mode === "Running" &&
+    rawConditions(rawObject(sandbox.status)).some((c) => c.type === "Ready" && c.status === "True")
+  );
 }
 
 export function sandboxSummary(sandbox: SandboxView): { label: string; kind: SandboxStatusKind } {
+  if (sandbox.phase === "Unspecified") return { label: "Status unknown", kind: "pending" };
   if (sandbox.phase === "Tearing down") return { label: "Deleting", kind: "gone" };
   if (sandbox.phase === "Quiescing") return { label: "Quiescing", kind: "pending" };
   if (sandbox.phase === "Suspending") return { label: "Suspending", kind: "pending" };

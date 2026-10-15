@@ -51,11 +51,10 @@ def sandbox_view(
     metadata, spec = sandbox.metadata, sandbox.spec
     created_at = Timestamp()
     created_at.FromDatetime(metadata.creation_timestamp)
-    return Sandbox(
+    view = Sandbox(
         name=metadata.name,
         uid=str(metadata.uid),
         created_at=created_at,
-        operating_mode=sandbox.operating_mode,
         namespace=metadata.namespace,
         status=_struct(sandbox.status.model_dump(mode="json", by_alias=True, exclude_none=True)),
         service_account=ServiceAccount(namespace=metadata.namespace, name=metadata.name),
@@ -64,6 +63,9 @@ def sandbox_view(
         phase=_phase(sandbox),
         pod=_pod(pod, api_client=api_client) if pod is not None and sandbox.runs_in(pod) else None,
     )
+    if sandbox.operating_mode is not None:
+        view.operating_mode = sandbox.operating_mode.value
+    return view
 
 
 def _phase(sandbox: sandbox_resource.Sandbox) -> SandboxPhase:
@@ -72,6 +74,8 @@ def _phase(sandbox: sandbox_resource.Sandbox) -> SandboxPhase:
     if sandbox.metadata.deletion_timestamp is not None:
         sealed = sandbox.sessions_sealed or sandbox.running_reason() == "Deleting"
         return SandboxPhase.SANDBOX_PHASE_TEARING_DOWN if sealed else SandboxPhase.SANDBOX_PHASE_QUIESCING
+    if sandbox.operating_mode is None:
+        return SandboxPhase.SANDBOX_PHASE_UNSPECIFIED
     incarnated = sandbox.status.incarnation is not None
     if sandbox.operating_mode is OperatingMode.RUNNING:
         return SandboxPhase.SANDBOX_PHASE_RUNNING if incarnated else SandboxPhase.SANDBOX_PHASE_CREATING

@@ -731,11 +731,11 @@ and `Idle`, and an operator hold (`spec.wakeOnSend: false`) is distinguishable f
   rendered spec of each incarnation is stored on the Sandbox for diffing.
 
 **What `suspendedBy` costs (operator, 2026-10-14: the shape stays).** After it, `spec.running = true` no longer means
-"meant to run". Every reader of `spec.running` must read the effective mode instead: the controller's reconcile,
-converge and quiesce paths and `vm.go`; `sandbox_resource.py` `operating_mode`; the shared phase
-derivation (today `kubernetes_views.py` `_phase`); the app's delete path (today `begin_teardown`; it refuses a Sandbox whose `spec.running` is true, so an
-idle-suspended Sandbox could not be deleted); the app's `sandbox_has_ready_pod` and everything fed by `SandboxPhase`.
-Four points follow.
+"meant to run". Every decision about effective state reads the controller's reported mode: the controller's reconcile,
+converge and quiesce paths and `vm.go`; Python's `Sandbox.operating_mode`; the shared phase projection in
+`kubernetes_views.py`; deletion; readiness; and everything fed by `SandboxPhase`. `spec.running` remains desired state
+for suspend and resume requests; it is not an effective-state fallback. An unreconciled Sandbox has no reported mode,
+gets `SANDBOX_PHASE_UNSPECIFIED`, and cannot be treated as ready, suspended, or safe to delete. Four points follow.
 
 1. _One derivation site._ The controller publishes the effective mode in status once; Go, Python and the app read
    that, not a re-derived `spec.running && !(suspendedBy == Idle && generation == recorded)` in each.
@@ -744,6 +744,10 @@ Four points follow.
 3. _Which generation is recorded._ The one the controller observed when it began quiescing, not when it finished, so
    a bump during the drain triggers N+1 after `Quiesced`. The helper refuses the bump while quiescing, like `running`.
 4. _Delete._ The app's delete of an idle-suspended Sandbox is allowed.
+
+**Implementation, 2026-10-15.** Python and the API expose `status.operatingMode` as nullable until the controller's
+first report. The phase projection preserves this as `Unspecified`; Runner Gateway refuses to route it, readiness stays
+false, deletion returns conflict, and send-triggered wake stays queued without recording a wake request or deadline.
 
 Message to a suspended Session:
 

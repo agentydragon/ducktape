@@ -53,6 +53,7 @@ async def test_sandbox_is_read_with_its_session_defaults(cluster: SandboxCluster
 
 async def test_suspended_sandbox_is_not_resumed(cluster: SandboxCluster) -> None:
     cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["spec"]["running"] = False
+    cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["status"]["operatingMode"] = "Suspended"
     cluster.fake.pods.clear()
     before = deepcopy(cluster.fake.objects)
     view = await cluster.inventory.get(SANDBOX)
@@ -107,12 +108,25 @@ async def test_phase_follows_what_the_controller_records(
     """While it seals before deletion it takes no new work but its Sessions stay readable; once sealed it is going."""
     stored = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
     stored["spec"]["running"] = running
+    stored["status"]["operatingMode"] = "Running" if running else "Suspended"
     if not incarnated:
         del stored["status"]["incarnation"]
     if deletion:
         stored["metadata"] |= {"deletionTimestamp": "2026-09-01T12:00:00Z", "finalizers": ["test-finalizer"]}
     stored["status"]["conditions"] = conditions
     assert (await cluster.inventory.get(SANDBOX)).phase == phase
+
+
+async def test_initial_sandbox_without_controller_status_is_unknown(cluster: SandboxCluster) -> None:
+    stored = cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]
+    stored["spec"]["running"] = True
+    stored["status"].pop("operatingMode")
+    stored["status"].pop("incarnation", None)
+    view = await cluster.inventory.get(SANDBOX)
+
+    assert not view.HasField("operating_mode")
+    assert view.phase == SandboxPhase.SANDBOX_PHASE_UNSPECIFIED
+    assert not view.HasField("pod")
 
 
 if __name__ == "__main__":

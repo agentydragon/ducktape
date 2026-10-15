@@ -93,8 +93,6 @@ class Incarnation(_Wire):
 
 class Status(_Wire):
     incarnation: Incarnation | None = None
-    # CLEANUP(added 2026-10-14): Make this required once the Sandbox Controller image that publishes it
-    #   is pinned, and drop the `spec.running` fallback in `Sandbox.operating_mode`.
     operating_mode: OperatingMode | None = None
     suspended_by: str | None = None
     suspended_at_wake_generation: int | None = None
@@ -107,12 +105,9 @@ class Sandbox(_Wire):
     status: Status = Field(default_factory=Status)
 
     @property
-    def operating_mode(self) -> OperatingMode:
-        """`spec.running`, unless the controller suspended the Sandbox for idleness: readers never read
-        `spec.running` themselves."""
-        if self.status.operating_mode is not None:
-            return self.status.operating_mode
-        return OperatingMode.RUNNING if self.spec.running else OperatingMode.SUSPENDED
+    def operating_mode(self) -> OperatingMode | None:
+        """The controller's reported effective mode; absent until it first reconciles the Sandbox."""
+        return self.status.operating_mode
 
     @property
     def sessions_sealed(self) -> bool:

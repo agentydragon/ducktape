@@ -69,6 +69,7 @@ async def sandbox_cluster() -> AsyncIterator[SandboxCluster]:
                     "creationTimestamp": "2026-09-01T11:00:00Z",
                 },
                 "spec": {"template": "test-template", "running": True},
+                "status": {"operatingMode": sandbox_resource.OperatingMode.RUNNING.value},
             },
         )
         pod = pod_for(fake, SANDBOX, pod_uid=POD_UID, ip="127.0.0.1")

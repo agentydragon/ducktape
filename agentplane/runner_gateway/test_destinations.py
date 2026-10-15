@@ -41,6 +41,13 @@ async def test_a_pod_the_controller_has_not_reported_is_not_a_destination(cluste
         await destinations.resolve(DESTINATION, writes=True)
 
 
+async def test_a_sandbox_without_reported_mode_is_not_a_destination(cluster: SandboxCluster) -> None:
+    cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["status"].pop("operatingMode")
+    destinations = DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api))
+    with pytest.raises(DestinationUnavailableError):
+        await destinations.resolve(DESTINATION, writes=True)
+
+
 async def test_sealing_sandbox_takes_no_new_work(cluster: SandboxCluster) -> None:
     cluster.fake.objects[SANDBOXES_PLURAL][SANDBOX]["metadata"]["deletionTimestamp"] = "2026-09-01T12:00:00Z"
     destinations = DestinationResolver(cluster.inventory, k8s_client.CoreV1Api(cluster.api))

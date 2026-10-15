@@ -23,6 +23,7 @@ SandboxName = Annotated[str, StringConstraints(pattern=r"^[a-z0-9]([-a-z0-9]*[a-
 class SandboxPhase(StrEnum):
     """Where the Sandbox is in its lifecycle, as the shared Sandbox inventory derives it."""
 
+    UNSPECIFIED = "Unspecified"
     CREATING = "Creating"
     RUNNING = "Running"
     SUSPENDING = "Suspending"
@@ -102,7 +103,9 @@ class SandboxView(BaseModel):
     uid: UUID = Field(description="The API server's identity of this Sandbox; what an owned binding references.")
     namespace: str
     created_at: datetime
-    operating_mode: OperatingMode
+    operating_mode: OperatingMode | None = Field(
+        default=None, description="The controller-reported effective mode; null until its first reconciliation."
+    )
     status: dict[str, object] | None = None
     service_account: ServiceAccountRef = Field(
         description="The ServiceAccount its Pod runs as, read off the Sandbox: the subject every "
@@ -113,7 +116,8 @@ class SandboxView(BaseModel):
     )
     preset: str | None = Field(default=None, description="The preset it was made from, when it was made from one.")
     phase: SandboxPhase = Field(
-        description="Quiescing and Tearing down mean deletion was asked for: it seals and waits for its ingress, "
+        description="Unspecified means the controller has not reported an effective mode yet. "
+        "Quiescing and Tearing down mean deletion was asked for: it seals and waits for its ingress, "
         "then is removed. A Sandbox in either takes no new work and cannot be suspended or resumed."
     )
     pod: PodView | None = None
@@ -127,7 +131,9 @@ def sandbox_view(value: sandboxes_pb2.Sandbox) -> SandboxView:
 
 def sandbox_is_ready(view: SandboxView) -> bool:
     """Whether the Sandbox Controller reports its incarnation able to take work: the Sandbox's own `Ready`
-    condition, so no caller reads into the incarnation."""
+    condition and its effective mode, so no caller reads into the incarnation or infers mode from desired state."""
+    if view.operating_mode is not OperatingMode.RUNNING:
+        return False
     conditions = (view.status or {}).get("conditions")
     return isinstance(conditions, list) and any(
         isinstance(condition, dict) and condition.get("type") == "Ready" and condition.get("status") == "True"

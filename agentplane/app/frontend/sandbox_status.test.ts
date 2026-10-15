@@ -51,4 +51,19 @@ describe("a Sandbox's summary follows its phase over its Pod", () => {
   ] as const)("%s", (phase, summary) => {
     expect(sandboxSummary({ ...sandbox([{ type: "Ready", status: "False" }]), phase })).toEqual(summary);
   });
+
+  it("does not report an unreconciled Sandbox as suspended", () => {
+    expect(
+      sandboxSummary({
+        ...sandbox([{ type: "Ready", status: "True" }]),
+        operating_mode: null,
+        phase: "Unspecified",
+        pod: null,
+      })
+    ).toEqual({
+      label: "Status unknown",
+      kind: "pending",
+    });
+    expect(sandboxReady({ ...sandbox([{ type: "Ready", status: "True" }]), operating_mode: null })).toBe(false);
+  });
 });
