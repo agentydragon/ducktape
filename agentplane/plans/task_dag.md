@@ -665,7 +665,7 @@ flowchart TD
     SANDBOX_ARCHIVE[Unscheduled: a suspended Sandbox archived to object storage]
     AGENT_RESUME_NOTICE[Unscheduled: tell agents when their Sandbox was suspended and resumed]
     SANDBOX_IDLE_EXPIRY[Candidate: suspend idle Sandboxes] -. related .-> AGENT_RESUME_NOTICE
-    QUIESCE_LEGACY_SHAPE_REMOVAL[In flight: remove the legacy Quiesce response reader]
+    QUIESCE_LEGACY_SHAPE_REMOVAL[In flight: remove the legacy Quiesce response reader] --> QUIESCE_RESPONSE_FIELDS_RETIRE[Blocked: controller rollout before deleting obsolete response fields]
     RUNNER_BUSY_TRACKING -. related .-> AGENT_RESUME_NOTICE
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     JOURNAL_LEGACY_SEAL_SCHEMA_REMOVE[Blocked: writer rollout and retained-journal cutoff]
@@ -847,11 +847,22 @@ restart. `AGENT_RESUME_NOTICE` tells the agent what a suspend ended.
 
 ### `QUIESCE_LEGACY_SHAPE_REMOVAL` — the controller stops reading the blocking `Quiesce` shape
 
-**In flight; `suspended_session_ui`, 2026-10-15 UTC.** All live and selectable Pod/VM images now
+**In flight; `suspended_session_ui`, #10615, 2026-10-15 UTC.** All live and selectable Pod/VM images now
 include the nonblocking writer from #10609, including runner-ducktape and the embedded VM wheel.
 Remove the controller's legacy response reader and obsolete fixtures; preserve conditional idle
 refusal, admission/setup ordering and Lease-driven completion. Use focused deterministic tests for
 the reader contract; a further live run needs a specific deployment uncertainty.
+
+### `QUIESCE_RESPONSE_FIELDS_RETIRE` — delete the legacy wire seal list
+
+**Blocked on `QUIESCE_LEGACY_SHAPE_REMOVAL` and the new controller image in both environments.**
+The nonblocking runner sends only `QuiesceResponse.stage`, but `runner.proto` still declares the
+old `sessions` field and rollout-era optional-stage contract. After no deployed reader consumes
+that shape, remove the obsolete field and comments and reserve its field number. The runner's
+internal `quiesce()` result and ingress tests still use `SessionSeal`; give that internal result an
+appropriate non-wire representation before deleting the unused protobuf message. Update proxy and
+runner fixtures, preserve seal/cursor/flush assertions, and generate bindings normally. Verify all
+remaining references before deletion; do not remove journal seal evidence or its separate retained-data gate.
 
 ### `SESSION_ACTIVITY_STREAM` — the notification service delivers on a Session's idle time
 
