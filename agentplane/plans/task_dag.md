@@ -18,10 +18,12 @@ contracts remain multi-replica unless a reviewed temporary restriction says othe
 
 Dispatch assignments (Rai authorized, Codex reported, 2026-10-15 UTC):
 
-| Worker          | Assigned work and remaining gates                                                                             |
-| --------------- | ------------------------------------------------------------------------------------------------------------- |
-| `vm_connection` | VM fresh-format/retained-remount and queued-opening acceptance after the corrected app image is pinned.       |
-| Coordinator     | Consolidate compatible cleanup PRs in #10569, shepherd its CI, and verify image rollout in both environments. |
+| Worker               | Assigned work and remaining gates                                                                     |
+| -------------------- | ----------------------------------------------------------------------------------------------------- |
+| `vm_connection`      | Verify post-#10569 image pins; then VM fresh-format/retained-remount and queued-opening acceptance.   |
+| `successor_delivery` | Joined Dispatcher redelivery and runner journal-admission deduplication coverage across incarnations. |
+| `resume_credentials` | Audit retained grants and projected tokens; propose the unresolved grant-on-resume contract.          |
+| Coordinator          | Burn down merged work and verify rollout gates before config or receiver cleanup.                     |
 
 These are assignments, not claims that gated work has started. Independent config changes can
 proceed while behavior PRs are under review. Publish drafts as soon as a branch has reviewable work,
@@ -477,7 +479,7 @@ app/Sandbox Service database changes requires its own migration safety review.
 flowchart LR
     CLAUDE_CODE_WEB_BRIDGE[Unscheduled: a frontend for Claude Code web sessions]
     ACTION_SURFACES_DESIGN[Decision: where and in what states Actions render]
-    ISOLATED_ACCEPTANCE_CI[In flight: isolated k3s lifecycle CI]
+    K3S_STARTUP_COST[Candidate: profile remaining containerd import and startup cost]
     DOCKABLE_PANES[Unscheduled: dockable panes in the web app]
     ACTION_SURFACES_DESIGN -. related .-> DOCKABLE_PANES
     NOTIFICATION_PRESENTATION[Blocked: compact notification rendering, section 2]
@@ -526,38 +528,18 @@ frontend a custom frontend for Claude Code web sessions: show their conversation
 messages, by shimming the web interface's control protocol. Builds on the viewer and syncer under
 `devinfra/` and the reverse-engineering in `agentydragon/gaffer-private`.
 
-### `ISOLATED_ACCEPTANCE_CI` — isolated acceptance tiers and their coverage gaps
+### `K3S_STARTUP_COST` — reduce remaining isolated-cluster startup cost
 
-**In flight (Codex, 2026-10-14; separate workflow #10502 merged):** current-stack/import work is
-complete (#10467, #10482). The workflow runs `//agentplane/x/k3s_env:test_lifecycle` only through an explicit
-`workflow_dispatch` (operator, 2026-10-14), overriding the default CI exclusion of
-`manual` tests for this explicitly selected target. The later [workflow run](https://github.com/agentydragon/ducktape/actions/runs/38654313999)
-succeeded at head `e0b9da6386`; the earlier cancelled run is historical failure evidence, not the
-current workflow status. This is a model-free four-test
-Sandbox lifecycle tier on BuildBuddy RBE; it does not read a model key. Keep the target's direct
-`bbr test` invocation available to agents. The separate `test_env` Qwen smoke remains manual and
-is not part of this workflow.
-
-**Performance TODO:** keep automatic triggers disabled until the suite is cheap enough for a
-separately reviewed change. The four-test OCI-layout run took 704.32 seconds versus 869.98 seconds for
-the earlier archive-import baseline; cProfile attributed 444.97 seconds of the current run to
-image import. These were individual shared-RBE runs, not a controlled benchmark. Shared Python
-interpreter layers across the 18 Python images and a matched four-test lifecycle comparison are
-complete in #10569: image import fell from 578.430 s to 220.195 s in one baseline/prototype pair.
-That measurement is not a steady-state performance guarantee.
-Investigate containerd import/unpack and deployment readiness before considering any broader CI
-use; preserve assertions and current timeout settings. See [the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
-
-This target is not Dispatcher two-replica acceptance and does not cover real KubeVirt, Cilium,
-ClusterIP routing or OIDC/Dex. The fixtures use stub KubeVirt CRDs and omit Cilium; the public
-Dex/OIDC path is not reached. Keep the stateful `agentplane-testing` environment until those gaps
-have explicit owners and usable replacement coverage; retiring it remains a separate reviewed
-operator change. The k3s-on-RBE spike (`agentplane/x/k3s_rbe_spike`) proves a real kubelet can run in
-a BuildBuddy action, while envtest covers only API-server behavior, not Pods or harnesses.
+**Candidate; no worker assigned.** Profile remaining containerd import/unpack and deployment
+readiness costs, then remove the measured bottleneck using existing Bazel/OCI rules where possible.
+The shared Python interpreter layers and matched lifecycle comparison are implemented; evidence
+belongs in [the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
+Preserve assertions and timeouts. The expensive lifecycle workflow stays **manual-only**;
+automatic triggers require a separate reviewed change. Language rewrites require Rai's decision.
 
 ### `ISOLATED_TEST_SPIKES_RETIRE` — remove superseded isolated-test scaffolding
 
-**Blocked on a separate fixture migration and coverage review.** The new workflow depends on the
+**Candidate; fixture migration and coverage review are the work.** The manual workflow depends on the
 maintained `agentplane/x/k3s_env` fixture and its `test_lifecycle` target; do not remove them while
 CI invokes them. Move the retained tests into their owning package and update the workflow first,
 then delete superseded `x/k3s_rbe_spike` or `x/k3s_env` entry points, image-loader paths, BUILD
@@ -567,7 +549,7 @@ local/CI invocation path per supported test tier.
 
 ### `TESTING_ENVIRONMENT_RETIRE` — retire the stateful testing deployment once coverage replaces it
 
-**Blocked on `ISOLATED_ACCEPTANCE_CI` and an explicit gap review.** Pod lifecycle/Dispatcher tests on
+**Decision: review coverage gaps before any retirement implementation.** Pod lifecycle/Dispatcher tests on
 bare k3s do not cover KubeVirt, Cilium, external identity or real service routing. Assign those checks
 to an isolated tier or retain their bounded live environment before removing `agentplane-testing`.
 Prepare a separate operator-reviewed retirement/data-disposition PR: remove obsolete Flux/deployments,
@@ -577,8 +559,8 @@ immediate deletion of the testing namespace or its volumes.
 
 ```mermaid
 flowchart LR
-    ISOLATED_ACCEPTANCE_CI --> ISOLATED_TEST_SPIKES_RETIRE
-    ISOLATED_ACCEPTANCE_CI --> TESTING_ENVIRONMENT_RETIRE
+    ISOLATED_TEST_SPIKES_RETIRE[Candidate: migrate retained fixtures and remove superseded scaffolding]
+    TESTING_ENVIRONMENT_RETIRE[Decision: coverage replacements before testing retirement]
 ```
 
 ## 6. Existing access and lifecycle follow-ups
@@ -712,12 +694,12 @@ flowchart TD
     INCARNATION_UID_REQUIRED[Blocked: the runner rejects a Welcome without the incarnation UID]
     RUNNER_BUSY_TRACKING[Unscheduled: the runner counts terminals and background processes as busy]
     QUIESCE_LEGACY_SHAPE_REMOVAL[Blocked: the controller stops reading the blocking Quiesce shape]
-    QUIESCE_WITHOUT_POLLING[Blocked: the controller is told when a seal finishes]
+    QUIESCE_WITHOUT_POLLING[Candidate: back off when seal progress stalls]
     SESSION_ACTIVITY_STREAM[Unscheduled: the notification service delivers on a Session's idle time]
     PROXY_START_METHODS_DISPATCHER_ONLY[Blocked: only the Dispatcher may start or continue work through the proxy]
-    RESUME_CREDENTIALS_VALID[Candidate: grants and tokens still valid after a long suspension]
+    RESUME_CREDENTIALS_VALID[Decision: optional grants versus resume prerequisites]
     SUSPENDED_COMPOSER[Blocked: the composer stays enabled while a Session is suspended]
-    THREAD_SUCCESSOR_DELIVERY[Candidate: commands unsettled across incarnations]
+    THREAD_SUCCESSOR_DELIVERY[In flight: admission deduplication across incarnations]
     HOSTED_THREAD_SURFACES[Candidate: show and revive stopped Sessions]
     VM_PROVIDER[VM provider, section 4]
     NODE_LOCAL_BLOCK_STORAGE --> STATE_VOLUME_BLOCK
@@ -746,17 +728,13 @@ flowchart TD
 
 ### `K3S_LIFECYCLE_SUITE` — a k3s lifecycle integration suite
 
-**Integration assertions remain; separate workflow #10502 is merged and has a successful run.**
-Keep expensive k3s tests in that workflow. The current performance worker compares the same source
-revision with and without shared interpreter layers; the historical successful run predates Sandbox
-Service retirement and is not a matched baseline. One
-shared k3s environment fixture on a BuildBuddy action, one test per
-flow, no LLM: create, bootstrap, suspend, resume, quiesce and delete, about 15 minutes on RBE. Create,
-bootstrap, suspend, resume and delete have landed (`agentplane/x/k3s_env`). Left: the quiesce
-assertions, which wait for `QUIESCE_WITHOUT_POLLING`, and the assertion that `Ready` implies a
-finished bootstrap. The controller contract is implemented; this node adds integration assertions. The disposable-environment lane owns the
-fixture. Tests that need ClusterIP Services, KubeVirt or Cilium stay elsewhere
-(`ISOLATED_ACCEPTANCE_CI`).
+**Candidate for bootstrap assertions; quiesce assertions wait on `QUIESCE_WITHOUT_POLLING`.**
+The existing model-free suite covers create, bootstrap execution, suspend, resume and delete in one
+shared k3s environment. Add the assertion that `Ready` implies finished bootstrap, then the selected
+quiesce completion assertions. These are the remaining integration gaps, not another fixture or CI
+workflow. Keep the suite in its separate manual-only workflow. Performance work is
+`K3S_STARTUP_COST`; real KubeVirt, Cilium, ClusterIP routing and OIDC/Dex coverage remain explicit
+limitations to resolve before `TESTING_ENVIRONMENT_RETIRE`.
 
 ### `STATE_VOLUME_BLOCK` — the state volume moves to block storage
 
@@ -1019,17 +997,18 @@ implementation node once policy is reviewed; existing caller cutovers do not sil
 
 ### `APP_SESSION_OPEN_ACTIVATION` — activate queued app Session openings
 
-**Rollout and acceptance remain; coordinator and `vm_connection`, 2026-10-15 UTC.** #10569 combines
-the History-backed Thread identity correction with Dispatcher-only app commands and Session openings.
+**Rollout and acceptance remain; coordinator and `vm_connection`, 2026-10-15 UTC.** #10569 merged
+as `721cab8eef`, including History-backed Thread identity and Dispatcher-only commands/openings.
 Rai explicitly approved activating queued openings in **both testing and staging** with this image;
 both environments follow the same app ImagePolicy. No separate staging configuration activation or
-pre-merge live acceptance hold remains. Verify both app pins/readiness after publication, then run
+pre-merge live acceptance hold remains. At the 2026-10-15 02:00 UTC read-only check, both
+environments still pinned app `6dc7dca`; the merged source had not rolled out.
+Verify both app pins/readiness after publication, then run
 bounded queued-open, same-ID retry and eventual Thread-projection acceptance in testing followed by
 staging. These checks remain unfinished; the earlier probe admitted a Session but its Thread read
 failed before the identity correction. Evidence: [History identity acceptance](../debug/app_thread_identity_acceptance.md).
 
-The removed app command/opening branches and History identity implementation are complete in this
-PR. Retain Runner Gateway Session reads and native resume, plus its receivers and other callers
+Retain Runner Gateway Session reads and native resume, plus its receivers and other callers
 until their own caller-image gates. The accepted-but-ignored opening setting has its removal below.
 
 ### `APP_OPEN_FLAG_REMOVE` — retire the queued-opening rollout flag
@@ -1060,10 +1039,14 @@ Complete caller rollout before narrowing Gateway authorization or removing the l
 
 ### `RESUME_CREDENTIALS_VALID` — grants and tokens still valid after a long suspension
 
-**Candidate; basic revival coverage is complete.** A Sandbox that resumes hours or days later must come up with egress
-grants, `PolicyBinding`s and projected tokens still valid, or it looks broken. Check each
-expiring thing the Sandbox holds, and make a resume refresh or refuse with a reason, never come up
-half-granted. Grants made from the app can carry an `expiresAt`.
+**Decision; audit assigned to `resume_credentials`, 2026-10-15 UTC.** Are app-created runtime
+`PolicyBinding`s optional additive capabilities, or prerequisites for useful resume? The current
+app adds independent expiring grants; Sandbox resume does not renew them. Recommend preserving
+that additive model: expiry and revocation remain authoritative, with no automatic re-grant.
+If required grants are desired, first define their durable identity, missing/expired status and
+explicit operator re-grant flow. The audit must distinguish controller-driven expiry from exact
+post-deadline denial, and projected-token renewal from grant renewal. Add implementation work only
+for a reviewed contract that the code does not already satisfy; do not add an implicit Ready gate.
 
 ### `SUSPENDED_COMPOSER` — the composer stays enabled while a Session is suspended
 
@@ -1075,9 +1058,11 @@ Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
 ### `THREAD_SUCCESSOR_DELIVERY` — commands unsettled across incarnations
 
-**Candidate; basic revival coverage is complete.** A command whose admission was ambiguous when an incarnation ended is
-redelivered to the next one, which resolves the ambiguity (the runner deduplicates on the command
-ID). It is `unknown` only when the Sandbox was deleted. Moved from the freezer.
+**In flight; `successor_delivery`, 2026-10-15 UTC.** Join the real Dispatcher retry and runner
+journal paths in a lost-admission-reply test across incarnation replacement. Preserve the command
+ID/payload and original durable admission cursor; no second admission is written. Deletion remains
+the terminal `unknown` case. This is admission deduplication, not a promise of exactly-once native
+effects: recovery can replay an input whose native acceptance was never confirmed.
 
 Control design: [ADR](../docs/adr_sandbox_session_control.md).
 
@@ -1223,9 +1208,7 @@ flowchart TD
 
 ### `APP_SESSION_DEFAULTS_LEGACY_REMOVE` — delete legacy per-Sandbox defaults fields
 
-**Caller defaults rollout and Sandbox Service retirement are complete.** The unused defaults input
-and writer in shared Sandbox creation are removed; existing CR fields and read projections remain.
-Audit remaining
+**Candidate for unused CR fields; receiver removals retain caller-image gates.** Audit remaining
 CreateSession callers before removing their field mask; that part waits for the direct-open caller
 removal and its image rollout. Other unused defaults fields can be reviewed independently.
 Once every writer has stopped sending them, delete `SandboxBinding.session_defaults`, the Sandbox

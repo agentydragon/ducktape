@@ -149,7 +149,7 @@ does not inspect or repair filesystems through the Kubernetes API.
 ## Initial rollout
 
 The accepted incompatible cutoff removed the listed disposable Sandboxes and their owned storage
-under [#10493](../plans/workspace_cutoff.md); it did not migrate existing contents. #10440
+under [#10493](../acceptance/debug/storage_acceptance.md#initial-workspace-cutoff); it did not migrate existing contents. #10440
 implements the retained-layout contract, and #10507 activated the selected layouts in the deployed
 templates: `DirectoryTree` for the Pod runners and `RawDiskImage`/ext4 for `runner-vm`, each with a
 Sandbox-owned workspace claim. The [storage acceptance record](../acceptance/debug/storage_acceptance.md)

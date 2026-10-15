@@ -8,18 +8,16 @@ The design and its constraints are in [VM Sandboxes](../docs/vm_sandboxes.md). S
 name. Warm pools, memory snapshots, live migration and arbitrary user-supplied VM specifications
 stay out of scope.
 
-## Storage rollout
+## Remaining storage acceptance
 
-[Storage layouts](../docs/sandbox_storage.md) separates Sandbox ownership from content format and
-attachment compatibility. #10440 adds the declared workspace contract. [Testing storage acceptance](../acceptance/debug/storage_acceptance.md)
-records image-pin gating, the historical comparison with the old DataVolume path, and selection of
-the retained path. Typed workspace templates from #10507 have reconciled in testing and staging;
-the operator-directed incompatible cutoff is complete ([evidence](workspace_cutoff.md)). This
-follow-up retires the superseded blank-DataVolume production workspace path while retaining generic
-DataVolume disks in custom VM templates. The guest shell-to-NixOS work is
-`VM_GUEST_DECLARATIVE_STORAGE`. Conversion is deferred to
-`VOLUME_LAYOUT_CONVERSION`, much later, and does not gate this rollout. A filesystem-backed raw
-`disk.img` and an ordinary Pod directory are explicitly incompatible without such a conversion.
+The declared [storage layouts](../docs/sandbox_storage.md), template activation, incompatible
+cutoff and obsolete production DataVolume workspace retirement are complete; evidence is in
+[storage acceptance](../acceptance/debug/storage_acceptance.md). Generic DataVolume disks in custom
+VM templates remain supported. `VM_GUEST_DECLARATIVE_STORAGE` retains only fresh-format and
+retained-remount acceptance for the newer guest implementation after the corrected testing app
+image pin. Conversion remains `VOLUME_LAYOUT_CONVERSION`, much later, and does not gate that
+acceptance. A filesystem-backed raw `disk.img` and an ordinary Pod directory remain explicitly
+incompatible without conversion.
 
 ## Open gates
 
