@@ -36,17 +36,10 @@ class RunnerClient:
     async def open_session(
         self, sandbox: str, session_id: str, spec: runner_pb2.SessionSpec, setup_script: str | None
     ) -> runner_pb2.Attached:
-        """The runner's snapshot of the Session it created, or confirmed against the same spec."""
+        """The runner's attachment for a newly created Session or an identical spec and setup retry."""
         request = runner_control_pb2.OpenSessionRequest(session_id=session_id, spec=spec, setup_script=setup_script)
         async with self._runner(sandbox) as (runner, metadata):
             return (await runner.OpenSession(request, metadata=metadata, timeout=self.request_timeout_s)).attached
-
-    async def has_session(self, sandbox: str, session_id: str) -> bool:
-        async with self._runner(sandbox) as (runner, metadata):
-            listed = await runner.ListSessions(
-                runner_pb2.ListSessionsRequest(), metadata=metadata, timeout=self.request_timeout_s
-            )
-        return any(summary.session_id == session_id for summary in listed.sessions)
 
     async def deliver(self, sandbox: str, session_id: str, command: command_pb2.Command) -> event_log_pb2.EventEntry:
         """The runner's admission of `command`. An input or a setting change first resumes a stopped

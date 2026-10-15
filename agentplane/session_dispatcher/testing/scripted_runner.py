@@ -16,7 +16,8 @@ class ScriptedRunner(runner_control_pb2_grpc.RunnerServicer):
     def __init__(self) -> None:
         self.calls: list[tuple[str, str]] = []
         self.failures: list[tuple[grpc.StatusCode, str]] = []
-        self.listed_sessions: list[str] = []
+        self.opened_sessions: dict[str, runner_control_pb2.OpenSessionRequest] = {}
+        self.lost_open_replies: set[str] = set()
         self.resumed_sessions: list[str] = []
 
     async def _answer(self, call: str, command_id: str, context: grpc.aio.ServicerContext) -> event_log_pb2.EventEntry:
@@ -27,18 +28,29 @@ class ScriptedRunner(runner_control_pb2_grpc.RunnerServicer):
         return event_log_pb2.EventEntry()
 
     @override
-    async def ListSessions(
-        self, request: runner_pb2.ListSessionsRequest, context: grpc.aio.ServicerContext
-    ) -> runner_pb2.ListSessionsResponse:
-        return runner_pb2.ListSessionsResponse(
-            sessions=[runner_pb2.SessionSummary(session_id=session_id) for session_id in self.listed_sessions]
-        )
-
-    @override
     async def OpenSession(
         self, request: runner_control_pb2.OpenSessionRequest, context: grpc.aio.ServicerContext
     ) -> runner_control_pb2.OpenSessionResponse:
-        await self._answer("OpenSession", request.session_id, context)
+        self.calls.append(("OpenSession", request.session_id))
+        existing = self.opened_sessions.get(request.session_id)
+        difference = None
+        if existing is not None and existing.spec != request.spec:
+            difference = "spec"
+        elif existing is not None and request.HasField("setup_script"):
+            existing_setup = existing.setup_script if existing.HasField("setup_script") else None
+            if (request.setup_script or None) != (existing_setup or None):
+                difference = "setup script"
+        if difference is not None:
+            await context.abort(
+                grpc.StatusCode.ALREADY_EXISTS, f"session {request.session_id} exists with a different {difference}"
+            )
+        if existing is None:
+            existing = runner_control_pb2.OpenSessionRequest()
+            existing.CopyFrom(request)
+            self.opened_sessions[request.session_id] = existing
+        if request.session_id in self.lost_open_replies:
+            self.lost_open_replies.remove(request.session_id)
+            await context.abort(grpc.StatusCode.UNAVAILABLE, "opening reply lost after creation")
         return runner_control_pb2.OpenSessionResponse(attached=runner_pb2.Attached(session_id=request.session_id))
 
     @override

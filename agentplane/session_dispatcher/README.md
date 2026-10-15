@@ -26,9 +26,8 @@ The [task DAG](../plans/task_dag.md) tracks rollout acceptance.
   with a `SessionOpening` in the same delivery states. A retry with the same Sandbox, spec and
   `setup_script` returns the stored record; anything else under that ID is `ALREADY_EXISTS`. Once the Sandbox
   is `Ready` the runner's idempotent `OpenSession` is called before any of the Session's commands. A
-  matching runner retry returns its existing attachment; `ALREADY_EXISTS` means the runner's retained
-  spec or setup conflicts. The current list-based fallback can misclassify that conflict and is tracked
-  for correction in the [task DAG](../plans/task_dag.md#dispatcher_open_already_exists).
+  matching runner retry returns its existing attachment; `ALREADY_EXISTS` means a requested spec or
+  setup conflicts, which the Dispatcher records as a failed opening.
   Openings follow the rules of commands below for deleted Sandboxes, runner statuses and retention.
 - **Queue**: no TTL; at most `max_queued_per_session` queued commands per Session, then
   `RESOURCE_EXHAUSTED`. A command for a Sandbox that does not exist is refused `NOT_FOUND` and stores nothing.

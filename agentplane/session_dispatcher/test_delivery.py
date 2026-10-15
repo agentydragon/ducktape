@@ -231,7 +231,6 @@ async def test_delivery_resumes_only_the_session_with_a_pending_command(
     store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster, runner: tuple[ScriptedRunner, str]
 ) -> None:
     set_sandbox(cluster, ready=True)
-    runner[0].listed_sessions.extend(["pending-session", "dormant-session"])
     await enqueue(store, sandboxes, "resume-pending", session_id="pending-session")
     await wait_for(store, "resume-pending", DeliveryState.RUNNER_ADMITTED)
 
@@ -879,7 +878,9 @@ async def test_a_command_the_runner_refuses_fails_with_its_status(
     assert row.admission is None
 
 
-async def open_session(store: DispatchStore, sandboxes: SandboxWatch, *, wake_eligible: bool = False) -> None:
+async def open_session(
+    store: DispatchStore, sandboxes: SandboxWatch, *, wake_eligible: bool = False, setup_script: str | None = None
+) -> None:
     sandbox = sandboxes.get_sandbox(SANDBOX)
     assert sandbox is not None
     await store.open_session(
@@ -887,7 +888,7 @@ async def open_session(store: DispatchStore, sandboxes: SandboxWatch, *, wake_el
         sandbox_name=SANDBOX,
         sandbox_uid=sandbox.metadata.uid,
         spec=runner_pb2.SessionSpec(),
-        setup_script=None,
+        setup_script=setup_script,
         wake_caller=WAKE_CALLER if wake_eligible else None,
     )
 
@@ -900,6 +901,17 @@ async def wait_for_opening(store: DispatchStore, state: DeliveryState, reason: s
             opening = await store.get_opening(SESSION)
             if (opening.state, opening.reason) == (state, reason):
                 return
+            await changed.wait()
+
+
+async def wait_for_opening_state(store: DispatchStore, state: DeliveryState) -> SessionOpening:
+    changed = asyncio.Event()
+    with store.wakeups.changes[Channel.DISPATCH].subscribe(changed):
+        while True:
+            changed.clear()
+            opening = await store.get_opening(SESSION)
+            if opening.state == state:
+                return opening
             await changed.wait()
 
 
@@ -916,23 +928,38 @@ async def test_a_session_is_opened_before_its_commands_once_the_sandbox_is_ready
     assert (await store.get_opening(SESSION)).attached is not None
 
 
-async def test_an_opening_the_runner_already_holds_is_opened_once_it_lists_the_session(
+async def test_a_lost_opening_reply_is_resolved_by_an_identical_retry(
     store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster, runner: tuple[ScriptedRunner, str]
 ) -> None:
     set_sandbox(cluster, ready=True)
-    runner[0].failures.append((grpc.StatusCode.ALREADY_EXISTS, "created by an attempt whose reply was lost"))
-    runner[0].listed_sessions.append(SESSION)
+    runner[0].lost_open_replies.add(SESSION)
     await open_session(store, sandboxes)
     await wait_for_opening(store, DeliveryState.RUNNER_ADMITTED)
+    assert runner[0].calls == [("OpenSession", SESSION), ("OpenSession", SESSION)]
+    assert (await store.get_opening(SESSION)).attached is not None
 
 
+@pytest.mark.parametrize("conflict", ["spec", "setup_script"])
 async def test_an_opening_that_conflicts_with_the_runners_session_fails(
-    store: DispatchStore, sandboxes: SandboxWatch, cluster: SandboxCluster, runner: tuple[ScriptedRunner, str]
+    conflict: str,
+    store: DispatchStore,
+    sandboxes: SandboxWatch,
+    cluster: SandboxCluster,
+    runner: tuple[ScriptedRunner, str],
 ) -> None:
     set_sandbox(cluster, ready=True)
-    runner[0].failures.append((grpc.StatusCode.ALREADY_EXISTS, "another spec"))
-    await open_session(store, sandboxes)
-    await wait_for_opening(store, DeliveryState.FAILED, "runner ALREADY_EXISTS: another spec")
+    existing = runner_control_pb2.OpenSessionRequest(session_id=SESSION, spec=runner_pb2.SessionSpec())
+    if conflict == "spec":
+        existing.spec.model = "another-model"
+        details = f"session {SESSION} exists with a different spec"
+    else:
+        existing.setup_script = "another setup"
+        details = f"session {SESSION} exists with a different setup script"
+    runner[0].opened_sessions[SESSION] = existing
+    await open_session(store, sandboxes, setup_script="requested setup" if conflict == "setup_script" else None)
+    failed = await wait_for_opening_state(store, DeliveryState.FAILED)
+    assert failed.reason == f"runner ALREADY_EXISTS: {details}"
+    assert runner[0].calls == [("OpenSession", SESSION)]
 
 
 async def test_a_deleted_sandbox_ends_its_commands_for_the_streams_and_takes_its_rows(

@@ -1277,8 +1277,6 @@ flowchart TD
     CONTROL_SURFACE_RETIREMENT_AUDIT[Assigned: audit RPCs, fields and arguments against the intended paths]
     CONTROL_SURFACE_RETIREMENT_AUDIT --> RUNNER_INVENTORY_AUTHORITY_DESIGN
     RUNNER_INVENTORY_AUTHORITY_DESIGN -. if no reviewed live-state caller remains .-> RUNNER_LIST_SESSIONS_RETIRE[Conditional: retire Runner.ListSessions]
-    CONTROL_SURFACE_RETIREMENT_AUDIT --> DISPATCHER_OPEN_ALREADY_EXISTS[Candidate: reconcile opening conflict semantics before removing its list fallback]
-    DISPATCHER_OPEN_ALREADY_EXISTS --> RUNNER_LIST_SESSIONS_RETIRE
     CONTROL_SURFACE_RETIREMENT_AUDIT --> DISPATCHER_OPENING_ATTACHED_RETIRE[Candidate: remove the unused persisted opening snapshot]
     GATEWAY_WRAPPER_RETIRE --> RUNNER_COMMAND_RPCS
     GATEWAY_WRAPPER_RETIRE[Blocked: retire redundant Gateway APIs; preserve registry for current resume checks]
@@ -1326,32 +1324,19 @@ migrations or authorize broad compatibility shims, language rewrites or speculat
 
 ### `RUNNER_LIST_SESSIONS_RETIRE` — retire live inventory only if its reviewed purposes no longer need it
 
-**Conditional on the live-versus-retained inventory disposition in `RUNNER_INVENTORY_AUTHORITY_DESIGN`,
-the surface audit, and the separate Dispatcher conflict correction.** Runner `ListSessions` reports
-the current runner's retained Session records and live harness/setup state. The app uses it for
-archive and resume checks; Notification uses it for destination membership at subscription time;
-Dispatcher currently uses it after runner `OpenSession` returns `ALREADY_EXISTS`; test drivers also
-use it for lifecycle assertions. History inventory is retained and event-backed, may include deleted
-Sandboxes, has no Sandbox UID and may lag. It cannot replace a caller's need for current runner state.
-
-Do not treat removal as the desired outcome: if a reviewed caller still needs live presence or
-current harness state, retain or narrow the RPC. If the decision finds no remaining live-state use,
-migrate each caller with its identity and failure semantics intact, then migrate tests and verify
-pinned caller images before removing the method, messages and helpers via normal generation. The
-Dispatcher's ID-only fallback can accept a conflicting spec as a retry; correct that independently
-before removing its caller. Gateway wrapper retirement may proceed while a narrowly justified runner
-read remains.
-
-### `DISPATCHER_OPEN_ALREADY_EXISTS` — settle opening conflicts without live-list inference
-
-**Candidate; identified by `CONTROL_SURFACE_RETIREMENT_AUDIT`.** `Runner.OpenSession` returns the
-existing attachment on a retry with the same spec and setup script, and returns `ALREADY_EXISTS` for
-a conflicting spec or setup. The Dispatcher currently calls `Runner.ListSessions` after
-`ALREADY_EXISTS` and accepts any matching Session ID, which can mark conflicting work admitted. Make
-the opening result follow the runner's actual conflict contract, and replace the test that models a
-lost identical-open reply as `ALREADY_EXISTS` with a retry that receives the existing attachment.
-This removes the Dispatcher caller of `Runner.ListSessions`; keep conflict and response-loss behavior
-covered before the runner list RPC is considered removable.
+**Blocked on the surface audit's disposition and migration of its remaining real callers.** The
+Sandbox table uses retained History inventory. App archive safety/native resume and Notification
+membership still use live runner inventory; app and Notification now reach `Runner.ListSessions`
+through the per-Sandbox proxy with expected Sandbox UID and owner metadata (#10619), and their caller
+plus receiver images are deployed in both environments. Test drivers also use the read to order
+Quiesce assertions. The Dispatcher now relies on `OpenSession` to return the existing attachment for an
+identical retry and propagates `ALREADY_EXISTS` for a conflicting spec or setup; it no longer calls
+`Runner.ListSessions` for opening. History's retained harness state and namespace/name association do
+not preserve authoritative live state or Sandbox UID/owner checks. Migrate remaining callers with their
+live-state and identity requirements intact, then migrate tests and verify pinned caller images before
+removing the runner method/messages and helpers via normal generation. The Gateway wrapper may retire
+even if a narrowly justified runner live read remains; record that decision and remove this conditional
+node if so.
 
 ### `DISPATCHER_OPENING_ATTACHED_RETIRE` — remove the unused persisted opening snapshot
 
@@ -1557,10 +1542,10 @@ node does not authorize deployment or service changes.
 **Candidate decision.** Trace every current `Runner.ListSessions` and History inventory caller. The
 runner read reports records and harness/setup state known to the current runner; History reports
 retained Events and folded Thread views, can lag, and can include deleted Sandboxes. App archive and
-resume checks, Notification subscription membership, Dispatcher `ALREADY_EXISTS` fallback, and test
-drivers use live state today for different reasons. Decide whether each requires live presence,
-retained identity/history or a narrower contract. Keep the bounded Dispatcher `ALREADY_EXISTS`
-conflict correction independent.
+resume checks, Notification subscription membership, and test drivers use live state today for
+different reasons. The Dispatcher no longer calls `ListSessions` to resolve `OpenSession` conflicts:
+identical retries return the existing attachment, while conflicting specs or setup fail. Decide
+whether each remaining caller requires live presence, retained identity/history or a narrower contract.
 
 **Recommendation for review:** retain a live read wherever an approved caller still needs live state;
 do not substitute History by name similarity. `RUNNER_LIST_SESSIONS_RETIRE` remains conditional on

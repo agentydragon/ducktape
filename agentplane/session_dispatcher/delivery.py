@@ -578,18 +578,10 @@ class Delivery:
                     opening, owner, DeliveryState.QUEUED_IN_DISPATCHER, reason=Reason.DELIVERY_UNAVAILABLE
                 )
             case grpc.StatusCode.ALREADY_EXISTS:
-                # An earlier attempt created it and its reply was lost, or the runner holds another spec.
-                try:
-                    exists = await self.runner.has_session(opening.sandbox_name, opening.session_id)
-                except grpc.aio.AioRpcError as listing:
-                    await self._refuse_opening(opening, incarnation, owner, listing)
-                    return
-                if exists:
-                    await self._settle_opening(opening, owner, DeliveryState.RUNNER_ADMITTED)
-                else:
-                    await self._settle_opening(
-                        opening, owner, DeliveryState.FAILED, reason=f"runner ALREADY_EXISTS: {error.details()}"
-                    )
+                # Exact retries return the existing attachment; ALREADY_EXISTS means a requested value conflicts.
+                await self._settle_opening(
+                    opening, owner, DeliveryState.FAILED, reason=f"runner ALREADY_EXISTS: {error.details()}"
+                )
             case code:
                 await self._settle_opening(
                     opening, owner, DeliveryState.FAILED, reason=f"runner {code.name}: {error.details()}"

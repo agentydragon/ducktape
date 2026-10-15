@@ -426,13 +426,13 @@ dependency the other path does not need).
 **Refusal codes**. The runner's gRPC code says what the Dispatcher does; the gateway proxy
 passes runner codes through. The first row is already true on `devel`, where the runner returns `ABORTED` for the lameduck refusal; only the conditional-`Quiesce` row is new.
 
-| Case                                                             | Code                  | Dispatcher                                                                                                                           |
-| ---------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| Runner in lameduck refuses work                                  | `ABORTED`             | back to `QUEUED_IN_DISPATCHER`, retry after resume                                                                                   |
-| Conditional `Quiesce` refused (`if_idle_since` differs, or busy) | `ABORTED`             | none: the controller resets its idle timer                                                                                           |
-| Journal sealed, setup failed, harness stopped, `BootstrapFailed` | `FAILED_PRECONDITION` | terminal: `FAILED` with the reason                                                                                                   |
-| Redelivered `command_id` already admitted                        | success               | `RUNNER_ADMITTED`, or later, from the runner's answer                                                                                |
-| Runner `OpenSession` returns `ALREADY_EXISTS`                    | `ALREADY_EXISTS`      | Current list fallback can mistake conflicting spec/setup for a successful open; see `DISPATCHER_OPEN_ALREADY_EXISTS` in the task DAG |
+| Case                                                             | Code                  | Dispatcher                                                                                                                                |
+| ---------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| Runner in lameduck refuses work                                  | `ABORTED`             | back to `QUEUED_IN_DISPATCHER`, retry after resume                                                                                        |
+| Conditional `Quiesce` refused (`if_idle_since` differs, or busy) | `ABORTED`             | none: the controller resets its idle timer                                                                                                |
+| Journal sealed, setup failed, harness stopped, `BootstrapFailed` | `FAILED_PRECONDITION` | terminal: `FAILED` with the reason                                                                                                        |
+| Redelivered `command_id` already admitted                        | success               | `RUNNER_ADMITTED`, or later, from the runner's answer                                                                                     |
+| Runner `OpenSession` returns `ALREADY_EXISTS`                    | `ALREADY_EXISTS`      | terminal: `FAILED`; the runner returns the existing attachment for exact retries, so this status means a requested spec or setup conflict |
 
 **Ambiguous delivery resolves on redelivery.** The runner's journal lives on the state volume and answers a
 redelivered `command_id` with its existing admission, even after the harness stopped or the journal was sealed. A
