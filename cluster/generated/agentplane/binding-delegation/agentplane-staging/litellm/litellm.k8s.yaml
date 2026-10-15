@@ -19,14 +19,6 @@ rules:
       - roles
     verbs:
       - get
-  - apiGroups:
-      - rbac.authorization.k8s.io
-    resourceNames:
-      - claude-ai-disposable-env-key-reader
-    resources:
-      - roles
-    verbs:
-      - bind
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

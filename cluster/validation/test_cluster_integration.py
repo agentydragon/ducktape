@@ -290,8 +290,7 @@ def test_managed_agent_read_grants_cover_declarative_namespace_opt_ins(
             and rule["role"]["kind"] == "Role"
             and namespace in rule["namespaces"]
         }
-        if namespace == "litellm":
-            expected_bound_roles.add("claude-ai-disposable-env-key-reader")
+        # The Litellm reader is a static Claude binding, not an assignable PolicySet role.
         actual_bound_roles = {
             tuple(rule.get("resourceNames", []))
             for rule in role["rules"]

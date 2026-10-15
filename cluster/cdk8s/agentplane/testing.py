@@ -48,6 +48,7 @@ from cluster.cdk8s.agentplane import (
     egress,
     notifications,
     policy_controller,
+    policy_controller_rbac,
     sandbox_pod,
 )
 from cluster.cdk8s.agentplane.actions_testing_fixtures import (
@@ -75,6 +76,7 @@ from cluster.cdk8s.flux import Kustomization, flux_kustomization, flux_kustomiza
 from cluster.cdk8s.generation import CNPG_DATABASE_READY
 from cluster.cdk8s.manifest_roots import GENERATED_ROOT, HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_selections import TESTING_APP_MODELS, model_configs
+from cluster.cdk8s.providers.agentplane.policy_set import PolicySet
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, NetworkPolicy
 from model_catalog.catalog import GPT6_LUNA_RESPONSES
 
@@ -398,13 +400,18 @@ def chart(app: App) -> Chart:
     )
     add_testing_fixtures(chart)
     dex.Dex(chart, "dex")
-    # No grant catalog here: the only Kubernetes-rule set is the tool config every environment
-    # serves, and the controller reports KubernetesReady on testing's PolicyBindings.
-    policy_controller.PolicyController(
+    # Testing composes and materializes only the tool-config set; its controller workload and RBAC
+    # are separate constructs, like staging's.
+    tool_config_grant = sandbox_pod.tool_config_grant(ENV.namespace)
+    PolicySet(
         chart,
-        "policy-controller",
-        ENV,
-        sets={sandbox_pod.TOOL_CONFIG_GRANT: [sandbox_pod.tool_config_grant(ENV.namespace)]},
+        f"policy-set-{sandbox_pod.TOOL_CONFIG_GRANT}",
+        metadata=ApiObjectMetadata(name=sandbox_pod.TOOL_CONFIG_GRANT, namespace=ENV.namespace),
+        rules=access.rules_for_grants([tool_config_grant]),
+    )
+    controller = policy_controller.PolicyController(chart, "policy-controller", ENV)
+    policy_controller_rbac.PolicyControllerRbac(
+        chart, "policy-controller-rbac", ENV, account=controller.account, assignable_grants=[tool_config_grant]
     )
     EgressCredentials(
         chart, "egress-credentials", namespace=ENV.egress.credentials_namespace, proxy_namespace=ENV.namespace

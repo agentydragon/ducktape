@@ -7,7 +7,8 @@ sensitive grants are explicit profile selections rather than diagnostics.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections import defaultdict
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import Literal
 
@@ -15,6 +16,7 @@ from agentplane_policyset_crds.works.allegedly.agentplane import (
     PolicySetSpecRules,
     PolicySetSpecRulesCredentialRef,
     PolicySetSpecRulesMethods,
+    PolicySetSpecRulesRoleKind,
 )
 from cdk8s_plus_34 import Group, ISubject, ServiceAccount, k8s
 from constructs import Construct
@@ -185,9 +187,9 @@ TESTING_ACCESS = ("agentplane-testing-operator", "agentplane-testing-login")
 PUBLIC_INVENTORY = ("public-coder-node-read", "public-coder-cluster-metadata-read")
 HAKU_EXTRAS = ("cluster-diagnostics", "haku-sandbox-write")
 PUBLIC_GRANTS = (*SHARED_DIAGNOSTICS, *TESTING_ACCESS, *PUBLIC_INVENTORY)
-# The Flux-owned PolicySets the Policy Controller expands, one per launch choice. Their Kubernetes
-# rules are catalog grants (one RoleBinding rule per role across its namespaces); staging may add
-# reviewed egress rules to a set when one selection should grant both capabilities.
+# Shared grant membership for PolicySets. Each deployment chart composes these Kubernetes rules with
+# its own rules before materializing the complete PolicySet, then separately materializes controller
+# RBAC from the resolved assignable grants.
 POLICY_SETS = {
     "shared-diagnostics": SHARED_DIAGNOSTICS,
     AGENTPLANE_TESTING_POLICY: TESTING_ACCESS,
@@ -198,6 +200,30 @@ POLICY_SETS = {
     "spend-policy-config": ("spend-policy-config",),
     PLAID_DIAGNOSTICS_POLICY: (PLAID_DIAGNOSTICS_POLICY,),
 }
+
+
+def policy_set_grants(catalog: Mapping[str, KubernetesGrant]) -> dict[str, tuple[KubernetesGrant, ...]]:
+    """Resolve the Kubernetes grants held by each shared, assignable PolicySet."""
+    return {name: tuple(catalog[grant] for grant in grants) for name, grants in POLICY_SETS.items()}
+
+
+def rules_for_grants(grants: Sequence[KubernetesGrant]) -> list[PolicySetSpecRules]:
+    """Render Kubernetes grants as the rules a PolicySet materializes."""
+    role_kinds = {"Role": PolicySetSpecRulesRoleKind.ROLE, "ClusterRole": PolicySetSpecRulesRoleKind.CLUSTER_ROLE}
+    namespaces: defaultdict[tuple[str, str], set[str]] = defaultdict(set)
+    cluster_roles: set[str] = set()
+    for grant in grants:
+        if isinstance(grant, RoleBindingGrant):
+            namespaces[(grant.role_ref.kind, grant.role_ref.name)].add(grant.namespace)
+        else:
+            cluster_roles.add(grant.role_ref.name)
+    return [
+        *(
+            Rule.kubernetes_role_binding(kind=role_kinds[kind], name=name, namespaces=sorted(namespaces[(kind, name)]))
+            for kind, name in sorted(namespaces)
+        ),
+        *(Rule.kubernetes_cluster_role_binding(cluster_role=name) for name in sorted(cluster_roles)),
+    ]
 
 
 def plaid_pgweb_egress_rules(*, credential: str) -> list[PolicySetSpecRules]:

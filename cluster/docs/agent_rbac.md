@@ -185,9 +185,12 @@ RoleBindings and ClusterRoleBindings of the bound sets' Kubernetes rules
 ([contract](../../agentplane/policy_controller/SPEC.md)). A set edit therefore reaches every
 bound Sandbox, and deleting a Sandbox deletes its binding and the native bindings it granted.
 
-The Policy Controller may `bind` only the roles the sets name, by `resourceNames`, and cannot
-edit their rules. Its own Flux Kustomization owns delegation in `agentplane-staging` and at
-cluster scope. Each external target namespace has a separate, GitRepository-sourced Flux
+Each environment chart separately materializes the Policy Controller workload, its assignable
+PolicySets, and the controller's RBAC. The same assignable grant references produce both the
+PolicySet Kubernetes rules and the controller's exact `resourceNames`-scoped `bind` permissions;
+the controller workload construct itself has no Role or binding wiring. The controller cannot
+edit the referenced roles' rules. Its own Flux Kustomization owns delegation in `agentplane-staging`
+and at cluster scope. Each external target namespace has a separate, GitRepository-sourced Flux
 Kustomization for the Policy Controller's RoleBinding management Role and RoleBinding
 (`cluster/cdk8s/agentplane/binding_delegation.py`). The `haku-sandbox` delegation depends on
 `haku-rbac`, which depends on the namespace owner. A failure in this delegation Kustomization
@@ -195,9 +198,9 @@ does not block the Agentplane app Kustomization. Keep an external delegation whi
 namespace is in the retained cleanup scopes, even if its catalog entry is removed.
 
 Kubernetes RBAC does not constrain a ClusterRole's `bind` permission to namespaced
-RoleBindings. Because the Policy Controller can create ClusterRoleBindings for the catalog's cluster
-grant, a compromised Policy Controller identity could bind the named metadata and logs ClusterRoles
-cluster-wide too. This is a delegation limit of its ServiceAccount's Kubernetes permissions.
+RoleBindings. Because the Policy Controller can create ClusterRoleBindings for assignable cluster
+grants, a compromised Policy Controller identity could bind any of its named ClusterRoles cluster-wide
+too. This is a delegation limit of its ServiceAccount's Kubernetes permissions.
 
 ### Shared deployment definitions and parity contract
 

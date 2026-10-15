@@ -27,6 +27,7 @@ from agentplane.action_service.operator_oidc_settings import OperatorOidcSetting
 from agentplane.action_service.sandbox.actions import SandboxAction
 from agentplane.action_service.sandbox.binding import PodExecutorBinding
 from agentplane.app.action_federation_settings import ExchangeFederationSettings
+from agentplane.sandboxes.kubernetes_grants import KubernetesGrant
 from cluster.cdk8s import (
     agent_access_profiles,
     cilium,
@@ -40,6 +41,7 @@ from cluster.cdk8s.agentplane import (
     command_sandbox,
     notifications,
     policy_controller,
+    policy_controller_rbac,
     staging_config,
     staging_grants,
 )
@@ -78,6 +80,7 @@ from cluster.cdk8s.gateway import https_route
 from cluster.cdk8s.generation import CNPG_DATABASE_READY, sops_decryption
 from cluster.cdk8s.manifest_roots import HAND_WRITTEN_ROOT
 from cluster.cdk8s.model_selections import STAGING_APP_MODELS, model_configs
+from cluster.cdk8s.providers.agentplane.policy_set import PolicySet
 from cluster.cdk8s.providers.cilium.network_policy import EgressRule, IngressRule, NetworkPolicy
 from cluster.cdk8s.providers.external_secrets.external_secret import ExternalSecret, SecretStoreRef, remote_data
 from cluster.cdk8s.public_coder import egress as public_coder_egress
@@ -394,6 +397,18 @@ ENV = Environment(
 )
 
 
+def assignable_policy_sets() -> dict[str, tuple[KubernetesGrant, ...]]:
+    """The complete PolicySet grant inventory materialized by staging."""
+    catalog = staging_grants.catalog(ENV.namespace)
+    sets = agent_access_profiles.policy_set_grants(catalog)
+    sets[TOOL_CONFIG_GRANT] = (catalog[TOOL_CONFIG_GRANT],)
+    return sets
+
+
+def assignable_grants() -> tuple[KubernetesGrant, ...]:
+    return tuple(grant for grants in assignable_policy_sets().values() for grant in grants)
+
+
 def chart(app: App) -> Chart:
     chart = environment_chart(app, ENV)
     # Reuse the canonical key via ESO; do not grant the sandbox ServiceAccount get-secrets RBAC.
@@ -432,24 +447,30 @@ def chart(app: App) -> Chart:
         ingress=[IngressRule.from_gateway(notification_service.pod_port)],
     )
     command_sandbox.CommandSandbox(chart, "command-sandbox", ENV)
-    # Staging alone: the grant catalog the shared sets draw on, and the delegation of RoleBinding
-    # writes in other namespaces, exist only here.
-    catalog = staging_grants.catalog(ENV.namespace)
-    policy_controller.PolicyController(
+    # Compose staging's complete PolicySets from the shared grant definitions and its own egress
+    # rules before materializing them. The controller workload and its RBAC are separate constructs.
+    assignable_sets = assignable_policy_sets()
+    deployment_rules = {
+        agent_access_profiles.AGENTPLANE_TESTING_POLICY: agentplane_testing_egress_rules(),
+        agent_access_profiles.COINBASE_POLICY: coinbase_egress_rules(),
+        agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: agent_access_profiles.plaid_pgweb_egress_rules(
+            credential=PLAID_PGWEB_CREDENTIAL
+        ),
+    }
+    for name, grants in sorted(assignable_sets.items()):
+        PolicySet(
+            chart,
+            f"policy-set-{name}",
+            metadata=ApiObjectMetadata(name=name, namespace=ENV.namespace),
+            rules=[*agent_access_profiles.rules_for_grants(grants), *deployment_rules.get(name, ())],
+        )
+    controller = policy_controller.PolicyController(chart, "policy-controller", ENV)
+    policy_controller_rbac.PolicyControllerRbac(
         chart,
-        "policy-controller",
+        "policy-controller-rbac",
         ENV,
-        sets={
-            name: [catalog[grant] for grant in grants]
-            for name, grants in {**agent_access_profiles.POLICY_SETS, TOOL_CONFIG_GRANT: (TOOL_CONFIG_GRANT,)}.items()
-        },
-        additional_rules={
-            agent_access_profiles.AGENTPLANE_TESTING_POLICY: agentplane_testing_egress_rules(),
-            agent_access_profiles.COINBASE_POLICY: coinbase_egress_rules(),
-            agent_access_profiles.PLAID_DIAGNOSTICS_POLICY: agent_access_profiles.plaid_pgweb_egress_rules(
-                credential=PLAID_PGWEB_CREDENTIAL
-            ),
-        },
+        account=controller.account,
+        assignable_grants=[grant for grants in assignable_sets.values() for grant in grants],
     )
     reader = ServiceAccount(
         chart,

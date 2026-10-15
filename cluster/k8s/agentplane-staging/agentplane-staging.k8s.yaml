@@ -7405,6 +7405,67 @@ spec:
     matchLabels:
       app.kubernetes.io/name: agentplane-policy-controller
 ---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-staging
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s-app: kube-dns
+            k8s:io.kubernetes.pod.namespace: kube-system
+      toPorts:
+        - ports:
+            - port: "53"
+              protocol: UDP
+            - port: "53"
+              protocol: TCP
+    - toEntities:
+        - kube-apiserver
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-policy-controller
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - port: "8080"
+              protocol: TCP
+---
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-staging
+spec:
+  endpoints:
+    - path: /metrics
+      port: metrics
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: agentplane-policy-controller
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: agentplane-policy-controller
+  namespace: agentplane-staging
+spec:
+  groups:
+    - name: agentplane-policy-controller
+      rules:
+        - alert: AgentplanePolicyBindingExpiryOverdue
+          annotations:
+            description: The Policy Controller deletes a PolicyBinding at its expiresAt; this one has outlived it, so its grants are still live. Check the agentplane-policy-controller Deployment and its logs.
+            summary: PolicyBinding {{ $labels.name }} still grants after its expiresAt
+          expr: time() - kube_customresource_agentplane_policybinding_expires_at{namespace="agentplane-staging"} > 300
+          labels:
+            severity: warning
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
@@ -7544,67 +7605,6 @@ subjects:
   - kind: ServiceAccount
     name: agentplane-policy-controller
     namespace: agentplane-staging
----
-apiVersion: cilium.io/v2
-kind: CiliumNetworkPolicy
-metadata:
-  name: agentplane-policy-controller
-  namespace: agentplane-staging
-spec:
-  egress:
-    - toEndpoints:
-        - matchLabels:
-            k8s-app: kube-dns
-            k8s:io.kubernetes.pod.namespace: kube-system
-      toPorts:
-        - ports:
-            - port: "53"
-              protocol: UDP
-            - port: "53"
-              protocol: TCP
-    - toEntities:
-        - kube-apiserver
-  endpointSelector:
-    matchLabels:
-      app.kubernetes.io/name: agentplane-policy-controller
-  ingress:
-    - fromEndpoints:
-        - matchLabels:
-            k8s:io.kubernetes.pod.namespace: monitoring
-      toPorts:
-        - ports:
-            - port: "8080"
-              protocol: TCP
----
-apiVersion: monitoring.coreos.com/v1
-kind: ServiceMonitor
-metadata:
-  name: agentplane-policy-controller
-  namespace: agentplane-staging
-spec:
-  endpoints:
-    - path: /metrics
-      port: metrics
-  selector:
-    matchLabels:
-      app.kubernetes.io/name: agentplane-policy-controller
----
-apiVersion: monitoring.coreos.com/v1
-kind: PrometheusRule
-metadata:
-  name: agentplane-policy-controller
-  namespace: agentplane-staging
-spec:
-  groups:
-    - name: agentplane-policy-controller
-      rules:
-        - alert: AgentplanePolicyBindingExpiryOverdue
-          annotations:
-            description: The Policy Controller deletes a PolicyBinding at its expiresAt; this one has outlived it, so its grants are still live. Check the agentplane-policy-controller Deployment and its logs.
-            summary: PolicyBinding {{ $labels.name }} still grants after its expiresAt
-          expr: time() - kube_customresource_agentplane_policybinding_expires_at{namespace="agentplane-staging"} > 300
-          labels:
-            severity: warning
 ---
 apiVersion: v1
 kind: ServiceAccount

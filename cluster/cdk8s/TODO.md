@@ -89,18 +89,17 @@ Done: `providers/kyverno` targets `v2beta1` (or offers it alongside `v1`), and
 
 ## PolicySet composition and controller RBAC
 
-`agent_access_profiles.POLICY_SETS` supplies Kubernetes grants while
-`agentplane/staging.py` passes egress rules for those same sets through
-`PolicyController.additional_rules`. "Additional" obscures that these are ordinary rules in
-one PolicySet. Give each PolicySet one obvious declaration for its full rule intent.
+Each deployment chart composes complete PolicySets from shared Kubernetes grant references and its
+own egress rules. The Policy Controller workload is materialized separately from PolicySets and
+RBAC; the same assignable grant references produce the controller's role-binding authority.
 
-Evaluate whether the controller should bind only Agentplane-managed Roles through a dedicated
-namespace and narrowly scoped `bind` authority, or through another enforceable ownership or
-selection mechanism such as labels. Keep unrelated/pre-existing Roles outside the controller's
-binding authority.
+Done: no PolicySet rules or role wiring are passed into the Policy Controller construct; each
+deployment materializes complete PolicySets and separately materializes exact-name controller RBAC
+from the assignable grant inventory.
 
-Done: Kubernetes and egress rules have one clear per-set declaration, and the controller can
-bind only the selected Agentplane-managed Roles with minimal, auditable authority.
+Remaining: determine whether exact role-name scoping is the right long-term ownership boundary for
+the controller, especially for its cluster-scoped `ClusterRoleBinding` authority. Native Kubernetes
+RBAC cannot scope `bind` by labels or by the kind of binding being created.
 
 ## Extract only when another caller needs it
 
