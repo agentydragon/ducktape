@@ -72,6 +72,7 @@ vi.mock("./live", async (importOriginal) => ({
 }));
 
 const readySandbox = live.snapshot.sandbox as SandboxView;
+const mutableSnapshot = live.snapshot as SandboxSnapshot;
 const readyPod = readySandbox.pod;
 const readyStatus = readySandbox.status;
 
@@ -104,7 +105,7 @@ afterEach(async () => {
   readySandbox.phase = "Running";
   readySandbox.pod = readyPod;
   readySandbox.status = readyStatus;
-  live.snapshot.sandbox = readySandbox;
+  mutableSnapshot.sandbox = readySandbox;
   sessionStorage.clear();
   rerender = async () => {};
   (live.snapshot.sandbox as SandboxView).binding = null;
@@ -367,7 +368,7 @@ it("keeps retained History Threads visible through ready to suspended with no ru
   await act(async () => menuButton.click());
 
   // History outlives the Sandbox row itself. Removing the Sandbox must not hide authored Threads.
-  live.snapshot.sandbox = null;
+  mutableSnapshot.sandbox = null;
   await rerender();
   expect(retainedRow()).toBeDefined();
 
