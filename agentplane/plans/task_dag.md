@@ -542,9 +542,11 @@ is not part of this workflow.
 
 **Performance TODO:** the four-test OCI-layout run took 704.32 seconds versus 869.98 seconds for
 the earlier archive-import baseline; cProfile attributed 444.97 seconds of the current run to
-image import. These were individual shared-RBE runs, not a controlled benchmark. Investigate
-containerd import/unpack and deployment readiness before considering any broader CI use; preserve
-assertions and current timeout settings. See [the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
+image import. These were individual shared-RBE runs, not a controlled benchmark. The bounded next
+step is a shared Python interpreter-layer prototype across the current 18 Python image targets,
+followed by representative multi-image startup and a matched isolated-RBE import/readiness profile.
+Investigate containerd import/unpack and deployment readiness before considering any broader CI
+use; preserve assertions and current timeout settings. See [the k3s fixture measurements](../x/k3s_env/README.md#lifecycle-measurements).
 
 This target is not Dispatcher two-replica acceptance and does not cover real KubeVirt, Cilium,
 ClusterIP routing or OIDC/Dex. The fixtures use stub KubeVirt CRDs and omit Cilium; the public

@@ -1,8 +1,8 @@
-load("@aspect_rules_py//py:defs.bzl", "py_image_layer", aspect_py_binary = "py_binary")
+load("@aspect_rules_py//py:defs.bzl", aspect_py_binary = "py_binary")
 load("@rules_oci//oci:defs.bzl", "oci_image")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//devinfra/oci:defs.bzl", "oci_layout_rloc")
-load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env")
+load("//devinfra/oci:py_image.bzl", "py_image_entrypoint", "py_image_env", "shared_py_image_layers")
 load("//devinfra/python:defs.bzl", "py_library", "py_test")
 
 # Spike: does the rendered `agentplane-testing` stack come up on a bare k3s inside an RBE action?
@@ -18,7 +18,7 @@ aspect_py_binary(
     deps = [":runner_entrypoint"],
 )
 
-py_image_layer(
+runner_layers_oci_tars = shared_py_image_layers(
     name = "runner_layers",
     binary = ":runner_image_bin",
     group = "1000",
@@ -51,8 +51,7 @@ oci_image(
     base = "@debian_trixie_slim_linux_amd64",
     entrypoint = py_image_entrypoint("runner_image_bin"),
     env = py_image_env(binary_name = "runner_image_bin"),
-    tars = [
-        ":runner_layers",
+    tars = runner_layers_oci_tars + [
         ":runner_harnesses",
         ":runner_harness_links",
         "//third_party/debian_slim:cacerts",
