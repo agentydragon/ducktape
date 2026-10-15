@@ -52,6 +52,7 @@ in
   # reads the card's passphrase from it into an in-memory NetworkManager profile.
   fileSystems.${secretMount} = {
     device = secretDevice;
+    fsType = "iso9660";
     options = [
       "ro"
       "nofail"
