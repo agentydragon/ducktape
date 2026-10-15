@@ -68,7 +68,9 @@ def test_rugged_local_candidates_are_served_and_experiment_only() -> None:
         for route in SERVED_ROUTES
         if isinstance(route, Route) and route.upstream.provider == Provider.RUGGED_LOCAL
     }
-    allowed_rugged_routes = {route for route in lane.allowed if route.upstream.provider == Provider.RUGGED_LOCAL}
+    allowed_rugged_routes = {
+        route for route in lane.allowed if isinstance(route, Route) and route.upstream.provider == Provider.RUGGED_LOCAL
+    }
     assert served_rugged_routes == set(routes)
     assert allowed_rugged_routes == set(routes)
     assert not lane.fallbacks
