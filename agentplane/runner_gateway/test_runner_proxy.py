@@ -15,7 +15,14 @@ from agentplane.proto import command_pb2, event_log_pb2, runner_control_pb2, run
 from agentplane.runner_gateway.connection_records import ConnectionHolder, ConnectionLeases
 from agentplane.runner_gateway.lifecycle_control import LifecycleControl
 from agentplane.runner_gateway.runner_control import ControlTiming
-from agentplane.runner_gateway.runner_proxy import SANDBOX_HEADER, Resources, RunnerProxy
+from agentplane.runner_gateway.runner_proxy import (
+    SANDBOX_HEADER,
+    SANDBOX_OWNER_NAME_HEADER,
+    SANDBOX_OWNER_NAMESPACE_HEADER,
+    SANDBOX_UID_HEADER,
+    Resources,
+    RunnerProxy,
+)
 from agentplane.runner_gateway.testing.runner_control import (
     OTHER_REPLICA,
     REPLICA,
@@ -23,7 +30,7 @@ from agentplane.runner_gateway.testing.runner_control import (
     connected,
     serve_replica_control,
 )
-from agentplane.sandboxes.testing.kubernetes import SANDBOX, SandboxCluster
+from agentplane.sandboxes.testing.kubernetes import SANDBOX, SANDBOX_UID, SandboxCluster
 from agentplane.subjects import ServiceAccountRef
 from agentplane.testing.fake_apiserver import SANDBOX_NAMESPACE, TokenVerdict
 
@@ -110,6 +117,17 @@ async def runner_on(replica: Replica) -> AsyncIterator[ScriptedRunner]:
 def metadata(account: ServiceAccountRef = CALLER, *, sandbox: str | None = SANDBOX) -> tuple[tuple[str, str], ...]:
     named = () if sandbox is None else ((SANDBOX_HEADER, sandbox),)
     return (("authorization", f"Bearer {TOKENS[account]}"), *named)
+
+
+def identity_metadata(
+    *, sandbox_uid: str = SANDBOX_UID, owner_namespace: str = SANDBOX_NAMESPACE, owner_name: str = SANDBOX
+) -> tuple[tuple[str, str], ...]:
+    return (
+        *metadata(),
+        (SANDBOX_UID_HEADER, sandbox_uid),
+        (SANDBOX_OWNER_NAMESPACE_HEADER, owner_namespace),
+        (SANDBOX_OWNER_NAME_HEADER, owner_name),
+    )
 
 
 @asynccontextmanager
@@ -203,6 +221,29 @@ async def test_a_call_that_names_no_servable_sandbox_is_refused(
             await stub.ListSessions(runner_pb2.ListSessionsRequest(), metadata=call_metadata)
         assert refused.value.code() == code
     assert not runner.received
+
+
+async def test_expected_sandbox_identity_is_checked_before_tunneling(holder: Replica) -> None:
+    async with runner_on(holder) as runner, runner_stub(holder) as stub:
+        runner.sessions["test-session"] = runner_pb2.SessionSummary(session_id="test-session")
+        listed = await stub.ListSessions(runner_pb2.ListSessionsRequest(), metadata=identity_metadata())
+        assert [row.session_id for row in listed.sessions] == ["test-session"]
+        assert len(runner.received) == 1
+
+        for call_metadata in (
+            identity_metadata(sandbox_uid="replaced-sandbox-uid"),
+            identity_metadata(owner_name="different-owner"),
+        ):
+            with pytest.raises(grpc.aio.AioRpcError) as refused:
+                await stub.ListSessions(runner_pb2.ListSessionsRequest(), metadata=call_metadata)
+            assert refused.value.code() == grpc.StatusCode.NOT_FOUND
+
+        with pytest.raises(grpc.aio.AioRpcError) as incomplete:
+            await stub.ListSessions(
+                runner_pb2.ListSessionsRequest(), metadata=(*metadata(), (SANDBOX_UID_HEADER, SANDBOX_UID))
+            )
+        assert incomplete.value.code() == grpc.StatusCode.INVALID_ARGUMENT
+        assert len(runner.received) == 1
 
 
 if __name__ == "__main__":

@@ -450,6 +450,7 @@ py_library(
         "//agentplane:grpc_servicer",
         "//agentplane:subjects",
         "//agentplane/proto:runner_control_pb2",
+        "//agentplane/proto:sandboxes_pb2",
         "//agentplane/sandboxes:errors",
         "//agentplane/sandboxes:reader",
         "//agentplane/workload_auth:grpc_caller",
