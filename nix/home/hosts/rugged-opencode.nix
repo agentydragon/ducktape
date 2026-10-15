@@ -243,8 +243,8 @@ let
         --tmpfs /home
         --tmpfs /root
         --tmpfs /tmp
-        --dir /tmp/offline-workspace
-        --bind "$workspace" /tmp/offline-workspace
+        --dir "$workspace"
+        --bind "$workspace" "$workspace"
         --dir /tmp/offline-home
         --dir /tmp/offline-home/.config
         --dir /tmp/offline-home/.cache
@@ -282,11 +282,11 @@ let
         bwrap_args+=(
           --setenv GIT_DIR /tmp/offline-git/worktree
           --setenv GIT_COMMON_DIR /tmp/offline-git/common
-          --setenv GIT_WORK_TREE /tmp/offline-workspace
+          --setenv GIT_WORK_TREE "$workspace"
         )
       fi
       bwrap_args+=(
-        --chdir /tmp/offline-workspace
+        --chdir "$workspace"
         --
         ${offlineCommand}/bin/rugged-opencode-offline-inner
         "$@"

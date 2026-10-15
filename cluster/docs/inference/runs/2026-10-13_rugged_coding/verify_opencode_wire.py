@@ -221,7 +221,7 @@ def main() -> int:
             str(args.launcher.resolve(strict=True)),
             "run",
             "--dir",
-            "/tmp/offline-workspace",
+            str(args.workspace.resolve(strict=True)),
             "--format",
             "json",
             "--title",

@@ -92,7 +92,8 @@ The dedicated `rugged-opencode-offline` Home Manager command introduced by
 [PR #10458](https://github.com/agentydragon/ducktape/pull/10458) uses a fresh
 home directory, a minimal OpenCode configuration, and only local file and shell
 tools.
-The repository remains writable; Git metadata is read-only. The current launcher
+The launcher preserves the original absolute working-directory path inside its
+sandbox. The repository remains writable; Git metadata is read-only. The current launcher
 connects directly to host-loopback Ollama (default port `11436`, overridable with
 `RUGGED_OPENCODE_BACKEND_PORT`) and keeps host network access. A cached local model
 can still be used when the host is offline, but the interactive agent itself is
@@ -307,7 +308,7 @@ but that claim is not counted as a successful task. The initial failure and any
 verifier-guided repair are recorded separately from HumanEval+ scores.
 
 Two attempted repair continuations selected the original workspace path even
-though the launcher remaps the writable checkout to `/tmp/offline-workspace`.
+though that launcher version remapped the writable checkout to `/tmp/offline-workspace`.
 Their file-access failures were harness errors and are excluded from model
 quality claims. A subsequent attempt used the correct directory but was
 interrupted during its edit/test loop; it is censored, not a completed failure.

@@ -140,7 +140,7 @@ def main() -> int:
     backend_port = server.server_address[1]
     server_thread = threading.Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
-    command = [str(args.launcher.resolve(strict=True)), "acp", "--cwd", "/tmp/offline-workspace"]
+    command = [str(args.launcher.resolve(strict=True)), "acp", "--cwd", str(args.workspace.resolve(strict=True))]
     env = {
         **os.environ,
         "RUGGED_OPENCODE_BACKEND_PORT": str(backend_port),
@@ -181,7 +181,7 @@ def main() -> int:
                     "jsonrpc": "2.0",
                     "id": 1,
                     "method": "session/new",
-                    "params": {"cwd": "/tmp/offline-workspace", "mcpServers": []},
+                    "params": {"cwd": str(args.workspace.resolve(strict=True)), "mcpServers": []},
                 },
                 events,
             )
